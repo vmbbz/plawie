@@ -47,6 +47,7 @@ android {
     sourceSets {
         getByName("main") {
             jniLibs.srcDir("src/main/jniLibs")
+            assets.setSrcDirs(listOf("src/main/assets"))
         }
     }
 }
@@ -61,6 +62,6 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.6-4@aar")
     // MLC-LLM: NanoHTTPD for the OpenAI-compatible HTTP proxy
     implementation("org.nanohttpd:nanohttpd:2.3.1")
-    // MLC-LLM: Uncomment when mlc4j artifacts are compiled and placed in libs/
-    // implementation(files("libs/mlc4j/tvm4j_core.jar"))
+    // MLC-LLM: TVM runtime for native GPU inference (from libs/)
+    // implementation(files("libs/tvm4j_core.jar"))
 }

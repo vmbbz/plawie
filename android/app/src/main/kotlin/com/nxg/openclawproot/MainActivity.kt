@@ -40,6 +40,8 @@ class MainActivity : FlutterActivity() {
     private lateinit var processManager: ProcessManager
     private var screenCaptureResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
+    private var mlcServer: com.nxg.openclawproot.mlc.LocalOpenAIServer? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -66,6 +68,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "isBootstrapComplete" -> {
                     result.success(bootstrapManager.isBootstrapComplete())
+                }
+                "markBootstrapComplete" -> {
+                    try {
+                        val marker = java.io.File(filesDir, "rootfs/root/.clawa/.bootstrap_complete")
+                        marker.parentFile?.mkdirs()
+                        marker.writeText("completed_${System.currentTimeMillis()}")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("MARKER_ERROR", e.message, null)
+                    }
                 }
                 "getBootstrapStatus" -> {
                     result.success(bootstrapManager.getBootstrapStatus())
@@ -177,6 +189,31 @@ class MainActivity : FlutterActivity() {
                 "isBatteryOptimized" -> {
                     val pm = getSystemService(POWER_SERVICE) as PowerManager
                     result.success(!pm.isIgnoringBatteryOptimizations(packageName))
+                }
+                "acquirePartialWakeLock" -> {
+                    try {
+                        if (wakeLock == null) {
+                            val pm = getSystemService(POWER_SERVICE) as PowerManager
+                            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "OpenClaw::NativeWakeLock")
+                        }
+                        if (wakeLock?.isHeld == false) {
+                            wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("WAKELOCK_ERROR", e.message, null)
+                    }
+                }
+                "releasePartialWakeLock" -> {
+                    try {
+                        if (wakeLock?.isHeld == true) {
+                            wakeLock?.release()
+                        }
+                        wakeLock = null
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("WAKELOCK_ERROR", e.message, null)
+                    }
                 }
                 "setupDirs" -> {
                     Thread {
@@ -408,7 +445,14 @@ class MainActivity : FlutterActivity() {
                     if (modelId != null) {
                         Thread {
                             try {
+                                // 1. Start Native Engine
                                 MLCEngineManager.start(applicationContext, modelId)
+                                // 2. Start HTTP Proxy Server
+                                runOnUiThread {
+                                    mlcServer?.stop()
+                                    mlcServer = com.nxg.openclawproot.mlc.LocalOpenAIServer(applicationContext)
+                                    mlcServer!!.start()
+                                }
                                 runOnUiThread { result.success(null) }
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("MLC_ERROR", e.message, null) }
@@ -420,6 +464,8 @@ class MainActivity : FlutterActivity() {
                 }
                 "stopMLCEngine" -> {
                     try {
+                        mlcServer?.stop()
+                        mlcServer = null
                         MLCEngineManager.stop()
                         result.success(null)
                     } catch (e: Exception) {
@@ -427,7 +473,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "isMLCRunning" -> {
-                    result.success(MLCEngineManager.isRunning())
+                    result.success(MLCEngineManager.isRunning() && mlcServer != null)
                 }
                 "copyAssetsToInternal" -> {
                     val folderName = call.argument<String>("folderName")

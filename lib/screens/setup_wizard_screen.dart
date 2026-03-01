@@ -12,6 +12,7 @@ import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
 import 'onboarding_screen.dart';
 import 'package_install_screen.dart';
+import 'dashboard_screen.dart';
 
 class SetupWizardScreen extends StatefulWidget {
   const SetupWizardScreen({super.key});
@@ -138,7 +139,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 _didAutoNavigate = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   Future.delayed(const Duration(milliseconds: 1500), () {
-                    if (mounted) _goToOnboarding(context);
+                    if (mounted) _goToApp(context);
                   });
                 });
               }
@@ -622,7 +623,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
-            onTap: () => _goToOnboarding(context),
+            onTap: () => _goToApp(context),
             child: const Center(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -630,7 +631,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   Icon(Icons.arrow_forward, color: Colors.white, size: 20),
                   SizedBox(width: 8),
                   Text(
-                    'Configure API Keys',
+                    'Continue to App',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -1025,11 +1026,26 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     );
   }
 
-  void _goToOnboarding(BuildContext context) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => const OnboardingScreen(isFirstRun: true),
-      ),
-    );
+  Future<void> _goToApp(BuildContext context) async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    
+    // If we have a dashboard URL, go to Dashboard
+    // Otherwise go to Onboarding
+    if (prefs.dashboardUrl != null && prefs.dashboardUrl!.isNotEmpty) {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => DashboardScreen()),
+        );
+      }
+    } else {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const OnboardingScreen(isFirstRun: true),
+          ),
+        );
+      }
+    }
   }
 }

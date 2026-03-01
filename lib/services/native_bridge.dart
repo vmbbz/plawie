@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import '../constants.dart';
+import 'preferences_service.dart';
 
 class NativeBridge {
   static const _channel = MethodChannel(AppConstants.channelName);
@@ -21,8 +22,15 @@ class NativeBridge {
     return await _channel.invokeMethod('getNativeLibDir');
   }
 
+  static Future<void> markBootstrapComplete() async {
+    await _channel.invokeMethod('markBootstrapComplete');
+  }
+
   static Future<bool> isBootstrapComplete() async {
-    return await _channel.invokeMethod('isBootstrapComplete');
+    final nativeOk = await _channel.invokeMethod('isBootstrapComplete') ?? false;
+    final prefs = PreferencesService();
+    await prefs.init();
+    return nativeOk || prefs.setupComplete;
   }
 
   static Future<Map<String, dynamic>> getBootstrapStatus() async {

@@ -123,9 +123,27 @@ c.models.providers.ollama = {
     {"id": "$selectedModel", "name": "$selectedModel", "contextWindow": 128000}
   ]
 };
-if (!c.agents) c.agents = {};
 if (!c.agents.defaults) c.agents.defaults = {};
 c.agents.defaults.model = {"primary": "ollama/$selectedModel"};
+if (!c.agents.defaults.instructions) c.agents.defaults.instructions = "You are a helpful mobile AI companion with a 3D animated VRM avatar. Be engaging and describe your actions.";
+''';
+    } else if (llmProvider == 'ollama' && prefs.localBackend == LocalLlmBackend.mlc) {
+      final mlcModel = prefs.mlcModelId;
+      script += '''
+if (!c.models) c.models = {};
+if (!c.models.providers) c.models.providers = {};
+c.models.providers.mlc = {
+  "baseUrl": "http://127.0.0.1:8000/v1",
+  "apiKey": "mlc",
+  "api": "openai-completions",
+  "models": [
+    {"id": "$mlcModel", "name": "$mlcModel", "contextWindow": 128000}
+  ]
+};
+if (!c.agents) c.agents = {};
+if (!c.agents.defaults) c.agents.defaults = {};
+c.agents.defaults.model = {"primary": "mlc/$mlcModel"};
+if (!c.agents.defaults.instructions) c.agents.defaults.instructions = "You are a helpful mobile AI companion with a 3D animated VRM avatar. Be engaging and describe your actions.";
 ''';
     }
 
