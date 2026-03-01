@@ -44,7 +44,7 @@ class MainActivity : FlutterActivity() {
     private var screenCaptureDurationMs: Long = 5000L
     private var mlcServer: com.nxg.openclawproot.mlc.LocalOpenAIServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var logStreamingThread: Thread? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -535,41 +535,10 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    GatewayService.logSink = events
-                    // Start a thread to poll the log file and stream to Flutter
-                    logStreamingThread?.interrupt()
-                    logStreamingThread = Thread {
-                        val logFile = java.io.File(filesDir, "rootfs/ubuntu/root/.openclaw/gateway.log")
-                        var lastPosition = 0L
-                        try {
-                            while (!Thread.currentThread().isInterrupted) {
-                                if (logFile.exists()) {
-                                    val currentLength = logFile.length()
-                                    if (currentLength > lastPosition) {
-                                        logFile.inputStream().use { input ->
-                                            input.skip(lastPosition)
-                                            val newBytes = input.readBytes()
-                                            val newContent = String(newBytes)
-                                            newContent.split("\n").forEach { line ->
-                                                if (line.isNotEmpty()) {
-                                                    runOnUiThread { events?.success(line) }
-                                                }
-                                            }
-                                        }
-                                        lastPosition = currentLength
-                                    }
-                                }
-                                Thread.sleep(1000)
-                            }
-                        } catch (e: Exception) {
-                            Log.e("MainActivity", "Log streaming error", e)
-                        }
-                    }.also { it.start() }
+                    processManager.startLogStreaming(events)
                 }
                 override fun onCancel(arguments: Any?) {
-                    GatewayService.logSink = null
-                    logStreamingThread?.interrupt()
-                    logStreamingThread = null
+                    processManager.stopLogStreaming()
                 }
             }
         )
