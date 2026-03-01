@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2d2d2d;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="headGradient">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.95" />
+      <stop offset="100%" style="stop-color:#e0e0e0;stop-opacity:0.85" />
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="96" cy="96" r="88" fill="url(#bgGradient)" stroke="#333" stroke-width="2"/>
+  
+  <!-- Dotted pattern overlay -->
+  <pattern id="dots" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+    <circle cx="2" cy="2" r="1" fill="#404040" opacity="0.3"/>
+  </pattern>
+  <circle cx="96" cy="96" r="86" fill="url(#dots)" opacity="0.5"/>
+  
+  <!-- Avatar head (main circle) -->
+  <circle cx="96" cy="96" r="45" fill="url(#headGradient)" filter="url(#glow)"/>
+  
+  <!-- Eyes -->
+  <g id="eyes">
+    <!-- Left eye -->
+    <ellipse cx="80" cy="88" rx="8" ry="10" fill="#1a1a1a"/>
+    <ellipse cx="82" cy="86" rx="3" ry="4" fill="#ffffff"/>
+    
+    <!-- Right eye -->
+    <ellipse cx="112" cy="88" rx="8" ry="10" fill="#1a1a1a"/>
+    <ellipse cx="114" cy="86" rx="3" ry="4" fill="#ffffff"/>
+  </g>
+  
+  <!-- Mouth (cute smile) -->
+  <path d="M 85 105 Q 96 112 107 105" stroke="#1a1a1a" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  
+  <!-- Lightning bolt feet -->
+  <g id="lightning">
+    <!-- Left lightning -->
+    <g transform="translate(75, 135) rotate(-15)">
+      <path d="M 0 0 L 8 0 L 4 8 L 10 8 L 2 20 L 8 8 L 2 8 Z" 
+            fill="#4a90e2" stroke="#2c5aa0" stroke-width="0.5" filter="url(#glow)"/>
+    </g>
+    
+    <!-- Right lightning -->
+    <g transform="translate(107, 135) rotate(15)">
+      <path d="M 0 0 L 8 0 L 4 8 L 10 8 L 2 20 L 8 8 L 2 8 Z" 
+            fill="#4a90e2" stroke="#2c5aa0" stroke-width="0.5" filter="url(#glow)"/>
+    </g>
+  </g>
+  
+  <!-- Subtle shadow -->
+  <ellipse cx="96" cy="165" rx="35" ry="8" fill="#000000" opacity="0.2"/>
+</svg>
