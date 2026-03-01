@@ -21,6 +21,10 @@ class ProcessManager(
     private val homeDir get() = "$filesDir/home"
     private val configDir get() = "$filesDir/config"
     private val libDir get() = "$filesDir/lib"
+    private val logFile get() = File("$rootfsDir/root/.openclaw/gateway.log")
+
+    private var logSink: io.flutter.plugin.common.EventChannel.EventSink? = null
+    private var logThread: Thread? = null
 
     companion object {
         // Match proot-distro v4.37.0 defaults
@@ -96,6 +100,7 @@ class ProcessManager(
             // App-specific binds
             "--bind=$configDir/resolv.conf:/etc/resolv.conf",
             "--bind=$homeDir:/root/home",
+            "--bind=$rootfsDir:$rootfsDir",
         )
 
         // GPU and Hardware Acceleration bindings (conditional — only bind if device exists)
@@ -276,15 +281,16 @@ class ProcessManager(
     fun startGateway(): Boolean {
         // We use a bash command that launches tmux inside proot.
         // This keeps the session alive and redirects logs to a file.
-        val logFile = "/root/.openclaw/gateway.log"
-        val tmuxCmd = "tmux new-session -d -s openclaw 'cd /root && openclaw gateway start 2>&1 | tee -a $logFile'"
+        val tmuxCmd = "tmux new-session -d -s openclaw 'cd /root && openclaw gateway start 2>&1 | tee -a /root/.openclaw/gateway.log'"
         
         return try {
             val fullCmd = buildGatewayCommand(tmuxCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
             pb.environment().putAll(prootEnv())
-            pb.start()
+            val process = pb.start()
+            process.waitFor(5, TimeUnit.SECONDS)
+            startLogStreaming(null)
             true
         } catch (e: Exception) {
             android.util.Log.e("ProcessManager", "Failed to start gateway tmux session", e)
@@ -300,6 +306,7 @@ class ProcessManager(
             pb.environment().clear()
             pb.environment().putAll(prootEnv())
             pb.start().waitFor()
+            stopLogStreaming()
             true
         } catch (e: Exception) {
             android.util.Log.e("ProcessManager", "Failed to stop gateway tmux session", e)
@@ -308,6 +315,7 @@ class ProcessManager(
     }
 
     fun isGatewayRunning(): Boolean {
+        // We MUST run tmux through proot because it's in the rootfs
         return try {
             val checkCmd = "tmux has-session -t openclaw"
             val fullCmd = buildGatewayCommand(checkCmd)
@@ -324,15 +332,62 @@ class ProcessManager(
 
     fun getRecentLogs(): String {
         return try {
-            val logFile = "$rootfsDir/root/.openclaw/gateway.log"
-            val file = java.io.File(logFile)
-            if (file.exists()) {
-                file.readLines().takeLast(200).joinToString("\n")
+            if (logFile.exists()) {
+                logFile.readLines().takeLast(200).joinToString("\n")
             } else {
-                "Logs not found at $logFile"
+                "Logs not found at ${logFile.absolutePath}"
             }
         } catch (e: Exception) {
             "Error reading logs: ${e.message}"
         }
+    }
+
+    fun startLogStreaming(sink: io.flutter.plugin.common.EventChannel.EventSink?) {
+        if (sink != null) logSink = sink
+        
+        if (logThread?.isAlive == true) return
+        
+        logThread = Thread {
+            var lastPosition = 0L
+            try {
+                while (!Thread.currentThread().isInterrupted) {
+                    if (logFile.exists()) {
+                        val currentLength = logFile.length()
+                        if (currentLength > lastPosition) {
+                            logFile.inputStream().use { input ->
+                                input.skip(lastPosition)
+                                val newBytes = input.readBytes()
+                                if (newBytes.isNotEmpty()) {
+                                    val newContent = String(newBytes)
+                                    newContent.split("\n").forEach { line ->
+                                        if (line.isNotEmpty()) {
+                                            logSink?.let { s ->
+                                                // We need to return to UI thread for Flutter
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                    try { s.success(line) } catch (_: Exception) {}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            lastPosition = currentLength
+                        }
+                    } else {
+                        // Reset if file was deleted
+                        lastPosition = 0L
+                    }
+                    Thread.sleep(1000)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProcessManager", "Log streaming error", e)
+            }
+        }.apply { start() }
+    }
+
+    fun stopLogStreaming() {
+        logSink = null
+        logThread?.interrupt()
+        logThread = null
     }
 }
