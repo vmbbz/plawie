@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../app.dart';
 import '../services/gateway_service.dart';
+import '../services/preferences_service.dart';
 import '../widgets/vrm_avatar_widget.dart';
 
 class ChatMessage {
@@ -34,13 +35,25 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isListening = false;
 
   late final GatewayService _gatewayService;
+  String _selectedAvatar = 'gemini.vrm';
 
   @override
   void initState() {
     super.initState();
     _gatewayService = GatewayService();
+    _loadPreferences();
     _initVoiceParams();
     _messages.add(ChatMessage(text: "Hello! I'm Clawa, your fully local AI companion. How can I help you today?", isUser: false));
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    if (mounted) {
+      setState(() {
+        _selectedAvatar = prefs.selectedAvatar;
+      });
+    }
   }
 
   Future<void> _initVoiceParams() async {
@@ -199,6 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 VrmAvatarWidget(
                   isThinking: _isThinking,
                   speechIntensity: _speechIntensity,
+                  modelFileName: _selectedAvatar,
                 ),
               ],
             ),

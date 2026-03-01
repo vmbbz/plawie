@@ -5,11 +5,13 @@ import '../app.dart';
 class VrmAvatarWidget extends StatefulWidget {
   final bool isThinking;
   final double speechIntensity;
+  final String modelFileName;
 
   const VrmAvatarWidget({
     super.key,
     this.isThinking = false,
     this.speechIntensity = 0.0,
+    this.modelFileName = 'gemini.vrm',
   });
 
   @override
@@ -38,6 +40,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
         },
       )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
+      
+      // Navigate to the HTML page with the selected model as a URL parameter
+      _controller.loadRequest(Uri.parse('file:///android_asset/flutter_assets/assets/vrm/avatar_scene.html?model=${widget.modelFileName}'));
   }
 
   @override

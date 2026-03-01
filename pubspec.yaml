@@ -42,6 +42,7 @@ flutter:
     - assets/app_icon_official.svg
     - assets/avatar_static.svg
     - assets/vrm/
+    - assets/vrm/animations/
   fonts:
     - family: DejaVuSansMono
       fonts:

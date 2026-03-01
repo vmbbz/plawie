@@ -31,6 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _brewInstalled = false;
   String _llmProvider = 'ollama';
   String _selectedModel = 'gemma3:2b';
+  String _selectedAvatar = 'gemini.vrm';
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nodeEnabled = _prefs.nodeEnabled;
     _llmProvider = _prefs.llmProvider;
     _selectedModel = _prefs.selectedModel;
+    _selectedAvatar = _prefs.selectedAvatar;
 
     try {
       final arch = await NativeBridge.getArch();
@@ -151,6 +153,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     leading: const Icon(Icons.model_training),
                     onTap: () => _changeLocalModel(context),
                   ),
+                const Divider(),
+                _sectionHeader(theme, 'AVATAR'),
+                ListTile(
+                  title: const Text('Selected Avatar'),
+                  subtitle: Text(_selectedAvatar == 'gemini.vrm' ? 'Gemini (Default)' : 'Naruto'),
+                  leading: const Icon(Icons.face),
+                  onTap: () => _changeAvatar(context),
+                ),
                 const Divider(),
                 _sectionHeader(theme, 'SYSTEM INFO'),
                 ListTile(
@@ -373,6 +383,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Navigator.pop(ctx);
         _promptModelDownload(val!);
       },
+    );
+  }
+
+  void _changeAvatar(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select Avatar'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<String>(
+              title: const Text('Gemini (Default)'),
+              value: 'gemini.vrm',
+              groupValue: _selectedAvatar,
+              onChanged: (val) {
+                setState(() => _selectedAvatar = val!);
+                _prefs.selectedAvatar = val!;
+                Navigator.pop(ctx);
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('Naruto'),
+              value: 'naruto.vrm',
+              groupValue: _selectedAvatar,
+              onChanged: (val) {
+                setState(() => _selectedAvatar = val!);
+                _prefs.selectedAvatar = val!;
+                Navigator.pop(ctx);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 

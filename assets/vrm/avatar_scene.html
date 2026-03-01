@@ -1,92 +1,135 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Clawa VRM</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: transparent; }
-        canvas { display: block; width: 100vw; height: 100vh; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: transparent;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
     </style>
-    <!-- Import maps polyfill -->
     <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
     <script type="importmap">
     {
         "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
             "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-            "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@2.0.8/lib/three-vrm.module.js"
+            "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@2.0.8/lib/three-vrm.module.js",
+            "@pixiv/three-vrm-animation": "https://unpkg.com/@pixiv/three-vrm-animation@2.0.8/lib/three-vrm-animation.module.js"
         }
     }
     </script>
 </head>
+
 <body>
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+        import { createVRMAnimationClip, VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation';
 
         const scene = new THREE.Scene();
-        // Adjust camera aspect ratio dynamically
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
-        camera.position.set(0.0, 1.35, 2.2); // Focus on upper body/face
+        camera.position.set(0.0, 1.35, 2.2);
 
         const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // limit pixel ratio for performance
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
         const light = new THREE.DirectionalLight(0xffffff, 1.2);
         light.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(light);
-        
-        const ambient = new THREE.AmbientLight(0xffffff, 0.8);
-        scene.add(ambient);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
         let currentVrm = null;
+        let mixer = null;
+        let idleAction = null;
+        let talkAction = null;
+        let currentAction = null;
+
         let speechIntensity = 0.0;
         let isThinking = false;
-        
+        let isSpeaking = false;
+
+        // Parse the model url param, default to gemini.vrm
+        const urlParams = new URLSearchParams(window.location.search);
+        const modelFileName = urlParams.get('model') || 'gemini.vrm';
+
         const loader = new GLTFLoader();
         loader.register((parser) => new VRMLoaderPlugin(parser));
+        loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
-        // Use local file path when loaded via loadFlutterAsset
-        loader.load('./default_avatar.vrm',
+        loader.load('./' + modelFileName,
             (gltf) => {
                 const vrm = gltf.userData.vrm;
                 scene.add(vrm.scene);
                 currentVrm = vrm;
-                
-                // Rotate model to face camera
                 vrm.scene.rotation.y = Math.PI;
-                
-                // Disable frustum culling for VRM so it doesn't disappear if bounding box is small
                 vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
-                
-                // Notify Flutter that VRM is ready
-                if (window.ClawaBridge) {
-                    window.ClawaBridge.postMessage('READY');
-                } else {
-                    console.log("ClawaBridge not found");
-                }
+
+                mixer = new THREE.AnimationMixer(vrm.scene);
+
+                // Load VRMA Animations sequentially
+                loader.load('./animations/idle_loop.vrma', (vrmaGltf) => {
+                    const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
+                    const clip = createVRMAnimationClip(vrmAnimation, vrm);
+                    idleAction = mixer.clipAction(clip);
+                    idleAction.play();
+                    currentAction = idleAction;
+
+                    loader.load('./animations/gesture_elegant.vrma', (talkGltf) => {
+                        const talkAnim = talkGltf.userData.vrmAnimations[0];
+                        const tClip = createVRMAnimationClip(talkAnim, vrm);
+                        talkAction = mixer.clipAction(tClip);
+                        talkAction.setLoop(THREE.LoopRepeat);
+
+                        if (window.ClawaBridge) window.ClawaBridge.postMessage('READY');
+                    });
+                });
             },
             (progress) => {
                 if (window.ClawaBridge && progress.total > 0) {
                     window.ClawaBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
                 }
             },
-            (error) => console.error(error)
+            (err) => console.error(err)
         );
 
         const clock = new THREE.Clock();
-        
-        // Window interface for Flutter WebView bridging
+
         window.setSpeechIntensity = (intensity) => {
-            speechIntensity = intensity; // 0.0 to 1.0
+            speechIntensity = intensity;
+            const wasSpeaking = isSpeaking;
+            isSpeaking = intensity > 0.1;
+
+            if (isSpeaking && !wasSpeaking && talkAction) {
+                // Crossfade to talking animation
+                talkAction.reset();
+                talkAction.play();
+                idleAction.crossFadeTo(talkAction, 0.3, true);
+                currentAction = talkAction;
+            } else if (!isSpeaking && wasSpeaking && idleAction) {
+                // Crossfade back to idle animation
+                idleAction.reset();
+                idleAction.play();
+                talkAction.crossFadeTo(idleAction, 0.5, true);
+                currentAction = idleAction;
+            }
         };
-        
+
         window.setThinking = (thinking) => {
-            isThinking = thinking; // boolean
+            isThinking = thinking;
         };
 
         function animate() {
@@ -94,31 +137,27 @@
             const delta = clock.getDelta();
 
             if (currentVrm) {
-                // Idle breathing / swaying
+                if (mixer) mixer.update(delta);
+
                 const time = clock.elapsedTime;
-                
-                const head = currentVrm.humanoid.getNormalizedBoneNode('head');
-                if (head) {
-                    if (isThinking) {
-                        // Thinking: slight nod, looking away slightly
-                        head.rotation.z = Math.sin(time * 2.0) * 0.03 + 0.05;
-                        head.rotation.x = Math.sin(time) * 0.02 + 0.02;
-                    } else {
-                        // Normal idle head sway
-                        head.rotation.y = Math.sin(time * 0.8) * 0.03;
-                        head.rotation.z = Math.cos(time * 0.5) * 0.02;
-                        head.rotation.x = 0;
+
+                // Keep the head sway for thinking state since VRMA animations just loop
+                if (isThinking) {
+                    const head = currentVrm.humanoid.getNormalizedBoneNode('head');
+                    if (head) {
+                        // Blend additive thinking motion on top of base animation
+                        head.rotation.z += Math.sin(time * 2.0) * 0.02 + 0.02;
+                        head.rotation.x += Math.sin(time) * 0.02 + 0.02;
                     }
                 }
-                
-                // Blinking logic (every ~3-5 seconds)
-                const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1); // chaotic wave
+
+                // Blinking logic
+                const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1);
                 const blinkState = blinkPeriod > 1.85 ? 1.0 : 0.0;
                 currentVrm.expressionManager.setValue('blink', blinkState);
-                
-                // Lip sync from TTS speech intensity
+
+                // Lip sync from TTS
                 if (speechIntensity > 0) {
-                    // Randomize vowel shape slightly with intensity modifier
                     const r = Math.random();
                     if (r < 0.6) {
                         currentVrm.expressionManager.setValue('aa', speechIntensity);
@@ -138,9 +177,7 @@
                     currentVrm.expressionManager.setValue('aa', 0);
                     currentVrm.expressionManager.setValue('ih', 0);
                     currentVrm.expressionManager.setValue('ou', 0);
-                    if (!isThinking) {
-                       currentVrm.expressionManager.setValue('neutral', 1.0);
-                    }
+                    if (!isThinking) currentVrm.expressionManager.setValue('neutral', 1.0);
                 }
 
                 currentVrm.update(delta);
@@ -158,4 +195,5 @@
         });
     </script>
 </body>
+
 </html>
