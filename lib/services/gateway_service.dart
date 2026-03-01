@@ -181,7 +181,12 @@ if (!c.agents.defaults.instructions) c.agents.defaults.instructions = "You are a
       await NativeBridge.acquirePartialWakeLock();
       
       await _configureGateway();
-      await NativeBridge.startGateway();
+      final success = await NativeBridge.startGateway();
+      if (!success) {
+        throw Exception('Native start failed');
+      }
+      
+      await Future.delayed(const Duration(seconds: 3)); // Give tmux/proot time
       _subscribeLogs();
       _startHealthCheck();
     } catch (e) {

@@ -44,6 +44,8 @@ class GatewayService : Service() {
     private lateinit var notificationManager: NotificationManager
     private lateinit var powerManager: PowerManager
     private var wakeLock: PowerManager.WakeLock? = null
+    private var gatewayProcess: Process? = null
+    private var logThread: Thread? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -55,20 +57,8 @@ class GatewayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d("GatewayService", "GatewayService starting")
-        
-        when (intent?.action) {
-            "START_GATEWAY" -> {
-                startGateway()
-            }
-            "STOP_GATEWAY" -> {
-                stopGateway()
-            }
-            else -> {
-                startGateway()
-            }
-        }
-        
+        Log.d("GatewayService", "GatewayService onStartCommand")
+        startGateway()
         return START_STICKY
     }
 
@@ -78,36 +68,82 @@ class GatewayService : Service() {
             return
         }
 
-        try {
-            // Acquire wake lock to keep service running
-            wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "OpenClaw:GatewayService"
-            ).apply {
-                acquire(10*60*1000L) // 10 minutes
-            }
+        Thread {
+            try {
+                // 1. Setup Environment
+                val filesDir = applicationContext.filesDir.absolutePath
+                val nativeLibDir = applicationContext.applicationInfo.nativeLibraryDir
+                val processManager = ProcessManager(filesDir, nativeLibDir)
 
-            // Start foreground service
-            startForeground(NOTIFICATION_ID, createNotification("OpenClaw Gateway Running"))
-            
-            isRunning = true
-            Log.d("GatewayService", "Gateway started successfully")
-            
-        } catch (e: Exception) {
-            Log.e("GatewayService", "Failed to start gateway", e)
-            stopSelf()
-        }
+                // 2. Acquire wake lock
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "OpenClaw:GatewayService"
+                ).apply {
+                    acquire(24 * 60 * 60 * 1000L) // 24 hours
+                }
+
+                // 3. Start foreground
+                startForeground(NOTIFICATION_ID, createNotification("Starting OpenClaw Gateway..."))
+
+                // 4. Launch Process
+                val command = "cd /root && openclaw gateway start"
+                Log.d("GatewayService", "Launching gateway: $command")
+                gatewayProcess = processManager.startProotProcess(command)
+
+                isRunning = true
+                Log.d("GatewayService", "Gateway process spawned")
+
+                // 5. Stream Logs
+                logThread = Thread {
+                    try {
+                        val reader = gatewayProcess?.inputStream?.bufferedReader()
+                        var line: String?
+                        while (reader?.readLine().also { line = it } != null) {
+                            val l = line ?: continue
+                            logSink?.let { sink ->
+                                runOnUiThread { sink.success(l) }
+                            }
+                            Log.d("GatewayLog", l)
+                            
+                            if (l.contains("Gateway is listening")) {
+                                updateNotification("OpenClaw Gateway: Running")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("GatewayService", "Log stream error", e)
+                    }
+                }.also { it.start() }
+
+                // 6. Monitor process
+                val exitCode = gatewayProcess?.waitFor() ?: -1
+                Log.d("GatewayService", "Gateway process exited with code $exitCode")
+                stopGateway()
+
+            } catch (e: Exception) {
+                Log.e("GatewayService", "Failed to start gateway", e)
+                isRunning = false
+                stopSelf()
+            }
+        }.start()
+    }
+
+    private fun updateNotification(text: String) {
+        notificationManager.notify(NOTIFICATION_ID, createNotification(text))
     }
 
     private fun stopGateway() {
-        if (!isRunning) {
-            Log.d("GatewayService", "Gateway not running")
-            return
-        }
+        if (!isRunning) return
 
         try {
-            // Release wake lock
-            wakeLock?.release()
+            gatewayProcess?.destroy()
+            gatewayProcess = null
+            logThread?.interrupt()
+            logThread = null
+            
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+            }
             wakeLock = null
             
             isRunning = false
@@ -119,6 +155,10 @@ class GatewayService : Service() {
         } catch (e: Exception) {
             Log.e("GatewayService", "Failed to stop gateway", e)
         }
+    }
+
+    private fun runOnUiThread(action: () -> Unit) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post(action)
     }
 
     private fun createNotificationChannel() {
@@ -152,14 +192,12 @@ class GatewayService : Service() {
             .build()
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        stopGateway()
         super.onDestroy()
         instance = null
-        wakeLock?.release()
         Log.d("GatewayService", "GatewayService destroyed")
     }
 }

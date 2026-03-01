@@ -57,7 +57,11 @@ class NativeBridge {
   }
 
   static Future<bool> isGatewayRunning() async {
-    return await _channel.invokeMethod('isGatewayRunning');
+    return await _channel.invokeMethod<bool>('isGatewayRunning') ?? false;
+  }
+
+  static Future<String> getGatewayLogs() async {
+    return await _channel.invokeMethod<String>('getGatewayLogs') ?? '';
   }
 
   static Future<bool> setupDirs() async {

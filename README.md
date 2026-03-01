@@ -218,7 +218,7 @@ Clawa conditionally binds GPU device nodes (`/dev/kgsl-3d0`, `/dev/mali0`, `/dev
 
 ## 📄 License
 
-MIT © [cosychiruka](https://github.com/cosychiruka)
+MIT © [bytezero](https://github.com/vmbbz)
 
 ---
 
