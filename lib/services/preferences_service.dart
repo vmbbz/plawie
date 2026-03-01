@@ -105,6 +105,11 @@ class PreferencesService {
   set localBackend(LocalLlmBackend value) => _prefs.setInt(_keyLocalBackend, value.index);
 
   /// The MLC model identifier (e.g. 'gemma-3-1b-it-q4f16_1-MLC')
+  /// The MLC model identifier (e.g. 'gemma-3-1b-it-q4f16_1-MLC')
   String get mlcModelId => _prefs.getString(_keyMlcModelId) ?? 'gemma-3-1b-it-q4f16_1-MLC';
   set mlcModelId(String value) => _prefs.setString(_keyMlcModelId, value);
+
+  /// The selected VRM avatar filename
+  String get selectedAvatar => _prefs.getString('selectedAvatar') ?? 'gemini.vrm';
+  set selectedAvatar(String value) => _prefs.setString('selectedAvatar', value);
 }
