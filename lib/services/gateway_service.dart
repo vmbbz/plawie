@@ -238,6 +238,50 @@ c.agents.defaults.model = {"primary": "ollama/$selectedModel"};
     }
   }
 
+  /// Send a message to the OpenClaw gateway and stream the SSE response
+  Stream<String> sendMessage(String message) async* {
+    final url = Uri.parse('${AppConstants.gatewayUrl}/api/v1/chat');
+    final request = http.Request('POST', url)
+      ..headers['Content-Type'] = 'application/json'
+      ..headers['Accept'] = 'text/event-stream'
+      ..body = jsonEncode({
+        'message': message,
+        'stream': true,
+      });
+
+    final client = http.Client();
+    try {
+      final response = await client.send(request).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) {
+        yield '[Error] Gateway returned status ${response.statusCode}';
+        return;
+      }
+      
+      final stream = response.stream.transform(utf8.decoder).transform(const LineSplitter());
+      await for (final line in stream) {
+        if (line.startsWith('data: ')) {
+          final data = line.substring(6);
+          if (data == '[DONE]') break;
+          try {
+            final json = jsonDecode(data);
+            if (json['content'] != null) {
+              yield json['content'] as String;
+            } else if (json['choices'] != null && json['choices'].isNotEmpty) {
+               final delta = json['choices'][0]['delta'];
+               if (delta != null && delta['content'] != null) {
+                 yield delta['content'] as String;
+               }
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      yield '[Error] Connection failed: $e';
+    } finally {
+      client.close();
+    }
+  }
+
   void dispose() {
     _healthTimer?.cancel();
     _logSubscription?.cancel();
