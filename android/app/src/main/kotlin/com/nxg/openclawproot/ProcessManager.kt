@@ -264,4 +264,72 @@ class ProcessManager(
 
         return pb.start()
     }
+
+    // ================================================================
+    // High-level Gateway Management (using tmux for daemonization)
+    // matches specialist recommendations for openclaw-termux forks.
+    // ================================================================
+
+    fun startGateway(): Boolean {
+        // We use a bash command that launches tmux inside proot.
+        // This keeps the session alive and redirects logs to a file.
+        val logFile = "/root/.openclaw/gateway.log"
+        val tmuxCmd = "tmux new-session -d -s openclaw 'cd /root && openclaw gateway start 2>&1 | tee -a $logFile'"
+        
+        return try {
+            val fullCmd = buildGatewayCommand(tmuxCmd)
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            pb.environment().putAll(prootEnv())
+            pb.start()
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("ProcessManager", "Failed to start gateway tmux session", e)
+            false
+        }
+    }
+
+    fun stopGateway(): Boolean {
+        return try {
+            val stopCmd = "tmux kill-session -t openclaw"
+            val fullCmd = buildGatewayCommand(stopCmd)
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            pb.environment().putAll(prootEnv())
+            pb.start().waitFor()
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("ProcessManager", "Failed to stop gateway tmux session", e)
+            false
+        }
+    }
+
+    fun isGatewayRunning(): Boolean {
+        return try {
+            val checkCmd = "tmux has-session -t openclaw"
+            val fullCmd = buildGatewayCommand(checkCmd)
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            pb.environment().putAll(prootEnv())
+            val process = pb.start()
+            process.waitFor()
+            process.exitValue() == 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun getRecentLogs(): String {
+        return try {
+            val logFile = "$rootfsDir/root/.openclaw/gateway.log"
+            val file = java.io.File(logFile)
+            if (file.exists()) {
+                file.readLines().takeLast(200).joinToString("\n")
+            } else {
+                "Logs not found at $logFile"
+            }
+        } catch (e: Exception) {
+            "Error reading logs: ${e.message}"
+        }
+    }
 }
