@@ -44,7 +44,6 @@ class MainActivity : FlutterActivity() {
     private var screenCaptureDurationMs: Long = 5000L
     private var mlcServer: com.nxg.openclawproot.mlc.LocalOpenAIServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
