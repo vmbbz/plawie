@@ -23,6 +23,7 @@ class SetupWizardScreen extends StatefulWidget {
 class _SetupWizardScreenState extends State<SetupWizardScreen>
     with SingleTickerProviderStateMixin {
   bool _started = false;
+  bool _didAutoNavigate = false;
   Map<String, bool> _pkgStatuses = {};
   String _llmProvider = 'ollama';
   String _selectedModel = 'gemma3:2b';
@@ -131,6 +132,15 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
               // Load package statuses once setup completes
               if (state.isComplete && _pkgStatuses.isEmpty) {
                 _refreshPkgStatuses();
+              }
+
+              if (state.isComplete && !_didAutoNavigate) {
+                _didAutoNavigate = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  Future.delayed(const Duration(milliseconds: 1500), () {
+                    if (mounted) _goToOnboarding(context);
+                  });
+                });
               }
 
               return FadeTransition(
