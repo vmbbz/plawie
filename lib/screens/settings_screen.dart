@@ -157,7 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _sectionHeader(theme, 'AVATAR'),
                 ListTile(
                   title: const Text('Selected Avatar'),
-                  subtitle: Text(_selectedAvatar == 'gemini.vrm' ? 'Gemini (Default)' : 'Naruto'),
+                  subtitle: Text(_selectedAvatar == 'gemini.vrm' ? 'Gemini (Default)' : 'Boruto'),
                   leading: const Icon(Icons.face),
                   onTap: () => _changeAvatar(context),
                 ),
@@ -405,8 +405,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
             RadioListTile<String>(
-              title: const Text('Naruto'),
-              value: 'naruto.vrm',
+              title: const Text('Boruto'),
+              value: 'boruto.vrm',
               groupValue: _selectedAvatar,
               onChanged: (val) {
                 setState(() => _selectedAvatar = val!);
