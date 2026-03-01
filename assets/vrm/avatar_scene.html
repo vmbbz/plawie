@@ -61,6 +61,7 @@
         let speechIntensity = 0.0;
         let isThinking = false;
         let isSpeaking = false;
+        let mouthTime = 0.0;
 
         // Parse the model url param, default to gemini.vrm
         const urlParams = new URLSearchParams(window.location.search);
@@ -156,27 +157,34 @@
                 const blinkState = blinkPeriod > 1.85 ? 1.0 : 0.0;
                 currentVrm.expressionManager.setValue('blink', blinkState);
 
-                // Lip sync from TTS
+                // Advanced Lip sync with 8Hz oscillation and lerp from speech intensity
+                const visemes = ['aa', 'ih', 'ou'];
                 if (speechIntensity > 0) {
-                    const r = Math.random();
-                    if (r < 0.6) {
-                        currentVrm.expressionManager.setValue('aa', speechIntensity);
-                        currentVrm.expressionManager.setValue('ih', 0);
-                        currentVrm.expressionManager.setValue('ou', 0);
-                    } else if (r < 0.8) {
-                        currentVrm.expressionManager.setValue('aa', 0);
-                        currentVrm.expressionManager.setValue('ih', speechIntensity);
-                        currentVrm.expressionManager.setValue('ou', 0);
-                    } else {
-                        currentVrm.expressionManager.setValue('aa', 0);
-                        currentVrm.expressionManager.setValue('ih', 0);
-                        currentVrm.expressionManager.setValue('ou', speechIntensity);
+                    mouthTime += delta;
+                    // Create an 8Hz oscillation wave (0 to 1)
+                    const osc = (Math.sin(mouthTime * 8 * Math.PI) + 1) / 2;
+                    // Scale by speech intensity for dynamic envelope bounds
+                    const intensity = (0.2 + 0.8 * osc) * speechIntensity;
+
+                    // Cycle through vowels
+                    const idx = Math.floor((mouthTime * 1000) / 180) % visemes.length;
+                    const currentViseme = visemes[idx];
+
+                    for (const v of visemes) {
+                        const target = v === currentViseme ? intensity : 0;
+                        const currentVal = currentVrm.expressionManager.getValue(v) || 0;
+                        // Smoothly lerp towards the target
+                        currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, target, 0.4));
                     }
                     currentVrm.expressionManager.setValue('neutral', 0);
                 } else {
-                    currentVrm.expressionManager.setValue('aa', 0);
-                    currentVrm.expressionManager.setValue('ih', 0);
-                    currentVrm.expressionManager.setValue('ou', 0);
+                    mouthTime = 0.0; // Reset
+                    for (const v of visemes) {
+                        const currentVal = currentVrm.expressionManager.getValue(v) || 0;
+                        if (currentVal > 0) {
+                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, 0, 0.2));
+                        }
+                    }
                     if (!isThinking) currentVrm.expressionManager.setValue('neutral', 1.0);
                 }
 
