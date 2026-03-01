@@ -2,6 +2,9 @@ package com.nxg.openclawproot
 
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.File
+import android.util.Log
+import java.util.concurrent.TimeUnit
 
 /**
  * Manages proot process execution, matching Termux proot-distro as closely
