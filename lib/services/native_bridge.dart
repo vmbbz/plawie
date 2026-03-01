@@ -3,8 +3,8 @@ import '../constants.dart';
 import 'preferences_service.dart';
 
 class NativeBridge {
-  static const _channel = MethodChannel(AppConstants.channelName);
-  static const _eventChannel = EventChannel(AppConstants.eventChannelName);
+  static const _channel = MethodChannel('com.nxg.openclawproot/native');
+  static const _eventChannel = EventChannel('com.nxg.openclawproot/gateway_logs');
 
   static Future<String> getProotPath() async {
     return await _channel.invokeMethod('getProotPath');
