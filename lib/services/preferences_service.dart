@@ -82,7 +82,7 @@ class PreferencesService {
     }
   }
 
-  String get selectedModel => _prefs.getString(_keySelectedModel) ?? 'gemma3:2b';
+  String get selectedModel => _prefs.getString(_keySelectedModel) ?? 'gemma3:1b';
   set selectedModel(String value) => _prefs.setString(_keySelectedModel, value);
 
   String get llmProvider => _prefs.getString(_keyLlmProvider) ?? 'ollama';

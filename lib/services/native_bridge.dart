@@ -34,6 +34,8 @@ class NativeBridge {
     return await _channel.invokeMethod('extractRootfs', {'tarPath': tarPath});
   }
 
+  // NOTE: No isolate needed — Kotlin already dispatches runInProotSync
+  // inside a background Thread{}, so this call returns to Dart instantly.
   static Future<String> runInProot(String command, {int timeout = 900}) async {
     return await _channel.invokeMethod('runInProot', {'command': command, 'timeout': timeout});
   }
