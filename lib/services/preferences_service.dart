@@ -20,6 +20,7 @@ class PreferencesService {
   static const _keyLlmProvider = 'llm_provider';
   static const _keyLocalBackend = 'local_backend';
   static const _keyMlcModelId = 'mlc_model_id';
+  static const _keyLlmConfigured = 'llm_configured';
 
   late SharedPreferences _prefs;
 
@@ -31,7 +32,15 @@ class PreferencesService {
   set autoStartGateway(bool value) => _prefs.setBool(_keyAutoStart, value);
 
   bool get setupComplete => _prefs.getBool(_keySetupComplete) ?? false;
-  set setupComplete(bool value) => _prefs.setBool(_keySetupComplete, value);
+  set setupComplete(bool value) {
+    _prefs.setBool(_keySetupComplete, value);
+    // notifyListeners(); // If we decide to mixin ChangeNotifier later
+  }
+
+  bool get isLlmConfigured => _prefs.getBool(_keyLlmConfigured) ?? false;
+  set isLlmConfigured(bool value) {
+    _prefs.setBool(_keyLlmConfigured, value);
+  }
 
   bool get isFirstRun => _prefs.getBool(_keyFirstRun) ?? true;
   set isFirstRun(bool value) => _prefs.setBool(_keyFirstRun, value);

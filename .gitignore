@@ -46,3 +46,7 @@ app.*.map.json
 build_trash/
 *.apk
 *.aab
+
+# MLC-LLM Models (Huge binaries, usually excluded)
+# assets/mlc_models/
+# mlc_models/

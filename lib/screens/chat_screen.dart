@@ -117,6 +117,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!mounted) break;
         setState(() {
           _isThinking = false; // Stopped thinking, started talking
+          _speechIntensity = chunk.length > 2 ? 0.8 : 0.3; // Simulate mouth movement
           fullResponse += chunk;
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         });
@@ -136,6 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _isThinking = false;
         _isGenerating = false;
+        _speechIntensity = 0.0; // Stop mouth
       });
     }
     

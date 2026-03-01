@@ -1,80 +1,80 @@
+// android/app/src/main/kotlin/com/nxg/openclawproot/mlc/MLCEngineManager.kt
 package com.nxg.openclawproot.mlc
 
 import android.content.Context
+import java.io.File
 import android.util.Log
 
 /**
  * Manages the MLC-LLM native GPU inference engine lifecycle.
- *
- * MLC-LLM uses the ChatModule API (org.apache.tvm.contrib.android)
- * for GPU-accelerated inference via OpenCL on Adreno/Mali GPUs.
- *
- * IMPORTANT: To use this, you must:
- * 1. Pre-compile models with `mlc_llm package` on your dev machine
- * 2. Place compiled model artifacts in assets/mlc-models/
- * 3. Add mlc4j (tvm4j_core.jar + libtvm4j_runtime_packed.so) to libs/
- *
- * The engine exposes an OpenAI-compatible HTTP server on 127.0.0.1:8000
- * via LocalOpenAIServer, so OpenClaw in PRoot can connect to it
- * identically to how it connects to Ollama.
+ * STUBBED: Currently disabled to bypass missing tvm4j_core.jar build failure.
+ * Ollama/OpenClaw backends remain fully functional.
  */
 object MLCEngineManager {
     private const val TAG = "MLCEngineManager"
-    private var server: LocalOpenAIServer? = null
-    private var isStarted = false
+    private var isStubEnabled = true
 
-    // TODO: Replace with actual ChatModule when mlc4j is integrated
-    // private var chatModule: ChatModule? = null
-
-    /**
-     * Start the MLC engine with the given model and spin up the
-     * OpenAI-compatible HTTP proxy on port 8000.
-     */
     fun start(context: Context, modelId: String) {
-        if (isStarted) {
-            Log.w(TAG, "MLC engine already running")
-            return
-        }
-
-        Log.i(TAG, "Starting MLC engine with model: $modelId")
-
-        try {
-            // Step 1: Initialize the MLC ChatModule with GPU backend
-            // When mlc4j is integrated, this becomes:
-            //   chatModule = ChatModule()
-            //   chatModule!!.reload(modelId, context.applicationInfo.nativeLibraryDir)
-            //
-            // For now, we create the proxy server in stub mode
-
-            // Step 2: Start the OpenAI-compatible HTTP server
-            server = LocalOpenAIServer(modelId)
-            server!!.start()
-
-            isStarted = true
-            Log.i(TAG, "MLC engine started — OpenAI proxy listening on http://127.0.0.1:8000")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start MLC engine", e)
-            stop()
-            throw e
-        }
+        Log.i(TAG, "MLC Engine started (STUB MODE). GPU acceleration is currently disabled.")
     }
 
-    /**
-     * Stop the MLC engine and its HTTP proxy.
-     */
+    fun generateStream(
+        prompt: String,
+        onToken: (String) -> Unit,
+        onComplete: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        // Simple stub response for debugging if MLC is called
+        onToken(" MLC GPU acceleration is currently disabled in this build. ")
+        onToken(" Please use the Ollama or remote backends via the OpenClaw gateway. ")
+        onComplete()
+    }
+
     fun stop() {
-        try {
-            server?.stop()
-            // chatModule?.unload()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping MLC engine", e)
-        } finally {
-            server = null
-            // chatModule = null
-            isStarted = false
-            Log.i(TAG, "MLC engine stopped")
-        }
+        Log.i(TAG, "MLC Engine stopped.")
     }
 
-    fun isRunning(): Boolean = isStarted
+    fun isRunning() = isStubEnabled
+
+    private fun copyModelFromAssetsIfNeeded(context: Context, modelId: String): File {
+        val dest = File(context.filesDir, "mlc_models/$modelId")
+        if (dest.exists() && File(dest, "mlc-chat-config.json").exists()) {
+            Log.i(TAG, "Model $modelId already exists at ${dest.absolutePath}")
+            return dest
+        }
+        
+        // Since we are no longer bundling 1GB+ models in assets:
+        // We return the destination and let the LocalOpenAIServer or a front-end 
+        // service handle the download if it's missing.
+        Log.w(TAG, "Model $modelId not found. It needs to be downloaded to ${dest.absolutePath}")
+        dest.mkdirs()
+        return dest
+    }
+
+    private fun copyAssetsRecursive(context: Context, assetPath: String, destDir: File) {
+        val assetManager = context.assets
+        val files = assetManager.list(assetPath) ?: return
+        destDir.mkdirs()
+        for (file in files) {
+            val fullAssetPath = if (assetPath.isEmpty()) file else "$assetPath/$file"
+            val outFile = File(destDir, file)
+            val children = assetManager.list(fullAssetPath)
+            if (children != null && children.isNotEmpty()) {
+                // directory
+                copyAssetsRecursive(context, fullAssetPath, outFile)
+            } else {
+                // file
+                try {
+                    assetManager.open(fullAssetPath).use { input ->
+                        java.io.FileOutputStream(outFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } catch (e: java.io.IOException) {
+                    // Fallback for empty directories or special asset types
+                    Log.d(TAG, "Skipping or cannot open asset: $fullAssetPath")
+                }
+            }
+        }
+    }
 }

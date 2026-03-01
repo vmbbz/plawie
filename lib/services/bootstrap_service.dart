@@ -267,7 +267,17 @@ class BootstrapService {
       // ---------------------------------------------------------
       // Step 7: Finalize
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.configuringBypass, 1.0, 'Setup complete! Ready to start the gateway.', 100);
+      await NativeBridge.markBootstrapComplete();
+      prefs.setupComplete = true;
+      // If we got here, LLM (Ollama or MLC) is also configured/downloaded
+      prefs.isLlmConfigured = true;
+
+      // Ensure a default dashboard URL exists so SplashScreen can transition to Dashboard
+      if (prefs.dashboardUrl == null || prefs.dashboardUrl!.isEmpty) {
+        prefs.dashboardUrl = 'http://127.0.0.1:18789';
+      }
+
+      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete! Ready to start the gateway.', 100);
       _stopSetupService();
 
     } on DioException catch (e) {
@@ -405,6 +415,11 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.pullingModel, 0.0, 'Pulling $modelId...', 0);
       await _startOllamaServer();
       await _pullModelWithServerCheck(modelId, onProgress);
+      
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.isLlmConfigured = true;
+
       _emitProgress(onProgress, SetupStep.complete, 1.0, 'Model $modelId ready', 100);
     } catch (e) {
       onProgress(SetupState(step: SetupStep.error, error: 'Failed to pull model: $e'));
