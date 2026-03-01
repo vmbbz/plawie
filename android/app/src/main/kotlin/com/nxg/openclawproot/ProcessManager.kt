@@ -59,7 +59,7 @@ class ProcessManager(
         val procFakes = "$configDir/proc_fakes"
         val sysFakes = "$configDir/sys_fakes"
 
-        return listOf(
+        val flags = mutableListOf(
             prootPath,
             "--link2symlink",
             "-L",
@@ -94,6 +94,15 @@ class ProcessManager(
             "--bind=$configDir/resolv.conf:/etc/resolv.conf",
             "--bind=$homeDir:/root/home",
         )
+
+        // GPU and Hardware Acceleration bindings (conditional — only bind if device exists)
+        for (path in listOf("/dev/kgsl-3d0", "/dev/mali0", "/dev/dri")) {
+            if (java.io.File(path).exists()) flags.add("--bind=$path:$path")
+        }
+        if (java.io.File("/vendor").exists()) flags.add("--bind=/vendor:/vendor")
+        if (java.io.File("/system/lib64").exists()) flags.add("--bind=/system/lib64:/system/lib64")
+
+        return flags
     }
 
     // ================================================================

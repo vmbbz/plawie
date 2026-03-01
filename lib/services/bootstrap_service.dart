@@ -240,7 +240,7 @@ class BootstrapService {
             step: SetupStep.error, // Show error but don't halt the whole process immediately if you want to allow bypass later
             error: 'Ollama failed: $e\n\nYou can still use cloud providers (Gemini, Claude) inside the app.',
           ));
-          return; // Stop setup
+          // return; // Stop setup - allow it to continue without Ollama
         }
       }
 
@@ -286,7 +286,7 @@ class BootstrapService {
   // UBUNTU PROOT INSTALL
   static Future<void> _installOllamaUbuntu(Function(SetupState) onProgress) async {
     onProgress(const SetupState(step: SetupStep.installingOllama, progress: 0.2, message: 'Preparing Ubuntu environment...'));
-    await NativeBridge.runInProot('export DEBIAN_FRONTEND=noninteractive && apt-get update -y && apt-get install -y curl tar zstd tmux', timeout: 180);
+    await NativeBridge.runInProot('export DEBIAN_FRONTEND=noninteractive && apt-get update -y && apt-get install -y curl tar zstd tmux ca-certificates openssl && update-ca-certificates', timeout: 180);
     
     onProgress(const SetupState(step: SetupStep.installingOllama, progress: 0.4, message: 'Downloading Ollama binary...'));
     await NativeBridge.runInProot('''
@@ -294,9 +294,9 @@ class BootstrapService {
       ARCH=\$(uname -m)
       
       # FIX: Every single bracket now has a space on BOTH sides.
-      if[ "\$ARCH" = "x86_64" ]; then 
+      if [ "\$ARCH" = "x86_64" ]; then 
           ARCH="amd64"
-      elif[ "\$ARCH" = "aarch64" ] || [ "\$ARCH" = "arm64" ]; then 
+      elif [ "\$ARCH" = "aarch64" ] || [ "\$ARCH" = "arm64" ]; then 
           ARCH="arm64"
       else 
           echo "Unsupported architecture: \$ARCH"
@@ -325,18 +325,30 @@ class BootstrapService {
     // Flutter moves on instantly, but the underlying PRoot process stays alive
     // perfectly tracking the Ollama server until the app is closed.
     NativeBridge.runInProot('''
-      mkdir -p /root/.openclaw/logs
-      mkdir -p /root/.ollama/models
-      export OLLAMA_HOST="127.0.0.1:11434"
+      mkdir -p /root/.openclaw/logs /root/.ollama/models
+      export OLLAMA_HOST="0.0.0.0:11434"
       export OLLAMA_MODELS="/root/.ollama/models"
+      export OLLAMA_VULKAN=1          # ← GPU acceleration (experimental but works on Adreno/Mali)
+      export OLLAMA_FLASH_ATTENTION=1 # bonus speed
       
-      # Run in foreground. Logs are piped to file.
-      ollama serve > /root/.openclaw/logs/ollama.log 2>&1
-    ''', timeout: 86400).then((_) { // 86400 seconds = 24 hour timeout
-      _log('Ollama server process exited cleanly.');
+      # Daemonized with tmux (survives app restart / device sleep)
+      tmux kill-session -t ollama 2>/dev/null || true
+      tmux new-session -d -s ollama 'ollama serve > /root/.openclaw/logs/ollama.log 2>&1'
+      
+      echo "Ollama daemon started in tmux session 'ollama'"
+    ''').then((_) { 
+      _log('Ollama server process initiated cleanly.');
     }).catchError((e) {
       _log('Ollama server process terminated/killed: $e');
     });
+  }
+
+  Future<bool> ensureDaemonsRunning() async {
+    final status = await NativeBridge.runInProot('tmux list-sessions | grep ollama || echo "NO"');
+    if (status.toString().contains("NO")) {
+      await _startOllamaServer();
+    }
+    return true;
   }
 
   Future<void> stopOllamaServer() async {
