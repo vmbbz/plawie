@@ -355,11 +355,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
     final prefs = PreferencesService();
     await prefs.init();
     prefs.setupComplete = true;
+    prefs.isLlmConfigured = true;
     prefs.isFirstRun = false;
 
     if (mounted) {
       navigator.pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        MaterialPageRoute(builder: (_) => DashboardScreen()),
       );
     }
   }
@@ -408,25 +409,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
           _buildLocalTab(),
         ],
       ),
-      bottomNavigationBar: _finished
-          ? Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: widget.isFirstRun
-                      ? _goToDashboard
-                      : () => Navigator.of(context).pop(),
-                  icon: Icon(widget.isFirstRun
-                      ? Icons.arrow_forward
-                      : Icons.check),
-                  label: Text(widget.isFirstRun
-                      ? 'Go to Dashboard'
-                      : 'Done'),
-                ),
-              ),
-            )
-          : null,
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SizedBox(
+          width: double.infinity,
+          child: Consumer<SetupProvider>(
+            builder: (context, provider, _) {
+              return FilledButton.icon(
+                // Disable the button if a massive download is actively processing
+                onPressed: provider.isRunning
+                    ? null
+                    : (widget.isFirstRun
+                        ? _goToDashboard
+                        : () => Navigator.of(context).pop()),
+                icon: Icon(widget.isFirstRun ? Icons.arrow_forward : Icons.check),
+                label: Text(widget.isFirstRun ? 'Go to Dashboard' : 'Done'),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 
@@ -531,20 +533,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
         return Column(
           children: [
             DropdownButtonFormField<String>(
-              value: 'gemma3:2b', // Default for demonstration, should be from prefs
+              value: PreferencesService().selectedModel,
               decoration: const InputDecoration(labelText: 'Select Model'),
               items: const [
                 DropdownMenuItem(value: 'gemma3:2b', child: Text('Gemma 3B')),
                 DropdownMenuItem(value: 'phi3:mini', child: Text('Phi-3 Mini 3.8B')),
                 DropdownMenuItem(value: 'qwen2.5:3b', child: Text('Qwen2.5 3B')),
               ],
-              onChanged: (v) {},
+              onChanged: (v) {
+                if (v != null) {
+                  PreferencesService().selectedModel = v;
+                }
+              },
             ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: provider.isRunning ? null : () => provider.pullModel('gemma3:2b'),
+                onPressed: provider.isRunning ? null : () => provider.pullModel(PreferencesService().selectedModel),
                 icon: const Icon(Icons.download),
                 label: const Text('Download Model'),
               ),

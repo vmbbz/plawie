@@ -94,24 +94,22 @@ class _SplashScreenState extends State<SplashScreen>
       final prefs = PreferencesService();
       await prefs.init();
 
-      bool setupComplete;
+      bool bootstrapOk = false;
       try {
-        setupComplete = await NativeBridge.isBootstrapComplete();
-      } catch (_) {
-        setupComplete = false;
-      }
+        bootstrapOk = await NativeBridge.isBootstrapComplete();
+      } catch (_) {}
 
       if (!mounted) return;
 
-      // Check both bootstrap completion AND onboarding completion
+      final llmOk = prefs.isLlmConfigured;
       final dashboardUrl = prefs.dashboardUrl;
-      final isFullyConfigured = setupComplete && dashboardUrl != null && dashboardUrl.isNotEmpty;
+      final isFullyConfigured = bootstrapOk && llmOk && dashboardUrl != null && dashboardUrl.isNotEmpty;
 
       if (isFullyConfigured) {
         prefs.setupComplete = true;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const DashboardScreen(),
+            pageBuilder: (context, animation, secondaryAnimation) => DashboardScreen(),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return SlideTransition(
                 position: Tween<Offset>(
@@ -131,7 +129,7 @@ class _SplashScreenState extends State<SplashScreen>
         // If bootstrap is complete but no dashboard URL, go to onboarding
         // If bootstrap is not complete, go to setup
         Widget targetScreen;
-        if (setupComplete) {
+        if (bootstrapOk && llmOk) {
           targetScreen = OnboardingScreen(isFirstRun: false);
         } else {
           targetScreen = const SetupWizardScreen();
