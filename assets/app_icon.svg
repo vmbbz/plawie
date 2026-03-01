@@ -1,0 +1,73 @@
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="96" cy="96" r="88" fill="#1a1a1a" stroke="#2ecc71" stroke-width="4"/>
+  
+  <!-- Crab body -->
+  <ellipse cx="96" cy="96" rx="35" ry="30" fill="#f8f9fa" stroke="#2ecc71" stroke-width="2"/>
+  
+  <!-- Crab head/face -->
+  <ellipse cx="96" cy="85" rx="28" ry="25" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+  
+  <!-- Eyes -->
+  <circle cx="85" cy="80" r="8" fill="#2ecc71"/>
+  <circle cx="107" cy="80" r="8" fill="#2ecc71"/>
+  <circle cx="85" cy="80" r="4" fill="#1a1a1a"/>
+  <circle cx="107" cy="80" r="4" fill="#1a1a1a"/>
+  
+  <!-- Cute mouth -->
+  <path d="M 88 95 Q 96 100 104 95" stroke="#2ecc71" stroke-width="2" fill="none" stroke-linecap="round"/>
+  
+  <!-- Left claw -->
+  <g transform="translate(55, 85)">
+    <!-- Arm -->
+    <rect x="-15" y="0" width="30" height="8" rx="4" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Claw base -->
+    <rect x="-20" y="-5" width="40" height="10" rx="5" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Upper finger -->
+    <rect x="-25" y="-12" width="20" height="6" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Lower finger -->
+    <rect x="-25" y="7" width="20" height="6" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Claw dots -->
+    <circle cx="-20" cy="-9" r="2" fill="#2ecc71"/>
+    <circle cx="-20" cy="10" r="2" fill="#2ecc71"/>
+  </g>
+  
+  <!-- Right claw -->
+  <g transform="translate(137, 85)">
+    <!-- Arm -->
+    <rect x="-15" y="0" width="30" height="8" rx="4" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Claw base -->
+    <rect x="-20" y="-5" width="40" height="10" rx="5" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Upper finger -->
+    <rect x="5" y="-12" width="20" height="6" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Lower finger -->
+    <rect x="5" y="7" width="20" height="6" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="2"/>
+    <!-- Claw dots -->
+    <circle cx="20" cy="-9" r="2" fill="#2ecc71"/>
+    <circle cx="20" cy="10" r="2" fill="#2ecc71"/>
+  </g>
+  
+  <!-- Left legs -->
+  <g transform="translate(65, 110)">
+    <rect x="-3" y="0" width="6" height="20" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+    <rect x="-3" y="18" width="6" height="10" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+  </g>
+  <g transform="translate(75, 115)">
+    <rect x="-3" y="0" width="6" height="18" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+    <rect x="-3" y="16" width="6" height="8" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+  </g>
+  
+  <!-- Right legs -->
+  <g transform="translate(117, 110)">
+    <rect x="-3" y="0" width="6" height="20" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+    <rect x="-3" y="18" width="6" height="10" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+  </g>
+  <g transform="translate(127, 115)">
+    <rect x="-3" y="0" width="6" height="18" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+    <rect x="-3" y="16" width="6" height="8" rx="3" fill="#ffffff" stroke="#2ecc71" stroke-width="1"/>
+  </g>
+  
+  <!-- Glow effect -->
+  <circle cx="96" cy="96" r="85" fill="none" stroke="#2ecc71" stroke-width="1" opacity="0.3"/>
+  <circle cx="96" cy="96" r="80" fill="none" stroke="#2ecc71" stroke-width="1" opacity="0.2"/>
+</svg>
