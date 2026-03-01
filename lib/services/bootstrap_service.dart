@@ -248,13 +248,17 @@ class BootstrapService {
         _emitProgress(onProgress, SetupStep.installingOllama, 0.0, 'Starting MLC GPU engine...', 92);
         
         try {
+          _emitProgress(onProgress, SetupStep.installingOllama, 0.5, 'Extracting MLC models...', 95);
+          await NativeBridge.copyAssetsToInternal('mlc_models');
+          
           await NativeBridge.startMLCEngine(modelId: prefs.mlcModelId);
           _emitProgress(onProgress, SetupStep.pullingModel, 1.0, 'MLC engine ready (native GPU)', 98);
         } catch (e) {
-          _log('MLC engine failed, falling back to cloud', error: e);
+          _log('MLC engine failed, falling back to Ollama', error: e);
+          prefs.localBackend = LocalLlmBackend.ollama;
           onProgress(SetupState(
             step: SetupStep.error,
-            error: 'MLC engine failed: $e\n\nYou can still use cloud providers (Gemini, Claude) inside the app.',
+            error: 'MLC GPU engine failed to load models.\nFalling back to Ollama CPU inference.\n\nPlease tap "Start Gateway" again to retry with Ollama.',
           ));
         }
       }
