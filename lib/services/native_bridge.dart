@@ -150,6 +150,10 @@ class NativeBridge {
 
   // --- MLC-LLM Native GPU Engine ---
 
+  static Future<bool> copyAssetsToInternal(String folderName) async {
+    return await _channel.invokeMethod('copyAssetsToInternal', {'folderName': folderName});
+  }
+
   static Future<void> startMLCEngine({required String modelId}) async {
     return await _channel.invokeMethod('startMLCEngine', {'modelId': modelId});
   }

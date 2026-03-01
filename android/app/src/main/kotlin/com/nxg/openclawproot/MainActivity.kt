@@ -429,6 +429,46 @@ class MainActivity : FlutterActivity() {
                 "isMLCRunning" -> {
                     result.success(MLCEngineManager.isRunning())
                 }
+                "copyAssetsToInternal" -> {
+                    val folderName = call.argument<String>("folderName")
+                    if (folderName != null) {
+                        Thread {
+                            try {
+                                val assetManager = assets
+                                val internalDir = java.io.File(filesDir, folderName)
+                                if (!internalDir.exists()) {
+                                    internalDir.mkdirs()
+                                }
+                                
+                                fun copyAssetFolder(path: String, outDir: java.io.File) {
+                                    val files = assetManager.list(path) ?: return
+                                    if (files.isEmpty()) {
+                                        // It's a file
+                                        val outFile = java.io.File(outDir.parent, outDir.name)
+                                        assetManager.open(path).use { input ->
+                                            java.io.FileOutputStream(outFile).use { output ->
+                                                input.copyTo(output)
+                                            }
+                                        }
+                                    } else {
+                                        // It's a directory
+                                        if (!outDir.exists()) outDir.mkdirs()
+                                        for (file in files) {
+                                            copyAssetFolder("$path/$file", java.io.File(outDir, file))
+                                        }
+                                    }
+                                }
+                                
+                                copyAssetFolder(folderName, internalDir)
+                                runOnUiThread { result.success(true) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("ASSET_ERROR", e.message, null) }
+                            }
+                        }.start()
+                    } else {
+                        result.error("INVALID_ARGS", "folderName required", null)
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }

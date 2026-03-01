@@ -43,6 +43,12 @@ android {
             useLegacyPackaging = true
         }
     }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir("src/main/jniLibs")
+        }
+    }
 }
 
 flutter {
