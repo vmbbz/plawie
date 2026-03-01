@@ -11,8 +11,8 @@ import 'terminal_screen.dart';
 import 'web_dashboard_screen.dart';
 import 'logs_screen.dart';
 import 'packages_screen.dart';
-import 'packages_screen.dart';
 import 'settings_screen.dart';
+import 'chat_screen.dart';
 import '../services/preferences_service.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -51,6 +51,23 @@ class DashboardScreen extends StatelessWidget {
                   letterSpacing: 1.2,
                 ),
               ),
+            ),
+            Consumer<GatewayProvider>(
+              builder: (context, provider, _) {
+                return StatusCard(
+                  title: 'Chat with Clawa',
+                  subtitle: provider.state.isRunning
+                      ? 'Talk to your local AI companion'
+                      : 'Start gateway first',
+                  icon: Icons.chat_bubble_outline,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: provider.state.isRunning
+                      ? () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const ChatScreen()),
+                          )
+                      : null,
+                );
+              },
             ),
             StatusCard(
               title: 'Terminal',

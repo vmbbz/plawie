@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Clawa VRM</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: transparent; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@2.0.8/lib/three-vrm.module.js"
+        }
+    }
+    </script>
+</head>
+<body>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+
+        const scene = new THREE.Scene();
+        // Adjust camera aspect ratio dynamically
+        const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
+        camera.position.set(0.0, 1.35, 2.2); // Focus on upper body/face
+
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // limit pixel ratio for performance
+        document.body.appendChild(renderer.domElement);
+
+        const light = new THREE.DirectionalLight(0xffffff, 1.2);
+        light.position.set(1.0, 1.0, 1.0).normalize();
+        scene.add(light);
+        
+        const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambient);
+
+        let currentVrm = null;
+        let speechIntensity = 0.0;
+        let isThinking = false;
+        
+        const loader = new GLTFLoader();
+        loader.register((parser) => new VRMLoaderPlugin(parser));
+
+        // Use local file path when loaded via loadFlutterAsset
+        loader.load('./default_avatar.vrm',
+            (gltf) => {
+                const vrm = gltf.userData.vrm;
+                scene.add(vrm.scene);
+                currentVrm = vrm;
+                
+                // Rotate model to face camera
+                vrm.scene.rotation.y = Math.PI;
+                
+                // Disable frustum culling for VRM so it doesn't disappear if bounding box is small
+                vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
+                
+                // Notify Flutter that VRM is ready
+                if (window.ClawaBridge) {
+                    window.ClawaBridge.postMessage('READY');
+                } else {
+                    console.log("ClawaBridge not found");
+                }
+            },
+            (progress) => {
+                if (window.ClawaBridge && progress.total > 0) {
+                    window.ClawaBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
+                }
+            },
+            (error) => console.error(error)
+        );
+
+        const clock = new THREE.Clock();
+        
+        // Window interface for Flutter WebView bridging
+        window.setSpeechIntensity = (intensity) => {
+            speechIntensity = intensity; // 0.0 to 1.0
+        };
+        
+        window.setThinking = (thinking) => {
+            isThinking = thinking; // boolean
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (currentVrm) {
+                // Idle breathing / swaying
+                const time = clock.elapsedTime;
+                
+                const head = currentVrm.humanoid.getNormalizedBoneNode('head');
+                if (head) {
+                    if (isThinking) {
+                        // Thinking: slight nod, looking away slightly
+                        head.rotation.z = Math.sin(time * 2.0) * 0.03 + 0.05;
+                        head.rotation.x = Math.sin(time) * 0.02 + 0.02;
+                    } else {
+                        // Normal idle head sway
+                        head.rotation.y = Math.sin(time * 0.8) * 0.03;
+                        head.rotation.z = Math.cos(time * 0.5) * 0.02;
+                        head.rotation.x = 0;
+                    }
+                }
+                
+                // Blinking logic (every ~3-5 seconds)
+                const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1); // chaotic wave
+                const blinkState = blinkPeriod > 1.85 ? 1.0 : 0.0;
+                currentVrm.expressionManager.setValue('blink', blinkState);
+                
+                // Lip sync from TTS speech intensity
+                if (speechIntensity > 0) {
+                    // Randomize vowel shape slightly with intensity modifier
+                    const r = Math.random();
+                    if (r < 0.6) {
+                        currentVrm.expressionManager.setValue('aa', speechIntensity);
+                        currentVrm.expressionManager.setValue('ih', 0);
+                        currentVrm.expressionManager.setValue('ou', 0);
+                    } else if (r < 0.8) {
+                        currentVrm.expressionManager.setValue('aa', 0);
+                        currentVrm.expressionManager.setValue('ih', speechIntensity);
+                        currentVrm.expressionManager.setValue('ou', 0);
+                    } else {
+                        currentVrm.expressionManager.setValue('aa', 0);
+                        currentVrm.expressionManager.setValue('ih', 0);
+                        currentVrm.expressionManager.setValue('ou', speechIntensity);
+                    }
+                    currentVrm.expressionManager.setValue('neutral', 0);
+                } else {
+                    currentVrm.expressionManager.setValue('aa', 0);
+                    currentVrm.expressionManager.setValue('ih', 0);
+                    currentVrm.expressionManager.setValue('ou', 0);
+                    if (!isThinking) {
+                       currentVrm.expressionManager.setValue('neutral', 1.0);
+                    }
+                }
+
+                currentVrm.update(delta);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
