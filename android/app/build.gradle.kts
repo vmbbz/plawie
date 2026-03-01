@@ -53,4 +53,8 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.26.0")
     implementation("org.tukaani:xz:1.9")
     implementation("com.github.luben:zstd-jni:1.5.6-4@aar")
+    // MLC-LLM: NanoHTTPD for the OpenAI-compatible HTTP proxy
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    // MLC-LLM: Uncomment when mlc4j artifacts are compiled and placed in libs/
+    // implementation(files("libs/mlc4j/tvm4j_core.jar"))
 }

@@ -208,12 +208,13 @@ class BootstrapService {
       await NativeBridge.runInProot('openclaw --version || echo openclaw_installed');
 
       // ---------------------------------------------------------
-      // Step 5: Install Ollama
+      // Step 5: Install Local LLM Backend (Ollama OR MLC)
       // ---------------------------------------------------------
       final prefs = PreferencesService();
       await prefs.init();
       
-      if (prefs.llmProvider == 'ollama') {
+      if (prefs.llmProvider == 'ollama' && prefs.localBackend == LocalLlmBackend.ollama) {
+        // --- OLLAMA PATH: Install in PRoot (CPU inference) ---
         _emitProgress(onProgress, SetupStep.installingOllama, 0.0, 'Installing Ollama server...', 92);
         
         try {
@@ -237,12 +238,27 @@ class BootstrapService {
         } catch (e) {
           _log('Ollama installation failed, continuing without it', error: e);
           onProgress(SetupState(
-            step: SetupStep.error, // Show error but don't halt the whole process immediately if you want to allow bypass later
+            step: SetupStep.error,
             error: 'Ollama failed: $e\n\nYou can still use cloud providers (Gemini, Claude) inside the app.',
           ));
-          // return; // Stop setup - allow it to continue without Ollama
+          // Allow setup to continue without Ollama
+        }
+      } else if (prefs.llmProvider == 'ollama' && prefs.localBackend == LocalLlmBackend.mlc) {
+        // --- MLC PATH: Native GPU inference (outside PRoot) ---
+        _emitProgress(onProgress, SetupStep.installingOllama, 0.0, 'Starting MLC GPU engine...', 92);
+        
+        try {
+          await NativeBridge.startMLCEngine(modelId: prefs.mlcModelId);
+          _emitProgress(onProgress, SetupStep.pullingModel, 1.0, 'MLC engine ready (native GPU)', 98);
+        } catch (e) {
+          _log('MLC engine failed, falling back to cloud', error: e);
+          onProgress(SetupState(
+            step: SetupStep.error,
+            error: 'MLC engine failed: $e\n\nYou can still use cloud providers (Gemini, Claude) inside the app.',
+          ));
         }
       }
+      // else: cloud provider selected — skip local LLM setup entirely
 
       // ---------------------------------------------------------
       // Step 7: Finalize

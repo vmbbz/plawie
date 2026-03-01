@@ -1,5 +1,7 @@
 package com.nxg.openclawproot
 
+import com.nxg.openclawproot.mlc.MLCEngineManager
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -399,6 +401,33 @@ class MainActivity : FlutterActivity() {
                             runOnUiThread { result.error("SENSOR_ERROR", e.message, null) }
                         }
                     }.start()
+                }
+                // --- MLC-LLM Native GPU Engine ---
+                "startMLCEngine" -> {
+                    val modelId = call.argument<String>("modelId")
+                    if (modelId != null) {
+                        Thread {
+                            try {
+                                MLCEngineManager.start(applicationContext, modelId)
+                                runOnUiThread { result.success(null) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("MLC_ERROR", e.message, null) }
+                            }
+                        }.start()
+                    } else {
+                        result.error("INVALID_ARGS", "modelId required", null)
+                    }
+                }
+                "stopMLCEngine" -> {
+                    try {
+                        MLCEngineManager.stop()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("MLC_ERROR", e.message, null)
+                    }
+                }
+                "isMLCRunning" -> {
+                    result.success(MLCEngineManager.isRunning())
                 }
                 else -> {
                     result.notImplemented()
