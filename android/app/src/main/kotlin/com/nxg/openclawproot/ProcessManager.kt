@@ -274,33 +274,36 @@ class ProcessManager(
     }
 
     // ================================================================
-    // High-level Gateway Management (using tmux for daemonization)
-    // matches specialist recommendations for openclaw-termux forks.
+    // High-level Gateway Management (direct execution like openclaw-termux)
+    // matches original upstream implementation for maximum compatibility.
     // ================================================================
 
     fun startGateway(): Boolean {
-        // We use a bash command that launches tmux inside proot.
-        // This keeps the session alive and redirects logs to a file.
-        val tmuxCmd = "tmux new-session -d -s openclaw 'cd /root && openclaw gateway start 2>&1 | tee -a /root/.openclaw/gateway.log'"
+        // Original approach: Direct execution with proot-distro like openclaw-termux
+        // Command: proot-distro login ubuntu -- bash -c 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw gateway --verbose'
+        // Let openclaw handle its own logging (no explicit redirection)
+        val gatewayCmd = "export NODE_OPTIONS=\"--require /root/.openclaw/bionic-bypass.js\" && openclaw gateway --verbose &"
         
         return try {
-            val fullCmd = buildGatewayCommand(tmuxCmd)
+            android.util.Log.i("ProcessManager", "Starting gateway with original approach (direct execution)")
+            val fullCmd = buildGatewayCommand(gatewayCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
             pb.environment().putAll(prootEnv())
             val process = pb.start()
-            process.waitFor(5, TimeUnit.SECONDS)
+            process.waitFor(3, TimeUnit.SECONDS)
             startLogStreaming(null)
             true
         } catch (e: Exception) {
-            android.util.Log.e("ProcessManager", "Failed to start gateway tmux session", e)
+            android.util.Log.e("ProcessManager", "Failed to start gateway", e)
             false
         }
     }
 
     fun stopGateway(): Boolean {
+        // Original approach: Kill openclaw gateway process directly
         return try {
-            val stopCmd = "tmux kill-session -t openclaw"
+            val stopCmd = "pkill -f 'openclaw gateway' || true"
             val fullCmd = buildGatewayCommand(stopCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
@@ -309,15 +312,15 @@ class ProcessManager(
             stopLogStreaming()
             true
         } catch (e: Exception) {
-            android.util.Log.e("ProcessManager", "Failed to stop gateway tmux session", e)
+            android.util.Log.e("ProcessManager", "Failed to stop gateway", e)
             false
         }
     }
 
     fun isGatewayRunning(): Boolean {
-        // We MUST run tmux through proot because it's in the rootfs
+        // Original approach: Check if openclaw gateway process is running
         return try {
-            val checkCmd = "tmux has-session -t openclaw"
+            val checkCmd = "pgrep -f 'openclaw gateway' > /dev/null 2>&1"
             val fullCmd = buildGatewayCommand(checkCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()

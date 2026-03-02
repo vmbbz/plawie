@@ -1189,6 +1189,14 @@ require('/root/.openclaw/proot-compat.js');
 
         File(bypassDir, "bionic-bypass.js").writeText(bypassContent)
 
+        // 4b. Simple hijack.js - matches original implementation for network interface fix
+        val hijackContent = """
+const os = require("os");
+os.networkInterfaces = () => ({});
+""".trimIndent()
+
+        File(bypassDir, "hijack.js").writeText(hijackContent)
+
         // 5. Git config — write .gitconfig directly to rootfs to avoid shell
         //    quoting issues when running `git config` inside proot via bash -c.
         //    Rewrites SSH URLs to HTTPS (no SSH keys in proot).
@@ -1204,11 +1212,13 @@ require('/root/.openclaw/proot-compat.js');
 
         // Patch .bashrc
         val bashrc = File("$rootfsDir/root/.bashrc")
-        val exportLine = "export NODE_OPTIONS=\"--require /root/.openclaw/bionic-bypass.js\""
+        val bypassLine = "export NODE_OPTIONS=\"-r /root/.openclaw/hijack.js\""
+        val complexBypassLine = "export NODE_OPTIONS=\"--require /root/.openclaw/bionic-bypass.js\""
 
         val existing = if (bashrc.exists()) bashrc.readText() else ""
-        if (!existing.contains("bionic-bypass")) {
-            bashrc.appendText("\n# OpenClaw Bionic Bypass\n$exportLine\n")
+        if (!existing.contains("hijack.js") && !existing.contains("bionic-bypass.js")) {
+            // Use simple hijack.js like original implementation
+            bashrc.appendText("\n# OpenClaw Network Interface Fix\n$bypassLine\n")
         }
     }
 

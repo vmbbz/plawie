@@ -5,8 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app.dart';
 import '../constants.dart';
 import '../providers/node_provider.dart';
-import '../providers/setup_provider.dart';
 import '../services/native_bridge.dart';
+import '../services/diagnostic_service.dart';
 import '../services/preferences_service.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
@@ -29,8 +29,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   bool _goInstalled = false;
   bool _brewInstalled = false;
-  String _llmProvider = 'ollama';
-  String _selectedModel = 'gemma3:2b';
   String _selectedAvatar = 'gemini.vrm';
 
   @override
@@ -43,8 +41,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _prefs.init();
     _autoStart = _prefs.autoStartGateway;
     _nodeEnabled = _prefs.nodeEnabled;
-    _llmProvider = _prefs.llmProvider;
-    _selectedModel = _prefs.selectedModel;
     _selectedAvatar = _prefs.selectedAvatar;
 
     try {
@@ -139,21 +135,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const Divider(),
-                _sectionHeader(theme, 'AI PROVIDER'),
-                ListTile(
-                  title: const Text('Provider'),
-                  subtitle: Text(_llmProvider == 'ollama' ? 'Local LLM (Ollama)' : 'Cloud (API)'),
-                  leading: const Icon(Icons.psychology),
-                  onTap: () => _changeLlmProvider(context),
-                ),
-                if (_llmProvider == 'ollama')
-                  ListTile(
-                    title: const Text('Local Model'),
-                    subtitle: Text(_selectedModel),
-                    leading: const Icon(Icons.model_training),
-                    onTap: () => _changeLocalModel(context),
-                  ),
-                const Divider(),
+                // AI provider selection removed; gateway configuration is used instead
+                const SizedBox.shrink(),
                 _sectionHeader(theme, 'AVATAR'),
                 ListTile(
                   title: const Text('Selected Avatar'),
@@ -221,6 +204,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+                ListTile(
+                  title: const Text('Run Gateway Diagnostics'),
+                  subtitle: const Text('Check tmux, openclaw, session and logs'),
+                  leading: const Icon(Icons.bug_report),
+                  onTap: () async {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+                    );
+                    final results = await DiagnosticService.runGatewayDiagnostics();
+                    Navigator.pop(context); // close progress
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Diagnostics'),
+                        content: SingleChildScrollView(
+                          child: SelectableText(results.entries.map((e) => '${e.key}:\n${e.value}').join('\n\n')),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                        ],
+                      ),
+                    );
+                  },
+                ),
                 const Divider(),
                 _sectionHeader(theme, 'ABOUT'),
                 const ListTile(
@@ -272,119 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _changeLlmProvider(BuildContext context) {
-    final currentProvider = _llmProvider;
-    final prefs = _prefs;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Choose AI Provider'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<String>(
-              title: const Text('Local LLM (Ollama)'),
-              subtitle: const Text('Runs entirely on your device (Offline)'),
-              value: 'ollama',
-              groupValue: currentProvider,
-              onChanged: (val) {
-                setState(() => _llmProvider = val!);
-                prefs.llmProvider = val!;
-                Navigator.pop(ctx);
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('Cloud (API)'),
-              subtitle: const Text('Requires internet and API keys'),
-              value: 'cloud',
-              groupValue: currentProvider,
-              onChanged: (val) {
-                setState(() => _llmProvider = val!);
-                prefs.llmProvider = val!;
-                Navigator.pop(ctx);
-              },
-            ),
-            _sectionHeader(Theme.of(context), 'Android 12+ Phantom Process Killer'),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '⚠️ ANDROID 12+ PHANTOM PROCESS KILLER',
-                      style: TextStyle(
-                        color: Colors.orange,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Android 12+ may kill Ollama as a "rogue process" due to high RAM usage.',
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'POWER USERS: Run this ADB command to disable:',
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Theme.of(context).colorScheme.outline),
-                      ),
-                      child: const SelectableText(
-                        'adb shell device_config put activity_manager max_phantom_processes 2147483647',
-                        style: TextStyle(fontFamily: 'monospace'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Then restart your device and the app.',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _changeLocalModel(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Select Local Model'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _modelOption(ctx, 'gemma3:2b', 'Gemma 3B'),
-            _modelOption(ctx, 'phi3:mini', 'Phi-3 Mini 3.8B'),
-            _modelOption(ctx, 'qwen2.5:3b', 'Qwen2.5 3B'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _modelOption(BuildContext ctx, String id, String name) {
-    final currentModel = _selectedModel;
-    final prefs = _prefs;
-    return RadioListTile<String>(
-      title: Text(name),
-      value: id,
-      groupValue: currentModel,
-      onChanged: (val) {
-        setState(() => _selectedModel = val!);
-        prefs.selectedModel = val!;
-        Navigator.pop(ctx);
-        _promptModelDownload(val!);
-      },
-    );
-  }
+  // Local LLM support removed; gateway-based providers are used.
 
   void _changeAvatar(BuildContext context) {
     showDialog(
@@ -420,33 +317,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _promptModelDownload(String modelId) {
-    final buildContext = context;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Download Model?'),
-        content: Text('Would you like to download $modelId now? This may take several minutes.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Later'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              buildContext.read<SetupProvider>().pullModel(modelId);
-              // We could navigate to a progress screen or show a persistent banner
-              ScaffoldMessenger.of(buildContext).showSnackBar(
-                SnackBar(content: Text('Downloading $modelId in background...')),
-              );
-            },
-            child: const Text('Download'),
-          ),
-        ],
-      ),
-    );
-  }
+  // Model download UI removed.
 
   Widget _sectionHeader(ThemeData theme, String title) {
     return Padding(

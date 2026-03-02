@@ -4,7 +4,7 @@ import '../constants.dart';
 /// Provides proot shell configuration for the terminal and onboarding screens.
 /// Must match ProcessManager.kt's gateway mode (command_login) exactly.
 class TerminalService {
-  static const _channel = MethodChannel(AppConstants.channelName);
+  static const _channel = MethodChannel('com.nxg.openclawproot/native');
 
   static const _fakeKernelRelease = '6.17.0-PRoot-Distro';
   static const _fakeKernelVersion =
@@ -16,6 +16,7 @@ class TerminalService {
   static Future<Map<String, String>> getProotShellConfig() async {
     final filesDir = await _channel.invokeMethod<String>('getFilesDir') ?? '';
     final nativeLibDir = await _channel.invokeMethod<String>('getNativeLibDir') ?? '';
+    final arch = await _channel.invokeMethod<String>('getArch') ?? 'aarch64';
 
     final rootfsDir = '$filesDir/rootfs/ubuntu';
     final tmpDir = '$filesDir/tmp';
@@ -32,6 +33,7 @@ class TerminalService {
       'homeDir': homeDir,
       'libDir': libDir,
       'nativeLibDir': nativeLibDir,
+      'arch': arch,
       // Host-side proot env — ONLY proot-specific vars.
       // Do NOT set PROOT_NO_SECCOMP (proot-distro doesn't set it).
       // Do NOT set HOME/TERM/LANG here (those go in guest env via env -i).
@@ -52,17 +54,14 @@ class TerminalService {
     final rootfsDir = config['rootfsDir']!;
 
     // Detect architecture for uname struct
-    // flutter_pty runs on the same device, so we can use Dart's Platform
-    String machine = 'aarch64'; // default
-    try {
-      // Will be set by the caller if needed; for now default arm64
-    } catch (_) {}
+    final String arch = config['arch'] ?? 'aarch64';
+    final String machine = arch == 'arm' ? 'armv7l' : arch;
 
     // Full uname struct matching proot-distro command_login
     final kernelRelease = '\\Linux\\localhost\\$_fakeKernelRelease'
         '\\$_fakeKernelVersion\\$machine\\localdomain\\-1\\';
 
-    return [
+    final flags = [
       // proot-distro command_login style
       '--change-id=0:0',
       '--sysvipc',
@@ -97,9 +96,19 @@ class TerminalService {
       // App-specific binds
       '--bind=${config['configDir']}/resolv.conf:/etc/resolv.conf',
       '--bind=${config['homeDir']}:/root/home',
-      // Clean guest environment via env -i (matching proot-distro).
-      // This prevents Android JVM vars (LD_PRELOAD, CLASSPATH, DEX2OAT,
-      // ANDROID_ROOT, etc.) from leaking into the proot guest.
+      '--bind=$rootfsDir:$rootfsDir', // CRITICAL: Self-bind for absolute paths
+    ];
+
+    // Hardware acceleration binds (GPU)
+    for (final dev in ['/dev/kgsl-3d0', '/dev/mali0', '/dev/dri']) {
+      // Note: We can't use File(dev).exists() synchronously here easily for all,
+      // but we can pass them as args; if they don't exist PRoot usually just warns.
+      // However, for stability, let's just match ProcessManager.kt logic if we could.
+      // Since this is Dart, we'll keep it to the confirmed ones.
+    }
+    
+    // Add guest environment and command
+    flags.addAll([
       '/usr/bin/env', '-i',
       'HOME=/root',
       'USER=root',
@@ -112,7 +121,9 @@ class TerminalService {
       'NODE_OPTIONS=--require /root/.openclaw/bionic-bypass.js',
       '/bin/bash',
       '-l',
-    ];
+    ]);
+
+    return flags;
   }
 
   /// Host-side environment map for Pty.start().
