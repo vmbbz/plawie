@@ -1,6 +1,5 @@
 package com.nxg.openclawproot
 
-import com.nxg.openclawproot.mlc.MLCEngineManager
 import android.util.Log
 import java.io.File
 
@@ -42,7 +41,6 @@ class MainActivity : FlutterActivity() {
     private lateinit var processManager: ProcessManager
     private var screenCaptureResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
-    private var mlcServer: com.nxg.openclawproot.mlc.LocalOpenAIServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -445,82 +443,6 @@ class MainActivity : FlutterActivity() {
                             runOnUiThread { result.error("SENSOR_ERROR", e.message, null) }
                         }
                     }.start()
-                }
-                // --- MLC-LLM Native GPU Engine ---
-                "startMLCEngine" -> {
-                    val modelId = call.argument<String>("modelId")
-                    if (modelId != null) {
-                        Thread {
-                            try {
-                                // 1. Start Native Engine
-                                MLCEngineManager.start(applicationContext, modelId)
-                                // 2. Start HTTP Proxy Server
-                                runOnUiThread {
-                                    mlcServer?.stop()
-                                    mlcServer = com.nxg.openclawproot.mlc.LocalOpenAIServer(applicationContext)
-                                    mlcServer!!.start()
-                                }
-                                runOnUiThread { result.success(null) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("MLC_ERROR", e.message, null) }
-                            }
-                        }.start()
-                    } else {
-                        result.error("INVALID_ARGS", "modelId required", null)
-                    }
-                }
-                "stopMLCEngine" -> {
-                    try {
-                        mlcServer?.stop()
-                        mlcServer = null
-                        MLCEngineManager.stop()
-                        result.success(null)
-                    } catch (e: Exception) {
-                        result.error("MLC_ERROR", e.message, null)
-                    }
-                }
-                "isMLCRunning" -> {
-                    result.success(MLCEngineManager.isRunning() && mlcServer != null)
-                }
-                "copyAssetsToInternal" -> {
-                    val folderName = call.argument<String>("folderName")
-                    if (folderName != null) {
-                        Thread {
-                            try {
-                                val assetManager = assets
-                                val internalDir = java.io.File(filesDir, folderName)
-                                if (!internalDir.exists()) {
-                                    internalDir.mkdirs()
-                                }
-                                
-                                fun copyAssetFolder(path: String, outDir: java.io.File) {
-                                    val files = assetManager.list(path) ?: return
-                                    if (files.isEmpty()) {
-                                        // It's a file
-                                        val outFile = java.io.File(outDir.parent, outDir.name)
-                                        assetManager.open(path).use { input ->
-                                            java.io.FileOutputStream(outFile).use { output ->
-                                                input.copyTo(output)
-                                            }
-                                        }
-                                    } else {
-                                        // It's a directory
-                                        if (!outDir.exists()) outDir.mkdirs()
-                                        for (file in files) {
-                                            copyAssetFolder("$path/$file", java.io.File(outDir, file))
-                                        }
-                                    }
-                                }
-                                
-                                copyAssetFolder(folderName, internalDir)
-                                runOnUiThread { result.success(true) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("ASSET_ERROR", e.message, null) }
-                            }
-                        }.start()
-                    } else {
-                        result.error("INVALID_ARGS", "folderName required", null)
-                    }
                 }
                 else -> {
                     result.notImplemented()

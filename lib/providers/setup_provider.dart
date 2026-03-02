@@ -32,22 +32,6 @@ class SetupProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> pullModel(String modelId) async {
-    if (_isRunning) return;
-    _isRunning = true;
-    notifyListeners();
-
-    await _bootstrapService.pullModel(
-      modelId,
-      onProgress: (state) {
-        _state = state;
-        notifyListeners();
-      },
-    );
-
-    _isRunning = false;
-    notifyListeners();
-  }
 
   void reset() {
     _state = const SetupState();

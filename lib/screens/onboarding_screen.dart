@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,7 +9,6 @@ import '../constants.dart';
 import '../services/native_bridge.dart';
 import '../services/terminal_service.dart';
 import '../services/preferences_service.dart';
-import '../providers/setup_provider.dart';
 import '../widgets/terminal_toolbar.dart';
 import 'dashboard_screen.dart';
 
@@ -27,15 +26,16 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _OnboardingScreenState extends State<OnboardingScreen> {
   late final Terminal _terminal;
   late final TerminalController _controller;
   Pty? _pty;
   bool _loading = true;
   bool _finished = false;
   String? _error;
-  static final _anyUrlRegex = RegExp(r'https?://[^\s<>\[\]"' "'" r'\)]+');
+  final _ctrlNotifier = ValueNotifier<bool>(false);
+  final _altNotifier = ValueNotifier<bool>(false);
+  static final _anyUrlRegex = RegExp(r'https?://[^\s<>]+');
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):18789/#token=[0-9a-f]+');
   static final _ansiEscape = AppConstants.ansiEscape;
   /// Box-drawing and other TUI characters that break URLs when copied
@@ -61,7 +61,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _terminal = Terminal(maxLines: 10000);
     _controller = TerminalController();
     NativeBridge.startTerminalService();
@@ -76,6 +75,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
 
   Future<void> _startOnboarding() async {
     try {
+      // Ensure dirs + resolv.conf exist before proot starts (#40).
+      try { await NativeBridge.setupDirs(); } catch (_) {}
+      try { await NativeBridge.writeResolv(); } catch (_) {}
+      try {
+        final filesDir = await NativeBridge.getFilesDir();
+        final resolvFile = File('$filesDir/config/resolv.conf');
+        if (!resolvFile.existsSync()) {
+          Directory('$filesDir/config').createSync(recursive: true);
+          resolvFile.writeAsStringSync('nameserver 8.8.8.8\nnameserver 8.8.4.4\n');
+        }
+      } catch (_) {}
       final config = await TerminalService.getProotShellConfig();
       final args = TerminalService.buildProotArgs(
         config,
@@ -92,7 +102,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
       onboardingArgs.removeLast(); // remove '/bin/bash'
       onboardingArgs.addAll([
         '/bin/bash', '-lc',
-        'echo \"=== Clawa Pocket Onboarding ===\" \u0026\u0026 '
+        'echo "=== OpenClaw Onboarding ===" && '
         'echo "Configure your API keys and binding settings." && '
         'echo "TIP: Select Loopback (127.0.0.1) when asked for binding!" && '
         'echo "" && '
@@ -146,6 +156,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
       });
 
       _terminal.onOutput = (data) {
+        if (_ctrlNotifier.value && data.length == 1) {
+          final code = data.toLowerCase().codeUnitAt(0);
+          if (code >= 97 && code <= 122) {
+            _pty?.write(Uint8List.fromList([code - 96]));
+            _ctrlNotifier.value = false;
+            return;
+          }
+        }
+        if (_altNotifier.value && data.isNotEmpty) {
+          _pty?.write(utf8.encode('\x1b$data'));
+          _altNotifier.value = false;
+          return;
+        }
         _pty?.write(utf8.encode(data));
       };
 
@@ -170,7 +193,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _ctrlNotifier.dispose();
+    _altNotifier.dispose();
     _controller.dispose();
     _pty?.kill();
     NativeBridge.stopTerminalService();
@@ -355,12 +379,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
     final prefs = PreferencesService();
     await prefs.init();
     prefs.setupComplete = true;
-    prefs.isLlmConfigured = true;
     prefs.isFirstRun = false;
 
     if (mounted) {
       navigator.pushReplacement(
-        MaterialPageRoute(builder: (_) => DashboardScreen()),
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
       );
     }
   }
@@ -369,16 +392,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Configuration'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Cloud (Terminal)', icon: Icon(Icons.cloud)),
-            Tab(text: 'Local LLM (Native)', icon: Icon(Icons.computer)),
-          ],
-        ),
+        title: const Text('OpenClaw Onboarding'),
         leading: widget.isFirstRun
-            ? null
+            ? null // no back button during first-run
             : IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => Navigator.of(context).pop(),
@@ -402,178 +418,96 @@ class _OnboardingScreenState extends State<OnboardingScreen> with SingleTickerPr
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildCloudTab(),
-          _buildLocalTab(),
-        ],
-      ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SizedBox(
-          width: double.infinity,
-          child: Consumer<SetupProvider>(
-            builder: (context, provider, _) {
-              return FilledButton.icon(
-                // Disable the button if a massive download is actively processing
-                onPressed: provider.isRunning
-                    ? null
-                    : (widget.isFirstRun
-                        ? _goToDashboard
-                        : () => Navigator.of(context).pop()),
-                icon: Icon(widget.isFirstRun ? Icons.arrow_forward : Icons.check),
-                label: Text(widget.isFirstRun ? 'Go to Dashboard' : 'Done'),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCloudTab() {
-    return Column(
-      children: [
-        if (_loading)
-          const Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Starting onboarding...'),
-                ],
-              ),
-            ),
-          )
-        else if (_error != null)
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
+          if (_loading)
+            const Expanded(
+              child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 48,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _loading = true;
-                          _error = null;
-                        });
-                        _startOnboarding();
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                    ),
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Starting onboarding...'),
                   ],
                 ),
               ),
-            ),
-          )
-        else ...[
-          Expanded(
-            child: TerminalView(
-              _terminal,
-              controller: _controller,
-              textStyle: const TerminalStyle(
-                fontSize: 11,
-                height: 1.0,
-                fontFamily: 'DejaVuSansMono',
-                fontFamilyFallback: _fontFallback,
+            )
+          else if (_error != null)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _loading = true;
+                            _error = null;
+                            _finished = false;
+                          });
+                          _startOnboarding();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              onTapUp: _handleTap,
+            )
+          else ...[
+            Expanded(
+              child: TerminalView(
+                _terminal,
+                controller: _controller,
+                textStyle: const TerminalStyle(
+                  fontSize: 11,
+                  height: 1.0,
+                  fontFamily: 'DejaVuSansMono',
+                  fontFamilyFallback: _fontFallback,
+                ),
+                onTapUp: _handleTap,
+              ),
             ),
-          ),
-          TerminalToolbar(pty: _pty),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildLocalTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Local LLM Setup',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Run AI models entirely on your phone. No internet required for chat once the model is downloaded.',
-          ),
-          const SizedBox(height: 24),
-          _buildModelSelector(),
-          const SizedBox(height: 32),
-          _buildModelStatus(),
+            TerminalToolbar(
+              pty: _pty,
+            ),
+          ],
+          if (_finished)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: widget.isFirstRun
+                      ? _goToDashboard
+                      : () => Navigator.of(context).pop(),
+                  icon: Icon(widget.isFirstRun
+                      ? Icons.arrow_forward
+                      : Icons.check),
+                  label: Text(widget.isFirstRun
+                      ? 'Go to Dashboard'
+                      : 'Done'),
+                ),
+              ),
+            ),
         ],
       ),
-    );
-  }
-
-  Widget _buildModelSelector() {
-    return Consumer<SetupProvider>(
-      builder: (context, provider, _) {
-        return Column(
-          children: [
-            DropdownButtonFormField<String>(
-              value: PreferencesService().selectedModel,
-              decoration: const InputDecoration(labelText: 'Select Model'),
-              items: const [
-                DropdownMenuItem(value: 'gemma3:2b', child: Text('Gemma 3B')),
-                DropdownMenuItem(value: 'phi3:mini', child: Text('Phi-3 Mini 3.8B')),
-                DropdownMenuItem(value: 'qwen2.5:3b', child: Text('Qwen2.5 3B')),
-              ],
-              onChanged: (v) {
-                if (v != null) {
-                  PreferencesService().selectedModel = v;
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: provider.isRunning ? null : () => provider.pullModel(PreferencesService().selectedModel),
-                icon: const Icon(Icons.download),
-                label: const Text('Download Model'),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildModelStatus() {
-    return Consumer<SetupProvider>(
-      builder: (context, provider, _) {
-        if (!provider.isRunning) return const SizedBox();
-        final state = provider.state;
-        return Column(
-          children: [
-            LinearProgressIndicator(value: state.progress > 0 ? state.progress : null),
-            const SizedBox(height: 8),
-            Text(state.message),
-          ],
-        );
-      },
     );
   }
 }

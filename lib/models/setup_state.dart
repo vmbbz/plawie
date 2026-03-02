@@ -4,8 +4,6 @@ enum SetupStep {
   extractingRootfs,
   installingNode,
   installingOpenClaw,
-  installingOllama,
-  pullingModel,
   configuringBypass,
   complete,
   error,
@@ -53,10 +51,8 @@ class SetupState {
         return 'Installing Node.js';
       case SetupStep.installingOpenClaw:
         return 'Installing OpenClaw';
-      case SetupStep.installingOllama:
-        return 'Installing Ollama';
-      case SetupStep.pullingModel:
-        return 'Downloading Model';
+      case SetupStep.configuringBypass:
+        return 'Configuring Bionic Bypass';
       case SetupStep.configuringBypass:
         return 'Configuring Bionic Bypass';
       case SetupStep.complete:
@@ -78,18 +74,14 @@ class SetupState {
         return 3;
       case SetupStep.installingOpenClaw:
         return 4;
-      case SetupStep.installingOllama:
-        return 5;
-      case SetupStep.pullingModel:
-        return 6;
       case SetupStep.configuringBypass:
-        return 7;
+        return 5;
       case SetupStep.complete:
-        return 8;
+        return 6;
       case SetupStep.error:
         return -1;
     }
   }
 
-  static const int totalSteps = 8;
+  static const int totalSteps = 6;
 }

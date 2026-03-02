@@ -13,7 +13,7 @@ import 'logs_screen.dart';
 import 'packages_screen.dart';
 import 'settings_screen.dart';
 import 'chat_screen.dart';
-import '../services/preferences_service.dart';
+import 'solana_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -68,6 +68,15 @@ class DashboardScreen extends StatelessWidget {
                       : null,
                 );
               },
+            ),
+            StatusCard(
+              title: 'Solana',
+              subtitle: 'Manage Solana wallet and DeFi',
+              icon: Icons.account_balance_wallet,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SolanaScreen()),
+              ),
             ),
             StatusCard(
               title: 'Terminal',
@@ -126,28 +135,14 @@ class DashboardScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const LogsScreen()),
               ),
             ),
-            FutureBuilder<PreferencesService>(
-              future: () async {
-                final p = PreferencesService();
-                await p.init();
-                return p;
-              }(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const SizedBox();
-                final prefs = snapshot.data!;
-                final isLocal = prefs.llmProvider == 'ollama';
-                return StatusCard(
-                  title: 'AI Model',
-                  subtitle: isLocal
-                      ? 'Local: ${prefs.selectedModel}'
-                      : 'Cloud API',
-                  icon: isLocal ? Icons.psychology : Icons.cloud_queue,
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  ),
-                );
-              },
+            StatusCard(
+              title: 'AI Model',
+              subtitle: 'Cloud API',
+              icon: Icons.cloud_queue,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
             ),
             Consumer<NodeProvider>(
               builder: (context, nodeProvider, _) {

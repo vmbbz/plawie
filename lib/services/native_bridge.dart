@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import '../constants.dart';
 import 'preferences_service.dart';
 
 class NativeBridge {
@@ -158,23 +157,5 @@ class NativeBridge {
 
   static Future<bool> stopScreenCapture() async {
     return await _channel.invokeMethod('stopScreenCapture');
-  }
-
-  // --- MLC-LLM Native GPU Engine ---
-
-  static Future<bool> copyAssetsToInternal(String folderName) async {
-    return await _channel.invokeMethod('copyAssetsToInternal', {'folderName': folderName});
-  }
-
-  static Future<void> startMLCEngine({required String modelId}) async {
-    return await _channel.invokeMethod('startMLCEngine', {'modelId': modelId});
-  }
-
-  static Future<void> stopMLCEngine() async {
-    return await _channel.invokeMethod('stopMLCEngine');
-  }
-
-  static Future<bool> isMLCRunning() async {
-    return await _channel.invokeMethod('isMLCRunning') ?? false;
   }
 }

@@ -1,10 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The local LLM inference backend the user has selected.
-/// - ollama: PRoot-based CPU inference (default, works everywhere)
-/// - mlc: Native GPU-accelerated inference via MLC-LLM (requires compiled model)
-enum LocalLlmBackend { ollama, mlc }
-
 class PreferencesService {
   static const _keyAutoStart = 'auto_start_gateway';
   static const _keySetupComplete = 'setup_complete';
@@ -16,11 +11,6 @@ class PreferencesService {
   static const _keyNodeGatewayPort = 'node_gateway_port';
   static const _keyNodePublicKey = 'node_ed25519_public';
   static const _keyNodeGatewayToken = 'node_gateway_token';
-  static const _keySelectedModel = 'selected_model';
-  static const _keyLlmProvider = 'llm_provider';
-  static const _keyLocalBackend = 'local_backend';
-  static const _keyMlcModelId = 'mlc_model_id';
-  static const _keyLlmConfigured = 'llm_configured';
 
   late SharedPreferences _prefs;
 
@@ -35,11 +25,6 @@ class PreferencesService {
   set setupComplete(bool value) {
     _prefs.setBool(_keySetupComplete, value);
     // notifyListeners(); // If we decide to mixin ChangeNotifier later
-  }
-
-  bool get isLlmConfigured => _prefs.getBool(_keyLlmConfigured) ?? false;
-  set isLlmConfigured(bool value) {
-    _prefs.setBool(_keyLlmConfigured, value);
   }
 
   bool get isFirstRun => _prefs.getBool(_keyFirstRun) ?? true;
@@ -97,26 +82,6 @@ class PreferencesService {
       _prefs.remove(_keyNodeGatewayPort);
     }
   }
-
-  String get selectedModel => _prefs.getString(_keySelectedModel) ?? 'gemma3:1b';
-  set selectedModel(String value) => _prefs.setString(_keySelectedModel, value);
-
-  String get llmProvider => _prefs.getString(_keyLlmProvider) ?? 'ollama';
-  set llmProvider(String value) => _prefs.setString(_keyLlmProvider, value);
-
-  // --- MLC-LLM Hybrid Backend Preferences ---
-
-  /// Which local inference backend to use: Ollama (PRoot CPU) or MLC (Native GPU)
-  LocalLlmBackend get localBackend {
-    final idx = _prefs.getInt(_keyLocalBackend) ?? 0;
-    return LocalLlmBackend.values[idx.clamp(0, LocalLlmBackend.values.length - 1)];
-  }
-  set localBackend(LocalLlmBackend value) => _prefs.setInt(_keyLocalBackend, value.index);
-
-  /// The MLC model identifier (e.g. 'gemma-3-1b-it-q4f16_1-MLC')
-  /// The MLC model identifier (e.g. 'gemma-3-1b-it-q4f16_1-MLC')
-  String get mlcModelId => _prefs.getString(_keyMlcModelId) ?? 'gemma-3-1b-it-q4f16_1-MLC';
-  set mlcModelId(String value) => _prefs.setString(_keyMlcModelId, value);
 
   /// The selected VRM avatar filename
   String get selectedAvatar => _prefs.getString('selectedAvatar') ?? 'gemini.vrm';

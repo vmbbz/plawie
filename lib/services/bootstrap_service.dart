@@ -157,7 +157,7 @@ class BootstrapService {
         'apt-get update -y && '
         'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
         'echo "Etc/UTC" > /etc/timezone && '
-        'apt-get install -y --no-install-recommends ca-certificates git python3 make g++ curl zstd'
+        'apt-get install -y --no-install-recommends ca-certificates git python3 make g++ curl zstd tmux'
       );
 
       final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
@@ -208,69 +208,12 @@ class BootstrapService {
       await NativeBridge.runInProot('openclaw --version || echo openclaw_installed');
 
       // ---------------------------------------------------------
-      // Step 5: Install Local LLM Backend (Ollama OR MLC)
-      // ---------------------------------------------------------
-      final prefs = PreferencesService();
-      await prefs.init();
-      
-      if (prefs.llmProvider == 'ollama' && prefs.localBackend == LocalLlmBackend.ollama) {
-        // --- OLLAMA PATH: Install in PRoot (CPU inference) ---
-        _emitProgress(onProgress, SetupStep.installingOllama, 0.0, 'Installing Ollama server...', 92);
-        
-        try {
-          final envCheck = await NativeBridge.runInProot('command -v pkg >/dev/null 2>&1 && echo "TERMUX" || echo "UBUNTU"', timeout: 30);
-          
-          if (envCheck.contains('TERMUX')) {
-            await _installOllamaTermuxNative(onProgress);
-          } else {
-            await _installOllamaUbuntu(onProgress);
-          }
-          final checkResult = await NativeBridge.runInProot('command -v ollama >/dev/null 2>&1 && echo "OK" || echo "NOT_FOUND"', timeout: 30);
-          if (!checkResult.contains('OK')) throw Exception('Ollama binary not found in PATH');
-
-          // Step 6: Pull Model
-          final model = prefs.selectedModel;
-          _emitProgress(onProgress, SetupStep.pullingModel, 0.0, 'Preparing Ollama model $model...', 96);
-          
-          await _startOllamaServer();
-          await _pullModelWithServerCheck(model, onProgress);
-          
-        } catch (e) {
-          _log('Ollama installation failed, continuing without it', error: e);
-          onProgress(SetupState(
-            step: SetupStep.error,
-            error: 'Ollama failed: $e\n\nYou can still use cloud providers (Gemini, Claude) inside the app.',
-          ));
-          // Allow setup to continue without Ollama
-        }
-      } else if (prefs.llmProvider == 'ollama' && prefs.localBackend == LocalLlmBackend.mlc) {
-        // --- MLC PATH: Native GPU inference (outside PRoot) ---
-        _emitProgress(onProgress, SetupStep.installingOllama, 0.0, 'Starting MLC GPU engine...', 92);
-        
-        try {
-          _emitProgress(onProgress, SetupStep.installingOllama, 0.5, 'Extracting MLC models...', 95);
-          await NativeBridge.copyAssetsToInternal('mlc_models');
-          
-          await NativeBridge.startMLCEngine(modelId: prefs.mlcModelId);
-          _emitProgress(onProgress, SetupStep.pullingModel, 1.0, 'MLC engine ready (native GPU)', 98);
-        } catch (e) {
-          _log('MLC engine failed, falling back to Ollama', error: e);
-          prefs.localBackend = LocalLlmBackend.ollama;
-          onProgress(SetupState(
-            step: SetupStep.error,
-            error: 'MLC GPU engine failed to load models.\nFalling back to Ollama CPU inference.\n\nPlease tap "Start Gateway" again to retry with Ollama.',
-          ));
-        }
-      }
-      // else: cloud provider selected — skip local LLM setup entirely
-
-      // ---------------------------------------------------------
-      // Step 7: Finalize
+      // Step 5: Finalize
       // ---------------------------------------------------------
       await NativeBridge.markBootstrapComplete();
+      final prefs = PreferencesService();
+      await prefs.init();
       prefs.setupComplete = true;
-      // If we got here, LLM (Ollama or MLC) is also configured/downloaded
-      prefs.isLlmConfigured = true;
 
       // Ensure a default dashboard URL exists so SplashScreen can transition to Dashboard
       if (prefs.dashboardUrl == null || prefs.dashboardUrl!.isEmpty) {
@@ -300,146 +243,5 @@ class BootstrapService {
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {
     _updateSetupNotification(message, progress: notifProgress);
     onProgress(SetupState(step: step, progress: progress, message: message));
-  }
-
-  // NATIVE TERMUX INSTALL
-  static Future<void> _installOllamaTermuxNative(Function(SetupState) onProgress) async {
-    onProgress(const SetupState(step: SetupStep.installingOllama, progress: 0.2, message: 'Installing Ollama (Termux)...'));
-    await NativeBridge.runInProot('''
-      pkg install tur-repo -y || true
-      pkg update -y
-      pkg install ollama tmux -y
-      ollama --version
-    ''', timeout: 300);
-  }
-
-  // UBUNTU PROOT INSTALL
-  static Future<void> _installOllamaUbuntu(Function(SetupState) onProgress) async {
-    onProgress(const SetupState(step: SetupStep.installingOllama, progress: 0.2, message: 'Preparing Ubuntu environment...'));
-    await NativeBridge.runInProot('export DEBIAN_FRONTEND=noninteractive && apt-get update -y && apt-get install -y curl tar zstd tmux ca-certificates openssl && update-ca-certificates', timeout: 180);
-    
-    onProgress(const SetupState(step: SetupStep.installingOllama, progress: 0.4, message: 'Downloading Ollama binary...'));
-    await NativeBridge.runInProot('''
-      set -e
-      ARCH=\$(uname -m)
-      
-      # FIX: Every single bracket now has a space on BOTH sides.
-      if [ "\$ARCH" = "x86_64" ]; then 
-          ARCH="amd64"
-      elif [ "\$ARCH" = "aarch64" ] || [ "\$ARCH" = "arm64" ]; then 
-          ARCH="arm64"
-      else 
-          echo "Unsupported architecture: \$ARCH"
-          exit 1
-      fi
-      
-      curl -fsSL "https://ollama.com/download/ollama-linux-\${ARCH}.tar.zst" -o /tmp/ollama.tar.zst
-      cd /usr && tar -I zstd -xf /tmp/ollama.tar.zst
-      chmod +x /usr/bin/ollama
-      rm -f /tmp/ollama.tar.zst
-    ''', timeout: 300);
-  }
-
-  // OLLAMA SERVER MANAGEMENT - PRODUCTION-GRADE LIFECYCLE
-  Future<void> _startOllamaServer() async {
-    _log('Starting Ollama server...');
-    
-    // 1. Check if it's already running to prevent double-spawning
-    if (await isOllamaServerRunning()) {
-      _log('Ollama is already running.');
-      return;
-    }
-
-    // 2. Spawn the server in the foreground of a dedicated PRoot session.
-    // CRITICAL: We DO NOT put 'await' here. We launch it into the background.
-    // Flutter moves on instantly, but the underlying PRoot process stays alive
-    // perfectly tracking the Ollama server until the app is closed.
-    NativeBridge.runInProot('''
-      mkdir -p /root/.openclaw/logs /root/.ollama/models
-      export OLLAMA_HOST="0.0.0.0:11434"
-      export OLLAMA_MODELS="/root/.ollama/models"
-      export OLLAMA_VULKAN=1          # ← GPU acceleration (experimental but works on Adreno/Mali)
-      export OLLAMA_FLASH_ATTENTION=1 # bonus speed
-      
-      # Daemonized with tmux (survives app restart / device sleep)
-      tmux kill-session -t ollama 2>/dev/null || true
-      tmux new-session -d -s ollama 'ollama serve > /root/.openclaw/logs/ollama.log 2>&1'
-      
-      echo "Ollama daemon started in tmux session 'ollama'"
-    ''').then((_) { 
-      _log('Ollama server process initiated cleanly.');
-    }).catchError((e) {
-      _log('Ollama server process terminated/killed: $e');
-    });
-  }
-
-  Future<bool> ensureDaemonsRunning() async {
-    final status = await NativeBridge.runInProot('tmux list-sessions | grep ollama || echo "NO"');
-    if (status.toString().contains("NO")) {
-      await _startOllamaServer();
-    }
-    return true;
-  }
-
-  Future<void> stopOllamaServer() async {
-    // Because the server is bound to a long-lived PRoot session, 
-    // the safest way to cleanly shut it down is a cross-session pkill.
-    await NativeBridge.runInProot('pkill -15 -f "ollama serve" || true', timeout: 10);
-  }
-
-  Future<void> _pullModelWithServerCheck(String model, Function(SetupState) onProgress) async {
-    _log('Waiting for Ollama API to boot...');
-    final readinessResult = await NativeBridge.runInProot('''
-      for i in {1..40}; do
-        if curl -s --connect-timeout 1 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-          echo "READY"
-          exit 0
-        fi
-        sleep 1
-      done
-      echo "FAILED"
-    ''', timeout: 60);
-
-    if (!readinessResult.contains('READY')) {
-      throw Exception('Ollama server failed to bind to port 11434.');
-    }
-    
-    _emitProgress(onProgress, SetupStep.pullingModel, 0.5, 'Pulling $model (may take a while)...', 98);
-    
-    // FIX: Increased from 1800 (30 mins) to 7200 (2 hours) to protect users with slow networks.
-    await NativeBridge.runInProot('ollama pull $model', timeout: 7200); 
-  }
-
-  Future<void> pullModel(String modelId, {required void Function(SetupState) onProgress}) async {
-    try {
-      _emitProgress(onProgress, SetupStep.pullingModel, 0.0, 'Pulling $modelId...', 0);
-      await _startOllamaServer();
-      await _pullModelWithServerCheck(modelId, onProgress);
-      
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.isLlmConfigured = true;
-
-      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Model $modelId ready', 100);
-    } catch (e) {
-      onProgress(SetupState(step: SetupStep.error, error: 'Failed to pull model: $e'));
-    }
-  }
-
-  Future<bool> isOllamaServerRunning() async {
-    try {
-      // The most bulletproof way to check if a web server is running 
-      // is to simply ping its API, rather than looking at process lists.
-      final result = await NativeBridge.runInProot('''
-        if curl -s --connect-timeout 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-          echo "RUNNING"
-        else
-          echo "STOPPED"
-        fi
-      ''', timeout: 10);
-      return result.contains('RUNNING');
-    } catch (_) {
-      return false;
-    }
   }
 }
