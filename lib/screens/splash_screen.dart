@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../app.dart';
 import '../constants.dart';
-import '../widgets/avatar_logo.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
+import '../widgets/avatar_logo.dart';
 import 'setup_wizard_screen.dart';
-import 'onboarding_screen.dart';
 import 'dashboard_screen.dart';
+import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -101,15 +100,14 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (!mounted) return;
 
-      final llmOk = prefs.isLlmConfigured;
       final dashboardUrl = prefs.dashboardUrl;
-      final isFullyConfigured = bootstrapOk && llmOk && dashboardUrl != null && dashboardUrl.isNotEmpty;
+      final isFullyConfigured = bootstrapOk && dashboardUrl != null && dashboardUrl.isNotEmpty;
 
       if (isFullyConfigured) {
         prefs.setupComplete = true;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => DashboardScreen(),
+            pageBuilder: (context, animation, secondaryAnimation) => const DashboardScreen(),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return SlideTransition(
                 position: Tween<Offset>(
@@ -126,10 +124,9 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         );
       } else {
-        // If bootstrap is complete but no dashboard URL, go to onboarding
-        // If bootstrap is not complete, go to setup
+        // If bootstrap is complete, go to onboarding; otherwise go to setup
         Widget targetScreen;
-        if (bootstrapOk && llmOk) {
+        if (bootstrapOk) {
           targetScreen = OnboardingScreen(isFirstRun: false);
         } else {
           targetScreen = const SetupWizardScreen();

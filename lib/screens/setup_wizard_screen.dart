@@ -26,8 +26,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   bool _started = false;
   bool _didAutoNavigate = false;
   Map<String, bool> _pkgStatuses = {};
-  String _llmProvider = 'ollama';
-  String _selectedModel = 'gemma3:2b';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -69,21 +67,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   }
 
   Future<void> _loadPrefs() async {
-    final prefs = PreferencesService();
-    await prefs.init();
-    if (mounted) {
-      setState(() {
-        _llmProvider = prefs.llmProvider;
-        _selectedModel = prefs.selectedModel;
-      });
-    }
+    // Preferences are now handled by services; no LLM config needed here
   }
 
   Future<void> _savePrefs() async {
-    final prefs = PreferencesService();
-    await prefs.init();
-    prefs.llmProvider = _llmProvider;
-    prefs.selectedModel = _selectedModel;
+    // Preferences are now handled by services; no LLM config needed here
   }
 
   Future<void> _refreshPkgStatuses() async {
@@ -157,10 +145,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                         _buildPremiumHeader(isDark),
                         const SizedBox(height: 24),
                         _buildDescriptionSection(theme, isDark),
-                        if (!_started) ...[
-                          const SizedBox(height: 32),
-                          _buildProviderSelection(theme, isDark),
-                        ],
                         const SizedBox(height: 32),
                         Expanded(
                           child: _buildSteps(state, theme, isDark),
@@ -305,198 +289,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildProviderSelection(ThemeData theme, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark 
-            ? AppColors.darkSurface.withOpacity(0.6)
-            : Colors.white.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark 
-              ? AppColors.darkBorder.withOpacity(0.2)
-              : AppColors.lightBorder.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.psychology,
-                color: AppColors.statusGreen,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'AI Provider',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? AppColors.inverseText : AppColors.darkBg,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDark 
-                    ? AppColors.darkBorder.withOpacity(0.3)
-                    : AppColors.lightBorder.withOpacity(0.5),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              children: [
-                _buildProviderOption(
-                  'ollama',
-                  'Local LLM',
-                  'Run AI models directly on your device',
-                  Icons.computer,
-                  isDark,
-                ),
-                Divider(
-                  height: 1,
-                  color: isDark 
-                      ? AppColors.darkBorder.withOpacity(0.2)
-                      : AppColors.lightBorder.withOpacity(0.3),
-                ),
-                _buildProviderOption(
-                  'cloud',
-                  'Cloud (API)',
-                  'Use external AI services via API',
-                  Icons.cloud_outlined,
-                  isDark,
-                ),
-              ],
-            ),
-          ),
-          if (_llmProvider == 'ollama') ...[
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedModel,
-              decoration: InputDecoration(
-                labelText: 'Select Local Model',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: isDark 
-                        ? AppColors.darkBorder.withOpacity(0.3)
-                        : AppColors.lightBorder.withOpacity(0.5),
-                  ),
-                ),
-                filled: true,
-                fillColor: isDark 
-                    ? AppColors.darkSurfaceAlt.withOpacity(0.5)
-                    : const Color(0xFFF8F9FA),
-                prefixIcon: Icon(
-                  Icons.memory,
-                  color: AppColors.statusGreen,
-                ),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'gemma3:2b', child: Text('Gemma 3B (Fastest)')),
-                DropdownMenuItem(value: 'phi3:mini', child: Text('Phi-3 Mini 3.8B')),
-                DropdownMenuItem(value: 'qwen2.5:3b', child: Text('Qwen2.5 3B')),
-              ],
-              onChanged: (v) => setState(() => _selectedModel = v!),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProviderOption(
-    String value,
-    String title,
-    String subtitle,
-    IconData icon,
-    bool isDark,
-  ) {
-    final isSelected = _llmProvider == value;
-    
-    return InkWell(
-      onTap: () => setState(() => _llmProvider = value),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.statusGreen.withOpacity(0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? AppColors.statusGreen.withOpacity(0.2)
-                    : (isDark 
-                        ? AppColors.darkSurfaceAlt.withOpacity(0.5)
-                        : const Color(0xFFF1F3F4)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: isSelected 
-                    ? AppColors.statusGreen
-                    : (isDark 
-                        ? AppColors.inverseText.withOpacity(0.7)
-                        : AppColors.darkBg.withOpacity(0.7)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? AppColors.inverseText : AppColors.darkBg,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark 
-                          ? AppColors.inverseText.withOpacity(0.6)
-                          : AppColors.darkBg.withOpacity(0.6),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: AppColors.statusGreen,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check,
-                  size: 16,
-                  color: Colors.white,
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }
@@ -778,12 +570,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       (2, 'Extract rootfs', SetupStep.extractingRootfs),
       (3, 'Install Node.js', SetupStep.installingNode),
       (4, 'Install Clawa', SetupStep.installingOpenClaw),
-      if (_llmProvider == 'ollama') ...[
-        (5, 'Install Ollama', SetupStep.installingOllama),
-        (6, 'Download Model', SetupStep.pullingModel),
-        (7, 'Configure Bionic Bypass', SetupStep.configuringBypass),
-      ] else
-        (5, 'Configure Bionic Bypass', SetupStep.configuringBypass),
+      (5, 'Configure Bionic Bypass', SetupStep.configuringBypass),
     ];
 
     return ListView(
@@ -799,7 +586,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           ),
         if (state.isComplete) ...[
           ProgressStep(
-            stepNumber: _llmProvider == 'ollama' ? 8 : 6,
+            stepNumber: 6,
             label: 'Setup complete!',
             isComplete: true,
           ),
