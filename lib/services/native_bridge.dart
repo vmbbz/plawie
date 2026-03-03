@@ -158,4 +158,21 @@ class NativeBridge {
   static Future<bool> stopScreenCapture() async {
     return await _channel.invokeMethod('stopScreenCapture');
   }
+
+  // Device info methods for node registration
+  static Future<String> getDeviceId() async {
+    return await _channel.invokeMethod('getDeviceId');
+  }
+
+  static Future<String> getDeviceModel() async {
+    return await _channel.invokeMethod('getDeviceModel');
+  }
+
+  static Future<String> getDeviceBrand() async {
+    return await _channel.invokeMethod('getDeviceBrand');
+  }
+
+  static Future<String> getAppVersion() async {
+    return await _channel.invokeMethod('getAppVersion');
+  }
 }
