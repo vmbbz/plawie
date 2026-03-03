@@ -1,19 +1,21 @@
 import 'dart:async';
-import 'package:flutter/widgets.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../models/gateway_state.dart';
-import '../models/node_state.dart';
-import '../services/capabilities/camera_capability.dart';
-import '../services/capabilities/canvas_capability.dart';
-import '../services/capabilities/flash_capability.dart';
-import '../services/capabilities/location_capability.dart';
-import '../services/capabilities/screen_capability.dart';
-import '../services/capabilities/sensor_capability.dart';
-import '../services/capabilities/vibration_capability.dart';
+import '../app.dart';
 import '../services/native_bridge.dart';
 import '../services/node_service.dart';
 import '../services/preferences_service.dart';
-
+import '../models/node_state.dart';
+import '../models/gateway_state.dart';
+import '../services/capabilities/camera_capability.dart';
+import '../services/capabilities/canvas_capability.dart';
+import '../services/capabilities/location_capability.dart';
+import '../services/capabilities/screen_capability.dart';
+import '../services/capabilities/flash_capability.dart';
+import '../services/capabilities/vibration_capability.dart';
+import '../services/capabilities/sensor_capability.dart';
 
 class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NodeService _nodeService = NodeService();
@@ -168,6 +170,42 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       await NativeBridge.startNodeService();
       await _nodeService.connect();
       _startWatchdog();
+      
+      // REGISTER DEVICE NODES
+      await _registerDeviceNodes();
+      
+      _startWatchdog();
+    }
+  }
+
+  Future<void> _registerDeviceNodes() async {
+    try {
+      // Get device info using existing methods
+      final arch = await NativeBridge.getArch();
+      final filesDir = await NativeBridge.getFilesDir();
+      
+      // Create simple device info for logging
+      final deviceInfo = {
+        'deviceId': filesDir.hashCode.toString(),
+        'deviceName': 'Flutter Device ($arch)',
+        'platform': Platform.isAndroid ? 'android' : 'ios',
+        'arch': arch,
+        'capabilities': [
+          'camera.snap', 'camera.clip', 'camera.list',
+          'location.get', 'sensor.read', 'sensor.list',
+          'screen.record', 'haptic.vibrate',
+        ],
+      };
+      
+      // Log device registration (simplified approach)
+      print('Device capabilities registered: ${deviceInfo['capabilities']}');
+      
+      // The capabilities are already registered in _registerCapabilities()
+      // This is just for logging/debugging purposes
+      
+    } catch (e) {
+      // Device registration failed - continue with gateway connection
+      print('Device node registration failed: $e');
     }
   }
 

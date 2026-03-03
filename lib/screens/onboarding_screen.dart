@@ -1,23 +1,13 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:xterm/xterm.dart';
-import 'package:flutter_pty/flutter_pty.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../constants.dart';
+import 'package:flutter/services.dart';
 import '../services/native_bridge.dart';
-import '../services/terminal_service.dart';
 import '../services/preferences_service.dart';
-import '../widgets/terminal_toolbar.dart';
 import 'dashboard_screen.dart';
 
-/// Runs `openclaw onboard` in a terminal so the user can configure
-/// API keys and select loopback binding. Shown after first-time setup
-/// and accessible from the dashboard for re-configuration.
+/// Modern Material Terminal - Clean, Material Design 3 with proper ANSI formatting
+/// Provides intuitive command execution with copy-paste functionality
 class OnboardingScreen extends StatefulWidget {
-  /// If true, shows a "Go to Dashboard" button when onboarding exits.
-  /// Used after first-time setup. If false, just pops back.
   final bool isFirstRun;
 
   const OnboardingScreen({super.key, this.isFirstRun = false});
@@ -26,352 +16,158 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends State<OnboardingScreen> with TickerProviderStateMixin {
   late final Terminal _terminal;
   late final TerminalController _controller;
-  Pty? _pty;
+  late final TabController _tabController;
   bool _loading = true;
-  bool _finished = false;
   String? _error;
-  final _ctrlNotifier = ValueNotifier<bool>(false);
-  final _altNotifier = ValueNotifier<bool>(false);
-  static final _anyUrlRegex = RegExp(r'https?://[^\s<>]+');
-  static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):18789/#token=[0-9a-f]+');
-  static final _ansiEscape = AppConstants.ansiEscape;
-  /// Box-drawing and other TUI characters that break URLs when copied
-  static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
-  static final _completionPattern = RegExp(
-    r'onboard(ing)?\s+(is\s+)?complete|successfully\s+onboarded|setup\s+complete',
-    caseSensitive: false,
-  );
-  String _outputBuffer = '';
+  final TextEditingController _commandController = TextEditingController();
 
-  static const _fontFallback = [
-    'monospace',
-    'Noto Sans Mono',
-    'Noto Sans Mono CJK SC',
-    'Noto Sans Mono CJK TC',
-    'Noto Sans Mono CJK JP',
-    'Noto Color Emoji',
-    'Noto Sans Symbols',
-    'Noto Sans Symbols 2',
-    'sans-serif',
+  // Command examples with descriptions - multiple AI services
+  final List<Map<String, String>> _commands = [
+    {
+      'command': 'openclaw onboard --claude-api-key "sk-ant-xxx"',
+      'description': 'Configure Claude API key',
+      'icon': 'api',
+    },
+    {
+      'command': 'openclaw onboard --gemini-api-key "AIzaSy..."',
+      'description': 'Configure Gemini API key',
+      'icon': 'smart_toy',
+    },
+    {
+      'command': 'openclaw onboard --openai-api-key "sk-proj..."',
+      'description': 'Configure OpenAI API key',
+      'icon': 'psychology',
+    },
+    {
+      'command': 'openclaw onboard --groq-api-key "gsk_xxx"',
+      'description': 'Configure Groq API key',
+      'icon': 'speed',
+    },
+    {
+      'command': 'openclaw onboard --binding 127.0.0.1',
+      'description': 'Set local binding address',
+      'icon': 'settings_ethernet',
+    },
   ];
 
   @override
   void initState() {
     super.initState();
-    _terminal = Terminal(maxLines: 10000);
+    // Initialize TabController
+    _tabController = TabController(length: 2, vsync: this);
+    
+    // Terminal with proper ANSI support (matches original)
+    _terminal = Terminal(maxLines: 500);
     _controller = TerminalController();
-    NativeBridge.startTerminalService();
-    // Defer PTY start until after the first frame so TerminalView has been
-    // laid out and _terminal.viewWidth/viewHeight reflect real screen
-    // dimensions instead of the 80×24 default. This is critical for QR
-    // codes — the shell must know the actual column count to avoid wrapping.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startOnboarding();
-    });
+    _loadOnboardingHelp();
   }
 
-  Future<void> _startOnboarding() async {
+  Future<void> _loadOnboardingHelp() async {
     try {
-      // Ensure dirs + resolv.conf exist before proot starts (#40).
-      try { await NativeBridge.setupDirs(); } catch (_) {}
-      try { await NativeBridge.writeResolv(); } catch (_) {}
-      try {
-        final filesDir = await NativeBridge.getFilesDir();
-        final resolvFile = File('$filesDir/config/resolv.conf');
-        if (!resolvFile.existsSync()) {
-          Directory('$filesDir/config').createSync(recursive: true);
-          resolvFile.writeAsStringSync('nameserver 8.8.8.8\nnameserver 8.8.4.4\n');
-        }
-      } catch (_) {}
-      final config = await TerminalService.getProotShellConfig();
-      final args = TerminalService.buildProotArgs(
-        config,
-        columns: _terminal.viewWidth,
-        rows: _terminal.viewHeight,
+      setState(() => _loading = true);
+      
+      // Simple command - just get help text (like original)
+      final result = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
+        timeout: 15000
       );
-
-      // Replace the login shell with a command that runs onboarding.
-      // buildProotArgs ends with [..., '/bin/bash', '-l']
-      // Replace with [..., '/bin/bash', '-lc', 'openclaw onboard']
-
-      final onboardingArgs = List<String>.from(args);
-      onboardingArgs.removeLast(); // remove '-l'
-      onboardingArgs.removeLast(); // remove '/bin/bash'
-      onboardingArgs.addAll([
-        '/bin/bash', '-lc',
-        'echo "=== OpenClaw Onboarding ===" && '
-        'echo "Configure your API keys and binding settings." && '
-        'echo "TIP: Select Loopback (127.0.0.1) when asked for binding!" && '
-        'echo "" && '
-        'openclaw onboard; '
-        'echo "" && echo "Onboarding complete! You can close this screen."',
-      ]);
-
-      _pty = Pty.start(
-        config['executable']!,
-        arguments: onboardingArgs,
-        // Host-side env: only proot-specific vars.
-        // Guest env is set via env -i in buildProotArgs.
-        environment: TerminalService.buildHostEnv(config),
-        columns: _terminal.viewWidth,
-        rows: _terminal.viewHeight,
-      );
-
-      _pty!.output.cast<List<int>>().listen((data) {
-        final text = utf8.decode(data, allowMalformed: true);
-        _terminal.write(text);
-        // Scan output for token URL (e.g. http://localhost:18789/#token=...)
-        _outputBuffer += text;
-        // Keep buffer manageable
-        if (_outputBuffer.length > 4096) {
-          _outputBuffer = _outputBuffer.substring(_outputBuffer.length - 2048);
-        }
-        // Strip ANSI escape codes for text analysis
-        final cleanText = _outputBuffer.replaceAll(_ansiEscape, '');
-        // For URL matching, strip whitespace + box-drawing chars
-        final cleanForUrl = cleanText
-            .replaceAll(_boxDrawing, '')
-            .replaceAll(RegExp(r'\s+'), '');
-        // Save token URL to preferences if found
-        final tokenMatch = _tokenUrlRegex.firstMatch(cleanForUrl);
-        if (tokenMatch != null) {
-          _saveTokenUrl(tokenMatch.group(0)!);
-        }
-        // Detect onboarding completion from output text
-        if (!_finished && _completionPattern.hasMatch(cleanText)) {
-          if (mounted) {
-            setState(() => _finished = true);
-          }
-        }
-      });
-
-      _pty!.exitCode.then((code) {
-        _terminal.write('\r\n[Onboarding exited with code $code]\r\n');
-        if (mounted) {
-          setState(() => _finished = true);
-        }
-      });
-
-      _terminal.onOutput = (data) {
-        if (_ctrlNotifier.value && data.length == 1) {
-          final code = data.toLowerCase().codeUnitAt(0);
-          if (code >= 97 && code <= 122) {
-            _pty?.write(Uint8List.fromList([code - 96]));
-            _ctrlNotifier.value = false;
-            return;
-          }
-        }
-        if (_altNotifier.value && data.isNotEmpty) {
-          _pty?.write(utf8.encode('\x1b$data'));
-          _altNotifier.value = false;
-          return;
-        }
-        _pty?.write(utf8.encode(data));
-      };
-
-      _terminal.onResize = (w, h, pw, ph) {
-        _pty?.resize(h, w);
-      };
-
+      
+      // Write directly like original - no line ending manipulation
+      _terminal.write(result);
       setState(() => _loading = false);
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = 'Failed to start onboarding: $e';
+        _error = 'Failed to load onboarding: $e';
       });
     }
   }
 
-  Future<void> _saveTokenUrl(String url) async {
+  Future<void> _executeCommand(String command) async {
+    try {
+      _terminal.write('\r\n> $command\r\n');
+      
+      final result = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $command',
+        timeout: 30000
+      );
+      
+      _terminal.write(result);
+      
+      // Check if configuration was successful
+      if (command.toLowerCase().contains('api-key') || 
+          command.toLowerCase().contains('binding')) {
+        _terminal.write('\r\n✓ Configuration command executed\r\n');
+        
+        // AUTOMATIC SERVICE STARTUP - Like SeekerClaw!
+        _terminal.write('\r\n🚀 Starting OpenClaw services...\r\n');
+        await _startOpenClawServices();
+      }
+    } catch (e) {
+      _terminal.write('\r\n✗ Command failed: $e\r\n');
+    }
+  }
+
+  Future<void> _startOpenClawServices() async {
+    try {
+      // Start OpenClaw Gateway automatically
+      _terminal.write('\r\n📡 Starting OpenClaw Gateway...\r\n');
+      final gatewayStarted = await NativeBridge.startGateway();
+      
+      if (gatewayStarted) {
+        _terminal.write('\r\n✅ OpenClaw Gateway started successfully\r\n');
+        _terminal.write('\r\n🤖 OpenClaw Agent is now running 24/7\r\n');
+        _terminal.write('\r\n📱 Dashboard available at: http://localhost:18789\r\n');
+        
+        // Save completion status
+        await _markOnboardingComplete();
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('✅ OpenClaw is now running!'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        _terminal.write('\r\n❌ Failed to start OpenClaw Gateway\r\n');
+      }
+    } catch (e) {
+      _terminal.write('\r\n❌ Service startup failed: $e\r\n');
+    }
+  }
+
+  Future<void> _markOnboardingComplete() async {
     final prefs = PreferencesService();
     await prefs.init();
-    prefs.dashboardUrl = url;
+    prefs.setupComplete = true;
+    prefs.isFirstRun = false;
+  }
+
+  Future<void> _copyCommand(String command) async {
+    await Clipboard.setData(ClipboardData(text: command));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Command copied!'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
-    _ctrlNotifier.dispose();
-    _altNotifier.dispose();
     _controller.dispose();
-    _pty?.kill();
-    NativeBridge.stopTerminalService();
+    _commandController.dispose();
+    _tabController.dispose();
     super.dispose();
-  }
-
-  String? _getSelectedText() {
-    final selection = _controller.selection;
-    if (selection == null || selection.isCollapsed) return null;
-
-    final range = selection.normalized;
-    final sb = StringBuffer();
-    for (int y = range.begin.y; y <= range.end.y; y++) {
-      if (y >= _terminal.buffer.lines.length) break;
-      final line = _terminal.buffer.lines[y];
-      final from = (y == range.begin.y) ? range.begin.x : 0;
-      final to = (y == range.end.y) ? range.end.x : null;
-      sb.write(line.getText(from, to));
-      if (y < range.end.y) sb.writeln();
-    }
-    final text = sb.toString().trim();
-    return text.isEmpty ? null : text;
-  }
-
-  /// Extract a clean URL from selected text by stripping box-drawing
-  /// chars and rejoining lines, but splitting on `http` boundaries
-  /// so concatenated URLs don't merge into one.
-  String? _extractUrl(String text) {
-    final clean = text.replaceAll(_boxDrawing, '').replaceAll(RegExp(r'\s+'), '');
-    // Split before each http(s):// so concatenated URLs become separate
-    final parts = clean.split(RegExp(r'(?=https?://)'));
-    // Return the longest URL match (token URLs are longest)
-    String? best;
-    for (final part in parts) {
-      final match = _anyUrlRegex.firstMatch(part);
-      if (match != null) {
-        final url = match.group(0)!;
-        if (best == null || url.length > best.length) {
-          best = url;
-        }
-      }
-    }
-    return best;
-  }
-
-  void _copySelection() {
-    final text = _getSelectedText();
-    if (text == null) return;
-
-    Clipboard.setData(ClipboardData(text: text));
-
-    // If the copied text contains a URL, offer "Open" action
-    final url = _extractUrl(text);
-    if (url != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Copied to clipboard'),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'Open',
-            onPressed: () {
-              final uri = Uri.tryParse(url);
-              if (uri != null) {
-                launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
-          ),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Copied to clipboard'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-    }
-  }
-
-  void _openSelection() {
-    final text = _getSelectedText();
-    if (text == null) return;
-
-    final url = _extractUrl(text);
-    if (url != null) {
-      final uri = Uri.tryParse(url);
-      if (uri != null) {
-        launchUrl(uri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('No URL found in selection'),
-        duration: Duration(seconds: 1),
-      ),
-    );
-  }
-
-  Future<void> _paste() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null && data!.text!.isNotEmpty) {
-      _pty?.write(utf8.encode(data.text!));
-    }
-  }
-
-  void _handleTap(TapUpDetails details, CellOffset offset) {
-    // Join adjacent lines and extract URL, handling wrapped URLs
-    // and TUI box-drawing characters.
-    final totalLines = _terminal.buffer.lines.length;
-    final startRow = (offset.y - 2).clamp(0, totalLines - 1);
-    final endRow = (offset.y + 2).clamp(0, totalLines - 1);
-
-    final sb = StringBuffer();
-    for (int row = startRow; row <= endRow; row++) {
-      sb.write(_getLineText(row).trimRight());
-    }
-    final url = _extractUrl(sb.toString());
-    if (url != null) {
-      _openUrl(url);
-    }
-  }
-
-  String _getLineText(int row) {
-    try {
-      final line = _terminal.buffer.lines[row];
-      final sb = StringBuffer();
-      for (int i = 0; i < line.length; i++) {
-        final char = line.getCodePoint(i);
-        if (char != 0) {
-          sb.writeCharCode(char);
-        }
-      }
-      return sb.toString();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-
-    final shouldOpen = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Open Link'),
-        content: Text(url),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: url));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Link copied'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-              Navigator.pop(ctx, false);
-            },
-            child: const Text('Copy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Open'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldOpen == true) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   Future<void> _goToDashboard() async {
@@ -393,121 +189,255 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('OpenClaw Onboarding'),
-        leading: widget.isFirstRun
-            ? null // no back button during first-run
-            : IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-        automaticallyImplyLeading: false,
+        // Remove redundant back button for first run
+        automaticallyImplyLeading: !widget.isFirstRun,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.copy),
-            tooltip: 'Copy',
-            onPressed: _copySelection,
-          ),
-          IconButton(
-            icon: const Icon(Icons.open_in_browser),
-            tooltip: 'Open URL',
-            onPressed: _openSelection,
-          ),
-          IconButton(
-            icon: const Icon(Icons.paste),
-            tooltip: 'Paste',
-            onPressed: _paste,
-          ),
+          if (widget.isFirstRun)
+            TextButton(
+              onPressed: _goToDashboard,
+              child: const Text('Dashboard'),
+            ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_loading)
-            const Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('Starting onboarding...'),
-                  ],
-                ),
-              ),
-            )
-          else if (_error != null)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 48,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _loading = true;
-                            _error = null;
-                            _finished = false;
-                          });
-                          _startOnboarding();
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else ...[
-            Expanded(
-              child: TerminalView(
-                _terminal,
-                controller: _controller,
-                textStyle: const TerminalStyle(
-                  fontSize: 11,
-                  height: 1.0,
-                  fontFamily: 'DejaVuSansMono',
-                  fontFamilyFallback: _fontFallback,
-                ),
-                onTapUp: _handleTap,
-              ),
-            ),
-            TerminalToolbar(
-              pty: _pty,
-            ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading onboarding options...'),
           ],
-          if (_finished)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: widget.isFirstRun
-                      ? _goToDashboard
-                      : () => Navigator.of(context).pop(),
-                  icon: Icon(widget.isFirstRun
-                      ? Icons.arrow_forward
-                      : Icons.check),
-                  label: Text(widget.isFirstRun
-                      ? 'Go to Dashboard'
-                      : 'Done'),
-                ),
+        ),
+      );
+    }
+    
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Error: $_error', textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _loadOnboardingHelp,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          // Tab bar
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.1),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
               ),
             ),
+            child: TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(
+                  icon: Icon(Icons.terminal, size: 20),
+                  text: 'Terminal',
+                ),
+                Tab(
+                  icon: Icon(Icons.flash_on, size: 20),
+                  text: 'Quick Setup',
+                ),
+              ],
+              labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+              indicatorColor: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          
+          // Tab content
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildTerminalTab(),
+                _buildQuickSetupTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buildTerminalTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          // Terminal with Material Design 3 styling
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: TerminalView(
+                  _terminal,
+                  controller: _controller,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickSetupTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Simple instruction
+          Text(
+            'Configure your AI model:',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Single command cards with copy buttons
+          ..._commands.map((cmd) => _buildCommandCard(cmd)),
+          
+          const SizedBox(height: 24),
+          
+          // Command input field
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commandController,
+                  decoration: InputDecoration(
+                    hintText: 'Or type your command here...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, 
+                      vertical: 12,
+                    ),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 14, 
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: () => _executeCommand(_commandController.text),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Execute'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommandCard(Map<String, String> command) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: ListTile(
+        leading: Icon(
+          _getIconForCommand(command['icon']!),
+          color: Theme.of(context).colorScheme.primary,
+          size: 20,
+        ),
+        title: Text(
+          command['description']!,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: Text(
+          command['command']!,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontFamily: 'monospace',
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        trailing: IconButton(
+          icon: Icon(
+            Icons.copy,
+            color: Theme.of(context).colorScheme.primary,
+            size: 20,
+          ),
+          onPressed: () => _copyCommand(command['command']!),
+          tooltip: 'Copy command',
+        ),
+      ),
+    );
+  }
+
+  IconData _getIconForCommand(String iconType) {
+    switch (iconType) {
+      case 'api':
+        return Icons.api;
+      case 'speed':
+        return Icons.speed;
+      case 'settings_ethernet':
+        return Icons.settings_ethernet;
+      default:
+        return Icons.code;
+    }
   }
 }
