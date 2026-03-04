@@ -43,6 +43,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
         },
       )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
+  }
 
   @override
   void didUpdateWidget(VrmAvatarWidget oldWidget) {
