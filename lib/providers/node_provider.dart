@@ -9,6 +9,7 @@ import '../services/node_service.dart';
 import '../services/preferences_service.dart';
 import '../models/node_state.dart';
 import '../models/gateway_state.dart';
+import 'gateway_provider.dart' as svc_gateway;
 import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/capabilities/location_capability.dart';
@@ -21,6 +22,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NodeService _nodeService = NodeService();
   StreamSubscription? _subscription;
   NodeState _state = const NodeState();
+  svc_gateway.GatewayProvider? _gatewayProvider;
   GatewayState? _lastGatewayState;
   Timer? _watchdog;
 
@@ -209,7 +211,9 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void onGatewayStateChanged(GatewayState gatewayState) {
+  void onGatewayStateUpdate(svc_gateway.GatewayProvider gatewayProvider) {
+    _gatewayProvider = gatewayProvider;
+    final gatewayState = gatewayProvider.state;
     final wasRunning = _lastGatewayState?.isRunning ?? false;
     final isRunning = gatewayState.isRunning;
     _lastGatewayState = gatewayState;
@@ -334,6 +338,17 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> reconnect() async {
     await _nodeService.disconnect();
     await _nodeService.connect();
+  }
+
+  Future<void> refreshToken() async {
+    if (_gatewayProvider == null) {
+      _nodeService.log('[NODE] GatewayProvider not available');
+      return;
+    }
+    _nodeService.log('[NODE] Manually refreshing gateway token...');
+    await _gatewayProvider!.refreshDashboardUrl();
+    _nodeService.clearCachedToken();
+    await reconnect();
   }
 
   @override

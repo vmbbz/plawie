@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../app.dart';
 
 class VrmAvatarWidget extends StatefulWidget {
   final bool isThinking;
   final double speechIntensity;
-  final String modelFileName;
+  final String avatarFileName;
   final bool isCinematic;
+  final Function(String)? onLog;
 
   const VrmAvatarWidget({
     super.key,
     this.isThinking = false,
     this.speechIntensity = 0.0,
-    this.modelFileName = 'gemini.vrm',
+    this.avatarFileName = 'gemini.vrm',
     this.isCinematic = false,
+    this.onLog,
   });
 
   @override
@@ -36,13 +39,25 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           if (message.message == 'READY') {
             if (mounted) {
               setState(() => _isReady = true);
-              _controller.runJavaScript("window.loadVrmModel('${widget.modelFileName}');");
+              _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
               _syncState();
             }
+          } else if (widget.onLog != null) {
+            widget.onLog!(message.message);
           }
         },
       )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
+      
+    // Relax Android specific WebView file load restrictions to allow loading assets natively
+    if (_controller.platform is AndroidWebViewController) {
+      final androidController = _controller.platform as AndroidWebViewController;
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+      androidController.setAllowFileAccess(true);
+      androidController.setAllowContentAccess(true);
+      // Let it access its own file contents more freely
+      AndroidWebViewController.enableDebugging(true);
+    }
   }
 
   @override
@@ -52,9 +67,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       if (oldWidget.isThinking != widget.isThinking ||
           oldWidget.speechIntensity != widget.speechIntensity ||
           oldWidget.isCinematic != widget.isCinematic ||
-          oldWidget.modelFileName != widget.modelFileName) {
-        if (oldWidget.modelFileName != widget.modelFileName) {
-          _controller.runJavaScript("window.loadVrmModel('${widget.modelFileName}');");
+          oldWidget.avatarFileName != widget.avatarFileName) {
+        if (oldWidget.avatarFileName != widget.avatarFileName) {
+          _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
         }
         _syncState();
       }

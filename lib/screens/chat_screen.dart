@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
@@ -7,11 +8,8 @@ import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
 import '../widgets/vrm_avatar_widget.dart';
 
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  ChatMessage({required this.text, required this.isUser});
-}
+import '../models/chat_message.dart';
+import '../services/chat_persistence_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -23,11 +21,17 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _logScrollController = ScrollController();
   final List<ChatMessage> _messages = [];
+  final ChatPersistenceService _persistence = ChatPersistenceService();
   
   bool _isThinking = false;
   double _speechIntensity = 0.0;
   bool _isGenerating = false;
+  
+  // Diagnostics
+  final List<String> _diagnosticLogs = [];
+  bool _showDiagnostics = false;
   
   // Voice
   final FlutterTts _flutterTts = FlutterTts();
@@ -41,7 +45,30 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _loadPreferences();
     _initVoiceParams();
-    _messages.add(ChatMessage(text: "Hello! I'm Clawa, your fully local AI companion. How can I help you today?", isUser: false));
+    _loadChatHistory();
+  }
+
+  Future<void> _loadChatHistory() async {
+    final history = await _persistence.loadMessages();
+    final prefs = PreferencesService();
+    await prefs.init();
+    final agentName = prefs.agentName;
+
+    if (mounted) {
+      setState(() {
+        if (history.isNotEmpty) {
+          _messages.clear();
+          _messages.addAll(history);
+        } else {
+          _messages.add(ChatMessage(text: "Hello! I'm $agentName, your fully local AI companion. How can I help you today?", isUser: false));
+        }
+      });
+      _scrollToBottom();
+    }
+  }
+
+  Future<void> _saveChatHistory() async {
+    await _persistence.saveMessages(_messages);
   }
 
   Future<void> _loadPreferences() async {
@@ -52,6 +79,23 @@ class _ChatScreenState extends State<ChatScreen> {
         _selectedAvatar = prefs.selectedAvatar;
       });
     }
+  }
+
+  void _addDiagnosticLog(String log) {
+    if (!mounted) return;
+    setState(() {
+      _diagnosticLogs.add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
+      if (_diagnosticLogs.length > 100) _diagnosticLogs.removeAt(0);
+    });
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_logScrollController.hasClients) {
+        _logScrollController.animateTo(
+          _logScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _initVoiceParams() async {
@@ -101,6 +145,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _isGenerating = true;
     });
     _scrollToBottom();
+    _saveChatHistory(); // Save user message
+    _addDiagnosticLog('Sending message: $text');
 
     // Add empty message for the assistant
     setState(() {
@@ -110,11 +156,17 @@ class _ChatScreenState extends State<ChatScreen> {
     String fullResponse = '';
     
     try {
-      // Use Consumer<GatewayProvider> to access shared gateway state
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-      final stream = gatewayProvider.sendMessage(text);
+      final stream = gatewayProvider.sendMessage(text, model: _selectedModel);
       await for (final chunk in stream) {
         if (!mounted) break;
+        
+        if (chunk.startsWith('[Error]')) {
+          _addDiagnosticLog('API Error: $chunk');
+        } else {
+           _addDiagnosticLog('Stream Delta: $chunk');
+        }
+        
         setState(() {
           _isThinking = false; // Stopped thinking, started talking
           _speechIntensity = chunk.length > 2 ? 0.8 : 0.3; // Simulate mouth movement
@@ -123,7 +175,9 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         _scrollToBottom();
       }
+      _saveChatHistory(); // Save full assistant response
     } catch (e) {
+      _addDiagnosticLog('Exception during Chat: $e');
       if (mounted) {
         setState(() {
           _isThinking = false;
@@ -139,6 +193,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _isGenerating = false;
         _speechIntensity = 0.0; // Stop mouth
       });
+      _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
     }
     
     // Speak the final response
@@ -152,46 +207,75 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isListening) {
       await _speechToText.stop();
       setState(() => _isListening = false);
+      _addDiagnosticLog('Voice listening stopped.');
     } else {
       bool available = await _speechToText.initialize();
       if (available) {
         setState(() => _isListening = true);
+        _addDiagnosticLog('Voice listening started.');
         await _speechToText.listen(
           onResult: (result) {
             _textController.text = result.recognizedWords;
             if (result.hasConfidenceRating && result.confidence > 0 && result.recognizedWords.isNotEmpty && !_speechToText.isListening) {
                 // Done recognizing
+                _addDiagnosticLog('Voice recognized: ${result.recognizedWords}');
                 _handleSubmit(result.recognizedWords);
             }
           },
         );
+      } else {
+        _addDiagnosticLog('Voice recognition unavailable on device.');
       }
     }
   }
 
   @override
-  final List<String> _availableModels = [
+  final List<String> _availableAvatars = [
     'gemini.vrm',
     'boruto.vrm',
     'default_avatar.vrm',
   ];
+
+  final List<String> _availableModels = [
+    'clawa',
+    'claude-3-5-sonnet',
+    'gpt-4o',
+    'gemini-1.5-pro',
+  ];
+
+  String _selectedModel = 'clawa';
   
-  bool get _isCinematic => _messages.isNotEmpty || _isListening || _textController.text.isNotEmpty;
+  // FIX: Decouple from _messages.isNotEmpty
+  bool get _isCinematic => _isGenerating || _isListening || _textController.text.isNotEmpty;
+
+  void _nextAvatar() {
+    int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
+    if (currentIndex == -1) currentIndex = 0;
+    int nextIndex = (currentIndex + 1) % _availableAvatars.length;
+    setState(() => _selectedAvatar = _availableAvatars[nextIndex]);
+    _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
+  }
+
+  void _prevAvatar() {
+    int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
+    if (currentIndex == -1) currentIndex = 0;
+    int prevIndex = (currentIndex - 1 + _availableAvatars.length) % _availableAvatars.length;
+    setState(() => _selectedAvatar = _availableAvatars[prevIndex]);
+    _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
+  }
 
   void _nextModel() {
-    int currentIndex = _availableModels.indexOf(_selectedAvatar);
-    if (currentIndex == -1) currentIndex = 0;
+    int currentIndex = _availableModels.indexOf(_selectedModel);
     int nextIndex = (currentIndex + 1) % _availableModels.length;
-    setState(() => _selectedAvatar = _availableModels[nextIndex]);
-    
-    // Play a tiny haptic or feedback here if desired
+    setState(() => _selectedModel = _availableModels[nextIndex]);
+    _addDiagnosticLog('Swapped to AI model: $_selectedModel');
   }
 
   void _prevModel() {
-    int currentIndex = _availableModels.indexOf(_selectedAvatar);
-    if (currentIndex == -1) currentIndex = 0;
+    int currentIndex = _availableModels.indexOf(_selectedModel);
     int prevIndex = (currentIndex - 1 + _availableModels.length) % _availableModels.length;
-    setState(() => _selectedAvatar = _availableModels[prevIndex]);
+    setState(() => _selectedModel = _availableModels[prevIndex]);
+    _addDiagnosticLog('Swapped to AI model: $_selectedModel');
   }
 
   @override
@@ -200,6 +284,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _speechToText.stop();
     _textController.dispose();
     _scrollController.dispose();
+    _logScrollController.dispose();
     super.dispose();
   }
 
@@ -221,29 +306,58 @@ class _ChatScreenState extends State<ChatScreen> {
           opacity: _isCinematic ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 400),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _selectedAvatar.split('.').first.toUpperCase(),
-                style: theme.textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
-                  letterSpacing: 4.0,
-                  fontWeight: FontWeight.w900,
-                  shadows: [
-                    Shadow(color: theme.colorScheme.primary, blurRadius: 10),
-                  ],
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_left, color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _prevAvatar,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _selectedAvatar.split('.').first.toUpperCase(),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2.0,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_right, color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _nextAvatar,
+                  ),
+                ],
               ),
+              const SizedBox(height: 2),
               Text(
-                'AI COMPANION',
+                'ACTIVE AVATAR',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.white70,
-                  letterSpacing: 2.0,
+                  fontSize: 10,
+                  letterSpacing: 3.0,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(_showDiagnostics ? Icons.bug_report : Icons.bug_report_outlined, 
+                       color: _showDiagnostics ? AppColors.statusGreen : Colors.white54),
+            onPressed: () => setState(() => _showDiagnostics = !_showDiagnostics),
+            tooltip: 'Toggle WebGL/Gateway Diagnostics',
+          )
+        ],
       ),
       body: Stack(
         children: [
@@ -287,52 +401,19 @@ class _ChatScreenState extends State<ChatScreen> {
             child: VrmAvatarWidget(
               isThinking: _isThinking,
               speechIntensity: _speechIntensity,
-              modelFileName: _selectedAvatar,
+              avatarFileName: _selectedAvatar,
               isCinematic: _isCinematic,
+              onLog: _addDiagnosticLog, // Wire WebView errors to Flutter
             ),
           ),
 
-          // 4. Model Selection Carousel (Left/Right Arrows)
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOutBack,
-            left: _isCinematic ? -80 : 16, // Slides out of view when cinematic
-            top: size.height * 0.4,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black45,
-                shape: BoxShape.circle,
-                border: Border.all(color: theme.colorScheme.primary.withOpacity(0.5)),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.chevron_left, color: Colors.white, size: 32),
-                onPressed: _prevModel,
-              ),
-            ),
-          ),
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOutBack,
-            right: _isCinematic ? -80 : 16, // Slides out of view when cinematic
-            top: size.height * 0.4,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black45,
-                shape: BoxShape.circle,
-                border: Border.all(color: theme.colorScheme.primary.withOpacity(0.5)),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.chevron_right, color: Colors.white, size: 32),
-                onPressed: _nextModel,
-              ),
-            ),
-          ),
+          // Area indicators removed as per request to use the top rotator for clarity
 
           // 5. Holographic Chat Overlay
           Positioned.fill(
             child: Column(
               children: [
-                const Spacer(flex: 3), // Push messages to the bottom half
+                const Spacer(flex: 2), // Push messages to the bottom half
                 Expanded(
                   flex: 5,
                   child: ShaderMask(
@@ -340,8 +421,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       return const LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.white, Colors.white],
-                        stops: [0.0, 0.1, 1.0],
+                        colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
+                        stops: [0.0, 0.1, 0.9, 1.0],
                       ).createShader(bounds);
                     },
                     blendMode: BlendMode.dstIn,
@@ -357,6 +438,55 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 
+                // Diagnostic Overlay
+                if (_showDiagnostics)
+                  Container(
+                    height: 120,
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      border: Border.all(color: AppColors.statusRed.withOpacity(0.5)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          color: AppColors.statusRed.withOpacity(0.2),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('SYSTEM DIAGNOSTICS', style: TextStyle(color: AppColors.statusRed, fontSize: 10, fontWeight: FontWeight.bold)),
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: EdgeInsets.zero,
+                                icon: const Icon(Icons.copy, size: 14, color: AppColors.statusRed),
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: _diagnosticLogs.join('\n')));
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logs copied!')));
+                                }
+                              )
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _logScrollController,
+                            padding: const EdgeInsets.all(8),
+                            itemCount: _diagnosticLogs.length,
+                            itemBuilder: (context, index) {
+                              return Text(
+                                _diagnosticLogs[index],
+                                style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace', fontSize: 10),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // Input Area (Glassmorphism)
                 ClipRRect(
                   child: BackdropFilter(

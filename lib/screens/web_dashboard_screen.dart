@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../constants.dart';
+import 'package:provider/provider.dart';
+import '../providers/gateway_provider.dart';
 import '../services/preferences_service.dart';
 
 class WebDashboardScreen extends StatefulWidget {
@@ -43,15 +45,25 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     _loadUrl();
   }
 
-  Future<void> _loadUrl() async {
-    var url = widget.url;
-    if (url == null || url.isEmpty) {
-      // Fallback: load saved token URL from preferences
-      final prefs = PreferencesService();
-      await prefs.init();
-      url = prefs.dashboardUrl;
+  Future<void> _loadUrl({bool forceRefresh = false}) async {
+    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+    
+    String? url;
+    if (forceRefresh) {
+      if (mounted) setState(() => _loading = true);
+      url = await gatewayProvider.refreshDashboardUrl();
+    } else {
+      url = widget.url;
+      if (url == null || url.isEmpty) {
+        final prefs = PreferencesService();
+        await prefs.init();
+        url = prefs.dashboardUrl;
+      }
     }
-    _controller.loadRequest(Uri.parse(url ?? AppConstants.gatewayUrl));
+    
+    if (mounted) {
+      _controller.loadRequest(Uri.parse(url ?? AppConstants.gatewayUrl));
+    }
   }
 
   @override
@@ -67,7 +79,7 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
                 _error = null;
                 _loading = true;
               });
-              _controller.reload();
+              _loadUrl(forceRefresh: true);
             },
           ),
         ],
@@ -82,7 +94,9 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.wifi_off,
+                      _error!.contains('401') || _error!.contains('403') 
+                          ? Icons.lock_outline 
+                          : Icons.wifi_off,
                       size: 48,
                       color: Theme.of(context).colorScheme.error,
                     ),
@@ -92,17 +106,30 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _error = null;
-                          _loading = true;
-                        });
-                        _controller.reload();
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                    ),
+                    if (_error!.contains('401') || _error!.contains('403') || _error!.contains('Unauthorized'))
+                      FilledButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _error = null;
+                            _loading = true;
+                          });
+                          _loadUrl(forceRefresh: true);
+                        },
+                        icon: const Icon(Icons.key),
+                        label: const Text('Refresh Token & Retry'),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _error = null;
+                            _loading = true;
+                          });
+                          _controller.reload();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                      ),
                   ],
                 ),
               ),

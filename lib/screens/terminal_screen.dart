@@ -1,12 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:xterm/xterm.dart';
-import 'package:flutter_pty/flutter_pty.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../services/native_bridge.dart';
 import '../services/terminal_service.dart';
-import '../widgets/terminal_toolbar.dart';
 
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key});
@@ -16,263 +13,116 @@ class TerminalScreen extends StatefulWidget {
 }
 
 class _TerminalScreenState extends State<TerminalScreen> {
-  late final Terminal _terminal;
-  late final TerminalController _controller;
-  Pty? _pty;
+  Process? _process;
   bool _loading = true;
   String? _error;
-  static final _anyUrlRegex = RegExp(r'https?://[^\s<>\[\]"' "'" r'\)]+');
-  /// Box-drawing and other TUI characters that break URLs when copied
-  static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
-
-  static const _fontFallback = [
-    'monospace',
-    'Noto Sans Mono',
-    'Noto Sans Mono CJK SC',
-    'Noto Sans Mono CJK TC',
-    'Noto Sans Mono CJK JP',
-    'Noto Color Emoji',
-    'Noto Sans Symbols',
-    'Noto Sans Symbols 2',
-    'sans-serif',
-  ];
+  
+  final List<String> _logs = [];
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _inputController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _terminal = Terminal(maxLines: 10000);
-    _controller = TerminalController();
     NativeBridge.startTerminalService();
-    // Defer PTY start until after the first frame so TerminalView has been
-    // laid out and _terminal.viewWidth/viewHeight reflect real screen
-    // dimensions instead of the 80×24 default.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startPty();
-    });
+    _startProcess();
   }
 
-  Future<void> _startPty() async {
+  Future<void> _startProcess() async {
     try {
       final config = await TerminalService.getProotShellConfig();
       final args = TerminalService.buildProotArgs(
         config,
-        columns: _terminal.viewWidth,
-        rows: _terminal.viewHeight,
+        columns: 120,
+        rows: 40,
       );
 
-      _pty = Pty.start(
+      _process = await Process.start(
         config['executable']!,
-        arguments: args,
+        args,
         environment: TerminalService.buildHostEnv(config),
-        columns: _terminal.viewWidth,
-        rows: _terminal.viewHeight,
       );
 
-      _pty!.output.cast<List<int>>().listen((data) {
-        final text = utf8.decode(data, allowMalformed: true);
-        _terminal.write(text);
+      _process!.stdout.transform(utf8.decoder).listen((data) {
+        _handleOutput(data);
       });
 
-      _pty!.exitCode.then((code) {
-        _terminal.write('\r\n[Process exited with code $code]\r\n');
+      _process!.stderr.transform(utf8.decoder).listen((data) {
+        _handleOutput(data, isError: true);
       });
 
-      _terminal.onOutput = (data) {
-        _pty?.write(utf8.encode(data));
-      };
-
-      _terminal.onResize = (w, h, pw, ph) {
-        _pty?.resize(h, w);
-      };
+      _process!.exitCode.then((code) {
+        _handleOutput('\n[Process exited with code $code]\n');
+      });
 
       setState(() => _loading = false);
     } catch (e) {
-      setState(() {
-        _loading = false;
-        _error = 'Failed to start terminal: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Failed to start terminal: $e';
+        });
+      }
     }
+  }
+
+  void _handleOutput(String data, {bool isError = false}) {
+    if (!mounted) return;
+    
+    // Split incoming blob into lines, skipping empty ones
+    final newLines = data.split('\n').where((line) => line.trim().isNotEmpty).toList();
+    if (newLines.isEmpty) return;
+
+    setState(() {
+      _logs.addAll(newLines);
+      if (_logs.length > 5000) {
+        _logs.removeRange(0, _logs.length - 5000);
+      }
+    });
+
+    // Auto-scroll to bottom
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _sendCommand() {
+    final cmd = _inputController.text.trim();
+    if (cmd.isEmpty || _process == null) return;
+
+    // Echo command to the UI
+    setState(() => _logs.add('\$ $cmd'));
+    
+    // Send to process stdin
+    _process!.stdin.writeln(cmd);
+    
+    _inputController.clear();
+    _focusNode.requestFocus();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _pty?.kill();
+    _process?.kill();
+    _scrollController.dispose();
+    _inputController.dispose();
+    _focusNode.dispose();
     NativeBridge.stopTerminalService();
     super.dispose();
   }
 
-  String? _getSelectedText() {
-    final selection = _controller.selection;
-    if (selection == null || selection.isCollapsed) return null;
-
-    final range = selection.normalized;
-    final sb = StringBuffer();
-    for (int y = range.begin.y; y <= range.end.y; y++) {
-      if (y >= _terminal.buffer.lines.length) break;
-      final line = _terminal.buffer.lines[y];
-      final from = (y == range.begin.y) ? range.begin.x : 0;
-      final to = (y == range.end.y) ? range.end.x : null;
-      sb.write(line.getText(from, to));
-      if (y < range.end.y) sb.writeln();
-    }
-    final text = sb.toString().trim();
-    return text.isEmpty ? null : text;
-  }
-
-  /// Extract a clean URL from selected text by stripping box-drawing
-  /// chars and rejoining lines, but splitting on `http` boundaries
-  /// so concatenated URLs don't merge into one.
-  String? _extractUrl(String text) {
-    final clean = text.replaceAll(_boxDrawing, '').replaceAll(RegExp(r'\s+'), '');
-    // Split before each http(s):// so concatenated URLs become separate
-    final parts = clean.split(RegExp(r'(?=https?://)'));
-    // Return the longest URL match (token URLs are longest)
-    String? best;
-    for (final part in parts) {
-      final match = _anyUrlRegex.firstMatch(part);
-      if (match != null) {
-        final url = match.group(0)!;
-        if (best == null || url.length > best.length) {
-          best = url;
-        }
-      }
-    }
-    return best;
-  }
-
-  void _copySelection() {
-    final text = _getSelectedText();
-    if (text == null) return;
-
+  void _copyAll() {
+    final text = _logs.join('\n');
     Clipboard.setData(ClipboardData(text: text));
-
-    // If the copied text contains a URL, offer "Open" action
-    final url = _extractUrl(text);
-    if (url != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Copied to clipboard'),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'Open',
-            onPressed: () {
-              final uri = Uri.tryParse(url);
-              if (uri != null) {
-                launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
-          ),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Copied to clipboard'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-    }
-  }
-
-  void _openSelection() {
-    final text = _getSelectedText();
-    if (text == null) return;
-
-    final url = _extractUrl(text);
-    if (url != null) {
-      final uri = Uri.tryParse(url);
-      if (uri != null) {
-        launchUrl(uri, mode: LaunchMode.externalApplication);
-        return;
-      }
-    }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('No URL found in selection'),
-        duration: Duration(seconds: 1),
-      ),
+      const SnackBar(content: Text('Copied terminal output')),
     );
-  }
-
-  Future<void> _paste() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null && data!.text!.isNotEmpty) {
-      _pty?.write(utf8.encode(data.text!));
-    }
-  }
-
-  /// Detect URLs in terminal at tap position. Joins adjacent lines
-  /// and strips box-drawing chars to handle wrapped URLs.
-  void _handleTap(TapUpDetails details, CellOffset offset) {
-    final totalLines = _terminal.buffer.lines.length;
-    final startRow = (offset.y - 2).clamp(0, totalLines - 1);
-    final endRow = (offset.y + 2).clamp(0, totalLines - 1);
-
-    final sb = StringBuffer();
-    for (int row = startRow; row <= endRow; row++) {
-      sb.write(_getLineText(row).trimRight());
-    }
-    final url = _extractUrl(sb.toString());
-    if (url != null) {
-      _openUrl(url);
-    }
-  }
-
-  String _getLineText(int row) {
-    try {
-      final line = _terminal.buffer.lines[row];
-      final sb = StringBuffer();
-      for (int i = 0; i < line.length; i++) {
-        final char = line.getCodePoint(i);
-        if (char != 0) {
-          sb.writeCharCode(char);
-        }
-      }
-      return sb.toString();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-
-    final shouldOpen = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Open Link'),
-        content: Text(url),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: url));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Link copied'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-              Navigator.pop(ctx, false);
-            },
-            child: const Text('Copy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Open'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldOpen == true) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   @override
@@ -283,29 +133,20 @@ class _TerminalScreenState extends State<TerminalScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.copy),
-            tooltip: 'Copy',
-            onPressed: _copySelection,
-          ),
-          IconButton(
-            icon: const Icon(Icons.open_in_browser),
-            tooltip: 'Open URL',
-            onPressed: _openSelection,
-          ),
-          IconButton(
-            icon: const Icon(Icons.paste),
-            tooltip: 'Paste',
-            onPressed: _paste,
+            tooltip: 'Copy Output',
+            onPressed: _copyAll,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Restart',
             onPressed: () {
-              _pty?.kill();
+              _process?.kill();
               setState(() {
+                _logs.clear();
                 _loading = true;
                 _error = null;
               });
-              _startPty();
+              _startProcess();
             },
           ),
         ],
@@ -322,7 +163,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('Starting terminal...'),
+            Text('Starting shell...'),
           ],
         ),
       );
@@ -353,7 +194,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                     _loading = true;
                     _error = null;
                   });
-                  _startPty();
+                  _startProcess();
                 },
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
@@ -364,24 +205,94 @@ class _TerminalScreenState extends State<TerminalScreen> {
       );
     }
 
+    final theme = Theme.of(context);
+    
     return Column(
       children: [
+        // Log Output List
         Expanded(
-          child: TerminalView(
-            _terminal,
-            controller: _controller,
-            textStyle: const TerminalStyle(
-              fontSize: 11,
-              height: 1.0,
-              fontFamily: 'DejaVuSansMono',
-              fontFamilyFallback: _fontFallback,
+          child: Container(
+            color: Colors.black,
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(12),
+              itemCount: _logs.length,
+              itemBuilder: (context, index) {
+                final line = _logs[index];
+                
+                // Extremely basic parsing for UI distinction
+                Color textColor = Colors.white70;
+                if (line.startsWith('\$ ')) {
+                  textColor = theme.colorScheme.primary;
+                } else if (line.toLowerCase().contains('error') || line.toLowerCase().contains('fail')) {
+                  textColor = Colors.redAccent;
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: SelectableText(
+                    line,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      color: textColor,
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                );
+              },
             ),
-            onTapUp: _handleTap,
           ),
         ),
-        TerminalToolbar(pty: _pty),
+        
+        // Command Input Bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _inputController,
+                    focusNode: _focusNode,
+                    decoration: InputDecoration(
+                      hintText: 'Enter command...',
+                      hintStyle: const TextStyle(fontFamily: 'monospace'),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      prefixText: '\$ ',
+                      prefixStyle: TextStyle(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    style: const TextStyle(fontFamily: 'monospace'),
+                    onSubmitted: (_) => _sendCommand(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  icon: const Icon(Icons.send, size: 20),
+                  onPressed: _sendCommand,
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
-
 }

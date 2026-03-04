@@ -9,8 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  xterm: ^4.0.0
-  flutter_pty: ^0.4.2
   webview_flutter: ^4.4.0
   dio: ^5.4.0
   http: ^1.2.0
@@ -74,6 +72,7 @@ flutter:
     - assets/avatar_static.svg
     - assets/vrm/
     - assets/vrm/animations/
+    - assets/vrm/lib/
     - assets/openclaw/skills/battery.md
     - assets/openclaw/skills/vibrate.md
     - assets/openclaw/skills/sensors.md

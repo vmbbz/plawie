@@ -32,6 +32,38 @@
 </head>
 
 <body>
+    <script>
+        // Intercept global errors to bubble up to Flutter for diagnostics!
+        window.onerror = function (msg, url, lineNo, columnNo, error) {
+            const errorMsg = 'ERROR: ' + msg + ' @ ' + url + ':' + lineNo + ':' + columnNo;
+            console.error(errorMsg);
+            if (window.ClawaBridge) {
+                window.ClawaBridge.postMessage(errorMsg);
+            }
+            return false;
+        };
+
+        // Also catch unhandled promise rejections
+        window.addEventListener('unhandledrejection', function (event) {
+            const msg = 'ERROR (Promise): ' + (event.reason ? event.reason.toString() : 'Unknown rejection');
+            console.error(msg);
+            if (window.ClawaBridge) {
+                window.ClawaBridge.postMessage(msg);
+            }
+        });
+
+        // Early probe to confirm Bridge is active
+        (function () {
+            const probe = () => {
+                if (window.ClawaBridge) {
+                    window.ClawaBridge.postMessage('LOG: [JS] Bridge Probe Successful');
+                } else {
+                    setTimeout(probe, 100);
+                }
+            };
+            probe();
+        })();
+    </script>
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/GLTFLoader.js';
@@ -42,7 +74,7 @@
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
         camera.position.set(0.0, 1.35, 2.2);
 
-        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
@@ -51,6 +83,19 @@
         light.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(light);
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+        let diagnosticCube = null;
+        // DIAGNOSTIC CUBE: If you see a spinning glowing red cube, WebGL is WORKING!
+        const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.5
+        });
+        diagnosticCube = new THREE.Mesh(geometry, material);
+        diagnosticCube.position.set(0.2, 1.7, 0.1); // Shifted slightly to be visible next to head
+        scene.add(diagnosticCube);
+        if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Diagnostic Cube Added and Visible');
 
         let currentVrm = null;
         let mixer = null;
@@ -61,17 +106,28 @@
         let speechIntensity = 0.0;
         let isSpeaking = false;
         let mouthTime = 0.0;
+        let isThinking = false;
 
         let targetCameraZ = 2.2;
         let currentCameraZ = 2.2;
 
-        window.loadVrmModel = (modelFileName) => {
+        window.loadVrmAvatar = (avatarFileName) => {
+            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Starting load of ' + avatarFileName);
+
             const loader = new GLTFLoader();
+            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Registering VRM Plugins...');
             loader.register((parser) => new VRMLoaderPlugin(parser));
             loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
-            loader.load('./' + modelFileName,
+            loader.load('./' + avatarFileName,
                 (gltf) => {
+                    if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] ' + avatarFileName + ' loaded successfully');
+
+                    if (currentVrm) {
+                        scene.remove(currentVrm.scene);
+                        currentVrm.dispose();
+                    }
+
                     const vrm = gltf.userData.vrm;
                     scene.add(vrm.scene);
                     currentVrm = vrm;
@@ -81,6 +137,7 @@
                     mixer = new THREE.AnimationMixer(vrm.scene);
 
                     // Load VRMA Animations sequentially
+                    if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: Loading VRMA animations...');
                     loader.load('./animations/idle_loop.vrma', (vrmaGltf) => {
                         const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
                         const clip = createVRMAnimationClip(vrmAnimation, vrm);
@@ -92,17 +149,28 @@
                             const talkAnim = talkGltf.userData.vrmAnimations[0];
                             const tClip = createVRMAnimationClip(talkAnim, vrm);
                             talkAction = mixer.clipAction(tClip);
-                            talkAction.setLoop(THREE.LoopRepeat);
-                            isThinking = false; // Reset just in case
+                            talkAction.setLoop(THREE.LoopRepeat); // Important so talking repeats!
+                            isThinking = false;
+
+                            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: VRMA setup complete');
+                        }, undefined, (err) => {
+                            if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: gesture_elegant failed: ' + err);
                         });
+                    }, undefined, (err) => {
+                        if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: idle_loop failed: ' + err);
                     });
                 },
                 (progress) => {
                     if (window.ClawaBridge && progress.total > 0) {
+                        const percent = (progress.loaded / progress.total * 100).toFixed(1);
+                        window.ClawaBridge.postMessage('LOG: [JS] Loading ' + avatarFileName + ': ' + percent + '%');
                         window.ClawaBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
                     }
                 },
-                (err) => console.error(err)
+                (err) => {
+                    console.error(err);
+                    if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: [JS] loading ' + avatarFileName + ': ' + err);
+                }
             );
         };
 
@@ -120,13 +188,13 @@
                 // Crossfade to talking animation
                 talkAction.reset();
                 talkAction.play();
-                idleAction.crossFadeTo(talkAction, 0.3, true);
+                if (idleAction) idleAction.crossFadeTo(talkAction, 0.3, true);
                 currentAction = talkAction;
             } else if (!isSpeaking && wasSpeaking && idleAction) {
                 // Crossfade back to idle animation
                 idleAction.reset();
                 idleAction.play();
-                talkAction.crossFadeTo(idleAction, 0.5, true);
+                if (talkAction) talkAction.crossFadeTo(idleAction, 0.5, true);
                 currentAction = idleAction;
             }
         };
@@ -198,6 +266,11 @@
                 }
 
                 currentVrm.update(delta);
+            }
+
+            if (diagnosticCube) {
+                diagnosticCube.rotation.x += 0.01;
+                diagnosticCube.rotation.y += 0.01;
             }
 
             renderer.render(scene, camera);
