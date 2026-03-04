@@ -34,16 +34,13 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           if (message.message == 'READY') {
             if (mounted) {
               setState(() => _isReady = true);
+              _controller.runJavaScript("window.loadVrmModel('${widget.modelFileName}');");
               _syncState();
             }
           }
         },
       )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
-      
-      // Navigate to the HTML page with the selected model as a URL parameter
-      _controller.loadRequest(Uri.parse('file:///android_asset/flutter_assets/assets/vrm/avatar_scene.html?model=${widget.modelFileName}'));
-  }
 
   @override
   void didUpdateWidget(VrmAvatarWidget oldWidget) {
