@@ -59,9 +59,11 @@
         let currentAction = null;
 
         let speechIntensity = 0.0;
-        let isThinking = false;
         let isSpeaking = false;
         let mouthTime = 0.0;
+
+        let targetCameraZ = 2.2;
+        let currentCameraZ = 2.2;
 
         window.loadVrmModel = (modelFileName) => {
             const loader = new GLTFLoader();
@@ -133,12 +135,19 @@
             isThinking = thinking;
         };
 
+        window.setCinematicMode = (active) => {
+            targetCameraZ = active ? 1.0 : 2.2;
+        };
+
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
             if (currentVrm) {
                 if (mixer) mixer.update(delta);
+
+                currentCameraZ = THREE.MathUtils.lerp(currentCameraZ, targetCameraZ, delta * 3.0);
+                camera.position.z = currentCameraZ;
 
                 const time = clock.elapsedTime;
 

@@ -170,6 +170,31 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
+  final List<String> _availableModels = [
+    'gemini.vrm',
+    'boruto.vrm',
+    'default_avatar.vrm',
+  ];
+  
+  bool get _isCinematic => _messages.isNotEmpty || _isListening || _textController.text.isNotEmpty;
+
+  void _nextModel() {
+    int currentIndex = _availableModels.indexOf(_selectedAvatar);
+    if (currentIndex == -1) currentIndex = 0;
+    int nextIndex = (currentIndex + 1) % _availableModels.length;
+    setState(() => _selectedAvatar = _availableModels[nextIndex]);
+    
+    // Play a tiny haptic or feedback here if desired
+  }
+
+  void _prevModel() {
+    int currentIndex = _availableModels.indexOf(_selectedAvatar);
+    if (currentIndex == -1) currentIndex = 0;
+    int prevIndex = (currentIndex - 1 + _availableModels.length) % _availableModels.length;
+    setState(() => _selectedAvatar = _availableModels[prevIndex]);
+  }
+
+  @override
   void dispose() {
     _flutterTts.stop();
     _speechToText.stop();
@@ -184,106 +209,221 @@ class _ChatScreenState extends State<ChatScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chat with Clawa'),
-        backgroundColor: Colors.transparent,
-      ),
       extendBodyBehindAppBar: true,
-      body: Column(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: AnimatedOpacity(
+          opacity: _isCinematic ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 400),
+          child: Column(
+            children: [
+              Text(
+                _selectedAvatar.split('.').first.toUpperCase(),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                  letterSpacing: 4.0,
+                  fontWeight: FontWeight.w900,
+                  shadows: [
+                    Shadow(color: theme.colorScheme.primary, blurRadius: 10),
+                  ],
+                ),
+              ),
+              Text(
+                'AI COMPANION',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white70,
+                  letterSpacing: 2.0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: Stack(
         children: [
-          // VRM Avatar Header
-          SizedBox(
-            height: size.height * 0.45,
-            child: Stack(
-              children: [
-                // Background gradient
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                         theme.colorScheme.surface.withOpacity(0.0),
-                         theme.colorScheme.surface,
-                      ],
-                      stops: const [0.7, 1.0],
-                    ),
-                  ),
-                ),
-                VrmAvatarWidget(
-                  isThinking: _isThinking,
-                  speechIntensity: _speechIntensity,
-                  modelFileName: _selectedAvatar,
-                ),
-              ],
-            ),
-          ),
-          
-          // Chat Messages
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                return _buildMessageBubble(msg, theme);
-              },
-            ),
-          ),
-          
-          // Input Area
+          // 1. Deep Sci-Fi Background
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.2),
+                radius: 1.0,
+                colors: [
+                  theme.colorScheme.surface,
+                  Colors.black,
+                ],
+                stops: const [0.2, 1.0],
+              ),
             ),
-            child: SafeArea(
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
-                    color: _isListening ? AppColors.statusRed : theme.colorScheme.primary,
-                    onPressed: _toggleListening,
-                  ),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: theme.cardTheme.color,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.5)),
-                      ),
-                      child: TextField(
-                        controller: _textController,
-                        decoration: const InputDecoration(
-                          hintText: 'Type a message...',
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                        ),
-                        onSubmitted: _handleSubmit,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  CircleAvatar(
-                    backgroundColor: theme.colorScheme.primary,
-                    child: IconButton(
-                      icon: Icon(Icons.send, color: theme.colorScheme.onPrimary, size: 20),
-                      onPressed: () => _handleSubmit(_textController.text),
-                    ),
+          ),
+
+          // 2. Base Spotlight Ellipse
+          Positioned(
+            bottom: size.height * 0.15,
+            left: size.width * 0.1,
+            right: size.width * 0.1,
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(100),
+                boxShadow: [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withOpacity(0.3),
+                    blurRadius: 40,
+                    spreadRadius: 20,
                   ),
                 ],
               ),
+            ),
+          ),
+
+          // 3. The 3D VRM Avatar (Full Screen Transparent WebGL)
+          Positioned.fill(
+            child: VrmAvatarWidget(
+              isThinking: _isThinking,
+              speechIntensity: _speechIntensity,
+              modelFileName: _selectedAvatar,
+              isCinematic: _isCinematic,
+            ),
+          ),
+
+          // 4. Model Selection Carousel (Left/Right Arrows)
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOutBack,
+            left: _isCinematic ? -80 : 16, // Slides out of view when cinematic
+            top: size.height * 0.4,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black45,
+                shape: BoxShape.circle,
+                border: Border.all(color: theme.colorScheme.primary.withOpacity(0.5)),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.chevron_left, color: Colors.white, size: 32),
+                onPressed: _prevModel,
+              ),
+            ),
+          ),
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOutBack,
+            right: _isCinematic ? -80 : 16, // Slides out of view when cinematic
+            top: size.height * 0.4,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black45,
+                shape: BoxShape.circle,
+                border: Border.all(color: theme.colorScheme.primary.withOpacity(0.5)),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.chevron_right, color: Colors.white, size: 32),
+                onPressed: _nextModel,
+              ),
+            ),
+          ),
+
+          // 5. Holographic Chat Overlay
+          Positioned.fill(
+            child: Column(
+              children: [
+                const Spacer(flex: 3), // Push messages to the bottom half
+                Expanded(
+                  flex: 5,
+                  child: ShaderMask(
+                    shaderCallback: (Rect bounds) {
+                      return const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.white, Colors.white],
+                        stops: [0.0, 0.1, 1.0],
+                      ).createShader(bounds);
+                    },
+                    blendMode: BlendMode.dstIn,
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        return _buildMessageBubble(msg, theme);
+                      },
+                    ),
+                  ),
+                ),
+                
+                // Input Area (Glassmorphism)
+                ClipRRect(
+                  child: BackdropFilter(
+                    filter: ColorFilter.mode(Colors.black.withOpacity(0.3), BlendMode.darken),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                              color: _isListening ? AppColors.statusRed : theme.colorScheme.primary,
+                              onPressed: _toggleListening,
+                            ),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
+                                ),
+                                child: TextField(
+                                  controller: _textController,
+                                  style: const TextStyle(color: Colors.white),
+                                  onChanged: (_) => setState(() {}), // Trigger cinematic mode on type
+                                  decoration: const InputDecoration(
+                                    hintText: 'Type a message...',
+                                    hintStyle: TextStyle(color: Colors.white54),
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                  ),
+                                  onSubmitted: _handleSubmit,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: theme.colorScheme.primary.withOpacity(0.8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: theme.colorScheme.primary.withOpacity(0.4),
+                                    blurRadius: 8,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: IconButton(
+                                icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                                onPressed: () => _handleSubmit(_textController.text),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -292,24 +432,50 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(ChatMessage msg, ThemeData theme) {
+    // Holographic Glassmorphism Bubble
     return Align(
       alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
         decoration: BoxDecoration(
-          color: msg.isUser ? theme.colorScheme.primary : theme.cardTheme.color,
+          color: msg.isUser ? theme.colorScheme.primary.withOpacity(0.2) : Colors.black.withOpacity(0.4),
           borderRadius: BorderRadius.circular(20).copyWith(
-            bottomRight: msg.isUser ? const Radius.circular(0) : const Radius.circular(20),
-            bottomLeft: msg.isUser ? const Radius.circular(20) : const Radius.circular(0),
+            bottomRight: msg.isUser ? const Radius.circular(4) : const Radius.circular(20),
+            bottomLeft: msg.isUser ? const Radius.circular(20) : const Radius.circular(4),
           ),
-          border: msg.isUser ? null : Border.all(color: theme.colorScheme.outline.withOpacity(0.5)),
+          border: Border.all(
+            color: msg.isUser ? theme.colorScheme.primary.withOpacity(0.5) : Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
+          boxShadow: msg.isUser ? [
+            BoxShadow(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              blurRadius: 10,
+              spreadRadius: 1,
+            )
+          ] : [],
         ),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
-        child: Text(
-          msg.text.isEmpty && _isGenerating && !msg.isUser ? '...' : msg.text,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: msg.isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20).copyWith(
+            bottomRight: msg.isUser ? const Radius.circular(4) : const Radius.circular(20),
+            bottomLeft: msg.isUser ? const Radius.circular(20) : const Radius.circular(4),
+          ),
+          child: BackdropFilter(
+            filter: ColorFilter.mode(Colors.black.withOpacity(0.1), BlendMode.dstATop),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Text(
+                msg.text.isEmpty && _isGenerating && !msg.isUser ? '...' : msg.text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                  height: 1.4,
+                  shadows: [
+                    Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 2),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

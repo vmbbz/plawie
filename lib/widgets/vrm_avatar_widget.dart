@@ -6,12 +6,14 @@ class VrmAvatarWidget extends StatefulWidget {
   final bool isThinking;
   final double speechIntensity;
   final String modelFileName;
+  final bool isCinematic;
 
   const VrmAvatarWidget({
     super.key,
     this.isThinking = false,
     this.speechIntensity = 0.0,
     this.modelFileName = 'gemini.vrm',
+    this.isCinematic = false,
   });
 
   @override
@@ -47,7 +49,12 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     super.didUpdateWidget(oldWidget);
     if (_isReady) {
       if (oldWidget.isThinking != widget.isThinking ||
-          oldWidget.speechIntensity != widget.speechIntensity) {
+          oldWidget.speechIntensity != widget.speechIntensity ||
+          oldWidget.isCinematic != widget.isCinematic ||
+          oldWidget.modelFileName != widget.modelFileName) {
+        if (oldWidget.modelFileName != widget.modelFileName) {
+          _controller.runJavaScript("window.loadVrmModel('${widget.modelFileName}');");
+        }
         _syncState();
       }
     }
@@ -57,6 +64,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     _controller.runJavaScript('''
       if (window.setThinking) window.setThinking(${widget.isThinking});
       if (window.setSpeechIntensity) window.setSpeechIntensity(${widget.speechIntensity});
+      if (window.setCinematicMode) window.setCinematicMode(${widget.isCinematic});
     ''');
   }
 
