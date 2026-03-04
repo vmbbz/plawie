@@ -76,7 +76,7 @@ class NodeWsService {
     _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_connected && _channel != null) {
         try {
-          _channel!.sink.add('ping');
+          _channel!.sink.add('{"type":"ping"}');
         } catch (_) {
           _handleDisconnect();
         }

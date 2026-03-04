@@ -12,6 +12,7 @@ class AppConstants {
   static const String gatewayHost = '127.0.0.1';
   static const int gatewayPort = 18789;
   static const String gatewayUrl = 'http://$gatewayHost:$gatewayPort';
+  static const String gatewayWsUrl = 'ws://$gatewayHost:$gatewayPort';
 
   static const String ubuntuRootfsUrl =
       'https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-';

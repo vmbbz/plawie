@@ -18,8 +18,14 @@
             height: 100vh;
         }
     </style>
-    <script async src="./lib/es-module-shims.js"></script>
-    <script type="importmap">
+    <script>
+        // esmsInitOptions MUST be set before es-module-shims loads.
+        // Without shimMode: true, the polyfill may skip importmap processing on older Android WebViews.
+        window.esmsInitOptions = { shimMode: true };
+    </script>
+    <!-- IMPORTANT: No 'async' here — must be synchronous so importmap is processed before type=module -->
+    <script src="./lib/es-module-shims.js"></script>
+    <script type="importmap-shim">
     {
         "imports": {
             "three": "./lib/three.module.js",
@@ -64,7 +70,7 @@
             probe();
         })();
     </script>
-    <script type="module">
+    <script type="module-shim">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/GLTFLoader.js';
         import { VRMLoaderPlugin } from '@pixiv/three-vrm';
