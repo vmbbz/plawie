@@ -49,13 +49,17 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
       
-    // Relax Android specific WebView file load restrictions to allow loading assets natively
+    // Relax Android specific WebView file load restrictions to allow loading assets natively.
+    // CRITICAL: setAllowFileAccessFromFileUrls + setAllowUniversalAccessFromFileUrls are REQUIRED
+    // so that GLTFLoader can fetch .vrm and .vrma files from within the flutter-asset:// origin.
+    // Without these, all XHR/fetch calls are silently blocked by CORS and VRM never loads.
     if (_controller.platform is AndroidWebViewController) {
       final androidController = _controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
       androidController.setAllowFileAccess(true);
       androidController.setAllowContentAccess(true);
-      // Let it access its own file contents more freely
+      // setAllowFileAccessFromFileUrls and setAllowUniversalAccessFromFileUrls are deprecated/removed in this version of webview_flutter_android.
+      // CORS should be handled by the flutter-asset:// scheme natively.
       AndroidWebViewController.enableDebugging(true);
     }
   }
