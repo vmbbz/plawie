@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:xterm/xterm.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/native_bridge.dart';
@@ -7,8 +6,6 @@ import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
 import 'dashboard_screen.dart';
 
-/// Modern Material Terminal - Clean, Material Design 3 with proper ANSI formatting
-/// Provides intuitive command execution with copy-paste functionality
 class OnboardingScreen extends StatefulWidget {
   final bool isFirstRun;
 
@@ -19,14 +16,14 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> with TickerProviderStateMixin {
-  late final Terminal _terminal;
-  late final TerminalController _controller;
   late final TabController _tabController;
   bool _loading = true;
   String? _error;
   final TextEditingController _commandController = TextEditingController();
+  
+  final List<String> _logs = [];
+  final ScrollController _scrollController = ScrollController();
 
-  // Command examples with descriptions - multiple AI services
   final List<Map<String, String>> _commands = [
     {
       'command': 'openclaw onboard --claude-api-key "sk-ant-xxx"',
@@ -58,142 +55,134 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   @override
   void initState() {
     super.initState();
-    // Initialize TabController
     _tabController = TabController(length: 2, vsync: this);
-    
-    // Terminal with simple constructor (like original)
-    _terminal = Terminal(maxLines: 500);
-    _controller = TerminalController();
     _loadOnboardingHelp();
+  }
+
+  void _writeLog(String text) {
+    if (!mounted) return;
+    setState(() {
+      _logs.addAll(text.split('\n').where((l) => l.trim().isNotEmpty));
+    });
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _loadOnboardingHelp() async {
     try {
       setState(() => _loading = true);
       
-      // Simple command - just get help text (like original)
       final result = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
         timeout: 15000
       );
       
-      // DEBUG: Print what we actually get
-      print('=== NATIVE BRIDGE OUTPUT ===');
-      print('Length: ${result.length}');
-      print('First 500 chars: ${result.substring(0, result.length > 500 ? 500 : result.length)}');
-      print('Contains ANSI: ${result.contains('\x1b[')}');
-      print('============================');
-      
-      // Write directly like original - no line ending manipulation
-      _terminal.write(result);
+      _writeLog(result);
       setState(() => _loading = false);
     } catch (e) {
-      setState(() {
-        _loading = false;
-        _error = 'Failed to load onboarding: $e';
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Failed to load onboarding: $e';
+        });
+      }
     }
   }
 
   Future<void> _executeCommand(String command) async {
     try {
-      _terminal.write('\r\n> $command\r\n');
+      _writeLog('> $command');
       
       final result = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $command',
         timeout: 30000
       );
       
-      _terminal.write(result);
+      _writeLog(result);
       
-      // Check if configuration was successful
       if (command.toLowerCase().contains('api-key') || 
           command.toLowerCase().contains('binding')) {
-        _terminal.write('\r\n✓ Configuration command executed\r\n');
+        _writeLog('\n✓ Configuration command executed');
         
-        // If binding command, sync WebSocket connection address
         if (command.toLowerCase().contains('binding')) {
           final bindingMatch = RegExp(r'--binding\s+([^\s]+)').firstMatch(command);
           if (bindingMatch != null) {
             final bindingAddress = bindingMatch.group(1);
-            _terminal.write('\r\n🔄 Syncing WebSocket connection to $bindingAddress\r\n');
+            _writeLog('\n🔄 Syncing WebSocket connection to $bindingAddress');
             
-            // Update app preferences to match OpenClaw binding
             final prefs = PreferencesService();
             await prefs.init();
             prefs.nodeGatewayHost = bindingAddress;
             
-            _terminal.write('\r\n✅ WebSocket will connect to $bindingAddress\r\n');
+            _writeLog('\n✅ WebSocket will connect to $bindingAddress');
           }
         }
         
-        // AUTOMATIC SERVICE STARTUP - Like SeekerClaw!
-        _terminal.write('\r\n🚀 Starting OpenClaw services...\r\n');
+        _writeLog('\n🚀 Starting OpenClaw services...');
         await _startOpenClawServices();
       }
     } catch (e) {
-      _terminal.write('\r\n✗ Command failed: $e\r\n');
+      _writeLog('\n✗ Command failed: $e');
     }
   }
 
   Future<void> _startOpenClawServices() async {
     try {
-      // Check if API key is configured first
-      _terminal.write('\r\n� Checking OpenClaw configuration...\r\n');
+      _writeLog('\nChecking OpenClaw configuration...');
       
       final configCheck = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show',
         timeout: 5000
       );
       
-      _terminal.write('\r\nCurrent config: $configCheck\r\n');
+      _writeLog('\nCurrent config: $configCheck');
       
-      // Only start gateway if API key is configured
       if (configCheck.contains('claude-api-key') || configCheck.contains('openai-api-key') || 
           configCheck.contains('gemini-api-key') || configCheck.contains('groq-api-key')) {
         
-        _terminal.write('\r\n✅ API key found, starting OpenClaw CLI Gateway...\r\n');
+        _writeLog('\n✅ API key found, starting OpenClaw CLI Gateway...');
         
-        // Stop any existing gateway first
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && pkill -f "openclaw gateway" || true',
           timeout: 5000
         );
         
-        // Start OpenClaw CLI gateway via native bridge (correct way)
         final gatewayStarted = await NativeBridge.startGateway();
         
         if (gatewayStarted) {
-          _terminal.write('\r\n✅ OpenClaw CLI Gateway started successfully\r\n');
-          _terminal.write('\r\n🤖 OpenClaw Agent is now running 24/7\r\n');
-          _terminal.write('\r\n📱 Dashboard available at: http://localhost:18789\r\n');
+          _writeLog('\n✅ OpenClaw CLI Gateway started successfully');
+          _writeLog('\n🤖 OpenClaw Agent is now running 24/7');
+          _writeLog('\n📱 Dashboard available at: http://localhost:18789');
           
-          // Trigger gateway state refresh to update UI
           await Future.delayed(const Duration(seconds: 2));
-          _triggerGatewayStateRefresh();
+          if (mounted) _triggerGatewayStateRefresh();
           
-          // Save completion status
           await _markOnboardingComplete();
           
-          // Show success message
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('✅ OpenClaw CLI Gateway is now running!'),
-                duration: const Duration(seconds: 3),
+              const SnackBar(
+                content: Text('✅ OpenClaw CLI Gateway is now running!'),
+                duration: Duration(seconds: 3),
                 backgroundColor: Colors.green,
               ),
             );
           }
         } else {
-          _terminal.write('\r\n❌ Failed to start OpenClaw CLI Gateway\r\n');
+          _writeLog('\n❌ Failed to start OpenClaw CLI Gateway');
         }
       } else {
-        _terminal.write('\r\n❌ No API key configured. Please configure an API key first.\r\n');
-        _terminal.write('\r\n💡 Use one of the commands above to configure your API key.\r\n');
+        _writeLog('\n❌ No API key configured. Please configure an API key first.');
       }
     } catch (e) {
-      _terminal.write('\r\n❌ Service startup failed: $e\r\n');
+      _writeLog('\n❌ Service startup failed: $e');
     }
   }
 
@@ -205,8 +194,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   }
 
   void _triggerGatewayStateRefresh() {
-    // Trigger gateway provider to refresh state
-    // This ensures UI components like Chat screen know gateway is running
     final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
     gatewayProvider.checkHealth();
   }
@@ -215,9 +202,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     await Clipboard.setData(ClipboardData(text: command));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Command copied!'),
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: 2),
         ),
       );
     }
@@ -225,9 +212,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
 
   @override
   void dispose() {
-    _controller.dispose();
     _commandController.dispose();
     _tabController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -250,7 +237,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     return Scaffold(
       appBar: AppBar(
         title: const Text('OpenClaw Onboarding'),
-        // Remove redundant back button for first run
         automaticallyImplyLeading: !widget.isFirstRun,
         actions: [
           if (widget.isFirstRun)
@@ -303,7 +289,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       length: 2,
       child: Column(
         children: [
-          // Tab bar
           Container(
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.1),
@@ -315,14 +300,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
             child: TabBar(
               controller: _tabController,
               tabs: const [
-                Tab(
-                  icon: Icon(Icons.terminal, size: 20),
-                  text: 'Terminal',
-                ),
-                Tab(
-                  icon: Icon(Icons.flash_on, size: 20),
-                  text: 'Quick Setup',
-                ),
+                Tab(icon: Icon(Icons.terminal, size: 20), text: 'Terminal'),
+                Tab(icon: Icon(Icons.flash_on, size: 20), text: 'Quick Setup'),
               ],
               labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
               unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
@@ -330,7 +309,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
             ),
           ),
           
-          // Tab content
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -350,30 +328,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          // Terminal with Material Design 3 styling
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: Colors.black,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                   width: 1,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: TerminalView(
-                  _terminal,
-                  controller: _controller,
-                ),
+                child: ListView.builder(
+                   controller: _scrollController,
+                   padding: const EdgeInsets.all(12),
+                   itemCount: _logs.length,
+                   itemBuilder: (context, index) {
+                     return Padding(
+                       padding: const EdgeInsets.only(bottom: 2),
+                       child: SelectableText(
+                         _logs[index],
+                         style: const TextStyle(
+                           fontFamily: 'monospace',
+                           color: Colors.lightGreenAccent,
+                           fontSize: 12,
+                           height: 1.3,
+                         ),
+                       ),
+                     );
+                   },
+                 ),
               ),
             ),
           ),
@@ -388,7 +373,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Simple instruction
           Text(
             'Configure your AI model:',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -398,12 +382,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           ),
           const SizedBox(height: 16),
           
-          // Single command cards with copy buttons
           ..._commands.map((cmd) => _buildCommandCard(cmd)),
           
           const SizedBox(height: 24),
           
-          // Command input field
           Row(
             children: [
               Expanded(
@@ -419,15 +401,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                     ),
                     filled: true,
                     fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, 
-                      vertical: 12,
-                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
-                  style: const TextStyle(
-                    fontSize: 14, 
-                    fontFamily: 'monospace',
-                  ),
+                  style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -477,11 +453,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           ),
         ),
         trailing: IconButton(
-          icon: Icon(
-            Icons.copy,
-            color: Theme.of(context).colorScheme.primary,
-            size: 20,
-          ),
+          icon: Icon(Icons.copy, color: Theme.of(context).colorScheme.primary, size: 20),
           onPressed: () => _copyCommand(command['command']!),
           tooltip: 'Copy command',
         ),
@@ -491,14 +463,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
 
   IconData _getIconForCommand(String iconType) {
     switch (iconType) {
-      case 'api':
-        return Icons.api;
-      case 'speed':
-        return Icons.speed;
-      case 'settings_ethernet':
-        return Icons.settings_ethernet;
-      default:
-        return Icons.code;
+      case 'api': return Icons.api;
+      case 'speed': return Icons.speed;
+      case 'settings_ethernet': return Icons.settings_ethernet;
+      default: return Icons.code;
     }
   }
 }

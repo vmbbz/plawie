@@ -10,9 +10,9 @@ class GatewayProvider extends ChangeNotifier {
 
   GatewayState get state => _state;
 
-  /// Send a message to the OpenClaw gateway and stream the SSE response
-  Stream<String> sendMessage(String message) {
-    return _gatewayService.sendMessage(message);
+  /// Send a message to the OpenClaw gateway and stream the response
+  Stream<String> sendMessage(String message, {String model = 'clawa'}) {
+    return _gatewayService.sendMessage(message, model: model);
   }
 
   GatewayProvider() {
@@ -50,6 +50,16 @@ class GatewayProvider extends ChangeNotifier {
   /// Write an API key without starting the gateway.
   Future<void> configureApiKey(String provider, String key) async {
     await _gatewayService.configureApiKey(provider, key);
+  }
+
+  /// Retrieve the authenticated Dashboard URL containing the ?token= query parameter.
+  Future<String?> fetchAuthenticatedDashboardUrl() {
+    return _gatewayService.fetchAuthenticatedDashboardUrl();
+  }
+
+  /// Force a re-fetch of the authenticated Dashboard URL.
+  Future<String?> refreshDashboardUrl() {
+    return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
   }
 
   @override

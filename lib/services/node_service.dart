@@ -30,7 +30,7 @@ class NodeService {
     _stateController.add(_state);
   }
 
-  void _log(String message) {
+  void log(String message) {
     final logs = [..._state.logs, message];
     if (logs.length > 500) {
       logs.removeRange(0, logs.length - 500);
@@ -51,7 +51,7 @@ class NodeService {
   Future<void> init() async {
     await _identity.init();
     _updateState(_state.copyWith(deviceId: _identity.deviceId));
-    _log('[NODE] Device ID: ${_identity.deviceId.substring(0, 12)}...');
+    log('[NODE] Device ID: ${_identity.deviceId.substring(0, 12)}...');
   }
 
   Future<void> connect({String? host, int? port}) async {
@@ -67,20 +67,20 @@ class NodeService {
       gatewayHost: targetHost,
       gatewayPort: targetPort,
     ));
-    _log('[NODE] Connecting to $targetHost:$targetPort...');
+    log('[NODE] Connecting to $targetHost:$targetPort...');
 
     _frameSubscription?.cancel();
     _frameSubscription = _ws.frameStream.listen(_onFrame);
 
     try {
       await _ws.connect(targetHost, targetPort);
-      _log('[NODE] WebSocket connected, awaiting challenge...');
+      log('[NODE] WebSocket connected, awaiting challenge...');
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
         errorMessage: 'Connection failed: $e',
       ));
-      _log('[NODE] Connection failed: $e');
+      log('[NODE] Connection failed: $e');
     }
   }
 
@@ -98,7 +98,7 @@ class NodeService {
             status: NodeStatus.disconnected,
             clearConnectedAt: true,
           ));
-          _log('[NODE] Disconnected, will retry...');
+          log('[NODE] Disconnected, will retry...');
         }
         break;
 
@@ -106,14 +106,14 @@ class NodeService {
         _updateState(_state.copyWith(status: NodeStatus.challenging));
         final nonce = frame.payload?['nonce'] as String?;
         if (nonce == null) {
-          _log('[NODE] Challenge missing nonce');
+          log('[NODE] Challenge missing nonce');
           return;
         }
-        _log('[NODE] Challenge received, signing...');
+        log('[NODE] Challenge received, signing...');
         try {
           await _sendConnect(nonce);
         } catch (e) {
-          _log('[NODE] Challenge/connect error: $e');
+          log('[NODE] Challenge/connect error: $e');
           _updateState(_state.copyWith(
             status: NodeStatus.error,
             errorMessage: '$e',
@@ -137,21 +137,21 @@ class NodeService {
     // 1. Manual token (user-provided for remote gateway)
     final manualToken = prefs.nodeGatewayToken;
     if (manualToken != null && manualToken.isNotEmpty) {
-      _log('[NODE] Using manually configured gateway token');
+      log('[NODE] Using manually configured gateway token');
       return manualToken;
     }
 
     // 2. Extract from local dashboard URL
     final dashboardUrl = prefs.dashboardUrl;
     if (dashboardUrl != null) {
-      final tokenMatch = RegExp(r'[#?&]token=([0-9a-fA-F]+)').firstMatch(dashboardUrl);
+      final tokenMatch = RegExp(r'[#?&]token=([0-9a-fA-F\-]+)').firstMatch(dashboardUrl);
       if (tokenMatch != null) {
-        _log('[NODE] Gateway token extracted from dashboard URL');
+        log('[NODE] Gateway token extracted from dashboard URL');
         return tokenMatch.group(1);
       }
     }
 
-    _log('[NODE] No gateway token available');
+    log('[NODE] No gateway token available');
     return null;
   }
 
@@ -190,7 +190,7 @@ class NodeService {
     // Build caps (unique capability names) and commands from registered handlers
     final commands = _capabilityHandlers.keys.toList();
     final caps = commands.map((c) => c.split('.').first).toSet().toList();
-    _log('[NODE] Declaring ${commands.length} commands: $commands');
+    log('[NODE] Declaring ${commands.length} commands: $commands');
 
     final connectFrame = NodeFrame.request('connect', {
       'minProtocol': 3,
@@ -218,10 +218,10 @@ class NodeService {
       },
     });
 
-    _log('[NODE] Connect frame caps=$caps commands=$commands');
-    _log('[NODE] Connect frame platform=android deviceFamily=Android');
+    log('[NODE] Connect frame caps=$caps commands=$commands');
+    log('[NODE] Connect frame platform=android deviceFamily=Android');
     final response = await _ws.sendRequest(connectFrame);
-    _log('[NODE] Connect response ok=${response.isOk} payload=${response.payload}');
+    log('[NODE] Connect response ok=${response.isOk} payload=${response.payload}');
 
     if (response.isOk) {
       // hello-ok
@@ -238,14 +238,14 @@ class NodeService {
 
       if (code == 'TOKEN_INVALID' || code == 'NOT_PAIRED' ||
           code == 'DEVICE_NOT_PAIRED') {
-        _log('[NODE] Not paired, requesting pairing...');
+        log('[NODE] Not paired, requesting pairing...');
         await _requestPairing();
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
           errorMessage: message,
         ));
-        _log('[NODE] Connect error: $code - $message');
+        log('[NODE] Connect error: $code - $message');
       }
     }
   }
@@ -256,7 +256,7 @@ class NodeService {
       connectedAt: DateTime.now(),
       clearPairingCode: true,
     ));
-    _log('[NODE] Paired and connected');
+    log('[NODE] Paired and connected');
 
     // Send capabilities advertisement
     final capabilities = _capabilityHandlers.keys.toList();
@@ -268,7 +268,7 @@ class NodeService {
 
   Future<void> _requestPairing() async {
     _updateState(_state.copyWith(status: NodeStatus.pairing));
-    _log('[NODE] Requesting pairing...');
+    log('[NODE] Requesting pairing...');
 
     try {
       final pairReq = NodeFrame.request('node.pair.request', {
@@ -285,7 +285,7 @@ class NodeService {
           status: NodeStatus.error,
           errorMessage: errPayload['message'] as String? ?? 'Pairing failed',
         ));
-        _log('[NODE] Pairing error: $errPayload');
+        log('[NODE] Pairing error: $errPayload');
         return;
       }
 
@@ -298,7 +298,7 @@ class NodeService {
         final prefs = PreferencesService();
         await prefs.init();
         prefs.nodeDeviceToken = token;
-        _log('[NODE] Pairing approved, token received');
+        log('[NODE] Pairing approved, token received');
         await Future.delayed(const Duration(milliseconds: 500));
         await _ws.disconnect();
         await connect();
@@ -307,21 +307,21 @@ class NodeService {
 
       if (code != null) {
         _updateState(_state.copyWith(pairingCode: code));
-        _log('[NODE] Pairing code: $code');
+        log('[NODE] Pairing code: $code');
 
         // Auto-approve if connecting to localhost
         final isLocal = _state.gatewayHost == '127.0.0.1' ||
             _state.gatewayHost == 'localhost';
         if (isLocal) {
-          _log('[NODE] Local gateway detected, auto-approving...');
+          log('[NODE] Local gateway detected, auto-approving...');
           try {
             await NativeBridge.runInProot('openclaw nodes approve $code');
-            _log('[NODE] Auto-approve command sent');
+            log('[NODE] Auto-approve command sent');
             await Future.delayed(const Duration(milliseconds: 500));
             await _ws.disconnect();
             await connect();
           } catch (e) {
-            _log('[NODE] Auto-approve failed: $e (user must approve manually)');
+            log('[NODE] Auto-approve failed: $e (user must approve manually)');
           }
         }
       }
@@ -330,7 +330,7 @@ class NodeService {
         status: NodeStatus.error,
         errorMessage: 'Pairing timeout: $e',
       ));
-      _log('[NODE] Pairing failed: $e');
+      log('[NODE] Pairing failed: $e');
     }
   }
 
@@ -346,11 +346,11 @@ class NodeService {
     final paramsJSON = invokePayload['paramsJSON'] as String?;
 
     if (requestId == null || command == null) {
-      _log('[NODE] Invoke missing id or command');
+      log('[NODE] Invoke missing id or command');
       return;
     }
 
-    _log('[NODE] Invoke: $command');
+    log('[NODE] Invoke: $command');
 
     Map<String, dynamic> commandParams = {};
     if (paramsJSON != null && paramsJSON.isNotEmpty) {
@@ -362,7 +362,7 @@ class NodeService {
 
     final handler = _capabilityHandlers[command];
     if (handler == null) {
-      _log('[NODE] Unknown command: $command');
+      log('[NODE] Unknown command: $command');
       _ws.sendRequest(NodeFrame.request('node.invoke.result', {
         'id': requestId,
         'nodeId': nodeId,
@@ -391,7 +391,7 @@ class NodeService {
         }
       }
       _ws.sendRequest(NodeFrame.request('node.invoke.result', resultPayload));
-      _log('[NODE] Invoke result sent for $command');
+      log('[NODE] Invoke result sent for $command');
     } catch (e) {
       _ws.sendRequest(NodeFrame.request('node.invoke.result', {
         'id': requestId,
@@ -413,7 +413,7 @@ class NodeService {
       clearConnectedAt: true,
       clearPairingCode: true,
     ));
-    _log('[NODE] Disconnected');
+    log('[NODE] Disconnected');
   }
 
   Future<void> disable() async {
@@ -423,7 +423,7 @@ class NodeService {
       logs: _state.logs,
       deviceId: _state.deviceId,
     ));
-    _log('[NODE] Node disabled');
+    log('[NODE] Node disabled');
   }
 
   void dispose() {

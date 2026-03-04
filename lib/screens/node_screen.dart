@@ -4,6 +4,7 @@ import '../app.dart';
 import '../providers/node_provider.dart';
 import '../services/preferences_service.dart';
 import '../widgets/node_controls.dart';
+import '../models/node_state.dart';
 
 class NodeScreen extends StatefulWidget {
   const NodeScreen({super.key});
@@ -135,6 +136,17 @@ class _NodeScreenState extends State<NodeScreen> {
                                 icon: const Icon(Icons.link),
                                 label: const Text('Connect'),
                               ),
+                            ] else if (state.status == NodeStatus.error || (state.logs.isNotEmpty && state.logs.last.contains('TOKEN_INVALID'))) ...[
+                               const SizedBox(height: 12),
+                               OutlinedButton.icon(
+                                 onPressed: () => provider.refreshToken(),
+                                 icon: const Icon(Icons.refresh),
+                                 label: const Text('Refresh Local Token'),
+                                 style: OutlinedButton.styleFrom(
+                                   foregroundColor: theme.colorScheme.error,
+                                   side: BorderSide(color: theme.colorScheme.error),
+                                 ),
+                               ),
                             ],
                           ],
                         ),

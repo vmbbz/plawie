@@ -97,13 +97,38 @@ class DashboardScreen extends StatelessWidget {
                   icon: Icons.dashboard,
                   trailing: const Icon(Icons.chevron_right),
                   onTap: provider.state.isRunning
-                      ? () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => WebDashboardScreen(
-                                url: provider.state.dashboardUrl,
+                      ? () async {
+                          final currentUrl = provider.state.dashboardUrl;
+                          if (currentUrl != null && currentUrl.contains('token=')) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => WebDashboardScreen(url: currentUrl),
                               ),
+                            );
+                            return;
+                          }
+
+                          // Show loading indicator
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(
+                              child: CircularProgressIndicator(),
                             ),
-                          )
+                          );
+
+                          // Fetch fresh tokenized URL
+                          final url = await provider.fetchAuthenticatedDashboardUrl();
+                          
+                          if (context.mounted) {
+                            Navigator.of(context).pop(); // Dismiss loading
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => WebDashboardScreen(url: url),
+                              ),
+                            );
+                          }
+                        }
                       : null,
                 );
               },
@@ -135,15 +160,7 @@ class DashboardScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const LogsScreen()),
               ),
             ),
-            StatusCard(
-              title: 'AI Model',
-              subtitle: 'Cloud API',
-              icon: Icons.cloud_queue,
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ),
-            ),
+
             Consumer<NodeProvider>(
               builder: (context, nodeProvider, _) {
                 final nodeState = nodeProvider.state;

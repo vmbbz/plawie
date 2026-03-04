@@ -11,7 +11,7 @@ class GatewayService {
   StreamSubscription? _logSubscription;
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
-  static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):18789/#token=[0-9a-f]+');
+  static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
 
   /// Strip ANSI, box-drawing chars, and whitespace to reconstruct URLs
@@ -139,6 +139,88 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     );
   }
 
+  /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
+  /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
+  Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
+    // If we already have a tokenized URL and aren't forcing, return it immediately
+    if (!force && _state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
+      return _state.dashboardUrl;
+    }
+
+    try {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[DEBUG] Probing gateway config for auth token...']
+      ));
+
+      final token = await retrieveTokenFromConfig();
+      if (token != null && token.isNotEmpty) {
+        final prefs = PreferencesService();
+        await prefs.init();
+        
+        // Construct the authenticated URL
+        final baseUrl = _state.dashboardUrl ?? AppConstants.gatewayUrl;
+        final urlWithToken = baseUrl.contains('?') 
+            ? '$baseUrl&token=$token' 
+            : '$baseUrl/?token=$token';
+        
+        prefs.dashboardUrl = urlWithToken;
+        _updateState(_state.copyWith(
+          dashboardUrl: urlWithToken,
+          logs: [..._state.logs, '[INFO] Gateway auth token acquired from config.']
+        ));
+        return urlWithToken;
+      }
+
+      // Fallback to CLI dashboard probe if config read fails or token is missing
+      final output = await NativeBridge.runInProot('openclaw dashboard --no-open', timeout: 10);
+      final urlMatch = _tokenUrlRegex.firstMatch(output);
+      
+      if (urlMatch != null) {
+        final url = urlMatch.group(0);
+        final prefs = PreferencesService();
+        await prefs.init();
+        prefs.dashboardUrl = url;
+        _updateState(_state.copyWith(
+          dashboardUrl: url,
+          logs: [..._state.logs, '[INFO] Gateway auth token acquired via CLI.']
+        ));
+        return url;
+      } else {
+         _updateState(_state.copyWith(
+          logs: [..._state.logs, '[WARN] Dashboard probe failed to find token. Ensure openclaw is starting correctly.']
+        ));
+      }
+    } catch (e) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[ERROR] Failed to probe dashboard: $e']
+      ));
+    }
+    return _state.dashboardUrl;
+  }
+
+  /// Use Node.js to read the token directly from the openclaw.json config file.
+  Future<String?> retrieveTokenFromConfig() async {
+    const script = '''
+const fs = require("fs");
+const p = "/root/.openclaw/openclaw.json";
+try {
+  const c = JSON.parse(fs.readFileSync(p, "utf8"));
+  if (c.gateway && c.gateway.auth && c.gateway.auth.token) {
+    console.log(c.gateway.auth.token);
+  }
+} catch (e) {}
+''';
+    try {
+      final token = await NativeBridge.runInProot(
+        'node -e ${_shellEscape(script)}',
+        timeout: 5,
+      );
+      return token.trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Escape a string for use as a single-quoted shell argument.
   static String _shellEscape(String s) {
     return "'${s.replaceAll("'", "'\\''")}'";
@@ -169,6 +251,9 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
       await Future.delayed(const Duration(seconds: 3)); // Give tmux/proot time
       _subscribeLogs();
       _startHealthCheck();
+      
+      // Proactively acquire auth token
+      await fetchAuthenticatedDashboardUrl(force: true);
     } catch (e) {
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
@@ -241,50 +326,89 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     }
   }
 
-  /// Send a message to the OpenClaw gateway and stream the SSE response
-  Stream<String> sendMessage(String message) async* {
-    final url = Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions');
-    final request = http.Request('POST', url)
-      ..headers['Content-Type'] = 'application/json'
-      ..headers['Accept'] = 'text/event-stream'
-      ..body = jsonEncode({
-        'messages': [
-          {'role': 'user', 'content': message}
-        ],
-        'stream': true,
-      });
+  /// Send a message to the OpenClaw gateway and stream the response.
+  /// Attempts OpenAI-style v1 endpoint first, with fallback to Ollama api style.
+  Stream<String> sendMessage(String message, {String model = 'clawa'}) async* {
+    final endpoints = [
+      '${AppConstants.gatewayUrl}/v1/chat/completions',
+      '${AppConstants.gatewayUrl}/api/chat',
+    ];
 
-    final client = http.Client();
-    try {
-      final response = await client.send(request).timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) {
-        yield '[Error] Gateway returned status ${response.statusCode}';
-        return;
-      }
-      
-      final stream = response.stream.transform(utf8.decoder).transform(const LineSplitter());
-      await for (final line in stream) {
-        if (line.startsWith('data: ')) {
-          final data = line.substring(6);
-          if (data == '[DONE]') break;
+    String? lastError;
+    
+    for (final endpointUrl in endpoints) {
+      final isOllama = endpointUrl.contains('/api/chat');
+      final url = Uri.parse(endpointUrl);
+      final request = http.Request('POST', url)
+        ..headers['Content-Type'] = 'application/json'
+        ..headers['Accept'] = 'text/event-stream'
+        ..body = jsonEncode({
+          'model': model,
+          'messages': [
+            {'role': 'user', 'content': message}
+          ],
+          'stream': true,
+        });
+
+      final client = http.Client();
+      try {
+        final response = await client.send(request).timeout(const Duration(seconds: 15));
+        
+        if (response.statusCode == 404) {
+          lastError = '404 Not Found at $endpointUrl';
+          continue; // Try next endpoint
+        }
+
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          yield '[Error] Unauthorized: Gateway token missing or invalid.\n'
+                'Please open the Dashboard URL from the Settings page to refresh the token,\n'
+                'or run: openclaw doctor --generate-gateway-token';
+          return;
+        }
+
+        if (response.statusCode != 200) {
+          final body = await response.stream.bytesToString();
+          yield '[Error] $endpointUrl returned ${response.statusCode}\nBody: $body';
+          return;
+        }
+
+        final stream = response.stream.transform(utf8.decoder).transform(const LineSplitter());
+        await for (final line in stream) {
+          if (line.isEmpty) continue;
+          
+          final cleanLine = line.startsWith('data: ') ? line.substring(6) : line;
+          if (cleanLine == '[DONE]') break;
+
           try {
-            final json = jsonDecode(data);
-            if (json['content'] != null) {
-              yield json['content'] as String;
-            } else if (json['choices'] != null && json['choices'].isNotEmpty) {
-               final delta = json['choices'][0]['delta'];
-               if (delta != null && delta['content'] != null) {
-                 yield delta['content'] as String;
-               }
+            final json = jsonDecode(cleanLine);
+            
+            // OpenAI Format: choices[0].delta.content
+            if (json['choices'] != null && 
+                json['choices'] is List && 
+                json['choices'].isNotEmpty &&
+                json['choices'][0]['delta'] != null &&
+                json['choices'][0]['delta']['content'] != null) {
+              yield json['choices'][0]['delta']['content'] as String;
+            } 
+            // Ollama Format: message.content
+            else if (json['message'] != null && json['message']['content'] != null) {
+              yield json['message']['content'] as String;
+            }
+            // Ollama /api/generate fallback
+            else if (json['response'] != null) {
+              yield json['response'] as String;
             }
           } catch (_) {}
         }
+        return; // Success, stop trying endpoints
+      } catch (e) {
+        lastError = 'Connection error at $endpointUrl: $e';
+      } finally {
+        client.close();
       }
-    } catch (e) {
-      yield '[Error] Connection failed: $e';
-    } finally {
-      client.close();
     }
+
+    yield '[Error] All endpoints failed.\nLast error: $lastError';
   }
 
   void dispose() {
