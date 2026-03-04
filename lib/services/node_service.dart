@@ -162,7 +162,10 @@ class NodeService {
     final deviceToken = prefs.nodeDeviceToken;
 
     // For local connections, read the gateway auth token from dashboard URL
-    _gatewayAuthToken ??= await _readGatewayToken();
+    // If missing, try a quiet probe (non-forced) via GatewayService
+    if (_gatewayAuthToken == null) {
+      _gatewayAuthToken = await _readGatewayToken();
+    }
 
     // Prefer gateway auth token (exact match); fall back to device token
     // (gateway verifies device tokens as fallback if gateway token check fails)

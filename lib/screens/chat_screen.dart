@@ -476,9 +476,25 @@ class _ChatScreenState extends State<ChatScreen> {
                             padding: const EdgeInsets.all(8),
                             itemCount: _diagnosticLogs.length,
                             itemBuilder: (context, index) {
+                              final logLine = _diagnosticLogs[index];
+                              // Color-code by prefix for easier VRM / gateway triage
+                              Color lineColor;
+                              if (logLine.contains('] ERROR:') || logLine.contains('] API Error')) {
+                                lineColor = Colors.redAccent;
+                              } else if (logLine.contains('] LOG:')) {
+                                lineColor = Colors.cyanAccent;
+                              } else if (logLine.contains('] PROGRESS:')) {
+                                lineColor = Colors.yellowAccent;
+                              } else {
+                                lineColor = Colors.greenAccent;
+                              }
                               return Text(
-                                _diagnosticLogs[index],
-                                style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace', fontSize: 10),
+                                logLine,
+                                style: TextStyle(
+                                  color: lineColor,
+                                  fontFamily: 'monospace',
+                                  fontSize: 10,
+                                ),
                               );
                             },
                           ),
