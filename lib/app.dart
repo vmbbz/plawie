@@ -53,7 +53,7 @@ class ClawaApp extends StatelessWidget {
         ChangeNotifierProxyProvider<GatewayProvider, NodeProvider>(
           create: (_) => NodeProvider(),
           update: (_, gatewayProvider, nodeProvider) {
-            nodeProvider!.onGatewayStateChanged(gatewayProvider.state);
+            nodeProvider!.onGatewayStateUpdate(gatewayProvider);
             return nodeProvider;
           },
         ),
