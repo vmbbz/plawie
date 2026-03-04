@@ -25,6 +25,8 @@ class ProcessManager(
 
     private var logSink: io.flutter.plugin.common.EventChannel.EventSink? = null
     private var logThread: Thread? = null
+    private val logRingBuffer = java.util.concurrent.ConcurrentLinkedDeque<String>()
+    private val MAX_LOG_LINES = 1000
 
     companion object {
         // Match proot-distro v4.37.0 defaults
@@ -279,19 +281,22 @@ class ProcessManager(
     // ================================================================
 
     fun startGateway(): Boolean {
-        // Original approach: Direct execution with proot-distro like openclaw-termux
-        // Command: proot-distro login ubuntu -- bash -c 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw gateway --verbose'
-        // Let openclaw handle its own logging (no explicit redirection)
-        val gatewayCmd = "export NODE_OPTIONS=\"--require /root/.openclaw/bionic-bypass.js\" && openclaw gateway --verbose &"
+        // Direct execution matching openclaw-termux upstream.
+        // NODE_OPTIONS is already injected by buildGatewayCommand() env vars,
+        // so we don't need to export it again in the shell command.
+        // Redirect stdout/stderr to gateway.log so the log streaming thread
+        // can pick up output (including the dashboard token URL).
+        val gatewayCmd = "mkdir -p /root/.openclaw && openclaw gateway --verbose > /root/.openclaw/gateway.log 2>&1"
         
         return try {
-            android.util.Log.i("ProcessManager", "Starting gateway with original approach (direct execution)")
+            android.util.Log.i("ProcessManager", "Starting gateway (output → gateway.log)")
             val fullCmd = buildGatewayCommand(gatewayCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
             pb.environment().putAll(prootEnv())
-            val process = pb.start()
-            process.waitFor(3, TimeUnit.SECONDS)
+            pb.start()
+            // Process is backgrounded (&) so bash exits immediately.
+            // The health check in GatewayService will verify the gateway is up.
             startLogStreaming(null)
             true
         } catch (e: Exception) {
@@ -334,14 +339,18 @@ class ProcessManager(
     }
 
     fun getRecentLogs(): String {
-        return try {
-            if (logFile.exists()) {
-                logFile.readLines().takeLast(200).joinToString("\n")
-            } else {
-                "Logs not found at ${logFile.absolutePath}"
+        return if (logRingBuffer.isNotEmpty()) {
+            logRingBuffer.joinToString("\n")
+        } else {
+            try {
+                if (logFile.exists()) {
+                    logFile.readLines().takeLast(200).joinToString("\n")
+                } else {
+                    "Logs not found at ${logFile.absolutePath}"
+                }
+            } catch (e: Exception) {
+                "Error reading logs: ${e.message}"
             }
-        } catch (e: Exception) {
-            "Error reading logs: ${e.message}"
         }
     }
 
@@ -364,6 +373,10 @@ class ProcessManager(
                                     val newContent = String(newBytes)
                                     newContent.split("\n").forEach { line ->
                                         if (line.isNotEmpty()) {
+                                            logRingBuffer.addLast(line)
+                                            while (logRingBuffer.size > MAX_LOG_LINES) {
+                                                logRingBuffer.pollFirst()
+                                            }
                                             logSink?.let { s ->
                                                 // We need to return to UI thread for Flutter
                                                 android.os.Handler(android.os.Looper.getMainLooper()).post {

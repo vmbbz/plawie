@@ -10,6 +10,11 @@ class GatewayProvider extends ChangeNotifier {
 
   GatewayState get state => _state;
 
+  /// Send a message to the OpenClaw gateway and stream the SSE response
+  Stream<String> sendMessage(String message) {
+    return _gatewayService.sendMessage(message);
+  }
+
   GatewayProvider() {
     _subscription = _gatewayService.stateStream.listen((state) {
       _state = state;
@@ -29,6 +34,22 @@ class GatewayProvider extends ChangeNotifier {
 
   Future<bool> checkHealth() async {
     return _gatewayService.checkHealth();
+  }
+
+  /// Write an API key to openclaw.json and start the gateway.
+  /// This is the single entry point for the onboarding wizard.
+  Future<void> configureAndStart({
+    required String provider,
+    required String apiKey,
+    String? agentName,
+  }) async {
+    await _gatewayService.configureApiKey(provider, apiKey);
+    await _gatewayService.start();
+  }
+
+  /// Write an API key without starting the gateway.
+  Future<void> configureApiKey(String provider, String key) async {
+    await _gatewayService.configureApiKey(provider, key);
   }
 
   @override
