@@ -421,6 +421,9 @@ try {
       'id': requestId,
     });
 
+    // We use a StreamController to bridge from the WS listen callback to an async* stream.
+    final chunkController = StreamController<String>();
+
     // Wait for hello-ok before sending the request
     final Completer<void> handshakeCompleter = Completer<void>();
     
