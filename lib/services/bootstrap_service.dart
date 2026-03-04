@@ -4,7 +4,9 @@ import 'package:dio/dio.dart';
 import '../constants.dart';
 import '../models/setup_state.dart';
 import 'native_bridge.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'preferences_service.dart';
+import 'dart:io';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -208,7 +210,34 @@ class BootstrapService {
       await NativeBridge.runInProot('openclaw --version || echo openclaw_installed');
 
       // ---------------------------------------------------------
-      // Step 5: Finalize
+      // Step 5: Install Native Android Skills
+      // ---------------------------------------------------------
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Installing Android native skills...', 95);
+      
+      try {
+        final prootRoot = '$filesDir/rootfs/ubuntu/root';
+        final openclawSkillsDir = Directory('$prootRoot/.openclaw/skills');
+        final openclawExtDir = Directory('$prootRoot/.openclaw/extensions');
+        
+        if (!openclawSkillsDir.existsSync()) openclawSkillsDir.createSync(recursive: true);
+        if (!openclawExtDir.existsSync()) openclawExtDir.createSync(recursive: true);
+
+        // Copy android bridge tools JS script to extensions so skills can require it or OpenClaw can load it
+        final bridgeJs = await rootBundle.loadString('assets/openclaw/android_bridge_tools.js');
+        File('${openclawExtDir.path}/android_bridge_tools.js').writeAsStringSync(bridgeJs);
+
+        // Copy the SKILL markdown files
+        final skills = ['battery.md', 'vibrate.md', 'sensors.md'];
+        for (final skill in skills) {
+          final content = await rootBundle.loadString('assets/openclaw/skills/$skill');
+          File('${openclawSkillsDir.path}/$skill').writeAsStringSync(content);
+        }
+      } catch (e) {
+        _log('Non-fatal: Failed to copy native skills', error: e);
+      }
+
+      // ---------------------------------------------------------
+      // Step 6: Finalize
       // ---------------------------------------------------------
       await NativeBridge.markBootstrapComplete();
       final prefs = PreferencesService();

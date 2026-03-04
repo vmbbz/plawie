@@ -7,6 +7,7 @@ import '../widgets/avatar_logo.dart';
 import 'setup_wizard_screen.dart';
 import 'dashboard_screen.dart';
 import 'onboarding_screen.dart';
+import 'setup_flow_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -101,7 +102,9 @@ class _SplashScreenState extends State<SplashScreen>
       if (!mounted) return;
 
       final dashboardUrl = prefs.dashboardUrl;
-      final isFullyConfigured = bootstrapOk && dashboardUrl != null && dashboardUrl.isNotEmpty;
+      final isFullyConfigured = bootstrapOk && (
+        (dashboardUrl != null && dashboardUrl.isNotEmpty) || prefs.apiKeyConfigured
+      );
 
       if (isFullyConfigured) {
         prefs.setupComplete = true;
@@ -127,7 +130,7 @@ class _SplashScreenState extends State<SplashScreen>
         // If bootstrap is complete, go to onboarding; otherwise go to setup
         Widget targetScreen;
         if (bootstrapOk) {
-          targetScreen = OnboardingScreen(isFirstRun: false);
+          targetScreen = const SetupFlowScreen();
         } else {
           targetScreen = const SetupWizardScreen();
         }

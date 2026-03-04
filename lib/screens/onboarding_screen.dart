@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
+import '../providers/gateway_provider.dart';
 import 'dashboard_screen.dart';
 
 /// Modern Material Terminal - Clean, Material Design 3 with proper ANSI formatting
@@ -48,7 +50,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     },
     {
       'command': 'openclaw onboard --binding 127.0.0.1',
-      'description': 'Set local binding address',
+      'description': 'Set local binding (recommended)',
       'icon': 'settings_ethernet',
     },
   ];
@@ -59,7 +61,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     // Initialize TabController
     _tabController = TabController(length: 2, vsync: this);
     
-    // Terminal with proper ANSI support (matches original)
+    // Terminal with simple constructor (like original)
     _terminal = Terminal(maxLines: 500);
     _controller = TerminalController();
     _loadOnboardingHelp();
@@ -74,6 +76,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
         timeout: 15000
       );
+      
+      // DEBUG: Print what we actually get
+      print('=== NATIVE BRIDGE OUTPUT ===');
+      print('Length: ${result.length}');
+      print('First 500 chars: ${result.substring(0, result.length > 500 ? 500 : result.length)}');
+      print('Contains ANSI: ${result.contains('\x1b[')}');
+      print('============================');
       
       // Write directly like original - no line ending manipulation
       _terminal.write(result);
@@ -102,6 +111,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           command.toLowerCase().contains('binding')) {
         _terminal.write('\r\n✓ Configuration command executed\r\n');
         
+        // If binding command, sync WebSocket connection address
+        if (command.toLowerCase().contains('binding')) {
+          final bindingMatch = RegExp(r'--binding\s+([^\s]+)').firstMatch(command);
+          if (bindingMatch != null) {
+            final bindingAddress = bindingMatch.group(1);
+            _terminal.write('\r\n🔄 Syncing WebSocket connection to $bindingAddress\r\n');
+            
+            // Update app preferences to match OpenClaw binding
+            final prefs = PreferencesService();
+            await prefs.init();
+            prefs.nodeGatewayHost = bindingAddress;
+            
+            _terminal.write('\r\n✅ WebSocket will connect to $bindingAddress\r\n');
+          }
+        }
+        
         // AUTOMATIC SERVICE STARTUP - Like SeekerClaw!
         _terminal.write('\r\n🚀 Starting OpenClaw services...\r\n');
         await _startOpenClawServices();
@@ -113,30 +138,59 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
 
   Future<void> _startOpenClawServices() async {
     try {
-      // Start OpenClaw Gateway automatically
-      _terminal.write('\r\n📡 Starting OpenClaw Gateway...\r\n');
-      final gatewayStarted = await NativeBridge.startGateway();
+      // Check if API key is configured first
+      _terminal.write('\r\n� Checking OpenClaw configuration...\r\n');
       
-      if (gatewayStarted) {
-        _terminal.write('\r\n✅ OpenClaw Gateway started successfully\r\n');
-        _terminal.write('\r\n🤖 OpenClaw Agent is now running 24/7\r\n');
-        _terminal.write('\r\n📱 Dashboard available at: http://localhost:18789\r\n');
+      final configCheck = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show',
+        timeout: 5000
+      );
+      
+      _terminal.write('\r\nCurrent config: $configCheck\r\n');
+      
+      // Only start gateway if API key is configured
+      if (configCheck.contains('claude-api-key') || configCheck.contains('openai-api-key') || 
+          configCheck.contains('gemini-api-key') || configCheck.contains('groq-api-key')) {
         
-        // Save completion status
-        await _markOnboardingComplete();
+        _terminal.write('\r\n✅ API key found, starting OpenClaw CLI Gateway...\r\n');
         
-        // Show success message
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('✅ OpenClaw is now running!'),
-              duration: const Duration(seconds: 3),
-              backgroundColor: Colors.green,
-            ),
-          );
+        // Stop any existing gateway first
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && pkill -f "openclaw gateway" || true',
+          timeout: 5000
+        );
+        
+        // Start OpenClaw CLI gateway via native bridge (correct way)
+        final gatewayStarted = await NativeBridge.startGateway();
+        
+        if (gatewayStarted) {
+          _terminal.write('\r\n✅ OpenClaw CLI Gateway started successfully\r\n');
+          _terminal.write('\r\n🤖 OpenClaw Agent is now running 24/7\r\n');
+          _terminal.write('\r\n📱 Dashboard available at: http://localhost:18789\r\n');
+          
+          // Trigger gateway state refresh to update UI
+          await Future.delayed(const Duration(seconds: 2));
+          _triggerGatewayStateRefresh();
+          
+          // Save completion status
+          await _markOnboardingComplete();
+          
+          // Show success message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('✅ OpenClaw CLI Gateway is now running!'),
+                duration: const Duration(seconds: 3),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else {
+          _terminal.write('\r\n❌ Failed to start OpenClaw CLI Gateway\r\n');
         }
       } else {
-        _terminal.write('\r\n❌ Failed to start OpenClaw Gateway\r\n');
+        _terminal.write('\r\n❌ No API key configured. Please configure an API key first.\r\n');
+        _terminal.write('\r\n💡 Use one of the commands above to configure your API key.\r\n');
       }
     } catch (e) {
       _terminal.write('\r\n❌ Service startup failed: $e\r\n');
@@ -148,6 +202,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     await prefs.init();
     prefs.setupComplete = true;
     prefs.isFirstRun = false;
+  }
+
+  void _triggerGatewayStateRefresh() {
+    // Trigger gateway provider to refresh state
+    // This ensures UI components like Chat screen know gateway is running
+    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+    gatewayProvider.checkHealth();
   }
 
   Future<void> _copyCommand(String command) async {

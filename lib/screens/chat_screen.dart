@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:provider/provider.dart';
 import '../app.dart';
-import '../services/gateway_service.dart';
 import '../services/preferences_service.dart';
+import '../providers/gateway_provider.dart';
 import '../widgets/vrm_avatar_widget.dart';
 
 class ChatMessage {
@@ -32,14 +33,12 @@ class _ChatScreenState extends State<ChatScreen> {
   final FlutterTts _flutterTts = FlutterTts();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
-
-  late final GatewayService _gatewayService;
+  
   String _selectedAvatar = 'gemini.vrm';
 
   @override
   void initState() {
     super.initState();
-    _gatewayService = GatewayService();
     _loadPreferences();
     _initVoiceParams();
     _messages.add(ChatMessage(text: "Hello! I'm Clawa, your fully local AI companion. How can I help you today?", isUser: false));
@@ -111,7 +110,9 @@ class _ChatScreenState extends State<ChatScreen> {
     String fullResponse = '';
     
     try {
-      final stream = _gatewayService.sendMessage(text);
+      // Use Consumer<GatewayProvider> to access shared gateway state
+      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+      final stream = gatewayProvider.sendMessage(text);
       await for (final chunk in stream) {
         if (!mounted) break;
         setState(() {
@@ -174,7 +175,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _speechToText.stop();
     _textController.dispose();
     _scrollController.dispose();
-    _gatewayService.dispose();
     super.dispose();
   }
 

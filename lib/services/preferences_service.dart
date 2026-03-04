@@ -86,4 +86,22 @@ class PreferencesService {
   /// The selected VRM avatar filename
   String get selectedAvatar => _prefs.getString('selectedAvatar') ?? 'gemini.vrm';
   set selectedAvatar(String value) => _prefs.setString('selectedAvatar', value);
+
+  /// Selected AI provider (claude, gemini, openai, groq)
+  String? get apiProvider => _prefs.getString('api_provider');
+  set apiProvider(String? value) {
+    if (value != null) {
+      _prefs.setString('api_provider', value);
+    } else {
+      _prefs.remove('api_provider');
+    }
+  }
+
+  /// User-chosen agent name
+  String get agentName => _prefs.getString('agent_name') ?? 'Clawa';
+  set agentName(String value) => _prefs.setString('agent_name', value);
+
+  /// Whether an API key has been configured
+  bool get apiKeyConfigured => _prefs.getBool('api_key_configured') ?? false;
+  set apiKeyConfigured(bool value) => _prefs.setBool('api_key_configured', value);
 }

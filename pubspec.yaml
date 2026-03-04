@@ -74,6 +74,9 @@ flutter:
     - assets/avatar_static.svg
     - assets/vrm/
     - assets/vrm/animations/
+    - assets/openclaw/skills/battery.md
+    - assets/openclaw/skills/vibrate.md
+    - assets/openclaw/skills/sensors.md
   fonts:
     - family: DejaVuSansMono
       fonts:

@@ -79,7 +79,8 @@ class GatewayService {
     });
   }
 
-  /// Patch /root/.openclaw/openclaw.json to clear denyCommands and set allowCommands.
+  /// Patch /root/.openclaw/openclaw.json to clear denyCommands, set allowCommands,
+  /// and configure gateway host/port (automates binding — no CLI `--binding` flag needed).
   Future<void> _configureGateway() async {
     const allowCommands = [
       'camera.snap', 'camera.clip', 'camera.list',
@@ -103,6 +104,7 @@ if (!c.gateway) c.gateway = {};
 if (!c.gateway.nodes) c.gateway.nodes = {};
 c.gateway.nodes.denyCommands = [];
 c.gateway.nodes.allowCommands = $allowJson;
+c.gateway.mode = "local";
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
 
@@ -114,6 +116,27 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     } catch (_) {
       // Non-fatal
     }
+  }
+
+  /// Write an API key directly to openclaw.json — bypasses the CLI `onboard` command.
+  /// [provider] is the JSON key (e.g. "claudeApiKey", "geminiApiKey", etc.)
+  /// [key] is the raw API key string.
+  Future<void> configureApiKey(String provider, String key) async {
+    final script = '''
+const fs = require("fs");
+const dir = "/root/.openclaw";
+const p = dir + "/openclaw.json";
+try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+let c = {};
+try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
+if (!c.env) c.env = {};
+c.env["$provider"] = "$key";
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+''';
+    await NativeBridge.runInProot(
+      'node -e ${_shellEscape(script)}',
+      timeout: 15,
+    );
   }
 
   /// Escape a string for use as a single-quoted shell argument.
@@ -220,12 +243,14 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
 
   /// Send a message to the OpenClaw gateway and stream the SSE response
   Stream<String> sendMessage(String message) async* {
-    final url = Uri.parse('${AppConstants.gatewayUrl}/api/v1/chat');
+    final url = Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions');
     final request = http.Request('POST', url)
       ..headers['Content-Type'] = 'application/json'
       ..headers['Accept'] = 'text/event-stream'
       ..body = jsonEncode({
-        'message': message,
+        'messages': [
+          {'role': 'user', 'content': message}
+        ],
         'stream': true,
       });
 

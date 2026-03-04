@@ -12,6 +12,7 @@ import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
 import 'onboarding_screen.dart';
 import 'package_install_screen.dart';
+import 'setup_flow_screen.dart';
 import 'dashboard_screen.dart';
 
 class SetupWizardScreen extends StatefulWidget {
@@ -817,9 +818,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     final prefs = PreferencesService();
     await prefs.init();
     
-    // If we have a dashboard URL, go to Dashboard
-    // Otherwise go to Onboarding
-    if (prefs.dashboardUrl != null && prefs.dashboardUrl!.isNotEmpty) {
+    // If we have a dashboard URL and API key configured, go straight to Dashboard
+    if (prefs.dashboardUrl != null && prefs.dashboardUrl!.isNotEmpty && prefs.apiKeyConfigured) {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => DashboardScreen()),
@@ -829,7 +829,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => const OnboardingScreen(isFirstRun: true),
+            builder: (_) => const SetupFlowScreen(),
           ),
         );
       }
