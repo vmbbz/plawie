@@ -28,7 +28,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isThinking = false;
   double _speechIntensity = 0.0;
   bool _isGenerating = false;
-  bool _vrmReady = false;
+  bool _isReady = false;
   
   // Diagnostics
   final List<String> _diagnosticLogs = [];
@@ -260,7 +260,7 @@ class _ChatScreenState extends State<ChatScreen> {
     int nextIndex = (currentIndex + 1) % _availableAvatars.length;
     setState(() {
       _selectedAvatar = _availableAvatars[nextIndex];
-      _vrmReady = false;
+      _isReady = false;
     });
     _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
   }
@@ -271,7 +271,7 @@ class _ChatScreenState extends State<ChatScreen> {
     int prevIndex = (currentIndex - 1 + _availableAvatars.length) % _availableAvatars.length;
     setState(() {
       _selectedAvatar = _availableAvatars[prevIndex];
-      _vrmReady = false;
+      _isReady = false;
     });
     _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
   }
@@ -411,7 +411,7 @@ class _ChatScreenState extends State<ChatScreen> {
           // 3. The 3D VRM Avatar (Full Screen Transparent WebGL)
           Positioned.fill(
             child: AnimatedOpacity(
-              opacity: _vrmReady ? 1.0 : 0.0,
+              opacity: _isReady ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 500),
               child: VrmAvatarWidget(
                 key: ValueKey(_selectedAvatar),
@@ -421,7 +421,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 isCinematic: _isCinematic,
                 onLog: (log) {
                   if (log == 'READY') {
-                    setState(() => _vrmReady = true);
+                    setState(() => _isReady = true);
                   }
                   _addDiagnosticLog(log);
                 },
