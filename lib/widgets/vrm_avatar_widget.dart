@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import '../app.dart';
 
 class VrmAvatarWidget extends StatefulWidget {
@@ -33,6 +34,25 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
+      ..setNavigationDelegate(NavigationDelegate(
+        onWebResourceError: (WebResourceError error) {
+          widget.onLog?.call('WebView Error: ${error.description} (code ${error.errorCode})');
+        },
+        onPageFinished: (String url) {
+          // Force console redirect in JS after the page is loaded
+          _controller.runJavaScript('''
+            window.addEventListener('error', e => {
+              if (window.ConsoleLog) ConsoleLog.postMessage(`ERROR: \${e.message} @ \${e.filename}:\${e.lineno}`);
+            });
+            console.log = (...args) => {
+              if (window.ConsoleLog) ConsoleLog.postMessage(args.join(' '));
+            };
+            console.error = (...args) => {
+              if (window.ConsoleLog) ConsoleLog.postMessage('ERROR: ' + args.join(' '));
+            };
+          ''');
+        },
+      ))
       ..addJavaScriptChannel(
         'ClawaBridge',
         onMessageReceived: (JavaScriptMessage message) {
@@ -47,19 +67,21 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           }
         },
       )
+      ..addJavaScriptChannel(
+        'ConsoleLog',
+        onMessageReceived: (JavaScriptMessage message) {
+          widget.onLog?.call('JS: ${message.message}');
+        },
+      )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
       
     // Relax Android specific WebView file load restrictions to allow loading assets natively.
-    // CRITICAL: setAllowFileAccessFromFileUrls + setAllowUniversalAccessFromFileUrls are REQUIRED
-    // so that GLTFLoader can fetch .vrm and .vrma files from within the flutter-asset:// origin.
-    // Without these, all XHR/fetch calls are silently blocked by CORS and VRM never loads.
     if (_controller.platform is AndroidWebViewController) {
       final androidController = _controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
       androidController.setAllowFileAccess(true);
       androidController.setAllowContentAccess(true);
-      // setAllowFileAccessFromFileUrls and setAllowUniversalAccessFromFileUrls are deprecated/removed in this version of webview_flutter_android.
-      // CORS should be handled by the flutter-asset:// scheme natively.
+      // ignore: invalid_use_of_visible_for_testing_member
       AndroidWebViewController.enableDebugging(true);
     }
   }
