@@ -161,6 +161,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       });
       await Future.delayed(const Duration(milliseconds: 300));
 
+      // World-Class Fix: Validate config before starting
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+        timeout: 10000
+      );
+
       await gatewayProvider.configureAndStart(
         provider: _selectedProvider!,
         apiKey: _apiKeyController.text.trim(),

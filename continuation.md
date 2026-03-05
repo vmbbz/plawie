@@ -602,3 +602,28 @@ learn from this regarding all my questions go read this repo and learn and do so
 
 https://github.com/yuga-hashimoto/openclaw-assistant
 
+
+---
+## 🛠️ World-Class Config Fix Audit – March 5, 2026 09:45 UTC
+
+### Root Cause: Configuration Mismatch
+Detected that AI providers (like Google Gemini) were being incorrectly placed under `secrets.providers` in `openclaw.json`. Per upstream docs, this section is reserved for secret backends (Vault, etc.). AI providers must reside in `models.providers`.
+
+### Precise Fixes Implemented:
+
+#### 1. Onboarding Screen (`lib/screens/onboarding_screen.dart`)
+- **Post-Run Validation**: Added `openclaw doctor --fix` immediately after configuration commands.
+- **UI Feedback**: Implemented SnackBar alerts if a configuration remains invalid after an attempt to fix.
+- **Pre-Service Check**: Added `openclaw config --validate` probe before starting the gateway.
+
+#### 2. Gateway Service (`lib/services/gateway_service.dart`)
+- **Corrected Config Logic**: Redesigned `configureApiKey` Node.js script to target `models.providers` instead of the erroneous `secrets.providers`.
+- **Auto-Fix Probe**: Added `probeGateway()` method to automatically detect and repair schema violations using `openclaw doctor --fix`.
+- **Startup Resilience**: Integrated auto-fix retry logic directly into the `start()` sequence.
+
+#### 3. Documentation
+- **README.md**: Added a dedicated "Adding New Providers" section with correct CLI usage and pathing information.
+- **Continuation.md**: Logged this audit as the definitive state of configuration management.
+
+### Status: ✅ FULL FIX APPLIED
+All intricate code paths identified in the audit have been implemented and cross-verified.
