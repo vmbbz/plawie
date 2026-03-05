@@ -34,13 +34,6 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onWebResourceError: (WebResourceError error) {
-            widget.onLog?.call('WebView Resource Error: ${error.description} (code ${error.errorCode})');
-          },
-        ),
-      )
       ..addJavaScriptChannel(
         'ClawaBridge',
         onMessageReceived: (JavaScriptMessage message) {
@@ -57,6 +50,13 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           }
         },
       )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onWebResourceError: (WebResourceError error) {
+            widget.onLog?.call('WebView Resource Error: ${error.description} (code ${error.errorCode})');
+          },
+        ),
+      )
       ..addJavaScriptChannel(
         'ConsoleLog',
         onMessageReceived: (JavaScriptMessage message) {
@@ -69,16 +69,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       window.addEventListener('error', (e) => {
         ConsoleLog.postMessage(`ERROR: \${e.message} @ \${e.filename}:\${e.lineno}:\${e.colno}`);
       });
-      const originalConsoleLog = console.log;
-      const originalConsoleError = console.error;
-      console.log = (...args) => {
-        ConsoleLog.postMessage(args.map(a => String(a)).join(' '));
-        originalConsoleLog(...args);
-      };
-      console.error = (...args) => {
-        ConsoleLog.postMessage('JS ERROR: ' + args.map(a => String(a)).join(' '));
-        originalConsoleError(...args);
-      };
+      const origLog = console.log; const origErr = console.error;
+      console.log = (...a) => { ConsoleLog.postMessage(a.map(x=>String(x)).join(' ')); origLog(...a); };
+      console.error = (...a) => { ConsoleLog.postMessage('JS ERROR: '+a.map(x=>String(x)).join(' ')); origErr(...a); };
     ''');
       
     // Relax Android specific WebView file load restrictions to allow loading assets natively.
