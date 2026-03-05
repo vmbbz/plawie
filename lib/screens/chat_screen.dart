@@ -28,6 +28,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isThinking = false;
   double _speechIntensity = 0.0;
   bool _isGenerating = false;
+  bool _vrmReady = false;
   
   // Diagnostics
   final List<String> _diagnosticLogs = [];
@@ -38,7 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
   
-  String _selectedAvatar = 'gemini.vrm';
+  String _selectedAvatar = 'default_avatar.vrm';
 
   @override
   void initState() {
@@ -86,6 +87,11 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _diagnosticLogs.add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
       if (_diagnosticLogs.length > 100) _diagnosticLogs.removeAt(0);
+
+      // Auto-show diagnostics on first error
+      if (log.contains('ERROR:') && !_showDiagnostics) {
+        _showDiagnostics = true;
+      }
     });
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_logScrollController.hasClients) {
@@ -252,7 +258,10 @@ class _ChatScreenState extends State<ChatScreen> {
     int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
     if (currentIndex == -1) currentIndex = 0;
     int nextIndex = (currentIndex + 1) % _availableAvatars.length;
-    setState(() => _selectedAvatar = _availableAvatars[nextIndex]);
+    setState(() {
+      _selectedAvatar = _availableAvatars[nextIndex];
+      _vrmReady = false;
+    });
     _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
   }
 
@@ -260,7 +269,10 @@ class _ChatScreenState extends State<ChatScreen> {
     int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
     if (currentIndex == -1) currentIndex = 0;
     int prevIndex = (currentIndex - 1 + _availableAvatars.length) % _availableAvatars.length;
-    setState(() => _selectedAvatar = _availableAvatars[prevIndex]);
+    setState(() {
+      _selectedAvatar = _availableAvatars[prevIndex];
+      _vrmReady = false;
+    });
     _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
   }
 
@@ -398,13 +410,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // 3. The 3D VRM Avatar (Full Screen Transparent WebGL)
           Positioned.fill(
-            child: VrmAvatarWidget(
-              key: ValueKey(_selectedAvatar),
-              isThinking: _isThinking,
-              speechIntensity: _speechIntensity,
-              avatarFileName: _selectedAvatar,
-              isCinematic: _isCinematic,
-              onLog: _addDiagnosticLog, // Wire WebView errors to Flutter
+            child: AnimatedOpacity(
+              opacity: _vrmReady ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 500),
+              child: VrmAvatarWidget(
+                key: ValueKey(_selectedAvatar),
+                isThinking: _isThinking,
+                speechIntensity: _speechIntensity,
+                avatarFileName: _selectedAvatar,
+                isCinematic: _isCinematic,
+                onLog: (log) {
+                  if (log == 'READY') {
+                    setState(() => _vrmReady = true);
+                  }
+                  _addDiagnosticLog(log);
+                },
+              ),
             ),
           ),
 
