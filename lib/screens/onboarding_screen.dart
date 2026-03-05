@@ -140,11 +140,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           
           // Also persist a default model for this provider if none selected
           String defaultModel = provider == 'google' ? 'google/gemini-1.5-pro' : 
-                               provider == 'anthropic' ? 'anthropic/claude-3-5-sonnet-latest' :
-                               provider == 'openai' ? 'openai/gpt-4o' : 'groq/llama-3.1-70b-versatile';
+                                provider == 'anthropic' ? 'anthropic/claude-3-5-sonnet-latest' :
+                                provider == 'openai' ? 'openai/gpt-4o' : 'groq/llama-3.1-70b-versatile';
           
           await gatewayProvider.persistModel(defaultModel);
           _writeLog('✅ API key and model ($defaultModel) synced.');
+
+          // World-Class Fix: Manual sync to auth-profiles.json for the 'main' agent
+          _writeLog('\n🔄 Syncing auth-profiles.json for agent "main"...');
+          String baseUrl = provider == 'google' ? 'https://generativelanguage.googleapis.com/v1beta' :
+                           provider == 'anthropic' ? 'https://api.anthropic.com' :
+                           provider == 'openai' ? 'https://api.openai.com/v1' : 'https://api.groq.com/openai/v1';
+
+          // Use a robust Node.js script via runInProot to update the JSON atomically
+          await NativeBridge.runInProot('''
+            export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e '
+              const fs = require("fs");
+              const path = "/root/.openclaw/agents/main/agent/auth-profiles.json";
+              let config = {};
+              try { config = JSON.parse(fs.readFileSync(path, "utf8")); } catch (e) {}
+              config["$provider"] = { apiKey: "$key", baseUrl: "$baseUrl" };
+              fs.writeFileSync(path, JSON.stringify(config, null, 2));
+              console.log("Synced $provider to auth-profiles.json");
+            '
+          ''');
+
+          // Explicitly update primary model
+          _writeLog('\n🎯 Setting primary model to $defaultModel...');
+          await NativeBridge.runInProot(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $defaultModel',
+            timeout: 10000
+          );
           
           // AFTER successful CLI run - exact user-requested logic
           _writeLog('\n🩺 Running configuration doctor...');
