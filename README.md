@@ -352,9 +352,24 @@ skills:
 ```dart
 // In the app settings screen
 await apiKeyDetectionService.setApiKey('claude', 'sk-ant-...');
-await apiKeyDetectionService.setApiKey('openrouter', 'sk-or-...');
+await apiKeyDetectionService.setApiKey('google', 'AIzaSy...');
 await cryptoService.setApiKey('sk-or-...');
 ```
+
+### 🔧 **Adding New Providers (e.g., Google Gemini)**
+
+-   **Run**: `openclaw onboard --gemini-api-key "AIzaSy..."`
+-   This adds to `models.providers.google.apiKey` (plaintext or SecretRef).
+-   **Dedicated Setup**: You can now use the **Gemini** tab in the Onboarding screen for a guided setup.
+-   **DO NOT** add under `secrets.providers` — that's for backends like Vault/1Password.
+-   If error `secrets.providers.google.source: Invalid`, edit `~/.openclaw/openclaw.json` to remove it.
+
+### 🩺 **Troubleshooting Configuration**
+
+If you encounter a `secrets.providers.google.source: Invalid input` error:
+1.  **Auto-Fix**: The app now automatically runs `openclaw doctor --fix` during onboarding.
+2.  **Manual Fix**: Edit `~/.openclaw/openclaw.json` and remove the `google` object from `secrets.providers`. Gemini belongs under `models.providers.google`.
+3.  **Correct CLI**: Use `openclaw onboard --gemini-api-key "YOUR_KEY"` which correctly updates `models.providers`.
 
 ---
 
