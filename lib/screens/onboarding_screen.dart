@@ -145,6 +145,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           
           await gatewayProvider.persistModel(defaultModel);
           _writeLog('✅ API key and model ($defaultModel) synced.');
+          
+          // AFTER successful CLI run - exact user-requested logic
+          _writeLog('\n🩺 Running configuration doctor...');
+          final doctorResult = await NativeBridge.runInProot(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+            timeout: 10000
+          );
+          
+          if (doctorResult.contains('Config invalid')) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Config invalid - run "openclaw doctor --fix" manually')),
+              );
+            }
+            return;
+          }
+          _writeLog('✅ Configuration repaired/validated.');
         }
       }
       
@@ -178,6 +195,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     try {
       _writeLog('\nChecking OpenClaw configuration...');
       
+      // BEFORE starting gateway - exact user-requested validation
+      final validateResult = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --validate',
+        timeout: 5000
+      );
+      
+      if (validateResult.contains('Invalid input')) {
+        _writeLog('\n⚠️ Configuration invalid. Attempting auto-fix...');
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+          timeout: 10000
+        );
+        // Re-check (implicit in subsequent config --show)
+      }
+
       final configCheck = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show',
         timeout: 5000
@@ -505,6 +537,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   IconData _getIconForCommand(String iconType) {
     switch (iconType) {
       case 'api': return Icons.api;
+      case 'smart_toy': return Icons.smart_toy;
+      case 'psychology': return Icons.psychology;
       case 'speed': return Icons.speed;
       case 'settings_ethernet': return Icons.settings_ethernet;
       default: return Icons.code;
