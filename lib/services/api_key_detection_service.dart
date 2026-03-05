@@ -21,9 +21,19 @@ class ApiKeyDetectionService {
   static const String _groqKey = 'groq_api_key';
   static const String _openrouterKey = 'openrouter_api_key';
   
+  String? _tokenCache;
+  DateTime? _lastCheck;
+  
   Future<void> initialize() async {
+    // If checked recently (within 30s), skip redundant probing
+    if (_lastCheck != null && 
+        DateTime.now().difference(_lastCheck!).inSeconds < 30) {
+      return;
+    }
+    
     await _checkApiKeys();
     await _checkGatewayStatus();
+    _lastCheck = DateTime.now();
   }
   
   /// Check if any API keys are configured

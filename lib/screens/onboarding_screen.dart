@@ -107,11 +107,52 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       _writeLog(result);
       
-      if (command.toLowerCase().contains('api-key') || 
-          command.toLowerCase().contains('binding')) {
+      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+      final lowercaseCommand = command.toLowerCase();
+
+      if (lowercaseCommand.contains('api-key')) {
+        _writeLog('\n🔑 Syncing API key to agent profiles...');
+        
+        // Extract key and provider
+        String? key;
+        String? provider;
+        
+        if (lowercaseCommand.contains('--claude-api-key')) {
+          provider = 'anthropic';
+          final match = RegExp(r'--claude-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
+          key = match?.group(1);
+        } else if (lowercaseCommand.contains('--gemini-api-key')) {
+          provider = 'google';
+          final match = RegExp(r'--gemini-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
+          key = match?.group(1);
+        } else if (lowercaseCommand.contains('--openai-api-key')) {
+          provider = 'openai';
+          final match = RegExp(r'--openai-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
+          key = match?.group(1);
+        } else if (lowercaseCommand.contains('--groq-api-key')) {
+          provider = 'groq';
+          final match = RegExp(r'--groq-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
+          key = match?.group(1);
+        }
+
+        if (provider != null && key != null && key.isNotEmpty) {
+          await gatewayProvider.configureApiKey(provider, key);
+          
+          // Also persist a default model for this provider if none selected
+          String defaultModel = provider == 'google' ? 'google/gemini-1.5-pro' : 
+                               provider == 'anthropic' ? 'anthropic/claude-3-5-sonnet-latest' :
+                               provider == 'openai' ? 'openai/gpt-4o' : 'groq/llama-3.1-70b-versatile';
+          
+          await gatewayProvider.persistModel(defaultModel);
+          _writeLog('✅ API key and model ($defaultModel) synced.');
+        }
+      }
+      
+      if (lowercaseCommand.contains('api-key') || 
+          lowercaseCommand.contains('binding')) {
         _writeLog('\n✓ Configuration command executed');
         
-        if (command.toLowerCase().contains('binding')) {
+        if (lowercaseCommand.contains('binding')) {
           final bindingMatch = RegExp(r'--binding\s+([^\s]+)').firstMatch(command);
           if (bindingMatch != null) {
             final bindingAddress = bindingMatch.group(1);
