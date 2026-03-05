@@ -34,6 +34,13 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onWebResourceError: (WebResourceError error) {
+            widget.onLog?.call('WebView Resource Error: ${error.description} (code ${error.errorCode})');
+          },
+        ),
+      )
       ..addJavaScriptChannel(
         'ClawaBridge',
         onMessageReceived: (JavaScriptMessage message) {
@@ -49,13 +56,6 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
             widget.onLog!(message.message);
           }
         },
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onWebResourceError: (WebResourceError error) {
-            widget.onLog?.call('WebView Resource Error: ${error.description} (code ${error.errorCode})');
-          },
-        ),
       )
       ..addJavaScriptChannel(
         'ConsoleLog',
