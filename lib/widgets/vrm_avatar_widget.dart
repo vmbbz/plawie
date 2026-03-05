@@ -9,6 +9,7 @@ class VrmAvatarWidget extends StatefulWidget {
   final double speechIntensity;
   final String avatarFileName;
   final bool isCinematic;
+  final double glowIntensity;
   final Function(String)? onLog;
 
   const VrmAvatarWidget({
@@ -17,6 +18,7 @@ class VrmAvatarWidget extends StatefulWidget {
     this.speechIntensity = 0.0,
     this.avatarFileName = 'default_avatar.vrm',
     this.isCinematic = false,
+    this.glowIntensity = 0.0,
     this.onLog,
   });
 
@@ -93,6 +95,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       if (oldWidget.isThinking != widget.isThinking ||
           oldWidget.speechIntensity != widget.speechIntensity ||
           oldWidget.isCinematic != widget.isCinematic ||
+          oldWidget.glowIntensity != widget.glowIntensity ||
           oldWidget.avatarFileName != widget.avatarFileName) {
         if (oldWidget.avatarFileName != widget.avatarFileName) {
           _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
@@ -107,6 +110,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       if (window.setThinking) window.setThinking(${widget.isThinking});
       if (window.setSpeechIntensity) window.setSpeechIntensity(${widget.speechIntensity});
       if (window.setCinematicMode) window.setCinematicMode(${widget.isCinematic});
+      if (window.setGlowIntensity) window.setGlowIntensity(${widget.glowIntensity});
     ''');
   }
 
