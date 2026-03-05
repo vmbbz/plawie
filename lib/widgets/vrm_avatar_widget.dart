@@ -69,7 +69,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       window.addEventListener('error', (e) => {
         ConsoleLog.postMessage(`ERROR: \${e.message} @ \${e.filename}:\${e.lineno}:\${e.colno}`);
       });
-      const origLog = console.log; const origErr = console.error;
+      const origLog = console.log;
+      const origErr = console.error;
       console.log = (...a) => { ConsoleLog.postMessage(a.map(x=>String(x)).join(' ')); origLog(...a); };
       console.error = (...a) => { ConsoleLog.postMessage('JS ERROR: '+a.map(x=>String(x)).join(' ')); origErr(...a); };
     ''');
