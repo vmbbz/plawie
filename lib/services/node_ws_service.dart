@@ -54,7 +54,7 @@ class NodeWsService {
             final frame = NodeFrame.decode(data as String);
             
             // Handle handshake
-            if (frame.type == 'hello-ok' || (frame.data?['type'] == 'hello-ok')) {
+            if (frame.type == 'hello-ok' || (frame.payload?['type'] == 'hello-ok')) {
               if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
                 _handshakeCompleter!.complete();
               }

@@ -399,6 +399,7 @@ class _ChatScreenState extends State<ChatScreen> {
           // 3. The 3D VRM Avatar (Full Screen Transparent WebGL)
           Positioned.fill(
             child: VrmAvatarWidget(
+              key: ValueKey(_selectedAvatar),
               isThinking: _isThinking,
               speechIntensity: _speechIntensity,
               avatarFileName: _selectedAvatar,
@@ -479,12 +480,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               final logLine = _diagnosticLogs[index];
                               // Color-code by prefix for easier VRM / gateway triage
                               Color lineColor;
-                              if (logLine.contains('] ERROR:') || logLine.contains('] API Error')) {
+                              if (logLine.contains('ERROR:')) {
                                 lineColor = Colors.redAccent;
-                              } else if (logLine.contains('] LOG:')) {
+                              } else if (logLine.contains('LOG:')) {
                                 lineColor = Colors.cyanAccent;
-                              } else if (logLine.contains('] PROGRESS:')) {
+                              } else if (logLine.contains('PROGRESS:')) {
                                 lineColor = Colors.yellowAccent;
+                              } else if (logLine.contains('JS:')) {
+                                lineColor = Colors.blueAccent;
                               } else {
                                 lineColor = Colors.greenAccent;
                               }
