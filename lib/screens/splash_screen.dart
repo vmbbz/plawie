@@ -130,7 +130,7 @@ class _SplashScreenState extends State<SplashScreen>
         // If bootstrap is complete, go to onboarding; otherwise go to setup
         Widget targetScreen;
         if (bootstrapOk) {
-          targetScreen = const SetupFlowScreen();
+          targetScreen = const OnboardingScreen(isFirstRun: true);
         } else {
           targetScreen = const SetupWizardScreen();
         }
