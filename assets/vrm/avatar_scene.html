@@ -214,6 +214,12 @@
             targetCameraZ = active ? 1.0 : 2.2;
         };
 
+        window.setGlowIntensity = (intensity) => {
+            if (diagnosticCube) {
+                diagnosticCube.material.emissiveIntensity = 0.5 + (intensity * 2.0);
+            }
+        };
+
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
