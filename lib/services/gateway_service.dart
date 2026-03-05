@@ -120,26 +120,48 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     }
   }
 
+  /// Persist the selected model to openclaw.json
+  Future<void> persistModel(String model) async {
+    final script = '''
+const fs = require("fs");
+const p = "/root/.openclaw/openclaw.json";
+let c = {}; try { c = JSON.parse(fs.readFileSync(p,"utf8")); } catch {}
+c.agents = c.agents || {}; c.agents.defaults = c.agents.defaults || {};
+c.agents.defaults.model = { ...(c.agents.defaults.model || {}), primary: "$model" };
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+''';
+    await NativeBridge.runInProot(
+      'node -e ${_shellEscape(script)}',
+      timeout: 15,
+    );
+  }
+
+  /// Normalize provider names to OpenClaw internal identifiers.
+  String _normalizeProvider(String provider) {
+    final p = provider.toLowerCase();
+    if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
+    if (p.contains('openai')) return 'openai';
+    if (p.contains('gemini') || p.contains('google')) return 'google';
+    if (p.contains('groq')) return 'groq';
+    return p;
+  }
+
+  /// Get the standard environment variable name for a provider's API key.
+  String _getEnvKeyForProvider(String provider) {
+    switch (_normalizeProvider(provider)) {
+      case 'anthropic': return 'ANTHROPIC_API_KEY';
+      case 'openai': return 'OPENAI_API_KEY';
+      case 'google': return 'GOOGLE_API_KEY';
+      case 'groq': return 'GROQ_API_KEY';
+      default: return '';
+    }
+  }
+
   /// Write an API key directly to openclaw.json and sync with agent auth stores.
   Future<void> configureApiKey(String provider, String key) async {
-    // Map common names to OpenClaw provider names
-    String openClawProvider = provider.toLowerCase();
-    String envKey = '';
+    final openClawProvider = _normalizeProvider(provider);
+    final envKey = _getEnvKeyForProvider(provider);
     
-    if (openClawProvider.contains('claude') || openClawProvider.contains('anthropic')) {
-      openClawProvider = 'anthropic';
-      envKey = 'ANTHROPIC_API_KEY';
-    } else if (openClawProvider.contains('openai')) {
-      openClawProvider = 'openai';
-      envKey = 'OPENAI_API_KEY';
-    } else if (openClawProvider.contains('gemini')) {
-      openClawProvider = 'google';
-      envKey = 'GOOGLE_API_KEY';
-    } else if (openClawProvider.contains('groq')) {
-      openClawProvider = 'groq';
-      envKey = 'GROQ_API_KEY';
-    }
-
     final script = '''
 const fs = require("fs");
 const path = require("path");
@@ -169,14 +191,15 @@ updateJson("/root/.openclaw/openclaw.json", (c) => {
   // Also store by provider name for common usage
   if (!c.secrets) c.secrets = {};
   if (!c.secrets.providers) c.secrets.providers = {};
-  c.secrets.providers["$openClawProvider"] = "$key";
+  c.secrets.providers["$openClawProvider"] = { ...(c.secrets.providers["$openClawProvider"] || {}), apiKey: "$key" };
 });
 
-// 2. Update agent auth-profiles.json
+// 2. Update agent auth-profiles.json for the 'main' agent
 const agentAuthPath = "/root/.openclaw/agents/main/agent/auth-profiles.json";
 updateJson(agentAuthPath, (c) => {
   if (!c.providers) c.providers = {};
-  c.providers["$openClawProvider"] = { apiKey: "$key" };
+  // Per fixes.md, ensure we preserve existing provider metadata (additive update)
+  c.providers["$openClawProvider"] = { ...(c.providers["$openClawProvider"] || {}), apiKey: "$key" };
 });
 ''';
     await NativeBridge.runInProot(
@@ -252,15 +275,24 @@ updateJson(agentAuthPath, (c) => {
     return _state.dashboardUrl;
   }
 
+  String? _cachedToken;
+  DateTime? _lastTokenFetch;
+
   /// Use Node.js to read the token directly from the openclaw.json config file.
-  Future<String?> retrieveTokenFromConfig() async {
+  Future<String?> retrieveTokenFromConfig({bool force = false}) async {
+    // Use cache if available and fresh (under 5 mins)
+    if (!force && _cachedToken != null && _lastTokenFetch != null &&
+        DateTime.now().difference(_lastTokenFetch!).inMinutes < 5) {
+      return _cachedToken;
+    }
+
     const script = '''
 const fs = require("fs");
 const p = "/root/.openclaw/openclaw.json";
 try {
   const c = JSON.parse(fs.readFileSync(p, "utf8"));
   if (c.gateway && c.gateway.auth && c.gateway.auth.token) {
-    console.log(c.gateway.auth.token);
+    process.stdout.write(c.gateway.auth.token);
   }
 } catch (e) {}
 ''';
@@ -269,7 +301,13 @@ try {
         'node -e ${_shellEscape(script)}',
         timeout: 5,
       );
-      return token.trim();
+      final trimmedToken = token.trim();
+      if (trimmedToken.isNotEmpty) {
+        _cachedToken = trimmedToken;
+        _lastTokenFetch = DateTime.now();
+        return trimmedToken;
+      }
+      return null;
     } catch (_) {
       return null;
     }

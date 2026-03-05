@@ -35,23 +35,35 @@ class NodeWsService {
     await _doConnect();
   }
 
+  Completer<void>? _handshakeCompleter;
+
   Future<void> _doConnect() async {
     if (_url == null) return;
 
     try {
       _channel = WebSocketChannel.connect(Uri.parse(_url!));
       await _channel!.ready;
-      _connected = true;
-      _reconnectAttempt = 0;
+      
+      _handshakeCompleter = Completer<void>();
       _lastActivity = DateTime.now();
-
-      _startPing();
 
       _subscription = _channel!.stream.listen(
         (data) {
           _lastActivity = DateTime.now();
           try {
             final frame = NodeFrame.decode(data as String);
+            
+            // Handle handshake
+            if (frame.type == 'hello-ok' || (frame.data?['type'] == 'hello-ok')) {
+              if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+                _handshakeCompleter!.complete();
+              }
+              _connected = true;
+              _reconnectAttempt = 0;
+              _startPing();
+              return;
+            }
+
             // Match pending request/response
             if (frame.isResponse && frame.id != null) {
               final completer = _pendingRequests.remove(frame.id);
@@ -66,8 +78,25 @@ class NodeWsService {
         onError: (_) => _handleDisconnect(),
         onDone: _handleDisconnect,
       );
+
+      // Wait for hello-ok with 5s timeout
+      await _handshakeCompleter!.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('WebSocket handshake (hello-ok) timed out'),
+      );
     } catch (_) {
       _handleDisconnect();
+      rethrow;
+    }
+  }
+
+  /// Wait for the connection to be fully ready (including handshake).
+  Future<void> waitForReady() async {
+    if (_connected) return;
+    if (_handshakeCompleter != null) {
+      await _handshakeCompleter!.future;
+    } else {
+      throw StateError('WebSocket not connecting');
     }
   }
 
@@ -121,7 +150,8 @@ class NodeWsService {
 
   /// Send a request frame and wait for the matching response.
   Future<NodeFrame> sendRequest(NodeFrame request, {Duration? timeout}) async {
-    if (!_connected || _channel == null) {
+    await waitForReady();
+    if (_channel == null) {
       throw StateError('WebSocket not connected');
     }
     final completer = Completer<NodeFrame>();
@@ -136,9 +166,14 @@ class NodeWsService {
   }
 
   /// Send a frame without waiting for response.
-  void send(NodeFrame frame) {
-    if (_connected && _channel != null) {
-      _channel!.sink.add(frame.encode());
+  Future<void> send(NodeFrame frame) async {
+    try {
+      await waitForReady();
+      if (_channel != null) {
+        _channel!.sink.add(frame.encode());
+      }
+    } catch (_) {
+      // Non-fatal for fire-and-forget send
     }
   }
 

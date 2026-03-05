@@ -57,6 +57,11 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.fetchAuthenticatedDashboardUrl();
   }
 
+  /// Persist the selected model to openclaw.json.
+  Future<void> persistModel(String model) async {
+    await _gatewayService.persistModel(model);
+  }
+
   /// Force a re-fetch of the authenticated Dashboard URL.
   Future<String?> refreshDashboardUrl() {
     return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
