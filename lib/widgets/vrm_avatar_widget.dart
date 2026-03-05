@@ -15,7 +15,7 @@ class VrmAvatarWidget extends StatefulWidget {
     super.key,
     this.isThinking = false,
     this.speechIntensity = 0.0,
-    this.avatarFileName = 'gemini.vrm',
+    this.avatarFileName = 'default_avatar.vrm',
     this.isCinematic = false,
     this.onLog,
   });
@@ -62,7 +62,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
               _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
               _syncState();
             }
-          } else if (widget.onLog != null) {
+          }
+          // Propagate all logs (including READY) to parent
+          if (widget.onLog != null) {
             widget.onLog!(message.message);
           }
         },
