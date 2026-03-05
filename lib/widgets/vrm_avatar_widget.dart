@@ -34,25 +34,13 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
-      ..setNavigationDelegate(NavigationDelegate(
-        onWebResourceError: (WebResourceError error) {
-          widget.onLog?.call('WebView Error: ${error.description} (code ${error.errorCode})');
-        },
-        onPageFinished: (String url) {
-          // Force console redirect in JS after the page is loaded
-          _controller.runJavaScript('''
-            window.addEventListener('error', e => {
-              if (window.ConsoleLog) ConsoleLog.postMessage(`ERROR: \${e.message} @ \${e.filename}:\${e.lineno}`);
-            });
-            console.log = (...args) => {
-              if (window.ConsoleLog) ConsoleLog.postMessage(args.join(' '));
-            };
-            console.error = (...args) => {
-              if (window.ConsoleLog) ConsoleLog.postMessage('ERROR: ' + args.join(' '));
-            };
-          ''');
-        },
-      ))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onWebResourceError: (WebResourceError error) {
+            widget.onLog?.call('WebView Resource Error: ${error.description} (code ${error.errorCode})');
+          },
+        ),
+      )
       ..addJavaScriptChannel(
         'ClawaBridge',
         onMessageReceived: (JavaScriptMessage message) {
@@ -72,10 +60,26 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       ..addJavaScriptChannel(
         'ConsoleLog',
         onMessageReceived: (JavaScriptMessage message) {
-          widget.onLog?.call('JS: ${message.message}');
+          widget.onLog?.call('JS → ${message.message}');
         },
       )
       ..loadFlutterAsset('assets/vrm/avatar_scene.html');
+
+    _controller.runJavaScript('''
+      window.addEventListener('error', (e) => {
+        ConsoleLog.postMessage(`ERROR: \${e.message} @ \${e.filename}:\${e.lineno}:\${e.colno}`);
+      });
+      const originalConsoleLog = console.log;
+      const originalConsoleError = console.error;
+      console.log = (...args) => {
+        ConsoleLog.postMessage(args.map(a => String(a)).join(' '));
+        originalConsoleLog(...args);
+      };
+      console.error = (...args) => {
+        ConsoleLog.postMessage('JS ERROR: ' + args.map(a => String(a)).join(' '));
+        originalConsoleError(...args);
+      };
+    ''');
       
     // Relax Android specific WebView file load restrictions to allow loading assets natively.
     if (_controller.platform is AndroidWebViewController) {
