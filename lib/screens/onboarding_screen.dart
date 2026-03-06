@@ -24,33 +24,53 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   final List<String> _logs = [];
   final ScrollController _scrollController = ScrollController();
 
-  final List<Map<String, String>> _commands = [
+  final List<Map<String, dynamic>> _providers = [
     {
-      'command': 'openclaw onboard --claude-api-key "sk-ant-xxx"',
-      'description': 'Configure Claude API key',
-      'icon': 'api',
-    },
-    {
-      'command': 'openclaw onboard --gemini-api-key "AIzaSy..."',
-      'description': 'Configure Gemini API key',
+      'id': 'google',
+      'name': 'Google Gemini',
       'icon': 'smart_toy',
+      'models': [
+        {'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'},
+        {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro'},
+        {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash'},
+      ],
+      'defaultModel': 'gemini-3.1-pro-preview',
     },
     {
-      'command': 'openclaw onboard --openai-api-key "sk-proj..."',
-      'description': 'Configure OpenAI API key',
+      'id': 'anthropic',
+      'name': 'Anthropic Claude',
+      'icon': 'api',
+      'models': [
+        {'id': 'claude-opus-4.6', 'name': 'Claude Opus 4.6'},
+        {'id': 'claude-sonnet-4.6', 'name': 'Claude Sonnet 4.6'},
+        {'id': 'claude-3-5-sonnet-latest', 'name': 'Claude 3.5 Sonnet'},
+      ],
+      'defaultModel': 'claude-opus-4.6',
+    },
+    {
+      'id': 'openai',
+      'name': 'OpenAI',
       'icon': 'psychology',
+      'models': [
+        {'id': 'gpt-4o', 'name': 'GPT-4o'},
+        {'id': 'gpt-o1', 'name': 'GPT o1'},
+      ],
+      'defaultModel': 'gpt-4o',
     },
     {
-      'command': 'openclaw onboard --groq-api-key "gsk_xxx"',
-      'description': 'Configure Groq API key',
+      'id': 'groq',
+      'name': 'Groq',
       'icon': 'speed',
-    },
-    {
-      'command': 'openclaw onboard --binding 127.0.0.1',
-      'description': 'Set local binding (recommended)',
-      'icon': 'settings_ethernet',
+      'models': [
+        {'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'},
+        {'id': 'llama-3.1-70b-versatile', 'name': 'Llama 3.1 70B'},
+      ],
+      'defaultModel': 'llama-3.1-405b',
     },
   ];
+
+  final Map<String, TextEditingController> _apiKeyControllers = {};
+  final Map<String, String> _selectedModels = {};
 
   @override
   void initState() {
@@ -136,58 +156,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
         }
 
         if (provider != null && key != null && key.isNotEmpty) {
-          await gatewayProvider.configureApiKey(provider, key);
-          
-          // Also persist a default model for this provider if none selected
-          String defaultModel = provider == 'google' ? 'google/gemini-1.5-pro' : 
-                                provider == 'anthropic' ? 'anthropic/claude-3-5-sonnet-latest' :
-                                provider == 'openai' ? 'openai/gpt-4o' : 'groq/llama-3.1-70b-versatile';
-          
-          await gatewayProvider.persistModel(defaultModel);
-          _writeLog('✅ API key and model ($defaultModel) synced.');
-
-          // World-Class Fix: Manual sync to auth-profiles.json for the 'main' agent
-          _writeLog('\n🔄 Syncing auth-profiles.json for agent "main"...');
-          String baseUrl = provider == 'google' ? 'https://generativelanguage.googleapis.com/v1beta' :
-                           provider == 'anthropic' ? 'https://api.anthropic.com' :
-                           provider == 'openai' ? 'https://api.openai.com/v1' : 'https://api.groq.com/openai/v1';
-
-          // Use a robust Node.js script via runInProot to update the JSON atomically
-          await NativeBridge.runInProot('''
-            export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e '
-              const fs = require("fs");
-              const path = "/root/.openclaw/agents/main/agent/auth-profiles.json";
-              let config = {};
-              try { config = JSON.parse(fs.readFileSync(path, "utf8")); } catch (e) {}
-              config["$provider"] = { apiKey: "$key", baseUrl: "$baseUrl" };
-              fs.writeFileSync(path, JSON.stringify(config, null, 2));
-              console.log("Synced $provider to auth-profiles.json");
-            '
-          ''');
-
-          // Explicitly update primary model
-          _writeLog('\n🎯 Setting primary model to $defaultModel...');
-          await NativeBridge.runInProot(
-            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $defaultModel',
-            timeout: 10000
-          );
-          
-          // AFTER successful CLI run - exact user-requested logic
-          _writeLog('\n🩺 Running configuration doctor...');
-          final doctorResult = await NativeBridge.runInProot(
-            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
-            timeout: 10000
-          );
-          
-          if (doctorResult.contains('Config invalid')) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Config invalid - run "openclaw doctor --fix" manually')),
-              );
-            }
-            return;
-          }
-          _writeLog('✅ Configuration repaired/validated.');
+          await _processProviderSetup(provider, key);
         }
       }
       
@@ -223,17 +192,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       // BEFORE starting gateway - exact user-requested validation
       final validateResult = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --validate',
-        timeout: 5000
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --validate || openclaw doctor --fix',
+        timeout: 10000
       );
       
-      if (validateResult.contains('Invalid input')) {
-        _writeLog('\n⚠️ Configuration invalid. Attempting auto-fix...');
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
-          timeout: 10000
-        );
-        // Re-check (implicit in subsequent config --show)
+      if (validateResult.contains('Invalid')) {
+        _writeLog('\n⚠️ Configuration auto-fixed. Start may fail.');
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Config auto-fixed – please restart if issues persist')),
+           );
+        }
       }
 
       final configCheck = await NativeBridge.runInProot(
@@ -314,7 +283,84 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     _commandController.dispose();
     _tabController.dispose();
     _scrollController.dispose();
+    for (var c in _apiKeyControllers.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  Future<void> _processProviderSetup(String provider, String key, {String? modelId, String? modelName}) async {
+    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+    
+    _writeLog('\n🔑 Syncing $provider API key to agent profiles...');
+    await gatewayProvider.configureApiKey(provider, key);
+
+    // Dynamic model fallback
+    if (modelId == null || modelName == null) {
+      switch (provider.toLowerCase()) {
+        case 'google':
+          modelId = 'gemini-3.1-pro-preview';
+          modelName = 'Gemini 3.1 Pro Preview';
+          break;
+        case 'anthropic':
+          modelId = 'claude-opus-4.6';
+          modelName = 'Claude Opus 4.6';
+          break;
+        case 'openai':
+          modelId = 'gpt-4o';
+          modelName = 'GPT-4o';
+          break;
+        case 'groq':
+          modelId = 'llama-3.1-405b';
+          modelName = 'Llama 3.1 405B';
+          break;
+        case 'openrouter':
+          modelId = 'anthropic/claude-sonnet-4.5';
+          modelName = 'Claude Sonnet 4.5 via OpenRouter';
+          break;
+        default:
+          modelId = 'default';
+          modelName = 'Default Model';
+      }
+    }
+
+    _writeLog('\n🔄 Syncing auth-profiles.json for agent "main"...');
+    String baseUrl = provider == 'google' ? 'https://generativelanguage.googleapis.com/v1beta' :
+                     provider == 'anthropic' ? 'https://api.anthropic.com' :
+                     provider == 'openai' ? 'https://api.openai.com/v1' : 
+                     provider == 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.groq.com/openai/v1';
+
+    await NativeBridge.runInProot('''
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e '
+        const fs = require("fs");
+        const path = "/root/.openclaw/agents/main/agent/auth-profiles.json";
+        let config = {};
+        try { config = JSON.parse(fs.readFileSync(path, "utf8")); } catch (e) {}
+        config["$provider"] = { apiKey: "$key", baseUrl: "$baseUrl" };
+        fs.writeFileSync(path, JSON.stringify(config, null, 2));
+        console.log("Synced $provider to auth-profiles.json");
+      '
+    ''');
+
+    _writeLog('\n📦 Adding specific model and setting as primary...');
+    // The exact sequence requested by the user
+    await NativeBridge.runInProot('''
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw models add --provider $provider --id $modelId --name "$modelName"
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $provider/$modelId
+    ''', timeout: 15000);
+    
+    _writeLog('✅ API key and model ($modelName) synced.');
+  }
+
+  Future<void> _executeProviderSetupUI(String provider, String key, String modelId, String modelName) async {
+     try {
+       await _processProviderSetup(provider, key, modelId: modelId, modelName: modelName);
+       _writeLog('\n🚀 Starting OpenClaw services...');
+       await _startOpenClawServices();
+     } catch (e) {
+       _writeLog('\n✗ Setup failed: $e');
+     }
   }
 
   Future<void> _goToDashboard() async {
@@ -481,17 +527,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           ),
           const SizedBox(height: 16),
           
-          ..._commands.map((cmd) => _buildCommandCard(cmd)),
+          ..._providers.map((p) => _buildProviderCard(p)),
           
           const SizedBox(height: 24),
-          
+          const Divider(),
+          const SizedBox(height: 16),
+          Text(
+            'Advanced CLI Command:',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _commandController,
                   decoration: InputDecoration(
-                    hintText: 'Or type your command here...',
+                    hintText: 'e.g., openclaw onboard --binding 127.0.0.1',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
@@ -521,41 +575,82 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     );
   }
 
-  Widget _buildCommandCard(Map<String, String> command) {
+  Widget _buildProviderCard(Map<String, dynamic> provider) {
+    final String id = provider['id'];
+    _apiKeyControllers.putIfAbsent(id, () => TextEditingController());
+    _selectedModels.putIfAbsent(id, () => provider['defaultModel']);
+
+    final models = provider['models'] as List<Map<String, String>>;
+    final theme = Theme.of(context);
+    
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
-      child: ListTile(
-        leading: Icon(
-          _getIconForCommand(command['icon']!),
-          color: Theme.of(context).colorScheme.primary,
-          size: 20,
-        ),
-        title: Text(
-          command['description']!,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_getIconForCommand(provider['icon']), color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(provider['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
           ),
-        ),
-        subtitle: Text(
-          command['command']!,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            fontFamily: 'monospace',
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          const SizedBox(height: 16),
+          TextField(
+            controller: _apiKeyControllers[id],
+            decoration: InputDecoration(
+              hintText: 'Enter API Key (sk-...)',
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            obscureText: true,
           ),
-        ),
-        trailing: IconButton(
-          icon: Icon(Icons.copy, color: Theme.of(context).colorScheme.primary, size: 20),
-          onPressed: () => _copyCommand(command['command']!),
-          tooltip: 'Copy command',
-        ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _selectedModels[id],
+            decoration: InputDecoration(
+              labelText: 'Starting Model',
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            items: models.map((m) => DropdownMenuItem(
+              value: m['id'],
+              child: Text(m['name']!),
+            )).toList(),
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedModels[id] = val);
+            },
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () {
+                final key = _apiKeyControllers[id]?.text.trim();
+                if (key == null || key.isEmpty) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an API key')));
+                   return;
+                }
+                final modelId = _selectedModels[id];
+                final modelName = models.firstWhere((m) => m['id'] == modelId)['name'];
+                
+                // Switch to terminal tab and configure
+                _tabController.animateTo(0);
+                _executeProviderSetupUI(id, key, modelId!, modelName!);
+              },
+              child: const Text('Configure & Connect'),
+            ),
+          ),
+        ],
       ),
     );
   }
