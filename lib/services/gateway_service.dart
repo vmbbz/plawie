@@ -218,6 +218,44 @@ updateJson(agentAuthPath, (c) => {
       'node -e ${_shellEscape(script)}',
       timeout: 15,
     );
+
+    // World-Class Fix: Ensure the models array exists for this provider
+    await _ensureModelsArray(provider);
+  }
+
+  /// Ensures every provider has the required models array (fixes the exact error)
+  Future<void> _ensureModelsArray(String provider) async {
+    final openClawProvider = _normalizeProvider(provider);
+
+    String modelId;
+    String modelName;
+
+    switch (openClawProvider) {
+      case 'google':
+        modelId = 'gemini-3.1-pro-preview';
+        modelName = 'Gemini 3.1 Pro Preview';
+        break;
+      case 'anthropic':
+        modelId = 'claude-opus-4.6';
+        modelName = 'Claude Opus 4.6';
+        break;
+      case 'groq':
+        modelId = 'llama-3.1-405b';
+        modelName = 'Llama 3.1 405B';
+        break;
+      case 'openai':
+        modelId = 'gpt-4o';
+        modelName = 'GPT-4o';
+        break;
+      default:
+        modelId = 'default';
+        modelName = 'Default Model';
+    }
+
+    await NativeBridge.runInProot('''
+      openclaw models add --provider $openClawProvider --id $modelId --name "$modelName" || true
+      openclaw doctor --fix
+    ''', timeout: 15);
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
