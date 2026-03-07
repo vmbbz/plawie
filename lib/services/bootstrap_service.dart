@@ -139,10 +139,8 @@ class BootstrapService {
       // ---------------------------------------------------------
       _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
 
-      await NativeBridge.runInProot('''
-        mkdir -p /root/.openclaw
-        cp /root/flutter_assets/assets/proot/network-shim.js /root/.openclaw/network-shim.js
-      ''');
+      // Pre-create directory for shims
+      await NativeBridge.runInProot('mkdir -p /root/.openclaw');
 
       try {
         await NativeBridge.runInProot(
