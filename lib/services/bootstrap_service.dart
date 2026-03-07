@@ -139,12 +139,13 @@ class BootstrapService {
       // ---------------------------------------------------------
       _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
 
-      // Pre-create directory for shims
-      await NativeBridge.runInProot('mkdir -p /root/.openclaw');
+      await NativeBridge.runInProot('''
+        mkdir -p /root/.openclaw
+      ''');
 
       try {
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && ' // Dual-shim verified.
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'chmod -R 755 /usr/bin /usr/sbin /bin /sbin /usr/local/bin /usr/local/sbin 2>/dev/null; '
           'chmod -R +x /usr/lib/apt/ /usr/lib/dpkg/ /usr/libexec/ /var/lib/dpkg/info/ /usr/share/debconf/ 2>/dev/null; '
           'chmod 755 /lib/*/ld-linux-*.so* /usr/lib/*/ld-linux-*.so* 2>/dev/null; '
@@ -159,7 +160,7 @@ class BootstrapService {
       
       // Use robust apt-get commands to avoid interactive prompts breaking the process
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
         'export DEBIAN_FRONTEND=noninteractive && '
         'apt-get update -y && '
         'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
@@ -200,19 +201,19 @@ class BootstrapService {
       const wrapper = '/root/.openclaw/node-wrapper.js';
       const nodeRun = 'node $wrapper';
       const npmCli = '/usr/local/lib/node_modules/npm/bin/npm-cli.js';
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node --version && $nodeRun $npmCli --version');
+      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && $nodeRun $npmCli --version');
 
       // ---------------------------------------------------------
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Installing OpenClaw (this may take a few minutes)...', 80);
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && npm install -g openclaw', timeout: 1800);
+      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && npm install -g openclaw', timeout: 1800);
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.7, 'Creating bin wrappers...', 85);
       await NativeBridge.createBinWrappers('openclaw');
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw --version || echo openclaw_installed');
+      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
 
       // ---------------------------------------------------------
       // Step 5: Install Native Android Skills

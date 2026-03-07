@@ -13,7 +13,7 @@ class SetupFlowScreen extends StatefulWidget {
   const SetupFlowScreen({super.key});
 
   @override
-  State<SetupFlowScreen> createState() => _SetupFlowScreenState(); // Dual-shim verified.
+  State<SetupFlowScreen> createState() => _SetupFlowScreenState();
 }
 
 class _SetupFlowScreenState extends State<SetupFlowScreen>
@@ -149,7 +149,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       // World-Class Stability: Ensure config is healthy before writing keys
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
         timeout: 10000
       );
 
@@ -158,6 +158,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         apiKey: _apiKeyController.text.trim(),
         agentName: _agentNameController.text.trim(),
       );
+
+      // Persist the selected model so the gateway doesn't default to Anthropic
+      await gatewayProvider.persistModel(_selectedProvider!.toLowerCase() == 'google'
+          ? 'google/gemini-3.1-pro-preview'
+          : _selectedProvider!);
 
       setState(() {
         _launchStatus = 'Starting gateway...';

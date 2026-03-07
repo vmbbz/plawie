@@ -13,7 +13,7 @@ class GatewayService {
   StreamSubscription? _logSubscription;
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
-  static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+'); // Dual-shim verified.
+  static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
 
   /// Strip ANSI, box-drawing chars, and whitespace to reconstruct URLs
@@ -108,22 +108,11 @@ c.gateway.nodes.denyCommands = [];
 c.gateway.nodes.allowCommands = $allowJson;
 c.gateway.mode = "local";
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
-
-// Inject network-shim.js to fix uv_interface_addresses EACCES on Android 11+
-const shimCode = `const os = require('os');
-const originalNetworkInterfaces = os.networkInterfaces;
-os.networkInterfaces = function () {
-  return {
-    lo: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', mac: '00:00:00:00:00:00', internal: true, cidr: '127.0.0.1/8' }],
-    eth0: [{ address: '192.168.1.100', netmask: '255.255.255.0', family: 'IPv4', mac: '00:11:22:33:44:55', internal: false, cidr: '192.168.1.100/24' }]
-  };
-};`;
-fs.writeFileSync("/root/.openclaw/network-shim.js", shimCode);
 ''';
 
     try {
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
         timeout: 15,
       );
     } catch (_) {
@@ -142,7 +131,7 @@ c.agents.defaults.model = { ...(c.agents.defaults.model || {}), primary: "$model
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
     await NativeBridge.runInProot(
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
       timeout: 15,
     );
   }
@@ -226,7 +215,7 @@ updateJson(agentAuthPath, (c) => {
 ''';
 
     await NativeBridge.runInProot(
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
       timeout: 15,
     );
   }
@@ -272,7 +261,7 @@ updateJson(agentAuthPath, (c) => {
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw dashboard --no-open',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);
@@ -324,7 +313,7 @@ try {
 ''';
     try {
       final token = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
         timeout: 5,
       );
       final trimmedToken = token.trim();
@@ -361,13 +350,16 @@ try {
       await NativeBridge.acquirePartialWakeLock();
       
       await _configureGateway();
+      // Android 14+ Foreground Service stability: longer delay to ensure app is in foreground
+      await Future.delayed(const Duration(milliseconds: 1200));
+
       final success = await NativeBridge.startGateway();
       if (!success) {
         _updateState(_state.copyWith(
           logs: [..._state.logs, '[WARN] Native start failed, attempting doctor fix...'],
         ));
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix',
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
           timeout: 10000
         );
         final retrySuccess = await NativeBridge.startGateway();
