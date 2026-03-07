@@ -147,6 +147,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     try {
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
 
+      // World-Class Stability: Ensure config is healthy before writing keys
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix',
+        timeout: 10000
+      );
+
       await gatewayProvider.configureAndStart(
         provider: _selectedProvider!,
         apiKey: _apiKeyController.text.trim(),
