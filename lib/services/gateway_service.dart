@@ -456,16 +456,16 @@ try {
   Future<void> probeGateway() async {
     try {
       final probe = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show'
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw config --show'
       );
       if (probe.contains('models: Invalid input')) {
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw models add --provider google --id gemini-3.1-pro-preview --name "Gemini 3.1 Pro Preview"'
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw models add --provider google --id gemini-3.1-pro-preview --name "Gemini 3.1 Pro Preview"'
         );
       }
       if (probe.contains('Invalid config') || probe.contains('Invalid input')) {
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix'
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix'
         );
         // Retry probe or log success
       }
