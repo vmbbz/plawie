@@ -108,6 +108,17 @@ c.gateway.nodes.denyCommands = [];
 c.gateway.nodes.allowCommands = $allowJson;
 c.gateway.mode = "local";
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
+
+// Inject network-shim.js to fix uv_interface_addresses EACCES on Android 11+
+const shimCode = `const os = require('os');
+const originalNetworkInterfaces = os.networkInterfaces;
+os.networkInterfaces = function () {
+  return {
+    lo: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', mac: '00:00:00:00:00:00', internal: true, cidr: '127.0.0.1/8' }],
+    eth0: [{ address: '192.168.1.100', netmask: '255.255.255.0', family: 'IPv4', mac: '00:11:22:33:44:55', internal: false, cidr: '192.168.1.100/24' }]
+  };
+};`;
+fs.writeFileSync("/root/.openclaw/network-shim.js", shimCode);
 ''';
 
     try {
@@ -260,7 +271,10 @@ updateJson(agentAuthPath, (c) => {
 
     // STEP 2: Fallback to CLI dashboard probe if config read fails or token is missing.
     try {
-      final output = await NativeBridge.runInProot('openclaw dashboard --no-open', timeout: 10);
+      final output = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw dashboard --no-open',
+        timeout: 10
+      );
       final urlMatch = _tokenUrlRegex.firstMatch(output);
 
       if (urlMatch != null) {
@@ -353,7 +367,7 @@ try {
           logs: [..._state.logs, '[WARN] Native start failed, attempting doctor fix...'],
         ));
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix',
           timeout: 10000
         );
         final retrySuccess = await NativeBridge.startGateway();
