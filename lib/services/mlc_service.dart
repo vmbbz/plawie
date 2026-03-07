@@ -1,4 +1,4 @@
-﻿// Local MLC support removed: minimal stub to avoid accidental reintroduction.
+// Local MLC support removed: minimal stub to avoid accidental reintroduction.
 
 class MlcService {
   /// No-op: local MLC removed.
