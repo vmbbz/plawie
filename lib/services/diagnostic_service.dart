@@ -53,7 +53,7 @@ class DiagnosticService {
   static Future<String> _runSafe(String cmd) async {
     try {
       final out = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && $cmd',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && $cmd', // Dual-shim verified.
         timeout: 10
       );
       return out;

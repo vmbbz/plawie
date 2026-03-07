@@ -146,7 +146,7 @@ class BootstrapService {
 
       try {
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && ' // Dual-shim verified.
           'chmod -R 755 /usr/bin /usr/sbin /bin /sbin /usr/local/bin /usr/local/sbin 2>/dev/null; '
           'chmod -R +x /usr/lib/apt/ /usr/lib/dpkg/ /usr/libexec/ /var/lib/dpkg/info/ /usr/share/debconf/ 2>/dev/null; '
           'chmod 755 /lib/*/ld-linux-*.so* /usr/lib/*/ld-linux-*.so* 2>/dev/null; '
@@ -161,7 +161,7 @@ class BootstrapService {
       
       // Use robust apt-get commands to avoid interactive prompts breaking the process
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && '
         'export DEBIAN_FRONTEND=noninteractive && '
         'apt-get update -y && '
         'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '

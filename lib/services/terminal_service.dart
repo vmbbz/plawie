@@ -118,7 +118,7 @@ class TerminalService {
       'TMPDIR=/tmp',
       'COLUMNS=$columns',
       'LINES=$rows',
-      'NODE_OPTIONS=--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js',
+      'NODE_OPTIONS=--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js', // Dual-shim session config.
       '/bin/bash',
       '-l',
     ]);

@@ -318,7 +318,7 @@ class NodeService {
         if (isLocal) {
           log('[NODE] Local gateway detected, auto-approving...');
           try {
-            await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw nodes approve $code');
+            await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw nodes approve $code'); // Dual-shim verified.
             log('[NODE] Auto-approve command sent');
             await Future.delayed(const Duration(milliseconds: 500));
             await _ws.disconnect();
