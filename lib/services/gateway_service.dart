@@ -162,6 +162,15 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
 
+    String modelsJson;
+    if (openClawProvider == 'google') {
+      modelsJson = '[ { "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview" } ]';
+    } else if (openClawProvider == 'anthropic') {
+      modelsJson = '[ { "id": "claude-opus-4.6", "name": "Claude Opus 4.6" } ]';
+    } else {
+      modelsJson = '[ { "id": "default", "name": "Default Model" } ]';
+    }
+
     final script = '''
 const fs = require("fs");
 const path = require("path");
@@ -182,21 +191,17 @@ function updateJson(p, updater) {
 // 1. Global config
 updateJson("/root/.openclaw/openclaw.json", (c) => {
   if (!c.env) c.env = {};
-  if ("\$envKey") c.env["\$envKey"] = "\$key";
+  if ("$envKey") c.env["$envKey"] = "$key";
 
   if (!c.models) c.models = {};
   if (!c.models.providers) c.models.providers = {};
-  const prov = c.models.providers["\$openClawProvider"] || {};
-  c.models.providers["\$openClawProvider"] = {
+  const prov = c.models.providers["$openClawProvider"] || {};
+  c.models.providers["$openClawProvider"] = {
     ...prov,
-    apiKey: "\$key",
-    models: prov.models || [
-      \${openClawProvider === 'google' ? '{ "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview" }' : 
-        openClawProvider === 'anthropic' ? '{ "id": "claude-opus-4.6", "name": "Claude Opus 4.6" }' : 
-        '{ "id": "default", "name": "Default Model" }'}
-    ]
+    apiKey: "$key",
+    models: prov.models || $modelsJson
   };
-  if ("\$openClawProvider" === "google" && !c.models.providers.google.baseUrl) {
+  if ("$openClawProvider" === "google" && !c.models.providers.google.baseUrl) {
     c.models.providers.google.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
   }
 });
@@ -205,12 +210,12 @@ updateJson("/root/.openclaw/openclaw.json", (c) => {
 const agentAuthPath = "/root/.openclaw/agents/main/agent/auth-profiles.json";
 updateJson(agentAuthPath, (c) => {
   if (!c.providers) c.providers = {};
-  c.providers["\$openClawProvider"] = { ...(c.providers["\$openClawProvider"] || {}), apiKey: "\$key" };
+  c.providers["$openClawProvider"] = { ...(c.providers["$openClawProvider"] || {}), apiKey: "$key" };
 });
 ''';
 
     await NativeBridge.runInProot(
-      'node -e \${_shellEscape(script)}',
+      'node -e ${_shellEscape(script)}',
       timeout: 15,
     );
   }
