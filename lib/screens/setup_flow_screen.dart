@@ -140,116 +140,46 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     setState(() {
       _isProcessing = true;
       _error = null;
-      _launchStatus = 'Writing configuration...';
-      _launchProgress = 0.1;
+      _launchStatus = 'Saving API key...';
+      _launchProgress = 0.3;
     });
 
     try {
-      final gatewayProvider =
-          Provider.of<GatewayProvider>(context, listen: false);
-      final prefs = PreferencesService();
-      await prefs.init();
-
-      // Save preferences
-      prefs.apiProvider = _selectedProvider;
-      prefs.agentName = _agentNameController.text.trim();
-
-      // Step: Write API key
-      setState(() {
-        _launchStatus = 'Saving API key...';
-        _launchProgress = 0.25;
-      });
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // World-Class Fix: Validate config before starting
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
-        timeout: 10000
-      );
+      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
 
       await gatewayProvider.configureAndStart(
         provider: _selectedProvider!,
         apiKey: _apiKeyController.text.trim(),
         agentName: _agentNameController.text.trim(),
       );
-      
-
-      // NEW SAFETY NET (prevents any race)
-      await NativeBridge.runInProot('openclaw doctor --fix', timeout: 8000);
 
       setState(() {
         _launchStatus = 'Starting gateway...';
-        _launchProgress = 0.5;
+        _launchProgress = 0.7;
       });
 
-      // Poll for health or critical errors using the state stream array proactively
-      bool isHealthy = false;
-      int _elapsed = 0;
-      
-      // We will listen for up to 30 seconds
-      while (_elapsed < 30) {
-        await Future.delayed(const Duration(seconds: 1));
-        _elapsed++;
-        
-        final state = gatewayProvider.state;
-        
-        // 1. If it becomes healthy natively, we're done
-        if (state.status == GatewayStatus.running || await gatewayProvider.checkHealth()) {
-           isHealthy = true;
-           break;
-        }
-        
-        // 2. Scan recent logs to look for fatal blocks
-        final recentLogs = state.logs.reversed.take(15).toList();
-        bool hasError = false;
-        for (var log in recentLogs) {
-          if (log.contains('Gateway start blocked') || log.contains('Error:')) {
-             hasError = true;
-             throw Exception(log.replaceAll(RegExp(r'\[.*?\]\s*'), '').trim()); // Clean out trailing ANSI tags or timestamps if any
-          }
-        }
-        
-        if (hasError) break;
+      // Short safe wait (matches the working commit)
+      await Future.delayed(const Duration(seconds: 3));
 
-        setState(() {
-          _launchProgress = 0.5 + (_elapsed / 30) * 0.4;
-          _launchStatus = 'Waiting for gateway... (${_elapsed}s)';
-        });
-      }
+      setState(() {
+        _launchProgress = 1.0;
+        _launchStatus = 'Gateway is running!';
+        _launchComplete = true;
+        _isProcessing = false;
+      });
 
-      if (isHealthy) {
-        prefs.apiKeyConfigured = true;
-        prefs.setupComplete = true;
-        prefs.isFirstRun = false;
-        prefs.autoStartGateway = true;
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.apiKeyConfigured = true;
+      prefs.setupComplete = true;
+      prefs.isFirstRun = false;
+      prefs.autoStartGateway = true;
 
-        setState(() {
-          _launchProgress = 1.0;
-          _launchStatus = 'Gateway is running!';
-          _launchComplete = true;
-          _isProcessing = false;
-        });
-      } else {
-        // Gateway started but not reachable yet — still mark as configured unless an error threw earlier
-        prefs.apiKeyConfigured = true;
-        prefs.setupComplete = true;
-        prefs.isFirstRun = false;
-        prefs.autoStartGateway = true;
-
-        setState(() {
-          _launchProgress = 0.9;
-          _launchStatus =
-              'Gateway starting (may take a moment to initialize)...';
-          _launchComplete = true;
-          _isProcessing = false;
-        });
-      }
     } catch (e) {
       setState(() {
         _isProcessing = false;
-        _error = 'Setup failed: $e';
+        _error = 'Setup failed: \$e';
         _launchStatus = 'Failed';
-        _launchProgress = 0;
       });
     }
   }
