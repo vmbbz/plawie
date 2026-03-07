@@ -123,7 +123,7 @@ fs.writeFileSync("/root/.openclaw/network-shim.js", shimCode);
 
     try {
       await NativeBridge.runInProot(
-        'node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
         timeout: 15,
       );
     } catch (_) {
@@ -142,7 +142,7 @@ c.agents.defaults.model = { ...(c.agents.defaults.model || {}), primary: "$model
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
     await NativeBridge.runInProot(
-      'node -e ${_shellEscape(script)}',
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
       timeout: 15,
     );
   }
@@ -226,7 +226,7 @@ updateJson(agentAuthPath, (c) => {
 ''';
 
     await NativeBridge.runInProot(
-      'node -e ${_shellEscape(script)}',
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
       timeout: 15,
     );
   }
@@ -324,7 +324,7 @@ try {
 ''';
     try {
       final token = await NativeBridge.runInProot(
-        'node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e ${_shellEscape(script)}',
         timeout: 5,
       );
       final trimmedToken = token.trim();
