@@ -269,10 +269,10 @@ updateJson(agentAuthPath, (c) => {
       return urlWithToken;
     }
 
-        // STEP 2: Fallback to CLI dashboard probe WITH FULL SHIM (bionic + your inline shimCode)
+    // STEP 2: Fallback to CLI dashboard probe WITH FULL SHIM (bionic + your inline shimCode)
     try {
       final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw dashboard --no-open',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);
@@ -448,27 +448,7 @@ try {
     }
   }
 
-  /// Exact user-requested logic for gateway probe and auto-fix
-  Future<void> probeGateway() async {
-    try {
-      final probe = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw config --show'
-      );
-      if (probe.contains('models: Invalid input')) {
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw models add --provider google --id gemini-3.1-pro-preview --name "Gemini 3.1 Pro Preview"'
-        );
-      }
-      if (probe.contains('Invalid config') || probe.contains('Invalid input')) {
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix'
-        );
-        // Retry probe or log success
-      }
-    } catch (e) {
-      // Log PlatformException(PROOT_ERROR) and retry with fix handled in start()
-    }
-  }
+
 
   /// Send a message to the OpenClaw gateway and stream the response.
   ///

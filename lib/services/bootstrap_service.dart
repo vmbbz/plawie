@@ -139,6 +139,11 @@ class BootstrapService {
       // ---------------------------------------------------------
       _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
 
+      await NativeBridge.runInProot('''
+        mkdir -p /root/.openclaw
+        cp /root/flutter_assets/assets/proot/network-shim.js /root/.openclaw/network-shim.js
+      ''');
+
       try {
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && '
