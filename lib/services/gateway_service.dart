@@ -269,10 +269,10 @@ updateJson(agentAuthPath, (c) => {
       return urlWithToken;
     }
 
-    // STEP 2: Fallback to CLI dashboard probe WITH FULL SHIM (bionic + your inline shimCode)
+    // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw dashboard --no-open',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);
@@ -287,10 +287,14 @@ updateJson(agentAuthPath, (c) => {
           logs: [..._state.logs, '[INFO] Gateway auth token acquired via CLI.'],
         ));
         return url;
+      } else {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[WARN] Dashboard probe failed to find token. Ensure openclaw is starting correctly.']
+        ));
       }
     } catch (e) {
       _updateState(_state.copyWith(
-        logs: [..._state.logs, '[WARN] CLI dashboard probe failed (shim applied): $e']
+        logs: [..._state.logs, '[WARN] CLI dashboard probe failed: $e']
       ));
     }
 
