@@ -58,8 +58,6 @@ class GatewayService {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
       ));
-      await _ensureModelsArray(prefs.apiProvider ?? 'google');
-      await Future.delayed(const Duration(milliseconds: 800)); // give UI time to be foreground
       await start();
     }
   }
@@ -159,11 +157,11 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     }
   }
 
-  /// Write an API key directly to openclaw.json and sync with agent auth stores.
+  /// Write an API key + ensure models array (pure Node.js — no flaky CLI)
   Future<void> configureApiKey(String provider, String key) async {
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
-    
+
     final script = '''
 const fs = require("fs");
 const path = require("path");
@@ -171,108 +169,50 @@ const path = require("path");
 function updateJson(p, updater) {
   try {
     let c = {};
-    if (fs.existsSync(p)) {
-      c = JSON.parse(fs.readFileSync(p, "utf8"));
-    } else {
+    if (fs.existsSync(p)) c = JSON.parse(fs.readFileSync(p, "utf8"));
+    else {
       const dir = path.dirname(p);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     }
     updater(c);
     fs.writeFileSync(p, JSON.stringify(c, null, 2));
-    return true;
-  } catch (e) {
-    console.error("Failed to update " + p + ": " + e.message);
-    return false;
-  }
+  } catch (e) { console.error(e.message); }
 }
 
-// 1. Update global openclaw.json
+// 1. Global config
 updateJson("/root/.openclaw/openclaw.json", (c) => {
   if (!c.env) c.env = {};
-  if ("$envKey") c.env["$envKey"] = "$key";
-  
-  // World-Class Fix: AI providers belong in models.providers, NOT secrets.providers
+  if ("\$envKey") c.env["\$envKey"] = "\$key";
+
   if (!c.models) c.models = {};
   if (!c.models.providers) c.models.providers = {};
-  
-  // Ensure we don't overwrite the whole provider object if it exists (preserve baseUrl/models)
-  const existingProvider = c.models.providers["$openClawProvider"] || {};
-  c.models.providers["$openClawProvider"] = {
-    ...existingProvider,
-    apiKey: "$key"
+  const prov = c.models.providers["\$openClawProvider"] || {};
+  c.models.providers["\$openClawProvider"] = {
+    ...prov,
+    apiKey: "\$key",
+    models: prov.models || [
+      \${openClawProvider === 'google' ? '{ "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview" }' : 
+        openClawProvider === 'anthropic' ? '{ "id": "claude-opus-4.6", "name": "Claude Opus 4.6" }' : 
+        '{ "id": "default", "name": "Default Model" }'}
+    ]
   };
-
-  // Add default baseUrl for Google if not present
-  if ("$openClawProvider" === "google" && !c.models.providers.google.baseUrl) {
+  if ("\$openClawProvider" === "google" && !c.models.providers.google.baseUrl) {
     c.models.providers.google.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
   }
 });
 
-// 2. Update agent auth-profiles.json for the 'main' agent
+// 2. Agent auth-profiles
 const agentAuthPath = "/root/.openclaw/agents/main/agent/auth-profiles.json";
 updateJson(agentAuthPath, (c) => {
   if (!c.providers) c.providers = {};
-  // Per fixes.md, ensure we preserve existing provider metadata (additive update)
-  c.providers["$openClawProvider"] = { ...(c.providers["$openClawProvider"] || {}), apiKey: "$key" };
+  c.providers["\$openClawProvider"] = { ...(c.providers["\$openClawProvider"] || {}), apiKey: "\$key" };
 });
 ''';
+
     await NativeBridge.runInProot(
-      'node -e ${_shellEscape(script)}',
+      'node -e \${_shellEscape(script)}',
       timeout: 15,
     );
-
-    // World-Class Fix: Ensure the models array exists for this provider
-    await _ensureModelsArray(provider);
-  }
-
-  /// Force the models array using pure Node.js (CLI "models add" is unreliable)
-  Future<void> _ensureModelsArray(String provider) async {
-    final openClawProvider = _normalizeProvider(provider);
-
-    String modelId = 'default';
-    String modelName = 'Default Model';
-    String baseUrl = '';
-
-    switch (openClawProvider) {
-      case 'google':
-        modelId = 'gemini-3.1-pro-preview';
-        modelName = 'Gemini 3.1 Pro Preview';
-        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
-        break;
-      case 'anthropic':
-        modelId = 'claude-opus-4.6';
-        modelName = 'Claude Opus 4.6';
-        break;
-      case 'groq':
-        modelId = 'llama-3.1-405b';
-        modelName = 'Llama 3.1 405B';
-        break;
-      case 'openai':
-        modelId = 'gpt-4o';
-        modelName = 'GPT-4o';
-        break;
-    }
-
-    final script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-let c = {}; 
-try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
-if (!c.models) c.models = {};
-if (!c.models.providers) c.models.providers = {};
-if (!c.models.providers["$openClawProvider"]) c.models.providers["$openClawProvider"] = {};
-c.models.providers["$openClawProvider"].models = [
-  { "id": "$modelId", "name": "$modelName" }
-];
-if ("$baseUrl") c.models.providers["$openClawProvider"].baseUrl = "$baseUrl";
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-''';
-
-    await NativeBridge.runInProot(
-      'node -e ${_shellEscape(script)}',
-      timeout: 10,
-    );
-    await NativeBridge.runInProot('openclaw doctor --fix', timeout: 5);
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
@@ -390,8 +330,6 @@ try {
     await prefs.init();
     final savedUrl = prefs.dashboardUrl;
 
-    await _ensureModelsArray(prefs.apiProvider ?? 'google');
-
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
       clearError: true,
@@ -404,7 +342,6 @@ try {
       await NativeBridge.acquirePartialWakeLock();
       
       await _configureGateway();
-      await Future.delayed(const Duration(milliseconds: 800)); // give UI time to be foreground
       final success = await NativeBridge.startGateway();
       if (!success) {
         _updateState(_state.copyWith(
