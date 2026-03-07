@@ -67,6 +67,11 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
   }
 
+  /// Ensures every provider has the required models array (fixes the exact error)
+  Future<void> ensureModelsArray(String provider) async {
+    await _gatewayService.ensureModelsArray(provider);
+  }
+
   @override
   void dispose() {
     _subscription?.cancel();

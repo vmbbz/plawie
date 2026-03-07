@@ -172,6 +172,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         apiKey: _apiKeyController.text.trim(),
         agentName: _agentNameController.text.trim(),
       );
+      
+      await gatewayProvider.ensureModelsArray(_selectedProvider!); 
 
       // NEW SAFETY NET (prevents any race)
       await NativeBridge.runInProot('openclaw doctor --fix', timeout: 8000);
@@ -252,6 +254,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       });
     }
   }
+
 
   void _goToDashboard() {
     Navigator.of(context).pushReplacement(
