@@ -100,7 +100,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       setState(() => _loading = true);
       
       final result = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw onboard --help',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw onboard --help', // Dual-shim verified.
         timeout: 15000
       );
       
