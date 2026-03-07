@@ -24,6 +24,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   // Step 1: Provider
   String? _selectedProvider;
+  String? _selectedModel;
 
   // Step 2: API Key
   final _apiKeyController = TextEditingController();
@@ -49,6 +50,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFFD97706),
       hint: 'sk-ant-api03-...',
       prefix: 'sk-ant-',
+      models: [
+        {'id': 'claude-opus-4-6', 'name': 'Claude Opus 4.6'},
+        {'id': 'claude-sonnet-4-6', 'name': 'Claude Sonnet 4.6'},
+      ],
+      defaultModel: 'claude-opus-4-6',
     ),
     _ProviderInfo(
       id: 'GEMINI_API_KEY',
@@ -58,6 +64,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFF4285F4),
       hint: 'AIzaSy...',
       prefix: 'AIza',
+      models: [
+        {'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'},
+        {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash'},
+      ],
+      defaultModel: 'gemini-3.1-pro-preview',
     ),
     _ProviderInfo(
       id: 'OPENAI_API_KEY',
@@ -67,6 +78,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFF10A37F),
       hint: 'sk-proj-...',
       prefix: 'sk-',
+      models: [
+        {'id': 'gpt-4o', 'name': 'GPT-4o'},
+        {'id': 'gpt-o1', 'name': 'GPT o1'},
+      ],
+      defaultModel: 'gpt-4o',
     ),
     _ProviderInfo(
       id: 'GROQ_API_KEY',
@@ -76,6 +92,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFFF55036),
       hint: 'gsk_...',
       prefix: 'gsk_',
+      models: [
+        {'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'},
+        {'id': 'llama-3.1-70b-versatile', 'name': 'Llama 3.1 70B'},
+      ],
+      defaultModel: 'llama-3.1-405b',
     ),
   ];
 
@@ -160,9 +181,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       );
 
       // Persist the selected model so the gateway doesn't default to Anthropic
-      await gatewayProvider.persistModel(_selectedProvider!.toLowerCase() == 'google'
-          ? 'google/gemini-3.1-pro-preview'
-          : _selectedProvider!);
+      await gatewayProvider.persistModel(_selectedModel ?? _selectedProvider!);
 
       setState(() {
         _launchStatus = 'Starting gateway...';
@@ -419,7 +438,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       _ProviderInfo provider, ThemeData theme, bool isDark) {
     final isSelected = _selectedProvider == provider.id;
     return GestureDetector(
-      onTap: () => setState(() => _selectedProvider = provider.id),
+      onTap: () => setState(() {
+        _selectedProvider = provider.id;
+        _selectedModel = provider.defaultModel;
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(bottom: 12),
@@ -573,6 +595,40 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Select Model',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: theme.colorScheme.outline.withAlpha(80),
+            ),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedModel,
+              isExpanded: true,
+              icon: Icon(Icons.arrow_drop_down, color: provider.color),
+              items: provider.models.map((m) {
+                return DropdownMenuItem<String>(
+                  value: m['id'],
+                  child: Text(m['name']!, 
+                    style: const TextStyle(fontSize: 14)),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedModel = val);
+              },
             ),
           ),
         ),
@@ -1034,6 +1090,8 @@ class _ProviderInfo {
   final Color color;
   final String hint;
   final String prefix;
+  final List<Map<String, String>> models;
+  final String defaultModel;
 
   const _ProviderInfo({
     required this.id,
@@ -1043,5 +1101,7 @@ class _ProviderInfo {
     required this.color,
     required this.hint,
     required this.prefix,
+    required this.models,
+    required this.defaultModel,
   });
 }
