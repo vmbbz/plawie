@@ -100,7 +100,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       setState(() => _loading = true);
       
       final result = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw onboard --help',
         timeout: 15000
       );
       
@@ -121,7 +121,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       _writeLog('> $command');
       
       final result = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $command',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && $command',
         timeout: 30000
       );
       
@@ -192,7 +192,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       // BEFORE starting gateway - exact user-requested validation
       final validateResult = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --validate || openclaw doctor --fix',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw config --validate || openclaw doctor --fix',
         timeout: 10000
       );
       
@@ -206,7 +206,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       }
 
       final configCheck = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw config --show',
         timeout: 5000
       );
       
@@ -218,7 +218,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
         _writeLog('\n✅ API key found, starting OpenClaw CLI Gateway...');
         
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && pkill -f "openclaw gateway" || true',
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && pkill -f "openclaw gateway" || true',
           timeout: 5000
         );
         
@@ -331,7 +331,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                      provider == 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.groq.com/openai/v1';
 
     await NativeBridge.runInProot('''
-      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e '
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && node -e '
         const fs = require("fs");
         const path = "/root/.openclaw/agents/main/agent/auth-profiles.json";
         let config = {};
@@ -345,9 +345,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     _writeLog('\n📦 Adding specific model and setting as primary...');
     // The exact sequence requested by the user
     await NativeBridge.runInProot('''
-      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw models add --provider $provider --id $modelId --name "$modelName"
-      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix
-      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $provider/$modelId
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw models add --provider $provider --id $modelId --name "$modelName"
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix
+      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw agents update --primary-model $provider/$modelId
     ''', timeout: 15000);
     
     _writeLog('✅ API key and model ($modelName) synced.');

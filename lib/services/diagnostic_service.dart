@@ -52,7 +52,10 @@ class DiagnosticService {
 
   static Future<String> _runSafe(String cmd) async {
     try {
-      final out = await NativeBridge.runInProot(cmd, timeout: 10);
+      final out = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && $cmd',
+        timeout: 10
+      );
       return out;
     } catch (e) {
       return 'exception: ${e.toString()}';
