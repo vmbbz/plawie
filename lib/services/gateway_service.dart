@@ -58,6 +58,8 @@ class GatewayService {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
       ));
+      await _ensureModelsArray(prefs.apiProvider ?? 'google');
+      await Future.delayed(const Duration(milliseconds: 800)); // give UI time to be foreground
       await start();
     }
   }
@@ -220,20 +222,22 @@ updateJson(agentAuthPath, (c) => {
     );
 
     // World-Class Fix: Ensure the models array exists for this provider
-    await ensureModelsArray(provider);
+    await _ensureModelsArray(provider);
   }
 
-  /// Ensures every provider has the required models array (fixes the exact error)
-  Future<void> ensureModelsArray(String provider) async {
+  /// Force the models array using pure Node.js (CLI "models add" is unreliable)
+  Future<void> _ensureModelsArray(String provider) async {
     final openClawProvider = _normalizeProvider(provider);
 
-    String modelId;
-    String modelName;
+    String modelId = 'default';
+    String modelName = 'Default Model';
+    String baseUrl = '';
 
     switch (openClawProvider) {
       case 'google':
         modelId = 'gemini-3.1-pro-preview';
         modelName = 'Gemini 3.1 Pro Preview';
+        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
         break;
       case 'anthropic':
         modelId = 'claude-opus-4.6';
@@ -247,15 +251,28 @@ updateJson(agentAuthPath, (c) => {
         modelId = 'gpt-4o';
         modelName = 'GPT-4o';
         break;
-      default:
-        modelId = 'default';
-        modelName = 'Default Model';
     }
 
-    await NativeBridge.runInProot('''
-      openclaw models add --provider $openClawProvider --id $modelId --name "$modelName" || true
-      openclaw doctor --fix
-    ''', timeout: 15);
+    final script = '''
+const fs = require("fs");
+const p = "/root/.openclaw/openclaw.json";
+let c = {}; 
+try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
+if (!c.models) c.models = {};
+if (!c.models.providers) c.models.providers = {};
+if (!c.models.providers["$openClawProvider"]) c.models.providers["$openClawProvider"] = {};
+c.models.providers["$openClawProvider"].models = [
+  { "id": "$modelId", "name": "$modelName" }
+];
+if ("$baseUrl") c.models.providers["$openClawProvider"].baseUrl = "$baseUrl";
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+''';
+
+    await NativeBridge.runInProot(
+      'node -e ${_shellEscape(script)}',
+      timeout: 10,
+    );
+    await NativeBridge.runInProot('openclaw doctor --fix', timeout: 5);
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
@@ -373,6 +390,8 @@ try {
     await prefs.init();
     final savedUrl = prefs.dashboardUrl;
 
+    await _ensureModelsArray(prefs.apiProvider ?? 'google');
+
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
       clearError: true,
@@ -385,6 +404,7 @@ try {
       await NativeBridge.acquirePartialWakeLock();
       
       await _configureGateway();
+      await Future.delayed(const Duration(milliseconds: 800)); // give UI time to be foreground
       final success = await NativeBridge.startGateway();
       if (!success) {
         _updateState(_state.copyWith(
