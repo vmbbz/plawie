@@ -173,7 +173,6 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         agentName: _agentNameController.text.trim(),
       );
       
-      await gatewayProvider.ensureModelsArray(_selectedProvider!); 
 
       // NEW SAFETY NET (prevents any race)
       await NativeBridge.runInProot('openclaw doctor --fix', timeout: 8000);
