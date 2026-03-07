@@ -149,7 +149,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       // World-Class Stability: Ensure config is healthy before writing keys
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --require /root/.openclaw/network-shim.js" && openclaw doctor --fix',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
         timeout: 10000
       );
 
