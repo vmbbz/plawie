@@ -127,7 +127,11 @@ const fs = require("fs");
 const p = "/root/.openclaw/openclaw.json";
 let c = {}; try { c = JSON.parse(fs.readFileSync(p,"utf8")); } catch {}
 c.agents = c.agents || {}; c.agents.defaults = c.agents.defaults || {};
-c.agents.defaults.model = { ...(c.agents.defaults.model || {}), primary: "$model" };
+c.agents.defaults.model = { 
+  ...(c.agents.defaults.model || {}), 
+  primary: "$model",
+  fallbacks: ["anthropic/claude-sonnet-4-6", "groq/llama-3.1-405b"]
+};
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
     await NativeBridge.runInProot(
