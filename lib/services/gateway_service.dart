@@ -220,11 +220,11 @@ updateJson(agentAuthPath, (c) => {
     );
 
     // World-Class Fix: Ensure the models array exists for this provider
-    await _ensureModelsArray(provider);
+    await ensureModelsArray(provider);
   }
 
   /// Ensures every provider has the required models array (fixes the exact error)
-  Future<void> _ensureModelsArray(String provider) async {
+  Future<void> ensureModelsArray(String provider) async {
     final openClawProvider = _normalizeProvider(provider);
 
     String modelId;
