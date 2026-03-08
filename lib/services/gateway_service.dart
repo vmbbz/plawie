@@ -143,7 +143,39 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     );
   }
 
+  /// Persist the agent name to openclaw.json
+  Future<void> persistAgentName(String agentName) async {
+    if (agentName.trim().isEmpty) return;
+    final safeName = agentName.replaceAll("'", "\\'").replaceAll('"', '\\"');
+    final script = '''
+const fs = require("fs");
+const p = "/root/.openclaw/openclaw.json";
+let c = {}; try { c = JSON.parse(fs.readFileSync(p,"utf8")); } catch {}
+c.agents = c.agents || {}; c.agents.defaults = c.agents.defaults || {};
+c.agents.defaults.name = "$safeName";
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+''';
+    await NativeBridge.runInProot(
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
+      timeout: 15,
+    );
+  }
+
+  /// Map a provider name to its default model string (provider/model).
+  /// Public so GatewayProvider can call it during configureAndStart.
+  String getModelForProvider(String provider) {
+    switch (_normalizeProvider(provider)) {
+      case 'google': return 'google/gemini-3.1-pro-preview';
+      case 'anthropic': return 'anthropic/claude-opus-4-6';
+      case 'openai': return 'openai/gpt-4o';
+      case 'groq': return 'groq/llama-3.1-405b';
+      default: return provider;
+    }
+  }
+
   /// Normalize provider names to OpenClaw internal identifiers.
+  /// Handles both human names ('gemini', 'claude') and env-key format
+  /// IDs from the setup screen ('GEMINI_API_KEY', 'ANTHROPIC_API_KEY').
   String _normalizeProvider(String provider) {
     final p = provider.toLowerCase();
     if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
@@ -173,7 +205,11 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     if (openClawProvider == 'google') {
       modelsJson = '[ { "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview" } ]';
     } else if (openClawProvider == 'anthropic') {
-      modelsJson = '[ { "id": "claude-opus-4.6", "name": "Claude Opus 4.6" } ]';
+      modelsJson = '[ { "id": "claude-opus-4-6", "name": "Claude Opus 4.6" } ]';
+    } else if (openClawProvider == 'openai') {
+      modelsJson = '[ { "id": "gpt-4o", "name": "GPT-4o" } ]';
+    } else if (openClawProvider == 'groq') {
+      modelsJson = '[ { "id": "llama-3.1-405b", "name": "Llama 3.1 405B" } ]';
     } else {
       modelsJson = '[ { "id": "default", "name": "Default Model" } ]';
     }
