@@ -492,13 +492,15 @@ try {
 
   /// Send a message to the OpenClaw gateway and stream the response.
   ///
-  /// Uses the OpenClaw WebSocket protocol:
-  ///   → {"method":"chat.send","params":{"message":"...","model":"..."},"id":"<uuid>"}
-  ///   ← {"type":"res","id":"<uuid>","result":{"runId":"...","status":"started"}}
+  /// OpenClaw WebSocket protocol (from official docs):
+  ///   → {"method":"connect","params":{"auth":{"token":"..."}}}
+  ///   ← {"type":"hello-ok", ...}
+  ///   → {"method":"chat.send","params":{"message":"..."},"id":"<uuid>"}
+  ///   ← {"type":"res","id":"<uuid>","result":{"status":"started"}}
   ///   ← {"type":"event","event":"chat","data":{"delta":"...","done":false}}
   ///   ← {"type":"event","event":"chat","data":{"done":true}}
   Stream<String> sendMessage(String message, {String model = 'clawa'}) async* {
-    // Retrieve auth token — required for WS auth.
+    // Retrieve auth token — required for connect frame.
     String? token;
     try {
       token = await retrieveTokenFromConfig();
@@ -510,7 +512,8 @@ try {
       return;
     }
 
-    final wsUri = Uri.parse('${AppConstants.gatewayWsUrl}/?token=$token');
+    // Connect to the raw WS endpoint (no token in URL — it goes in the connect frame)
+    final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
     WebSocketChannel? channel;
 
     try {
@@ -522,19 +525,7 @@ try {
     }
 
     final requestId = const Uuid().v4();
-    final requestPayload = jsonEncode({
-      'method': 'chat.send',
-      'params': {
-        'message': message,
-        'model': model,
-      },
-      'id': requestId,
-    });
-
-    // We use a StreamController to bridge from the WS listen callback to an async* stream.
     final chunkController = StreamController<String>();
-
-    // Wait for hello-ok before sending the request
     final Completer<void> handshakeCompleter = Completer<void>();
     
     late StreamSubscription wsSubscription;
@@ -544,25 +535,26 @@ try {
           final frame = jsonDecode(raw as String) as Map<String, dynamic>;
           final type = frame['type'] as String?;
 
-          // Handle handshake
+          // Step 2: Handle hello-ok (response to our connect frame)
           if (type == 'hello-ok') {
             if (!handshakeCompleter.isCompleted) handshakeCompleter.complete();
             return;
           }
 
-          // Ack for our request
+          // Ack for our chat.send request
           if (type == 'res' && frame['id'] == requestId) {
-            final status = (frame['result'] as Map?)?['status'];
+            final result = frame['result'] as Map<String, dynamic>?;
+            final status = result?['status'] as String?;
             if (status == 'ok' || status == null) {
-              // Synchronous response — gateway ran inline, treat result text as full reply
-              final text = (frame['result'] as Map?)?['text'] as String?;
+              // Synchronous response — gateway ran inline
+              final text = result?['text'] as String?;
               if (text != null && text.isNotEmpty) {
                 chunkController.add(text);
               }
               chunkController.close();
               return;
             }
-            // status == 'started' → streaming response, wait for chat events below
+            // status == 'started' → streaming, wait for chat events
             return;
           }
 
@@ -574,7 +566,6 @@ try {
               if (delta != null && delta.isNotEmpty) {
                 chunkController.add(delta);
               }
-              // Also handle non-streaming 'text' field (full response at once)
               final text = data['text'] as String?;
               if (text != null && text.isNotEmpty && delta == null) {
                 chunkController.add(text);
@@ -585,8 +576,6 @@ try {
             }
             return;
           }
-
-          // hello-ok and other events are expected; ignore them silently
         } catch (_) {}
       },
       onError: (e) {
@@ -600,13 +589,34 @@ try {
       },
     );
 
+    // Step 1: Send the connect frame with auth token (REQUIRED first frame)
+    final connectPayload = jsonEncode({
+      'method': 'connect',
+      'params': {
+        'auth': {'token': token},
+      },
+    });
+    channel.sink.add(connectPayload);
+
+    // Wait for hello-ok with 5s timeout
     try {
-      // Wait for hello-ok with 2s timeout
-      await handshakeCompleter.future.timeout(const Duration(seconds: 2));
+      await handshakeCompleter.future.timeout(const Duration(seconds: 5));
     } catch (_) {
-      // Fallback if hello-ok doesn't arrive as expected, but try sending anyway
+      yield '[Error] Gateway handshake timed out — no hello-ok received.';
+      wsSubscription.cancel();
+      channel.sink.close();
+      return;
     }
-    
+
+    // Step 3: Send the chat.send request (only after handshake succeeds)
+    final requestPayload = jsonEncode({
+      'method': 'chat.send',
+      'params': {
+        'message': message,
+        'model': model,
+      },
+      'id': requestId,
+    });
     channel.sink.add(requestPayload);
 
     // Yield chunks as they arrive
