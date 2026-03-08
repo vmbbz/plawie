@@ -52,6 +52,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadChatHistory() async {
+    await _persistence.init();
     final history = await _persistence.loadMessages();
     final prefs = PreferencesService();
     await prefs.init();
@@ -59,8 +60,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (mounted) {
       setState(() {
+        _messages.clear();
         if (history.isNotEmpty) {
-          _messages.clear();
           _messages.addAll(history);
         } else {
           _messages.add(ChatMessage(text: "Hello! I'm $agentName, your fully local AI companion. How can I help you today?", isUser: false));
@@ -307,6 +308,139 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Widget _buildSessionDrawer() {
+    final sessions = _persistence.sessions;
+    final activeId = _persistence.activeSessionId;
+
+    return Drawer(
+      backgroundColor: const Color(0xE0101828),
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'CHAT SESSIONS',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add, color: Colors.white70),
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await _persistence.createSession();
+                      _loadChatHistory();
+                    },
+                    tooltip: 'New Chat',
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            Expanded(
+              child: ListView.builder(
+                itemCount: sessions.length,
+                itemBuilder: (ctx, i) {
+                  final session = sessions[i];
+                  final isActive = session.id == activeId;
+                  return ListTile(
+                    leading: Icon(
+                      isActive ? Icons.chat_bubble : Icons.chat_bubble_outline,
+                      color: isActive ? AppColors.statusGreen : Colors.white38,
+                      size: 20,
+                    ),
+                    title: Text(
+                      session.title,
+                      style: TextStyle(
+                        color: isActive ? Colors.white : Colors.white70,
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      _formatDate(session.updatedAt),
+                      style: const TextStyle(color: Colors.white38, fontSize: 10),
+                    ),
+                    trailing: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white38, size: 18),
+                      onSelected: (action) async {
+                        if (action == 'delete') {
+                          await _persistence.deleteSession(session.id);
+                          _loadChatHistory();
+                        } else if (action == 'rename') {
+                          _renameSession(session);
+                        }
+                      },
+                      itemBuilder: (ctx) => [
+                        const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      ],
+                    ),
+                    selected: isActive,
+                    selectedTileColor: Colors.white.withOpacity(0.05),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _persistence.switchSession(session.id);
+                      _loadChatHistory();
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _renameSession(ChatSession session) {
+    final controller = TextEditingController(text: session.title);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Chat'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Chat name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                await _persistence.renameSession(session.id, name);
+                setState(() {});
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  String _formatDate(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${dt.month}/${dt.day}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -314,6 +448,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
+      endDrawer: _buildSessionDrawer(),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -351,6 +486,23 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         centerTitle: true,
         actions: [
+          // New chat button
+          IconButton(
+            icon: const Icon(Icons.add_comment_outlined, color: Colors.white70),
+            onPressed: () async {
+              await _persistence.createSession();
+              _loadChatHistory();
+            },
+            tooltip: 'New Chat',
+          ),
+          // Sessions list button
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.history, color: Colors.white70),
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+              tooltip: 'Chat Sessions',
+            ),
+          ),
           IconButton(
             icon: Icon(_showDiagnostics ? Icons.bug_report : Icons.bug_report_outlined, 
                        color: _showDiagnostics ? AppColors.statusGreen : Colors.white54),

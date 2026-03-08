@@ -208,6 +208,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(),
                 _sectionHeader(theme, 'MAINTENANCE'),
                 ListTile(
+                  title: const Text('Test Gateway Connection'),
+                  subtitle: const Text('Check if the gateway is reachable'),
+                  leading: const Icon(Icons.wifi_tethering),
+                  onTap: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Testing connection...')),
+                    );
+                    final gw = context.read<GatewayProvider>();
+                    final healthy = await gw.checkHealth();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        icon: Icon(
+                          healthy ? Icons.check_circle : Icons.error,
+                          color: healthy ? AppColors.statusGreen : AppColors.statusRed,
+                          size: 48,
+                        ),
+                        title: Text(healthy ? 'Gateway Connected' : 'Connection Failed'),
+                        content: Text(healthy
+                          ? 'Gateway is healthy and responding at ${AppConstants.gatewayUrl}'
+                          : 'Cannot reach the gateway at ${AppConstants.gatewayUrl}.\nMake sure it is running.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
                   title: const Text('Re-run setup'),
                   subtitle: const Text('Reinstall or repair the environment'),
                   leading: const Icon(Icons.build),
