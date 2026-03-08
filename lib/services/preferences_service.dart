@@ -104,4 +104,14 @@ class PreferencesService {
   /// Whether an API key has been configured
   bool get apiKeyConfigured => _prefs.getBool('api_key_configured') ?? false;
   set apiKeyConfigured(bool value) => _prefs.setBool('api_key_configured', value);
+
+  /// The configured primary model (e.g. 'google/gemini-3.1-pro-preview')
+  String? get configuredModel => _prefs.getString('configured_model');
+  set configuredModel(String? value) {
+    if (value != null) {
+      _prefs.setString('configured_model', value);
+    } else {
+      _prefs.remove('configured_model');
+    }
+  }
 }

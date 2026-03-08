@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app.dart';
 import '../constants.dart';
+import '../providers/gateway_provider.dart';
 import '../providers/node_provider.dart';
 import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
@@ -135,8 +136,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const Divider(),
-                // AI provider selection removed; gateway configuration is used instead
-                const SizedBox.shrink(),
+                _sectionHeader(theme, 'API KEYS & MODEL'),
+                ListTile(
+                  title: const Text('Current Provider'),
+                  subtitle: Text(_prefs.apiProvider ?? 'Not configured'),
+                  leading: const Icon(Icons.key),
+                  trailing: const Icon(Icons.edit, size: 18),
+                  onTap: () => _showUpdateApiKeyDialog(context),
+                ),
+                ListTile(
+                  title: const Text('Active Model'),
+                  subtitle: Text(_prefs.configuredModel ?? 'Default'),
+                  leading: const Icon(Icons.psychology),
+                  trailing: const Icon(Icons.swap_horiz, size: 18),
+                  onTap: () => _showChangeModelDialog(context),
+                ),
                 _sectionHeader(theme, 'AVATAR'),
                 ListTile(
                   title: const Text('Selected Avatar'),
@@ -317,7 +331,130 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Model download UI removed.
+  void _showUpdateApiKeyDialog(BuildContext context) {
+    final keyController = TextEditingController();
+    final providers = ['google', 'anthropic', 'openai', 'groq'];
+    String selectedProvider = _prefs.apiProvider ?? 'google';
+    if (!providers.contains(selectedProvider)) selectedProvider = 'google';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Update API Key'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: selectedProvider,
+                decoration: const InputDecoration(labelText: 'Provider'),
+                items: providers.map((p) => DropdownMenuItem(
+                  value: p,
+                  child: Text(p[0].toUpperCase() + p.substring(1)),
+                )).toList(),
+                onChanged: (v) => setDialogState(() => selectedProvider = v!),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: keyController,
+                decoration: const InputDecoration(
+                  labelText: 'New API Key',
+                  hintText: 'Paste your API key here',
+                ),
+                obscureText: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final key = keyController.text.trim();
+                if (key.isEmpty) return;
+                Navigator.pop(ctx);
+                
+                // Show progress
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Updating API key...')),
+                );
+                
+                try {
+                  final gw = context.read<GatewayProvider>();
+                  await gw.configureApiKey(selectedProvider, key);
+                  _prefs.apiProvider = selectedProvider;
+                  _prefs.apiKeyConfigured = true;
+                  setState(() {});
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('API key updated! OpenClaw will hot-reload the config.')),
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to update key: $e')),
+                  );
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChangeModelDialog(BuildContext context) {
+    final models = [
+      'google/gemini-3.1-pro-preview',
+      'anthropic/claude-opus-4.6',
+      'openai/gpt-4o',
+      'groq/llama-3.1-405b',
+    ];
+    final labels = [
+      'Gemini 3.1 Pro Preview',
+      'Claude Opus 4.6',
+      'GPT-4o',
+      'Llama 3.1 405B',
+    ];
+    String current = _prefs.configuredModel ?? models[0];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select Model'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(models.length, (i) => RadioListTile<String>(
+            title: Text(labels[i]),
+            subtitle: Text(models[i], style: const TextStyle(fontSize: 11)),
+            value: models[i],
+            groupValue: current,
+            onChanged: (val) async {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Switching model...')),
+              );
+              try {
+                final gw = context.read<GatewayProvider>();
+                await gw.persistModel(val!);
+                _prefs.configuredModel = val;
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Model set to ${labels[i]}. OpenClaw will hot-reload.')),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed: $e')),
+                );
+              }
+            },
+          )),
+        ),
+      ),
+    );
+  }
 
   Widget _sectionHeader(ThemeData theme, String title) {
     return Padding(
