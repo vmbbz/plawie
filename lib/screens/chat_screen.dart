@@ -80,6 +80,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) {
       setState(() {
         _selectedAvatar = prefs.selectedAvatar;
+        // Load the user's configured model (from setup or settings)
+        final configured = prefs.configuredModel;
+        if (configured != null && configured.isNotEmpty && _availableModels.contains(configured)) {
+          _selectedModel = configured;
+        }
       });
     }
   }
@@ -245,13 +250,13 @@ class _ChatScreenState extends State<ChatScreen> {
   ];
 
   final List<String> _availableModels = [
-    'clawa',
-    'claude-3-5-sonnet',
-    'gpt-4o',
-    'gemini-1.5-pro',
+    'google/gemini-3.1-pro-preview',
+    'anthropic/claude-opus-4.6',
+    'openai/gpt-4o',
+    'groq/llama-3.1-405b',
   ];
 
-  String _selectedModel = 'clawa';
+  String _selectedModel = 'google/gemini-3.1-pro-preview';
   
   // FIX: Decouple from _messages.isNotEmpty
   bool get _isCinematic => _isGenerating || _isListening || _textController.text.isNotEmpty;
