@@ -44,10 +44,30 @@ class ClawaForegroundService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, ClawaForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                // Android 14+ may throw ForegroundServiceStartNotAllowedException
+                // if the app window isn't fully visible yet.
+                Log.w(TAG, "startForegroundService blocked, retrying in 500ms: ${e.message}")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(intent)
+                        } else {
+                            context.startService(intent)
+                        }
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Retry also failed: ${e2.message}")
+                        // Fall back to regular startService — won't have fg notification
+                        // but at least won't crash
+                        try { context.startService(intent) } catch (_: Exception) {}
+                    }
+                }, 500)
             }
         }
 
