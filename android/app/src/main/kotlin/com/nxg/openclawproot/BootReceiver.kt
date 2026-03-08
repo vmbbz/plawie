@@ -28,7 +28,13 @@ class BootReceiver : BroadcastReceiver() {
 
         if (autoStart) {
             Log.i(TAG, "Boot completed — auto-starting Clawa service")
-            ClawaForegroundService.start(context)
+            try {
+                ClawaForegroundService.start(context)
+            } catch (e: Exception) {
+                // Android 14+ may block foreground service start from a broadcast receiver.
+                // The service will start when the user opens the app.
+                Log.w(TAG, "Boot auto-start blocked by OS: ${e.message}")
+            }
         } else {
             Log.i(TAG, "Boot completed — auto-start disabled, skipping")
         }
