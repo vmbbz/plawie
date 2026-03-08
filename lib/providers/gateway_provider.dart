@@ -36,14 +36,24 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.checkHealth();
   }
 
-  /// Write an API key to openclaw.json and start the gateway.
-  /// This is the single entry point for the onboarding wizard.
+  /// Write API key, persist model & agent name, THEN start the gateway.
+  /// All config must be written before start() so the gateway reads the correct values.
   Future<void> configureAndStart({
     required String provider,
     required String apiKey,
     String? agentName,
   }) async {
+    // Step 1: Write API key to config files
     await _gatewayService.configureApiKey(provider, apiKey);
+    // Step 2: Set the correct primary model for this provider
+    await _gatewayService.persistModel(
+      _gatewayService.getModelForProvider(provider),
+    );
+    // Step 3: Persist agent name if provided
+    if (agentName != null && agentName.trim().isNotEmpty) {
+      await _gatewayService.persistAgentName(agentName);
+    }
+    // Step 4: NOW start the gateway (it will read the freshly-written config)
     await _gatewayService.start();
   }
 
