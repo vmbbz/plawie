@@ -109,6 +109,9 @@ if (!c.gateway.nodes) c.gateway.nodes = {};
 c.gateway.nodes.denyCommands = [];
 c.gateway.nodes.allowCommands = $allowJson;
 c.gateway.mode = "local";
+// Enable OpenAI-compatible HTTP endpoint for fallback chat
+if (!c.gateway.openaiCompat) c.gateway.openaiCompat = {};
+c.gateway.openaiCompat.enabled = true;
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
 
