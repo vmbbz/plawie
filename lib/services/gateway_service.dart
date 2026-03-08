@@ -396,18 +396,22 @@ try {
       await NativeBridge.acquirePartialWakeLock();
       
       await _configureGateway();
-      // Android 14+ Foreground Service stability: longer delay to ensure app is in foreground
-      await Future.delayed(const Duration(milliseconds: 1200));
+      // Android 14+ requires the activity to be fully visible before
+      // startForegroundService(). Wait to ensure the window is drawn.
+      await Future.delayed(const Duration(milliseconds: 1500));
 
       final success = await NativeBridge.startGateway();
       if (!success) {
         _updateState(_state.copyWith(
           logs: [..._state.logs, '[WARN] Native start failed, attempting doctor fix...'],
         ));
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
-          timeout: 10000
-        );
+        try {
+          await NativeBridge.runInProot(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+            timeout: 30,
+          );
+        } catch (_) {}
+        await Future.delayed(const Duration(milliseconds: 500));
         final retrySuccess = await NativeBridge.startGateway();
         if (!retrySuccess) throw Exception('Native start failed after doctor fix');
       }
