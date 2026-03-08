@@ -115,50 +115,50 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
         timeout: 15,
       );
+      // Clean up any stale/invalid keys from previous versions
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+        timeout: 15,
+      );
     } catch (_) {
       // Non-fatal
     }
   }
 
-  /// Persist the selected model and fallback chain to openclaw.json
+  /// Persist the selected model using OpenClaw CLI (schema-safe).
+  /// Sets the primary model via `openclaw config set` and runs doctor to validate.
   Future<void> persistModel(String model) async {
-    final script = '''
+    try {
+      // Set primary model via official CLI (avoids schema violations from manual JSON)
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config set agents.defaults.model.primary "$model"',
+        timeout: 15,
+      );
+    } catch (_) {
+      // Fallback: direct JSON patch if CLI not available
+      final script = '''
 const fs = require("fs");
 const p = "/root/.openclaw/openclaw.json";
 let c = {}; try { c = JSON.parse(fs.readFileSync(p,"utf8")); } catch {}
-c.agents = c.agents || {}; c.agents.defaults = c.agents.defaults || {};
-c.agents.defaults.model = {
-  ...(c.agents.defaults.model || {}),
-  primary: "$model",
-  fallbacks: [
-    "anthropic/claude-sonnet-4-6",
-    "groq/llama-3.1-405b"
-  ]
-};
+if (!c.agents) c.agents = {};
+if (!c.agents.defaults) c.agents.defaults = {};
+if (!c.agents.defaults.model) c.agents.defaults.model = {};
+c.agents.defaults.model.primary = "$model";
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
-    await NativeBridge.runInProot(
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
-      timeout: 15,
-    );
-  }
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
+        timeout: 15,
+      );
+    }
 
-  /// Persist the agent name to openclaw.json
-  Future<void> persistAgentName(String agentName) async {
-    if (agentName.trim().isEmpty) return;
-    final safeName = agentName.replaceAll("'", "\\'").replaceAll('"', '\\"');
-    final script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-let c = {}; try { c = JSON.parse(fs.readFileSync(p,"utf8")); } catch {}
-c.agents = c.agents || {}; c.agents.defaults = c.agents.defaults || {};
-c.agents.defaults.name = "$safeName";
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-''';
-    await NativeBridge.runInProot(
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
-      timeout: 15,
-    );
+    // Always run doctor --fix to clean up any invalid keys
+    try {
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+        timeout: 15,
+      );
+    } catch (_) {}
   }
 
   /// Map a provider name to its default model string (provider/model).
@@ -234,7 +234,8 @@ function updateJson(p, updater) {
 // 1. Global config
 updateJson("/root/.openclaw/openclaw.json", (c) => {
   if (!c.env) c.env = {};
-  if ("$envKey") c.env["$envKey"] = "$key";
+  if (!c.env.vars) c.env.vars = {};
+  if ("$envKey") c.env.vars["$envKey"] = "$key";
 
   if (!c.models) c.models = {};
   if (!c.models.providers) c.models.providers = {};

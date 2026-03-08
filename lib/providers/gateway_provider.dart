@@ -36,8 +36,10 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.checkHealth();
   }
 
-  /// Write API key, persist model & agent name, THEN start the gateway.
+  /// Write API key, persist model, THEN start the gateway.
   /// All config must be written before start() so the gateway reads the correct values.
+  /// Note: agentName is kept as parameter for UI compatibility but OpenClaw schema
+  /// does not support agents.defaults.name, so it is not persisted.
   Future<void> configureAndStart({
     required String provider,
     required String apiKey,
@@ -49,11 +51,7 @@ class GatewayProvider extends ChangeNotifier {
     await _gatewayService.persistModel(
       _gatewayService.getModelForProvider(provider),
     );
-    // Step 3: Persist agent name if provided
-    if (agentName != null && agentName.trim().isNotEmpty) {
-      await _gatewayService.persistAgentName(agentName);
-    }
-    // Step 4: NOW start the gateway (it will read the freshly-written config)
+    // Step 3: Start the gateway (it will read the freshly-written config)
     await _gatewayService.start();
   }
 
