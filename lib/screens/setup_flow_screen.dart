@@ -163,11 +163,6 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         agentName: _agentNameController.text.trim(),
       );
 
-      // Persist the selected model so the gateway uses the user's choice (not Anthropic default)
-      final provider = _activeProvider;
-      if (provider != null) {
-        await gatewayProvider.persistModel(provider.defaultModel);
-      }
 
       setState(() {
         _launchStatus = 'Starting gateway...';
