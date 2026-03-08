@@ -166,7 +166,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
   String getModelForProvider(String provider) {
     switch (_normalizeProvider(provider)) {
       case 'google': return 'google/gemini-3.1-pro-preview';
-      case 'anthropic': return 'anthropic/claude-opus-4-6';
+      case 'anthropic': return 'anthropic/claude-opus-4.6';
       case 'openai': return 'openai/gpt-4o';
       case 'groq': return 'groq/llama-3.1-405b';
       default: return provider;
@@ -205,7 +205,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     if (openClawProvider == 'google') {
       modelsJson = '[ { "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview" } ]';
     } else if (openClawProvider == 'anthropic') {
-      modelsJson = '[ { "id": "claude-opus-4-6", "name": "Claude Opus 4.6" } ]';
+      modelsJson = '[ { "id": "claude-opus-4.6", "name": "Claude Opus 4.6" } ]';
     } else if (openClawProvider == 'openai') {
       modelsJson = '[ { "id": "gpt-4o", "name": "GPT-4o" } ]';
     } else if (openClawProvider == 'groq') {

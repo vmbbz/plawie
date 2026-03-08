@@ -49,7 +49,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFFD97706),
       hint: 'sk-ant-api03-...',
       prefix: 'sk-ant-',
-      defaultModel: 'anthropic/claude-opus-4-6',
+      defaultModel: 'anthropic/claude-opus-4.6',
     ),
     _ProviderInfo(
       id: 'GEMINI_API_KEY',
