@@ -9,7 +9,7 @@ import '../constants.dart';
 ///
 /// Maintains a single WS connection with:
 /// - Automatic reconnect on disconnect (exponential backoff)
-/// - Proper OpenClaw handshake (connect frame → hello-ok)
+/// - Proper OpenClaw Protocol v3 handshake
 /// - Ping keep-alive
 /// - Connection state tracking
 enum GatewayConnectionState { disconnected, connecting, handshaking, connected }
@@ -73,17 +73,33 @@ class GatewayConnection {
       onDone: _onDisconnect,
     );
 
-    // Send connect frame
+    // Send Protocol v3 connect frame.
+    // Local connections (127.0.0.1) auto-approve pairing, so device
+    // identity/signing is not required.
+    final connectId = const Uuid().v4();
     _channel!.sink.add(jsonEncode({
+      'type': 'req',
+      'id': connectId,
       'method': 'connect',
       'params': {
+        'minProtocol': 3,
+        'maxProtocol': 3,
+        'client': {
+          'id': AppConstants.packageName,
+          'version': AppConstants.version,
+          'platform': 'android',
+          'mode': 'node',
+        },
+        'role': 'node',
+        'scopes': ['chat', 'system'],
         'auth': {'token': _token},
+        'locale': 'en-US',
       },
     }));
 
-    // Wait for hello-ok
+    // Wait for hello-ok (increased timeout for slower devices)
     try {
-      await _handshakeCompleter!.future.timeout(const Duration(seconds: 5));
+      await _handshakeCompleter!.future.timeout(const Duration(seconds: 10));
     } catch (_) {
       _updateState(GatewayConnectionState.disconnected);
       _cleanup();
@@ -122,9 +138,7 @@ class GatewayConnection {
       // Events (chat deltas, etc.)
       if (type == 'event') {
         _eventController.add(frame);
-        // Also route to pending request if it matches
-        final data = frame['data'] as Map<String, dynamic>?;
-        // Broadcast to all — specific handlers filter by their needs
+        // Broadcast to all pending request handlers
         for (final controller in _pendingRequests.values) {
           controller.add(frame);
         }
@@ -163,7 +177,10 @@ class GatewayConnection {
     _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_state == GatewayConnectionState.connected && _channel != null) {
         try {
-          _channel!.sink.add(jsonEncode({'method': 'ping'}));
+          _channel!.sink.add(jsonEncode({
+            'type': 'req',
+            'method': 'ping',
+          }));
         } catch (_) {}
       }
     });
@@ -173,6 +190,8 @@ class GatewayConnection {
   Stream<Map<String, dynamic>> sendRequest(Map<String, dynamic> payload) {
     final id = payload['id'] as String? ?? const Uuid().v4();
     payload['id'] = id;
+    // Ensure Protocol v3 frame format
+    payload['type'] = 'req';
 
     final controller = StreamController<Map<String, dynamic>>();
     _pendingRequests[id] = controller;
