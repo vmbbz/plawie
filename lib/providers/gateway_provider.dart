@@ -11,7 +11,7 @@ class GatewayProvider extends ChangeNotifier {
   GatewayState get state => _state;
 
   /// Send a message to the OpenClaw gateway and stream the response
-  Stream<String> sendMessage(String message, {String model = 'clawa'}) {
+  Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) {
     return _gatewayService.sendMessage(message, model: model);
   }
 

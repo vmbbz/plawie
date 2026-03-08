@@ -1,16 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
-import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
+import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 
 class GatewayService {
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
+  GatewayConnection? _connection;
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
@@ -489,18 +491,12 @@ try {
   }
 
 
-
-  /// Send a message to the OpenClaw gateway and stream the response.
+  /// Send a message using the persistent WebSocket connection.
   ///
-  /// OpenClaw WebSocket protocol (from official docs):
-  ///   → {"method":"connect","params":{"auth":{"token":"..."}}}
-  ///   ← {"type":"hello-ok", ...}
-  ///   → {"method":"chat.send","params":{"message":"..."},"id":"<uuid>"}
-  ///   ← {"type":"res","id":"<uuid>","result":{"status":"started"}}
-  ///   ← {"type":"event","event":"chat","data":{"delta":"...","done":false}}
-  ///   ← {"type":"event","event":"chat","data":{"done":true}}
-  Stream<String> sendMessage(String message, {String model = 'clawa'}) async* {
-    // Retrieve auth token — required for connect frame.
+  /// Uses auto-reconnecting GatewayConnection. Falls back to per-message
+  /// connection if the persistent one isn't available.
+  Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) async* {
+    // Retrieve auth token
     String? token;
     try {
       token = await retrieveTokenFromConfig();
@@ -512,41 +508,43 @@ try {
       return;
     }
 
-    // Connect to the raw WS endpoint (no token in URL — it goes in the connect frame)
-    final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
-    WebSocketChannel? channel;
+    // Use persistent connection with auto-reconnect
+    if (_connection == null) {
+      _connection = GatewayConnection();
+    }
 
-    try {
-      channel = WebSocketChannel.connect(wsUri);
-      await channel.ready;
-    } catch (e) {
-      yield '[Error] Cannot connect to gateway WebSocket: $e';
-      return;
+    if (_connection!.state != GatewayConnectionState.connected) {
+      final ok = await _connection!.connect(token);
+      if (!ok) {
+        // Fallback to HTTP if WS fails
+        yield* sendMessageHttp(message, model: model, token: token);
+        return;
+      }
     }
 
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
-    final Completer<void> handshakeCompleter = Completer<void>();
-    
-    late StreamSubscription wsSubscription;
-    wsSubscription = channel.stream.listen(
-      (raw) {
+
+    final responseStream = _connection!.sendRequest({
+      'method': 'chat.send',
+      'params': {
+        'message': message,
+        'model': model,
+      },
+      'id': requestId,
+    });
+
+    late StreamSubscription frameSub;
+    frameSub = responseStream.listen(
+      (frame) {
         try {
-          final frame = jsonDecode(raw as String) as Map<String, dynamic>;
           final type = frame['type'] as String?;
 
-          // Step 2: Handle hello-ok (response to our connect frame)
-          if (type == 'hello-ok') {
-            if (!handshakeCompleter.isCompleted) handshakeCompleter.complete();
-            return;
-          }
-
-          // Ack for our chat.send request
+          // Response to our request
           if (type == 'res' && frame['id'] == requestId) {
             final result = frame['result'] as Map<String, dynamic>?;
             final status = result?['status'] as String?;
             if (status == 'ok' || status == null) {
-              // Synchronous response — gateway ran inline
               final text = result?['text'] as String?;
               if (text != null && text.isNotEmpty) {
                 chunkController.add(text);
@@ -554,11 +552,11 @@ try {
               chunkController.close();
               return;
             }
-            // status == 'started' → streaming, wait for chat events
+            // status == 'started' → streaming
             return;
           }
 
-          // Streaming chat events from the agent
+          // Chat events
           if (type == 'event' && frame['event'] == 'chat') {
             final data = frame['data'] as Map<String, dynamic>?;
             if (data != null) {
@@ -574,7 +572,6 @@ try {
                 chunkController.close();
               }
             }
-            return;
           }
         } catch (_) {}
       },
@@ -589,37 +586,7 @@ try {
       },
     );
 
-    // Step 1: Send the connect frame with auth token (REQUIRED first frame)
-    final connectPayload = jsonEncode({
-      'method': 'connect',
-      'params': {
-        'auth': {'token': token},
-      },
-    });
-    channel.sink.add(connectPayload);
-
-    // Wait for hello-ok with 5s timeout
-    try {
-      await handshakeCompleter.future.timeout(const Duration(seconds: 5));
-    } catch (_) {
-      yield '[Error] Gateway handshake timed out — no hello-ok received.';
-      wsSubscription.cancel();
-      channel.sink.close();
-      return;
-    }
-
-    // Step 3: Send the chat.send request (only after handshake succeeds)
-    final requestPayload = jsonEncode({
-      'method': 'chat.send',
-      'params': {
-        'message': message,
-        'model': model,
-      },
-      'id': requestId,
-    });
-    channel.sink.add(requestPayload);
-
-    // Yield chunks as they arrive
+    // Yield chunks
     try {
       await for (final chunk in chunkController.stream
           .timeout(const Duration(seconds: 90))) {
@@ -630,14 +597,62 @@ try {
     } catch (e) {
       yield '[Error] WebSocket chat error: $e';
     } finally {
-      wsSubscription.cancel();
-      channel.sink.close();
+      frameSub.cancel();
+    }
+  }
+
+  /// HTTP fallback: POST to /v1/chat/completions (OpenAI-compatible endpoint).
+  ///
+  /// Used when WebSocket connection fails. Simpler but doesn't support streaming.
+  Stream<String> sendMessageHttp(String message, {String model = 'google/gemini-3.1-pro-preview', String? token}) async* {
+    token ??= await retrieveTokenFromConfig();
+    if (token == null || token.isEmpty) {
+      yield '[Error] No auth token for HTTP fallback.';
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'model': model,
+          'messages': [
+            {'role': 'user', 'content': message},
+          ],
+        }),
+      ).timeout(const Duration(seconds: 90));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final choices = json['choices'] as List?;
+        if (choices != null && choices.isNotEmpty) {
+          final content = (choices[0]['message'] as Map?)?['content'] as String?;
+          if (content != null) {
+            yield content;
+          } else {
+            yield '[Error] Empty response from HTTP endpoint.';
+          }
+        } else {
+          yield '[Error] No choices in HTTP response.';
+        }
+      } else {
+        yield '[Error] HTTP ${response.statusCode}: ${response.body}';
+      }
+    } on TimeoutException {
+      yield '[Error] HTTP chat timed out after 90 seconds.';
+    } catch (e) {
+      yield '[Error] HTTP chat error: $e';
     }
   }
 
   void dispose() {
     _healthTimer?.cancel();
     _logSubscription?.cancel();
+    _connection?.dispose();
     _stateController.close();
   }
 }
