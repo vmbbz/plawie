@@ -16,7 +16,7 @@ class DeviceIdentity {
 
   String? _deviceId;
   String? _publicKeyBase64Url;
-  SimpleKeyPair? _keyPair;
+  SimpleKeyPairData? _keyPair;
 
   String? get deviceId => _deviceId;
   String? get publicKeyBase64Url => _publicKeyBase64Url;
@@ -60,8 +60,8 @@ class DeviceIdentity {
     _deviceId = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
     // Extract and persist private key bytes
-    final privateKeyData = _keyPair!;
-    final privateKeyBytes = Uint8List.fromList(privateKeyData.bytes);
+    final extractedData = await _keyPair!.extractPrivateKeyBytes();
+    final privateKeyBytes = Uint8List.fromList(extractedData);
     final privateKeyBase64Url = base64Url.encode(privateKeyBytes).replaceAll('=', '');
 
     // Save to SharedPreferences
@@ -106,11 +106,7 @@ class DeviceIdentity {
     try {
       final signature = await _algorithm.sign(
         utf8.encode(data),
-        keyPair: SimpleKeyPairData(
-          _keyPair!.bytes,
-          publicKey: _keyPair!.publicKey,
-          type: KeyPairType.ed25519,
-        ),
+        keyPair: _keyPair!,
       );
       return base64Url.encode(signature.bytes).replaceAll('=', '');
     } catch (_) {
