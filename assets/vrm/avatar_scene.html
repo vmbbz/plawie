@@ -7,16 +7,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Clawa VRM</title>
     <style>
+        html,
         body {
+            width: 100%;
+            height: 100%;
             margin: 0;
+            padding: 0;
             overflow: hidden;
             background-color: transparent;
         }
 
         canvas {
             display: block;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
+            margin: 0 auto;
         }
     </style>
     <script>
@@ -130,6 +135,27 @@
                     currentVrm = vrm;
                     vrm.scene.rotation.y = Math.PI;
                     vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
+
+                    // Standardize Position and Scale by Bounding Box (AF Spec)
+                    const box = new THREE.Box3().setFromObject(vrm.scene);
+                    const size = new THREE.Vector3();
+                    box.getSize(size);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    
+                    // Root floor and center rigidly
+                    vrm.scene.position.x = -center.x;
+                    vrm.scene.position.z = -center.z;
+                    vrm.scene.position.y = -box.min.y;
+
+                    // Frame Camera precisely to Chest/Head height
+                    const headHeight = size.y * 0.85;
+                    camera.position.set(0, headHeight, Math.max(1.8, size.y * 1.2));
+                    camera.lookAt(0, headHeight, 0);
+                    
+                    // Update interpolation targets
+                    targetCameraZ = camera.position.z;
+                    currentCameraZ = camera.position.z;
 
                     mixer = new THREE.AnimationMixer(vrm.scene);
 
