@@ -233,7 +233,7 @@ class BootstrapService {
         File('${openclawExtDir.path}/android_bridge_tools.js').writeAsStringSync(bridgeJs);
 
         // Copy the SKILL markdown files
-        final skills = ['battery.md', 'vibrate.md', 'sensors.md'];
+        final skills = ['battery.md', 'vibrate.md', 'sensors.md', 'avatar_forge.md'];
         for (final skill in skills) {
           final content = await rootBundle.loadString('assets/openclaw/skills/$skill');
           File('${openclawSkillsDir.path}/$skill').writeAsStringSync(content);
