@@ -4,12 +4,14 @@ import 'dart:math';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
+import 'device_identity.dart';
 
 /// Persistent WebSocket connection to the OpenClaw gateway.
 ///
-/// Maintains a single WS connection with:
+/// Implements OpenClaw Protocol v3 with:
+/// - Ed25519 device identity (signed connect frame)
+/// - Challenge-response nonce handling
 /// - Automatic reconnect on disconnect (exponential backoff)
-/// - Proper OpenClaw Protocol v3 handshake
 /// - Ping keep-alive
 /// - Connection state tracking
 enum GatewayConnectionState { disconnected, connecting, handshaking, connected }
@@ -27,17 +29,24 @@ class GatewayConnection {
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 10;
 
+  final DeviceIdentity _identity = DeviceIdentity();
+  bool _identityLoaded = false;
+
+  /// The main session key returned by the gateway in hello-ok.
+  String? mainSessionKey;
+
   final _stateNotifier = StreamController<GatewayConnectionState>.broadcast();
   Stream<GatewayConnectionState> get stateStream => _stateNotifier.stream;
 
   // Pending request completers — keyed by request ID
   final Map<String, StreamController<Map<String, dynamic>>> _pendingRequests = {};
 
-  // Global event stream for unsolicited events (chat, etc.)
+  // Global event stream for unsolicited events (chat, agent, etc.)
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
 
   Completer<void>? _handshakeCompleter;
+  Completer<String?>? _challengeCompleter;
 
   /// Connect to the gateway with the given auth token.
   Future<bool> connect(String token) async {
@@ -46,6 +55,13 @@ class GatewayConnection {
     }
 
     _token = token;
+
+    // Ensure device identity is loaded/generated
+    if (!_identityLoaded) {
+      await _identity.loadOrCreate();
+      _identityLoaded = true;
+    }
+
     return _doConnect();
   }
 
@@ -65,6 +81,7 @@ class GatewayConnection {
 
     _updateState(GatewayConnectionState.handshaking);
     _handshakeCompleter = Completer<void>();
+    _challengeCompleter = Completer<String?>();
 
     // Listen for frames
     _subscription = _channel!.stream.listen(
@@ -73,31 +90,20 @@ class GatewayConnection {
       onDone: _onDisconnect,
     );
 
-    // Send Protocol v3 connect frame.
-    // Local connections (127.0.0.1) auto-approve pairing.
-    // client.id must be a recognized constant from the gateway schema.
-    final connectId = const Uuid().v4();
-    _channel!.sink.add(jsonEncode({
-      'type': 'req',
-      'id': connectId,
-      'method': 'connect',
-      'params': {
-        'minProtocol': 3,
-        'maxProtocol': 3,
-        'client': {
-          'id': 'openclaw-android',
-          'version': AppConstants.version,
-          'platform': 'android',
-          'mode': 'ui',
-        },
-        'role': 'node',
-        'scopes': ['chat', 'system'],
-        'auth': {'token': _token},
-        'locale': 'en-US',
-      },
-    }));
+    // For local connections (127.0.0.1), the gateway skips the challenge.
+    // Wait briefly for a challenge nonce, then proceed without one.
+    String? nonce;
+    try {
+      nonce = await _challengeCompleter!.future
+          .timeout(const Duration(milliseconds: 500));
+    } catch (_) {
+      nonce = null; // No challenge for local connections
+    }
 
-    // Wait for hello-ok (increased timeout for slower devices)
+    // Build and send the Protocol v3 connect frame with device identity
+    await _sendConnectFrame(nonce);
+
+    // Wait for hello-ok
     try {
       await _handshakeCompleter!.future.timeout(const Duration(seconds: 10));
     } catch (_) {
@@ -113,13 +119,62 @@ class GatewayConnection {
     return true;
   }
 
+  Future<void> _sendConnectFrame(String? nonce) async {
+    final deviceBlock = await _identity.buildDeviceBlock(
+      clientId: 'openclaw-android',
+      clientMode: 'ui',
+      role: 'node',
+      scopes: ['*'],
+      token: _token,
+      nonce: nonce,
+    );
+
+    final connectId = const Uuid().v4();
+    final frame = <String, dynamic>{
+      'type': 'req',
+      'id': connectId,
+      'method': 'connect',
+      'params': {
+        'minProtocol': 3,
+        'maxProtocol': 3,
+        'client': {
+          'id': 'openclaw-android',
+          'version': AppConstants.version,
+          'platform': 'android',
+          'mode': 'ui',
+        },
+        'role': 'node',
+        'scopes': ['*'],
+        'auth': {'token': _token},
+        'locale': 'en-US',
+      },
+    };
+
+    // Add device identity block if available
+    if (deviceBlock != null) {
+      (frame['params'] as Map<String, dynamic>)['device'] = deviceBlock;
+    }
+
+    _channel!.sink.add(jsonEncode(frame));
+  }
+
   void _onFrame(dynamic raw) {
     try {
       final frame = jsonDecode(raw as String) as Map<String, dynamic>;
       final type = frame['type'] as String?;
 
-      // Handshake response
+      // hello-ok: handshake success
       if (type == 'hello-ok') {
+        // Extract mainSessionKey from the hello-ok payload
+        final snapshot = frame['snapshot'] as Map<String, dynamic>?;
+        final sessionDefaults = snapshot?['sessionDefaults'] as Map<String, dynamic>?;
+        mainSessionKey = sessionDefaults?['mainSessionKey'] as String? ?? 'main';
+
+        // Persist device token if provided
+        final auth = frame['auth'] as Map<String, dynamic>?;
+        final _deviceToken = auth?['deviceToken'] as String?;
+        // TODO: persist deviceToken for future connections
+
         if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
           _handshakeCompleter!.complete();
         }
@@ -135,10 +190,22 @@ class GatewayConnection {
         return;
       }
 
-      // Events (chat deltas, etc.)
+      // Events
       if (type == 'event') {
+        final event = frame['event'] as String?;
+
+        // Handle challenge-response during handshake
+        if (event == 'connect.challenge') {
+          final payload = frame['payload'] as Map<String, dynamic>?;
+          final nonce = payload?['nonce'] as String?;
+          if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
+            _challengeCompleter!.complete(nonce);
+          }
+          return;
+        }
+
         _eventController.add(frame);
-        // Broadcast to all pending request handlers
+        // Also broadcast to any pending request handlers
         for (final controller in _pendingRequests.values) {
           controller.add(frame);
         }

@@ -532,11 +532,16 @@ try {
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
 
+    // Use sessionKey from gateway handshake, or default to 'main'
+    final sessionKey = _connection!.mainSessionKey ?? 'main';
+
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
       'params': {
+        'sessionKey': sessionKey,
         'message': message,
-        'model': model,
+        'idempotencyKey': const Uuid().v4(),
+        'timeoutMs': 90000,
       },
       'id': requestId,
     });
@@ -563,20 +568,38 @@ try {
             return;
           }
 
-          // Chat events
+          // Chat events — terminal state signals
           if (type == 'event' && frame['event'] == 'chat') {
-            final data = frame['data'] as Map<String, dynamic>?;
-            if (data != null) {
-              final delta = data['delta'] as String?;
+            final payload = frame['payload'] as Map<String, dynamic>?
+                ?? frame['data'] as Map<String, dynamic>?;
+            if (payload != null) {
+              final state = payload['state'] as String?;
+              if (state == 'final' || state == 'aborted' || state == 'error') {
+                if (!chunkController.isClosed) chunkController.close();
+              }
+              // Legacy delta handling (in case gateway sends chat events)
+              final delta = payload['delta'] as String?;
               if (delta != null && delta.isNotEmpty) {
                 chunkController.add(delta);
               }
-              final text = data['text'] as String?;
-              if (text != null && text.isNotEmpty && delta == null) {
-                chunkController.add(text);
+              if (payload['done'] == true) {
+                if (!chunkController.isClosed) chunkController.close();
               }
-              if (data['done'] == true) {
-                chunkController.close();
+            }
+          }
+
+          // Agent events — streaming text deltas from the assistant
+          if (type == 'event' && frame['event'] == 'agent') {
+            final payload = frame['payload'] as Map<String, dynamic>?
+                ?? frame['data'] as Map<String, dynamic>?;
+            if (payload != null) {
+              final stream = payload['stream'] as String?;
+              if (stream == 'assistant') {
+                // Text delta from the AI
+                final text = payload['text'] as String?;
+                if (text != null && text.isNotEmpty) {
+                  chunkController.add(text);
+                }
               }
             }
           }
