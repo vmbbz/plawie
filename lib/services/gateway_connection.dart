@@ -74,8 +74,8 @@ class GatewayConnection {
     );
 
     // Send Protocol v3 connect frame.
-    // Local connections (127.0.0.1) auto-approve pairing, so device
-    // identity/signing is not required.
+    // Local connections (127.0.0.1) auto-approve pairing.
+    // client.id must be a recognized constant from the gateway schema.
     final connectId = const Uuid().v4();
     _channel!.sink.add(jsonEncode({
       'type': 'req',
@@ -85,12 +85,12 @@ class GatewayConnection {
         'minProtocol': 3,
         'maxProtocol': 3,
         'client': {
-          'id': AppConstants.packageName,
+          'id': 'gateway-client',
           'version': AppConstants.version,
           'platform': 'android',
-          'mode': 'node',
+          'mode': 'operator',
         },
-        'role': 'node',
+        'role': 'operator',
         'scopes': ['chat', 'system'],
         'auth': {'token': _token},
         'locale': 'en-US',
