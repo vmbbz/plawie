@@ -77,7 +77,6 @@ flutter:
     - assets/vrm/animations/
     - assets/vrm/lib/
     - assets/vrm/utils/
-    - assets/voices/
     - assets/openclaw/skills/battery.md
     - assets/openclaw/skills/vibrate.md
     - assets/openclaw/skills/sensors.md

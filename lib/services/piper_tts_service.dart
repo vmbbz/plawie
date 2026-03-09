@@ -28,13 +28,24 @@ class PiperTtsService {
       final voicesDir = Directory('${docDir.path}/voices');
       final modelExtractedDir = Directory('${voicesDir.path}/vits-piper-en_US-amy-low');
 
-      // 1. Extract the tar.bz2 asset if it hasn't been extracted yet
+      // 1. Download & Extract the tar.bz2 asset if it hasn't been extracted yet
       if (!await modelExtractedDir.exists()) {
-        print('PiperTTS: Extracting ONNX model (this happens once)...');
+        print('PiperTTS: Downloading ONNX model (this happens once, ~67MB)...');
         await voicesDir.create(recursive: true);
         
-        final ByteData data = await rootBundle.load('assets/voices/amy.tar.bz2');
-        final bytes = data.buffer.asUint8List();
+        final url = Uri.parse('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2');
+        final httpClient = HttpClient();
+        final request = await httpClient.getUrl(url);
+        final response = await request.close();
+        
+        // Accumulate bytes
+        final bytesBuilder = BytesBuilder();
+        await for (var chunk in response) {
+          bytesBuilder.add(chunk);
+        }
+        final bytes = bytesBuilder.takeBytes();
+        
+        print('PiperTTS: Download complete. Extracting...');
         
         // Decode BZip2 then Tar
         final tarBytes = BZip2Decoder().decodeBytes(bytes);
