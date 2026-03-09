@@ -32,7 +32,10 @@ class GatewayConnection {
   final DeviceIdentity _identity = DeviceIdentity();
   bool _identityLoaded = false;
 
-  /// The main session key returned by the gateway in hello-ok.
+  /// The connect request ID, used to match the hello-ok (type:res) response.
+  String? _connectRequestId;
+
+  /// The main session key returned by the gateway in the connect response.
   String? mainSessionKey;
 
   final _stateNotifier = StreamController<GatewayConnectionState>.broadcast();
@@ -103,9 +106,9 @@ class GatewayConnection {
     // Build and send the Protocol v3 connect frame with device identity
     await _sendConnectFrame(nonce);
 
-    // Wait for hello-ok
+    // Wait for connect response (type: 'res' matching our connect ID)
     try {
-      await _handshakeCompleter!.future.timeout(const Duration(seconds: 10));
+      await _handshakeCompleter!.future.timeout(const Duration(seconds: 15));
     } catch (_) {
       _updateState(GatewayConnectionState.disconnected);
       _cleanup();
@@ -129,10 +132,10 @@ class GatewayConnection {
       nonce: nonce,
     );
 
-    final connectId = const Uuid().v4();
+    _connectRequestId = const Uuid().v4();
     final frame = <String, dynamic>{
       'type': 'req',
-      'id': connectId,
+      'id': _connectRequestId,
       'method': 'connect',
       'params': {
         'minProtocol': 3,
@@ -163,25 +166,40 @@ class GatewayConnection {
       final frame = jsonDecode(raw as String) as Map<String, dynamic>;
       final type = frame['type'] as String?;
 
-      // hello-ok: handshake success
-      if (type == 'hello-ok') {
-        // Extract mainSessionKey from the hello-ok payload
-        final snapshot = frame['snapshot'] as Map<String, dynamic>?;
-        final sessionDefaults = snapshot?['sessionDefaults'] as Map<String, dynamic>?;
-        mainSessionKey = sessionDefaults?['mainSessionKey'] as String? ?? 'main';
+      // ── Connect response (hello-ok) ──
+      // The gateway sends the connect response as type:'res' with our connect ID.
+      // The server logs call it "hello-ok" but the wire protocol uses type:'res'.
+      if (type == 'res' && frame['id'] == _connectRequestId) {
+        // Check if the connect was successful
+        final ok = frame['ok'] as bool? ?? false;
+        if (ok) {
+          // Extract mainSessionKey from the payload
+          final payload = frame['payload'] as Map<String, dynamic>?;
+          final snapshot = payload?['snapshot'] as Map<String, dynamic>?;
+          final sessionDefaults = snapshot?['sessionDefaults'] as Map<String, dynamic>?;
+          mainSessionKey = sessionDefaults?['mainSessionKey'] as String? ?? 'main';
 
-        // Persist device token if provided
-        final auth = frame['auth'] as Map<String, dynamic>?;
-        final _deviceToken = auth?['deviceToken'] as String?;
-        // TODO: persist deviceToken for future connections
+          // Persist device token if provided
+          final auth = payload?['auth'] as Map<String, dynamic>?;
+          // ignore: unused_local_variable
+          final deviceToken = auth?['deviceToken'] as String?;
+          // TODO: persist deviceToken for future connections
+        }
 
+        _connectRequestId = null; // Clear so we don't match again
         if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
-          _handshakeCompleter!.complete();
+          if (ok) {
+            _handshakeCompleter!.complete();
+          } else {
+            final error = frame['error'] as Map<String, dynamic>?;
+            final msg = error?['message'] as String? ?? 'connect rejected';
+            _handshakeCompleter!.completeError(Exception(msg));
+          }
         }
         return;
       }
 
-      // Response to a pending request
+      // ── Response to a pending RPC request ──
       if (type == 'res' && frame['id'] != null) {
         final id = frame['id'] as String;
         if (_pendingRequests.containsKey(id)) {
@@ -190,7 +208,7 @@ class GatewayConnection {
         return;
       }
 
-      // Events
+      // ── Events ──
       if (type == 'event') {
         final event = frame['event'] as String?;
 
@@ -246,6 +264,7 @@ class GatewayConnection {
         try {
           _channel!.sink.add(jsonEncode({
             'type': 'req',
+            'id': const Uuid().v4(),
             'method': 'ping',
           }));
         } catch (_) {}
@@ -281,6 +300,7 @@ class GatewayConnection {
     _subscription?.cancel();
     _subscription = null;
     _pingTimer?.cancel();
+    _connectRequestId = null;
     try {
       _channel?.sink.close();
     } catch (_) {}
