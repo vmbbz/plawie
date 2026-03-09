@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import '../services/piper_tts_service.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 import '../app.dart';
@@ -37,8 +37,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<String> _diagnosticLogs = [];
   bool _showDiagnostics = false;
   
-  // Voice
-  final FlutterTts _flutterTts = FlutterTts();
+  // Voice Pipeline (Piper TTS / Local VITS)
+  final PiperTtsService _piperTts = PiperTtsService();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
   
@@ -114,28 +114,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initVoiceParams() async {
-    await _flutterTts.setLanguage("en-US");
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.0);
+    await _piperTts.init();
 
     await _speechToText.initialize();
 
-    _flutterTts.setStartHandler(() {
+    _piperTts.onStart = () {
       if (mounted) setState(() => _speechIntensity = 0.8);
-    });
+    };
 
-    _flutterTts.setCompletionHandler(() {
+    _piperTts.onComplete = () {
       if (mounted) setState(() => _speechIntensity = 0.0);
-    });
-
-    _flutterTts.setCancelHandler(() {
-      if (mounted) setState(() => _speechIntensity = 0.0);
-    });
-
-    _flutterTts.setErrorHandler((msg) {
-      if (mounted) setState(() => _speechIntensity = 0.0);
-    });
+    };
   }
 
   void _scrollToBottom() {
@@ -191,6 +180,11 @@ class _ChatScreenState extends State<ChatScreen> {
         _scrollToBottom();
       }
       _saveChatHistory(); // Save full assistant response
+
+      // Strip markdown symbols before speaking so it doesn't pronounce asterisks
+      final cleanTextForSpeech = fullResponse.replaceAll(RegExp(r'[\*\`\#]'), '');
+      _piperTts.speak(cleanTextForSpeech);
+      
     } catch (e) {
       _addDiagnosticLog('Exception during Chat: $e');
       if (mounted) {
@@ -398,7 +392,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _flutterTts.stop();
+    _piperTts.stop();
     _speechToText.stop();
     _textController.dispose();
     _scrollController.dispose();
