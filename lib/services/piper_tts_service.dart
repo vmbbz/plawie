@@ -70,7 +70,6 @@ class PiperTtsService {
           provider: "cpu",
         ),
         ruleFsts: '',
-        maxNumSentences: 1,
       );
 
       _tts = sherpa.OfflineTts(config);
@@ -92,7 +91,7 @@ class PiperTtsService {
 
     try {
       // 1. Generate Raw PCM
-      final audioConfig = _tts!.generate(text, sid: 0, speed: 1.0);
+      final audioConfig = _tts!.generate(text: text, sid: 0, speed: 1.0);
       if (audioConfig.samples.isEmpty) return;
       
       onStart?.call();

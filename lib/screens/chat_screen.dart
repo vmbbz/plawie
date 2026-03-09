@@ -207,8 +207,9 @@ class _ChatScreenState extends State<ChatScreen> {
     
     // Speak the final response
     if (fullResponse.isNotEmpty && !fullResponse.startsWith('[Error')) {
-       await _flutterTts.stop();
-       await _flutterTts.speak(fullResponse);
+       await _piperTts.stop();
+       final cleanTextForSpeech = fullResponse.replaceAll(RegExp(r'[\*\`\#]'), '');
+       await _piperTts.speak(cleanTextForSpeech);
     }
   }
 

@@ -59,7 +59,7 @@ class AgentSkillServer {
       // Update the global preference for the avatar
       final prefs = PreferencesService();
       await prefs.init();
-      await prefs.saveSelectedAvatar(avatarFileName);
+      prefs.selectedAvatar = avatarFileName;
 
       _sendJson(request, {
         'success': true,
