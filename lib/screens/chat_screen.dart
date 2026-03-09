@@ -12,6 +12,7 @@ import '../widgets/vrm_avatar_widget.dart';
 import '../models/chat_message.dart';
 import '../services/chat_persistence_service.dart';
 import '../widgets/chat_bubble.dart';
+import 'avatar_forge_page.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -298,6 +299,103 @@ class _ChatScreenState extends State<ChatScreen> {
     _addDiagnosticLog('Swapped to AI model: $_selectedModel');
   }
 
+  void _showAvatarMenu(BuildContext context) {
+    final RenderBox? button = context.findRenderObject() as RenderBox?;
+    final position = button?.localToGlobal(Offset.zero) ?? Offset.zero;
+    
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 200, 0),
+      color: const Color(0xFF1A1A2E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      items: [
+        ..._availableAvatars.map((avatar) => PopupMenuItem<String>(
+          value: avatar,
+          child: Row(
+            children: [
+              Icon(
+                avatar == _selectedAvatar ? Icons.check_circle : Icons.circle_outlined,
+                color: avatar == _selectedAvatar ? AppColors.statusGreen : Colors.white38,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                avatar.split('.').first,
+                style: TextStyle(
+                  color: avatar == _selectedAvatar ? Colors.white : Colors.white70,
+                  fontWeight: avatar == _selectedAvatar ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        )),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'avatar_forge',
+          child: Row(
+            children: [
+              Icon(Icons.auto_fix_high, color: Colors.purpleAccent.shade100, size: 18),
+              const SizedBox(width: 10),
+              const Text('Avatar Forge', style: TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 12),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      if (value == 'avatar_forge') {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const AvatarForgePage(),
+        ));
+        return;
+      }
+      setState(() {
+        _selectedAvatar = value;
+        _isReady = false;
+      });
+      _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
+    });
+  }
+
+  void _showModelMenu(BuildContext context) {
+    final RenderBox? button = context.findRenderObject() as RenderBox?;
+    final position = button?.localToGlobal(Offset.zero) ?? Offset.zero;
+    
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 300, 0),
+      color: const Color(0xFF1A1A2E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      items: _availableModels.map((model) => PopupMenuItem<String>(
+        value: model,
+        child: Row(
+          children: [
+            Icon(
+              model == _selectedModel ? Icons.check_circle : Icons.circle_outlined,
+              color: model == _selectedModel ? Colors.purpleAccent : Colors.white38,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              model,
+              style: TextStyle(
+                color: model == _selectedModel ? Colors.white : Colors.white70,
+                fontSize: 13,
+                fontWeight: model == _selectedModel ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      )).toList(),
+    ).then((value) {
+      if (value == null) return;
+      setState(() => _selectedModel = value);
+      _addDiagnosticLog('Swapped to AI model: $_selectedModel');
+    });
+  }
+
   @override
   void dispose() {
     _flutterTts.stop();
@@ -450,7 +548,7 @@ class _ChatScreenState extends State<ChatScreen> {
       extendBodyBehindAppBar: true,
       endDrawer: _buildSessionDrawer(),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.black.withOpacity(0.3),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -459,26 +557,59 @@ class _ChatScreenState extends State<ChatScreen> {
         title: AnimatedOpacity(
           opacity: _isCinematic ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 400),
-          child: Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'CLAW POCKET',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 4.0,
+              // Avatar dropdown
+              GestureDetector(
+                onTap: () => _showAvatarMenu(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.15)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.face, color: AppColors.statusGreen, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        _selectedAvatar.split('.').first,
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.keyboard_arrow_down, color: Colors.white54, size: 16),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                'SECURE NODE ACTIVE',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.statusGreen,
-                  fontSize: 8,
-                  letterSpacing: 2.0,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 8),
+              // Model dropdown
+              GestureDetector(
+                onTap: () => _showModelMenu(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.15)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome, color: Colors.purpleAccent.shade100, size: 14),
+                      const SizedBox(width: 6),
+                      Text(
+                        _selectedModel.split('/').last,
+                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.keyboard_arrow_down, color: Colors.white54, size: 16),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -486,7 +617,6 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         centerTitle: true,
         actions: [
-          // New chat button
           IconButton(
             icon: const Icon(Icons.add_comment_outlined, color: Colors.white70),
             onPressed: () async {
@@ -495,7 +625,6 @@ class _ChatScreenState extends State<ChatScreen> {
             },
             tooltip: 'New Chat',
           ),
-          // Sessions list button
           Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.history, color: Colors.white70),
@@ -703,19 +832,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // 5. Floating avatar/model controls (minimal, bottom right)
-          Positioned(
-            bottom: 24,
-            right: 24,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                _buildFloatingChip(_selectedAvatar.split('.').first.toUpperCase(), _nextAvatar, _prevAvatar),
-                const SizedBox(height: 8),
-                _buildFloatingChip(_selectedModel.toUpperCase(), _nextModel, _prevModel),
-              ],
-            ),
-          ),
+
 
           // 6. Diagnostics (slide-up panel)
           if (_showDiagnostics)
