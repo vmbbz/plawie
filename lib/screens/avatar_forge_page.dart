@@ -35,7 +35,7 @@ class _AvatarForgePageState extends State<AvatarForgePage> {
   Future<void> _equipAvatar(String avatar) async {
     final prefs = PreferencesService();
     await prefs.init();
-    await prefs.saveSelectedAvatar(avatar);
+    prefs.selectedAvatar = avatar;
     setState(() {
       _equippedAvatar = avatar;
     });
