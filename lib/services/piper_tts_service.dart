@@ -66,7 +66,7 @@ class PiperTtsService {
             lengthScale: 1.0,
           ),
           numThreads: 2,
-          debug: 0,
+          debug: false,
           provider: "cpu",
         ),
         ruleFsts: '',
