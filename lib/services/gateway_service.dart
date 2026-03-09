@@ -552,19 +552,19 @@ try {
         try {
           final type = frame['type'] as String?;
 
-          // Response to our request
+          // Response to our chat.send request — this is just an ACK.
+          // The gateway responds with ok:true + runId when streaming starts.
+          // Actual text comes via 'agent' events.
           if (type == 'res' && frame['id'] == requestId) {
-            final result = frame['result'] as Map<String, dynamic>?;
-            final status = result?['status'] as String?;
-            if (status == 'ok' || status == null) {
-              final text = result?['text'] as String?;
-              if (text != null && text.isNotEmpty) {
-                chunkController.add(text);
-              }
-              chunkController.close();
-              return;
+            final ok = frame['ok'] as bool? ?? false;
+            if (!ok) {
+              // chat.send was rejected
+              final error = frame['error'] as Map<String, dynamic>?;
+              final msg = error?['message'] as String? ?? 'chat.send failed';
+              chunkController.add('[Error] $msg');
+              if (!chunkController.isClosed) chunkController.close();
             }
-            // status == 'started' → streaming
+            // ok:true → streaming has started, wait for agent events
             return;
           }
 
@@ -577,18 +577,10 @@ try {
               if (state == 'final' || state == 'aborted' || state == 'error') {
                 if (!chunkController.isClosed) chunkController.close();
               }
-              // Legacy delta handling (in case gateway sends chat events)
-              final delta = payload['delta'] as String?;
-              if (delta != null && delta.isNotEmpty) {
-                chunkController.add(delta);
-              }
-              if (payload['done'] == true) {
-                if (!chunkController.isClosed) chunkController.close();
-              }
             }
           }
 
-          // Agent events — streaming text deltas from the assistant
+          // Agent events — streaming text deltas and lifecycle errors
           if (type == 'event' && frame['event'] == 'agent') {
             final payload = frame['payload'] as Map<String, dynamic>?
                 ?? frame['data'] as Map<String, dynamic>?;
@@ -599,6 +591,14 @@ try {
                 final text = payload['text'] as String?;
                 if (text != null && text.isNotEmpty) {
                   chunkController.add(text);
+                }
+              } else if (stream == 'lifecycle') {
+                // Lifecycle events (start, error, end)
+                final phase = payload['phase'] as String?;
+                if (phase == 'error') {
+                  final error = payload['error'] as String? ?? 'Unknown error';
+                  chunkController.add('[Error] $error');
+                  if (!chunkController.isClosed) chunkController.close();
                 }
               }
             }
