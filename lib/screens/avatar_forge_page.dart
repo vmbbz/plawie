@@ -1,10 +1,50 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import '../app.dart';
+import '../services/preferences_service.dart';
 
 /// Avatar Forge — Create, mint, or rent 3D AI avatars as NFTs.
-class AvatarForgePage extends StatelessWidget {
+class AvatarForgePage extends StatefulWidget {
   const AvatarForgePage({super.key});
+
+  @override
+  State<AvatarForgePage> createState() => _AvatarForgePageState();
+}
+
+class _AvatarForgePageState extends State<AvatarForgePage> {
+  final List<String> _myAvatars = [
+    'default_avatar.vrm',
+    'gemini.vrm',
+    'boruto.vrm'
+  ];
+  String _equippedAvatar = 'default_avatar.vrm';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEquipped();
+  }
+
+  Future<void> _loadEquipped() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    setState(() {
+      _equippedAvatar = prefs.selectedAvatar;
+    });
+  }
+
+  Future<void> _equipAvatar(String avatar) async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    await prefs.saveSelectedAvatar(avatar);
+    setState(() {
+      _equippedAvatar = avatar;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Equipped ${avatar.split('.').first}')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,65 +90,16 @@ class AvatarForgePage extends StatelessWidget {
                 _buildHeroSection(),
                 const SizedBox(height: 32),
 
-                // Action cards
-                _buildSectionTitle('CREATE', Icons.auto_fix_high, Colors.purpleAccent),
+                // My Library
+                _buildSectionTitle('MY LIBRARY', Icons.grid_view, Colors.greenAccent),
                 const SizedBox(height: 12),
-                _buildActionCard(
-                  context,
-                  title: 'Forge New Avatar',
-                  subtitle: 'Design a unique 3D VRM avatar for your AI agent',
-                  description: 'Use our AI-powered generator to create a custom 3D avatar '
-                      'from text descriptions or reference images. Your avatar will be '
-                      'compatible with VRM standard and can be used across platforms.',
-                  icon: Icons.brush,
-                  gradient: const [Color(0xFF7B2FBE), Color(0xFF3A1078)],
-                  steps: [
-                    'Describe your avatar or upload a reference',
-                    'AI generates a 3D VRM model',
-                    'Preview and customize expressions',
-                    'Export or mint as NFT',
-                  ],
-                ),
-                const SizedBox(height: 16),
+                _buildLibraryGrid(),
+                const SizedBox(height: 32),
 
-                _buildSectionTitle('MINT', Icons.diamond_outlined, Colors.cyanAccent),
+                // Web Portal CTA
+                _buildSectionTitle('WEB PORTAL', Icons.public, Colors.purpleAccent),
                 const SizedBox(height: 12),
-                _buildActionCard(
-                  context,
-                  title: 'Mint as NFT',
-                  subtitle: 'Own your avatar permanently on-chain',
-                  description: 'Mint your custom avatar as an NFT on Solana. '
-                      'Your avatar becomes a tradeable digital asset with provable '
-                      'ownership. Includes full VRM file and metadata.',
-                  icon: Icons.token,
-                  gradient: const [Color(0xFF0891B2), Color(0xFF164E63)],
-                  steps: [
-                    'Connect your Solana wallet',
-                    'Choose mint collection (Avatar Forge)',
-                    'Set royalty percentage for rentals',
-                    'Confirm transaction & mint',
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                _buildSectionTitle('RENT', Icons.storefront, Colors.amber),
-                const SizedBox(height: 12),
-                _buildActionCard(
-                  context,
-                  title: 'Rent from Marketplace',
-                  subtitle: 'Browse avatars created by other agents',
-                  description: 'Access the Avatar Forge marketplace to rent premium '
-                      'avatars created by other users and AI bots. Pay per-day or '
-                      'subscribe for unlimited access to curated collections.',
-                  icon: Icons.shopping_bag_outlined,
-                  gradient: const [Color(0xFFB45309), Color(0xFF78350F)],
-                  steps: [
-                    'Browse marketplace collections',
-                    'Preview avatar in 3D viewer',
-                    'Choose rental duration',
-                    'Avatar appears in your library',
-                  ],
-                ),
+                _buildWebPortalCard(context),
                 const SizedBox(height: 32),
 
                 // Coming soon badge
@@ -126,7 +117,7 @@ class AvatarForgePage extends StatelessWidget {
                         Icon(Icons.rocket_launch, color: Colors.purpleAccent.shade100, size: 18),
                         const SizedBox(width: 8),
                         const Text(
-                          'Powered by AgentVRM Protocol',
+                          'Powered by AgentVRM on Solana',
                           style: TextStyle(
                             color: Colors.purpleAccent,
                             fontSize: 12,
@@ -144,6 +135,70 @@ class AvatarForgePage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLibraryGrid() {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: _myAvatars.length,
+      itemBuilder: (context, index) {
+        final avatar = _myAvatars[index];
+        final isEquipped = avatar == _equippedAvatar;
+        final name = avatar.split('.').first;
+
+        return GestureDetector(
+          onTap: () => _equipAvatar(avatar),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isEquipped ? Colors.greenAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isEquipped ? Colors.greenAccent : Colors.white.withOpacity(0.1),
+                width: isEquipped ? 2 : 1,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.person,
+                  size: 40,
+                  color: isEquipped ? Colors.greenAccent : Colors.white54,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  name.toUpperCase(),
+                  style: TextStyle(
+                    color: isEquipped ? Colors.white : Colors.white70,
+                    fontSize: 10,
+                    fontWeight: isEquipped ? FontWeight.bold : FontWeight.normal,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                if (isEquipped) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('EQUIPPED', style: TextStyle(color: Colors.greenAccent, fontSize: 8, fontWeight: FontWeight.bold)),
+                  )
+                ]
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -199,7 +254,7 @@ class AvatarForgePage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Create, own, and trade 3D AI avatars\nas digital assets on the blockchain',
+            'Manage your on-chain identities.\nEquip local avocados or visit the web portal to mint.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.7),
@@ -230,15 +285,7 @@ class AvatarForgePage extends StatelessWidget {
     );
   }
 
-  Widget _buildActionCard(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required String description,
-    required IconData icon,
-    required List<Color> gradient,
-    required List<String> steps,
-  }) {
+  Widget _buildWebPortalCard(BuildContext context) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -262,18 +309,18 @@ class AvatarForgePage extends StatelessWidget {
                       height: 44,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        gradient: LinearGradient(colors: gradient),
+                        gradient: const LinearGradient(colors: [Color(0xFF7B2FBE), Color(0xFF3A1078)]),
                       ),
-                      child: Icon(icon, color: Colors.white, size: 22),
+                      child: const Icon(Icons.public, color: Colors.white, size: 22),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            title,
-                            style: const TextStyle(
+                          const Text(
+                            'Avatar Forge Web',
+                            style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -281,7 +328,7 @@ class AvatarForgePage extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            subtitle,
+                            'forge.openclaw.com',
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.5),
                               fontSize: 12,
@@ -294,43 +341,35 @@ class AvatarForgePage extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  description,
+                  'Visit the Avatar Forge web portal to create new 3D avatars from scratch, mint them as Core NFTs on Solana, and browse the rental marketplace.',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.65),
                     fontSize: 13,
                     height: 1.5,
                   ),
                 ),
-                const SizedBox(height: 16),
-                ...steps.asMap().entries.map((entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(colors: gradient),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${entry.key + 1}',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Opening forge.openclaw.com...')),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purpleAccent.withOpacity(0.2),
+                      foregroundColor: Colors.purpleAccent.shade100,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5)),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
-                        ),
-                      ),
-                    ],
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('OPEN WEB PORTAL', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5)),
                   ),
-                )),
+                ),
               ],
             ),
           ),
