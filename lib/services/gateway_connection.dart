@@ -127,7 +127,7 @@ class GatewayConnection {
       clientId: 'openclaw-android',
       clientMode: 'ui',
       role: 'operator',
-      scopes: ['*'],
+      scopes: ['operator.read', 'operator.write', 'chat', 'agent', 'system'],
       token: _token,
       nonce: nonce,
     );
@@ -147,7 +147,7 @@ class GatewayConnection {
           'mode': 'ui',
         },
         'role': 'operator',
-        'scopes': ['*'],
+        'scopes': ['operator.read', 'operator.write', 'chat', 'agent', 'system'],
         'auth': {'token': _token},
         'locale': 'en-US',
       },
