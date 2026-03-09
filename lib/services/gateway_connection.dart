@@ -126,7 +126,7 @@ class GatewayConnection {
     final deviceBlock = await _identity.buildDeviceBlock(
       clientId: 'openclaw-android',
       clientMode: 'ui',
-      role: 'node',
+      role: 'operator',
       scopes: ['*'],
       token: _token,
       nonce: nonce,
@@ -146,7 +146,7 @@ class GatewayConnection {
           'platform': 'android',
           'mode': 'ui',
         },
-        'role': 'node',
+        'role': 'operator',
         'scopes': ['*'],
         'auth': {'token': _token},
         'locale': 'en-US',
