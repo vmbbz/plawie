@@ -507,14 +507,57 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commandController,
+                  decoration: InputDecoration(
+                    hintText: 'Enter CLI command...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
+                  onSubmitted: (val) {
+                    if (val.trim().isNotEmpty) {
+                      _executeCommand(val);
+                      _commandController.clear();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton(
+                onPressed: () {
+                  if (_commandController.text.trim().isNotEmpty) {
+                    _executeCommand(_commandController.text);
+                    _commandController.clear();
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Icon(Icons.send, size: 20),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
   Widget _buildQuickSetupTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -525,20 +568,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           
           ..._providers.map((p) => _buildProviderCard(p)),
           
-          const SizedBox(height: 24),
+          const SizedBox(height: 32),
           const Divider(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
             'Advanced CLI Command:',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(

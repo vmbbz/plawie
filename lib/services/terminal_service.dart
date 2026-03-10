@@ -116,8 +116,6 @@ class TerminalService {
       'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       'TERM=xterm-256color',
       'TMPDIR=/tmp',
-      'COLUMNS=$columns',
-      'LINES=$rows',
       'NODE_OPTIONS=--require /root/.openclaw/bionic-bypass.js',
       '/bin/bash',
       '-l',
