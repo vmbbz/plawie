@@ -78,8 +78,12 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         setState(() {
           _downloadProgress = p;
-          _isDownloadingTts = p > 0 && p < 1.0;
-          if (p >= 1.0) _isTtsDownloaded = true;
+          if (p >= 1.0) {
+            _isDownloadingTts = false;
+            _isTtsDownloaded = true;
+          } else if (p > 0) {
+            _isDownloadingTts = true;
+          }
         });
       }
     };
@@ -1105,8 +1109,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         ],
                       ),
                     ),
-
-                children: [
                   const Spacer(flex: 3),
                   Expanded(
                     flex: 4,
