@@ -15,6 +15,8 @@ class VrmAvatarWidget extends StatefulWidget {
   final String avatarFileName;
   final bool isCinematic;
   final double glowIntensity;
+  final String? gesture;
+  final String? userMessage;
   final Function(String)? onLog;
 
   const VrmAvatarWidget({
@@ -24,6 +26,8 @@ class VrmAvatarWidget extends StatefulWidget {
     this.avatarFileName = 'default_avatar.vrm',
     this.isCinematic = false,
     this.glowIntensity = 0.0,
+    this.gesture,
+    this.userMessage,
     this.onLog,
   });
 
@@ -124,6 +128,12 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           oldWidget.avatarFileName != widget.avatarFileName) {
         if (oldWidget.avatarFileName != widget.avatarFileName) {
           _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
+        }
+        if (widget.gesture != null && widget.gesture != oldWidget.gesture) {
+          _controller.runJavaScript("window.playGesture('${widget.gesture}');");
+        }
+        if (widget.userMessage != null && widget.userMessage != oldWidget.userMessage) {
+          _controller.runJavaScript("window.processKeywords('''${widget.userMessage}''');");
         }
         _syncState();
       }

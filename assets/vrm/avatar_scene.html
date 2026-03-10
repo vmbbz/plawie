@@ -26,10 +26,8 @@
     </style>
     <script>
         // esmsInitOptions MUST be set before es-module-shims loads.
-        // Without shimMode: true, the polyfill may skip importmap processing on older Android WebViews.
         window.esmsInitOptions = { shimMode: true };
     </script>
-    <!-- IMPORTANT: No 'async' here — must be synchronous so importmap is processed before type=module -->
     <script src="./lib/es-module-shims.js"></script>
     <script type="importmap-shim">
     {
@@ -45,7 +43,6 @@
 
 <body>
     <script>
-        // Intercept global errors to bubble up to Flutter for diagnostics!
         window.onerror = function (msg, url, lineNo, columnNo, error) {
             const errorMsg = 'ERROR: ' + msg + ' @ ' + url + ':' + lineNo + ':' + columnNo;
             console.error(errorMsg);
@@ -55,7 +52,6 @@
             return false;
         };
 
-        // Also catch unhandled promise rejections
         window.addEventListener('unhandledrejection', function (event) {
             const msg = 'ERROR (Promise): ' + (event.reason ? event.reason.toString() : 'Unknown rejection');
             console.error(msg);
@@ -64,7 +60,6 @@
             }
         });
 
-        // Early probe to confirm Bridge is active
         (function () {
             const probe = () => {
                 if (window.ClawaBridge) {
@@ -84,7 +79,7 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
-        camera.position.set(0.0, 1.45, 1.6);
+        camera.position.set(0.0, 1.45, 1.5);
         camera.lookAt(0, 1.3, 0);
 
         const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
@@ -97,27 +92,28 @@
         scene.add(light);
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
-
-
         let currentVrm = null;
         let mixer = null;
         let idleAction = null;
-        let talkAction = null;
         let currentAction = null;
+        
+        const gestures = {};
+        const GESTURE_PATHS = [
+            'dance_picatrix', 'gesture_cute', 'gesture_dance', 'gesture_elegant',
+            'gesture_fight', 'gesture_greeting', 'gesture_peacesign', 'gesture_pose',
+            'gesture_powerful', 'gesture_ready', 'gesture_shoot', 'gesture_spin',
+            'gesture_squat', 'gesture_talk'
+        ];
 
         let speechIntensity = 0.0;
         let isSpeaking = false;
         let mouthTime = 0.0;
         let isThinking = false;
 
-        let targetCameraZ = 1.6;
-        let currentCameraZ = 1.6;
-
         window.loadVrmAvatar = (avatarFileName) => {
             if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Starting load of ' + avatarFileName);
 
             const loader = new GLTFLoader();
-            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Registering VRM Plugins...');
             loader.register((parser) => new VRMLoaderPlugin(parser));
             loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
@@ -136,54 +132,29 @@
                     vrm.scene.rotation.y = Math.PI;
                     vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
 
-                    // Standardize Position and Scale by Bounding Box (AF Spec)
-                    // We lock the root bone position explicitly to X=0 and Z=0.
-                    // This is VITAL because asymmetrical avatars (e.g. holding a sword, large cape)
-                    // have skewed overall bounding-boxes. Using the bounding-box center pushes them off-center.
                     vrm.scene.position.set(0, 0, 0); 
-                    
-                    // Force coordinate matrices to update so bone positions are instantly mathematically accurate
                     vrm.scene.updateMatrixWorld(true);
 
-                    // --- PURE aiDreams6Nov CENTERING ENGINE ---
-                    // By user request, we revert to the highly successful Volumetric Bounding Box centering 
-                    // paradigm used in aiDreams. This perfectly centers the mesh's geometric mass.
                     const box = new THREE.Box3().setFromObject(vrm.scene);
                     const size = box.getSize(new THREE.Vector3());
                     const center = box.getCenter(new THREE.Vector3());
                     
-                    // 1. Mathematically shift the entire mesh so its volumetric center sits EXACTLY at (0,0,0) world coordinates.
                     vrm.scene.position.sub(center);
                     vrm.scene.updateMatrixWorld(true);
 
-                    // 2. Head-bone validation for height (fallback to mesh height if needed)
                     const head = vrm.humanoid.getNormalizedBoneNode('head');
                     const headPos = new THREE.Vector3();
                     if (head) head.getWorldPosition(headPos);
 
-                    const trueHeight = head ? (headPos.y + (size.y / 2)) * 1.1 : size.y;
-                    const trueWidth = size.x;
-
-                    // 3. Since the avatar's volumetric center is exactly (0,0,0), the camera should 
-                    // look dead at the origin, with a slight Y tilt for face framing.
-                    const cameraLookY = trueHeight / 6.0; // Look slightly above center mass
+                    avatarMetrics.height = trueHeight;
                     
-                    avatarMetrics = { 
-                        height: trueHeight, 
-                        width: trueWidth, 
-                        centerX: 0, 
-                        cameraY: cameraLookY 
-                    };
+                    // Shift the avatar to the RIGHT (Direct Front View)
+                    vrm.scene.position.x += 0.35;
                     
-                    // 4. Instantly snap to the exact bounds
                     updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
-                    currentCameraZ = targetCameraZ; 
-                    camera.position.z = currentCameraZ;
 
                     mixer = new THREE.AnimationMixer(vrm.scene);
 
-                    // Load VRMA Animations sequentially
-                    if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: Loading VRMA animations...');
                     loader.load('./animations/idle_loop.vrma', (vrmaGltf) => {
                         const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
                         const clip = createVRMAnimationClip(vrmAnimation, vrm);
@@ -191,36 +162,35 @@
                         idleAction.play();
                         currentAction = idleAction;
 
-                        loader.load('./animations/gesture_elegant.vrma', (talkGltf) => {
-                            const talkAnim = talkGltf.userData.vrmAnimations[0];
-                            const tClip = createVRMAnimationClip(talkAnim, vrm);
-                            talkAction = mixer.clipAction(tClip);
-                            talkAction.setLoop(THREE.LoopRepeat); // Important so talking repeats!
-                            isThinking = false;
-
-                            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: VRMA setup complete');
-                        }, undefined, (err) => {
-                            if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: gesture_elegant failed: ' + err);
+                        GESTURE_PATHS.forEach(name => {
+                            loader.load(`./animations/${name}.vrma`, (g) => {
+                                const anim = g.userData.vrmAnimations[0];
+                                const clip = createVRMAnimationClip(anim, vrm);
+                                const action = mixer.clipAction(clip);
+                                action.setLoop(THREE.LoopOnce);
+                                action.clampWhenFinished = true;
+                                gestures[name] = action;
+                                if (name.startsWith('gesture_')) {
+                                    gestures[name.replace('gesture_', '')] = action;
+                                } else if (name === 'dance_picatrix') {
+                                    gestures['dance'] = action;
+                                }
+                            });
                         });
-                    }, undefined, (err) => {
-                        if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: idle_loop failed: ' + err);
                     });
                 },
                 (progress) => {
                     if (window.ClawaBridge && progress.total > 0) {
-                        const percent = (progress.loaded / progress.total * 100).toFixed(1);
-                        window.ClawaBridge.postMessage('LOG: [JS] Loading ' + avatarFileName + ': ' + percent + '%');
                         window.ClawaBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
                     }
                 },
                 (err) => {
                     console.error(err);
-                    if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: [JS] loading ' + avatarFileName + ': ' + err);
+                    if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: [JS] ' + err);
                 }
             );
         };
 
-        // Signal flutter bridge that the static JS engine is online and ready
         if (window.ClawaBridge) window.ClawaBridge.postMessage('READY');
 
         const clock = new THREE.Clock();
@@ -228,63 +198,72 @@
         window.setSpeechIntensity = (intensity) => {
             speechIntensity = intensity;
             isSpeaking = intensity > 0.1;
-            // No longer crossfading full animations to keep head steady
-            // We stay in idle loop and use expressionManager for lips/expressions
         };
 
         window.setThinking = (thinking) => {
             isThinking = thinking;
-            // Smoothly blend thinking expression
-            if (currentVrm && currentVrm.expressionManager) {
-                const target = thinking ? 0.6 : 0.0;
-                // We will lerp this in the animate loop
+        };
+
+        window.setCinematicMode = (active) => {};
+        window.setGlowIntensity = (intensity) => {};
+
+        window.playGesture = (name) => {
+            const action = gestures[name];
+            if (!action || !currentVrm || !idleAction) return;
+            if (currentAction === action) return;
+
+            if (currentAction && currentAction !== idleAction) {
+                currentAction.fadeOut(0.5);
             }
+
+            action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.5).play();
+            currentAction = action;
+
+            const duration = action.getClip().duration;
+            setTimeout(() => {
+                if (currentAction === action) {
+                    idleAction.reset().fadeIn(0.5).play();
+                    action.fadeOut(0.5);
+                    currentAction = idleAction;
+                }
+            }, (duration * 1000) - 500);
         };
 
-        window.setCinematicMode = (active) => {
-            // Disabled: Let the dynamic fov-math strictly dictate zoom based on device screen.
-            // Previous logic hardcoded targetCameraZ = 1.2, which caused massive layout jumps!
+        window.processKeywords = (text) => {
+            const lower = text.toLowerCase();
+            if (lower.includes('dance')) window.playGesture('dance');
+            else if (lower.includes('hello') || lower.includes('hi ')) window.playGesture('greeting');
+            else if (lower.includes('fight')) window.playGesture('fight');
+            else if (lower.includes('cute')) window.playGesture('cute');
+            else if (lower.includes('spin')) window.playGesture('spin');
+            else if (lower.includes('ready')) window.playGesture('ready');
         };
 
-        window.setGlowIntensity = (intensity) => {
-            // Future VFX
-        };
-
-        // --- Dynamic FOV Responsive Engine ---
-        let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15, cameraY: 0.75 };
+        // --- Simplified Dynamic Framing Engine ---
+        // --- Simplified Dynamic Framing Engine ---
+        let avatarMetrics = { height: 1.5, zoom: 1.05 };
         
         function updateCameraFraming(containerWidth, containerHeight) {
-            if (!containerWidth || !containerHeight) return;
+            if (!containerWidth || !containerHeight || !currentVrm) return;
             
-            // Re-calculate the actual aspect ratio of the Flutter WebView container
             camera.aspect = containerWidth / containerHeight;
             camera.updateProjectionMatrix();
-            
-            // Set Renderer size, but pass `false` so it DOES NOT overwrite the critical `width: 100%` CSS rules!
             renderer.setSize(containerWidth, containerHeight, false); 
-            
-            // Making this number SMALLER pulls the camera CLOSER.
-            // 55% gives a tight waist-up portrait shot.
-            const targetHeight = avatarMetrics.height * 0.55;
-            
-            const fovRadians = camera.fov * (Math.PI / 180) / 2;
-            
-            // Calculate perfect distance using aiDreams trigonometry
-            let dist = (targetHeight / 2) / Math.tan(fovRadians);
-            
-            // On extremely narrow screens, ensure width fits
-            const containerAspect = camera.aspect;
-            if (containerAspect < 0.6) {
-                 const targetWidth = avatarMetrics.width;
-                 const distW = (targetWidth / 2) / Math.tan(fovRadians) / containerAspect;
-                 dist = Math.max(dist, distW);
-            }
-            
-            targetCameraZ = dist;
-            
-            // Immediately position and point camera
-            camera.position.set(avatarMetrics.centerX, avatarMetrics.cameraY, targetCameraZ);
-            camera.lookAt(avatarMetrics.centerX, avatarMetrics.cameraY, 0);
+
+            // 1. Fit Height: Dist at which the avatar's height fills the vertical FOV
+            const fovRad = (camera.fov * Math.PI) / 180;
+            let dist = (avatarMetrics.height / 2) / Math.tan(fovRad / 2);
+
+            // 2. Zoom: 10% (1.1x)
+            dist = dist / avatarMetrics.zoom;
+
+            // 3. Anchor Feet: Align bottom of frame with avatar bottom (-height/2)
+            const visibleHeight = 2 * dist * Math.tan(fovRad / 2);
+            const frameCenterY = (-avatarMetrics.height / 2) + (visibleHeight / 2);
+
+            // 4. Update Camera position immediately (Clean FRONT view at X=0)
+            camera.position.set(0, frameCenterY, dist);
+            camera.lookAt(0, frameCenterY, 0);
         }
 
         let lastHeight = 0;
@@ -292,7 +271,6 @@
             for (let entry of entries) {
                 const w = entry.contentRect.width;
                 const h = entry.contentRect.height;
-                // Ignore height shifts less than 100px to avoid jumping when keyboard opens
                 if (Math.abs(h - lastHeight) > 100 || lastHeight === 0) {
                     updateCameraFraming(w, h);
                     lastHeight = h;
@@ -308,12 +286,9 @@
             if (currentVrm) {
                 if (mixer) mixer.update(delta);
 
-                currentCameraZ = THREE.MathUtils.lerp(currentCameraZ, targetCameraZ, delta * 3.0);
-                camera.position.z = currentCameraZ;
-
                 const time = clock.elapsedTime;
 
-                // Subtle thinking sway (additive, very small)
+                // Subtle thinking sway
                 if (isThinking) {
                     const head = currentVrm.humanoid.getNormalizedBoneNode('head');
                     if (head) {
@@ -327,7 +302,7 @@
                 const blinkState = blinkPeriod > 1.85 ? 1.0 : 0.0;
                 currentVrm.expressionManager.setValue('blink', blinkState);
 
-                // Expanded VRM Visemes for factual speech
+                // Visemes
                 const visemes = ['aa', 'ih', 'ee', 'oh', 'ou'];
                 const names = Object.keys(currentVrm.expressionManager.expressionMap);
                 const availableVisemes = visemes.filter(v => names.includes(v));
@@ -340,7 +315,6 @@
                     if (availableVisemes.length > 0) {
                         const idx = Math.floor((mouthTime * 1000) / 150) % availableVisemes.length;
                         const currentViseme = availableVisemes[idx];
-
                         for (const v of availableVisemes) {
                             const target = v === currentViseme ? intensity : 0;
                             const currentVal = currentVrm.expressionManager.getValue(v) || 0;
@@ -348,12 +322,6 @@
                         }
                     } else if (names.includes('mouthOpen')) {
                         currentVrm.expressionManager.setValue('mouthOpen', intensity);
-                    }
-                    
-                    // Reduce neutral expression when talking
-                    if (names.includes('neutral')) {
-                        const cur = currentVrm.expressionManager.getValue('neutral');
-                        currentVrm.expressionManager.setValue('neutral', THREE.MathUtils.lerp(cur, 0, 0.2));
                     }
                 } else {
                     mouthTime = 0.0;
@@ -367,32 +335,14 @@
                         const cur = currentVrm.expressionManager.getValue('mouthOpen');
                         currentVrm.expressionManager.setValue('mouthOpen', THREE.MathUtils.lerp(cur, 0, 0.2));
                     }
-
-                    // Blend in thinking expression or neutral
-                    if (isThinking && names.includes('surprised')) { // Surprised as a proxy for 'thinking'
-                         const cur = currentVrm.expressionManager.getValue('surprised');
-                         currentVrm.expressionManager.setValue('surprised', THREE.MathUtils.lerp(cur, 0.3, 0.1));
-                    } else if (names.includes('surprised')) {
-                         const cur = currentVrm.expressionManager.getValue('surprised');
-                         currentVrm.expressionManager.setValue('surprised', THREE.MathUtils.lerp(cur, 0, 0.1));
-                    }
-
-                    if (names.includes('neutral')) {
-                        const target = isThinking ? 0.5 : 1.0;
-                        const cur = currentVrm.expressionManager.getValue('neutral');
-                        currentVrm.expressionManager.setValue('neutral', THREE.MathUtils.lerp(cur, target, 0.1));
-                    }
                 }
 
                 currentVrm.update(delta);
             }
-
             renderer.render(scene, camera);
         }
 
         animate();
-
-        // Resize events are now handled by the bulletproof ResizeObserver bounding-box engine above.
     </script>
 </body>
 

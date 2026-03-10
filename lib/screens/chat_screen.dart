@@ -41,6 +41,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final PiperTtsService _piperTts = PiperTtsService();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
+  String? _currentGesture;
+  String? _lastUserMessage;
   
   String _selectedAvatar = 'default_avatar.vrm';
   String _agentName = 'Clawa Pocket';
@@ -58,6 +60,10 @@ class _ChatScreenState extends State<ChatScreen> {
     'boruto.vrm',
     'default_avatar.vrm',
   ];
+  
+  bool _isTtsDownloaded = false;
+  double _downloadProgress = 0.0;
+  bool _isDownloadingTts = false;
 
   @override
   void initState() {
@@ -66,61 +72,93 @@ class _ChatScreenState extends State<ChatScreen> {
     _initVoiceParams();
     _loadChatHistory();
     _checkTtsModel();
+    
+    // Listen for background download progress
+    _piperTts.onDownloadProgress = (p) {
+      if (mounted) {
+        setState(() {
+          _downloadProgress = p;
+          _isDownloadingTts = p > 0 && p < 1.0;
+          if (p >= 1.0) _isTtsDownloaded = true;
+        });
+      }
+    };
   }
 
   Future<void> _checkTtsModel() async {
     final downloaded = await _piperTts.isModelDownloaded();
-    if (!downloaded && mounted) {
-      _showTtsDownloadDialog();
+    if (mounted) {
+      setState(() => _isTtsDownloaded = downloaded);
     }
   }
 
   void _showTtsDownloadDialog() {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          bool downloading = false;
-          double progress = 0.0;
-
-          return AlertDialog(
-            title: const Text('Download Voice Data'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('To enable voice, a one-time 67MB high-quality voice model (Piper Amy) needs to be downloaded.'),
-                if (downloading) ...[
-                  const SizedBox(height: 20),
-                  LinearProgressIndicator(value: progress),
-                  const SizedBox(height: 8),
-                  Text('${(progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 12)),
-                ],
-              ],
-            ),
-            actions: [
-              if (!downloading)
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Later'),
-                ),
-              if (!downloading)
-                FilledButton(
-                  onPressed: () async {
-                    setDialogState(() => downloading = true);
-                    _piperTts.onDownloadProgress = (p) {
-                      setDialogState(() => progress = p);
-                    };
-                    await _piperTts.init(forceDownload: true);
-                    if (mounted) Navigator.pop(ctx);
-                  },
-                  child: const Text('Download Now'),
-                ),
-            ],
-          );
-        },
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Download Voice Data'),
+        content: const Text('To enable voice, a one-time 67MB high-quality voice model (Piper Amy) needs to be downloaded.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _startPiperDownload();
+            },
+            child: const Text('Download Now'),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _startPiperDownload() async {
+    if (_isDownloadingTts) return;
+    
+    setState(() {
+      _isDownloadingTts = true;
+      _downloadProgress = 0.0;
+    });
+
+    try {
+      _addDiagnosticLog('Starting Piper TTS background download...');
+      await _piperTts.init(forceDownload: true);
+      
+      if (mounted) {
+        setState(() {
+          _isDownloadingTts = false;
+          _isTtsDownloaded = true;
+          _downloadProgress = 1.0;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voice engine ready! Tap the mic to start talking.'),
+            backgroundColor: AppColors.statusGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      _addDiagnosticLog('Download Error: $e');
+      if (mounted) {
+        setState(() => _isDownloadingTts = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
+            backgroundColor: Colors.redAccent,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _startPiperDownload(),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadChatHistory() async {
@@ -186,8 +224,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _initVoiceParams() async {
-    await _piperTts.init();
-
+    // Only initialize the shell STT, don't pre-emptively init Piper (it hangs)
     await _speechToText.initialize();
 
     _piperTts.onStart = () {
@@ -223,6 +260,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
     _saveChatHistory(); // Save user message
     _addDiagnosticLog('Sending message: $text');
+    setState(() => _lastUserMessage = text); // Trigger JS keyword listener
 
     // Add empty message for the assistant
     setState(() {
@@ -259,6 +297,15 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _isThinking = false; // Stopped thinking, started talking
           _speechIntensity = chunk.length > 2 ? 0.8 : 0.3; // Simulate mouth movement
+          
+          // Check for (gesture: name) in bot response
+          if (chunk.contains('(gesture:')) {
+            final match = RegExp(r'\(gesture:\s*(\w+)\)').firstMatch(chunk);
+            if (match != null) {
+              _currentGesture = match.group(1);
+            }
+          }
+          
           fullResponse += chunk;
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         });
@@ -290,17 +337,21 @@ class _ChatScreenState extends State<ChatScreen> {
         // If the upstream AI provider rate-limited silently, the message stream will be empty.
         // Catch this and provide a human-readable fallback instead of a blank bubble.
         if (fullResponse.trim().isEmpty) {
-          fullResponse = '⚠️ The AI provider did not return a response. This usually indicates an upstream API rate limit or an empty model output. Please wait a moment before trying again or switch to a different AI model.';
+          fullResponse = '⚠️ **System Alert**: API Rate Limit Reached. My neural processors are currently overloaded and need a moment to cool down. Please wait a few seconds before trying again!';
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         }
       });
       _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
     }
     
-    // Speak the final response
-    if (fullResponse.isNotEmpty && !fullResponse.startsWith('[Error')) {
+    // Speak the final response (including errors now!)
+    if (fullResponse.isNotEmpty) {
        await _piperTts.stop();
-       final cleanTextForSpeech = fullResponse.replaceAll(RegExp(r'[\*\`\#]'), '');
+       // Clean emojis and markdown for TTS
+       final cleanTextForSpeech = fullResponse
+         .replaceAll('⚠️', 'Attention, ')
+         .replaceAll(RegExp(r'[\*\`\#]'), '')
+         .replaceAll(RegExp(r'\(gesture:.*?\)\s*'), ''); // Don't speak the tag
        await _piperTts.speak(cleanTextForSpeech);
     }
   }
@@ -593,11 +644,75 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         )),
+
+        const PopupMenuDivider(),
+        PopupMenuItem<void>(
+          enabled: false,
+          child: Text(
+            'VOICE MODULE',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'tts_status',
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: (_isTtsDownloaded ? AppColors.statusGreen : (_isDownloadingTts ? Colors.orange : Colors.blue)).withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isTtsDownloaded ? Icons.volume_up : (_isDownloadingTts ? Icons.downloading : Icons.cloud_download),
+                    color: _isTtsDownloaded ? AppColors.statusGreen : (_isDownloadingTts ? Colors.orange : Colors.blue),
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _isTtsDownloaded ? 'Piper Voice Engine' : (_isDownloadingTts ? 'Downloading...' : 'Voice Engine'),
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        _isTtsDownloaded 
+                          ? 'Active & Ready' 
+                          : (_isDownloadingTts 
+                              ? '${(_downloadProgress * 100).toInt()}% complete' 
+                              : 'High-quality TTS required'),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!_isTtsDownloaded && !_isDownloadingTts)
+                   const Icon(Icons.arrow_circle_right_outlined, color: Colors.blue, size: 20),
+              ],
+            ),
+          ),
+        ),
       ],
     ).then((value) {
       if (value == null) return;
       
-      if (value == 'avatar_forge') {
+      if (value == 'tts_status' && !_isTtsDownloaded && !_isDownloadingTts) {
+        _showTtsDownloadDialog();
+      } else if (value == 'avatar_forge') {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AvatarForgePage(),
         ));
@@ -928,6 +1043,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       glowIntensity: _speechIntensity,
                       avatarFileName: _selectedAvatar,
                       isCinematic: _isCinematic,
+                      gesture: _currentGesture,
+                      userMessage: _lastUserMessage,
                       onLog: (log) {
                         if (log == 'READY') {
                           setState(() => _isReady = true);
@@ -946,6 +1063,49 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Padding(
               padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
               child: Column(
+                children: [
+                  // --- PIPER TTS GLOBAL PROGRESS OVERLAY ---
+                  if (_isDownloadingTts)
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(20, 100, 20, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.downloading, color: Colors.blue, size: 16),
+                              const SizedBox(width: 10),
+                              Text(
+                                _downloadProgress > 0.82 ? 'Extracting Voice...' : 'Downloading Voice Engine',
+                                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${(_downloadProgress * 100).toInt()}%',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: _downloadProgress,
+                              backgroundColor: Colors.white.withValues(alpha: 0.1),
+                              color: Colors.blue,
+                              minHeight: 4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                 children: [
                   const Spacer(flex: 3),
                   Expanded(

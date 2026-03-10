@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
+import 'dart:isolate';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'package:audioplayers/audioplayers.dart';
 
@@ -50,14 +51,19 @@ class PiperTtsService {
         
         final url = Uri.parse('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2');
         final httpClient = HttpClient();
-        final request = await httpClient.getUrl(url);
-        final response = await request.close();
+        httpClient.connectionTimeout = const Duration(seconds: 15);
+        final request = await httpClient.getUrl(url).timeout(const Duration(seconds: 20));
+        final response = await request.close().timeout(const Duration(seconds: 20));
         
+        if (response.statusCode != 200) {
+          throw HttpException('Server returned status code ${response.statusCode}');
+        }
+
         final totalLength = response.contentLength;
         int receivedLength = 0;
 
         final bytesBuilder = BytesBuilder();
-        await for (var chunk in response) {
+        await for (var chunk in response.timeout(const Duration(seconds: 15))) {
           bytesBuilder.add(chunk);
           receivedLength += chunk.length;
           if (totalLength != -1) {
@@ -67,22 +73,25 @@ class PiperTtsService {
         }
         final bytes = bytesBuilder.takeBytes();
         
-        print('PiperTTS: Download complete. Extracting...');
+        print('PiperTTS: Download complete. Extracting via background isolate...');
         onDownloadProgress?.call(0.85);
         
-        final tarBytes = BZip2Decoder().decodeBytes(bytes);
-        onDownloadProgress?.call(0.9);
-        final archive = TarDecoder().decodeBytes(tarBytes);
-        
-        for (final file in archive) {
-          final filename = file.name;
-          if (file.isFile) {
-            final data = file.content as List<int>;
-            final outFile = File('${voicesDir.path}/$filename');
-            await outFile.parent.create(recursive: true);
-            await outFile.writeAsBytes(data, flush: true);
+        final voicesDirPath = voicesDir.path;
+        await Isolate.run(() {
+          final tarBytes = BZip2Decoder().decodeBytes(bytes);
+          final archive = TarDecoder().decodeBytes(tarBytes);
+          
+          for (final file in archive) {
+            final filename = file.name;
+            if (file.isFile) {
+              final data = file.content as List<int>;
+              final outFile = File('$voicesDirPath/$filename');
+              outFile.parent.createSync(recursive: true);
+              outFile.writeAsBytesSync(data, flush: true);
+            }
           }
-        }
+        });
+        
         onDownloadProgress?.call(1.0);
         print('PiperTTS: Extraction complete.');
       }

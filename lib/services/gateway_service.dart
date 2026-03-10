@@ -614,26 +614,31 @@ try {
 
           // Agent events — streaming text deltas and lifecycle errors
           if (type == 'event' && frame['event'] == 'agent') {
-            // OpenClaw frames sometimes flatten fields into the root, or nest them in 'payload'/'data'
-            final Map<String, dynamic> data = (frame['payload'] as Map<String, dynamic>?)
-                ?? (frame['data'] as Map<String, dynamic>?)
-                ?? frame; 
+            final payload = frame['payload'] as Map<String, dynamic>?;
+            final innerData = payload?['data'] as Map<String, dynamic>? ?? frame['data'] as Map<String, dynamic>?;
 
-            final stream = data['stream'] as String?;
+            // Extract stream from payload or frame
+            final stream = (payload?['stream'] ?? frame['stream']) as String?;
+
             if (stream == 'assistant') {
               // Text delta from the AI
-              final text = data['text'] as String?;
+              final text = (innerData?['text'] ?? payload?['text'] ?? frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
                 chunkController.add(text);
               }
             } else if (stream == 'lifecycle') {
               // Lifecycle events (start, error, end)
-              final phase = data['phase'] as String?;
+              final phase = (innerData?['phase'] ?? payload?['phase'] ?? frame['phase']) as String?;
               if (phase == 'error') {
-                final error = data['error']?.toString() ?? 'Unknown API error';
+                final error = (innerData?['error'] ?? payload?['error'] ?? frame['error'])?.toString() ?? 'Unknown API error';
                 chunkController.add('[Error] $error');
                 if (!chunkController.isClosed) chunkController.close();
               }
+            } else if (stream == 'error') {
+               // Gateway stream=error (e.g. seq gap / unknown provider error)
+               final error = (innerData?['error'] ?? payload?['error'] ?? payload?['reason'] ?? frame['reason'] ?? frame['error'])?.toString() ?? 'Unknown API stream error';
+               chunkController.add('[Error] $error');
+               if (!chunkController.isClosed) chunkController.close();
             }
           }
         } catch (_) {}
