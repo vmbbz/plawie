@@ -32,11 +32,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
   Future<void> _startProcess() async {
     try {
       final config = await TerminalService.getProotShellConfig();
+      // Use the exact same argument structure as onboarding's safe CLI initialization.
       final args = TerminalService.buildProotArgs(
         config,
-        columns: 120,
-        rows: 40,
       );
+      
+      // Remove any PTY-specific row/col configurations from args
+      args.removeWhere((a) => a.contains('COLUMNS') || a.contains('LINES'));
 
       _process = await Process.start(
         config['executable']!,
