@@ -181,6 +181,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       final prefs = PreferencesService();
       await prefs.init();
+      prefs.agentName = _agentNameController.text.trim();
       prefs.apiKeyConfigured = true;
       prefs.setupComplete = true;
       prefs.isFirstRun = false;

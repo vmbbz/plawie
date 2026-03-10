@@ -1,3 +1,4 @@
+// ignore_for_file: unused_import, unused_local_variable
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -29,21 +30,21 @@ class ChatBubble extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: isUser 
-              ? theme.colorScheme.primary.withOpacity(0.15) 
-              : Colors.white.withOpacity(0.06),
+              ? theme.colorScheme.primary.withValues(alpha: 0.15) 
+              : Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(22).copyWith(
             bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(22),
             bottomLeft: isUser ? const Radius.circular(22) : const Radius.circular(4),
           ),
           border: Border.all(
             color: isUser 
-                ? theme.colorScheme.primary.withOpacity(0.3) 
-                : Colors.white.withOpacity(0.1),
+                ? theme.colorScheme.primary.withValues(alpha: 0.3) 
+                : Colors.white.withValues(alpha: 0.1),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: (isUser ? theme.colorScheme.primary : Colors.black).withOpacity(0.1),
+              color: (isUser ? theme.colorScheme.primary : Colors.black).withValues(alpha: 0.1),
               blurRadius: 10,
               spreadRadius: 1,
             ),
@@ -55,8 +56,9 @@ class ChatBubble extends StatelessWidget {
             bottomLeft: isUser ? const Radius.circular(22) : const Radius.circular(4),
           ),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Padding(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.2), // Added a slight dark tint so text pops over bright avatars
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: isThinking
                   ? const _TypingIndicator()
@@ -82,19 +84,19 @@ class ChatBubble extends StatelessWidget {
                           em: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
                           code: TextStyle(
                             color: Colors.cyanAccent.shade100,
-                            backgroundColor: Colors.white.withOpacity(0.08),
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
                             fontFamily: 'monospace',
                             fontSize: 13,
                           ),
                           codeblockDecoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.3),
+                            color: Colors.black.withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white.withOpacity(0.1)),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                           ),
                           codeblockPadding: const EdgeInsets.all(12),
                           blockquoteDecoration: BoxDecoration(
                             border: Border(
-                              left: BorderSide(color: Colors.white.withOpacity(0.3), width: 3),
+                              left: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 3),
                             ),
                           ),
                           listBullet: const TextStyle(color: Colors.white70),
@@ -151,11 +153,11 @@ class _TypingIndicatorState extends State<_TypingIndicator> with SingleTickerPro
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.2 + (0.8 * opacity)),
+                color: Colors.white.withValues(alpha: 0.2 + (0.8 * opacity)),
                 boxShadow: [
                   if (opacity > 0.8)
                     BoxShadow(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       blurRadius: 4,
                       spreadRadius: 1,
                     ),
@@ -198,8 +200,8 @@ class NebulaPainter extends CustomPainter {
 
       final gradient = RadialGradient(
         colors: [
-          particle.color.withOpacity(opacity),
-          particle.color.withOpacity(0),
+          particle.color.withValues(alpha: opacity),
+          particle.color.withValues(alpha: 0),
         ],
       ).createShader(rect);
 
@@ -219,9 +221,9 @@ class _Particle {
   final double speed = 0.5 + Random().nextDouble() * 1.5;
   final double offset = Random().nextDouble() * pi * 2;
   final Color color = [
-    Colors.blue.withOpacity(0.2),
-    Colors.purple.withOpacity(0.2),
-    Colors.cyan.withOpacity(0.2),
-    const Color(0xFF00C853).withOpacity(0.1), // AppColors.statusGreen
+    Colors.blue.withValues(alpha: 0.2),
+    Colors.purple.withValues(alpha: 0.2),
+    Colors.cyan.withValues(alpha: 0.2),
+    const Color(0xFF00C853).withValues(alpha: 0.1), // AppColors.statusGreen
   ][Random().nextInt(4)];
 }

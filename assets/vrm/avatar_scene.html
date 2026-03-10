@@ -137,25 +137,48 @@
                     vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
 
                     // Standardize Position and Scale by Bounding Box (AF Spec)
-                    const box = new THREE.Box3().setFromObject(vrm.scene);
-                    const size = new THREE.Vector3();
-                    box.getSize(size);
-                    const center = new THREE.Vector3();
-                    box.getCenter(center);
+                    // We lock the root bone position explicitly to X=0 and Z=0.
+                    // This is VITAL because asymmetrical avatars (e.g. holding a sword, large cape)
+                    // have skewed overall bounding-boxes. Using the bounding-box center pushes them off-center.
+                    vrm.scene.position.set(0, 0, 0); 
                     
-                    // Root floor and center rigidly
-                    vrm.scene.position.x = -center.x;
-                    vrm.scene.position.z = -center.z;
-                    vrm.scene.position.y = -box.min.y;
+                    // Force coordinate matrices to update so bone positions are instantly mathematically accurate
+                    vrm.scene.updateMatrixWorld(true);
 
-                    // Frame Camera precisely to Chest/Head height
-                    const headHeight = size.y * 0.85;
-                    camera.position.set(0, headHeight, Math.max(1.8, size.y * 1.2));
-                    camera.lookAt(0, headHeight, 0);
+                    // --- PURE aiDreams6Nov CENTERING ENGINE ---
+                    // By user request, we revert to the highly successful Volumetric Bounding Box centering 
+                    // paradigm used in aiDreams. This perfectly centers the mesh's geometric mass.
+                    const box = new THREE.Box3().setFromObject(vrm.scene);
+                    const size = box.getSize(new THREE.Vector3());
+                    const center = box.getCenter(new THREE.Vector3());
                     
-                    // Update interpolation targets
-                    targetCameraZ = camera.position.z;
-                    currentCameraZ = camera.position.z;
+                    // 1. Mathematically shift the entire mesh so its volumetric center sits EXACTLY at (0,0,0) world coordinates.
+                    vrm.scene.position.sub(center);
+                    vrm.scene.updateMatrixWorld(true);
+
+                    // 2. Head-bone validation for height (fallback to mesh height if needed)
+                    const head = vrm.humanoid.getNormalizedBoneNode('head');
+                    const headPos = new THREE.Vector3();
+                    if (head) head.getWorldPosition(headPos);
+
+                    const trueHeight = head ? (headPos.y + (size.y / 2)) * 1.1 : size.y;
+                    const trueWidth = size.x;
+
+                    // 3. Since the avatar's volumetric center is exactly (0,0,0), the camera should 
+                    // look dead at the origin, with a slight Y tilt for face framing.
+                    const cameraLookY = trueHeight / 6.0; // Look slightly above center mass
+                    
+                    avatarMetrics = { 
+                        height: trueHeight, 
+                        width: trueWidth, 
+                        centerX: 0, 
+                        cameraY: cameraLookY 
+                    };
+                    
+                    // 4. Instantly snap to the exact bounds
+                    updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
+                    currentCameraZ = targetCameraZ; 
+                    camera.position.z = currentCameraZ;
 
                     mixer = new THREE.AnimationMixer(vrm.scene);
 
@@ -204,35 +227,79 @@
 
         window.setSpeechIntensity = (intensity) => {
             speechIntensity = intensity;
-            const wasSpeaking = isSpeaking;
             isSpeaking = intensity > 0.1;
-
-            if (isSpeaking && !wasSpeaking && talkAction) {
-                // Crossfade to talking animation
-                talkAction.reset();
-                talkAction.play();
-                if (idleAction) idleAction.crossFadeTo(talkAction, 0.3, true);
-                currentAction = talkAction;
-            } else if (!isSpeaking && wasSpeaking && idleAction) {
-                // Crossfade back to idle animation
-                idleAction.reset();
-                idleAction.play();
-                if (talkAction) talkAction.crossFadeTo(idleAction, 0.5, true);
-                currentAction = idleAction;
-            }
+            // No longer crossfading full animations to keep head steady
+            // We stay in idle loop and use expressionManager for lips/expressions
         };
 
         window.setThinking = (thinking) => {
             isThinking = thinking;
+            // Smoothly blend thinking expression
+            if (currentVrm && currentVrm.expressionManager) {
+                const target = thinking ? 0.6 : 0.0;
+                // We will lerp this in the animate loop
+            }
         };
 
         window.setCinematicMode = (active) => {
-            targetCameraZ = active ? 1.2 : 1.6;
+            // Disabled: Let the dynamic fov-math strictly dictate zoom based on device screen.
+            // Previous logic hardcoded targetCameraZ = 1.2, which caused massive layout jumps!
         };
 
         window.setGlowIntensity = (intensity) => {
-            // Glow intensity can be used for future VFX effects
+            // Future VFX
         };
+
+        // --- Dynamic FOV Responsive Engine ---
+        let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15, cameraY: 0.75 };
+        
+        function updateCameraFraming(containerWidth, containerHeight) {
+            if (!containerWidth || !containerHeight) return;
+            
+            // Re-calculate the actual aspect ratio of the Flutter WebView container
+            camera.aspect = containerWidth / containerHeight;
+            camera.updateProjectionMatrix();
+            
+            // Set Renderer size, but pass `false` so it DOES NOT overwrite the critical `width: 100%` CSS rules!
+            renderer.setSize(containerWidth, containerHeight, false); 
+            
+            // Making this number SMALLER pulls the camera CLOSER.
+            // 55% gives a tight waist-up portrait shot.
+            const targetHeight = avatarMetrics.height * 0.55;
+            
+            const fovRadians = camera.fov * (Math.PI / 180) / 2;
+            
+            // Calculate perfect distance using aiDreams trigonometry
+            let dist = (targetHeight / 2) / Math.tan(fovRadians);
+            
+            // On extremely narrow screens, ensure width fits
+            const containerAspect = camera.aspect;
+            if (containerAspect < 0.6) {
+                 const targetWidth = avatarMetrics.width;
+                 const distW = (targetWidth / 2) / Math.tan(fovRadians) / containerAspect;
+                 dist = Math.max(dist, distW);
+            }
+            
+            targetCameraZ = dist;
+            
+            // Immediately position and point camera
+            camera.position.set(avatarMetrics.centerX, avatarMetrics.cameraY, targetCameraZ);
+            camera.lookAt(avatarMetrics.centerX, avatarMetrics.cameraY, 0);
+        }
+
+        let lastHeight = 0;
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const w = entry.contentRect.width;
+                const h = entry.contentRect.height;
+                // Ignore height shifts less than 100px to avoid jumping when keyboard opens
+                if (Math.abs(h - lastHeight) > 100 || lastHeight === 0) {
+                    updateCameraFraming(w, h);
+                    lastHeight = h;
+                }
+            }
+        });
+        resizeObserver.observe(document.body);
 
         function animate() {
             requestAnimationFrame(animate);
@@ -246,66 +313,86 @@
 
                 const time = clock.elapsedTime;
 
-                // Keep the head sway for thinking state since VRMA animations just loop
+                // Subtle thinking sway (additive, very small)
                 if (isThinking) {
                     const head = currentVrm.humanoid.getNormalizedBoneNode('head');
                     if (head) {
-                        // Blend additive thinking motion on top of base animation
-                        head.rotation.z += Math.sin(time * 2.0) * 0.02 + 0.02;
-                        head.rotation.x += Math.sin(time) * 0.02 + 0.02;
+                        head.rotation.z += Math.sin(time * 1.5) * 0.005; 
+                        head.rotation.x += Math.sin(time * 0.8) * 0.005;
                     }
                 }
 
-                // Blinking logic
+                // Blinking
                 const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1);
                 const blinkState = blinkPeriod > 1.85 ? 1.0 : 0.0;
                 currentVrm.expressionManager.setValue('blink', blinkState);
 
-                // Advanced Lip sync with 8Hz oscillation and lerp from speech intensity
-                const visemes = ['aa', 'ih', 'ou'];
+                // Expanded VRM Visemes for factual speech
+                const visemes = ['aa', 'ih', 'ee', 'oh', 'ou'];
+                const names = Object.keys(currentVrm.expressionManager.expressionMap);
+                const availableVisemes = visemes.filter(v => names.includes(v));
+
                 if (speechIntensity > 0) {
                     mouthTime += delta;
-                    // Create an 8Hz oscillation wave (0 to 1)
-                    const osc = (Math.sin(mouthTime * 8 * Math.PI) + 1) / 2;
-                    // Scale by speech intensity for dynamic envelope bounds
-                    const intensity = (0.2 + 0.8 * osc) * speechIntensity;
+                    const osc = (Math.sin(mouthTime * 10 * Math.PI) + 1) / 2;
+                    const intensity = (0.3 + 0.7 * osc) * speechIntensity;
 
-                    // Cycle through vowels
-                    const idx = Math.floor((mouthTime * 1000) / 180) % visemes.length;
-                    const currentViseme = visemes[idx];
+                    if (availableVisemes.length > 0) {
+                        const idx = Math.floor((mouthTime * 1000) / 150) % availableVisemes.length;
+                        const currentViseme = availableVisemes[idx];
 
-                    for (const v of visemes) {
-                        const target = v === currentViseme ? intensity : 0;
-                        const currentVal = currentVrm.expressionManager.getValue(v) || 0;
-                        // Smoothly lerp towards the target
-                        currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, target, 0.4));
+                        for (const v of availableVisemes) {
+                            const target = v === currentViseme ? intensity : 0;
+                            const currentVal = currentVrm.expressionManager.getValue(v) || 0;
+                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, target, 0.4));
+                        }
+                    } else if (names.includes('mouthOpen')) {
+                        currentVrm.expressionManager.setValue('mouthOpen', intensity);
                     }
-                    currentVrm.expressionManager.setValue('neutral', 0);
+                    
+                    // Reduce neutral expression when talking
+                    if (names.includes('neutral')) {
+                        const cur = currentVrm.expressionManager.getValue('neutral');
+                        currentVrm.expressionManager.setValue('neutral', THREE.MathUtils.lerp(cur, 0, 0.2));
+                    }
                 } else {
-                    mouthTime = 0.0; // Reset
+                    mouthTime = 0.0;
                     for (const v of visemes) {
                         const currentVal = currentVrm.expressionManager.getValue(v) || 0;
                         if (currentVal > 0) {
                             currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, 0, 0.2));
                         }
                     }
-                    if (!isThinking) currentVrm.expressionManager.setValue('neutral', 1.0);
+                    if (names.includes('mouthOpen')) {
+                        const cur = currentVrm.expressionManager.getValue('mouthOpen');
+                        currentVrm.expressionManager.setValue('mouthOpen', THREE.MathUtils.lerp(cur, 0, 0.2));
+                    }
+
+                    // Blend in thinking expression or neutral
+                    if (isThinking && names.includes('surprised')) { // Surprised as a proxy for 'thinking'
+                         const cur = currentVrm.expressionManager.getValue('surprised');
+                         currentVrm.expressionManager.setValue('surprised', THREE.MathUtils.lerp(cur, 0.3, 0.1));
+                    } else if (names.includes('surprised')) {
+                         const cur = currentVrm.expressionManager.getValue('surprised');
+                         currentVrm.expressionManager.setValue('surprised', THREE.MathUtils.lerp(cur, 0, 0.1));
+                    }
+
+                    if (names.includes('neutral')) {
+                        const target = isThinking ? 0.5 : 1.0;
+                        const cur = currentVrm.expressionManager.getValue('neutral');
+                        currentVrm.expressionManager.setValue('neutral', THREE.MathUtils.lerp(cur, target, 0.1));
+                    }
                 }
 
                 currentVrm.update(delta);
             }
-
 
             renderer.render(scene, camera);
         }
 
         animate();
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        // Resize events are now handled by the bulletproof ResizeObserver bounding-box engine above.
     </script>
 </body>
 

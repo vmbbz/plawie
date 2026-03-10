@@ -1,20 +1,23 @@
 
-  matcher 0.12.17 (0.12.19 available)
   material_color_utilities 0.11.1 (0.13.0 available)
   meta 1.17.0 (1.18.1 available)
   permission_handler 11.4.0 (12.0.1 available)
   permission_handler_android 12.1.0 (13.0.1 available)
   pointycastle 3.9.1 (4.0.0 available)
   solana 0.31.2+1 (0.32.0 available)
+  sqflite_android 2.4.2+2 (2.4.2+3 available)
   test_api 0.7.7 (0.7.10 available)
   win32 5.15.0 (6.0.0 available)
 Got dependencies!
 1 package is discontinued.
-27 packages have newer versions incompatible with dependency constraints.
+28 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
-lib/services/piper_tts_service.dart:69:18: Error: The argument type 'int' can't be assigned to the parameter type 'bool'.
-          debug: 0,
-                 ^
+lib/screens/terminal_screen.dart:38:9: Error: No named parameter with the name 'command'.
+        command: '/bin/bash', 
+        ^^^^^^^
+lib/services/terminal_service.dart:50:23: Context: Found this candidate, but the arguments don't match.
+  static List<String> buildProotArgs(Map<String, String> config,
+                      ^^^^^^^^^^^^^^
 Target kernel_snapshot_program failed: Exception
 
 
@@ -30,7 +33,7 @@ Execution failed for task ':app:compileFlutterBuildRelease'.
 > Run with --scan to get full insights.
 > Get more help at https://help.gradle.org.
 
-BUILD FAILED in 37s
-Running Gradle task 'assembleRelease'...                           38.1s
+BUILD FAILED in 1m 41s
+Running Gradle task 'assembleRelease'...                          102.1s
 Gradle task assembleRelease failed with exit code 1
 PS C:\dev-shared\openclaw-projects\openclaw_final> 

@@ -296,9 +296,18 @@ updateJson(agentAuthPath, (c) => {
       await prefs.init();
       // Construct the authenticated URL
       final baseUrl = _state.dashboardUrl ?? AppConstants.gatewayUrl;
-      final urlWithToken = baseUrl.contains('?')
-          ? '$baseUrl&token=$token'
-          : '$baseUrl/?token=$token';
+      
+      // Sanitize the baseUrl: brutally strip out any fragments (#) or query params (?)
+      // This prevents malformed URLs from stacking parameters (e.g. /#token=.../?token=...&token=...)
+      var sanitizedBaseUrl = baseUrl.split('#').first.split('?').first;
+      
+      // Remove any trailing slashes to unify exact domain formatting
+      while (sanitizedBaseUrl.endsWith('/')) {
+        sanitizedBaseUrl = sanitizedBaseUrl.substring(0, sanitizedBaseUrl.length - 1);
+      }
+      
+      // A clean gateway dashboard URL requires /?token=
+      final urlWithToken = '$sanitizedBaseUrl/?token=$token';
       prefs.dashboardUrl = urlWithToken;
       _updateState(_state.copyWith(
         dashboardUrl: urlWithToken,
@@ -552,6 +561,29 @@ try {
         try {
           final type = frame['type'] as String?;
 
+          // 1. Gateway Native 'error' bounds:
+          // The gateway directly passes unrecoverable provider failures (like rate limits)
+          // as a root frame with type: "error" and payload: { message: ... }
+          if (type == 'error') {
+            final payload = frame['payload'] as Map<String, dynamic>?;
+            final errMsg = payload?['message'] as String? ?? 'API Error encountered';
+            chunkController.add('[Error] $errMsg');
+            if (!chunkController.isClosed) chunkController.close();
+            return;
+          }
+
+          // Ultimate Fallback: Intercept ANY frame that natively carries an 'error' field
+          // to guarantee the UI reflects it, regardless of the event nesting layer.
+          if (frame.containsKey('error') && frame['error'] != null) {
+            final errObj = frame['error'];
+            final errStr = errObj is Map ? (errObj['message']?.toString() ?? errObj.toString()) : errObj.toString();
+            if (errStr.toLowerCase().contains('rate limit') || errStr.toLowerCase().contains('api') || errStr.toLowerCase().contains('invalid')) {
+              chunkController.add('[Error] $errStr');
+              if (!chunkController.isClosed) chunkController.close();
+              return;
+            }
+          }
+
           // Response to our chat.send request — this is just an ACK.
           // The gateway responds with ok:true + runId when streaming starts.
           // Actual text comes via 'agent' events.
@@ -570,36 +602,37 @@ try {
 
           // Chat events — terminal state signals
           if (type == 'event' && frame['event'] == 'chat') {
-            final payload = frame['payload'] as Map<String, dynamic>?
-                ?? frame['data'] as Map<String, dynamic>?;
-            if (payload != null) {
-              final state = payload['state'] as String?;
-              if (state == 'final' || state == 'aborted' || state == 'error') {
-                if (!chunkController.isClosed) chunkController.close();
-              }
+            final Map<String, dynamic> data = (frame['payload'] as Map<String, dynamic>?)
+                ?? (frame['data'] as Map<String, dynamic>?)
+                ?? frame; 
+
+            final state = data['state'] as String?;
+            if (state == 'final' || state == 'aborted' || state == 'error') {
+              if (!chunkController.isClosed) chunkController.close();
             }
           }
 
           // Agent events — streaming text deltas and lifecycle errors
           if (type == 'event' && frame['event'] == 'agent') {
-            final payload = frame['payload'] as Map<String, dynamic>?
-                ?? frame['data'] as Map<String, dynamic>?;
-            if (payload != null) {
-              final stream = payload['stream'] as String?;
-              if (stream == 'assistant') {
-                // Text delta from the AI
-                final text = payload['text'] as String?;
-                if (text != null && text.isNotEmpty) {
-                  chunkController.add(text);
-                }
-              } else if (stream == 'lifecycle') {
-                // Lifecycle events (start, error, end)
-                final phase = payload['phase'] as String?;
-                if (phase == 'error') {
-                  final error = payload['error'] as String? ?? 'Unknown error';
-                  chunkController.add('[Error] $error');
-                  if (!chunkController.isClosed) chunkController.close();
-                }
+            // OpenClaw frames sometimes flatten fields into the root, or nest them in 'payload'/'data'
+            final Map<String, dynamic> data = (frame['payload'] as Map<String, dynamic>?)
+                ?? (frame['data'] as Map<String, dynamic>?)
+                ?? frame; 
+
+            final stream = data['stream'] as String?;
+            if (stream == 'assistant') {
+              // Text delta from the AI
+              final text = data['text'] as String?;
+              if (text != null && text.isNotEmpty) {
+                chunkController.add(text);
+              }
+            } else if (stream == 'lifecycle') {
+              // Lifecycle events (start, error, end)
+              final phase = data['phase'] as String?;
+              if (phase == 'error') {
+                final error = data['error']?.toString() ?? 'Unknown API error';
+                chunkController.add('[Error] $error');
+                if (!chunkController.isClosed) chunkController.close();
               }
             }
           }

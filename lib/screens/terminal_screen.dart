@@ -111,7 +111,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   @override
   void dispose() {
-    _process?.kill();
+    _process?.stdin.writeln('exit');
     _scrollController.dispose();
     _inputController.dispose();
     _focusNode.dispose();
