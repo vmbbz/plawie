@@ -62,22 +62,31 @@ class PiperTtsService {
         final totalLength = response.contentLength;
         int receivedLength = 0;
 
-        final bytesBuilder = BytesBuilder();
-        await for (var chunk in response.timeout(const Duration(seconds: 15))) {
-          bytesBuilder.add(chunk);
-          receivedLength += chunk.length;
-          if (totalLength != -1) {
-            _downloadProgress = receivedLength / totalLength;
-            onDownloadProgress?.call(_downloadProgress * 0.8); // 80% for download
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/piper_model_download.tar.bz2');
+        final sink = tempFile.openWrite();
+
+        try {
+          await for (var chunk in response.timeout(const Duration(seconds: 30))) {
+            sink.add(chunk);
+            receivedLength += chunk.length;
+            if (totalLength != -1) {
+              _downloadProgress = receivedLength / totalLength;
+              onDownloadProgress?.call(_downloadProgress * 0.8); // 80% for download
+            }
           }
+        } finally {
+          await sink.close();
         }
-        final bytes = bytesBuilder.takeBytes();
         
         print('PiperTTS: Download complete. Extracting via background isolate...');
         onDownloadProgress?.call(0.85);
         
         final voicesDirPath = voicesDir.path;
+        final tempFilePath = tempFile.path;
+        
         await Isolate.run(() {
+          final bytes = File(tempFilePath).readAsBytesSync();
           final tarBytes = BZip2Decoder().decodeBytes(bytes);
           final archive = TarDecoder().decodeBytes(tarBytes);
           
@@ -91,6 +100,11 @@ class PiperTtsService {
             }
           }
         });
+        
+        // Clean up temp file
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
         
         onDownloadProgress?.call(1.0);
         print('PiperTTS: Extraction complete.');
