@@ -139,14 +139,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _sectionHeader(theme, 'API KEYS & MODEL'),
                 ListTile(
                   title: const Text('Current Provider'),
-                  subtitle: Text(_prefs.apiProvider ?? 'Not configured'),
+                  subtitle: Text(_getProviderLabel(_prefs.configuredModel ?? 'google/gemini-3.1-pro-preview')),
                   leading: const Icon(Icons.key),
                   trailing: const Icon(Icons.edit, size: 18),
                   onTap: () => _showUpdateApiKeyDialog(context),
                 ),
                 ListTile(
                   title: const Text('Active Model'),
-                  subtitle: Text(_prefs.configuredModel ?? 'Default'),
+                  subtitle: Text(_getModelLabel(_prefs.configuredModel ?? 'google/gemini-3.1-pro-preview')),
                   leading: const Icon(Icons.psychology),
                   trailing: const Icon(Icons.swap_horiz, size: 18),
                   onTap: () => _showChangeModelDialog(context),
@@ -154,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _sectionHeader(theme, 'AVATAR'),
                 ListTile(
                   title: const Text('Selected Avatar'),
-                  subtitle: Text(_selectedAvatar == 'gemini.vrm' ? 'Gemini (Default)' : 'Boruto'),
+                  subtitle: Text(_prefs.selectedAvatar.split('.').first.toUpperCase()),
                   leading: const Icon(Icons.face),
                   onTap: () => _changeAvatar(context),
                 ),
@@ -332,37 +332,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Local LLM support removed; gateway-based providers are used.
 
   void _changeAvatar(BuildContext context) {
+    final avatars = ['gemini.vrm', 'boruto.vrm', 'default_avatar.vrm'];
+    final labels = ['Gemini (Default)', 'Boruto', 'Clawa Pocket'];
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Select Avatar'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<String>(
-              title: const Text('Gemini (Default)'),
-              value: 'gemini.vrm',
-              groupValue: _selectedAvatar,
-              onChanged: (val) {
-                setState(() => _selectedAvatar = val!);
-                _prefs.selectedAvatar = val!;
-                Navigator.pop(ctx);
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('Boruto'),
-              value: 'boruto.vrm',
-              groupValue: _selectedAvatar,
-              onChanged: (val) {
-                setState(() => _selectedAvatar = val!);
-                _prefs.selectedAvatar = val!;
-                Navigator.pop(ctx);
-              },
-            ),
-          ],
+          children: List.generate(avatars.length, (i) => RadioListTile<String>(
+            title: Text(labels[i]),
+            value: avatars[i],
+            groupValue: _selectedAvatar,
+            onChanged: (val) {
+              setState(() => _selectedAvatar = val!);
+              _prefs.selectedAvatar = val!;
+              Navigator.pop(ctx);
+            },
+          )),
         ),
       ),
     );
+  }
+
+  String _getModelLabel(String modelId) {
+    const models = [
+      'google/gemini-3.1-pro-preview',
+      'anthropic/claude-opus-4.6',
+      'openai/gpt-4o',
+      'groq/llama-3.1-405b',
+    ];
+    const labels = [
+      'Gemini 3.1 Pro Preview',
+      'Claude Opus 4.6',
+      'GPT-4o',
+      'Llama 3.1 405B',
+    ];
+    final idx = models.indexOf(modelId);
+    if (idx != -1) return labels[idx];
+    return modelId.split('/').last;
+  }
+
+  String _getProviderLabel(String modelId) {
+    if (modelId.startsWith('google/')) return 'Google';
+    if (modelId.startsWith('anthropic/')) return 'Anthropic';
+    if (modelId.startsWith('openai/')) return 'OpenAI';
+    if (modelId.startsWith('groq/')) return 'Groq';
+    return modelId.split('/').first.toUpperCase();
   }
 
   void _showUpdateApiKeyDialog(BuildContext context) {

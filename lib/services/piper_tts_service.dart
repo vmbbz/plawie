@@ -15,22 +15,37 @@ class PiperTtsService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInit = false;
   bool get isReady => _isInit && _tts != null;
+  
+  double _downloadProgress = 0.0;
+  double get downloadProgress => _downloadProgress;
 
   // Handlers to emulate the flutter_tts interface for VRM lip sync
   Function? onStart;
   Function? onComplete;
+  Function(double)? onDownloadProgress;
 
-  Future<void> init() async {
-    if (_isInit) return;
+  Future<bool> isModelDownloaded() async {
+    final docDir = await getApplicationDocumentsDirectory();
+    final modelExtractedDir = Directory('${docDir.path}/voices/vits-piper-en_US-amy-low');
+    return await modelExtractedDir.exists();
+  }
+
+  Future<void> init({bool forceDownload = false}) async {
+    if (_isInit && !forceDownload) return;
     
     try {
       final docDir = await getApplicationDocumentsDirectory();
       final voicesDir = Directory('${docDir.path}/voices');
       final modelExtractedDir = Directory('${voicesDir.path}/vits-piper-en_US-amy-low');
 
-      // 1. Download & Extract the tar.bz2 asset if it hasn't been extracted yet
-      if (!await modelExtractedDir.exists()) {
-        print('PiperTTS: Downloading ONNX model (this happens once, ~67MB)...');
+      if (!await modelExtractedDir.exists() || forceDownload) {
+        if (!forceDownload && !await modelExtractedDir.exists()) {
+          print('PiperTTS: Model missing and forceDownload is false. Aborting silent init.');
+          _isInit = false;
+          return;
+        }
+
+        print('PiperTTS: Preparing to download ONNX model...');
         await voicesDir.create(recursive: true);
         
         final url = Uri.parse('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2');
@@ -38,17 +53,25 @@ class PiperTtsService {
         final request = await httpClient.getUrl(url);
         final response = await request.close();
         
-        // Accumulate bytes
+        final totalLength = response.contentLength;
+        int receivedLength = 0;
+
         final bytesBuilder = BytesBuilder();
         await for (var chunk in response) {
           bytesBuilder.add(chunk);
+          receivedLength += chunk.length;
+          if (totalLength != -1) {
+            _downloadProgress = receivedLength / totalLength;
+            onDownloadProgress?.call(_downloadProgress * 0.8); // 80% for download
+          }
         }
         final bytes = bytesBuilder.takeBytes();
         
         print('PiperTTS: Download complete. Extracting...');
+        onDownloadProgress?.call(0.85);
         
-        // Decode BZip2 then Tar
         final tarBytes = BZip2Decoder().decodeBytes(bytes);
+        onDownloadProgress?.call(0.9);
         final archive = TarDecoder().decodeBytes(tarBytes);
         
         for (final file in archive) {
@@ -60,10 +83,10 @@ class PiperTtsService {
             await outFile.writeAsBytes(data, flush: true);
           }
         }
+        onDownloadProgress?.call(1.0);
         print('PiperTTS: Extraction complete.');
       }
 
-      // 2. Initialize Sherpa ONNX Offline TTS
       final base = modelExtractedDir.path;
       final config = sherpa.OfflineTtsConfig(
         model: sherpa.OfflineTtsModelConfig(
@@ -85,7 +108,6 @@ class PiperTtsService {
 
       _tts = sherpa.OfflineTts(config);
       
-      // Wire up audioplayer listener
       _audioPlayer.onPlayerComplete.listen((_) {
         onComplete?.call();
       });
@@ -94,6 +116,7 @@ class PiperTtsService {
       print('PiperTTS: Initialization successful.');
     } catch (e) {
       print('PiperTTS Error: $e');
+      _isInit = false;
     }
   }
 

@@ -1,6 +1,10 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PreferencesService {
+  static final PreferencesService _instance = PreferencesService._internal();
+  factory PreferencesService() => _instance;
+  PreferencesService._internal();
+
   static const _keyAutoStart = 'auto_start_gateway';
   static const _keySetupComplete = 'setup_complete';
   static const _keyFirstRun = 'first_run';
@@ -12,106 +16,110 @@ class PreferencesService {
   static const _keyNodePublicKey = 'node_ed25519_public';
   static const _keyNodeGatewayToken = 'node_gateway_token';
 
-  late SharedPreferences _prefs;
+  SharedPreferences? _prefs;
 
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
+    _prefs ??= await SharedPreferences.getInstance();
   }
 
-  bool get autoStartGateway => _prefs.getBool(_keyAutoStart) ?? false;
-  set autoStartGateway(bool value) => _prefs.setBool(_keyAutoStart, value);
-
-  bool get setupComplete => _prefs.getBool(_keySetupComplete) ?? false;
-  set setupComplete(bool value) {
-    _prefs.setBool(_keySetupComplete, value);
-    // notifyListeners(); // If we decide to mixin ChangeNotifier later
+  SharedPreferences get _p {
+    if (_prefs == null) {
+      throw StateError('PreferencesService not initialized. Call init() first.');
+    }
+    return _prefs!;
   }
 
-  bool get isFirstRun => _prefs.getBool(_keyFirstRun) ?? true;
-  set isFirstRun(bool value) => _prefs.setBool(_keyFirstRun, value);
+  bool get autoStartGateway => _p.getBool(_keyAutoStart) ?? false;
+  set autoStartGateway(bool value) => _p.setBool(_keyAutoStart, value);
 
-  String? get dashboardUrl => _prefs.getString(_keyDashboardUrl);
+  bool get setupComplete => _p.getBool(_keySetupComplete) ?? false;
+  set setupComplete(bool value) => _p.setBool(_keySetupComplete, value);
+
+  bool get isFirstRun => _p.getBool(_keyFirstRun) ?? true;
+  set isFirstRun(bool value) => _p.setBool(_keyFirstRun, value);
+
+  String? get dashboardUrl => _p.getString(_keyDashboardUrl);
   set dashboardUrl(String? value) {
     if (value != null) {
-      _prefs.setString(_keyDashboardUrl, value);
+      _p.setString(_keyDashboardUrl, value);
     } else {
-      _prefs.remove(_keyDashboardUrl);
+      _p.remove(_keyDashboardUrl);
     }
   }
 
-  bool get nodeEnabled => _prefs.getBool(_keyNodeEnabled) ?? false;
-  set nodeEnabled(bool value) => _prefs.setBool(_keyNodeEnabled, value);
+  bool get nodeEnabled => _p.getBool(_keyNodeEnabled) ?? false;
+  set nodeEnabled(bool value) => _p.setBool(_keyNodeEnabled, value);
 
-  String? get nodeDeviceToken => _prefs.getString(_keyNodeDeviceToken);
+  String? get nodeDeviceToken => _p.getString(_keyNodeDeviceToken);
   set nodeDeviceToken(String? value) {
     if (value != null) {
-      _prefs.setString(_keyNodeDeviceToken, value);
+      _p.setString(_keyNodeDeviceToken, value);
     } else {
-      _prefs.remove(_keyNodeDeviceToken);
+      _p.remove(_keyNodeDeviceToken);
     }
   }
 
-  String? get nodeGatewayHost => _prefs.getString(_keyNodeGatewayHost);
+  String? get nodeGatewayHost => _p.getString(_keyNodeGatewayHost);
   set nodeGatewayHost(String? value) {
     if (value != null) {
-      _prefs.setString(_keyNodeGatewayHost, value);
+      _p.setString(_keyNodeGatewayHost, value);
     } else {
-      _prefs.remove(_keyNodeGatewayHost);
+      _p.remove(_keyNodeGatewayHost);
     }
   }
 
-  String? get nodePublicKey => _prefs.getString(_keyNodePublicKey);
+  String? get nodePublicKey => _p.getString(_keyNodePublicKey);
 
-  String? get nodeGatewayToken => _prefs.getString(_keyNodeGatewayToken);
+  String? get nodeGatewayToken => _p.getString(_keyNodeGatewayToken);
   set nodeGatewayToken(String? value) {
     if (value != null && value.isNotEmpty) {
-      _prefs.setString(_keyNodeGatewayToken, value);
+      _p.setString(_keyNodeGatewayToken, value);
     } else {
-      _prefs.remove(_keyNodeGatewayToken);
+      _p.remove(_keyNodeGatewayToken);
     }
   }
 
   int? get nodeGatewayPort {
-    final val = _prefs.getInt(_keyNodeGatewayPort);
+    final val = _p.getInt(_keyNodeGatewayPort);
     return val;
   }
   set nodeGatewayPort(int? value) {
     if (value != null) {
-      _prefs.setInt(_keyNodeGatewayPort, value);
+      _p.setInt(_keyNodeGatewayPort, value);
     } else {
-      _prefs.remove(_keyNodeGatewayPort);
+      _p.remove(_keyNodeGatewayPort);
     }
   }
 
   /// The selected VRM avatar filename
-  String get selectedAvatar => _prefs.getString('selectedAvatar') ?? 'gemini.vrm';
-  set selectedAvatar(String value) => _prefs.setString('selectedAvatar', value);
+  String get selectedAvatar => _p.getString('selectedAvatar') ?? 'gemini.vrm';
+  set selectedAvatar(String value) => _p.setString('selectedAvatar', value);
 
   /// Selected AI provider (claude, gemini, openai, groq)
-  String? get apiProvider => _prefs.getString('api_provider');
+  String? get apiProvider => _p.getString('api_provider');
   set apiProvider(String? value) {
     if (value != null) {
-      _prefs.setString('api_provider', value);
+      _p.setString('api_provider', value);
     } else {
-      _prefs.remove('api_provider');
+      _p.remove('api_provider');
     }
   }
 
   /// User-chosen agent name
-  String get agentName => _prefs.getString('agent_name') ?? 'Clawa';
-  set agentName(String value) => _prefs.setString('agent_name', value);
+  String get agentName => _p.getString('agent_name') ?? 'Clawa';
+  set agentName(String value) => _p.setString('agent_name', value);
 
   /// Whether an API key has been configured
-  bool get apiKeyConfigured => _prefs.getBool('api_key_configured') ?? false;
-  set apiKeyConfigured(bool value) => _prefs.setBool('api_key_configured', value);
+  bool get apiKeyConfigured => _p.getBool('api_key_configured') ?? false;
+  set apiKeyConfigured(bool value) => _p.setBool('api_key_configured', value);
 
   /// The configured primary model (e.g. 'google/gemini-3.1-pro-preview')
-  String? get configuredModel => _prefs.getString('configured_model');
+  String? get configuredModel => _p.getString('configured_model');
   set configuredModel(String? value) {
     if (value != null) {
-      _prefs.setString('configured_model', value);
+      _p.setString('configured_model', value);
     } else {
-      _prefs.remove('configured_model');
+      _p.remove('configured_model');
     }
   }
 }

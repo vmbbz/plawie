@@ -1,6 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../services/piper_tts_service.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
@@ -43,6 +43,21 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isListening = false;
   
   String _selectedAvatar = 'default_avatar.vrm';
+  String _agentName = 'Clawa Pocket';
+  String _selectedModel = 'google/gemini-3.1-pro-preview';
+  
+  final List<String> _availableModels = [
+    'google/gemini-3.1-pro-preview',
+    'anthropic/claude-opus-4.6',
+    'openai/gpt-4o',
+    'groq/llama-3.1-405b',
+  ];
+
+  final List<String> _availableAvatars = [
+    'gemini.vrm',
+    'boruto.vrm',
+    'default_avatar.vrm',
+  ];
 
   @override
   void initState() {
@@ -50,6 +65,62 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadPreferences();
     _initVoiceParams();
     _loadChatHistory();
+    _checkTtsModel();
+  }
+
+  Future<void> _checkTtsModel() async {
+    final downloaded = await _piperTts.isModelDownloaded();
+    if (!downloaded && mounted) {
+      _showTtsDownloadDialog();
+    }
+  }
+
+  void _showTtsDownloadDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          bool downloading = false;
+          double progress = 0.0;
+
+          return AlertDialog(
+            title: const Text('Download Voice Data'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('To enable voice, a one-time 67MB high-quality voice model (Piper Amy) needs to be downloaded.'),
+                if (downloading) ...[
+                  const SizedBox(height: 20),
+                  LinearProgressIndicator(value: progress),
+                  const SizedBox(height: 8),
+                  Text('${(progress * 100).toStringAsFixed(1)}%', style: const TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+            actions: [
+              if (!downloading)
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Later'),
+                ),
+              if (!downloading)
+                FilledButton(
+                  onPressed: () async {
+                    setDialogState(() => downloading = true);
+                    _piperTts.onDownloadProgress = (p) {
+                      setDialogState(() => progress = p);
+                    };
+                    await _piperTts.init(forceDownload: true);
+                    if (mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Download Now'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _loadChatHistory() async {
@@ -57,7 +128,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final history = await _persistence.loadMessages();
     final prefs = PreferencesService();
     await prefs.init();
-    final agentName = prefs.agentName;
+    _agentName = prefs.agentName;
 
     if (mounted) {
       setState(() {
@@ -65,7 +136,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (history.isNotEmpty) {
           _messages.addAll(history);
         } else {
-          _messages.add(ChatMessage(text: "Hello! I'm $agentName, your fully local AI companion. How can I help you today?", isUser: false));
+          _messages.add(ChatMessage(text: "Hello! I'm $_agentName, your fully local AI companion. How can I help you today?", isUser: false));
         }
       });
       _scrollToBottom();
@@ -81,6 +152,7 @@ class _ChatScreenState extends State<ChatScreen> {
     await prefs.init();
     if (mounted) {
       setState(() {
+        _agentName = prefs.agentName;
         _selectedAvatar = prefs.selectedAvatar;
         // Load the user's configured model (from setup or settings)
         final configured = prefs.configuredModel;
@@ -165,10 +237,23 @@ class _ChatScreenState extends State<ChatScreen> {
       await for (final chunk in stream) {
         if (!mounted) break;
         
-        if (chunk.startsWith('[Error]')) {
-          _addDiagnosticLog('API Error: $chunk');
-        } else {
-           _addDiagnosticLog('Stream Delta: $chunk');
+        _addDiagnosticLog('Chunk received: "$chunk"');
+        
+        // Handle common API error patterns and OpenClaw error frames
+        if (chunk.contains('[Error]') || chunk.contains('rate limit reached') || chunk.contains('API error')) {
+          _addDiagnosticLog('Caught API Error in stream: $chunk');
+          final errorMsg = chunk.replaceAll('[Error]', '').trim();
+          setState(() {
+            _isThinking = false;
+            _isGenerating = false;
+            if (fullResponse.isEmpty) {
+              fullResponse = '⚠️ $errorMsg';
+            } else {
+              fullResponse += '\n\n⚠️ $errorMsg';
+            }
+            _messages.last = ChatMessage(text: fullResponse, isUser: false);
+          });
+          break; // Stop listening to this stream
         }
         
         setState(() {
@@ -239,24 +324,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  @override
-  final List<String> _availableAvatars = [
-    'gemini.vrm',
-    'boruto.vrm',
-    'default_avatar.vrm',
-  ];
-
-  final List<String> _availableModels = [
-    'google/gemini-3.1-pro-preview',
-    'anthropic/claude-opus-4.6',
-    'openai/gpt-4o',
-    'groq/llama-3.1-405b',
-  ];
-
-  String _selectedModel = 'google/gemini-3.1-pro-preview';
-  
-  // FIX: Decouple from _messages.isNotEmpty
-  bool get _isCinematic => _isGenerating || _isListening || _textController.text.isNotEmpty;
+  // FIX: Decoupled cinematic effect from typing to prevent zoom jumps 
+  bool get _isCinematic => _isGenerating || _isListening;
 
   void _nextAvatar() {
     int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
@@ -266,7 +335,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _selectedAvatar = _availableAvatars[nextIndex];
       _isReady = false;
     });
-    _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
+    PreferencesService().selectedAvatar = _selectedAvatar;
+    _addDiagnosticLog('Swapped and persisted avatar: $_selectedAvatar');
   }
 
   void _prevAvatar() {
@@ -277,35 +347,173 @@ class _ChatScreenState extends State<ChatScreen> {
       _selectedAvatar = _availableAvatars[prevIndex];
       _isReady = false;
     });
-    _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
+    PreferencesService().selectedAvatar = _selectedAvatar;
+    _addDiagnosticLog('Swapped and persisted avatar: $_selectedAvatar');
   }
 
   void _nextModel() {
     int currentIndex = _availableModels.indexOf(_selectedModel);
     int nextIndex = (currentIndex + 1) % _availableModels.length;
-    setState(() => _selectedModel = _availableModels[nextIndex]);
-    _addDiagnosticLog('Swapped to AI model: $_selectedModel');
+    final nextModel = _availableModels[nextIndex];
+    setState(() => _selectedModel = nextModel);
+    PreferencesService().configuredModel = nextModel;
+    _addDiagnosticLog('Swapped and persisted AI model: $nextModel');
   }
 
   void _prevModel() {
     int currentIndex = _availableModels.indexOf(_selectedModel);
     int prevIndex = (currentIndex - 1 + _availableModels.length) % _availableModels.length;
     setState(() => _selectedModel = _availableModels[prevIndex]);
-    _addDiagnosticLog('Swapped to AI model: $_selectedModel');
+    PreferencesService().configuredModel = _availableModels[prevIndex];
+    _addDiagnosticLog('Swapped and persisted AI model: $_availableModels[prevIndex]');
   }
 
-  void _showAvatarMenu(BuildContext context) {
+  void _showEditNameDialog() {
+    final controller = TextEditingController(text: _agentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Rename Agent', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Enter new name...',
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+          ),
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                setState(() => _agentName = newName);
+                PreferencesService().agentName = newName;
+              }
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.statusGreen,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUnifiedMenu(BuildContext context) {
     final RenderBox? button = context.findRenderObject() as RenderBox?;
     final position = button?.localToGlobal(Offset.zero) ?? Offset.zero;
     
-    showMenu<String>(
+    showMenu<dynamic>(
       context: context,
-      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 200, 0),
+      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 300, 0),
       color: const Color(0xFF1A1A2E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 20,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+      ),
       items: [
+        // Premium Header
+        PopupMenuItem<void>(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'AGENT SETTINGS',
+                    style: TextStyle(
+                      color: AppColors.statusGreen.withValues(alpha: 0.8),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showEditNameDialog();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.edit, color: Colors.white70, size: 12),
+                          SizedBox(width: 4),
+                          Text('Edit', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.statusGreen, AppColors.statusGreen.withValues(alpha: 0.5)],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _agentName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Divider(color: Colors.white12),
+            ],
+          ),
+        ),
+
+        // Avatars Section
+        PopupMenuItem<void>(
+          enabled: false,
+          child: Text(
+            'ACTIVE AVATAR',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
         ..._availableAvatars.map((avatar) => PopupMenuItem<String>(
-          value: avatar,
+          value: 'avatar:$avatar',
           child: Row(
             children: [
               Icon(
@@ -324,6 +532,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         )),
+
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'avatar_forge',
@@ -333,61 +542,72 @@ class _ChatScreenState extends State<ChatScreen> {
               const SizedBox(width: 10),
               const Text('Avatar Forge', style: TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.w600)),
               const Spacer(),
-              Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 12),
+              const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 12),
             ],
           ),
         ),
+
+        const PopupMenuDivider(),
+
+        // Models Section
+        PopupMenuItem<void>(
+          enabled: false,
+          child: Text(
+            'ACTIVE MODEL',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        ..._availableModels.map((model) => PopupMenuItem<String>(
+          value: 'model:$model',
+          child: Row(
+            children: [
+              Icon(
+                model == _selectedModel ? Icons.check_circle : Icons.circle_outlined,
+                color: model == _selectedModel ? Colors.purpleAccent : Colors.white38,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  model,
+                  style: TextStyle(
+                    color: model == _selectedModel ? Colors.white : Colors.white70,
+                    fontSize: 13,
+                    fontWeight: model == _selectedModel ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        )),
       ],
     ).then((value) {
       if (value == null) return;
+      
       if (value == 'avatar_forge') {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AvatarForgePage(),
         ));
-        return;
+      } else if (value.toString().startsWith('model:')) {
+        final model = value.toString().substring(6);
+        setState(() => _selectedModel = model);
+        PreferencesService().configuredModel = model;
+        _addDiagnosticLog('Swapped and persisted AI model: $model');
+      } else if (value.toString().startsWith('avatar:')) {
+        final avatar = value.toString().substring(7);
+        setState(() {
+          _selectedAvatar = avatar;
+          _isReady = false;
+        });
+        PreferencesService().selectedAvatar = avatar;
+        _addDiagnosticLog('Swapped and persisted avatar: $avatar');
       }
-      setState(() {
-        _selectedAvatar = value;
-        _isReady = false;
-      });
-      _addDiagnosticLog('Swapped to avatar: $_selectedAvatar');
-    });
-  }
-
-  void _showModelMenu(BuildContext context) {
-    final RenderBox? button = context.findRenderObject() as RenderBox?;
-    final position = button?.localToGlobal(Offset.zero) ?? Offset.zero;
-    
-    showMenu<String>(
-      context: context,
-      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 300, 0),
-      color: const Color(0xFF1A1A2E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      items: _availableModels.map((model) => PopupMenuItem<String>(
-        value: model,
-        child: Row(
-          children: [
-            Icon(
-              model == _selectedModel ? Icons.check_circle : Icons.circle_outlined,
-              color: model == _selectedModel ? Colors.purpleAccent : Colors.white38,
-              size: 18,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              model,
-              style: TextStyle(
-                color: model == _selectedModel ? Colors.white : Colors.white70,
-                fontSize: 13,
-                fontWeight: model == _selectedModel ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      )).toList(),
-    ).then((value) {
-      if (value == null) return;
-      setState(() => _selectedModel = value);
-      _addDiagnosticLog('Swapped to AI model: $_selectedModel');
     });
   }
 
@@ -479,7 +699,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ),
                     selected: isActive,
-                    selectedTileColor: Colors.white.withOpacity(0.05),
+                    selectedTileColor: Colors.white.withValues(alpha: 0.05),
                     onTap: () async {
                       Navigator.pop(context);
                       await _persistence.switchSession(session.id);
@@ -541,9 +761,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
+      resizeToAvoidBottomInset: false, // Prevents VRM aspect-ratio scaling bounds from squishing
       endDrawer: _buildSessionDrawer(),
       appBar: AppBar(
-        backgroundColor: Colors.black.withOpacity(0.3),
+        backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -552,62 +773,67 @@ class _ChatScreenState extends State<ChatScreen> {
         title: AnimatedOpacity(
           opacity: _isCinematic ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 400),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Avatar dropdown
-              GestureDetector(
-                onTap: () => _showAvatarMenu(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.15)),
+          child: GestureDetector(
+            onTap: () => _showUnifiedMenu(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.face, color: AppColors.statusGreen, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        _selectedAvatar.split('.').first,
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.keyboard_arrow_down, color: Colors.white54, size: 16),
-                    ],
-                  ),
-                ),
+                ],
               ),
-              const SizedBox(width: 8),
-              // Model dropdown
-              GestureDetector(
-                onTap: () => _showModelMenu(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.15)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusGreen.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.face, color: AppColors.statusGreen, size: 16),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.auto_awesome, color: Colors.purpleAccent.shade100, size: 14),
-                      const SizedBox(width: 6),
-                      Text(
-                        _selectedModel.split('/').last,
-                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.keyboard_arrow_down, color: Colors.white54, size: 16),
-                    ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _agentName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.0,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.keyboard_arrow_down, color: Colors.white38, size: 18),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         centerTitle: true,
@@ -664,59 +890,75 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // 3. 3D VRM Avatar
           Positioned.fill(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 600),
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  )),
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
-              child: VrmAvatarWidget(
-                key: ValueKey(_selectedAvatar),
-                isThinking: _isThinking,
-                speechIntensity: _speechIntensity,
-                glowIntensity: _speechIntensity,
-                avatarFileName: _selectedAvatar,
-                isCinematic: _isCinematic,
-                onLog: (log) {
-                  if (log == 'READY') {
-                    setState(() => _isReady = true);
-                  }
-                  _addDiagnosticLog(log);
-                },
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                transform: Matrix4.identity()
+                  ..scale(MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0),
+                transformAlignment: Alignment.bottomCenter,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: size.width.clamp(0.0, 600.0),
+                    maxHeight: size.height,
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 600),
+                    transitionBuilder: (child, animation) {
+                      return ScaleTransition(
+                        scale: Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        )),
+                        child: FadeTransition(opacity: animation, child: child),
+                      );
+                    },
+                    child: VrmAvatarWidget(
+                      key: ValueKey(_selectedAvatar),
+                      isThinking: _isThinking,
+                      speechIntensity: _speechIntensity,
+                      glowIntensity: _speechIntensity,
+                      avatarFileName: _selectedAvatar,
+                      isCinematic: _isCinematic,
+                      onLog: (log) {
+                        if (log == 'READY') {
+                          setState(() => _isReady = true);
+                        }
+                        _addDiagnosticLog(log);
+                      },
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
 
           // 4. Glassmorphic Chat Area
           Positioned.fill(
-            child: Column(
-              children: [
-                const Spacer(flex: 3),
-                Expanded(
-                  flex: 4,
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.colorScheme.primary.withOpacity(0.1),
-                          blurRadius: 40,
-                          spreadRadius: 10,
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: Column(
+                children: [
+                  const Spacer(flex: 3),
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 30,
+                            spreadRadius: -5,
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(28),
                         child: Column(
                           children: [
                             Expanded(
@@ -745,75 +987,72 @@ class _ChatScreenState extends State<ChatScreen> {
                             Container(
                               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.4),
-                                border: Border(top: BorderSide(color: Colors.white.withOpacity(0.08))),
+                                color: Colors.black.withValues(alpha: 0.4),
+                                border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
                               ),
                               child: SafeArea(
                                 top: false,
-                                child: Padding(
-                                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-                                  child: Row(
-                                    children: [
-                                      GestureDetector(
-                                        onTap: _toggleListening,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: _isListening 
-                                                ? AppColors.statusGreen.withOpacity(0.8) 
-                                                : Colors.white54,
-                                              width: _isListening ? 3 : 1,
-                                            ),
-                                            boxShadow: _isListening ? [
-                                              BoxShadow(
-                                                color: AppColors.statusGreen.withOpacity(0.3),
-                                                blurRadius: 10,
-                                                spreadRadius: 2,
-                                              )
-                                            ] : [],
-                                          ),
-                                          child: Icon(
-                                            _isListening ? Icons.mic : Icons.mic_none,
-                                            color: _isListening ? AppColors.statusGreen : Colors.white70,
-                                            size: 20,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: TextField(
-                                          controller: _textController,
-                                          style: const TextStyle(color: Colors.white, fontSize: 15),
-                                          onChanged: (_) => setState(() {}),
-                                          decoration: InputDecoration(
-                                            hintText: "Message your companion...",
-                                            hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
-                                            border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(30),
-                                              borderSide: BorderSide.none,
-                                            ),
-                                            filled: true,
-                                            fillColor: Colors.white.withOpacity(0.08),
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                          ),
-                                          onSubmitted: _handleSubmit,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
+                                child: Row(
+                                  children: [
+                                    GestureDetector(
+                                      onTap: _toggleListening,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: theme.colorScheme.primary.withOpacity(0.8),
+                                          border: Border.all(
+                                            color: _isListening 
+                                              ? AppColors.statusGreen.withValues(alpha: 0.8) 
+                                              : Colors.white54,
+                                            width: _isListening ? 3 : 1,
+                                          ),
+                                          boxShadow: _isListening ? [
+                                            BoxShadow(
+                                              color: AppColors.statusGreen.withValues(alpha: 0.3),
+                                              blurRadius: 10,
+                                              spreadRadius: 2,
+                                            )
+                                          ] : [],
                                         ),
-                                        child: IconButton(
-                                          icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                                          onPressed: () => _handleSubmit(_textController.text),
+                                        child: Icon(
+                                          _isListening ? Icons.mic : Icons.mic_none,
+                                          color: _isListening ? AppColors.statusGreen : Colors.white70,
+                                          size: 20,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _textController,
+                                        style: const TextStyle(color: Colors.white, fontSize: 15),
+                                        onChanged: (_) => setState(() {}),
+                                        decoration: InputDecoration(
+                                          hintText: "Message your companion...",
+                                          hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(30),
+                                            borderSide: BorderSide.none,
+                                          ),
+                                          filled: true,
+                                          fillColor: Colors.white.withValues(alpha: 0.08),
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        ),
+                                        onSubmitted: _handleSubmit,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: theme.colorScheme.primary.withValues(alpha: 0.8),
+                                      ),
+                                      child: IconButton(
+                                        icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                                        onPressed: () => _handleSubmit(_textController.text),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -822,12 +1061,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-
-
 
           // 6. Diagnostics (slide-up panel)
           if (_showDiagnostics)
@@ -847,12 +1084,12 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 10,
             spreadRadius: 1,
           ),
@@ -888,12 +1125,12 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildDiagnosticsPanel(ThemeData theme) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.9),
+        color: Colors.black.withValues(alpha: 0.9),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.5),
+            color: Colors.black.withValues(alpha: 0.5),
             blurRadius: 20,
             spreadRadius: 5,
           ),
@@ -904,7 +1141,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1))),
+              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,

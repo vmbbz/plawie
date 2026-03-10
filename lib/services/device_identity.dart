@@ -29,18 +29,25 @@ class DeviceIdentity {
     final existingDeviceId = prefs.getString(_prefDeviceId);
 
     if (existingPrivate != null && existingPublic != null && existingDeviceId != null) {
-      // Restore existing keys
-      _deviceId = existingDeviceId;
-      _publicKeyBase64Url = existingPublic;
-      final privateBytes = base64Url.decode(existingPrivate);
-      final publicBytes = base64Url.decode(existingPublic);
-      final publicKey = SimplePublicKey(publicBytes, type: KeyPairType.ed25519);
-      _keyPair = SimpleKeyPairData(
-        privateBytes,
-        publicKey: publicKey,
-        type: KeyPairType.ed25519,
-      );
-      return;
+      // Restore existing keys (pad safely to prevent FormatException: Invalid length)
+      String padBase64(String s) => s.padRight(s.length + (4 - s.length % 4) % 4, '=');
+      
+      try {
+        _deviceId = existingDeviceId;
+        _publicKeyBase64Url = existingPublic;
+        final privateBytes = base64Url.decode(padBase64(existingPrivate));
+        final publicBytes = base64Url.decode(padBase64(existingPublic));
+        final publicKey = SimplePublicKey(publicBytes, type: KeyPairType.ed25519);
+        _keyPair = SimpleKeyPairData(
+          privateBytes,
+          publicKey: publicKey,
+          type: KeyPairType.ed25519,
+        );
+        return;
+      } catch (e) {
+        print('Device Identity Load Error: $e');
+        // Fall through to generate new keys if corrupted
+      }
     }
 
     // Generate new Ed25519 key pair

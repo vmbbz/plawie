@@ -127,7 +127,7 @@ class GatewayConnection {
       clientId: 'openclaw-android',
       clientMode: 'ui',
       role: 'operator',
-      scopes: ['operator.read', 'operator.write', 'chat', 'agent', 'system'],
+      scopes: ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
       token: _token,
       nonce: nonce,
     );
@@ -147,7 +147,7 @@ class GatewayConnection {
           'mode': 'ui',
         },
         'role': 'operator',
-        'scopes': ['operator.read', 'operator.write', 'chat', 'agent', 'system'],
+        'scopes': ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
         'auth': {'token': _token},
         'locale': 'en-US',
       },
@@ -191,8 +191,14 @@ class GatewayConnection {
           if (ok) {
             _handshakeCompleter!.complete();
           } else {
-            final error = frame['error'] as Map<String, dynamic>?;
-            final msg = error?['message'] as String? ?? 'connect rejected';
+            // Error could be a Map or a String. Avoid fatal TypeErrors on Strings.
+            final errorRaw = frame['error'];
+            String msg = 'connect rejected';
+            if (errorRaw is Map) {
+              msg = errorRaw['message']?.toString() ?? 'connect rejected';
+            } else if (errorRaw != null) {
+              msg = errorRaw.toString();
+            }
             _handshakeCompleter!.completeError(Exception(msg));
           }
         }
@@ -230,6 +236,36 @@ class GatewayConnection {
         return;
       }
 
+      // ── Gateway Errors ──
+      // The gateway blasts fatal errors (like rate limits) down with type:'error', NOT as 'event' or 'res'.
+      if (type == 'error') {
+        // If the handshake was in progress and failed immediately
+        if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+          final payloadRaw = frame['payload'];
+          String msg = 'Fatal Gateway Connection Error';
+          if (payloadRaw is Map) {
+            msg = payloadRaw['message']?.toString() ?? msg;
+          } else if (payloadRaw != null) {
+            msg = payloadRaw.toString();
+          }
+          _handshakeCompleter!.completeError(Exception(msg));
+          _connectRequestId = null;
+        }
+
+        final errorId = frame['id'] as String?;
+        // If it has an ID, route it to the specific pending request that failed
+        if (errorId != null && _pendingRequests.containsKey(errorId)) {
+          _pendingRequests[errorId]!.add(frame);
+        } else {
+          // If no ID, it's a global socket error (like rate limit). Broadcast everywhere.
+          _eventController.add(frame);
+          for (final controller in _pendingRequests.values) {
+            controller.add(frame);
+          }
+        }
+        return;
+      }
+
       // Pong
       if (type == 'pong') return;
     } catch (_) {}
@@ -262,10 +298,10 @@ class GatewayConnection {
     _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_state == GatewayConnectionState.connected && _channel != null) {
         try {
+          // Send a protocol-compliant native ping instead of an RPC request
           _channel!.sink.add(jsonEncode({
-            'type': 'req',
+            'type': 'ping',
             'id': const Uuid().v4(),
-            'method': 'ping',
           }));
         } catch (_) {}
       }
