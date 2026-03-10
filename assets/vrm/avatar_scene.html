@@ -146,6 +146,8 @@
                     const headPos = new THREE.Vector3();
                     if (head) head.getWorldPosition(headPos);
 
+                    const trueHeight = head ? (headPos.y + (size.y / 2)) * 1.1 : size.y;
+                    
                     avatarMetrics.height = trueHeight;
                     
                     // Shift the avatar to the RIGHT (Direct Front View)
