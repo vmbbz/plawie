@@ -1,9 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/native_bridge.dart';
-import '../services/terminal_service.dart';
 
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key});
@@ -13,11 +10,13 @@ class TerminalScreen extends StatefulWidget {
 }
 
 class _TerminalScreenState extends State<TerminalScreen> {
-  Process? _process;
-  bool _loading = true;
+  bool _loading = false;
   String? _error;
   
-  final List<String> _logs = [];
+  final List<String> _logs = [
+    'Welcome to OpenClaw Terminal.',
+    'Type a command to execute natively via PRoot.'
+  ];
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -26,64 +25,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void initState() {
     super.initState();
     NativeBridge.startTerminalService();
-    _startProcess();
   }
 
-  Future<void> _startProcess() async {
-    try {
-      final config = await TerminalService.getProotShellConfig();
-      // Use the exact same argument structure as onboarding's safe CLI initialization.
-      final args = TerminalService.buildProotArgs(
-        config,
-      );
-      
-      // Remove any PTY-specific row/col configurations from args
-      args.removeWhere((a) => a.contains('COLUMNS') || a.contains('LINES'));
-
-      _process = await Process.start(
-        config['executable']!,
-        args,
-        environment: TerminalService.buildHostEnv(config),
-      );
-
-      _process!.stdout.transform(utf8.decoder).listen((data) {
-        _handleOutput(data);
-      });
-
-      _process!.stderr.transform(utf8.decoder).listen((data) {
-        _handleOutput(data, isError: true);
-      });
-
-      _process!.exitCode.then((code) {
-        _handleOutput('\n[Process exited with code $code]\n');
-      });
-
-      setState(() => _loading = false);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = 'Failed to start terminal: $e';
-        });
-      }
-    }
-  }
-
-  void _handleOutput(String data, {bool isError = false}) {
-    if (!mounted) return;
-    
-    // Split incoming blob into lines, skipping empty ones
-    final newLines = data.split('\n').where((line) => line.trim().isNotEmpty).toList();
-    if (newLines.isEmpty) return;
-
-    setState(() {
-      _logs.addAll(newLines);
-      if (_logs.length > 5000) {
-        _logs.removeRange(0, _logs.length - 5000);
-      }
-    });
-
-    // Auto-scroll to bottom
+  void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 50), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -95,23 +39,42 @@ class _TerminalScreenState extends State<TerminalScreen> {
     });
   }
 
-  void _sendCommand() {
+  Future<void> _sendCommand() async {
     final cmd = _inputController.text.trim();
-    if (cmd.isEmpty || _process == null) return;
+    if (cmd.isEmpty) return;
 
-    // Echo command to the UI
-    setState(() => _logs.add('\$ $cmd'));
-    
-    // Send to process stdin
-    _process!.stdin.writeln(cmd);
-    
+    setState(() => _logs.add('\n\$ $cmd'));
     _inputController.clear();
     _focusNode.requestFocus();
+    _scrollToBottom();
+
+    setState(() => _loading = true);
+
+    try {
+      final result = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $cmd',
+        timeout: 60000
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _logs.addAll(result.split('\n').where((l) => l.trim().isNotEmpty));
+        _loading = false;
+      });
+      _scrollToBottom();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _logs.add('Error: $e');
+        _loading = false;
+      });
+      _scrollToBottom();
+    }
   }
 
   @override
   void dispose() {
-    _process?.stdin.writeln('exit');
     _scrollController.dispose();
     _inputController.dispose();
     _focusNode.dispose();
@@ -140,15 +103,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Restart',
+            tooltip: 'Clear',
             onPressed: () {
-              _process?.kill();
               setState(() {
                 _logs.clear();
-                _loading = true;
+                _logs.add('Terminal cleared.');
                 _error = null;
               });
-              _startProcess();
             },
           ),
         ],
@@ -158,19 +119,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Starting shell...'),
-          ],
-        ),
-      );
-    }
-
     if (_error != null) {
       return Center(
         child: Padding(
@@ -193,13 +141,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
               FilledButton.icon(
                 onPressed: () {
                   setState(() {
-                    _loading = true;
+                    _loading = false;
                     _error = null;
                   });
-                  _startProcess();
                 },
                 icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+                label: const Text('Dismiss'),
               ),
             ],
           ),
@@ -246,6 +193,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
             ),
           ),
         ),
+        
+        if (_loading) const LinearProgressIndicator(),
         
         // Command Input Bar
         Container(
