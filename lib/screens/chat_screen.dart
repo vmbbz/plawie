@@ -286,6 +286,13 @@ class _ChatScreenState extends State<ChatScreen> {
         _isThinking = false;
         _isGenerating = false;
         _speechIntensity = 0.0; // Stop mouth
+        
+        // If the upstream AI provider rate-limited silently, the message stream will be empty.
+        // Catch this and provide a human-readable fallback instead of a blank bubble.
+        if (fullResponse.trim().isEmpty) {
+          fullResponse = '⚠️ The AI provider did not return a response. This usually indicates an upstream API rate limit or an empty model output. Please wait a moment before trying again or switch to a different AI model.';
+          _messages.last = ChatMessage(text: fullResponse, isUser: false);
+        }
       });
       _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
     }
