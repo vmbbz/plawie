@@ -9,9 +9,11 @@ import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
 import '../widgets/vrm_avatar_widget.dart';
 
+import 'dart:ui';
 import '../models/chat_message.dart';
 import '../services/chat_persistence_service.dart';
 import '../widgets/chat_bubble.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'avatar_forge_page.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -65,6 +67,9 @@ class _ChatScreenState extends State<ChatScreen> {
   double _downloadProgress = 0.0;
   bool _isDownloadingTts = false;
 
+  static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
+  bool _isPipMode = false;
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +77,17 @@ class _ChatScreenState extends State<ChatScreen> {
     _initVoiceParams();
     _loadChatHistory();
     _checkTtsModel();
+
+    _pipChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onPiPModeChanged') {
+        final bool isPip = call.arguments as bool;
+        if (mounted) {
+          setState(() {
+            _isPipMode = isPip;
+          });
+        }
+      }
+    });
     
     // Listen for background download progress
     _piperTts.onDownloadProgress = (p) {
@@ -882,6 +898,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isPipMode) {
+      return Scaffold(
+        backgroundColor: Colors.black, // Dark background for PiP visibility
+        body: Center(
+          child: VrmAvatarWidget(
+            avatarFileName: _selectedAvatar,
+            speechIntensity: _speechIntensity,
+            isThinking: _isThinking,
+            gesture: _currentGesture,
+          ),
+        ),
+      );
+    }
+
     final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
 
@@ -902,22 +932,30 @@ class _ChatScreenState extends State<ChatScreen> {
           child: GestureDetector(
             onTap: () => _showUnifiedMenu(context),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 10,
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A2E).withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.0),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -962,7 +1000,10 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ),
-        centerTitle: true,
+      ),
+    ),
+  ),
+  centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.add_comment_outlined, color: Colors.white70),
@@ -971,6 +1012,24 @@ class _ChatScreenState extends State<ChatScreen> {
               _loadChatHistory();
             },
             tooltip: 'New Chat',
+          ),
+          IconButton(
+            icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white70),
+            onPressed: () async {
+              if (await FlutterOverlayWindow.isPermissionGranted()) {
+                await FlutterOverlayWindow.showOverlay(
+                  height: 1000,
+                  width: 800,
+                  alignment: OverlayAlignment.centerRight,
+                  flag: OverlayFlag.defaultFlag,
+                  visibility: NotificationVisibility.visibilitySecret,
+                  positionGravity: PositionGravity.auto,
+                );
+              } else {
+                await FlutterOverlayWindow.requestPermission();
+              }
+            },
+            tooltip: 'Floating Avatar',
           ),
           Builder(
             builder: (ctx) => IconButton(
