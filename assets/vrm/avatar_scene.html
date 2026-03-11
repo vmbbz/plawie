@@ -486,6 +486,27 @@
                     }
                 }
 
+                // 4. Ambient World Engine (Procedural Wind in SpringBones)
+                // Injects a continuously evolving 3D Vector into the VRM SpringBones
+                // creating the illusion of atmosphere, so hair/clothing moves even when idle.
+                if (currentVrm.springBoneManager) {
+                    // Sum of sines pseudo-noise for organic, chaotic wind gusts
+                    const windX = Math.sin(time * 0.7) * 0.5 + Math.sin(time * 1.3) * 0.5;
+                    const windZ = Math.cos(time * 0.5) * 0.5 + Math.sin(time * 1.1) * 0.5;
+                    const windGust = (Math.sin(time * 0.3) + 1.0) * 0.5; // 0 to 1 intensity multiplier
+
+                    const windForce = new THREE.Vector3(windX, 0, windZ).normalize();
+                    const gravityPower = 0.2 + (windGust * 0.6); // Base 0.2, peaks at 0.8
+
+                    currentVrm.springBoneManager.joints.forEach(joint => {
+                        // Blend the original gravity dir (usually straight down 0, -1, 0) with the wind vector
+                        // The X and Z forces are scaled down slightly so it's a gentle breeze
+                        joint.settings.gravityDir.set(windForce.x * 0.3, -1, windForce.z * 0.3).normalize();
+                        // Overwrite power so the wind actually "pushes" the hair
+                        joint.settings.gravityPower = gravityPower;
+                    });
+                }
+
                 currentVrm.update(delta);
             }
             renderer.render(scene, camera);
