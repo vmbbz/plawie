@@ -176,6 +176,18 @@
 
                     mixer = new THREE.AnimationMixer(vrm.scene);
 
+                    // --- moeru-ai/airi Alignment: KILL EMBEDDED CLIPS ---
+                    // We disable all internal animations to prevent bone-fighting with the procedural matrix.
+                    if (vrm.animations && vrm.animations.length > 0) {
+                        vrm.animations.forEach(clip => {
+                            const action = mixer.clipAction(clip);
+                            action.stop();
+                            action.weight = 0;
+                        });
+                    }
+                    mixer.stopAllAction();
+                    console.log("Airi-Style: Embedded VRM animations disabled. Centralized Matrix active.");
+
                     loader.load('./animations/idle_loop.vrma', (vrmaGltf) => {
                         const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
                         const clip = createVRMAnimationClip(vrmAnimation, vrm);
@@ -342,6 +354,9 @@
         let currentLookX = 0;
         let currentLookY = 0;
 
+        let lastBlinkTime = 0;
+        let nextBlinkDuration = 3000 + Math.random() * 2000;
+
         function updateLookTarget(clientX, clientY) {
             targetLookX = (clientX / window.innerWidth) * 2 - 1;
             targetLookY = -(clientY / window.innerHeight) * 2 + 1;
@@ -391,12 +406,10 @@
                 const saccadeY = Math.sin(time * 1.7) * Math.cos(time * 2.5 + 2.0);
                 
                 if (head) {
-                    // Reset head rotation to baseline before applying additive procedural effects
-                    // to prevent cumulative rotation drift (the frenzy).
                     head.rotation.set(0, 0, 0); 
-                    
-                    head.rotation.y = (saccadeX * 0.02) - currentLookX * 0.6;
-                    head.rotation.x = (saccadeY * 0.015) + currentLookY * 0.5;
+                    // moeru-ai/airi Fix: Flip sign for correct screen-to-world mapping
+                    head.rotation.y = (saccadeX * 0.02) - (currentLookX * 0.8); 
+                    head.rotation.x = (saccadeY * 0.015) + (currentLookY * 0.5);
                     
                     if (isThinking) { // Exaggerated thinking sway
                         head.rotation.z += Math.sin(time * 1.5) * 0.01; 
@@ -413,23 +426,29 @@
                     neck.rotation.x = currentLookY * 0.15;
                 }
                 
-                // 3. Saccadic Eye Darting
+                // 3. Airi-Style Blink & Eye Darting
                 const leftEye = currentVrm.humanoid.getNormalizedBoneNode('leftEye');
                 const rightEye = currentVrm.humanoid.getNormalizedBoneNode('rightEye');
                 if (leftEye && rightEye) {
                     // Quick darts mixed with slow drift
                     const dartX = (Math.sin(time * 4.0) > 0.8) ? saccadeX * 0.15 : saccadeX * 0.02;
                     const dartY = (Math.cos(time * 3.1) > 0.8) ? saccadeY * 0.15 : saccadeY * 0.02;
-                    leftEye.rotation.y += dartX; leftEye.rotation.x += dartY;
-                    rightEye.rotation.y += dartX; rightEye.rotation.x += dartY;
+                    leftEye.rotation.y = dartX - (currentLookX * 0.2); 
+                    leftEye.rotation.x = dartY - (currentLookY * 0.2);
+                    rightEye.rotation.y = dartX - (currentLookX * 0.2); 
+                    rightEye.rotation.x = dartY - (currentLookY * 0.2);
                 }
 
-                // Smooth Blinking
-                const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1);
-                const targetBlink = blinkPeriod > 1.85 ? 1.0 : 0.0;
-                const currentBlink = currentVrm.expressionManager.getValue('blink') || 0;
-                const blinkLerp = targetBlink > currentBlink ? 0.6 : 0.2; // Fast close, smooth open
-                currentVrm.expressionManager.setValue('blink', THREE.MathUtils.lerp(currentBlink, targetBlink, blinkLerp));
+                // Airi-Style Blink Logic: Random 3-5s timer
+                if (time - lastBlinkTime > nextBlinkDuration / 1000) {
+                    currentVrm.expressionManager.setValue('blink', 1.0);
+                    if (time - lastBlinkTime > (nextBlinkDuration / 1000) + 0.15) { // Blink last 150ms
+                        lastBlinkTime = time;
+                        nextBlinkDuration = 2000 + Math.random() * 4000;
+                    }
+                } else {
+                    currentVrm.expressionManager.setValue('blink', 0.0);
+                }
 
                 // Base Emotion Blending
                 const names = Object.keys(currentVrm.expressionManager.expressionMap);
