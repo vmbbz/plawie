@@ -1,4 +1,4 @@
-# Plawie 🌌 Your Pocket OpenClaw Companion
+# Plawie — Your Pocket OpenClaw Companion
 
 <div align="center">
   <img src="assets/images/product_render.png" alt="Plawie Render" width="600"/>
@@ -20,7 +20,7 @@
 
 ## 🚀 No Server. No Problem.
 
-*"Run OpenClaw fully local on your phone. No complex setup, zero security risks, and zero server costs."*
+**"Run OpenClaw fully local on your phone. No complex setup, zero security risks, and zero server costs."**
 
 While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a $2,000 MacBook to run local AI agents—we took a different path. 
 
