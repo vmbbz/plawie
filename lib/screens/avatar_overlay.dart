@@ -1,7 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_floatwing/flutter_floatwing.dart';
 import '../widgets/vrm_avatar_widget.dart';
-
 import 'dart:convert';
 
 class AvatarOverlay extends StatefulWidget {
@@ -12,16 +12,28 @@ class AvatarOverlay extends StatefulWidget {
   State<AvatarOverlay> createState() => _AvatarOverlayState();
 }
 
+class _AvatarOverlayState extends State<AvatarOverlay> {
   Window? _window;
+  
+  // State variables for synchronization
+  double _speechIntensity = 0.0;
+  bool _isThinking = false;
+  String _gesture = "idle";
+  String _avatarFileName = "default_avatar.vrm";
+  bool _isListening = false;
 
   @override
   void initState() {
     super.initState();
+    // Use addPostFrameCallback to ensure the Window object is accessible via context
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _window = Window.of(context);
-      _window?.onData.listen((event) {
-        if (!mounted) return;
-        _handleDataSync(event);
+      
+      // flutter_floatwing 0.3.1 registers data handlers via a method call, not a Stream
+      _window?.onData((source, name, data) {
+        if (!mounted) return null;
+        _handleDataSync(data);
+        return null; // Return null as we don't need to return a value to the sender
       });
     });
   }
@@ -76,6 +88,7 @@ class AvatarOverlay extends StatefulWidget {
               gesture: _gesture,
             ),
           ),
+          
           // A tiny close button in the top right
           if (widget.isFloating)
             Positioned(
@@ -95,6 +108,7 @@ class AvatarOverlay extends StatefulWidget {
                 ),
               ),
             ),
+            
           // Interactive Microphone Button
           Positioned(
             bottom: 20,
