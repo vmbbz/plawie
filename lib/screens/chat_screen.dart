@@ -1095,6 +1095,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   visibility: NotificationVisibility.visibilitySecret,
                   positionGravity: PositionGravity.auto,
                 );
+                // Minimize the app so the user sees the floating avatar on the home screen immediately
+                await SystemNavigator.pop();
               } else {
                 await FlutterOverlayWindow.requestPermission();
               }
