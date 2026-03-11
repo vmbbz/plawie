@@ -163,7 +163,14 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        WebViewWidget(controller: _controller),
+        GestureDetector(
+          onTapDown: (details) {
+            final x = details.localPosition.dx;
+            final y = details.localPosition.dy;
+            _controller.runJavaScript('if (window.setTapTarget) window.setTapTarget($x, $y);');
+          },
+          child: WebViewWidget(controller: _controller),
+        ),
         if (!_isReady)
           const Center(
             child: CircularProgressIndicator(
