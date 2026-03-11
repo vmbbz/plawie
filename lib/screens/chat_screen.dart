@@ -243,16 +243,37 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _syncOverlayState() async {
+    try {
+      if (await FlutterOverlayWindow.isActive()) {
+        await FlutterOverlayWindow.shareData({
+          'speechIntensity': _speechIntensity,
+          'isThinking': _isThinking,
+          'gesture': _currentGesture ?? '',
+          'avatarFileName': _selectedAvatar,
+        });
+      }
+    } catch (e) {
+      debugPrint('Overlay sync error: $e');
+    }
+  }
+
   Future<void> _initVoiceParams() async {
     // Only initialize the shell STT, don't pre-emptively init Piper (it hangs)
     await _speechToText.initialize();
 
     _piperTts.onStart = () {
-      if (mounted) setState(() => _speechIntensity = 0.8);
+      if (mounted) {
+        setState(() => _speechIntensity = 0.8);
+        _syncOverlayState();
+      }
     };
 
     _piperTts.onComplete = () {
-      if (mounted) setState(() => _speechIntensity = 0.0);
+      if (mounted) {
+        setState(() => _speechIntensity = 0.0);
+        _syncOverlayState();
+      }
     };
   }
 
@@ -277,6 +298,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _isThinking = true;
       _isGenerating = true;
     });
+    _syncOverlayState();
     _scrollToBottom();
     _saveChatHistory(); // Save user message
     _addDiagnosticLog('Sending message: $text');
@@ -329,6 +351,7 @@ class _ChatScreenState extends State<ChatScreen> {
           fullResponse += chunk;
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         });
+        _syncOverlayState();
         _scrollToBottom();
       }
       _saveChatHistory(); // Save full assistant response
@@ -353,6 +376,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _isThinking = false;
         _isGenerating = false;
         _speechIntensity = 0.0; // Stop mouth
+        _syncOverlayState();
         
         // If the upstream AI provider rate-limited silently, the message stream will be empty.
         // Catch this and provide a human-readable fallback instead of a blank bubble.
@@ -414,6 +438,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _isReady = false;
     });
     PreferencesService().selectedAvatar = _selectedAvatar;
+    _syncOverlayState();
     _addDiagnosticLog('Swapped and persisted avatar: $_selectedAvatar');
   }
 
@@ -426,6 +451,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _isReady = false;
     });
     PreferencesService().selectedAvatar = _selectedAvatar;
+    _syncOverlayState();
     _addDiagnosticLog('Swapped and persisted avatar: $_selectedAvatar');
   }
 
