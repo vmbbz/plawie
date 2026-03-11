@@ -95,7 +95,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // --- Overlay To Main Bridge ---
     // --- Overlay To Main Bridge (Floatwing) ---
-    FloatwingPlugin().onData((source, name, data) async {
+    Window(id: "clawa-avatar").onData((source, name, data) async {
       if (!mounted) return null;
       try {
         Map<String, dynamic> msgData = {};
