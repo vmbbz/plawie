@@ -1,12 +1,12 @@
-# 🌌 OpenClaw: The AI-Native Wearable Interface
+# Plawie 🌌 Your Pocket OpenClaw Companion
 
 <div align="center">
-  <img src="assets/images/product_render.png" alt="OpenClaw x AgentVRM Render" width="600"/>
+  <img src="assets/images/product_render.png" alt="Plawie Render" width="600"/>
   
   <br/>
   
-  **🤖️ Your Pocket AGI Companion**  
-  **🔗 Native Solana Web3 Logic • 🎭 Airi-Style Procedural VRM • 📱 Android Transparent Overlay**
+  **🤖️ The $2,000 Mac Experience in Your Pocket**  
+  **🔗 Local PRoot OpenClaw Engine • Native Web3 • 🎭 Airi-Style Immersive VRM**
   
   <br/>
   
@@ -18,139 +18,132 @@
 
 ---
 
-## 📋 **Executive Summary**
+## 🚀 No Server. No Problem.
 
-**OpenClaw** is a next-generation AI agent platform that transforms your Android device into a 24/7 autonomous digital being. By bridging the gap between high-performance local LLM logic (**OpenClaw Gateway**) and hyper-realistic 3D expression (**AgentVRM**), we have created the world's most advanced "Wearable Interface" for your phone.
+*"Run OpenClaw fully local on your phone. No complex setup, zero security risks, and zero server costs."*
 
-Whether checking the weather, managing your **Solana** portfolio, or executing complex multi-step "Skills," your OpenClaw companion lives on your home screen—breathing, thinking, and reacting in real-time.
+While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a $2,000 MacBook to run local AI agents—we took a different path. 
 
----
+**Plawie** represents a top 1% engineering achievement: we successfully embedded a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone. 
 
-## ✨ **The "Airi-Style" Edge: AgentVRM**
+You simply install the app, and you immediately possess a world-class, autonomous AI agent capable of multi-step reasoning, tool execution, and native Web3 transactions, right from your pocket. 
 
-In 2026, a chat box isn't enough. OpenClaw features a **World-Class 3D Rendering Pipeline** inspired by Project Airi and Neuro-sama.
-
-### 🎭 **Procedural Realism Matrix**
-Our avatars don't just "loop" animations. They are driven by a **Layered Procedural Matrix** in Three.js:
-- **🌬️ Ambient World Engine:** Procedural wind force injected into VRM Spring Bones. Hair and clothing ripple naturally even when idle.
-- **👁️ Saccadic Gaze & Focus:** Independent neck and eye-tracking using sum-of-sines pseudo-noise for an "alive" look.
-- **🎙️ Isolate-Driven Lip Sync:** Bidirectional bridge between the Flutter TTS engine and the WebGL renderer for flawlessly smooth background lip-sync.
-- **🧠 Skill Reactions:** The avatar physically reacts to OpenClaw events (e.g., striking a `pose` when calculating or `ready` after execution).
-
-### 🌌 **Transparent Floating Overlay**
-Escape the app. OpenClaw utilizes a custom **System Alert Window Overlay**, allowing your 3D companion to float over any Android application with true glassmorphic transparency. Talk to your agent locally while using Twitter, Discord, or your favorite games.
+Your data stays on your device. Always.
 
 ---
 
-## 🏗️ **Architecture & Tech Stack**
+## 🧠 The Core Foundation: Industrial-Grade Mobile Architecture
 
-### **The Multi-Isolate Engine**
-OpenClaw is surgically optimized for mobile efficiency using a 3-layer architecture:
+Plawie isn't just a UI wrapper; it is built on an untouchable technical foundation:
+
+### 1. The Autonomous PRoot Gateway
+We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your Snapdragon processor. It handles 35+ local Android skills to bridge the gap between intelligence and device-level actions.
+
+### 2. Native Solana Web3 Logic
+Plawie is your ultimate Web3 co-pilot. We built a robust, fully native Solana integration directly into the app:
+- **Real Ed25519 Keypairs:** Generated and secured in on-device storage.
+- **DeFi Ready:** Swap tokens, set limit orders, and DCA via direct Jupiter API integration.
+- **On-Chain Queries:** Real-time RPC balance checks and historical transaction fetching.
+- **Zero Cloud Intermediaries:** Your private keys never touch a server; transactions are constructed and signed locally.
+
+### 3. Voice-First Pipeline
+A fully local Piper TTS (Text-to-Speech) engine and built-in STT providing lightning-fast, on-device voice interactions without hitting cloud transcription APIs.
+
+---
+
+## 🎭 The UI Layer: An Airi-Style Immersive Experience
+
+Once we perfected the untouchable local OpenClaw foundation, we knew a standard chat window wouldn't do it justice. We needed an interface worthy of the technology.
+
+We layered on an incredibly immersive, **Airi-style procedural companion experience** built on top of the solid core. Plawie isn't just text; it's a living digital entity on your home screen.
+
+### 🌌 Transparent Glassmorphic Overlay
+Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay. Talk to your agent while scrolling X/Twitter, reading emails, or watching YouTube. The companion floats effortlessly above your digital life.
+
+### 👁️ Procedural Realism & Ambience
+Our WebGL-based VRM avatars are driven by a custom mathematical engine, not pre-baked animations:
+- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically and constantly.
+- **Saccadic Gaze & Breath:** Independent neck and eye-tracking using sum-of-sines pseudo-noise algorithms to give a hyper-realistic, "alive" look.
+- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer ensures mathematically perfect lip-sync.
+- **Behavioral Reactions:** As the OpenClaw gateway calculates, thinks, or executes errors, the avatar physically poses and reacts through the Skill-to-Gesture bus.
+
+---
+
+## 🏗️ Technical Architecture
+
+Plawie is surgically optimized for mobile efficiency using a 3-layer architecture:
 
 ```mermaid
 graph TD
-    subgraph "Layer 1: The Flutter Isolate (Logic)"
-        A[Chat UI] --> B[SkillsService]
-        B --> C[OpenClaw Gateway]
-        A --> D[Solana SDK]
+    subgraph "Layer 1: The Flutter Isolate (The Shell)"
+        A[Native Chat & Audio UI] --> B[SkillsService]
+        A --> C[Solana Dart SDK]
+        A --> D[Piper TTS Engine]
     end
 
-    subgraph "Layer 2: The Overlay Isolate (UI)"
-        E[Floating Window] --> F[shareData Bridge]
+    subgraph "Layer 2: The Core Foundation (The Brain)"
+        E[Ubuntu PRoot Sandbox] --> F[Node.js OpenClaw Gateway]
+        B --> F
+        F --> G[35+ Device Skills Executer]
     end
 
-    subgraph "Layer 3: The WebGL Engine (Expression)"
-        G[Three.js Renderer] --> H[VRM 1.0 Runtime]
-        H --> I[Procedural Atmosphere Math]
+    subgraph "Layer 3: The UI Layer (The Expression)"
+        H[Transparent Overlay] --> I[Three.js VRM Renderer]
+        I --> J[Procedural Animation Math]
     end
 
-    A -- "Bidirectional Bridge" --> E
-    B -- "Event Hook" --> I
+    A -- "flutter_overlay_window.shareData" --> H
+    D -- "Viseme Synectics" --> I
 ```
 
-### **⚡ Core Technology**
-- **Frontend**: Flutter (Dart) with `flutter_overlay_window`.
-- **3D Graphics**: [Three.js](https://threejs.org/) + [@pixiv/three-vrm](https://github.com/pixiv/three-vrm).
-- **Backend**: Node.js local gateway running in a sandboxed Android Proot environment.
-- **Web3**: Native Solana Wallet integration (Jupiter Ultra API, DCA, Limit Orders).
-- **Voice**: [Piper TTS](https://github.com/rhasspy/piper) (On-device neural voice) + Google STT.
+### ⚡ Technology Stack Summary
+- **The Brain:** PRoot, Ubuntu, Node.js (OpenClaw Server).
+- **The Shell:** Flutter (Dart) 3.24+.
+- **The Web3 Layer:** Native `solana` Dart SDK.
+- **The Expression:** Three.js + `@pixiv/three-vrm` running in a high-performance background WebGL view.
 
 ---
 
-## 🚀 **Installation & Setup**
+## 📦 Deployment & Setup
 
-### **Prerequisites**
-- **Android SDK**: API 21+ (Android 5.0+)
-- **Flutter SDK**: 3.24 or higher
-- **Node.js**: 20.0+
+Experience the future of local AI companions.
 
-### **📦 Deployment**
+### Prerequisites
+- **Android Device**: API 21+ (Android 5.0+). Snapdragon 8 Gen 1 or equivalent recommended for optimal local LLM performance.
+- **Flutter SDK**: 3.24+
+- **Node.js**: 20.0+ (for local development)
+
+### Build Instructions
 ```bash
-# 1. Clone & Install Flutter dependencies
+# 1. Clone & Install Dependencies
 git clone https://github.com/vmbbz/plawie.git
 cd openclaw_final
 flutter pub get
 
-# 2. Setup local AI Gateway
+# 2. Prepare the local AI Gateway
 cd android/app/src/main/assets/nodejs-project
 npm install
 
-# 3. Launch App
-flutter run --release
+# 3. Compile and Run
+cd ../../../../../../
+flutter build apk --release
+flutter install
 ```
 
 ---
 
-## 🤖 **Using Your Agent**
+## 🤝 Contributing to Plawie
 
-### **Voice Interaction**
-- **Overlay Mic**: Tap the floating mic button on your home screen to talk to the agent in the background.
-- **Keyword Triggers**: "Hey Clawa", "Open search", "Check SOL balance".
-
-### **Solana Operations**
-OpenClaw turns complex DeFi into a conversation:
-- *"Swap 0.5 SOL for USDC"*
-- *"Set a limit order for BONK at $0.00002"*
-- *"Show me my portfolio value"*
+We are building the **"Linux for AI Companions"**, and the roadmap is massive. We welcome contributions in:
+- Optimized WebGL/GLSL shaders for better battery life during procedural renders.
+- Expanding the native Solana DeFi toolings (e.g., direct Jupiter SDK ports).
+- Advanced Android-level system automation tools for the OpenClaw gateway.
 
 ---
 
-## 🏆 **Development Roadmap**
-
-### **Phase 1-3: Foundation & Web3** ✅
-- [x] Local Proot Node.js Gateway.
-- [x] Native Solana wallet & Jupiter integration.
-- [x] 35+ Local Android Skills.
-
-### **Phase 4-6: AgentVRM & Realism** ✅
-- [x] **Procedural Animation Matrix** (Airi-style logic).
-- [x] **Transparent Background Overlay**.
-- [x] **Ambient World Engine** (Procedural wind physics).
-- [x] **Skill-to-Gesture Bus**.
-
-### **Phase 7: The Collective (Future)** 🔮
-- [ ] Multi-agent collaborative swarms.
-- [ ] Advanced "Wearable" hardware integration.
-- [ ] On-chain Avatar evolution (NFT metadata sync).
-
----
-
-## 🤝 **Contributing**
-We are building the **"Linux for AI Companions."** We welcome PRs for:
-- Optimized WebGL Shaders.
-- New `.vrma` gesture packs.
-- Advanced Solana automation "Skills."
-
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for style guides and isolate communication standards.
-
----
-
-## 📄 **License & Legal**
+## 📄 License
 This project is licensed under the **MIT License**. Distributed as-is for educational and experimental automation purposes.
 
----
-
 <div align="center">
-  <strong>🌌 OpenClaw - Your AI Agent, Your Rules, Your Reality 🌌</strong>  
-  <em>Bridging Logic and Expression on your home screen.</em>
+  <strong>🌌 Plawie - Your AI Agent, Your Rules, Your Reality 🌌</strong>  
 </div>
