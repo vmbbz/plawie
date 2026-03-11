@@ -336,6 +336,27 @@
         });
         resizeObserver.observe(document.body);
 
+        // --- Interactive Gaze Tracking ---
+        let targetLookX = 0;
+        let targetLookY = 0;
+        let currentLookX = 0;
+        let currentLookY = 0;
+
+        function updateLookTarget(clientX, clientY) {
+            targetLookX = (clientX / window.innerWidth) * 2 - 1;
+            targetLookY = -(clientY / window.innerHeight) * 2 + 1;
+            // Clamp so they don't break their neck tracking too far
+            targetLookX = Math.max(-0.6, Math.min(0.6, targetLookX));
+            targetLookY = Math.max(-0.6, Math.min(0.6, targetLookY));
+        }
+
+        window.addEventListener('mousemove', (e) => updateLookTarget(e.clientX, e.clientY));
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) updateLookTarget(e.touches[0].clientX, e.touches[0].clientY);
+        });
+        window.addEventListener('touchend', () => { targetLookX = 0; targetLookY = 0; });
+        window.addEventListener('mouseout', () => { targetLookX = 0; targetLookY = 0; });
+
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
@@ -353,19 +374,25 @@
                 const upperChest = currentVrm.humanoid.getNormalizedBoneNode('upperChest');
                 const neck = currentVrm.humanoid.getNormalizedBoneNode('neck');
                 const head = currentVrm.humanoid.getNormalizedBoneNode('head');
-                
+                // --- Interactive Gaze Lerping ---
+                currentLookX = THREE.MathUtils.lerp(currentLookX, targetLookX, delta * 4.0);
+                currentLookY = THREE.MathUtils.lerp(currentLookY, targetLookY, delta * 4.0);
+
                 // 1. Procedural Breathing (Applies smoothly on top of the mixer)
                 const breathOsc = Math.sin(time * 1.5); 
                 if (upperChest) upperChest.rotation.x += breathOsc * 0.015;
-                if (spine) spine.rotation.z += Math.sin(time * 0.8) * 0.005;
+                if (spine) {
+                    spine.rotation.z += Math.sin(time * 0.8) * 0.005;
+                    spine.rotation.y -= currentLookX * 0.25; // Spine twists slightly to track user
+                }
 
-                // 2. Saccadic Neck & Head Micro-Movements (Constant organic shift)
+                // 2. Saccadic Neck & Head Micro-Movements + Gaze Tracking
                 const saccadeX = Math.sin(time * 2.1) * Math.sin(time * 1.3 + 1.0);
                 const saccadeY = Math.sin(time * 1.7) * Math.cos(time * 2.5 + 2.0);
                 
                 if (head) {
-                    head.rotation.y += saccadeX * 0.02;
-                    head.rotation.x += saccadeY * 0.015;
+                    head.rotation.y += (saccadeX * 0.02) - currentLookX * 0.6;
+                    head.rotation.x += (saccadeY * 0.015) + currentLookY * 0.5;
                     
                     if (isThinking) { // Exaggerated thinking sway
                         head.rotation.z += Math.sin(time * 1.5) * 0.01; 
@@ -373,7 +400,8 @@
                     }
                 }
                 if (neck) {
-                    neck.rotation.y += saccadeX * 0.01;
+                    neck.rotation.y += (saccadeX * 0.01) - currentLookX * 0.15;
+                    neck.rotation.x += currentLookY * 0.15;
                 }
                 
                 // 3. Saccadic Eye Darting
