@@ -95,22 +95,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // --- Overlay To Main Bridge ---
     // --- Overlay To Main Bridge (Floatwing) ---
-    FloatwingPlugin().onData.listen((event) {
-      if (!mounted) return;
+    FloatwingPlugin().onData((source, name, data) async {
+      if (!mounted) return null;
       try {
-        Map<String, dynamic> data = {};
-        if (event is String) {
-          data = jsonDecode(event);
-        } else if (event is Map) {
-          data = Map<String, dynamic>.from(event);
+        Map<String, dynamic> msgData = {};
+        if (data is String) {
+          msgData = jsonDecode(data);
+        } else if (data is Map) {
+          msgData = Map<String, dynamic>.from(data);
         }
 
-        if (data['action'] == 'toggle_mic') {
+        if (msgData['action'] == 'toggle_mic') {
           _toggleListening();
         }
       } catch (e) {
         debugPrint('Main Listener Error: $e');
       }
+      return null;
     });
 
     // --- OpenClaw Skills Event Bus ---
@@ -289,7 +290,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _syncOverlayState() async {
     try {
-      final window = FloatwingPlugin().getWindow("clawa-avatar");
+      final window = FloatwingPlugin().windows["clawa-avatar"];
       if (window != null) {
         await window.share({
           'speechIntensity': _speechIntensity,
@@ -1090,22 +1091,21 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white70),
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               final plugin = FloatwingPlugin();
               bool granted = await plugin.checkPermission();
               if (!granted) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Please grant 'Display over other apps' to enable the floating avatar."),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text("Please grant 'Display over other apps' to enable the floating avatar."),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
                 await plugin.openPermissionSetting();
                 return;
               }
               
-              startFloatingAvatar();
+              await startFloatingAvatar();
               // Minimize the app so the user sees the floating avatar on the home screen immediately
               await SystemNavigator.pop();
             },
