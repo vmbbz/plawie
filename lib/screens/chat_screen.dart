@@ -1090,6 +1090,21 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white70),
             onPressed: () async {
+              final plugin = FloatwingPlugin();
+              bool granted = await plugin.checkPermission();
+              if (!granted) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Please grant 'Display over other apps' to enable the floating avatar."),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                await plugin.openPermissionSetting();
+                return;
+              }
+              
               startFloatingAvatar();
               // Minimize the app so the user sees the floating avatar on the home screen immediately
               await SystemNavigator.pop();
