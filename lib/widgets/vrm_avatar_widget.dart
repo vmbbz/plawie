@@ -18,6 +18,7 @@ class VrmAvatarWidget extends StatefulWidget {
   final String? gesture;
   final String? userMessage;
   final Function(String)? onLog;
+  final bool isOverlay;
 
   const VrmAvatarWidget({
     super.key,
@@ -29,6 +30,7 @@ class VrmAvatarWidget extends StatefulWidget {
     this.gesture,
     this.userMessage,
     this.onLog,
+    this.isOverlay = false,
   });
 
   @override
@@ -94,7 +96,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     try {
       await _server.start();
       _serverStarted = true;
-      final url = '${_server.origin}/avatar_scene.html';
+      final url = '${_server.origin}/avatar_scene.html${widget.isOverlay ? "?overlay=true" : ""}';
       widget.onLog?.call('VRM Server started at ${_server.origin}');
 
       // Load from localhost HTTP — all fetch() and import() calls work naturally

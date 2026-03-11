@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';
 
 /// Skills System with YAML frontmatter and dynamic loading
 /// Inspired by SeekerClaw's skills architecture
@@ -62,6 +63,7 @@ class SkillsService {
         _createReminderSkill(),
         _createCalculatorSkill(),
         _createTextAnalysisSkill(),
+        _createAvatarOverlaySkill(),
       ];
 
       for (final skill in bundledSkills) {
@@ -272,6 +274,9 @@ class SkillsService {
       case 'file':
         return await _executeFileSkill(skill, parameters, context);
       case 'system':
+        if (skill.id == 'avatar_pip') {
+          return await _executeAvatarPipSkill(skill, parameters, context);
+        }
         return await _executeSystemSkill(skill, parameters, context);
       case 'reminder':
         return await _executeReminderSkill(skill, parameters, context);
@@ -433,6 +438,15 @@ class SkillsService {
   Future<SkillResult> _executeSystemSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     // System skill implementation
     return SkillResult.success({'battery': '85%', 'memory': '4GB used', 'storage': '32GB free'});
+  }
+
+  Future<SkillResult> _executeAvatarPipSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    try {
+      await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
+      return SkillResult.success({'message': 'Entered Picture-in-Picture mode successfully.'});
+    } catch (e) {
+      return SkillResult.error('Failed to enter PiP mode: \$e');
+    }
   }
 
   Future<SkillResult> _executeReminderSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
@@ -731,6 +745,39 @@ Analyze text for word count, readability, and other metrics.
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true,
+    );
+  }
+
+  Skill _createAvatarOverlaySkill() {
+    return Skill(
+      id: 'avatar_overlay',
+      name: 'Floating Transparent Avatar',
+      description: 'Shrink the agent avatar into a transparent floating widget on the home screen.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'system',
+      tags: ['overlay', 'floating', 'minimize', 'widget', 'shrink', 'transparent'],
+      requirements: [],
+      body: '''# Floating Avatar Skill
+
+## Description
+Shrinks the avatar into a true transparent floating widget, allowing you to use other apps while talking.
+
+## Usage
+- "Minimize to floating widget"
+- "Show floating transparent avatar"
+- "Pop out"
+
+## Requirements
+- SYSTEM_ALERT_WINDOW permission.
+
+## Returns
+- Status of Overlay transition.
+''',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true,
+
     );
   }
 

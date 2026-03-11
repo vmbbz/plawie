@@ -42,6 +42,7 @@ class MainActivity : FlutterActivity() {
     private var screenCaptureResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
     private var wakeLock: PowerManager.WakeLock? = null
+    private var pipMethodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -51,6 +52,28 @@ class MainActivity : FlutterActivity() {
 
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir)
         processManager = ProcessManager(filesDir, nativeLibDir)
+
+        pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
+        pipMethodChannel?.setMethodCallHandler { call, result ->
+            if (call.method == "enterPictureInPictureMode") {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        val aspectRatio = android.util.Rational(3, 4)
+                        val params = android.app.PictureInPictureParams.Builder()
+                            .setAspectRatio(aspectRatio)
+                            .build()
+                        val success = enterPictureInPictureMode(params)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        result.error("PIP_ERROR", e.message, null)
+                    }
+                } else {
+                    result.error("UNSUPPORTED", "PiP requires Android O+", null)
+                }
+            } else {
+                result.notImplemented()
+            }
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -560,6 +583,14 @@ class MainActivity : FlutterActivity() {
                 screenCaptureResult = null
             }
         }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration?
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
     }
 
     companion object {

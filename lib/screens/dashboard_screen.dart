@@ -14,6 +14,7 @@ import 'packages_screen.dart';
 import 'settings_screen.dart';
 import 'chat_screen.dart';
 import 'solana_screen.dart';
+import 'help_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -158,6 +159,15 @@ class DashboardScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const LogsScreen()),
+              ),
+            ),
+            StatusCard(
+              title: 'Help & Docs',
+              subtitle: 'View OpenClaw usage, commands, and guides',
+              icon: Icons.help_outline_rounded,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HelpScreen()),
               ),
             ),
 
