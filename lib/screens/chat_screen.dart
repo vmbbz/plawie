@@ -15,6 +15,7 @@ import '../services/chat_persistence_service.dart';
 import '../widgets/chat_bubble.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'avatar_forge_page.dart';
+import '../services/skills_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -86,6 +87,45 @@ class _ChatScreenState extends State<ChatScreen> {
             _isPipMode = isPip;
           });
         }
+      }
+    });
+
+    // --- Overlay To Main Bridge ---
+    FlutterOverlayWindow.overlayListener.listen((event) {
+      if (!mounted) return;
+      try {
+        Map<String, dynamic> data = {};
+        if (event is String) {
+          data = jsonDecode(event);
+        } else if (event is Map) {
+          data = Map<String, dynamic>.from(event);
+        }
+
+        if (data['action'] == 'toggle_mic') {
+          _toggleListening();
+        }
+      } catch (e) {
+        debugPrint('Main Listener Error: $e');
+      }
+    });
+
+    // --- OpenClaw Skills Event Bus ---
+    SkillsService().events.listen((event) {
+      if (!mounted) return;
+      if (event.type == SkillsEventType.executing) {
+        _addDiagnosticLog('Skill executing: ${event.skillId}');
+        setState(() {
+          _isThinking = true;
+          _currentGesture = 'pose'; // Elegant pose while calculating
+        });
+        _syncOverlayState();
+      } else if (event.type == SkillsEventType.executed || event.type == SkillsEventType.error) {
+        _addDiagnosticLog('Skill finished: ${event.skillId}');
+        setState(() {
+          _isThinking = false;
+          _currentGesture = 'ready'; // Drop back to ready
+        });
+        _syncOverlayState();
       }
     });
     
@@ -251,6 +291,7 @@ class _ChatScreenState extends State<ChatScreen> {
           'isThinking': _isThinking,
           'gesture': _currentGesture ?? '',
           'avatarFileName': _selectedAvatar,
+          'isListening': _isListening,
         });
       }
     } catch (e) {
@@ -404,11 +445,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isListening) {
       await _speechToText.stop();
       setState(() => _isListening = false);
+      _syncOverlayState();
       _addDiagnosticLog('Voice listening stopped.');
     } else {
       bool available = await _speechToText.initialize();
       if (available) {
         setState(() => _isListening = true);
+        _syncOverlayState();
         _addDiagnosticLog('Voice listening started.');
         await _speechToText.listen(
           onResult: (result) {

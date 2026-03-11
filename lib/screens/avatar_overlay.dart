@@ -16,6 +16,7 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
   bool _isThinking = false;
   String? _gesture;
   String _avatarFileName = 'default_avatar.vrm';
+  bool _isListening = false;
 
   @override
   void initState() {
@@ -43,6 +44,9 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
             }
             if (data.containsKey('avatarFileName')) {
               _avatarFileName = data['avatarFileName'] as String;
+            }
+            if (data.containsKey('isListening')) {
+              _isListening = data['isListening'] as bool;
             }
           });
         }
@@ -84,6 +88,48 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.close, color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+          // Interactive Microphone Button
+          Positioned(
+            bottom: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () async {
+                  // Fire action back to main isolate
+                  await FlutterOverlayWindow.shareData({'action': 'toggle_mic'});
+                  // Optimistically update UI
+                  setState(() => _isListening = !_isListening);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _isListening 
+                        ? Colors.redAccent.withValues(alpha: 0.8) 
+                        : Colors.black.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _isListening ? Colors.redAccent : Colors.white24,
+                      width: _isListening ? 2 : 1,
+                    ),
+                    boxShadow: [
+                      if (_isListening)
+                        BoxShadow(
+                          color: Colors.redAccent.withValues(alpha: 0.5),
+                          blurRadius: 15,
+                          spreadRadius: 2,
+                        ),
+                    ],
+                  ),
+                  child: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none, 
+                    color: Colors.white, 
+                    size: 28,
+                  ),
+                ),
               ),
             ),
           ),
