@@ -14,7 +14,9 @@ import 'dart:ui';
 import '../models/chat_message.dart';
 import '../services/chat_persistence_service.dart';
 import '../widgets/chat_bubble.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+// import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:flutter_floatwing/flutter_floatwing.dart';
+import '../main.dart'; // To access startFloatingAvatar()
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 
@@ -92,7 +94,8 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     // --- Overlay To Main Bridge ---
-    FlutterOverlayWindow.overlayListener.listen((event) {
+    // --- Overlay To Main Bridge (Floatwing) ---
+    FloatwingPlugin().onData.listen((event) {
       if (!mounted) return;
       try {
         Map<String, dynamic> data = {};
@@ -286,8 +289,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _syncOverlayState() async {
     try {
-      if (await FlutterOverlayWindow.isActive()) {
-        await FlutterOverlayWindow.shareData({
+      final window = FloatwingPlugin().getWindow("clawa-avatar");
+      if (window != null) {
+        await window.share({
           'speechIntensity': _speechIntensity,
           'isThinking': _isThinking,
           'gesture': _currentGesture ?? '',
@@ -1086,20 +1090,9 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white70),
             onPressed: () async {
-              if (await FlutterOverlayWindow.isPermissionGranted()) {
-                await FlutterOverlayWindow.showOverlay(
-                  height: 1000,
-                  width: 800,
-                  alignment: OverlayAlignment.centerRight,
-                  flag: OverlayFlag.defaultFlag,
-                  visibility: NotificationVisibility.visibilitySecret,
-                  positionGravity: PositionGravity.auto,
-                );
-                // Minimize the app so the user sees the floating avatar on the home screen immediately
-                await SystemNavigator.pop();
-              } else {
-                await FlutterOverlayWindow.requestPermission();
-              }
+              startFloatingAvatar();
+              // Minimize the app so the user sees the floating avatar on the home screen immediately
+              await SystemNavigator.pop();
             },
             tooltip: 'Floating Avatar',
           ),

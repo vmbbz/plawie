@@ -1,59 +1,62 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter_floatwing/flutter_floatwing.dart';
 import '../widgets/vrm_avatar_widget.dart';
 
 import 'dart:convert';
 
 class AvatarOverlay extends StatefulWidget {
-  const AvatarOverlay({super.key});
+  final bool isFloating;
+  const AvatarOverlay({super.key, this.isFloating = false});
 
   @override
   State<AvatarOverlay> createState() => _AvatarOverlayState();
 }
 
-class _AvatarOverlayState extends State<AvatarOverlay> {
-  double _speechIntensity = 0.0;
-  bool _isThinking = false;
-  String? _gesture;
-  String _avatarFileName = 'default_avatar.vrm';
-  bool _isListening = false;
+  Window? _window;
 
   @override
   void initState() {
     super.initState();
-    FlutterOverlayWindow.overlayListener.listen((event) {
-      if (!mounted) return;
-      try {
-        Map<String, dynamic> data = {};
-        if (event is String) {
-          data = jsonDecode(event);
-        } else if (event is Map) {
-          data = Map<String, dynamic>.from(event);
-        }
-
-        if (data.isNotEmpty) {
-          setState(() {
-            if (data.containsKey('speechIntensity')) {
-              _speechIntensity = (data['speechIntensity'] as num).toDouble();
-            }
-            if (data.containsKey('isThinking')) {
-              _isThinking = data['isThinking'] as bool;
-            }
-            if (data.containsKey('gesture')) {
-              _gesture = data['gesture'] as String;
-            }
-            if (data.containsKey('avatarFileName')) {
-              _avatarFileName = data['avatarFileName'] as String;
-            }
-            if (data.containsKey('isListening')) {
-              _isListening = data['isListening'] as bool;
-            }
-          });
-        }
-      } catch (e) {
-        debugPrint('Overlay Listener Error: $e');
-      }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _window = Window.of(context);
+      _window?.onData.listen((event) {
+        if (!mounted) return;
+        _handleDataSync(event);
+      });
     });
+  }
+
+  void _handleDataSync(dynamic event) {
+    try {
+      Map<String, dynamic> data = {};
+      if (event is String) {
+        data = jsonDecode(event);
+      } else if (event is Map) {
+        data = Map<String, dynamic>.from(event);
+      }
+
+      if (data.isNotEmpty) {
+        setState(() {
+          if (data.containsKey('speechIntensity')) {
+            _speechIntensity = (data['speechIntensity'] as num).toDouble();
+          }
+          if (data.containsKey('isThinking')) {
+            _isThinking = data['isThinking'] as bool;
+          }
+          if (data.containsKey('gesture')) {
+            _gesture = data['gesture'] as String;
+          }
+          if (data.containsKey('avatarFileName')) {
+            _avatarFileName = data['avatarFileName'] as String;
+          }
+          if (data.containsKey('isListening')) {
+            _isListening = data['isListening'] as bool;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Overlay Sync Error: $e');
+    }
   }
 
   @override
@@ -74,23 +77,24 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
             ),
           ),
           // A tiny close button in the top right
-          Positioned(
-            top: 8,
-            right: 8,
-            child: GestureDetector(
-              onTap: () async {
-                await FlutterOverlayWindow.closeOverlay();
-              },
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
+          if (widget.isFloating)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: () {
+                  _window?.close();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
                 ),
-                child: const Icon(Icons.close, color: Colors.white, size: 20),
               ),
             ),
-          ),
           // Interactive Microphone Button
           Positioned(
             bottom: 20,
@@ -98,9 +102,9 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
             right: 0,
             child: Center(
               child: GestureDetector(
-                onTap: () async {
+                onTap: () {
                   // Fire action back to main isolate
-                  await FlutterOverlayWindow.shareData({'action': 'toggle_mic'});
+                  _window?.share({'action': 'toggle_mic'});
                   // Optimistically update UI
                   setState(() => _isListening = !_isListening);
                 },
