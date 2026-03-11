@@ -64,7 +64,11 @@ class ClawaApp extends StatelessWidget {
         theme: _buildLightTheme(),
         darkTheme: _buildDarkTheme(),
         themeMode: ThemeMode.system,
-        home: const SplashScreen(),
+        initialRoute: "/",
+        routes: {
+          "/": (context) => const SplashScreen(),
+          "/avatar-overlay": (context) => const AvatarOverlay(isFloating: true),
+        },
       ),
     );
   }
