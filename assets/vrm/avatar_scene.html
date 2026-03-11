@@ -26,8 +26,10 @@
     </style>
     <script>
         // esmsInitOptions MUST be set before es-module-shims loads.
+        // Without shimMode: true, the polyfill may skip importmap processing on older Android WebViews.
         window.esmsInitOptions = { shimMode: true };
     </script>
+    <!-- IMPORTANT: No 'async' here — must be synchronous so importmap is processed before type=module -->
     <script src="./lib/es-module-shims.js"></script>
     <script type="importmap-shim">
     {
@@ -43,6 +45,7 @@
 
 <body>
     <script>
+        // Intercept global errors to bubble up to Flutter for diagnostics!
         window.onerror = function (msg, url, lineNo, columnNo, error) {
             const errorMsg = 'ERROR: ' + msg + ' @ ' + url + ':' + lineNo + ':' + columnNo;
             console.error(errorMsg);
@@ -52,6 +55,7 @@
             return false;
         };
 
+        // Also catch unhandled promise rejections
         window.addEventListener('unhandledrejection', function (event) {
             const msg = 'ERROR (Promise): ' + (event.reason ? event.reason.toString() : 'Unknown rejection');
             console.error(msg);
@@ -60,6 +64,7 @@
             }
         });
 
+        // Early probe to confirm Bridge is active
         (function () {
             const probe = () => {
                 if (window.ClawaBridge) {
@@ -79,7 +84,7 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
-        camera.position.set(0.0, 1.45, 1.5);
+        camera.position.set(0.0, 1.45, 1.6);
         camera.lookAt(0, 1.3, 0);
 
         const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
@@ -87,43 +92,23 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
 
-        // --- Studio-Grade 3-Point Lighting ---
-        // 1. Key Light: Main bright light. Lower angle and closer to Z-axis for eye visibility.
-        const keyLight = new THREE.DirectionalLight(0xfff0e6, 1.4);
-        keyLight.position.set(1.0, 2.0, 3.0);
-        scene.add(keyLight);
-        
-        // 2. Fill Light: Softer, cooler light from below-front to illuminate eye sockets.
-        const fillLight = new THREE.DirectionalLight(0xd9e6ff, 0.6);
-        fillLight.position.set(-1.0, 0.5, 2.0);
-        scene.add(fillLight);
-        
-        // 3. Rim / Backlight: Sharp bright light from behind for contour.
-        const rimLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        rimLight.position.set(0.0, 3.0, -4.0);
-        scene.add(rimLight);
-        
-        // 4. Base Ambient: Very low intensity so the directional shadows are preserved.
-        scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+        const light = new THREE.DirectionalLight(0xffffff, 1.2);
+        light.position.set(1.0, 1.0, 1.0).normalize();
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+
 
         let currentVrm = null;
         let mixer = null;
         let idleAction = null;
+        let talkAction = null;
         let currentAction = null;
-        
-        const gestures = {};
-        const GESTURE_PATHS = [
-            'dance_picatrix', 'gesture_cute', 'gesture_dance', 'gesture_elegant',
-            'gesture_fight', 'gesture_greeting', 'gesture_peacesign', 'gesture_pose',
-            'gesture_powerful', 'gesture_ready', 'gesture_shoot', 'gesture_spin',
-            'gesture_squat', 'gesture_talk'
-        ];
 
         let speechIntensity = 0.0;
         let isSpeaking = false;
         let mouthTime = 0.0;
         let isThinking = false;
-        let targetEmotion = 'neutral';
 
         let targetCameraZ = 1.6;
         let currentCameraZ = 1.6;
@@ -132,6 +117,7 @@
             if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Starting load of ' + avatarFileName);
 
             const loader = new GLTFLoader();
+            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Registering VRM Plugins...');
             loader.register((parser) => new VRMLoaderPlugin(parser));
             loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
@@ -150,44 +136,54 @@
                     vrm.scene.rotation.y = Math.PI;
                     vrm.scene.traverse((obj) => { obj.frustumCulled = false; });
 
+                    // Standardize Position and Scale by Bounding Box (AF Spec)
+                    // We lock the root bone position explicitly to X=0 and Z=0.
+                    // This is VITAL because asymmetrical avatars (e.g. holding a sword, large cape)
+                    // have skewed overall bounding-boxes. Using the bounding-box center pushes them off-center.
                     vrm.scene.position.set(0, 0, 0); 
+                    
+                    // Force coordinate matrices to update so bone positions are instantly mathematically accurate
                     vrm.scene.updateMatrixWorld(true);
 
                     // --- PURE aiDreams6Nov CENTERING ENGINE ---
+                    // By user request, we revert to the highly successful Volumetric Bounding Box centering 
+                    // paradigm used in aiDreams. This perfectly centers the mesh's geometric mass.
                     const box = new THREE.Box3().setFromObject(vrm.scene);
                     const size = box.getSize(new THREE.Vector3());
                     const center = box.getCenter(new THREE.Vector3());
                     
+                    // 1. Mathematically shift the entire mesh so its volumetric center sits EXACTLY at (0,0,0) world coordinates.
                     vrm.scene.position.sub(center);
                     vrm.scene.updateMatrixWorld(true);
 
+                    // 2. Head-bone validation for height (fallback to mesh height if needed)
                     const head = vrm.humanoid.getNormalizedBoneNode('head');
                     const headPos = new THREE.Vector3();
                     if (head) head.getWorldPosition(headPos);
 
                     const trueHeight = head ? (headPos.y + (size.y / 2)) * 1.1 : size.y;
                     const trueWidth = size.x;
+
+                    // 3. Since the avatar's volumetric center is exactly (0,0,0), the camera should 
+                    // look dead at the origin, with a slight Y tilt for face framing.
+                    const cameraLookY = trueHeight / 6.0; // Look slightly above center mass
                     
-                    avatarMetrics = { height: trueHeight, width: trueWidth, centerX: -0.15 };
+                    avatarMetrics = { 
+                        height: trueHeight, 
+                        width: trueWidth, 
+                        centerX: 0, 
+                        cameraY: cameraLookY 
+                    };
                     
+                    // 4. Instantly snap to the exact bounds
                     updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
-                    currentCameraZ = targetCameraZ;
+                    currentCameraZ = targetCameraZ; 
                     camera.position.z = currentCameraZ;
 
                     mixer = new THREE.AnimationMixer(vrm.scene);
 
-                    // --- moeru-ai/airi Alignment: KILL EMBEDDED CLIPS ---
-                    // We disable all internal animations to prevent bone-fighting with the procedural matrix.
-                    if (vrm.animations && vrm.animations.length > 0) {
-                        vrm.animations.forEach(clip => {
-                            const action = mixer.clipAction(clip);
-                            action.stop();
-                            action.weight = 0;
-                        });
-                    }
-                    mixer.stopAllAction();
-                    console.log("Airi-Style: Embedded VRM animations disabled. Centralized Matrix active.");
-
+                    // Load VRMA Animations sequentially
+                    if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: Loading VRMA animations...');
                     loader.load('./animations/idle_loop.vrma', (vrmaGltf) => {
                         const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
                         const clip = createVRMAnimationClip(vrmAnimation, vrm);
@@ -195,35 +191,36 @@
                         idleAction.play();
                         currentAction = idleAction;
 
-                        GESTURE_PATHS.forEach(name => {
-                            loader.load(`./animations/${name}.vrma`, (g) => {
-                                const anim = g.userData.vrmAnimations[0];
-                                const clip = createVRMAnimationClip(anim, vrm);
-                                const action = mixer.clipAction(clip);
-                                action.setLoop(THREE.LoopOnce);
-                                action.clampWhenFinished = true;
-                                gestures[name] = action;
-                                if (name.startsWith('gesture_')) {
-                                    gestures[name.replace('gesture_', '')] = action;
-                                } else if (name === 'dance_picatrix') {
-                                    gestures['dance'] = action;
-                                }
-                            });
+                        loader.load('./animations/gesture_elegant.vrma', (talkGltf) => {
+                            const talkAnim = talkGltf.userData.vrmAnimations[0];
+                            const tClip = createVRMAnimationClip(talkAnim, vrm);
+                            talkAction = mixer.clipAction(tClip);
+                            talkAction.setLoop(THREE.LoopRepeat); // Important so talking repeats!
+                            isThinking = false;
+
+                            if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: VRMA setup complete');
+                        }, undefined, (err) => {
+                            if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: gesture_elegant failed: ' + err);
                         });
+                    }, undefined, (err) => {
+                        if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: idle_loop failed: ' + err);
                     });
                 },
                 (progress) => {
                     if (window.ClawaBridge && progress.total > 0) {
+                        const percent = (progress.loaded / progress.total * 100).toFixed(1);
+                        window.ClawaBridge.postMessage('LOG: [JS] Loading ' + avatarFileName + ': ' + percent + '%');
                         window.ClawaBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
                     }
                 },
                 (err) => {
                     console.error(err);
-                    if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: [JS] ' + err);
+                    if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: [JS] loading ' + avatarFileName + ': ' + err);
                 }
             );
         };
 
+        // Signal flutter bridge that the static JS engine is online and ready
         if (window.ClawaBridge) window.ClawaBridge.postMessage('READY');
 
         const clock = new THREE.Clock();
@@ -231,114 +228,68 @@
         window.setSpeechIntensity = (intensity) => {
             speechIntensity = intensity;
             isSpeaking = intensity > 0.1;
+            // No longer crossfading full animations to keep head steady
+            // We stay in idle loop and use expressionManager for lips/expressions
         };
 
         window.setThinking = (thinking) => {
             isThinking = thinking;
-        };
-
-        window.setCinematicMode = (active) => {};
-        window.setGlowIntensity = (intensity) => {};
-
-        window.playGesture = (name) => {
-            const n = name.toLowerCase();
-            if (n.includes('greeting') || n.includes('cute') || n.includes('dance')) {
-                targetEmotion = 'happy';
-            } else if (n.includes('fight') || n.includes('powerful') || n.includes('shoot')) {
-                targetEmotion = 'angry';
-            } else if (n.includes('ready')) {
-                targetEmotion = 'relaxed';
-            } else if (n.includes('sad')) {
-                targetEmotion = 'sad';
-            } else if (n.includes('surprised')) {
-                targetEmotion = 'surprised';
-            } else {
-                targetEmotion = 'neutral';
+            // Smoothly blend thinking expression
+            if (currentVrm && currentVrm.expressionManager) {
+                const target = thinking ? 0.6 : 0.0;
+                // We will lerp this in the animate loop
             }
-
-            const action = gestures[name];
-            if (!action || !currentVrm || !idleAction) return;
-            if (currentAction === action) return;
-
-            if (currentAction && currentAction !== idleAction) {
-                currentAction.fadeOut(0.5);
-            }
-
-            action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.5).play();
-            currentAction = action;
-
-            const duration = action.getClip().duration;
-            setTimeout(() => {
-                if (currentAction === action) {
-                    idleAction.reset().fadeIn(0.5).play();
-                    action.fadeOut(0.5);
-                    currentAction = idleAction;
-                }
-            }, (duration * 1000) - 500);
         };
 
-        window.processKeywords = (text) => {
-            const lower = text.toLowerCase();
-            if (lower.includes('dance')) window.playGesture('dance');
-            else if (lower.includes('hello') || lower.includes('hi ')) window.playGesture('greeting');
-            else if (lower.includes('fight')) window.playGesture('fight');
-            else if (lower.includes('cute')) window.playGesture('cute');
-            else if (lower.includes('spin')) window.playGesture('spin');
-            else if (lower.includes('ready')) window.playGesture('ready');
+        window.setCinematicMode = (active) => {
+            // Disabled: Let the dynamic fov-math strictly dictate zoom based on device screen.
+            // Previous logic hardcoded targetCameraZ = 1.2, which caused massive layout jumps!
         };
 
-        // --- Optimized Dynamic Framing Engine ---
-        let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15 };
+        window.setGlowIntensity = (intensity) => {
+            // Future VFX
+        };
+
+        // --- Dynamic FOV Responsive Engine ---
+        let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15, cameraY: 0.75 };
+
+        // === PHASE 10: INTERACTIVE GAZE + FULL AIRI MATRIX ===
+        let gazeTarget = new THREE.Vector3(0, 1.3, 0);
+
+        window.setTapTarget = (screenX, screenY) => {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const x = ((screenX - rect.left) / rect.width) * 2 - 1;
+          const y = -((screenY - rect.top) / rect.height) * 2 + 1;
+          const vector = new THREE.Vector3(x, y, 0.5).unproject(camera);
+          gazeTarget.copy(vector);
+          if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Tap gaze target updated');
+        };
         
         function updateCameraFraming(containerWidth, containerHeight) {
             if (!containerWidth || !containerHeight) return;
             
-            // 1. Update Camera and Renderer aspect ratio
             camera.aspect = containerWidth / containerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(containerWidth, containerHeight, false); 
             
-            // Extract overlay mode from URL
-            const urlParams = new URLSearchParams(window.location.search);
-            const isOverlay = urlParams.get('overlay') === 'true';
-
-            // 2. Constants & Trigonometry Pre-calculation
-            // Increase ZOOM_FACTOR to make avatar BIGGER (1.10 = 10% larger, 1.20 = 20% larger)
-            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.5; 
-            // PAN_Y_OFFSET shifts the camera vertically. 
-            // Increase this to move the avatar UP in the screen (to stop feet getting hidden under UI)
-            const PAN_Y_OFFSET = isOverlay ? 0.45 : 0.15; 
-            const tanFov = Math.tan((camera.fov * Math.PI) / 360); 
+            // PHASE 10: Overlay bust shot
+            const isOverlayMode = window.location.search.includes('overlay');
+            const targetHeight = isOverlayMode 
+                ? avatarMetrics.height * 0.35   // tight floating-bubble framing
+                : avatarMetrics.height * 0.55;
             
-            // 3. Distance to fit full vertical height
-            let distHeight = avatarMetrics.height / (2 * tanFov);
+            const fovRadians = camera.fov * (Math.PI / 180) / 2;
+            let dist = (targetHeight / 2) / Math.tan(fovRadians);
             
-            // 4. Distance to fit full width (for extremely narrow phone screens)
-            let distWidth = 0;
-            const containerAspect = camera.aspect;
-            if (containerAspect < 0.6) {
-                 distWidth = avatarMetrics.width / (2 * tanFov * containerAspect);
-            }
-            
-            // choose the distance that fits the whole avatar, then apply ZOOM_FACTOR
-            let dist = Math.max(distHeight, distWidth) / ZOOM_FACTOR;
-            
-            // --- MOERU-AI/AIRI: Overlay Framing Boost ---
-            if (isOverlay) {
-                dist = dist / 1.6; // Further zoom in for bust shot in floating bubble
+            if (camera.aspect < 0.6) {
+                const targetWidth = avatarMetrics.width;
+                const distW = (targetWidth / 2) / Math.tan(fovRadians) / camera.aspect;
+                dist = Math.max(dist, distW);
             }
             
             targetCameraZ = dist;
-            
-            // 5. Calculate Y positioning to mathematically anchor the feet to the bottom limit.
-            // Screen bottom visible distance from center is exactly (dist * tanFov)
-            // Feet are located at (-avatarMetrics.height / 2.0)
-            // We subtract PAN_Y_OFFSET to pan the camera down, effectively shifting the avatar UP on screen.
-            const frameCenterY = (dist * tanFov) - (avatarMetrics.height / 2.0) - PAN_Y_OFFSET;
-            
-            // 6. Apply position and rotation
-            camera.position.set(avatarMetrics.centerX, frameCenterY, targetCameraZ);
-            camera.lookAt(avatarMetrics.centerX, frameCenterY, 0);
+            camera.position.set(avatarMetrics.centerX, avatarMetrics.cameraY, targetCameraZ);
+            camera.lookAt(avatarMetrics.centerX, avatarMetrics.cameraY, 0);
         }
 
         let lastHeight = 0;
@@ -346,6 +297,7 @@
             for (let entry of entries) {
                 const w = entry.contentRect.width;
                 const h = entry.contentRect.height;
+                // Ignore height shifts less than 100px to avoid jumping when keyboard opens
                 if (Math.abs(h - lastHeight) > 100 || lastHeight === 0) {
                     updateCameraFraming(w, h);
                     lastHeight = h;
@@ -353,31 +305,6 @@
             }
         });
         resizeObserver.observe(document.body);
-
-        // --- Interactive Gaze Tracking (moeru-ai/airi) ---
-        let gazeTarget = new THREE.Vector3(0, 1.3, 0);
-        window.setTapTarget = (screenX, screenY) => {
-            const rect = renderer.domElement.getBoundingClientRect();
-            const x = ((screenX - rect.left) / rect.width) * 2 - 1;
-            const y = -((screenY - rect.top) / rect.height) * 2 + 1;
-            const vector = new THREE.Vector3(x, y, 0.5).unproject(camera);
-            gazeTarget.copy(vector);
-        };
-
-        let lastBlinkTime = 0;
-        let nextBlinkDuration = 3000 + Math.random() * 2000;
-
-        // Keep fallback listeners for mouse/touch in main UI
-        function updateLookTarget(clientX, clientY) {
-            window.setTapTarget(clientX, clientY);
-        }
-
-        window.addEventListener('mousemove', (e) => updateLookTarget(e.clientX, e.clientY));
-        window.addEventListener('touchmove', (e) => {
-            if (e.touches.length > 0) updateLookTarget(e.touches[0].clientX, e.touches[0].clientY);
-        });
-        window.addEventListener('touchend', () => { targetLookX = 0; targetLookY = 0; });
-        window.addEventListener('mouseout', () => { targetLookX = 0; targetLookY = 0; });
 
         function animate() {
             requestAnimationFrame(animate);
@@ -391,163 +318,112 @@
 
                 const time = clock.elapsedTime;
 
-                // --- Procedural Layered Animation Matrix (Airi-Style) ---
-                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
-                const upperChest = currentVrm.humanoid.getNormalizedBoneNode('upperChest');
-                const neck = currentVrm.humanoid.getNormalizedBoneNode('neck');
                 const head = currentVrm.humanoid.getNormalizedBoneNode('head');
+                const neck = currentVrm.humanoid.getNormalizedBoneNode('neck');
+                const upperChest = currentVrm.humanoid.getNormalizedBoneNode('upperChest');
+                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
 
-                // 1. Procedural Breathing (Additive)
+                // === FULL AIRI PROCEDURAL MATRIX (Phase 10) ===
+                // Breathing
                 const breathe = Math.sin(time * 1.2) * 0.008;
                 if (upperChest) upperChest.rotation.x = breathe;
                 if (spine) spine.rotation.x = breathe * 0.6;
 
-                // 2. Idle Micro-Saccades (Only when not thinking/talking)
+                // Idle micro-saccades (only when calm)
                 if (!isThinking && speechIntensity < 0.1 && head && neck) {
                     head.rotation.y += Math.sin(time * 2.3) * 0.003;
                     neck.rotation.y += Math.cos(time * 1.7) * 0.002;
                 }
 
-                // 3. Gaze Look-At (Lerp to tap target)
+                // Gaze look-at (now working — sign already fixed in Phase 9)
                 if (head) {
-                    // We reset before additive but need to handle the lerp carefully
-                    const currentPos = new THREE.Vector3();
-                    head.getWorldPosition(currentPos);
-                    const lookDir = gazeTarget.clone().sub(currentPos);
+                    const lookDir = gazeTarget.clone().sub(head.getWorldPosition(new THREE.Vector3()));
                     const targetRot = new THREE.Euler().setFromQuaternion(
-                        new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), lookDir.normalize())
+                        new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,-1), lookDir.normalize())
                     );
-                    
-                    // negative = correct direction shift for VRM
                     head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, -targetRot.y, delta * 8);
                     head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, targetRot.x * 0.6, delta * 6);
-                    
-                    if (isThinking) {
-                        head.rotation.z += Math.sin(time * 1.5) * 0.01; 
-                        head.rotation.x += Math.sin(time * 0.8) * 0.02;
-                    }
-
-                    head.rotation.y = Math.max(-0.8, Math.min(0.8, head.rotation.y));
-                    head.rotation.x = Math.max(-0.5, Math.min(0.5, head.rotation.x));
                 }
 
-                // 4. Airi-Style Blink & Eye Darting
-                const leftEye = currentVrm.humanoid.getNormalizedBoneNode('leftEye');
-                const rightEye = currentVrm.humanoid.getNormalizedBoneNode('rightEye');
-                if (leftEye && rightEye) {
-                    const saccadeX = Math.sin(time * 2.1) * Math.sin(time * 1.3 + 1.0);
-                    const saccadeY = Math.sin(time * 1.7) * Math.cos(time * 2.5 + 2.0);
-                    const dartX = (Math.sin(time * 4.0) > 0.8) ? saccadeX * 0.15 : saccadeX * 0.02;
-                    const dartY = (Math.cos(time * 3.1) > 0.8) ? saccadeY * 0.15 : saccadeY * 0.02;
-                    
-                    // Eyes track the same target but with micro-jitter
-                    leftEye.rotation.y = dartX + (head.rotation.y * 0.2); 
-                    leftEye.rotation.x = dartY + (head.rotation.x * 0.2);
-                    rightEye.rotation.y = dartX + (head.rotation.y * 0.2); 
-                    rightEye.rotation.x = dartY + (head.rotation.x * 0.2);
-                }
-
-                // Airi-Style Blink Logic: Random 3-5s timer
-                if (time - lastBlinkTime > nextBlinkDuration / 1000) {
-                    currentVrm.expressionManager.setValue('blink', 1.0);
-                    if (time - lastBlinkTime > (nextBlinkDuration / 1000) + 0.15) { // Blink last 150ms
-                        lastBlinkTime = time;
-                        nextBlinkDuration = 2000 + Math.random() * 4000;
-                    }
-                } else {
-                    currentVrm.expressionManager.setValue('blink', 0.0);
-                }
-
-                // Base Emotion Blending
-                const names = Object.keys(currentVrm.expressionManager.expressionMap);
-                for (const emotion of ['happy', 'angry', 'sad', 'relaxed', 'surprised']) {
-                    if (names.includes(emotion)) {
-                        // Suppress emotion slightly when speaking loudly to prevent facial distortion
-                        const target = (emotion === targetEmotion && speechIntensity < 0.6) ? 0.6 : 0.0;
-                        const currentVal = currentVrm.expressionManager.getValue(emotion) || 0;
-                        currentVrm.expressionManager.setValue(emotion, THREE.MathUtils.lerp(currentVal, target, 0.05));
+                // Subtle thinking sway (additive, very small)
+                if (isThinking) {
+                    if (head) {
+                        head.rotation.z += Math.sin(time * 1.5) * 0.005; 
+                        head.rotation.x += Math.sin(time * 0.8) * 0.005;
                     }
                 }
 
-                // Dynamic Visemes
+                // Blinking
+                const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1);
+                const blinkState = blinkPeriod > 1.85 ? 1.0 : 0.0;
+                currentVrm.expressionManager.setValue('blink', blinkState);
+
+                // Expanded VRM Visemes for factual speech
                 const visemes = ['aa', 'ih', 'ee', 'oh', 'ou'];
+                const names = Object.keys(currentVrm.expressionManager.expressionMap);
                 const availableVisemes = visemes.filter(v => names.includes(v));
 
                 if (speechIntensity > 0) {
                     mouthTime += delta;
-                    // Introduce organic noise to simulate varied mouth shapes over time
-                    const volumeJitter = 0.8 + 0.2 * Math.sin(time * 20);
-                    const effectiveIntensity = Math.min(1.0, speechIntensity * volumeJitter * 1.5);
-                    
-                    if (availableVisemes.length > 0) {
-                        let targetViseme = '';
-                        if (effectiveIntensity > 0.6) {
-                            targetViseme = Math.sin(mouthTime * 15) > 0 ? 'aa' : 'oh';
-                        } else if (effectiveIntensity > 0.2) {
-                            targetViseme = Math.sin(mouthTime * 10) > 0 ? 'ih' : 'ee';
-                        } else {
-                            targetViseme = 'ou';
-                        }
+                    const osc = (Math.sin(mouthTime * 10 * Math.PI) + 1) / 2;
+                    const intensity = (0.3 + 0.7 * osc) * speechIntensity;
 
-                        // --- Emotion-Driven Visemes ---
-                        if (targetEmotion === 'angry') {
-                            targetViseme = Math.sin(mouthTime * 20) > 0 ? 'ee' : 'ih'; // Bared teeth, intense
-                        } else if (targetEmotion === 'happy') {
-                            targetViseme = Math.sin(mouthTime * 12) > 0 ? 'aa' : 'ih'; // Wider smiling shapes
-                        } else if (targetEmotion === 'sad') {
-                            targetViseme = 'ou'; // Constrained, sullen shape
-                        }
-                        
+                    if (availableVisemes.length > 0) {
+                        const idx = Math.floor((mouthTime * 1000) / 150) % availableVisemes.length;
+                        const currentViseme = availableVisemes[idx];
+
                         for (const v of availableVisemes) {
-                            const target = (v === targetViseme) ? effectiveIntensity : 0;
+                            const target = v === currentViseme ? intensity : 0;
                             const currentVal = currentVrm.expressionManager.getValue(v) || 0;
-                            const lerpFactor = target > currentVal ? 0.6 : 0.4; // Snappy open and close
-                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, target, lerpFactor));
+                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, target, 0.4));
                         }
                     } else if (names.includes('mouthOpen')) {
-                        const currentVal = currentVrm.expressionManager.getValue('mouthOpen') || 0;
-                        currentVrm.expressionManager.setValue('mouthOpen', THREE.MathUtils.lerp(currentVal, effectiveIntensity, 0.5));
+                        currentVrm.expressionManager.setValue('mouthOpen', intensity);
+                    }
+                    
+                    // Reduce neutral expression when talking
+                    if (names.includes('neutral')) {
+                        const cur = currentVrm.expressionManager.getValue('neutral');
+                        currentVrm.expressionManager.setValue('neutral', THREE.MathUtils.lerp(cur, 0, 0.2));
                     }
                 } else {
                     mouthTime = 0.0;
                     for (const v of visemes) {
                         const currentVal = currentVrm.expressionManager.getValue(v) || 0;
                         if (currentVal > 0) {
-                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, 0, 0.3));
+                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, 0, 0.2));
                         }
                     }
                     if (names.includes('mouthOpen')) {
-                        const cur = currentVrm.expressionManager.getValue('mouthOpen') || 0;
-                        currentVrm.expressionManager.setValue('mouthOpen', THREE.MathUtils.lerp(cur, 0, 0.3));
+                        const cur = currentVrm.expressionManager.getValue('mouthOpen');
+                        currentVrm.expressionManager.setValue('mouthOpen', THREE.MathUtils.lerp(cur, 0, 0.2));
                     }
-                }
 
-                // 4. Ambient World Engine (Procedural Wind in SpringBones)
-                // Injects a continuously evolving 3D Vector into the VRM SpringBones
-                // creating the illusion of atmosphere, so hair/clothing moves even when idle.
-                if (currentVrm.springBoneManager) {
-                    // Sum of sines pseudo-noise for organic, chaotic wind gusts
-                    const windX = Math.sin(time * 0.7) * 0.5 + Math.sin(time * 1.3) * 0.5;
-                    const windZ = Math.cos(time * 0.5) * 0.5 + Math.sin(time * 1.1) * 0.5;
-                    const windGust = (Math.sin(time * 0.3) + 1.0) * 0.5; // 0 to 1 intensity multiplier
+                    // Blend in thinking expression or neutral
+                    if (isThinking && names.includes('surprised')) { // Surprised as a proxy for 'thinking'
+                         const cur = currentVrm.expressionManager.getValue('surprised');
+                         currentVrm.expressionManager.setValue('surprised', THREE.MathUtils.lerp(cur, 0.3, 0.1));
+                    } else if (names.includes('surprised')) {
+                         const cur = currentVrm.expressionManager.getValue('surprised');
+                         currentVrm.expressionManager.setValue('surprised', THREE.MathUtils.lerp(cur, 0, 0.1));
+                    }
 
-                    const windForce = new THREE.Vector3(windX, 0, windZ).normalize();
-                    const gravityPower = 0.5 + (windGust * 1.0); // Increased intensity: Base 0.5, peaks at 1.5
-
-                    currentVrm.springBoneManager.joints.forEach(joint => {
-                        // Blend the original gravity dir (usually straight down 0, -1, 0) with the wind vector
-                        joint.settings.gravityDir.set(windForce.x * 0.5, -1, windForce.z * 0.5).normalize();
-                        // Overwrite power so the wind actually "pushes" the hair
-                        joint.settings.gravityPower = gravityPower;
-                    });
+                    if (names.includes('neutral')) {
+                        const target = isThinking ? 0.5 : 1.0;
+                        const cur = currentVrm.expressionManager.getValue('neutral');
+                        currentVrm.expressionManager.setValue('neutral', THREE.MathUtils.lerp(cur, target, 0.1));
+                    }
                 }
 
                 currentVrm.update(delta);
             }
+
             renderer.render(scene, camera);
         }
 
         animate();
+
+        // Resize events are now handled by the bulletproof ResizeObserver bounding-box engine above.
     </script>
 </body>
 
