@@ -14,6 +14,14 @@ void main() async {
   await skillServer.start();
 
   runApp(const ClawaApp());
+
+  // Auto-reopen floating avatar if permission is already granted
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    final plugin = FloatwingPlugin();
+    if (await plugin.checkPermission()) {
+      await startFloatingAvatar();
+    }
+  });
 }
 
 // Add this anywhere in main.dart (outside any class)
