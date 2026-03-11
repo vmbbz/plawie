@@ -13,15 +13,16 @@ The pipeline ensures that the Agent's internal state is perfectly synchronized w
 **Flow:**
 `OpenClaw Agent State (LLM/Skill)` ➔ `Flutter UI/Isolate Data Bridge` ➔ `WebView Javascript Interface (ClawaBridge)` ➔ `Three.js Procedural Matrix`
 
-### 2.1 Cross-Isolate Communication (The Overlay Bridge)
-Because the "Floating Companion" widget runs `flutter_overlay_window` in a completely separate background Flutter Engine (Isolate) to bypass Android PiP limitations, it does not share memory with the main app.
-- **The Bridge:** We utilize `FlutterOverlayWindow.shareData(data)` to broadcast real-time telemetry (Speech Intensity, Thinking boolean, Current Skill Gesture, Current Emotion).
-- **The Receiver:** The background Isolate listens via `FlutterOverlayWindow.overlayListener` and pipes these directly into the floating instance of the `VrmAvatarWidget`.
+### 2.1 The Bidirectional Overlay Bridge
+Because the "Floating Companion" widget runs `flutter_overlay_window` in a completely separate background Flutter Engine (Isolate) to bypass Android PiP limitations, it does not naturally share memory with the main app.
+- **Main App -> Overlay:** We utilize `FlutterOverlayWindow.shareData(data)` to broadcast real-time telemetry (Speech Intensity, Thinking boolean, Current Skill Gesture). The background Isolate listens via `FlutterOverlayWindow.overlayListener` and pipes these directly into the floating `VrmAvatarWidget`, guaranteeing flawless background lip-sync.
+- **Overlay -> Main App (Interactivity):** The Overlay widget contains a microphone floating action button. Tapping it sends `shareData({'action': 'toggle_mic'})` *back down the bridge* to the main app Isolate, seamlessly triggering the OpenClaw Agent's audio listening pipeline without waking the UI.
 
-### 2.2 Skill-to-Gesture Mapping
-When an OpenClaw Agent executes a skill (e.g., `_createSearchSkill`), the framework emits a state change. 
-- Thinking state triggers the avatar to gaze upwards and sway (`isThinking = true`).
-- Specific skills map directly to `.vrma` files (e.g., executing a calculation skill might trigger `playGesture('gesture_smart')`).
+### 2.2 Skill Execution Event Hooks
+When an OpenClaw Agent executes a system tool or skill (e.g., fetching weather, web search), the 3D Wearable must physically react.
+- The `chat_screen.dart` registers a global listener to `SkillsService().events`.
+- Incoming `SkillsEventType.executing` packages snap the avatar into an `isThinking = true` state and simultaneously fire the `gesture_pose` `.vrma` track, so the avatar looks intelligently busy.
+- `SkillsEventType.executed` forces the avatar out of the thinking sway and returns it to `gesture_ready`.
 
 ## 3. The 3D Render Engine (`avatar_scene.html`)
 To achieve top-tier visual fidelity (par with Project Airi), the Three.js scene employs:
