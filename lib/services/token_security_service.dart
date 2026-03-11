@@ -306,25 +306,7 @@ class TokenSecurityService {
   }
 }
 
-/// Token security model
-class TokenSecurity extends Equatable {
-  final String mint;
-  final bool isVerified;
-  final TokenRiskLevel riskLevel;
-  final List<String> warnings;
-
-  const TokenSecurity({
-    required this.mint,
-    required this.isVerified,
-    required this.riskLevel,
-    required this.warnings,
-  });
-
-  @override
-  List<Object?> get props => [mint, isVerified, riskLevel, warnings];
-}
-
-/// Token metadata model
+/// Token metadata model (unique to this service)
 class TokenMetadata extends Equatable {
   final String mint;
   final String name;
@@ -348,7 +330,7 @@ class TokenMetadata extends Equatable {
   List<Object?> get props => [mint, name, symbol, decimals, logoURI, description, tags];
 }
 
-/// Token search result model
+/// Token search result model (unique to this service)
 class TokenSearchResult extends Equatable {
   final JupiterToken token;
   final TokenSecurity security;
@@ -360,56 +342,4 @@ class TokenSearchResult extends Equatable {
 
   @override
   List<Object?> get props => [token, security];
-}
-
-/// Token price model
-class TokenPrice extends Equatable {
-  final String mint;
-  final String symbol;
-  final Decimal price;
-  final Decimal priceChange24h;
-  final Decimal volume24h;
-  final Decimal liquidity;
-
-  const TokenPrice({
-    required this.mint,
-    required this.symbol,
-    required this.price,
-    required this.priceChange24h,
-    required this.volume24h,
-    required this.liquidity,
-  });
-
-  @override
-  List<Object?> get props => [mint, symbol, price, priceChange24h, volume24h, liquidity];
-}
-
-/// Transaction validation model
-class TransactionValidation extends Equatable {
-  final bool isValid;
-  final List<String> warnings;
-  final TransactionRiskLevel riskLevel;
-
-  const TransactionValidation({
-    required this.isValid,
-    required this.warnings,
-    required this.riskLevel,
-  });
-
-  @override
-  List<Object?> get props => [isValid, warnings, riskLevel];
-}
-
-/// Token risk level enum
-enum TokenRiskLevel {
-  low,
-  medium,
-  high,
-}
-
-/// Transaction risk level enum
-enum TransactionRiskLevel {
-  low,
-  medium,
-  high,
 }
