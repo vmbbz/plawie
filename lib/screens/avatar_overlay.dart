@@ -30,10 +30,11 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
       _window = Window.of(context);
       
       // flutter_floatwing 0.3.1 registers data handlers via a method call, not a Stream
-      _window?.onData((source, name, data) {
+      // The handler must return a Future<dynamic>
+      _window?.onData((source, name, data) async {
         if (!mounted) return null;
         _handleDataSync(data);
-        return null; // Return null as we don't need to return a value to the sender
+        return null; // async returns Future<Null> which satisfies Future<dynamic>
       });
     });
   }

@@ -67,7 +67,7 @@ class ClawaApp extends StatelessWidget {
         initialRoute: "/",
         routes: {
           "/": (context) => const SplashScreen(),
-          "/avatar-overlay": (context) => const AvatarOverlay(isFloating: true),
+          "/avatar-overlay": (context) => AvatarOverlay(isFloating: true),
         },
       ),
     );
