@@ -35,16 +35,20 @@ Future<void> startFloatingAvatar() async {
     return; // user must grant then call again
   }
 
-  await plugin.initialize();
+  try {
+    await plugin.initialize();
 
-  // Start the floating window (bust size, draggable, right side like before)
-  WindowConfig(
-    id: "clawa-avatar",
-    route: "/avatar-overlay",
-    width: 280,
-    height: 380,
-    gravity: GravityType.RightTop,     // or RightBottom
-    draggable: true,
-    clickable: true,
-  ).to().create(start: true);
+    // Start the floating window (bust size, draggable, right side like before)
+    await WindowConfig(
+      id: "clawa-avatar",
+      route: "/avatar-overlay",
+      width: 280,
+      height: 380,
+      gravity: GravityType.RightTop,     // or RightBottom
+      draggable: true,
+      clickable: true,
+    ).to().create(start: true);
+  } catch (e) {
+    debugPrint('Floater Launch Error: $e');
+  }
 }
