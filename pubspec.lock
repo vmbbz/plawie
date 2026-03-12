@@ -310,14 +310,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_floatwing:
-    dependency: "direct main"
-    description:
-      name: flutter_floatwing
-      sha256: "2f9fa6688c4cde0b10e5ea102037f8cc317d7c2d2404fa7b6ea47f33e3170ddf"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.1"
   flutter_lints:
     dependency: "direct dev"
     description:
