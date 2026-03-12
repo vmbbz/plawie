@@ -13,6 +13,9 @@ void main() async {
   final skillServer = AgentSkillServer();
   await skillServer.start();
 
+  // Initialize Floatwing routing
+  FloatwingPlugin().initialize();
+
   runApp(const ClawaApp());
 
   // Auto-reopen floating avatar if permission is already granted
@@ -22,6 +25,17 @@ void main() async {
       await startFloatingAvatar();
     }
   });
+}
+
+@pragma('vm:entry-point')
+void floatwingPlugin(List<String> args) {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: const AvatarOverlay(isFloating: true), // Force overlay mode
+    ),
+  );
 }
 
 // Add this anywhere in main.dart (outside any class)
