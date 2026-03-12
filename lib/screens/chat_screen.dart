@@ -1106,6 +1106,10 @@ class _ChatScreenState extends State<ChatScreen> {
               }
               
               await startFloatingAvatar();
+              
+              // Give the system a moment to stabilize the background service before minimizing
+              await Future.delayed(const Duration(milliseconds: 500));
+              
               // Minimize the app so the user sees the floating avatar on the home screen immediately
               await SystemNavigator.pop();
             },
