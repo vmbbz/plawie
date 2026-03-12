@@ -5,6 +5,7 @@ import 'providers/setup_provider.dart';
 import 'providers/gateway_provider.dart';
 import 'providers/node_provider.dart';
 import 'screens/splash_screen.dart';
+import 'screens/avatar_overlay.dart';
 
 /// Centralized premium metallic color palette for entire app.
 class AppColors {
