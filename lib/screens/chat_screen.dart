@@ -14,9 +14,7 @@ import 'dart:ui';
 import '../models/chat_message.dart';
 import '../services/chat_persistence_service.dart';
 import '../widgets/chat_bubble.dart';
-// import 'package:flutter_overlay_window/flutter_overlay_window.dart';
-import 'package:flutter_floatwing/flutter_floatwing.dart';
-import '../main.dart'; // To access startFloatingAvatar()
+import '../main.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 
@@ -93,27 +91,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     });
 
-    // --- Overlay To Main Bridge ---
-    // --- Overlay To Main Bridge (Floatwing) ---
-    Window(id: "clawa-avatar").onData((source, name, data) async {
-      if (!mounted) return null;
-      try {
-        Map<String, dynamic> msgData = {};
-        if (data is String) {
-          msgData = jsonDecode(data);
-        } else if (data is Map) {
-          msgData = Map<String, dynamic>.from(data);
-        }
-
-        if (msgData['action'] == 'toggle_mic') {
-          _toggleListening();
-        }
-      } catch (e) {
-        debugPrint('Main Listener Error: $e');
-      }
-      return null;
-    });
-
     // --- OpenClaw Skills Event Bus ---
     SkillsService().events.listen((event) {
       if (!mounted) return;
@@ -123,14 +100,12 @@ class _ChatScreenState extends State<ChatScreen> {
           _isThinking = true;
           _currentGesture = 'pose'; // Elegant pose while calculating
         });
-        _syncOverlayState();
       } else if (event.type == SkillsEventType.executed || event.type == SkillsEventType.error) {
         _addDiagnosticLog('Skill finished: ${event.skillId}');
         setState(() {
           _isThinking = false;
           _currentGesture = 'ready'; // Drop back to ready
         });
-        _syncOverlayState();
       }
     });
     
@@ -289,20 +264,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _syncOverlayState() async {
-    try {
-      final window = FloatwingPlugin().windows["clawa-avatar"];
-      if (window != null) {
-        await window.share({
-          'speechIntensity': _speechIntensity,
-          'isThinking': _isThinking,
-          'gesture': _currentGesture ?? '',
-          'avatarFileName': _selectedAvatar,
-          'isListening': _isListening,
-        });
-      }
-    } catch (e) {
-      debugPrint('Overlay sync error: $e');
-    }
+    // Ported to Native PiP - no-op for now as PiP uses the same activity
   }
 
   Future<void> _initVoiceParams() async {
@@ -312,7 +274,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _piperTts.onStart = () {
       if (mounted) {
         setState(() => _speechIntensity = 0.8);
-        _syncOverlayState();
       }
     };
 
@@ -1091,29 +1052,17 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white70),
             onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final plugin = FloatwingPlugin();
-              bool granted = await plugin.checkPermission();
-              if (!granted) {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text("Please grant 'Display over other apps' to enable the floating avatar."),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-                await plugin.openPermissionSetting();
-                return;
+              try {
+                await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('PiP Mode not supported: $e')),
+                  );
+                }
               }
-              
-              await startFloatingAvatar();
-              
-              // Give the system a moment to stabilize the background service before minimizing
-              await Future.delayed(const Duration(milliseconds: 500));
-              
-              // Minimize the app so the user sees the floating avatar on the home screen immediately
-              await SystemNavigator.pop();
             },
-            tooltip: 'Floating Avatar',
+            tooltip: 'Picture in Picture',
           ),
           Builder(
             builder: (ctx) => IconButton(
