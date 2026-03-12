@@ -255,6 +255,7 @@
 
         // === PHASE 10: INTERACTIVE GAZE + FULL AIRI MATRIX ===
         let gazeTarget = new THREE.Vector3(0, 1.3, 0);
+        let lastGazeTime = -100; // Start with no active gaze
 
         window.setTapTarget = (screenX, screenY) => {
           const rect = renderer.domElement.getBoundingClientRect();
@@ -262,6 +263,7 @@
           const y = -((screenY - rect.top) / rect.height) * 2 + 1;
           const vector = new THREE.Vector3(x, y, 0.5).unproject(camera);
           gazeTarget.copy(vector);
+          lastGazeTime = clock.elapsedTime; // Record hit time
           if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Tap gaze target updated');
         };
         
@@ -335,16 +337,24 @@
                     neck.rotation.y += Math.cos(time * 1.7) * 0.002;
                 }
 
-                // Gaze look-at (now working — sign already fixed in Phase 9)
+                // Gaze look-at (with 4-second timeout fix)
                 if (head) {
-                    const lookDir = gazeTarget.clone().sub(head.getWorldPosition(new THREE.Vector3()));
+                    const isGazing = (clock.elapsedTime - lastGazeTime) < 4.0;
+                    
+                    // If not gazing, create a target directly in front of the head
+                    const targetLookAt = isGazing 
+                        ? gazeTarget.clone() 
+                        : head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0, 5));
+                        
+                    const lookDir = targetLookAt.sub(head.getWorldPosition(new THREE.Vector3()));
                     const targetRot = new THREE.Euler().setFromQuaternion(
                         new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,-1), lookDir.normalize())
                     );
-                    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, -targetRot.y, delta * 8);
-                    head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, targetRot.x * 0.6, delta * 6);
+                    
+                    // Lerp speed is faster for active gaze, slower/natural for return to neutral
+                    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, -targetRot.y, delta * (isGazing ? 8 : 2));
+                    head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, targetRot.x * 0.6, delta * (isGazing ? 6 : 2));
                 }
-
                 // Subtle thinking sway (additive, very small)
                 if (isThinking) {
                     if (head) {
