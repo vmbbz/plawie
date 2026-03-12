@@ -372,12 +372,12 @@
                 currentLookX = THREE.MathUtils.lerp(currentLookX, finalTargetX, delta * 4.0);
                 currentLookY = THREE.MathUtils.lerp(currentLookY, finalTargetY, delta * 4.0);
 
-                // 1. Procedural Breathing
+                // 1. Procedural Breathing (Absolute assignment to prevent infinite rotation accumulation)
                 const breathOsc = Math.sin(time * 1.5); 
-                if (upperChest) upperChest.rotation.x += breathOsc * 0.015;
+                if (upperChest) upperChest.rotation.x = breathOsc * 0.015;
                 if (spine) {
-                    spine.rotation.z += Math.sin(time * 0.8) * 0.005;
-                    spine.rotation.y -= currentLookX * 0.25;
+                    spine.rotation.z = Math.sin(time * 0.8) * 0.005;
+                    spine.rotation.y = currentLookX * 0.25; // No -= accumulation to fix 360 spin glitch
                 }
 
                 // 2. Saccadic Neck & Head Micro-Movements + Gaze Tracking
@@ -386,31 +386,24 @@
                 
                 if (head) {
                     head.rotation.set(0, 0, 0); 
-                    head.rotation.y = (saccadeX * 0.02) - currentLookX * 0.6;
-                    head.rotation.x = (saccadeY * 0.015) + currentLookY * 0.5;
+                    // Fixed inverted gaze logic: +X instead of -X, -Y instead of +Y
+                    head.rotation.y = (saccadeX * 0.02) + currentLookX * 0.6;
+                    head.rotation.x = (saccadeY * 0.015) - currentLookY * 0.5;
                     
                     if (isThinking) {
                         head.rotation.z += Math.sin(time * 1.5) * 0.01; 
-                        head.rotation.x += Math.sin(time * 0.8) * 0.02;
+                        head.rotation.x += Math.sin(time * 0.8) * 0.02; // Fine, head is reset at start
                     }
                     head.rotation.y = Math.max(-0.8, Math.min(0.8, head.rotation.y));
                     head.rotation.x = Math.max(-0.5, Math.min(0.5, head.rotation.x));
                 }
                 if (neck) {
                     neck.rotation.set(0, 0, 0);
-                    neck.rotation.y = (saccadeX * 0.01) - currentLookX * 0.15;
-                    neck.rotation.x = currentLookY * 0.15;
+                    neck.rotation.y = (saccadeX * 0.01) + currentLookX * 0.15;
+                    neck.rotation.x = -currentLookY * 0.15;
                 }
                 
-                // 3. Saccadic Eye Darting
-                const leftEye = currentVrm.humanoid.getNormalizedBoneNode('leftEye');
-                const rightEye = currentVrm.humanoid.getNormalizedBoneNode('rightEye');
-                if (leftEye && rightEye) {
-                    const dartX = (Math.sin(time * 4.0) > 0.8) ? saccadeX * 0.15 : saccadeX * 0.02;
-                    const dartY = (Math.cos(time * 3.1) > 0.8) ? saccadeY * 0.15 : saccadeY * 0.02;
-                    leftEye.rotation.y += dartX; leftEye.rotation.x += dartY;
-                    rightEye.rotation.y += dartX; rightEye.rotation.x += dartY;
-                }
+                // 3. Saccadic Eye Darting -> removed per request to stop erratic eye overriding
 
                 // Smooth Blinking
                 const blinkPeriod = Math.sin(time * 2.5) + Math.sin(time * 3.1);

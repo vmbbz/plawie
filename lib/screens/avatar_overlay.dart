@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_floatwing/flutter_floatwing.dart';
+import 'package:flutter/scheduler.dart';
 import '../widgets/vrm_avatar_widget.dart';
-import 'dart:convert';
 
 class AvatarOverlay extends StatefulWidget {
   final bool isFloating;
@@ -14,91 +13,54 @@ class AvatarOverlay extends StatefulWidget {
 
 class _AvatarOverlayState extends State<AvatarOverlay> {
   Window? _window;
-  
-  // State variables for synchronization
+
+  String _avatarFileName = 'default_avatar.vrm';
   double _speechIntensity = 0.0;
   bool _isThinking = false;
-  String _gesture = "idle";
-  String _avatarFileName = "default_avatar.vrm";
+  String _gesture = '';
   bool _isListening = false;
 
   @override
   void initState() {
     super.initState();
-    // Use addPostFrameCallback to ensure the Window object is accessible via context
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _window = Window.of(context);
-      
-      // flutter_floatwing 0.3.1 registers data handlers via a method call, not a Stream
-      // The handler must return a Future<dynamic>
+
       _window?.onData((source, name, data) async {
-        if (!mounted) return null;
-        _handleDataSync(data);
-        return null; // async returns Future<Null> which satisfies Future<dynamic>
+        if (data is Map<String, dynamic>) {
+          setState(() {
+            _speechIntensity = (data['speechIntensity'] as num?)?.toDouble() ?? 0.0;
+            _isThinking = data['isThinking'] as bool? ?? false;
+            _gesture = data['gesture'] as String? ?? '';
+            _avatarFileName = data['avatarFileName'] as String? ?? _avatarFileName;
+            _isListening = data['isListening'] as bool? ?? false;
+          });
+        }
       });
     });
   }
 
-  void _handleDataSync(dynamic event) {
-    try {
-      Map<String, dynamic> data = {};
-      if (event is String) {
-        data = jsonDecode(event);
-      } else if (event is Map) {
-        data = Map<String, dynamic>.from(event);
-      }
-
-      if (data.isNotEmpty) {
-        setState(() {
-          if (data.containsKey('speechIntensity')) {
-            _speechIntensity = (data['speechIntensity'] as num).toDouble();
-          }
-          if (data.containsKey('isThinking')) {
-            _isThinking = data['isThinking'] as bool;
-          }
-          if (data.containsKey('gesture')) {
-            _gesture = data['gesture'] as String;
-          }
-          if (data.containsKey('avatarFileName')) {
-            _avatarFileName = data['avatarFileName'] as String;
-          }
-          if (data.containsKey('isListening')) {
-            _isListening = data['isListening'] as bool;
-          }
-        });
-      }
-    } catch (e) {
-      debugPrint('Overlay Sync Error: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    // A completely transparent scaffold ensures the Android home screen shows through
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // Render the 3D scene. isOverlay=true triggers the Head Framing zoom.
           Positioned.fill(
             child: VrmAvatarWidget(
               avatarFileName: _avatarFileName,
-              isOverlay: true, 
+              isOverlay: true,
               speechIntensity: _speechIntensity,
               isThinking: _isThinking,
               gesture: _gesture,
             ),
           ),
-          
-          // A tiny close button in the top right
           if (widget.isFloating)
             Positioned(
               top: 8,
               right: 8,
               child: GestureDetector(
-                onTap: () {
-                  _window?.close();
-                },
+                onTap: () => _window?.close(),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
@@ -109,8 +71,7 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
                 ),
               ),
             ),
-            
-          // Interactive Microphone Button
+          // Mic button (unchanged)
           Positioned(
             bottom: 20,
             left: 0,
@@ -118,36 +79,17 @@ class _AvatarOverlayState extends State<AvatarOverlay> {
             child: Center(
               child: GestureDetector(
                 onTap: () {
-                  // Fire action back to main isolate
-                  _window?.share({'action': 'toggle_mic'});
-                  // Optimistically update UI
                   setState(() => _isListening = !_isListening);
+                  _window?.share({'isListening': _isListening});
                 },
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _isListening 
-                        ? Colors.redAccent.withValues(alpha: 0.8) 
-                        : Colors.black.withValues(alpha: 0.6),
+                    color: _isListening ? Colors.redAccent.withValues(alpha: 0.8) : Colors.black.withValues(alpha: 0.6),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _isListening ? Colors.redAccent : Colors.white24,
-                      width: _isListening ? 2 : 1,
-                    ),
-                    boxShadow: [
-                      if (_isListening)
-                        BoxShadow(
-                          color: Colors.redAccent.withValues(alpha: 0.5),
-                          blurRadius: 15,
-                          spreadRadius: 2,
-                        ),
-                    ],
+                    border: Border.all(color: _isListening ? Colors.redAccent : Colors.white24, width: _isListening ? 2 : 1),
                   ),
-                  child: Icon(
-                    _isListening ? Icons.mic : Icons.mic_none, 
-                    color: Colors.white, 
-                    size: 28,
-                  ),
+                  child: Icon(_isListening ? Icons.mic : Icons.mic_none, color: Colors.white, size: 28),
                 ),
               ),
             ),

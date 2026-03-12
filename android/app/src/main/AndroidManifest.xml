@@ -44,6 +44,20 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="fly.mrs.floatwing.FloatwingPluginActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/LaunchTheme" >
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <meta-data
+                android:name="io.flutter.embedding.android.SplashScreenDrawable"
+                android:resource="@drawable/launch_background" />
+        </activity>
+
         <service
             android:name=".GatewayService"
             android:exported="false"
