@@ -19,6 +19,7 @@ class VrmAvatarWidget extends StatefulWidget {
   final String? userMessage;
   final Function(String)? onLog;
   final bool isOverlay;
+  final bool isPip;
 
   const VrmAvatarWidget({
     super.key,
@@ -31,6 +32,7 @@ class VrmAvatarWidget extends StatefulWidget {
     this.userMessage,
     this.onLog,
     this.isOverlay = false,
+    this.isPip = false,
   });
 
   @override
@@ -96,11 +98,15 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     try {
       await _server.start();
       _serverStarted = true;
-      final url = '${_server.origin}/avatar_scene.html${widget.isOverlay ? "?overlay=true" : ""}';
+      final params = <String, String>{};
+      if (widget.isOverlay) params['overlay'] = 'true';
+      if (widget.isPip) params['pip'] = 'true';
+      
+      final uri = Uri.parse('${_server.origin}/avatar_scene.html').replace(queryParameters: params);
       widget.onLog?.call('VRM Server started at ${_server.origin}');
 
-      // Load from localhost HTTP — all fetch() and import() calls work naturally
-      _controller.loadRequest(Uri.parse(url));
+      // Load from localhost HTTP
+      _controller.loadRequest(uri);
 
       // Inject console bridging after a short delay to let page start loading
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -127,6 +133,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           oldWidget.speechIntensity != widget.speechIntensity ||
           oldWidget.isCinematic != widget.isCinematic ||
           oldWidget.glowIntensity != widget.glowIntensity ||
+          oldWidget.isPip != widget.isPip ||
           oldWidget.avatarFileName != widget.avatarFileName) {
         if (oldWidget.avatarFileName != widget.avatarFileName) {
           _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
@@ -148,6 +155,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       if (window.setSpeechIntensity) window.setSpeechIntensity(${widget.speechIntensity});
       if (window.setCinematicMode) window.setCinematicMode(${widget.isCinematic});
       if (window.setGlowIntensity) window.setGlowIntensity(${widget.glowIntensity});
+      if (window.setPipMode) window.setPipMode(${widget.isPip});
     ''');
   }
 

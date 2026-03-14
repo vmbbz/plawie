@@ -56,11 +56,21 @@ class GatewayService {
 
       _subscribeLogs();
       _startHealthCheck();
-    } else if (prefs.autoStartGateway) {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
       ));
       await start();
+    } else {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']
+      ));
+      if (prefs.autoStartGateway) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
+        ));
+        // Don't await here to avoid blocking splash screen if initialization takes time
+        start();
+      }
     }
   }
 
@@ -409,10 +419,13 @@ try {
       
       await _configureGateway();
       // Android 14+ requires the activity to be fully visible before
-      // startForegroundService(). Wait to ensure the window is drawn.
-      await Future.delayed(const Duration(milliseconds: 1500));
+      // startForegroundService(). Reduced delay for perceived speed.
+      await Future.delayed(const Duration(milliseconds: 800));
 
       final success = await NativeBridge.startGateway();
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[DEBUG] GatewayService.start: NativeBridge.startGateway success=$success'],
+      ));
       if (!success) {
         _updateState(_state.copyWith(
           logs: [..._state.logs, '[WARN] Native start failed, attempting doctor fix...'],
@@ -428,7 +441,7 @@ try {
         if (!retrySuccess) throw Exception('Native start failed after doctor fix');
       }
       
-      await Future.delayed(const Duration(seconds: 3)); // Give tmux/proot time
+      await Future.delayed(const Duration(seconds: 1)); // Give tmux/proot time (reduced from 3s)
       _subscribeLogs();
       _startHealthCheck();
       

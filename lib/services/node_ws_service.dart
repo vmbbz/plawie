@@ -35,6 +35,7 @@ class NodeWsService {
     await _doConnect();
   }
 
+  Completer<void>? _socketCompleter;
   Completer<void>? _handshakeCompleter;
 
   Future<void> _doConnect() async {
@@ -42,8 +43,7 @@ class NodeWsService {
 
     try {
       _channel = WebSocketChannel.connect(Uri.parse(_url!));
-      await _channel!.ready;
-      
+      _socketCompleter = Completer<void>();
       _handshakeCompleter = Completer<void>();
       _lastActivity = DateTime.now();
 
@@ -53,7 +53,7 @@ class NodeWsService {
           try {
             final frame = NodeFrame.decode(data as String);
             
-            // Handle handshake
+            // Handle handshake (hello-ok)
             if (frame.type == 'hello-ok' || (frame.payload?['type'] == 'hello-ok')) {
               if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
                 _handshakeCompleter!.complete();
@@ -61,6 +61,18 @@ class NodeWsService {
               _connected = true;
               _reconnectAttempt = 0;
               _startPing();
+              
+              // hello-ok is the response to the initial 'connect' request.
+              // Some gateway versions include the original request ID, others don't.
+              final requestId = frame.id;
+              if (requestId != null && _pendingRequests.containsKey(requestId)) {
+                _pendingRequests.remove(requestId)!.complete(frame);
+              } else if (_pendingRequests.isNotEmpty) {
+                // Fallback: If we have exactly one pending request (the connect one), 
+                // and we get hello-ok, it's likely the answer.
+                final firstKey = _pendingRequests.keys.first;
+                _pendingRequests.remove(firstKey)!.complete(frame);
+              }
               return;
             }
 
@@ -79,24 +91,32 @@ class NodeWsService {
         onDone: _handleDisconnect,
       );
 
-      // Wait for hello-ok with 5s timeout
-      await _handshakeCompleter!.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw TimeoutException('WebSocket handshake (hello-ok) timed out'),
-      );
+      await _channel!.ready;
+      if (!_socketCompleter!.isCompleted) {
+        _socketCompleter!.complete();
+      }
     } catch (_) {
       _handleDisconnect();
       rethrow;
     }
   }
 
-  /// Wait for the connection to be fully ready (including handshake).
+  /// Wait for the socket to be connected (channel.ready).
+  Future<void> waitForSocket() async {
+    if (_socketCompleter != null) {
+      await _socketCompleter!.future;
+    } else if (_channel == null) {
+      throw StateError('WebSocket not connecting');
+    }
+  }
+
+  /// Wait for the connection to be fully handshaked (hello-ok received).
   Future<void> waitForReady() async {
     if (_connected) return;
     if (_handshakeCompleter != null) {
       await _handshakeCompleter!.future;
     } else {
-      throw StateError('WebSocket not connecting');
+      throw StateError('WebSocket not handshaking');
     }
   }
 
@@ -150,7 +170,13 @@ class NodeWsService {
 
   /// Send a request frame and wait for the matching response.
   Future<NodeFrame> sendRequest(NodeFrame request, {Duration? timeout}) async {
-    await waitForReady();
+    // If it's the initial connect request, only wait for the socket to be up.
+    // Otherwise, wait for the full handshake.
+    if (request.type == 'req' && request.method == 'connect') {
+      await waitForSocket();
+    } else {
+      await waitForReady();
+    }
     if (_channel == null) {
       throw StateError('WebSocket not connected');
     }
@@ -168,7 +194,12 @@ class NodeWsService {
   /// Send a frame without waiting for response.
   Future<void> send(NodeFrame frame) async {
     try {
-      await waitForReady();
+      // Connect frame or events can be sent as soon as socket is ready
+      if (frame.method == 'connect' || frame.type == 'event') {
+        await waitForSocket();
+      } else {
+        await waitForReady();
+      }
       if (_channel != null) {
         _channel!.sink.add(frame.encode());
       }
