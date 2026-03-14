@@ -35,6 +35,9 @@ class GatewayService {
     _stateController.add(_state);
   }
 
+  /// List of methods supported by the current gateway connection.
+  List<String> get supportedMethods => _connection?.supportedMethods ?? [];
+
   /// Check if the gateway is already running (e.g. after app restart)
   /// and sync the UI state accordingly.  If not running but auto-start
   /// is enabled, start it automatically.
@@ -680,6 +683,35 @@ try {
     } finally {
       frameSub.cancel();
     }
+  }
+
+  /// Invoke a generic RPC method on the gateway.
+  Future<Map<String, dynamic>> invoke(String method, [Map<String, dynamic>? params]) async {
+    if (_connection == null || _connection!.state != GatewayConnectionState.connected) {
+      // Need token to connect
+      String? token;
+      try {
+        token = await retrieveTokenFromConfig();
+      } catch (_) {}
+      
+      if (token == null || token.isEmpty) {
+        throw Exception('Gateway not connected and no auth token available.');
+      }
+      
+      if (_connection == null) _connection = GatewayConnection();
+      final ok = await _connection!.connect(token);
+      if (!ok) throw Exception('Failed to connect to gateway.');
+    }
+
+    final requestId = const Uuid().v4();
+    final responseStream = _connection!.sendRequest({
+      'method': method,
+      'params': params ?? {},
+      'id': requestId,
+    });
+
+    final frame = await responseStream.first.timeout(const Duration(seconds: 30));
+    return frame;
   }
 
   /// HTTP fallback: POST to /v1/chat/completions (OpenAI-compatible endpoint).

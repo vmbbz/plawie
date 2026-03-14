@@ -15,6 +15,7 @@ import 'settings_screen.dart';
 import 'chat_screen.dart';
 import 'solana_screen.dart';
 import 'help_screen.dart';
+import 'bot_methods_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -159,6 +160,15 @@ class DashboardScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const LogsScreen()),
+              ),
+            ),
+            StatusCard(
+              title: 'Bot Methods',
+              subtitle: 'Advanced management & RPC tools',
+              icon: Icons.settings_ethernet,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BotMethodsScreen()),
               ),
             ),
             StatusCard(

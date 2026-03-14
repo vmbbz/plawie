@@ -10,6 +10,9 @@ class GatewayProvider extends ChangeNotifier {
 
   GatewayState get state => _state;
 
+  /// The list of methods supported by the current gateway connection.
+  List<String> get supportedMethods => _gatewayService.supportedMethods;
+
   /// Send a message to the OpenClaw gateway and stream the response
   Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) {
     return _gatewayService.sendMessage(message, model: model);
@@ -73,6 +76,11 @@ class GatewayProvider extends ChangeNotifier {
   /// Force a re-fetch of the authenticated Dashboard URL.
   Future<String?> refreshDashboardUrl() {
     return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
+  }
+
+  /// Invoke a generic RPC method on the gateway.
+  Future<Map<String, dynamic>> invoke(String method, [Map<String, dynamic>? params]) {
+    return _gatewayService.invoke(method, params);
   }
 
 
