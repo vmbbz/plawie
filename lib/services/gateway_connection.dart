@@ -38,6 +38,9 @@ class GatewayConnection {
   /// The main session key returned by the gateway in the connect response.
   String? mainSessionKey;
 
+  /// The list of methods supported by the gateway, extracted from the hello-ok response.
+  List<String> supportedMethods = [];
+
   final _stateNotifier = StreamController<GatewayConnectionState>.broadcast();
   Stream<GatewayConnectionState> get stateStream => _stateNotifier.stream;
 
@@ -178,6 +181,13 @@ class GatewayConnection {
           final snapshot = payload?['snapshot'] as Map<String, dynamic>?;
           final sessionDefaults = snapshot?['sessionDefaults'] as Map<String, dynamic>?;
           mainSessionKey = sessionDefaults?['mainSessionKey'] as String? ?? 'main';
+
+          // Extract supported methods
+          final features = payload?['features'] as Map<String, dynamic>?;
+          final methods = features?['methods'] as List?;
+          if (methods != null) {
+            supportedMethods = List<String>.from(methods);
+          }
 
           // Persist device token if provided
           final auth = payload?['auth'] as Map<String, dynamic>?;
