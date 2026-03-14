@@ -18,6 +18,7 @@ class NodeService {
   final Map<String, Future<NodeFrame> Function(String, Map<String, dynamic>)>
       _capabilityHandlers = {};
   String? _gatewayAuthToken;
+  Completer<String?>? _challengeCompleter;
 
   Stream<NodeState> get stateStream => _stateController.stream;
   NodeState get state => _state;
@@ -73,8 +74,22 @@ class NodeService {
     _frameSubscription = _ws.frameStream.listen(_onFrame);
 
     try {
+      _challengeCompleter = Completer<String?>();
       await _ws.connect(targetHost, targetPort);
       log('[NODE] WebSocket connected, awaiting challenge...');
+      
+      // Wait briefly for a challenge nonce, proceed without one for local connections
+      String? nonce;
+      try {
+        nonce = await _challengeCompleter!.future.timeout(const Duration(milliseconds: 500));
+      } catch (_) {
+        nonce = null;
+      }
+      
+      // If we got here and didn't trigger via _onFrame yet, proceed
+      if (_state.status == NodeStatus.connecting) {
+        await _sendConnect(nonce ?? '');
+      }
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
@@ -103,15 +118,21 @@ class NodeService {
         break;
 
       case 'connect.challenge':
-        _updateState(_state.copyWith(status: NodeStatus.challenging));
         final nonce = frame.payload?['nonce'] as String?;
+        if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
+          _challengeCompleter!.complete(nonce);
+        }
+        _updateState(_state.copyWith(status: NodeStatus.challenging));
         if (nonce == null) {
           log('[NODE] Challenge missing nonce');
           return;
         }
         log('[NODE] Challenge received, signing...');
         try {
-          await _sendConnect(nonce);
+          // If we haven't sent connect yet (via the 500ms timeout), send it now
+          if (_state.status != NodeStatus.paired && _state.status != NodeStatus.error) {
+             await _sendConnect(nonce);
+          }
         } catch (e) {
           log('[NODE] Challenge/connect error: $e');
           _updateState(_state.copyWith(
@@ -171,10 +192,10 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    const clientId = 'node-host';
-    const clientMode = 'node';
+    const clientId = 'openclaw-android';
+    const clientMode = 'ui';
     const role = AppConstants.nodeRole;
-    const scopes = <String>['node.device'];
+    const scopes = <String>['*'];
     final signedAtMs = DateTime.now().millisecondsSinceEpoch;
 
     // Build the structured payload the gateway verifies:
@@ -200,7 +221,7 @@ class NodeService {
       'maxProtocol': 3,
       'client': {
         'id': clientId,
-        'displayName': 'Clawa Node',
+        'displayName': 'OpenClaw Mobile',
         'version': AppConstants.version,
         'platform': 'android',
         'deviceFamily': 'Android',
@@ -208,17 +229,18 @@ class NodeService {
       },
       'role': role,
       'scopes': scopes,
-      'caps': caps,
-      'commands': commands,
-      'permissions': <String, dynamic>{},
-      if (authToken != null) 'auth': {'token': authToken},
-      'device': {
+      if (nonce.isNotEmpty) 'device': {
         'id': _identity.deviceId,
         'publicKey': _identity.publicKeyBase64Url,
         'signature': signature,
         'nonce': nonce,
         'signedAt': signedAtMs,
       },
+      if (authToken != null) 'auth': {'token': authToken},
+      'locale': 'en-US',
+      // Include caps/commands for node registration
+      'caps': caps,
+      'commands': commands,
     });
 
     log('[NODE] Connect frame caps=$caps commands=$commands');

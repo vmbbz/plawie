@@ -25,7 +25,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ScrollController _logScrollController = ScrollController();
@@ -71,10 +71,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
+  bool _isChatCollapsed = false; // Expanded by default
+  late AnimationController _glowController;
 
   @override
   void initState() {
     super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
     _loadPreferences();
     _initVoiceParams();
     _loadChatHistory();
@@ -225,7 +231,8 @@ class _ChatScreenState extends State<ChatScreen> {
     await _persistence.saveMessages(_messages);
   }
 
-  Future<void> _loadPreferences() async {
+
+  void _loadPreferences() async {
     final prefs = PreferencesService();
     await prefs.init();
     if (mounted) {
@@ -389,7 +396,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // If the upstream AI provider rate-limited silently, the message stream will be empty.
         // Catch this and provide a human-readable fallback instead of a blank bubble.
         if (fullResponse.trim().isEmpty) {
-          fullResponse = '⚠️ **System Alert**: API Rate Limit Reached. My neural processors are currently overloaded and need a moment to cool down. Please wait a few seconds before trying again!';
+          fullResponse = '⚠️ **API Rate Limit Reached**. Please wait a moment before trying again.';
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         }
       });
@@ -557,7 +564,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: AppColors.statusGreen.withValues(alpha: 0.8),
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
+                      letterSpacing: 2.0,
                     ),
                   ),
                   GestureDetector(
@@ -566,49 +573,84 @@ class _ChatScreenState extends State<ChatScreen> {
                       _showEditNameDialog();
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(8),
+                        gradient: LinearGradient(
+                          colors: [Colors.white.withValues(alpha: 0.1), Colors.white.withValues(alpha: 0.05)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.edit, color: Colors.white70, size: 12),
+                          Icon(Icons.edit_note, color: AppColors.statusGreen, size: 14),
                           SizedBox(width: 4),
-                          Text('Edit', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                          Text('EDIT', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [AppColors.statusGreen, AppColors.statusGreen.withValues(alpha: 0.5)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.statusGreen, AppColors.statusGreen.withValues(alpha: 0.4)],
                       ),
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.statusGreen.withValues(alpha: 0.2),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        )
+                      ],
                     ),
-                    child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+                    child: const Icon(Icons.psychology_outlined, color: Colors.white, size: 20),
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    _agentName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _agentName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _selectedModel.split('/').last.toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.0,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              const Divider(color: Colors.white12),
+              const SizedBox(height: 16),
+              const Divider(color: Colors.white10),
             ],
           ),
         ),
@@ -652,9 +694,9 @@ class _ChatScreenState extends State<ChatScreen> {
           value: 'avatar_forge',
           child: Row(
             children: [
-              Icon(Icons.auto_fix_high, color: Colors.purpleAccent.shade100, size: 18),
+              Icon(Icons.face, color: AppColors.statusGreen, size: 18),
               const SizedBox(width: 10),
-              const Text('Avatar Forge', style: TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.w600)),
+              const Text('Avatar Forge', style: TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.w600)),
               const Spacer(),
               const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 12),
             ],
@@ -791,6 +833,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _glowController.dispose();
     _piperTts.stop();
     _speechToText.stop();
     _textController.dispose();
@@ -934,28 +977,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isPipMode) {
-      return Scaffold(
-        backgroundColor: Colors.black, // Dark background for PiP visibility
-        body: Center(
-          child: VrmAvatarWidget(
-            avatarFileName: _selectedAvatar,
-            speechIntensity: _speechIntensity,
-            isThinking: _isThinking,
-            gesture: _currentGesture,
-          ),
-        ),
-      );
-    }
 
     final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
 
+    // --- Dynamic Sizing for Floating Mic ---
+    const double collapsedSize = 80.0;
+    final double barWidth = _isChatCollapsed ? collapsedSize : size.width - 24;
+    final double barHeight = _isChatCollapsed ? collapsedSize : (size.height * 0.6);
+
     return Scaffold(
+      backgroundColor: _isPipMode ? Colors.transparent : null,
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: false, // Prevents VRM aspect-ratio scaling bounds from squishing
       endDrawer: _buildSessionDrawer(),
-      appBar: AppBar(
+      appBar: _isPipMode ? null : AppBar(
         backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
         leading: IconButton(
@@ -968,39 +1004,31 @@ class _ChatScreenState extends State<ChatScreen> {
           child: GestureDetector(
             onTap: () => _showUnifiedMenu(context),
             child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 12,
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A2E).withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.0),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Container(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
-                      color: AppColors.statusGreen.withValues(alpha: 0.2),
+                      color: AppColors.statusGreen.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.face, color: AppColors.statusGreen, size: 16),
+                    child: const Icon(Icons.face, color: AppColors.statusGreen, size: 14),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1014,6 +1042,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.5,
                           ),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
@@ -1024,21 +1053,19 @@ class _ChatScreenState extends State<ChatScreen> {
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.0,
                           ),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                const SizedBox(width: 8),
-                const Icon(Icons.keyboard_arrow_down, color: Colors.white38, size: 18),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.keyboard_arrow_down, color: Colors.white38, size: 18),
                 ],
               ),
             ),
           ),
         ),
-      ),
-    ),
-  ),
   centerTitle: true,
         actions: [
           IconButton(
@@ -1072,6 +1099,12 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           IconButton(
+            icon: Icon(_isChatCollapsed ? Icons.unfold_more : Icons.unfold_less, 
+                       color: _isChatCollapsed ? AppColors.statusGreen : Colors.white70),
+            onPressed: () => setState(() => _isChatCollapsed = !_isChatCollapsed),
+            tooltip: 'Toggle Voice Only Mode',
+          ),
+          IconButton(
             icon: Icon(_showDiagnostics ? Icons.bug_report : Icons.bug_report_outlined, 
                        color: _showDiagnostics ? AppColors.statusGreen : Colors.white54),
             onPressed: () => setState(() => _showDiagnostics = !_showDiagnostics),
@@ -1082,29 +1115,31 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Stack(
         children: [
           // 1. Deep space background
-          Container(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: const Alignment(0, -0.2),
-                radius: 1.2,
-                colors: [
-                  const Color(0xFF0D1B2A),
-                  Colors.black,
-                ],
-                stops: const [0.0, 1.0],
+          if (!_isPipMode)
+            Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.2),
+                  radius: 1.2,
+                  colors: [
+                    const Color(0xFF0D1B2A),
+                    Colors.black,
+                  ],
+                  stops: const [0.0, 1.0],
+                ),
               ),
             ),
-          ),
 
           // 2. Subtle animated nebula particles
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.15,
-              child: CustomPaint(
-                painter: NebulaPainter(_isThinking ? 1.0 : 0.0),
+          if (!_isPipMode)
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.15,
+                child: CustomPaint(
+                  painter: NebulaPainter(_isThinking ? 1.0 : 0.0),
+                ),
               ),
             ),
-          ),
 
           // 3. 3D VRM Avatar
           Positioned.fill(
@@ -1139,6 +1174,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       glowIntensity: _speechIntensity,
                       avatarFileName: _selectedAvatar,
                       isCinematic: _isCinematic,
+                      isPip: _isPipMode,
                       gesture: _currentGesture,
                       userMessage: _lastUserMessage,
                       onLog: (log) {
@@ -1155,10 +1191,12 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
 
           // 4. Glassmorphic Chat Area
-          Positioned.fill(
+          if (!_isPipMode)
+            Positioned.fill(
             child: Padding(
               padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   // --- PIPER TTS GLOBAL PROGRESS OVERLAY ---
                   if (_isDownloadingTts)
@@ -1201,118 +1239,142 @@ class _ChatScreenState extends State<ChatScreen> {
                         ],
                       ),
                     ),
-                  const Spacer(flex: 3),
-                  Expanded(
-                    flex: 4,
-                    child: Container(
-                      margin: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 30,
-                            spreadRadius: -5,
-                          ),
-                        ],
+                  // 5. Epic Floating Chat/Mic Bar
+
+                  if (!_isChatCollapsed) const Spacer(flex: 3),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.elasticOut,
+                    width: barWidth,
+                    height: barHeight,
+                    margin: EdgeInsets.only(bottom: _isChatCollapsed ? 40 : 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(_isChatCollapsed ? collapsedSize / 2 : 32),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: _isChatCollapsed ? 0.2 : 0.12),
+                        width: _isChatCollapsed ? 2 : 1.5,
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _isListening 
+                              ? AppColors.statusGreen.withValues(alpha: 0.2) 
+                              : Colors.black.withValues(alpha: 0.3),
+                          blurRadius: _isChatCollapsed ? 30 : 20,
+                          spreadRadius: _isChatCollapsed ? 5 : -2,
+                        ),
+                        if (_isListening && _isChatCollapsed)
+                          BoxShadow(
+                            color: AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value),
+                            blurRadius: 20 * _glowController.value,
+                            spreadRadius: 10 * _glowController.value,
+                          ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(_isChatCollapsed ? collapsedSize / 2 : 32),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                         child: Column(
                           children: [
-                            Expanded(
-                              child: ShaderMask(
-                                shaderCallback: (bounds) => const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
-                                  stops: [0.0, 0.05, 0.95, 1.0],
-                                ).createShader(bounds),
-                                blendMode: BlendMode.dstIn,
-                                child: ListView.builder(
-                                  controller: _scrollController,
-                                  padding: const EdgeInsets.all(20),
-                                  itemCount: _messages.length,
-                                  itemBuilder: (context, i) {
-                                    final msg = _messages[i];
-                                    return ChatBubble(
-                                      message: msg,
-                                      isThinking: i == _messages.length - 1 && _isThinking,
-                                    );
-                                  },
+                            if (!_isChatCollapsed)
+                              Expanded(
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) => const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
+                                    stops: [0.0, 0.05, 0.95, 1.0],
+                                  ).createShader(bounds),
+                                  blendMode: BlendMode.dstIn,
+                                  child: ListView.builder(
+                                    controller: _scrollController,
+                                    padding: const EdgeInsets.all(20),
+                                    itemCount: _messages.length,
+                                    itemBuilder: (context, i) {
+                                      final msg = _messages[i];
+                                      return ChatBubble(
+                                        message: msg,
+                                        isThinking: i == _messages.length - 1 && _isThinking,
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
-                            ),
                             Container(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: _isChatCollapsed ? 0 : 16, 
+                                vertical: _isChatCollapsed ? 0 : 12
+                              ),
                               decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.4),
-                                border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                                color: _isChatCollapsed ? Colors.transparent : Colors.black.withValues(alpha: 0.4),
+                                border: _isChatCollapsed 
+                                  ? null 
+                                  : Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
                               ),
                               child: SafeArea(
                                 top: false,
+                                bottom: !_isChatCollapsed,
                                 child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     GestureDetector(
                                       onTap: _toggleListening,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(12),
+                                      child: AnimatedBuilder(
+                                        animation: _glowController,
+                                        builder: (context, child) {
+                                          return AnimatedContainer(
+                                            duration: const Duration(milliseconds: 300),
+                                            width: _isChatCollapsed ? collapsedSize : 48,
+                                            height: _isChatCollapsed ? collapsedSize : 48,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: _isListening && _isChatCollapsed
+                                                  ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
+                                                  : Colors.transparent,
+                                            ),
+                                            child: Icon(
+                                              _isListening ? Icons.mic : Icons.mic_none,
+                                              color: _isListening ? AppColors.statusGreen : Colors.white70,
+                                              size: _isChatCollapsed ? 36 : 24,
+                                            ),
+                                          );
+                                        }
+                                      ),
+                                    ),
+                                    if (!_isChatCollapsed) ...[
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: TextField(
+                                          controller: _textController,
+                                          style: const TextStyle(color: Colors.white, fontSize: 15),
+                                          onChanged: (_) => setState(() {}),
+                                          decoration: InputDecoration(
+                                            hintText: "Message your companion...",
+                                            hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
+                                            border: OutlineInputBorder(
+                                              borderRadius: BorderRadius.circular(30),
+                                              borderSide: BorderSide.none,
+                                            ),
+                                            filled: true,
+                                            fillColor: Colors.white.withValues(alpha: 0.08),
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                          ),
+                                          onSubmitted: _handleSubmit,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: _isListening 
-                                              ? AppColors.statusGreen.withValues(alpha: 0.8) 
-                                              : Colors.white54,
-                                            width: _isListening ? 3 : 1,
-                                          ),
-                                          boxShadow: _isListening ? [
-                                            BoxShadow(
-                                              color: AppColors.statusGreen.withValues(alpha: 0.3),
-                                              blurRadius: 10,
-                                              spreadRadius: 2,
-                                            )
-                                          ] : [],
+                                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
                                         ),
-                                        child: Icon(
-                                          _isListening ? Icons.mic : Icons.mic_none,
-                                          color: _isListening ? AppColors.statusGreen : Colors.white70,
-                                          size: 20,
+                                        child: IconButton(
+                                          icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                                          onPressed: () => _handleSubmit(_textController.text),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _textController,
-                                        style: const TextStyle(color: Colors.white, fontSize: 15),
-                                        onChanged: (_) => setState(() {}),
-                                        decoration: InputDecoration(
-                                          hintText: "Message your companion...",
-                                          hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(30),
-                                            borderSide: BorderSide.none,
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.white.withValues(alpha: 0.08),
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                        ),
-                                        onSubmitted: _handleSubmit,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: theme.colorScheme.primary.withValues(alpha: 0.8),
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                                        onPressed: () => _handleSubmit(_textController.text),
-                                      ),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -1326,15 +1388,45 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
-
           // 6. Diagnostics (slide-up panel)
-          if (_showDiagnostics)
+          if (_showDiagnostics && !_isPipMode)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
               height: size.height * 0.4,
               child: _buildDiagnosticsPanel(theme),
+            ),
+
+          // 7. Mini PiP Mic Button
+          if (_isPipMode)
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: GestureDetector(
+                onTap: _toggleListening,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isListening 
+                        ? AppColors.statusGreen.withValues(alpha: 0.2) 
+                        : Colors.black.withValues(alpha: 0.4),
+                    border: Border.all(
+                      color: _isListening 
+                          ? AppColors.statusGreen 
+                          : Colors.white38,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none,
+                    color: _isListening ? AppColors.statusGreen : Colors.white70,
+                    size: 24,
+                  ),
+                ),
+              ),
             ),
         ],
       ),

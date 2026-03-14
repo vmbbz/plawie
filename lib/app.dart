@@ -49,7 +49,7 @@ class ClawaApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => SetupProvider()),
-        ChangeNotifierProvider(create: (_) => GatewayProvider()),
+        ChangeNotifierProvider(create: (_) => GatewayProvider(), lazy: false),
         ChangeNotifierProxyProvider<GatewayProvider, NodeProvider>(
           create: (_) => NodeProvider(),
           update: (_, gatewayProvider, nodeProvider) {

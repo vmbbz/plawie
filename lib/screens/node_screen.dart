@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../providers/node_provider.dart';
@@ -245,7 +246,27 @@ class _NodeScreenState extends State<NodeScreen> {
                     const SizedBox(height: 16),
 
                     // Logs
-                    _sectionHeader(theme, 'NODE LOGS'),
+                    _sectionHeader(
+                      theme, 
+                      'NODE LOGS',
+                      trailing: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.copy_all, size: 16),
+                        onPressed: () {
+                          if (state.logs.isNotEmpty) {
+                            Clipboard.setData(ClipboardData(text: state.logs.join('\n')));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Logs copied to clipboard'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          }
+                        },
+                        tooltip: 'Copy all logs',
+                      ),
+                    ),
                     Card(
                       child: Container(
                         height: 200,
@@ -282,16 +303,22 @@ class _NodeScreenState extends State<NodeScreen> {
     );
   }
 
-  Widget _sectionHeader(ThemeData theme, String title) {
+  Widget _sectionHeader(ThemeData theme, String title, {Widget? trailing}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-      child: Text(
-        title,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 1.2,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.2,
+            ),
+          ),
+          if (trailing != null) trailing,
+        ],
       ),
     );
   }

@@ -218,8 +218,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final isRunning = gatewayState.isRunning;
     _lastGatewayState = gatewayState;
 
-    if (!wasRunning && isRunning && _state.isDisabled) {
-      // Gateway just started - auto-enable node if previously enabled
+    if (!wasRunning && isRunning) {
+      // Gateway just started OR was detected - force sync connection status.
+      // This ensures any "Connection failed" errors from when the gateway was down
+      // are promptly cleared as the node completes its challenge.
       _checkAutoConnect();
     } else if (wasRunning && !isRunning && !_state.isDisabled) {
       // Gateway stopped - disconnect node and stop foreground service
@@ -305,6 +307,12 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     prefs.nodeEnabled = true;
     await _requestNodePermissions();
     await _requestBatteryOptimization();
+    
+    // Ensure latest compatibility shims are deployed
+    try {
+      await NativeBridge.installBionicBypass();
+    } catch (_) {}
+
     await NativeBridge.startNodeService();
     await _nodeService.connect();
     _startWatchdog();
