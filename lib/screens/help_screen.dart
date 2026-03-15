@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
-import '../constants.dart';
 import '../app.dart';
 
 class HelpScreen extends StatelessWidget {

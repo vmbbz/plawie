@@ -1,10 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../services/gateway_service.dart';
-import '../../services/node_service.dart';
-import '../../services/native_bridge.dart';
-import '../../constants.dart';
 import '../../app.dart';
 
 class StatusDashboard extends StatefulWidget {
@@ -140,7 +136,7 @@ class _StatusDashboardState extends State<StatusDashboard> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: (isRunning ? AppColors.statusGreen : Colors.red).withOpacity(0.1),
+              color: (isRunning ? AppColors.statusGreen : Colors.red).withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: isRunning ? AppColors.statusGreen : Colors.redAccent, size: 24),
@@ -161,9 +157,9 @@ class _StatusDashboardState extends State<StatusDashboard> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: (isRunning ? AppColors.statusGreen : Colors.red).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                color: (isRunning ? AppColors.statusGreen : Colors.red).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
                 child: Text(
                   isRunning ? 'REACHABLE' : 'DOWN',
                   style: TextStyle(
