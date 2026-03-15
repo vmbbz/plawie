@@ -1,5 +1,9 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'dart:ui';
 import '../../../services/skills_service.dart';
 import '../../../widgets/skill_install_hero.dart';
+import '../../../app.dart';
 
 class AgentCreditPage extends StatefulWidget {
   const AgentCreditPage({super.key});
