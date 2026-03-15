@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'preferences_service.dart';
+import 'skills_service.dart';
 
 /// Local HTTP Server that listens on 127.0.0.1:8765 for OpenClaw Native Skills.
 /// The Proot AI Agent uses these endpoints to control the Android phone.
@@ -28,8 +29,20 @@ class AgentSkillServer {
 
     if (request.method == 'GET' && path == '/battery') {
       _handleBattery(request);
+    } else if (request.method == 'GET' && path == '/api/tools') {
+      _handleToolsCatalog(request);
+    } else if (request.method == 'GET' && path == '/api/skills/list') {
+      _handleSkillsList(request);
     } else if (request.method == 'POST' && path == '/api/avatar/equip') {
       await _handleAvatarEquip(request);
+    } else if (path.startsWith('/twilio')) {
+      await _handleTwilio(request);
+    } else if (path.startsWith('/cards')) {
+      await _handleAgentCard(request);
+    } else if (path.startsWith('/marketplace')) {
+      await _handleMoltLaunch(request);
+    } else if (path.startsWith('/sentinel')) {
+      await _handleValeo(request);
     } else {
       _sendNotFound(request);
     }
@@ -41,6 +54,17 @@ class AgentSkillServer {
       'level': 85,
       'isCharging': true,
     });
+  }
+
+  void _handleToolsCatalog(HttpRequest request) {
+    final catalog = SkillsService().getToolsCatalog();
+    _sendJson(request, {'tools': catalog});
+  }
+
+  void _handleSkillsList(HttpRequest request) {
+    final skills = SkillsService().getSkillsList();
+    final jsonList = skills.map((s) => s.toJson()).toList();
+    _sendJson(request, {'skills': jsonList});
   }
 
   Future<void> _handleAvatarEquip(HttpRequest request) async {
@@ -67,6 +91,38 @@ class AgentSkillServer {
       });
     } catch (e) {
       _sendError(request, e.toString());
+    }
+  }
+
+  Future<void> _handleTwilio(HttpRequest request) async {
+    final method = request.uri.path == '/twilio/webhook' ? 'get_status' : 'get_status';
+    final result = await SkillsService().executeSkill('twilio_voice', parameters: {'method': method});
+    _sendSkillResult(request, result);
+  }
+
+  Future<void> _handleAgentCard(HttpRequest request) async {
+    final method = request.uri.path == '/cards/create' ? 'create_card' : 'get_balance';
+    final result = await SkillsService().executeSkill('agent_card', parameters: {'method': method});
+    _sendSkillResult(request, result);
+  }
+
+  Future<void> _handleMoltLaunch(HttpRequest request) async {
+    final method = request.uri.path == '/marketplace/identity' ? 'register' : 'get_rep';
+    final result = await SkillsService().executeSkill('molt_launch', parameters: {'method': method});
+    _sendSkillResult(request, result);
+  }
+
+  Future<void> _handleValeo(HttpRequest request) async {
+    final method = request.uri.path == '/sentinel/audit' ? 'get_audit' : 'get_budget';
+    final result = await SkillsService().executeSkill('valeo_sentinel', parameters: {'method': method});
+    _sendSkillResult(request, result);
+  }
+
+  void _sendSkillResult(HttpRequest request, SkillResult result) {
+    if (result.success) {
+      _sendJson(request, result.data as Map<String, dynamic>);
+    } else {
+      _sendError(request, result.error ?? 'Unknown skill error');
     }
   }
 

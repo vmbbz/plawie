@@ -390,9 +390,9 @@
 
             if (isPip) {
                 // Focused headshot framing for small PiP window - DYNAMIC HEAD TRACKING
-                targetCameraZ = 0.8; 
-                const headHeight = avatarMetrics.headY; 
-                camera.position.set(0, headHeight, targetCameraZ);
+                targetCameraZ = 1.2; // Pulled back from 0.8 to avoid "too close" feel
+                const headHeight = avatarMetrics.headY + 0.05; // Slightly higher to target forehead/eyes
+                camera.position.set(0, headHeight, targetCameraZ); // X=0 to remove biased 0.15 offset
                 camera.lookAt(0, headHeight, 0);
                 return;
             }

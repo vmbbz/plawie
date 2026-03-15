@@ -71,3 +71,54 @@ NODE] Device ID: 83de6835e9b5...
 [NODE] Paired and connected
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+√ Built build\app\outputs\flutter-apk\app-release.apk (97.6MB)
+PS C:\dev-shared\openclaw-projects\openclaw_final> C:\flutter\bin\flutter.bat build apk --release;
+lib/screens/management/bot_management_dashboard.dart:62:36: Error: Member not found: 'primaryBlue'.
+                  color: AppColors.primaryBlue,
+                                   ^^^^^^^^^^^
+lib/screens/management/bot_management_dashboard.dart:226:31: Error: Member not found: 'primaryBlue'.
+                    AppColors.primaryBlue,
+                              ^^^^^^^^^^^
+lib/screens/management/bot_management_dashboard.dart:185:52: Error: The getter 'GatewayStatus' isn't defined for the type 'StatusSummaryCard'.
+ - 'StatusSummaryCard' is from 'package:clawa/screens/management/bot_management_dashboard.dart' ('lib/screens/management/bot_management_dashboard.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'GatewayStatus'.      
+        final isHealthy = provider.state.status == GatewayStatus.running;
+                                                   ^^^^^^^^^^^^^
+lib/screens/management/agent_manager.dart:107:46: Error: Couldn't find constructor 'EdgeInsets.bottom'.
+                    margin: const EdgeInsets.bottom(16),
+                                             ^^^^^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command 'C:\flutter\bin\flutter.bat'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 2m 35s
+Running Gradle task 'assembleRelease'...                          156.2s
+Gradle task assembleRelease failed with exit code 1
+PS C:\dev-shared\openclaw-projects\openclaw_final> 
