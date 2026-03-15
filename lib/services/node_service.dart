@@ -85,20 +85,18 @@ class NodeService {
     try {
       _challengeCompleter = Completer<String?>();
       await _ws.connect(targetHost, targetPort);
-      log('[NODE] WebSocket connected, awaiting challenge...');
+      log('[NODE] WebSocket connected, awaiting handshake/challenge...');
       
-      // Wait briefly for a challenge nonce, proceed without one for local connections
-      String? nonce;
-      try {
-        nonce = await _challengeCompleter!.future.timeout(const Duration(milliseconds: 500));
-      } catch (_) {
-        nonce = null;
-      }
-      
-      // If we got here and didn't trigger via _onFrame yet, proceed
-      if (_state.status == NodeStatus.connecting) {
-        await _sendConnect(nonce ?? '');
-      }
+      // We don't send anything here. We wait for either:
+      // 1. A connect.challenge event (triggering _sendConnect)
+      // 2. A timeout if no challenge is received (triggering _sendConnect without nonce)
+      _reconnectTimer?.cancel();
+      _reconnectTimer = Timer(const Duration(seconds: 2), () {
+        if (_state.status == NodeStatus.connecting) {
+          log('[NODE] No challenge received after 2s, proceeding with hello...');
+          _sendConnect('');
+        }
+      });
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,

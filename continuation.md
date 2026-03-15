@@ -1,30 +1,20 @@
 
 PS C:\dev-shared\openclaw-projects\openclaw_final> C:\flutter\bin\flutter.bat build apk --release;
-lib/screens/management/status_dashboard.dart:25:29: Error: The getter 'NativeBridge' isn't defined for the type '_StatusDashboardState'.
- - '_StatusDashboardState' is from 'package:clawa/screens/management/status_dashboard.dart' ('lib/screens/management/status_dashboard.dart').
-Try correcting the name to the name of an existing getter, or defining a getter or field named 'NativeBridge'.       
-    final optimized = await NativeBridge.isBatteryOptimized();
-                            ^^^^^^^^^^^^
-lib/screens/management/status_dashboard.dart:26:24: Error: The getter 'NativeBridge' isn't defined for the type '_StatusDashboardState'.
- - '_StatusDashboardState' is from 'package:clawa/screens/management/status_dashboard.dart' ('lib/screens/management/status_dashboard.dart').
-Try correcting the name to the name of an existing getter, or defining a getter or field named 'NativeBridge'.       
-    final node = await NativeBridge.isNodeServiceRunning();
-                       ^^^^^^^^^^^^
-lib/screens/management/status_dashboard.dart:27:27: Error: The getter 'NativeBridge' isn't defined for the type '_StatusDashboardState'.
- - '_StatusDashboardState' is from 'package:clawa/screens/management/status_dashboard.dart' ('lib/screens/management/status_dashboard.dart').
-Try correcting the name to the name of an existing getter, or defining a getter or field named 'NativeBridge'.       
-    final gateway = await NativeBridge.isGatewayRunning();
-                          ^^^^^^^^^^^^
-lib/screens/management/status_dashboard.dart:201:19: Error: The getter 'NativeBridge' isn't defined for the type '_StatusDashboardState'.
- - '_StatusDashboardState' is from 'package:clawa/screens/management/status_dashboard.dart' ('lib/screens/management/status_dashboard.dart').
-Try correcting the name to the name of an existing getter, or defining a getter or field named 'NativeBridge'.       
-            () => NativeBridge.acquirePartialWakeLock(),
-                  ^^^^^^^^^^^^
-lib/screens/management/status_dashboard.dart:208:19: Error: The getter 'NativeBridge' isn't defined for the type '_StatusDashboardState'.
- - '_StatusDashboardState' is from 'package:clawa/screens/management/status_dashboard.dart' ('lib/screens/management/status_dashboard.dart').
-Try correcting the name to the name of an existing getter, or defining a getter or field named 'NativeBridge'.       
-            () => NativeBridge.requestBatteryOptimization(),
-                  ^^^^^^^^^^^^
+lib/services/node_service.dart:93:7: Error: The getter '_reconnectTimer' isn't defined for the type 'NodeService'.
+ - 'NodeService' is from 'package:clawa/services/node_service.dart' ('lib/services/node_service.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named '_reconnectTimer'.    
+      _reconnectTimer?.cancel();
+      ^^^^^^^^^^^^^^^
+lib/services/node_service.dart:94:7: Error: The setter '_reconnectTimer' isn't defined for the type 'NodeService'.   
+ - 'NodeService' is from 'package:clawa/services/node_service.dart' ('lib/services/node_service.dart').
+Try correcting the name to the name of an existing setter, or defining a setter or field named '_reconnectTimer'.    
+      _reconnectTimer = Timer(const Duration(seconds: 2), () {
+      ^^^^^^^^^^^^^^^
+lib/services/node_ws_service.dart:80:17: Error: The getter 'isResponse' isn't defined for the type 'NodeWsService'.
+ - 'NodeWsService' is from 'package:clawa/services/node_ws_service.dart' ('lib/services/node_ws_service.dart').      
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'isResponse'.
+            if (isResponse && frame.id != null) {
+                ^^^^^^^^^^
 Target kernel_snapshot_program failed: Exception
 
 
@@ -40,7 +30,7 @@ Execution failed for task ':app:compileFlutterBuildRelease'.
 > Run with --scan to get full insights.
 > Get more help at https://help.gradle.org.
 
-BUILD FAILED in 1m 8s
-Running Gradle task 'assembleRelease'...                           68.5s
+BUILD FAILED in 1m 14s
+Running Gradle task 'assembleRelease'...                           75.7s
 Gradle task assembleRelease failed with exit code 1
 PS C:\dev-shared\openclaw-projects\openclaw_final> 
