@@ -996,6 +996,15 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
 
 /// Skill model
 class Skill {
+  final String id;
+  final String name;
+  final String description;
+  final String version;
+  final String author;
+  final String category;
+  final List<String> tags;
+  final List<SkillRequirement> requirements;
+  final String body;
   final String source;
   final DateTime createdAt;
   final bool enabled;
