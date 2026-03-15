@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../services/native_bridge.dart';
+import 'package:clawa/services/native_bridge.dart';
 import '../../app.dart';
 
 class StatusDashboard extends StatefulWidget {
