@@ -31,6 +31,10 @@ class ClawaForegroundService : Service() {
         const val CHANNEL_ID = "clawa_local_agent"
         const val NOTIFICATION_ID = 4
         
+        // Actions
+        const val ACTION_STOP = "com.nxg.openclawproot.ACTION_STOP"
+        const val ACTION_RESTART = "com.nxg.openclawproot.ACTION_RESTART"
+        
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds
         private const val HEALTH_TIMEOUT_MS = 10_000        // 10 second timeout for HTTP check
@@ -101,6 +105,19 @@ class ClawaForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP -> {
+                Log.i(TAG, "Notification ACTION_STOP received")
+                stop(this)
+                return START_NOT_STICKY
+            }
+            ACTION_RESTART -> {
+                Log.i(TAG, "Notification ACTION_RESTART received")
+                attemptRestart()
+                return START_STICKY
+            }
+        }
+
         isRunning = true
         instance = this
         startTime = System.currentTimeMillis()
@@ -301,6 +318,15 @@ class ClawaForegroundService : Service() {
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+
+        // Add Action Buttons (Surgical upgrade for production control)
+        val stopIntent = Intent(this, ClawaForegroundService::class.java).apply { action = ACTION_STOP }
+        val stopPendingIntent = PendingIntent.getService(this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE)
+        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP", stopPendingIntent)
+
+        val restartIntent = Intent(this, ClawaForegroundService::class.java).apply { action = ACTION_RESTART }
+        val restartPendingIntent = PendingIntent.getService(this, 2, restartIntent, PendingIntent.FLAG_IMMUTABLE)
+        builder.addAction(android.R.drawable.ic_menu_rotate, "RESTART", restartPendingIntent)
 
         if (startTime > 0) {
             builder.setWhen(startTime)

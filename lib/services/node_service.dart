@@ -53,6 +53,15 @@ class NodeService {
     await _identity.init();
     _updateState(_state.copyWith(deviceId: _identity.deviceId));
     log('[NODE] Device ID: ${_identity.deviceId.substring(0, 12)}...');
+
+    // Synchronize with background process (Production-grade state recovery)
+    final alreadyRunning = await NativeBridge.isNodeServiceRunning();
+    if (alreadyRunning) {
+      log('[NODE] Background service detected, attempting resync...');
+      // Small delay to ensure preferences are ready if just launched
+      await Future.delayed(const Duration(milliseconds: 500));
+      connect();
+    }
   }
 
   Future<void> connect({String? host, int? port}) async {

@@ -27,9 +27,10 @@ class BootReceiver : BroadcastReceiver() {
         val autoStart = prefs.getBoolean(PREF_AUTO_START, false)
 
         if (autoStart) {
-            Log.i(TAG, "Boot completed — auto-starting Clawa service")
+            Log.i(TAG, "Boot completed — auto-starting Clawa services")
             try {
                 ClawaForegroundService.start(context)
+                NodeForegroundService.start(context)
             } catch (e: Exception) {
                 // Android 14+ may block foreground service start from a broadcast receiver.
                 // The service will start when the user opens the app.
