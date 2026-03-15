@@ -18,9 +18,7 @@
 
 ---
 
-## 🚀 No Server. No Problem.
-
-**"Run OpenClaw fully local on your phone. No complex setup, zero security risks, and zero server costs."**
+**"Run OpenClaw fully local on your phone. Always-on, totally private, and under your absolute control."**
 
 While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a $2,000 MacBook to run local AI agents—we took a different path. 
 
@@ -39,7 +37,14 @@ Plawie isn't just a UI wrapper; it is built on an untouchable technical foundati
 ### 1. The Autonomous PRoot Gateway
 We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your Snapdragon processor. It handles 35+ local Android skills to bridge the gap between intelligence and device-level actions.
 
-### 2. Native Solana Web3 Logic
+### 3. Industrial-Grade Background Stability
+Plawie is built for 24/7 autonomous operation. Unlike standard apps that die when you swipe them away:
+- **Sticky Foreground Services**: The OpenClaw engine runs as a high-priority Android service, surviving app closures and background pruning.
+- **Actionable Notifications**: Control your bot directly from the notification shade with **STOP** and **RESTART** buttons—no need to open the app.
+- **Boot Persistence**: If enabled, Plawie automatically revives your gateway and node processes the moment your phone restarts and unlocks.
+- **Process Watchdog**: An intelligent monitor that detects gateway failures and self-heals the environment within seconds.
+
+### 4. Native Solana Web3 Logic
 Plawie is your ultimate Web3 co-pilot. We built a robust, fully native Solana integration directly into the app:
 - **Real Ed25519 Keypairs:** Generated and secured in on-device storage.
 - **DeFi Ready:** Swap tokens, set limit orders, and DCA via direct Jupiter API integration.

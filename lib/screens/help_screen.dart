@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
+import '../constants.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
@@ -17,12 +19,12 @@ class HelpScreen extends StatelessWidget {
             top: -100,
             right: -50,
             child: Container(
-              width: 300,
-              height: 300,
+              width: 400,
+              height: 400,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.blueAccent.withValues(alpha: 0.1),
-                filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                color: AppColors.statusGreen.withValues(alpha: 0.05),
+                filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
               ),
             ),
           ),
@@ -32,64 +34,59 @@ class HelpScreen extends StatelessWidget {
               _buildAppBar(context),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildSectionHeader('Quick Start Guide'),
+                      _buildPitchHeader(context),
+                      const SizedBox(height: 40),
+                      
+                      _buildSectionHeader('Your Pocket AI Power'),
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'Getting Started',
-                        description: 'Learn how to activate your agent and send your first command.',
-                        icon: Icons.rocket_launch_outlined,
-                        gradient: [Colors.orangeAccent, Colors.redAccent],
+                        title: 'Always-On Intelligence',
+                        description: 'Your bot never sleeps. It runs in the background 24/7, ready to help even if the app is closed.',
+                        icon: Icons.auto_awesome_rounded,
+                        gradient: [Colors.blueAccent, Colors.cyanAccent],
                       ),
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Voice Interaction',
-                        description: 'How to use the floating mic for hands-free AI assistance.',
-                        icon: Icons.mic_none_outlined,
-                        gradient: [Colors.blueAccent, Colors.cyanAccent],
+                        title: 'Talk Like a Human',
+                        description: 'Use the floating mic to speak naturally. Your companion understands and acts on your voice commands.',
+                        icon: Icons.record_voice_over_rounded,
+                        gradient: [Colors.orangeAccent, Colors.redAccent],
                       ),
                       
                       const SizedBox(height: 32),
-                      _buildSectionHeader('Foundational Engine'),
+                      _buildSectionHeader('Professional Upgrades'),
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'PRoot & Gateway',
-                        description: 'Deep dive into the local Ubuntu OpenClaw execution environment.',
-                        icon: Icons.terminal_outlined,
-                        gradient: [Colors.greenAccent, Colors.tealAccent],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildHelpCard(
-                        context,
-                        title: 'Solana Web3 Logic',
-                        description: 'Understanding native transactions and key security.',
-                        icon: Icons.account_balance_wallet_outlined,
+                        title: 'Web3 & Financials',
+                        description: 'Manage money, swap tokens, and issue virtual cards. No bank account or complex tech skills needed.',
+                        icon: Icons.account_balance_wallet_rounded,
                         gradient: [Colors.purpleAccent, Colors.deepPurpleAccent],
                       ),
-
-                      const SizedBox(height: 32),
-                      _buildSectionHeader('Advanced Skill Hub'),
-                      const SizedBox(height: 16),
-                      _buildHelpCard(
-                        context,
-                        title: 'Twilio & Telephony',
-                        description: 'Configuring your agent for voice bridging and SMS.',
-                        icon: Icons.phone_android_outlined,
-                        gradient: [Colors.redAccent, Colors.pinkAccent],
-                      ),
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Payments & Budgets',
-                        description: 'Managing AgentCard issuance and Valeo Sentinel policies.',
-                        icon: Icons.credit_card_outlined,
+                        title: 'Auto-Work & Calls',
+                        description: 'Your bot can handle phone calls, sms, and on-chain jobs while you focus on what matters.',
+                        icon: Icons.work_history_rounded,
                         gradient: [Colors.tealAccent, Colors.lightGreenAccent],
+                      ),
+                      
+                      const SizedBox(height: 32),
+                      _buildSectionHeader('Total Control'),
+                      const SizedBox(height: 16),
+                      _buildHelpCard(
+                        context,
+                        title: 'Notifications & Safety',
+                        description: 'Control your bot directly from your phone notifications. Stop or restart with a single tap.',
+                        icon: Icons.notifications_active_rounded,
+                        gradient: [Colors.pinkAccent, Colors.redAccent],
                       ),
                       
                       const SizedBox(height: 40),
@@ -108,36 +105,40 @@ class HelpScreen extends StatelessWidget {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 140,
+      expandedHeight: 180,
       floating: false,
       pinned: true,
       elevation: 0,
       backgroundColor: const Color(0xFF0D1B2A).withValues(alpha: 0.8),
       flexibleSpace: ClipRect(
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: FlexibleSpaceBar(
             centerTitle: true,
             title: Text(
               'HELP CENTER',
               style: GoogleFonts.outfit(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                letterSpacing: 2,
-                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+                letterSpacing: 4,
+                color: Colors.white.withValues(alpha: 0.9),
               ),
             ),
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.blueAccent.withValues(alpha: 0.1),
-                    Colors.transparent,
-                  ],
+            background: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 40),
+                Hero(
+                  tag: 'app_logo',
+                  child: SvgPicture.asset(
+                    'assets/app_icon_official.svg',
+                    width: 70,
+                    height: 70,
+                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 10),
+              ],
             ),
           ),
         ),
@@ -145,14 +146,40 @@ class HelpScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildPitchHeader(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Master Your Reality.',
+          style: GoogleFonts.outfit(
+            fontSize: 32,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            height: 1.1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Plawie is the first 100% private, autonomous AI companion that lives entirely on your phone. No servers, no spying—just pure intelligence at your fingertips.',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            color: Colors.white70,
+            height: 1.5,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSectionHeader(String title) {
     return Text(
       title.toUpperCase(),
       style: GoogleFonts.outfit(
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-        color: Colors.blueAccent,
+        fontSize: 11,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 2,
+        color: AppColors.statusGreen.withValues(alpha: 0.8),
       ),
     );
   }
@@ -166,33 +193,40 @@ class HelpScreen extends StatelessWidget {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
+          color: Colors.white.withValues(alpha: 0.06),
           width: 1,
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () {}, // Navigate to detailed markdown page
+            onTap: () {}, 
             child: Padding(
-              padding: const EdgeInsets.all(20.0),
+              padding: const EdgeInsets.all(24.0),
               child: Row(
                 children: [
-                  Container(
-                    width: 50,
-                    height: 50,
+                   Container(
+                    width: 54,
+                    height: 54,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: gradient,
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: gradient[0].withValues(alpha: 0.3),
+                          blurRadius: 15,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
                     child: Icon(icon, color: Colors.white, size: 28),
                   ),
@@ -209,20 +243,17 @@ class HelpScreen extends StatelessWidget {
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Text(
                           description,
                           style: GoogleFonts.outfit(
-                            color: Colors.white70,
+                            color: Colors.white60,
                             fontSize: 14,
+                            height: 1.3,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    color: Colors.white.withValues(alpha: 0.3),
                   ),
                 ],
               ),
@@ -236,14 +267,13 @@ class HelpScreen extends StatelessWidget {
   Widget _buildSupportLinks(BuildContext context) {
     return Column(
       children: [
-        const Divider(color: Colors.white10),
         const SizedBox(height: 20),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildSupportButton(context, 'ClawHub', 'https://github.com/vmbbz/plawie'),
-            const SizedBox(width: 20),
-            _buildSupportButton(context, 'Discord', 'https://discord.gg/openclaw'),
+            _buildSupportButton(context, 'Explore Code', 'https://github.com/vmbbz/plawie'),
+            const SizedBox(width: 32),
+            _buildSupportButton(context, 'Join Discord', 'https://discord.gg/openclaw'),
           ],
         ),
       ],
@@ -251,15 +281,15 @@ class HelpScreen extends StatelessWidget {
   }
 
   Widget _buildSupportButton(BuildContext context, String label, String url) {
-    return TextButton.icon(
-      onPressed: () => launchUrl(Uri.parse(url)),
-      icon: const Icon(Icons.open_in_new, size: 16),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: Colors.white.withValues(alpha: 0.5),
-        textStyle: GoogleFonts.outfit(
+    return InkWell(
+      onTap: () => launchUrl(Uri.parse(url)),
+      child: Text(
+        label,
+        style: GoogleFonts.outfit(
           fontWeight: FontWeight.bold,
+          fontSize: 13,
           letterSpacing: 1,
+          color: Colors.white.withValues(alpha: 0.4),
         ),
       ),
     );

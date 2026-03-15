@@ -24,6 +24,7 @@ dependencies:
   uuid: ^4.2.0
   geolocator: ^12.0.0
   camera: ^0.11.0
+  flutter_svg: ^2.0.10
 
   # Crypto Payment Integration
   flutter_secure_storage: ^9.0.0
