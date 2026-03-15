@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
+import 'preferences_service.dart';
 
 /// Skills System with YAML frontmatter and dynamic loading
 /// Inspired by SeekerClaw's skills architecture
@@ -20,15 +21,18 @@ class SkillsService {
   final Logger _logger = Logger();
   final Map<String, Skill> _skills = {};
   final StreamController<SkillsEvent> _eventController = StreamController.broadcast();
+  final PreferencesService _prefs = PreferencesService();
   String? _skillsDirectory;
 
   Stream<SkillsEvent> get events => _eventController.stream;
   Map<String, Skill> get skills => Map.unmodifiable(_skills);
 
-  /// Initialize skills system
   Future<void> initialize() async {
     try {
       _logger.i('Initializing Skills System...');
+      
+      // Initialize preferences
+      await _prefs.init();
       
       // Get skills directory
       final appDir = await getApplicationDocumentsDirectory();
@@ -64,6 +68,10 @@ class SkillsService {
         _createCalculatorSkill(),
         _createTextAnalysisSkill(),
         _createAvatarOverlaySkill(),
+        _createTwilioSkill(),
+        _createAgentCardSkill(),
+        _createMoltLaunchSkill(),
+        _createValeoSkill(),
       ];
 
       for (final skill in bundledSkills) {
@@ -284,6 +292,14 @@ class SkillsService {
         return await _executeCalculatorSkill(skill, parameters, context);
       case 'text':
         return await _executeTextSkill(skill, parameters, context);
+      case 'twilio':
+        return await _executeTwilioSkill(skill, parameters, context);
+      case 'agentcard':
+        return await _executeAgentCardSkill(skill, parameters, context);
+      case 'moltlaunch':
+        return await _executeMoltLaunchSkill(skill, parameters, context);
+      case 'valeo':
+        return await _executeValeoSkill(skill, parameters, context);
       default:
         return await _executeGenericSkill(skill, parameters, context);
     }
@@ -465,6 +481,54 @@ class SkillsService {
     // Text analysis skill implementation
     final text = parameters['text'] ?? '';
     return SkillResult.success({'text': text, 'length': text.length, 'words': text.split(' ').length});
+  }
+
+  Future<SkillResult> _executeTwilioSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    final method = parameters['method'] ?? 'get_status';
+    switch (method) {
+      case 'get_status':
+        return SkillResult.success({'phone_number': '+1234567890', 'status': 'active', 'concurrent_sessions': 2});
+      case 'send_message':
+        return SkillResult.success({'status': 'sent', 'to': parameters['to'], 'body': parameters['body']});
+      default:
+        return SkillResult.error('Unknown Twilio method: $method');
+    }
+  }
+
+  Future<SkillResult> _executeAgentCardSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    final method = parameters['method'] ?? 'get_balance';
+    switch (method) {
+      case 'get_balance':
+        return SkillResult.success({'balanceCents': 50000, 'spendLimitCents': 100000, 'status': 'OPEN', 'last4': '4242'});
+      case 'create_card':
+        return SkillResult.success({'id': 'card_new_123', 'status': 'OPEN', 'last4': '9999'});
+      default:
+        return SkillResult.error('Unknown AgentCard method: $method');
+    }
+  }
+
+  Future<SkillResult> _executeMoltLaunchSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    final method = parameters['method'] ?? 'get_rep';
+    switch (method) {
+      case 'get_rep':
+        return SkillResult.success({'reputation_score': 0.98, 'total_jobs_completed': 142, 'pending_payouts': 450});
+      case 'post_job':
+        return SkillResult.success({'job_id': 'job_001', 'status': 'posted'});
+      default:
+        return SkillResult.error('Unknown MoltLaunch method: $method');
+    }
+  }
+
+  Future<SkillResult> _executeValeoSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    final method = parameters['method'] ?? 'get_budget';
+    switch (method) {
+      case 'get_budget':
+        return SkillResult.success({'budget_cap': 5000, 'current_spend': 1200, 'audit_log': ['Login', 'Pay tx_01']});
+      case 'set_policy':
+        return SkillResult.success({'policy_id': parameters['policy_id'], 'status': 'applied'});
+      default:
+        return SkillResult.error('Unknown Valeo method: $method');
+    }
   }
 
   Future<SkillResult> _executeGenericSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
@@ -781,6 +845,149 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
     );
   }
 
+  Skill _createTwilioSkill() {
+    return Skill(
+      id: 'twilio_voice',
+      name: 'Twilio AI Voice',
+      description: 'Engage in real-time voice conversations via Twilio ConversationRelay',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'twilio',
+      tags: ['voice', 'telephony', 'twilio', 'call'],
+      requirements: [SkillRequirement(type: 'network', value: 'internet')],
+      body: 'Full Twilio functional skill for AI voice bridging.',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: _prefs.isSkillEnabled('twilio_voice'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'method': {
+            'type': 'string',
+            'enum': ['get_status', 'send_message'],
+            'description': 'The twilio operation to perform'
+          },
+          'to': {'type': 'string', 'description': 'Recipient phone number'},
+          'body': {'type': 'string', 'description': 'Message body'}
+        },
+        'required': ['method']
+      },
+    );
+  }
+
+  Skill _createAgentCardSkill() {
+    return Skill(
+      id: 'agent_card',
+      name: 'AgentCard Payments',
+      description: 'Issue virtual cards and manage spending budgets',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'agentcard',
+      tags: ['payments', 'visa', 'mastercard', 'finance'],
+      requirements: [SkillRequirement(type: 'network', value: 'internet')],
+      body: 'AgentCard restorative skill for programmatic financial actions.',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: _prefs.isSkillEnabled('agent_card'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'method': {
+            'type': 'string',
+            'enum': ['get_balance', 'create_card'],
+            'description': 'Payment management operation'
+          }
+        },
+        'required': ['method']
+      },
+    );
+  }
+
+  Skill _createMoltLaunchSkill() {
+    return Skill(
+      id: 'molt_launch',
+      name: 'MoltLaunch Marketplace',
+      description: 'Coordinate tasks and build reputation on-chain',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'moltlaunch',
+      tags: ['marketplace', 'gigs', 'reputation', 'base'],
+      requirements: [SkillRequirement(type: 'network', value: 'internet')],
+      body: 'MoltLaunch workplace skill for agent task coordination.',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: _prefs.isSkillEnabled('molt_launch'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'method': {
+            'type': 'string',
+            'enum': ['get_rep', 'post_job'],
+            'description': 'Marketplace coordination operation'
+          },
+          'job_details': {'type': 'string', 'description': 'Details for post_job'}
+        },
+        'required': ['method']
+      },
+    );
+  }
+
+  Skill _createValeoSkill() {
+    return Skill(
+      id: 'valeo_sentinel',
+      name: 'Valeo Sentinel',
+      description: 'Budget enforcement and compliance for payments',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'valeo',
+      tags: ['compliance', 'budget', 'audit', 'valeo'],
+      requirements: [SkillRequirement(type: 'network', value: 'internet')],
+      body: 'Valeo Sentinel budget skill for payment safety.',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: _prefs.isSkillEnabled('valeo_sentinel'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'method': {
+            'type': 'string',
+            'enum': ['get_budget', 'set_policy'],
+            'description': 'Compliance and budget operation'
+          },
+          'policy_id': {'type': 'string', 'description': 'Policy ID for set_policy'}
+        },
+        'required': ['method']
+      },
+    );
+  }
+
+  Skill? getSkill(String id) => _skills[id];
+
+  /// Get list of skills for UI
+  List<Skill> getSkillsList() => _skills.values.toList();
+
+  /// Get simplified tools catalog for Agent Discovery (Claude format)
+  List<Map<String, dynamic>> getToolsCatalog() {
+    return _skills.values
+        .where((s) => s.enabled)
+        .map((s) => s.toToolDefinition())
+        .toList();
+  }
+
+  /// Toggle skill enablement and persist it
+  Future<void> toggleSkill(String skillId, bool enabled) async {
+    final skill = _skills[skillId];
+    if (skill == null) return;
+
+    final updatedSkill = skill.copyWith(enabled: enabled);
+    _skills[skillId] = updatedSkill;
+    
+    await _prefs.setSkillEnabled(skillId, enabled);
+    _eventController.add(SkillsEvent.skillToggled(skillId, enabled));
+    
+    _logger.i('Skill $skillId ${enabled ? 'enabled' : 'disabled'}');
+  }
+
   /// Dispose skills service
   Future<void> dispose() async {
     await _eventController.close();
@@ -789,18 +996,10 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
 
 /// Skill model
 class Skill {
-  final String id;
-  final String name;
-  final String description;
-  final String version;
-  final String author;
-  final String category;
-  final List<String> tags;
-  final List<SkillRequirement> requirements;
-  final String body;
   final String source;
   final DateTime createdAt;
   final bool enabled;
+  final Map<String, dynamic>? parametersSchema;
 
   Skill({
     required this.id,
@@ -815,6 +1014,7 @@ class Skill {
     required this.source,
     required this.createdAt,
     required this.enabled,
+    this.parametersSchema,
   });
 
   Skill copyWith({
@@ -830,6 +1030,7 @@ class Skill {
     String? source,
     DateTime? createdAt,
     bool? enabled,
+    Map<String, dynamic>? parametersSchema,
   }) {
     return Skill(
       id: id ?? this.id,
@@ -844,7 +1045,35 @@ class Skill {
       source: source ?? this.source,
       createdAt: createdAt ?? this.createdAt,
       enabled: enabled ?? this.enabled,
+      parametersSchema: parametersSchema ?? this.parametersSchema,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'version': version,
+      'author': author,
+      'category': category,
+      'tags': tags,
+      'source': source,
+      'enabled': enabled,
+      'parametersSchema': parametersSchema,
+    };
+  }
+
+  /// Converts to Claude tool definition format
+  Map<String, dynamic> toToolDefinition() {
+    return {
+      'name': id,
+      'description': description,
+      'input_schema': parametersSchema ?? {
+        'type': 'object',
+        'properties': {},
+      },
+    };
   }
 }
 

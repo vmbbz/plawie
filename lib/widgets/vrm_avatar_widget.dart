@@ -173,6 +173,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       children: [
         GestureDetector(
           onTapDown: (details) {
+            if (widget.isPip) return; // Don't intercept taps in PiP to allow mic button interaction
             final x = details.localPosition.dx;
             final y = details.localPosition.dy;
             _controller.runJavaScript('if (window.setTapTarget) window.setTapTarget($x, $y);');

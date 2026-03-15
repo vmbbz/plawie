@@ -1004,32 +1004,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           child: GestureDetector(
             onTap: () => _showUnifiedMenu(context),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(24),
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: AppColors.statusGreen.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.face, color: AppColors.statusGreen, size: 14),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
+                   Icon(Icons.face_unlock_rounded, color: AppColors.statusGreen.withValues(alpha: 0.9), size: 16),
+                   const SizedBox(width: 10),
+                   Flexible(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1038,9 +1024,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           _agentName,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
+                            letterSpacing: 0.3,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1049,9 +1035,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 9,
+                            fontSize: 8,
                             fontWeight: FontWeight.w600,
-                            letterSpacing: 1.0,
+                            letterSpacing: 0.8,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1059,8 +1045,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.keyboard_arrow_down, color: Colors.white38, size: 18),
+                  const SizedBox(width: 10),
+                  const Icon(Icons.expand_more_rounded, color: Colors.white38, size: 16),
                 ],
               ),
             ),
@@ -1405,6 +1391,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               right: 20,
               child: GestureDetector(
                 onTap: _toggleListening,
+                behavior: HitTestBehavior.opaque,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   padding: const EdgeInsets.all(12),

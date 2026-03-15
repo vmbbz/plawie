@@ -491,12 +491,24 @@ try {
           .head(Uri.parse(AppConstants.gatewayUrl))
           .timeout(const Duration(seconds: 3));
 
-      if (response.statusCode < 500 && _state.status != GatewayStatus.running) {
-        _updateState(_state.copyWith(
-          status: GatewayStatus.running,
-          startedAt: DateTime.now(),
-          logs: [..._state.logs, '[INFO] Gateway is healthy'],
-        ));
+      if (response.statusCode < 500) {
+        if (_state.status != GatewayStatus.running) {
+          _updateState(_state.copyWith(
+            status: GatewayStatus.running,
+            startedAt: _state.startedAt ?? DateTime.now(),
+            logs: [..._state.logs, '[INFO] Gateway is healthy'],
+          ));
+        }
+
+        // 2. Fetch detailed RPC health
+        if (_connection?.state == GatewayConnectionState.connected) {
+          try {
+            final healthResult = await invoke('health');
+            if (healthResult['ok'] == true) {
+              _updateState(_state.copyWith(detailedHealth: healthResult['payload']));
+            }
+          } catch (_) {}
+        }
       }
     } catch (_) {
       // Still starting or temporarily unreachable
