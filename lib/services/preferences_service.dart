@@ -122,4 +122,8 @@ class PreferencesService {
       _p.remove('configured_model');
     }
   }
+
+  /// Skill Enablement Persistence
+  bool isSkillEnabled(String skillId) => _p.getBool('skill_enabled_$skillId') ?? false;
+  Future<void> setSkillEnabled(String skillId, bool enabled) => _p.setBool('skill_enabled_$skillId', enabled);
 }

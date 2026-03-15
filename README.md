@@ -69,6 +69,26 @@ Our WebGL-based VRM avatars are driven by a custom mathematical engine, not pre-
 
 ---
 
+## 🛠️ The Bot Management Suite: High-Fidelity Control
+
+Plawie includes a full-featured, glassmorphic management dashboard to monitor and command your agent fleet:
+
+### 1. Unified Control Plane
+A premium dashboard with domain-specific icons (System, Config, Agents) providing live health metrics, connection state, and RPC latency tracking.
+
+### 2. Config & Agent Manager
+An interactive `JsonEditor` allows you to manage `openclaw.json` and your agent configurations directly on-device. No SSH or command-line required for tuning your agents.
+
+### 3. Premium Agent Skills (Claude Standard)
+We've integrated high-fidelity, functional skills standardized for Claude's "Tool Use" protocol:
+- **Twilio Voice**: Bridge your agent to real telephony via ConversationRelay.
+- **AgentCard (Alchemy)**: Programmatic Visa/Mastercard issuance for autonomous spending.
+- **MoltLaunch (Base L2)**: On-chain workforce coordination and reputation tracking.
+- **Valeo Sentinel**: Strict budget policies and automated audit trails for compliance.
+- **Discovery Engine**: Native `/api/tools` endpoint for "Progressive Disclosure" skill loading.
+
+---
+
 ## 🏗️ Technical Architecture
 
 Plawie is surgically optimized for mobile efficiency using a 3-layer architecture:
@@ -79,12 +99,14 @@ graph TD
         A[Native Chat & Audio UI] --> B[SkillsService]
         A --> C[Solana Dart SDK]
         A --> D[Piper TTS Engine]
+        B --> K[AgentSkillServer - Discovery Hub]
     end
 
     subgraph "Layer 2: The Core Foundation (The Brain)"
         E[Ubuntu PRoot Sandbox] --> F[Node.js OpenClaw Gateway]
         B --> F
         F --> G[35+ Device Skills Executer]
+        F -- "GET /api/tools" --> K
     end
 
     subgraph "Layer 3: The UI Layer (The Expression)"
@@ -97,10 +119,11 @@ graph TD
 ```
 
 ### ⚡ Technology Stack Summary
-- **The Brain:** PRoot, Ubuntu, Node.js (OpenClaw Server).
+- **The Brain:** PRoot, Ubuntu, Node.js v20+ (OpenClaw Server).
+- **The Hub:** AgentSkillServer (Standardized Loopback Discovery).
 - **The Shell:** Flutter (Dart) 3.24+.
 - **The Web3 Layer:** Native `solana` Dart SDK.
-- **The Expression:** Three.js + `@pixiv/three-vrm` running in a high-performance background WebGL view.
+- **The Expression:** Three.js + VRM bone-tracking renderer.
 
 ---
 

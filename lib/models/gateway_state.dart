@@ -11,6 +11,7 @@ class GatewayState {
   final String? errorMessage;
   final DateTime? startedAt;
   final String? dashboardUrl;
+  final Map<String, dynamic>? detailedHealth;
 
   const GatewayState({
     this.status = GatewayStatus.stopped,
@@ -18,6 +19,7 @@ class GatewayState {
     this.errorMessage,
     this.startedAt,
     this.dashboardUrl,
+    this.detailedHealth,
   });
 
   GatewayState copyWith({
@@ -28,6 +30,8 @@ class GatewayState {
     DateTime? startedAt,
     bool clearStartedAt = false,
     String? dashboardUrl,
+    Map<String, dynamic>? detailedHealth,
+    bool clearDetailedHealth = false,
   }) {
     return GatewayState(
       status: status ?? this.status,
@@ -35,6 +39,7 @@ class GatewayState {
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       startedAt: clearStartedAt ? null : (startedAt ?? this.startedAt),
       dashboardUrl: dashboardUrl ?? this.dashboardUrl,
+      detailedHealth: clearDetailedHealth ? null : (detailedHealth ?? this.detailedHealth),
     );
   }
 
