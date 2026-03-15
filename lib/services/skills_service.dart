@@ -399,16 +399,6 @@ class SkillsService {
     }
   }
 
-  /// Enable/disable skill
-  Future<void> toggleSkill(String skillId, bool enabled) async {
-    final skill = _skills[skillId];
-    if (skill == null) return;
-
-    final updatedSkill = skill.copyWith(enabled: enabled);
-    _skills[skillId] = updatedSkill;
-    
-    _eventController.add(SkillsEvent.skillToggled(skillId, enabled));
-  }
 
   /// Get skills by category
   List<Skill> getSkillsByCategory(String category) {

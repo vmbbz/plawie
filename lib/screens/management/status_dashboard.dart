@@ -5,6 +5,7 @@ import '../../services/gateway_service.dart';
 import '../../services/node_service.dart';
 import '../../services/native_bridge.dart';
 import '../../constants.dart';
+import '../../app.dart';
 
 class StatusDashboard extends StatefulWidget {
   const StatusDashboard({super.key});
@@ -149,8 +150,8 @@ class _StatusDashboardState extends State<StatusDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text(desc, style: const TextStyle(fontSize: 12, color: AppColors.statusGrey)),
+                Text(name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(desc, style: TextStyle(fontSize: 12, color: AppColors.statusGrey)),
               ],
             ),
           ),
@@ -245,11 +246,11 @@ class _StatusDashboardState extends State<StatusDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-              Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.statusGrey)),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: AppColors.statusGrey)),
             ],
           ),
         ),
-        if (isActive) const Icon(Icons.check_circle_rounded, color: AppColors.statusGreen, size: 18),
+        if (isActive) Icon(Icons.check_circle_rounded, color: AppColors.statusGreen, size: 18),
       ],
     );
   }
@@ -274,7 +275,7 @@ class _StatusDashboardState extends State<StatusDashboard> {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.statusGrey),
+          Icon(Icons.chevron_right_rounded, color: AppColors.statusGrey),
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
 import '../constants.dart';
+import '../app.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
@@ -23,8 +24,14 @@ class HelpScreen extends StatelessWidget {
               height: 400,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.statusGreen.withValues(alpha: 0.05),
-                filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
+                color: AppColors.statusGreen.withValues(alpha: 0.1),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.statusGreen.withValues(alpha: 0.1),
+                    blurRadius: 100,
+                    spreadRadius: 50,
+                  ),
+                ],
               ),
             ),
           ),
