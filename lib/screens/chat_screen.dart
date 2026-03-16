@@ -1388,37 +1388,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               child: _buildDiagnosticsPanel(theme),
             ),
 
-          // 7. Mini PiP Mic Button
-          if (_isPipMode)
-            Positioned(
-              bottom: 20,
-              right: 20,
-              child: GestureDetector(
-                onTap: _toggleListening,
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _isListening 
-                        ? AppColors.statusGreen.withValues(alpha: 0.2) 
-                        : Colors.black.withValues(alpha: 0.4),
-                    border: Border.all(
-                      color: _isListening 
-                          ? AppColors.statusGreen 
-                          : Colors.white38,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Icon(
-                    _isListening ? Icons.mic : Icons.mic_none,
-                    color: _isListening ? AppColors.statusGreen : Colors.white70,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
+          // PiP mic is handled by native Android RemoteAction (see MainActivity.kt).
+          // Flutter UI touch events are blocked in PiP mode by the OS.
         ],
       ),
     );
