@@ -95,6 +95,33 @@ class HelpScreen extends StatelessWidget {
                         gradient: [Colors.pinkAccent, Colors.redAccent],
                       ),
                       
+                      const SizedBox(height: 32),
+                      _buildSectionHeader('Under the Hood'),
+                      const SizedBox(height: 16),
+                      _buildHelpCard(
+                        context,
+                        title: 'Private Linux Server',
+                        description: 'Your phone runs a real Linux environment with its own AI server. No cloud, no middleman — your data never leaves this device.',
+                        icon: Icons.dns_rounded,
+                        gradient: [const Color(0xFF6C63FF), const Color(0xFF3F3D99)],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
+                        title: 'Self-Healing Background',
+                        description: 'A watchdog monitors your AI server every 30 seconds. If anything goes wrong, it auto-restarts — even if you swipe the app closed.',
+                        icon: Icons.security_rounded,
+                        gradient: [const Color(0xFF00B4D8), const Color(0xFF0077B6)],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
+                        title: 'Multi-Model Intelligence',
+                        description: 'Switch between Gemini, Claude, GPT and more. Your server orchestrates any AI model, running conversations locally through industry-standard protocols.',
+                        icon: Icons.hub_rounded,
+                        gradient: [const Color(0xFFE76F51), const Color(0xFFF4A261)],
+                      ),
+                      
                       const SizedBox(height: 40),
                       _buildSupportLinks(context),
                       const SizedBox(height: 60),
