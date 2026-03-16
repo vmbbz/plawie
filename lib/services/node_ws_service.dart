@@ -77,7 +77,7 @@ class NodeWsService {
             }
 
             // Match pending request/response
-            if (isResponse && frame.id != null) {
+            if (frame.isResponse && frame.id != null) {
               final completer = _pendingRequests.remove(frame.id);
               if (completer != null) {
                 completer.complete(frame);

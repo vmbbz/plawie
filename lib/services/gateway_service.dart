@@ -59,14 +59,10 @@ class GatewayService {
 
       _subscribeLogs();
       _startHealthCheck();
-      
-      // Proactively fetch token to sync UI dashboard state (Production-grade resync)
-      await fetchAuthenticatedDashboardUrl();
-      
       _updateState(_state.copyWith(
-        status: GatewayStatus.running,
-        logs: [..._state.logs, '[INFO] Gateway resynced successfully.'],
+        logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
       ));
+      await start();
     } else {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']

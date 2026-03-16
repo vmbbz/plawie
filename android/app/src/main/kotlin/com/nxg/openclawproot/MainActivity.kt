@@ -7,9 +7,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
@@ -36,6 +40,12 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.nxg.openclawproot/native"
     private val EVENT_CHANNEL = "com.nxg.openclawproot/gateway_logs"
+    companion object {
+        const val ACTION_PIP_MIC = "com.nxg.openclawproot.ACTION_PIP_MIC"
+        const val URL_CHANNEL_ID = "openclaw_urls"
+        const val NOTIFICATION_PERMISSION_REQUEST = 1001
+        const val SCREEN_CAPTURE_REQUEST = 1002
+    }
 
     private lateinit var bootstrapManager: BootstrapManager
     private lateinit var processManager: ProcessManager
@@ -43,6 +53,16 @@ class MainActivity : FlutterActivity() {
     private var screenCaptureDurationMs: Long = 5000L
     private var wakeLock: PowerManager.WakeLock? = null
     private var pipMethodChannel: MethodChannel? = null
+
+    // BroadcastReceiver that captures the PIP mic button tap
+    private val pipMicReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_PIP_MIC) {
+                Log.i("MainActivity", "PIP Mic button tapped — forwarding to Flutter")
+                pipMethodChannel?.invokeMethod("toggleMicFromPip", null)
+            }
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -54,14 +74,39 @@ class MainActivity : FlutterActivity() {
         processManager = ProcessManager(filesDir, nativeLibDir)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
+
+        // Register the PIP mic broadcast receiver
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipMicReceiver, IntentFilter(ACTION_PIP_MIC), Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipMicReceiver, IntentFilter(ACTION_PIP_MIC))
+        }
+
         pipMethodChannel?.setMethodCallHandler { call, result ->
             if (call.method == "enterPictureInPictureMode") {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     try {
                         val aspectRatio = android.util.Rational(3, 4)
-                        val params = android.app.PictureInPictureParams.Builder()
+                        val builder = android.app.PictureInPictureParams.Builder()
                             .setAspectRatio(aspectRatio)
-                            .build()
+
+                        // Add native Mic RemoteAction button (Android O+)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            val micIntent = Intent(ACTION_PIP_MIC)
+                            micIntent.setPackage(packageName)
+                            val micPendingIntent = PendingIntent.getBroadcast(
+                                this, 0, micIntent,
+                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            )
+                            val micAction = RemoteAction(
+                                Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now),
+                                "Mic", "Toggle microphone",
+                                micPendingIntent
+                            )
+                            builder.setActions(listOf(micAction))
+                        }
+
+                        val params = builder.build()
                         val success = enterPictureInPictureMode(params)
                         result.success(success)
                     } catch (e: Exception) {
@@ -593,9 +638,8 @@ class MainActivity : FlutterActivity() {
         pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
     }
 
-    companion object {
-        const val URL_CHANNEL_ID = "openclaw_urls"
-        const val NOTIFICATION_PERMISSION_REQUEST = 1001
-        const val SCREEN_CAPTURE_REQUEST = 1002
+    override fun onDestroy() {
+        try { unregisterReceiver(pipMicReceiver) } catch (_: Exception) {}
+        super.onDestroy()
     }
 }

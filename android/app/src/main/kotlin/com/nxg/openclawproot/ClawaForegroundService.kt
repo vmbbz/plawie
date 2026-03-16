@@ -131,6 +131,22 @@ class ClawaForegroundService : Service() {
         return START_STICKY
     }
 
+    /**
+     * Called when the user swipes the app away from Recents.
+     * Re-deliver the start intent so the service restarts via START_STICKY.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "onTaskRemoved: App swiped away — service will persist via START_STICKY")
+        // Re-deliver start command to ensure onStartCommand fires again if OS kills us
+        val restartIntent = Intent(applicationContext, ClawaForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(restartIntent)
+        } else {
+            startService(restartIntent)
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         isRunning = false
         instance = null
