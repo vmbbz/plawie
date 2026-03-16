@@ -94,6 +94,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             _isPipMode = isPip;
           });
         }
+      } else if (call.method == 'toggleMicFromPip') {
+        // Native PIP mic button was tapped — toggle voice listening
+        _addDiagnosticLog('PIP Mic button tapped (native RemoteAction)');
+        _toggleListening();
       }
     });
 
