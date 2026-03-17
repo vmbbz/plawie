@@ -83,40 +83,41 @@ class MainActivity : FlutterActivity() {
         }
 
         pipMethodChannel?.setMethodCallHandler { call, result ->
-            if (call.method == "enterPictureInPictureMode") {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    try {
-                        val aspectRatio = android.util.Rational(3, 4)
-                        val builder = android.app.PictureInPictureParams.Builder()
-                            .setAspectRatio(aspectRatio)
-
-                        // Add native Mic RemoteAction button (Android O+)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            val micIntent = Intent(ACTION_PIP_MIC)
-                            micIntent.setPackage(packageName)
-                            val micPendingIntent = PendingIntent.getBroadcast(
-                                this, 0, micIntent,
-                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                            )
-                            val micAction = RemoteAction(
-                                Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now),
-                                "Mic", "Toggle microphone",
-                                micPendingIntent
-                            )
-                            builder.setActions(listOf(micAction))
+            when (call.method) {
+                "enterPictureInPictureMode" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val params = android.app.PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(3, 4))
+                                .setActions(buildPipActions(false))
+                                .build()
+                            val success = enterPictureInPictureMode(params)
+                            result.success(success)
+                        } catch (e: Exception) {
+                            result.error("PIP_ERROR", e.message, null)
                         }
-
-                        val params = builder.build()
-                        val success = enterPictureInPictureMode(params)
-                        result.success(success)
-                    } catch (e: Exception) {
-                        result.error("PIP_ERROR", e.message, null)
+                    } else {
+                        result.error("UNSUPPORTED", "PiP requires Android O+", null)
                     }
-                } else {
-                    result.error("UNSUPPORTED", "PiP requires Android O+", null)
                 }
-            } else {
-                result.notImplemented()
+                "updatePipMicState" -> {
+                    val isListening = call.arguments as? Boolean ?: false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val params = android.app.PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(3, 4))
+                                .setActions(buildPipActions(isListening))
+                                .build()
+                            setPictureInPictureParams(params)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    } else {
+                        result.success(false)
+                    }
+                }
+                else -> result.notImplemented()
             }
         }
 
@@ -636,6 +637,30 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
+    }
+
+    private fun buildPipActions(isListening: Boolean): List<RemoteAction> {
+        val micIntent = Intent(ACTION_PIP_MIC).setPackage(packageName)
+        val micPendingIntent = PendingIntent.getBroadcast(
+            this, 0, micIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Using standard Android icons. 
+        // ic_btn_speak_now (outline) for idle
+        // ic_lock_idle_lock (filled/different) for listening - or just a different title
+        val iconRes = if (isListening) android.R.drawable.ic_lock_idle_lock else android.R.drawable.ic_btn_speak_now
+        val title = if (isListening) "Listening..." else "Mic"
+        
+        val micAction = RemoteAction(
+            Icon.createWithResource(this, iconRes),
+            title,
+            "Toggle microphone",
+            micPendingIntent
+        )
+        // We can't easily tint RemoteAction icons dynamically in PiP without custom icons, 
+        // but changing the icon resource and title provides clear feedback.
+        return listOf(micAction)
     }
 
     override fun onDestroy() {

@@ -90,14 +90,27 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       if (call.method == 'onPiPModeChanged') {
         final bool isPip = call.arguments as bool;
         if (mounted) {
-          setState(() {
-            _isPipMode = isPip;
-          });
+          // When LEAVING PIP, stop microphone if it was listening
+          if (!isPip && _isListening) {
+            _addDiagnosticLog('Exiting PIP — stopping mic to reset state');
+            await _speechToText.stop();
+            setState(() {
+              _isListening = false;
+              _isPipMode = false;
+            });
+            _syncOverlayState();
+          } else {
+            setState(() {
+              _isPipMode = isPip;
+            });
+          }
         }
       } else if (call.method == 'toggleMicFromPip') {
         // Native PIP mic button was tapped — toggle voice listening
         _addDiagnosticLog('PIP Mic button tapped (native RemoteAction)');
         _toggleListening();
+        // Update the native PIP icon to reflect new listening state
+        _updatePipMicIcon();
       }
     });
 
@@ -444,6 +457,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       } else {
         _addDiagnosticLog('Voice recognition unavailable on device.');
       }
+    }
+  }
+
+  /// Tell native Android to update the PiP RemoteAction icon based on listening state.
+  void _updatePipMicIcon() {
+    if (_isPipMode) {
+      _pipChannel.invokeMethod('updatePipMicState', _isListening);
     }
   }
 
