@@ -48,21 +48,19 @@ class GatewayService {
 
     final alreadyRunning = await NativeBridge.isGatewayRunning();
     if (alreadyRunning) {
-      // Write allowCommands config so the next gateway restart picks it up,
-      // and in case the running gateway supports config hot-reload.
-      await _configureGateway();
+      // PROD FIX: If already running, DO NOT call start().
+      // Just attach to the existing process.
       _updateState(_state.copyWith(
-        status: GatewayStatus.starting,
+        status: GatewayStatus.starting, // Transitioning to attached state
         dashboardUrl: savedUrl,
         logs: [..._state.logs, '[INFO] Gateway process detected, reconnecting...'],
       ));
 
       _subscribeLogs();
       _startHealthCheck();
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
-      ));
-      await start();
+      
+      // Proactively try to get the token from the existing process
+      await fetchAuthenticatedDashboardUrl(force: true);
     } else {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']
@@ -130,12 +128,12 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
 
     try {
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
         timeout: 15,
       );
       // Clean up any stale/invalid keys from previous versions
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw doctor --fix',
         timeout: 15,
       );
     } catch (_) {
@@ -149,7 +147,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     try {
       // Set primary model via official CLI (avoids schema violations from manual JSON)
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config set agents.defaults.model.primary "$model"',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw config set agents.defaults.model.primary "$model"',
         timeout: 15,
       );
     } catch (_) {
@@ -165,7 +163,7 @@ c.agents.defaults.model.primary = "$model";
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 ''';
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
         timeout: 15,
       );
     }
@@ -173,7 +171,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     // Always run doctor --fix to clean up any invalid keys
     try {
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw doctor --fix',
         timeout: 15,
       );
     } catch (_) {}
@@ -277,7 +275,7 @@ updateJson(agentAuthPath, (c) => {
 ''';
 
     await NativeBridge.runInProot(
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
       timeout: 15,
     );
   }
@@ -332,7 +330,7 @@ updateJson(agentAuthPath, (c) => {
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw dashboard --no-open',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);
@@ -384,7 +382,7 @@ try {
 ''';
     try {
       final token = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e ${_shellEscape(script)}',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
         timeout: 5,
       );
       final trimmedToken = token.trim();
@@ -429,13 +427,25 @@ try {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] GatewayService.start: NativeBridge.startGateway success=$success'],
       ));
+
+      // PROD UPGRADE: Proactive Check for Battery Optimization
+      try {
+        final isOptimized = await NativeBridge.isBatteryOptimized();
+        if (isOptimized) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE. This may kill the server in the background.'],
+          ));
+          await NativeBridge.requestBatteryOptimization();
+        }
+      } catch (_) {}
+
       if (!success) {
         _updateState(_state.copyWith(
           logs: [..._state.logs, '[WARN] Native start failed, attempting doctor fix...'],
         ));
         try {
           await NativeBridge.runInProot(
-            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw doctor --fix',
             timeout: 30,
           );
         } catch (_) {}

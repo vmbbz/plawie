@@ -64,4 +64,5 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     // MLC-LLM: TVM runtime for native GPU inference (from libs/)
     // implementation(files("libs/tvm4j_core.jar"))
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 }
