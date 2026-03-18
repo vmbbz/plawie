@@ -521,6 +521,7 @@ class MainActivity : FlutterActivity() {
 
         createUrlNotificationChannel()
         requestNotificationPermission()
+        HeartbeatWorker.schedule(this) // PROD UPGRADE: Background heartbeat watchdog
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
