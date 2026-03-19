@@ -415,7 +415,7 @@
             // The avatar's feet are at Y=0 (set by the Unified Height Engine).
             // We position the camera so feet appear near the screen bottom
             // and the avatar fills the view proportionally.
-            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.4;
+            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.85;
             const halfFov = (camera.fov * Math.PI) / 360;
             const tanHalf = Math.tan(halfFov);
 
@@ -431,11 +431,9 @@
             targetCameraZ = dist;
 
             // The camera sees (dist * tanHalf) units above and below its Y.
-            // To ground feet at the bottom of the screen:
-            //   cameraY - visibleHalf = 0  →  cameraY = visibleHalf
-            // Then nudge slightly up so feet aren't clipped by the input bar.
+            // GROUND_OFFSET = -0.05: negative nudges feet fully into frame at bottom edge.
             const visibleHalf = dist * tanHalf;
-            const GROUND_OFFSET = isOverlay ? 0.3 : 0.12; 
+            const GROUND_OFFSET = isOverlay ? 0.3 : -0.05;
             const cameraY = visibleHalf + GROUND_OFFSET;
 
             camera.position.set(avatarMetrics.centerX, cameraY, targetCameraZ);
@@ -482,7 +480,37 @@
             if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Tap gaze target updated');
         };
 
+        // ── Touch Orbit Camera (360° Y-axis rotation, auto-reset after 4s) ──
+        let orbitAngle = 0;         // Current orbit angle (radians)
+        let orbitTarget = 0;        // Target angle to lerp toward
+        let lastOrbitTime = -100;   // Time of last drag event
+        let isDragging = false;
+        let dragStartX = 0;
+        const ORBIT_DRAG_SENSITIVITY = 0.01; // radians per px
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                dragStartX = e.touches[0].clientX;
+                lastOrbitTime = clock.elapsedTime;
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!isDragging || e.touches.length !== 1) return;
+            const dx = e.touches[0].clientX - dragStartX;
+            dragStartX = e.touches[0].clientX;
+            orbitTarget += dx * ORBIT_DRAG_SENSITIVITY;
+            lastOrbitTime = clock.elapsedTime;
+        }, { passive: true });
+
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+            lastOrbitTime = clock.elapsedTime;
+        }, { passive: true });
+
         window.addEventListener('mousemove', (e) => {
+            if (isDragging) return; // Don't update gaze while orbiting
             targetLookX = (e.clientX / window.innerWidth) * 2 - 1;
             targetLookY = -(e.clientY / window.innerHeight) * 2 + 1;
             targetLookX = Math.max(-0.6, Math.min(0.6, targetLookX));
@@ -498,8 +526,28 @@
                 if (mixer) mixer.update(delta);
                 if (window.SparkleManager) window.SparkleManager.update(delta);
 
+
                 currentCameraZ = THREE.MathUtils.lerp(currentCameraZ, targetCameraZ, delta * 3.0);
-                camera.position.z = currentCameraZ;
+
+                // ── Orbit Camera Update (polar coords around avatar Y axis) ──
+                const urlParamsAnim = new URLSearchParams(window.location.search);
+                const isOverlayAnim = urlParamsAnim.get('overlay') === 'true' || dynamicPip;
+                if (!isOverlayAnim) {
+                    // Auto-reset orbit to front after 4 seconds of inactivity
+                    const timeSinceOrbit = clock.elapsedTime - lastOrbitTime;
+                    if (!isDragging && timeSinceOrbit > 4.0) {
+                        orbitTarget = THREE.MathUtils.lerp(orbitTarget, 0, delta * 2.0);
+                    }
+                    orbitAngle = THREE.MathUtils.lerp(orbitAngle, orbitTarget, delta * 4.0);
+
+                    // Polar orbit: camera circles avatar at constant radius
+                    const camY = camera.position.y; // keep existing height
+                    camera.position.x = Math.sin(orbitAngle) * currentCameraZ + avatarMetrics.centerX;
+                    camera.position.z = Math.cos(orbitAngle) * currentCameraZ;
+                    camera.lookAt(avatarMetrics.centerX, camY, 0);
+                } else {
+                    camera.position.z = currentCameraZ;
+                }
 
                 const time = clock.elapsedTime;
 

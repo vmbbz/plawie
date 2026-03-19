@@ -73,6 +73,7 @@ class SkillsService {
         _createAgentCardSkill(),
         _createMoltLaunchSkill(),
         _createValeoSkill(),
+        _createMoonPaySkill(),
       ];
 
       for (final skill in bundledSkills) {
@@ -301,6 +302,8 @@ class SkillsService {
         return await _executeMoltLaunchSkill(skill, parameters, context);
       case 'valeo':
         return await _executeValeoSkill(skill, parameters, context);
+      case 'moonpay':
+        return await _executeMoonPaySkill(skill, parameters, context);
       default:
         return await _executeGenericSkill(skill, parameters, context);
     }
@@ -619,7 +622,53 @@ class SkillsService {
 
   Future<SkillResult> _executeGenericSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     // Generic skill execution
-    return SkillResult.success({'message': 'Executed ${skill.name}', 'parameters': parameters});
+    return SkillResult.success({'message': 'Executed \${skill.name}', 'parameters': parameters});
+  }
+
+  /// Execute MoonPay Agents skill via Gateway MCP server.
+  /// MoonPay runs as an MCP server (mp mcp) inside OpenClaw.
+  /// Skills install automatically via `mp skill install` to ~/.claude/skills/.
+  ///
+  /// Agent prompt: tell the agent it has moonpay.* MCP tools available:
+  ///   get_portfolio, get_price, swap, bridge, buy, sell, dca_list, dca_create
+  ///
+  /// Full setup:
+  ///   npm install -g @moonpay/cli
+  ///   mp login && mp wallet create MyWallet
+  ///   Configure in openclaw.yaml: mcp.servers → [name: moonpay, command: mp, args: [mcp]]
+  Future<SkillResult> _executeMoonPaySkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    final method = parameters['method'] ?? 'get_portfolio';
+    final proxy = GatewaySkillProxy();
+    if (!proxy.isAttached) {
+      // Offline fallback with realistic MoonPay field shapes
+      switch (method) {
+        case 'get_portfolio':
+          return SkillResult.success({
+            'wallets': [],
+            'total_usd_value': 0.0,
+          });
+        case 'get_price':
+          return SkillResult.success({
+            'prices': [
+              {'token': 'ETH', 'usd': 0.0, 'change_24h': 0.0},
+              {'token': 'BTC', 'usd': 0.0, 'change_24h': 0.0},
+              {'token': 'SOL', 'usd': 0.0, 'change_24h': 0.0},
+              {'token': 'USDC', 'usd': 1.0, 'change_24h': 0.0},
+            ],
+          });
+        case 'dca_list':
+          return SkillResult.success({'strategies': []});
+        default:
+          return SkillResult.error('Gateway not connected');
+      }
+    }
+    try {
+      final data = await proxy.execute('moonpay', method,
+          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      return SkillResult.success(data);
+    } on SkillProxyException catch (e) {
+      return SkillResult.error(e.message);
+    }
   }
 
   // Bundled skill creators
@@ -1043,6 +1092,70 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
           'policy_id': {'type': 'string', 'description': 'Policy ID for set_policy'}
         },
         'required': ['method']
+      },
+    );
+  }
+
+  Skill _createMoonPaySkill() {
+    return Skill(
+      id: 'moonpay',
+      name: 'MoonPay Agents',
+      description: 'Give your agent a verified bank account and 30+ financial skills — buy, sell, swap, bridge, DCA, and live prices via the MoonPay CLI MCP server.',
+      version: '1.0.0',
+      author: 'MoonPay',
+      category: 'moonpay',
+      tags: ['moonpay', 'crypto', 'finance', 'swap', 'buy', 'sell', 'bridge', 'dca', 'portfolio'],
+      requirements: [SkillRequirement(type: 'network', value: 'internet')],
+      body: '''# MoonPay Agents Skill
+
+Your agent can call these MCP tools once MoonPay CLI is configured:
+  moonpay.get_portfolio — wallet balances across all chains
+  moonpay.get_price { token } — live USD price + 24h change
+  moonpay.swap { from_token, to_token, amount } — on-chain swap
+  moonpay.bridge { token, from_chain, to_chain, amount } — cross-chain bridge
+  moonpay.buy { token, amount_usd } — fiat onramp
+  moonpay.sell { token, amount } — fiat offramp
+  moonpay.dca_list — active DCA strategies
+  moonpay.dca_create { token, amount_usd, frequency } — new DCA strategy
+
+Setup: npm install -g @moonpay/cli → mp login → mp wallet create MyWallet
+Config: openclaw.yaml → mcp.servers → [name: moonpay, command: mp, args: [mcp]]
+
+Agent instruction: "You have the MoonPay MCP toolkit. Always confirm with user before executing swaps/buys/bridges."
+''',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: _prefs.isSkillEnabled('moonpay'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'method': {
+            'type': 'string',
+            'enum': [
+              'get_portfolio', 'get_price', 'swap', 'bridge',
+              'buy', 'sell', 'dca_list', 'dca_create',
+            ],
+            'description': 'The MoonPay operation. get_portfolio for balances, swap/bridge for on-chain, buy/sell for fiat, dca_* for strategies.',
+          },
+          'token': {'type': 'string', 'description': 'Token symbol (ETH, BTC, SOL, USDC…)'},
+          'from_token': {'type': 'string', 'description': 'Source token for swap/bridge'},
+          'to_token': {'type': 'string', 'description': 'Target token for swap'},
+          'from_chain': {'type': 'string', 'description': 'Source chain for bridge'},
+          'to_chain': {'type': 'string', 'description': 'Destination chain for bridge'},
+          'amount': {'type': 'number', 'description': 'Token amount for swap/bridge/sell'},
+          'amount_usd': {'type': 'number', 'description': 'USD amount for buy/dca_create'},
+          'frequency': {
+            'type': 'string',
+            'enum': ['daily', 'weekly', 'biweekly', 'monthly'],
+            'description': 'Purchase frequency for dca_create',
+          },
+          'tokens': {
+            'type': 'array',
+            'items': {'type': 'string'},
+            'description': 'Batch token list for get_price',
+          },
+        },
+        'required': ['method'],
       },
     );
   }

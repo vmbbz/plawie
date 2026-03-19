@@ -8,6 +8,7 @@ import 'skills/agent_wallet_page.dart';
 import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
 import 'skills/agent_calls_page.dart';
+import 'skills/agent_moonpay_page.dart';
 import '../solana_screen.dart';
 import 'bot_method_explorer.dart';
 
@@ -21,6 +22,7 @@ const _premiumSkills = [
     description: 'Issue virtual Visa cards, manage balances, and make autonomous payments for your AI agent.',
     icon: Icons.account_balance_wallet_rounded,
     color: Color(0xFF3D52D5), // AgentCard navy
+    tooltip: 'AgentCard.ai gives your agent a virtual Visa card with real spending power. Your agent can create cards, top them up, check balances, and make autonomous payments — all on-chain on Base.',
   ),
   _SkillEntry(
     id: 'molt_launch',
@@ -29,6 +31,7 @@ const _premiumSkills = [
     description: 'Get hired for AI agent work. Escrow payments on Base chain. ERC-8004 identity + reputation.',
     icon: Icons.work_rounded,
     color: Colors.orangeAccent,
+    tooltip: 'MoltLaunch is an on-chain job marketplace for AI agents. Your agent gets an ERC-8004 identity NFT on Base, can browse posted jobs, bid, and receive ETH escrow payments on completion.',
   ),
   _SkillEntry(
     id: 'valeo_sentinel',
@@ -37,6 +40,7 @@ const _premiumSkills = [
     description: 'x402 spending policy for autonomous agents — per-call, hourly & daily budget caps.',
     icon: Icons.credit_score_rounded,
     color: AppColors.statusGreen,
+    tooltip: 'Valeo Sentinel enforces x402 protocol spending rules on your agent. Set per-call, hourly, daily, and lifetime USD budget caps. Every payment is audit-logged on-chain so you can review exactly what your agent spent.',
   ),
   _SkillEntry(
     id: 'twilio_voice',
@@ -45,6 +49,16 @@ const _premiumSkills = [
     description: 'ConversationRelay voice orchestration — inbound/outbound with real-time AI transcription.',
     icon: Icons.phone_android_rounded,
     color: Colors.redAccent,
+    tooltip: 'Your agent can make and receive phone calls, transcribe conversations in real-time using Deepgram, and orchestrate AI-driven call flows via Twilio ConversationRelay.',
+  ),
+  _SkillEntry(
+    id: 'moonpay',
+    title: 'Finance',
+    subtitle: 'MoonPay',
+    description: 'Verified agent bank account + 30 financial skills: swap, bridge, buy/sell, DCA, live prices.',
+    icon: Icons.currency_exchange_rounded,
+    color: Color(0xFF7B2FBE),
+    tooltip: 'Give your agent a verified bank account. It can swap tokens, bridge cross-chain, buy/sell crypto via fiat, check portfolio, and run DCA strategies — all from natural language commands in chat.',
   ),
 ];
 
@@ -191,6 +205,9 @@ class _SkillsManagerState extends State<SkillsManager> {
         break;
       case 'twilio_voice':
         page = const AgentCallsPage();
+        break;
+      case 'moonpay':
+        page = const AgentMoonPayPage();
         break;
       default:
         return;
@@ -708,6 +725,7 @@ class _SkillEntry {
   final String description;
   final IconData icon;
   final Color color;
+  final String? tooltip;
   const _SkillEntry({
     required this.id,
     required this.title,
@@ -715,6 +733,7 @@ class _SkillEntry {
     required this.description,
     required this.icon,
     required this.color,
+    this.tooltip,
   });
 }
 
@@ -861,7 +880,113 @@ class _ServiceCard extends StatelessWidget {
                           ),
                         ),
             ),
+            // Tooltip info icon — long press or tap for detailed capability hint
+            if (skill.tooltip != null)
+              Positioned(
+                bottom: 10,
+                right: 10,
+                child: GestureDetector(
+                  onTap: () {
+                    final overlay = Overlay.of(context);
+                    final entry = OverlayEntry(
+                      builder: (_) => _SkillTooltipOverlay(
+                        message: skill.tooltip!,
+                        color: skill.color,
+                      ),
+                    );
+                    overlay.insert(entry);
+                    Future.delayed(const Duration(seconds: 4), entry.remove);
+                  },
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: skill.color.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Overlay that shows a tooltip over the skill card for 4 seconds
+class _SkillTooltipOverlay extends StatefulWidget {
+  final String message;
+  final Color color;
+  const _SkillTooltipOverlay({required this.message, required this.color});
+
+  @override
+  State<_SkillTooltipOverlay> createState() => _SkillTooltipOverlayState();
+}
+
+class _SkillTooltipOverlayState extends State<_SkillTooltipOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
+    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) _ctrl.reverse();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: FadeTransition(
+          opacity: _opacity,
+          child: Align(
+            alignment: const Alignment(0, 0.4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A2E).withValues(alpha: 0.97),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: widget.color.withValues(alpha: 0.4)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(alpha: 0.15),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.psychology_outlined, color: widget.color, size: 18),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        widget.message,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

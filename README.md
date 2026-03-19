@@ -85,11 +85,47 @@ A premium dashboard with domain-specific icons (System, Config, Agents) providin
 An interactive `JsonEditor` allows you to manage `openclaw.json` and your agent configurations directly on-device. No SSH or command-line required for tuning your agents.
 
 ### 3. Premium Agent Skills (Claude Standard)
+
 We've integrated high-fidelity, functional skills standardized for Claude's "Tool Use" protocol:
-- **Twilio Voice**: Bridge your agent to real telephony via ConversationRelay.
-- **AgentCard (Alchemy)**: Programmatic Visa/Mastercard issuance for autonomous spending.
-- **MoltLaunch (Base L2)**: On-chain workforce coordination and reputation tracking.
-- **Valeo Sentinel**: Strict budget policies and automated audit trails for compliance.
+
+| Skill | Provider | What Your Agent Can Do |
+|-------|----------|------------------------|
+| 💳 **Wallet** | AgentCard.ai | Issue virtual Visa cards, top up & spend autonomously on Base |
+| 🔨 **Work** | MoltLaunch | Browse & bid on on-chain AI jobs, receive ETH escrow payments |
+| 🛡️ **Credit** | Valeo Sentinel | x402 budget caps (per-call / hourly / daily), full audit log |
+| 📞 **Calls** | Twilio AI | Inbound & outbound voice via ConversationRelay, real-time transcription |
+| 💸 **Finance** | MoonPay Agents | Buy, sell, swap, bridge crypto • portfolio check • DCA strategies • live prices |
+
+#### 🌙 MoonPay Agents — Agent Banking
+
+MoonPay gives your AI a **verified bank account and 30+ financial skills** via the `@moonpay/cli` MCP server. Once configured in OpenClaw, your agent gains natural-language access to:
+
+- **Portfolio checks** — multi-chain wallet balances across ETH / BTC / SOL / USDC
+- **Token swaps** — on-chain via `moonpay.swap { from_token, to_token, amount }`
+- **Cross-chain bridges** — via `moonpay.bridge { token, from_chain, to_chain, amount }`
+- **Fiat onramps/offramps** — `moonpay.buy / moonpay.sell`
+- **DCA strategies** — `moonpay.dca_create { token, amount_usd, frequency }`
+- **Live market prices** — `moonpay.get_price { token }`
+
+```bash
+# Setup (one-time, run on your device via OpenClaw terminal)
+npm install -g @moonpay/cli
+mp login
+mp wallet create MyWallet
+mp skill install   # installs OpenClaw-optimised skill prompts
+```
+
+```yaml
+# openclaw.yaml — add MoonPay as MCP server
+mcp:
+  servers:
+    - name: moonpay
+      command: mp
+      args: [mcp]
+```
+
+> **Security:** Your private keys stay on your device. MoonPay CLI signs all transactions locally. Nothing leaves your hardware.
+
 - **Discovery Engine**: Native `/api/tools` endpoint for "Progressive Disclosure" skill loading.
 
 ---
