@@ -1076,7 +1076,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
           ),
         ),
-  centerTitle: true,
+      centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.add_comment_outlined, color: Colors.white70),
@@ -1086,40 +1086,108 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             },
             tooltip: 'New Chat',
           ),
-          IconButton(
-            icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white70),
-            onPressed: () async {
-              try {
-                await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('PiP Mode not supported: $e')),
-                  );
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
+            tooltip: 'More',
+            color: const Color(0xFF1A1A2E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            onSelected: (value) async {
+              if (value == 'pip') {
+                try {
+                  await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('PiP not supported: $e')),
+                    );
+                  }
                 }
               }
             },
-            tooltip: 'Picture in Picture',
+            itemBuilder: (ctx) => [
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Builder(
+                  builder: (ctx2) => ListTile(
+                    dense: true,
+                    leading: Icon(
+                      Icons.picture_in_picture_alt,
+                      color: Colors.white70,
+                      size: 20,
+                    ),
+                    title: const Text('Picture in Picture',
+                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    onTap: () async {
+                      Navigator.pop(ctx2);
+                      try {
+                        await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
+                      } catch (_) {}
+                    },
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Builder(
+                  builder: (ctx2) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.history, color: Colors.white70, size: 20),
+                    title: const Text('Chat Sessions',
+                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    onTap: () {
+                      Navigator.pop(ctx2);
+                      Scaffold.of(context).openEndDrawer();
+                    },
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Builder(
+                  builder: (ctx2) => ListTile(
+                    dense: true,
+                    leading: Icon(
+                      _isChatCollapsed ? Icons.unfold_more : Icons.unfold_less,
+                      color: _isChatCollapsed ? AppColors.statusGreen : Colors.white70,
+                      size: 20,
+                    ),
+                    title: Text(
+                      _isChatCollapsed ? 'Expand Chat' : 'Voice Only Mode',
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx2);
+                      setState(() => _isChatCollapsed = !_isChatCollapsed);
+                    },
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Builder(
+                  builder: (ctx2) => ListTile(
+                    dense: true,
+                    leading: Icon(
+                      _showDiagnostics ? Icons.bug_report : Icons.bug_report_outlined,
+                      color: _showDiagnostics ? AppColors.statusGreen : Colors.white54,
+                      size: 20,
+                    ),
+                    title: Text(
+                      _showDiagnostics ? 'Hide Diagnostics' : 'Show Diagnostics',
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx2);
+                      setState(() => _showDiagnostics = !_showDiagnostics);
+                    },
+                  ),
+                ),
+              ),
+            ],
           ),
-          Builder(
-            builder: (ctx) => IconButton(
-              icon: const Icon(Icons.history, color: Colors.white70),
-              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
-              tooltip: 'Chat Sessions',
-            ),
-          ),
-          IconButton(
-            icon: Icon(_isChatCollapsed ? Icons.unfold_more : Icons.unfold_less, 
-                       color: _isChatCollapsed ? AppColors.statusGreen : Colors.white70),
-            onPressed: () => setState(() => _isChatCollapsed = !_isChatCollapsed),
-            tooltip: 'Toggle Voice Only Mode',
-          ),
-          IconButton(
-            icon: Icon(_showDiagnostics ? Icons.bug_report : Icons.bug_report_outlined, 
-                       color: _showDiagnostics ? AppColors.statusGreen : Colors.white54),
-            onPressed: () => setState(() => _showDiagnostics = !_showDiagnostics),
-            tooltip: 'Toggle Diagnostics',
-          )
         ],
       ),
       body: Stack(
