@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/gateway_state.dart';
 import '../services/gateway_service.dart' as svc;
+import '../services/gateway_skill_proxy.dart';
 
 class GatewayProvider extends ChangeNotifier {
   final svc.GatewayService _gatewayService = svc.GatewayService();
@@ -26,6 +27,9 @@ class GatewayProvider extends ChangeNotifier {
       _state = state;
       notifyListeners();
     });
+    // Wire the GatewaySkillProxy singleton so all skill pages can call
+    // gateway.invoke('skills.execute', ...) without needing BuildContext.
+    GatewaySkillProxy().attach(this);
     // Check if gateway is already running (e.g. after app restart)
     _gatewayService.init();
   }

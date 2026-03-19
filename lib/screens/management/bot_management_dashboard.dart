@@ -188,7 +188,9 @@ class StatusSummaryCard extends StatelessWidget {
         final health = provider.detailedHealth;
         final uptimeMs = health?['uptimeMs'] as int?;
         final isHealthy = provider.state.status == GatewayStatus.running;
-        final agentsCount = (health?['agents'] as List?)?.length ?? 0;
+        // health RPC returns { uptimeMs, health: { durationMs, agents:[], ok } }
+        final healthInner = health?['health'] as Map<String, dynamic>?;
+        final agentsCount = (healthInner?['agents'] as List?)?.length ?? 0;
 
         return Container(
           decoration: BoxDecoration(
@@ -234,7 +236,7 @@ class StatusSummaryCard extends StatelessWidget {
                   _buildMetric(
                     context, 
                     'LATENCY', 
-                    health?['durationMs'] != null ? '${health?['durationMs']}ms' : '--',
+                    healthInner?['durationMs'] != null ? 'ms' : '--',
                     Icons.speed_rounded,
                     AppColors.statusAmber,
                   ),

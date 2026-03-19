@@ -30,7 +30,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   bool _apiKeyObscured = true;
 
   // Step 3: Agent Name
-  final _agentNameController = TextEditingController(text: 'Clawa');
+  final _agentNameController = TextEditingController(text: 'Plawie');
 
   // Step 5: Launch status
   String _launchStatus = '';
@@ -311,7 +311,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Clawa Setup',
+                  'Plawie Setup',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
@@ -641,7 +641,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             fontWeight: FontWeight.w700,
           ),
           decoration: InputDecoration(
-            hintText: 'e.g. Clawa, Jarvis, Friday...',
+            hintText: 'e.g. Plawie, Jarvis, Nova...',
             prefixIcon: const Icon(Icons.smart_toy_outlined, size: 22),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -653,7 +653,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: ['Clawa', 'Atlas', 'Nova', 'Sage', 'Echo']
+          children: ['Plawie', 'Atlas', 'Nova', 'Sage', 'Echo']
               .map(
                 (name) => ActionChip(
                   label: Text(name),

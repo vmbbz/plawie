@@ -10,6 +10,7 @@ import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
+import 'gateway_skill_proxy.dart';
 
 /// Skills System with YAML frontmatter and dynamic loading
 /// Inspired by SeekerClaw's skills architecture
@@ -473,51 +474,146 @@ class SkillsService {
     return SkillResult.success({'text': text, 'length': text.length, 'words': text.split(' ').length});
   }
 
+  /// Execute Twilio Voice skill via Gateway.
+  /// Response fields per Twilio REST API: phone_number (E.164), status, concurrent_sessions,
+  /// inbound_count, total_duration_h, transcription_enabled, relay_enabled,
+  /// call_logs: [{sid, from, to, direction, duration, status, summary, date_created}]
   Future<SkillResult> _executeTwilioSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     final method = parameters['method'] ?? 'get_status';
-    switch (method) {
-      case 'get_status':
-        return SkillResult.success({'phone_number': '+1234567890', 'status': 'active', 'concurrent_sessions': 2});
-      case 'send_message':
-        return SkillResult.success({'status': 'sent', 'to': parameters['to'], 'body': parameters['body']});
-      default:
-        return SkillResult.error('Unknown Twilio method: $method');
+    final proxy = GatewaySkillProxy();
+    if (!proxy.isAttached) {
+      // Offline fallback — realistic field names matching Twilio REST API
+      switch (method) {
+        case 'get_status':
+          return SkillResult.success({
+            'phone_number': '',
+            'status': 'disconnected',
+            'concurrent_sessions': 0,
+            'inbound_count': 0,
+            'total_duration_h': 0,
+            'transcription_enabled': false,
+            'relay_enabled': false,
+            'call_logs': [],
+          });
+        default:
+          return SkillResult.error('Gateway not connected');
+      }
+    }
+    try {
+      final data = await proxy.execute('twilio_voice', method,
+          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      return SkillResult.success(data);
+    } on SkillProxyException catch (e) {
+      return SkillResult.error(e.message);
     }
   }
 
+  /// Execute AgentCard.ai skill via Gateway.
+  /// Official product: Visa virtual card by AgentCard.ai (agentcard.ai) — private beta.
+  /// CLI: agentcard cards create --amount X / agentcard cards details [id]
+  /// Response fields: id, last4, balance (cents), spendLimit (cents), status (OPEN|PAUSED|TERMINATED),
+  ///   expiryMonth, expiryYear, network ('Visa'), autoRefill (bool), cardholderName
   Future<SkillResult> _executeAgentCardSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     final method = parameters['method'] ?? 'get_balance';
-    switch (method) {
-      case 'get_balance':
-        return SkillResult.success({'balanceCents': 50000, 'spendLimitCents': 100000, 'status': 'OPEN', 'last4': '4242'});
-      case 'create_card':
-        return SkillResult.success({'id': 'card_new_123', 'status': 'OPEN', 'last4': '9999'});
-      default:
-        return SkillResult.error('Unknown AgentCard method: $method');
+    final proxy = GatewaySkillProxy();
+    if (!proxy.isAttached) {
+      switch (method) {
+        case 'get_balance':
+          return SkillResult.success({
+            'id': '',
+            'last4': '----',
+            'balance': 0,
+            'spendLimit': 0,
+            'status': 'DISCONNECTED',
+            'expiryMonth': '--',
+            'expiryYear': '----',
+            'network': 'Visa',
+            'autoRefill': false,
+          });
+        default:
+          return SkillResult.error('Gateway not connected');
+      }
+    }
+    try {
+      final data = await proxy.execute('agent_card', method,
+          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      return SkillResult.success(data);
+    } on SkillProxyException catch (e) {
+      return SkillResult.error(e.message);
     }
   }
 
+  /// Execute MoltLaunch skill via Gateway.
+  /// MoltLaunch / Molt.ID: Solana-based AI agent job marketplace (moltdotid/AutoPilot-Molt-CLI).
+  /// Identity = NFT public key on Solana. Jobs are on-chain transactions via Multiclaw tx-queue API.
+  /// get_identity fields: wallet_pubkey, display_name, verified, jobs_count, reputation_score (0.0-1.0)
+  /// get_rep fields: reputation_score, total_jobs_completed, pending_payouts (lamports), active_gig_list[]
+  ///   gig: { title, status (in_progress|pending_review|bidding|completed), price (lamports), currency }
   Future<SkillResult> _executeMoltLaunchSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     final method = parameters['method'] ?? 'get_rep';
-    switch (method) {
-      case 'get_rep':
-        return SkillResult.success({'reputation_score': 0.98, 'total_jobs_completed': 142, 'pending_payouts': 450});
-      case 'post_job':
-        return SkillResult.success({'job_id': 'job_001', 'status': 'posted'});
-      default:
-        return SkillResult.error('Unknown MoltLaunch method: $method');
+    final proxy = GatewaySkillProxy();
+    if (!proxy.isAttached) {
+      switch (method) {
+        case 'get_identity':
+          return SkillResult.success({
+            'wallet_pubkey': '',
+            'display_name': '',
+            'verified': false,
+            'jobs_count': 0,
+            'reputation_score': 0.0,
+          });
+        case 'get_rep':
+          return SkillResult.success({
+            'reputation_score': 0.0,
+            'total_jobs_completed': 0,
+            'pending_payouts': 0,
+            'active_gig_list': [],
+          });
+        default:
+          return SkillResult.error('Gateway not connected');
+      }
+    }
+    try {
+      final data = await proxy.execute('molt_launch', method,
+          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      return SkillResult.success(data);
+    } on SkillProxyException catch (e) {
+      return SkillResult.error(e.message);
     }
   }
 
+  /// Execute Valeo Sentinel skill via Gateway.
+  /// Valeo.cash Sentinel: x402 payment protocol compliance & budget enforcement for AI agents.
+  /// Budget caps: per_call_limit, hourly_limit, daily_limit, lifetime_limit (all in USD cents).
+  /// Audit log fields per Valeo docs: agentId, team, endpoint, tx_hash, timing, action, amount_cents, result.
+  /// result values: 'approved' | 'blocked' | 'pending'
   Future<SkillResult> _executeValeoSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     final method = parameters['method'] ?? 'get_budget';
-    switch (method) {
-      case 'get_budget':
-        return SkillResult.success({'budget_cap': 5000, 'current_spend': 1200, 'audit_log': ['Login', 'Pay tx_01']});
-      case 'set_policy':
-        return SkillResult.success({'policy_id': parameters['policy_id'], 'status': 'applied'});
-      default:
-        return SkillResult.error('Unknown Valeo method: $method');
+    final proxy = GatewaySkillProxy();
+    if (!proxy.isAttached) {
+      switch (method) {
+        case 'get_budget':
+          return SkillResult.success({
+            'budget_cap': 0,
+            'current_spend': 0,
+            'sentinel_active': false,
+            'policy_id': '--',
+            'per_call_limit': 0,
+            'hourly_limit': 0,
+            'daily_limit': 0,
+            'lifetime_limit': 0,
+            'audit_log': [],
+          });
+        default:
+          return SkillResult.error('Gateway not connected');
+      }
+    }
+    try {
+      final data = await proxy.execute('valeo_sentinel', method,
+          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      return SkillResult.success(data);
+    } on SkillProxyException catch (e) {
+      return SkillResult.error(e.message);
     }
   }
 

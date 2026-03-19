@@ -415,7 +415,7 @@
             // The avatar's feet are at Y=0 (set by the Unified Height Engine).
             // We position the camera so feet appear near the screen bottom
             // and the avatar fills the view proportionally.
-            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.1;
+            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.4;
             const halfFov = (camera.fov * Math.PI) / 360;
             const tanHalf = Math.tan(halfFov);
 
@@ -435,7 +435,7 @@
             //   cameraY - visibleHalf = 0  →  cameraY = visibleHalf
             // Then nudge slightly up so feet aren't clipped by the input bar.
             const visibleHalf = dist * tanHalf;
-            const GROUND_OFFSET = isOverlay ? 0.3 : 0.30; // Lift well above screen edge / input bar
+            const GROUND_OFFSET = isOverlay ? 0.3 : 0.12; 
             const cameraY = visibleHalf + GROUND_OFFSET;
 
             camera.position.set(avatarMetrics.centerX, cameraY, targetCameraZ);
