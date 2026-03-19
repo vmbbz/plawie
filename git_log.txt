@@ -1,5 +1,0 @@
-79d7d33 Hotfix: Restore trueHeight definition and VRM lateral shift in avatar_scene
-01b3f1e Refactor: Simplified avatar framing (5% zoom), robust Piper TTS download flow with global progress UI, and integrated high-quality legacy animations.
-8533ec0 Fix terminal JVM faults and API rate limit blanks
-87cc9f2 Fix terminal crash, API UI errors, and Avatar framing
-36b9404 Fix terminal crash & UI polish

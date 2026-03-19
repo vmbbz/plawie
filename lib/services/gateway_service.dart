@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
@@ -58,9 +57,30 @@ class GatewayService {
 
       _subscribeLogs();
       _startHealthCheck();
-      
+      // FIX: Fire an immediate health check so the UI doesn't wait for the
+      // first timer tick (which can be 5–10 seconds after wake-up).
+      unawaited(_checkHealth());
+
       // Proactively try to get the token from the existing process
       await fetchAuthenticatedDashboardUrl(force: true);
+
+      // FIX: Connect (or reconnect) the WebSocket after waking from sleep.
+      // Previously, init() never initiated a WS connection, so all RPC
+      // calls (chat, skills, bot management) silently failed even though
+      // the HTTP gateway was reachable. The WS reconnect counter may also
+      // be exhausted after hours of background use — reset it first.
+      try {
+        final token = await retrieveTokenFromConfig();
+        if (token != null && token.isNotEmpty) {
+          _connection ??= GatewayConnection();
+          // Reset exhausted reconnect counter from prior session
+          _connection!.resetReconnectCounter();
+          // Connect asynchronously — don't block init() on WS handshake
+          unawaited(_connection!.connect(token));
+        }
+      } catch (_) {
+        // Non-fatal — WS will retry via its own backoff loop
+      }
     } else {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']

@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 OpenClaw Agent Team
+Copyright (c) 2026 Plawie — OpenClaw Agent Team (vmbbz)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,27 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Third-Party Acknowledgements
+─────────────────────────────
+
+This software bundles or depends on the following open-source projects:
+
+• Flutter / Dart — BSD 3-Clause License — https://flutter.dev
+• three.js — MIT License — https://threejs.org
+• @pixiv/three-vrm — MIT License — https://github.com/pixiv/three-vrm
+• Node.js — MIT License — https://nodejs.org
+• OpenClaw — MIT License — https://github.com/openclaw (server runtime)
+• PRoot — GPL-2.0 License — https://proot-me.github.io
+• Piper TTS — MIT License — https://github.com/rhasspy/piper
+• Solana Dart SDK — Apache 2.0 — https://github.com/espresso-cash/espresso-cash-public
+• Jupiter Aggregator API — Terms at https://jup.ag
+• MoonPay CLI — Terms at https://moonpay.com/agents
+• Twilio ConversationRelay — Terms at https://twilio.com
+• AgentCard.ai — Terms at https://agentcard.ai
+• MoltLaunch — Terms at https://moltlaunch.xyz
+• Valeo — Terms at https://valeo.xyz
+
+All third-party trademarks are property of their respective owners.

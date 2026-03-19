@@ -27,7 +27,9 @@ class GatewayConnection {
 
   String? _token;
   int _reconnectAttempts = 0;
-  static const _maxReconnectAttempts = 10;
+  // 50 attempts ≈ 12+ minutes of exponential backoff.
+  // 10 was too small for phones that can be dormant for hours.
+  static const _maxReconnectAttempts = 50;
 
   final DeviceIdentity _identity = DeviceIdentity();
   bool _identityLoaded = false;
@@ -356,6 +358,14 @@ class GatewayConnection {
   void _updateState(GatewayConnectionState newState) {
     _state = newState;
     _stateNotifier.add(newState);
+  }
+
+  /// Reset the reconnect attempt counter so the automatic backoff loop
+  /// can start fresh. Call this when the app comes to the foreground after
+  /// a sleep/wake cycle where the old counter may have been exhausted.
+  void resetReconnectCounter() {
+    _reconnectAttempts = 0;
+    _reconnectTimer?.cancel();
   }
 
   /// Disconnect and stop reconnecting.

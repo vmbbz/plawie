@@ -87,7 +87,12 @@ class HelpScreen extends StatelessWidget {
                         icon: Icons.work_history_rounded,
                         gradient: [Colors.tealAccent, Colors.lightGreenAccent],
                       ),
-                      
+                      const SizedBox(height: 12),
+                      _buildMoonPayCard(context),
+
+                      const SizedBox(height: 24),
+                      _buildPremiumSkillsTable(context),
+
                       const SizedBox(height: 32),
                       _buildSectionHeader('Total Control'),
                       const SizedBox(height: 16),
@@ -417,6 +422,162 @@ class HelpScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMoonPayCard(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2D1060), Color(0xFF0A1F3C)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFF7B2FBE).withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7B2FBE).withValues(alpha: 0.15),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7B2FBE).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.currency_exchange_rounded,
+                    color: Color(0xFF9B6FDE), size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7B2FBE).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text('NEW — MCP SKILL',
+                          style: TextStyle(color: Color(0xFF9B6FDE), fontSize: 9, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Agent Banking via MoonPay',
+                        style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w800, fontSize: 16, color: Colors.white)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Give your AI a verified bank account. MoonPay Agents connects your OpenClaw agent to 30+ financial skills — swap tokens, bridge cross-chain, buy/sell crypto via fiat, and run DCA strategies — all from natural language in chat.',
+            style: GoogleFonts.outfit(
+                color: Colors.white70, fontSize: 13, height: 1.55),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              '💱 Swap', '🌉 Bridge', '💵 Buy/Sell', '📊 DCA', '📈 Live Prices',
+            ].map((label) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF7B2FBE).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF7B2FBE).withValues(alpha: 0.3)),
+              ),
+              child: Text(label,
+                  style: const TextStyle(color: Color(0xFF9B6FDE), fontSize: 11, fontWeight: FontWeight.w600)),
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumSkillsTable(BuildContext context) {
+    final skills = [
+      ('💳', 'Wallet', 'AgentCard.ai', 'Virtual Visa cards + autonomous spending on Base'),
+      ('🔨', 'Work', 'MoltLaunch', 'On-chain AI jobs • ETH escrow • ERC-8004 identity'),
+      ('🛡️', 'Credit', 'Valeo Sentinel', 'x402 budget caps: per-call / hourly / daily'),
+      ('📞', 'Calls', 'Twilio AI', 'AI voice calls + real-time transcription (Deepgram)'),
+      ('💸', 'Finance', 'MoonPay', 'Swap / bridge / buy / sell / DCA / live prices'),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('PREMIUM SKILLS',
+              style: GoogleFonts.outfit(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                  color: AppColors.statusGreen.withValues(alpha: 0.8))),
+          const SizedBox(height: 4),
+          Text('Tap ⓘ on any skill card in Agent Skills to see what your agent can do.',
+              style: GoogleFonts.outfit(
+                  fontSize: 11, color: Colors.white38)),
+          const SizedBox(height: 14),
+          ...skills.map((s) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.$1, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(s.$2,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 6),
+                          Text('/ ${s.$3}',
+                              style: const TextStyle(
+                                  color: Colors.white38, fontSize: 10)),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(s.$4,
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 11, height: 1.4)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
+        ],
       ),
     );
   }
