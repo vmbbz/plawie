@@ -45,14 +45,18 @@ class HelpScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildPitchHeader(context),
+                      const SizedBox(height: 28),
+
+                      // ═══ #1 FLAGSHIP HERO CARD — OpenClaw on your phone ═══
+                      _buildFlagshipCard(context),
                       const SizedBox(height: 40),
-                      
+
                       _buildSectionHeader('Your Pocket AI Power'),
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
                         title: 'Always-On Intelligence',
-                        description: 'Your bot never sleeps. It runs in the background 24/7, ready to help even if the app is closed.',
+                        description: 'Your OpenClaw gateway runs 24/7 in the background, even when the app is closed. Your AI is always standing by.',
                         icon: Icons.auto_awesome_rounded,
                         gradient: [Colors.blueAccent, Colors.cyanAccent],
                       ),
@@ -60,7 +64,7 @@ class HelpScreen extends StatelessWidget {
                       _buildHelpCard(
                         context,
                         title: 'Talk Like a Human',
-                        description: 'Use the floating mic to speak naturally. Your companion understands and acts on your voice commands.',
+                        description: 'Use the floating mic to speak naturally. Your companion understands context and acts on your voice commands in real time.',
                         icon: Icons.record_voice_over_rounded,
                         gradient: [Colors.orangeAccent, Colors.redAccent],
                       ),
@@ -71,7 +75,7 @@ class HelpScreen extends StatelessWidget {
                       _buildHelpCard(
                         context,
                         title: 'Web3 & Financials',
-                        description: 'Manage money, swap tokens, and issue virtual cards. No bank account or complex tech skills needed.',
+                        description: 'Manage money, swap tokens, and issue virtual cards. No bank account or complex tech skills needed — your agent handles it.',
                         icon: Icons.account_balance_wallet_rounded,
                         gradient: [Colors.purpleAccent, Colors.deepPurpleAccent],
                       ),
@@ -79,7 +83,7 @@ class HelpScreen extends StatelessWidget {
                       _buildHelpCard(
                         context,
                         title: 'Auto-Work & Calls',
-                        description: 'Your bot can handle phone calls, sms, and on-chain jobs while you focus on what matters.',
+                        description: 'Your bot handles phone calls, SMS, and on-chain jobs while you stay focused on what matters most.',
                         icon: Icons.work_history_rounded,
                         gradient: [Colors.tealAccent, Colors.lightGreenAccent],
                       ),
@@ -89,8 +93,8 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'Notifications & Safety',
-                        description: 'Control your bot directly from your phone notifications. Stop or restart with a single tap.',
+                        title: 'Command from Notifications',
+                        description: 'Stop or restart your gateway directly from the notification shade. Full control without opening the app.',
                         icon: Icons.notifications_active_rounded,
                         gradient: [Colors.pinkAccent, Colors.redAccent],
                       ),
@@ -100,16 +104,8 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'Private Linux Server',
-                        description: 'Your phone runs a real Linux environment with its own AI server. No cloud, no middleman — your data never leaves this device.',
-                        icon: Icons.dns_rounded,
-                        gradient: [const Color(0xFF6C63FF), const Color(0xFF3F3D99)],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildHelpCard(
-                        context,
-                        title: 'Self-Healing Background',
-                        description: 'A watchdog monitors your AI server every 30 seconds. If anything goes wrong, it auto-restarts — even if you swipe the app closed.',
+                        title: 'Self-Healing Background Service',
+                        description: 'A watchdog checks your AI server every 30 seconds. If anything goes wrong, it auto-restarts — even after you swipe the app away.',
                         icon: Icons.security_rounded,
                         gradient: [const Color(0xFF00B4D8), const Color(0xFF0077B6)],
                       ),
@@ -117,7 +113,7 @@ class HelpScreen extends StatelessWidget {
                       _buildHelpCard(
                         context,
                         title: 'Multi-Model Intelligence',
-                        description: 'Switch between Gemini, Claude, GPT and more. Your server orchestrates any AI model, running conversations locally through industry-standard protocols.',
+                        description: 'Switch between Gemini, Claude, GPT-4o and more. Your gateway orchestrates any AI model through industry-standard protocols.',
                         icon: Icons.hub_rounded,
                         gradient: [const Color(0xFFE76F51), const Color(0xFFF4A261)],
                       ),
@@ -184,7 +180,7 @@ class HelpScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Master Your Reality.',
+          'Your Phone.\nYour AI. Your Rules.',
           style: GoogleFonts.outfit(
             fontSize: 32,
             fontWeight: FontWeight.w900,
@@ -194,7 +190,7 @@ class HelpScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Plawie is the first 100% private, autonomous AI companion that lives entirely on your phone. No servers, no spying—just pure intelligence at your fingertips.',
+          'Plawie is the first app to run a complete OpenClaw AI gateway directly on your Android — no cloud, no server fees, total privacy.',
           style: GoogleFonts.outfit(
             fontSize: 16,
             color: Colors.white70,
@@ -202,6 +198,134 @@ class HelpScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// The #1 flagship selling point card — full OpenClaw gateway running on-device.
+  /// Based on ARCHITECTURE_REPORT.md: "No known production app ships a bundled
+  /// Linux rootfs + PRoot + Node.js + AI gateway inside a single Flutter APK."
+  Widget _buildFlagshipCard(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0A3D2B), Color(0xFF0D2A40)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: AppColors.statusGreen.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.statusGreen.withValues(alpha: 0.15),
+            blurRadius: 30,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.statusGreen.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.statusGreen.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.lock_rounded,
+                    color: AppColors.statusGreen,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.statusGreen.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'WORLD FIRST',
+                          style: GoogleFonts.outfit(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2,
+                            color: AppColors.statusGreen,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'OpenClaw AI — On Your Phone',
+                        style: GoogleFonts.outfit(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Plawie embeds a full OpenClaw AI gateway — the same server-grade intelligence used by enterprises — directly inside this APK. It runs inside a real Linux environment on your phone via PRoot. No root access. No subscription. No internet required.',
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                color: Colors.white.withValues(alpha: 0.8),
+                height: 1.55,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildFlagshipPill('🔒 100% Private'),
+                _buildFlagshipPill('⚡ No Cloud'),
+                _buildFlagshipPill('🐧 Real Linux'),
+                _buildFlagshipPill('📦 One APK'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlagshipPill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.outfit(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Colors.white70,
+        ),
+      ),
     );
   }
 
@@ -238,12 +362,12 @@ class HelpScreen extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () {}, 
+            onTap: () {},
             child: Padding(
               padding: const EdgeInsets.all(24.0),
               child: Row(
                 children: [
-                   Container(
+                  Container(
                     width: 54,
                     height: 54,
                     decoration: BoxDecoration(
@@ -304,9 +428,11 @@ class HelpScreen extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildSupportButton(context, 'Explore Code', 'https://github.com/vmbbz/plawie'),
+            _buildSupportButton(
+              context, 'Explore Code', 'https://github.com/vmbbz/plawie'),
             const SizedBox(width: 32),
-            _buildSupportButton(context, 'Join Discord', 'https://discord.gg/openclaw'),
+            _buildSupportButton(
+              context, 'Join Discord', 'https://discord.gg/openclaw'),
           ],
         ),
       ],
