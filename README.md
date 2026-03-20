@@ -95,6 +95,7 @@ We've integrated high-fidelity, functional skills standardized for Claude's "Too
 | 🛡️ **Credit** | Valeo Sentinel | x402 budget caps (per-call / hourly / daily), full audit log |
 | 📞 **Calls** | Twilio AI | Inbound & outbound voice via ConversationRelay, real-time transcription |
 | 💸 **Finance** | MoonPay Agents | Buy, sell, swap, bridge crypto • portfolio check • DCA strategies • live prices |
+| 🧠 **Local LLM** | llama-server | Free, offline, on-device inference via Qwen2.5 — no API key, no internet |
 
 #### 🌙 MoonPay Agents — Agent Banking
 
@@ -129,6 +130,33 @@ mcp:
 - **Discovery Engine**: Native `/api/tools` endpoint for "Progressive Disclosure" skill loading.
 
 ---
+
+#### 🧠 Local LLM — Free On-Device Inference (Phase 1)
+
+Plawie can run a **completely free, offline LLM** on your device alongside the existing OpenClaw gateway — no API key, no internet, total privacy.
+
+**How it works:**
+- `llama-server` (from [llama.cpp](https://github.com/ggerganov/llama.cpp)) is compiled inside our PRoot Ubuntu layer on first setup.
+- A GGUF model is downloaded post-install (not bundled in the APK).
+- `openclaw.json` is automatically patched to route OpenClaw to `http://127.0.0.1:8081/v1`.
+- Cloud APIs remain available as automatic fallback if the local server is offline.
+
+**Recommended model:** `Qwen2.5-1.5B-Instruct-Q4_K_M` (~1 GB download, ~14–18 tok/s on Snapdragon 8 Gen 2)
+
+**Setup via Agent Skills → Local LLM in the app:**
+1. Tap **Local LLM** in the Agent Skills grid
+2. Select a model and tap **Download** (~1 GB)
+3. Tap **Start** — first-time setup compiles llama-server (~10–25 min, one-time only)
+4. Toggle **Route to local model** to activate free, offline inference
+
+| Device Tier | RAM | SoC | Speed |
+|-------------|-----|-----|-------|
+| Minimum | 8 GB | Snapdragon 8 Gen 1 | ~4–8 tok/s |
+| Recommended | 12 GB | 8 Gen 2 | ~10–18 tok/s |
+| Optimal | 16 GB | 8 Gen 3 / Elite | ~20–30 tok/s |
+
+> See `ARCHITECTURE_LOCAL_LLM.md` for the full research doc, peer reviews (Gemini + Grok), and the 3-phase implementation roadmap.
+
 
 ## 🏗️ Technical Architecture
 
@@ -173,7 +201,7 @@ graph TD
 Experience the future of local AI companions.
 
 ### Prerequisites
-- **Android Device**: API 21+ (Android 5.0+). Snapdragon 8 Gen 1 or equivalent recommended for optimal local LLM performance.
+- **Android Device**: API 26+ (Android 8.0+). **Snapdragon 8 Gen 1 or newer recommended** — required for Local LLM (8 GB+ RAM). Older devices work fine for cloud-only mode.
 - **Flutter SDK**: 3.24+
 - **Node.js**: 20.0+ (for local development)
 
@@ -199,6 +227,7 @@ flutter install
 ## 🤝 Contributing to Plawie
 
 We are building the **"Linux for AI Companions"**, and the roadmap is massive. We welcome contributions in:
+- On-device local LLM stability, model benchmarks, and GPU acceleration via native Android host (see `ARCHITECTURE_LOCAL_LLM.md`)
 - Optimized WebGL/GLSL shaders for better battery life during procedural renders.
 - Expanding the native Solana DeFi toolings (e.g., direct Jupiter SDK ports).
 - Advanced Android-level system automation tools for the OpenClaw gateway.
