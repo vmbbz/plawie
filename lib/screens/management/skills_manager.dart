@@ -9,6 +9,7 @@ import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
 import 'skills/agent_calls_page.dart';
 import 'skills/agent_moonpay_page.dart';
+import 'local_llm_screen.dart';
 import '../solana_screen.dart';
 import 'bot_method_explorer.dart';
 
@@ -59,6 +60,15 @@ const _premiumSkills = [
     icon: Icons.currency_exchange_rounded,
     color: Color(0xFF7B2FBE),
     tooltip: 'Give your agent a verified bank account. It can swap tokens, bridge cross-chain, buy/sell crypto via fiat, check portfolio, and run DCA strategies — all from natural language commands in chat.',
+  ),
+  _SkillEntry(
+    id: 'local_llm',
+    title: 'Local LLM',
+    subtitle: 'llama-server',
+    description: 'Run a free, offline LLM on-device via llama-server inside PRoot. No API key. No internet. Total privacy.',
+    icon: Icons.memory_rounded,
+    color: Color(0xFF0097A7),
+    tooltip: 'Downloads a GGUF model (Qwen2.5-1.5B recommended) and runs llama-server as a sibling process inside PRoot. OpenClaw routes to localhost:8081 when enabled. CPU-only for stability. Thread count adjustable. Automatic cloud fallback if the server is offline.',
   ),
 ];
 
@@ -208,6 +218,9 @@ class _SkillsManagerState extends State<SkillsManager> {
         break;
       case 'moonpay':
         page = const AgentMoonPayPage();
+        break;
+      case 'local_llm':
+        page = const LocalLlmScreen();
         break;
       default:
         return;
