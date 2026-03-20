@@ -255,7 +255,7 @@ class _SplashScreenState extends State<SplashScreen>
                     end: Alignment.bottomRight,
                   ).createShader(bounds),
                   child: Text(
-                    'Clawa Pocket',
+                    'Plawie',
                     style: GoogleFonts.inter(
                       fontSize: 36,
                       fontWeight: FontWeight.w900,
