@@ -148,8 +148,8 @@
                     const box = new THREE.Box3().setFromObject(vrm.scene);
                     const size = box.getSize(new THREE.Vector3());
                     
-                    // Normalize all models to a standard 1.6m height
-                    const targetHeight = 1.6;
+                    // Normalize all models to a standard height (1.44 = 1.6 × 0.9, -10%)
+                    const targetHeight = 1.44;
                     const scaleFactor = targetHeight / size.y;
                     vrm.scene.scale.set(scaleFactor, scaleFactor, scaleFactor);
                     vrm.scene.updateMatrixWorld(true);

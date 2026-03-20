@@ -232,7 +232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.code),
                 ),
                 ListTile(
-                  title: const Text('Clawa Pocket'),
+                  title: const Text('OpenClaw Gateway'),
                   subtitle: Text(_status['openclawInstalled'] == true
                       ? 'Installed'
                       : 'Not installed'),
@@ -328,9 +328,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(),
                 _sectionHeader(theme, 'ABOUT'),
                 const ListTile(
-                  title: const Text('Clawa Pocket'),
+                  title: Text('Plawie'),
                   subtitle: Text(
-                    'AI in Your Pocket\nVersion ${AppConstants.version}',
+                    'OpenClaw in your Pocket\nVersion ${AppConstants.version}',
                   ),
                   leading: Icon(Icons.info_outline),
                   isThreeLine: true,
@@ -380,7 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _changeAvatar(BuildContext context) {
     final avatars = ['gemini.vrm', 'boruto.vrm', 'default_avatar.vrm'];
-    final labels = ['Gemini (Default)', 'Boruto', 'Clawa Pocket'];
+    final labels = ['Gemini (Default)', 'Boruto', 'Plawie'];
 
     showDialog(
       context: context,

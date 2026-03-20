@@ -496,7 +496,7 @@ class HelpScreen extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              '💱 Swap', '🌉 Bridge', '💵 Buy/Sell', '📊 DCA', '📈 Live Prices',
+              'Swap', 'Bridge', 'Buy/Sell', 'DCA', 'Live Prices',
             ].map((label) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -515,11 +515,11 @@ class HelpScreen extends StatelessWidget {
 
   Widget _buildPremiumSkillsTable(BuildContext context) {
     final skills = [
-      ('💳', 'Wallet', 'AgentCard.ai', 'Virtual Visa cards + autonomous spending on Base'),
-      ('🔨', 'Work', 'MoltLaunch', 'On-chain AI jobs • ETH escrow • ERC-8004 identity'),
-      ('🛡️', 'Credit', 'Valeo Sentinel', 'x402 budget caps: per-call / hourly / daily'),
-      ('📞', 'Calls', 'Twilio AI', 'AI voice calls + real-time transcription (Deepgram)'),
-      ('💸', 'Finance', 'MoonPay', 'Swap / bridge / buy / sell / DCA / live prices'),
+      (Icons.account_balance_wallet_rounded, 'Wallet', 'AgentCard.ai', 'Virtual Visa cards + autonomous spending on Base'),
+      (Icons.work_rounded, 'Work', 'MoltLaunch', 'On-chain AI jobs • ETH escrow • ERC-8004 identity'),
+      (Icons.credit_score_rounded, 'Credit', 'Valeo Sentinel', 'x402 budget caps: per-call / hourly / daily'),
+      (Icons.phone_in_talk_rounded, 'Calls', 'Twilio AI', 'AI voice calls + real-time transcription (Deepgram)'),
+      (Icons.currency_exchange_rounded, 'Finance', 'MoonPay', 'Swap / bridge / buy / sell / DCA / live prices'),
     ];
 
     return Container(
@@ -548,7 +548,7 @@ class HelpScreen extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(s.$1, style: const TextStyle(fontSize: 18)),
+                Icon(s.$1, size: 18, color: AppColors.statusGreen.withValues(alpha: 0.8)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(

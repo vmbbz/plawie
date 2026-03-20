@@ -59,7 +59,7 @@ class ClawaApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Clawa Pocket',
+        title: 'Plawie',
         debugShowCheckedModeBanner: false,
         theme: _buildLightTheme(),
         darkTheme: _buildDarkTheme(),
