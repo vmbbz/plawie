@@ -90,7 +90,7 @@ const _modelCatalog = [
 enum LocalLlmStatus {
   idle,        // no model / server not running
   downloading, // downloading model file
-  installing,  // downloading llama-server binary
+  installing,  // compiling llama-server from source inside PRoot
   starting,    // starting llama-server process
   ready,       // server up and responding
   error,       // unrecoverable error
@@ -162,11 +162,6 @@ class LocalLlmService {
   static const int _llamaPort = 8081;
   static const String _llamaHost = '127.0.0.1';
 
-  /// GitHub Releases URL for the pre-compiled AArch64 llama-server binary.
-  /// This targets the static binary builds from the llama.cpp releases page.
-  static const String _llamaServerBinaryUrl =
-      'https://github.com/ggerganov/llama.cpp/releases/latest/download/llama-server-android-arm64';
-
   final _stateController = StreamController<LocalLlmState>.broadcast();
   LocalLlmState _state = const LocalLlmState();
 
@@ -186,7 +181,9 @@ class LocalLlmService {
   /// Download a GGUF model, then start llama-server if not already running.
   Future<void> downloadAndStart(LocalLlmModel model) async {
     if (_state.status == LocalLlmStatus.downloading ||
-        _state.status == LocalLlmStatus.starting) return;
+        _state.status == LocalLlmStatus.starting) {
+      return;
+    }
 
     // 1. Ensure models dir exists inside PRoot
     await _ensureModelDir();
@@ -194,7 +191,7 @@ class LocalLlmService {
     // 2. Check if binary exists, download if not
     final binaryExists = await _isBinaryInstalled();
     if (!binaryExists) {
-      await _downloadBinary();
+      await _compileBinary();
       if (_state.status == LocalLlmStatus.error) return;
     }
 
@@ -284,52 +281,67 @@ class LocalLlmService {
     }
   }
 
-  Future<void> _downloadBinary() async {
+  Future<void> _compileBinary() async {
     _updateState(_state.copyWith(
       status: LocalLlmStatus.installing,
       downloadProgress: 0.0,
     ));
 
+    // One-time compile inside PRoot Ubuntu. This takes 10-25 min on a
+    // mid-range Snapdragon. After that, the binary at
+    // /root/.openclaw/bin/llama-server persists across app restarts.
+    //
+    // We build only the llama-server target (not the whole project) to
+    // minimise compile time.
+    const buildScript = r'''
+set -e
+echo "[llama.cpp] Installing build deps..."
+apt-get update -qq && apt-get install -y --no-install-recommends \
+  cmake make g++ git ca-certificates 2>&1 | tail -5
+
+echo "[llama.cpp] Cloning repository (shallow)..."
+rm -rf /tmp/llama-build
+git clone --depth 1 https://github.com/ggerganov/llama.cpp /tmp/llama-build
+
+echo "[llama.cpp] Configuring cmake..."
+cmake -B /tmp/llama-build/build \
+  -S /tmp/llama-build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLAMA_BUILD_SERVER=ON \
+  -DLLAMA_BUILD_TESTS=OFF \
+  -DLLAMA_BUILD_EXAMPLES=OFF \
+  2>&1 | tail -5
+
+echo "[llama.cpp] Building llama-server (this takes a while)..."
+cmake --build /tmp/llama-build/build \
+  --target llama-server \
+  --config Release \
+  -j4 2>&1 | tail -10
+
+echo "[llama.cpp] Installing binary..."
+mkdir -p /root/.openclaw/bin
+cp /tmp/llama-build/build/bin/llama-server /root/.openclaw/bin/llama-server
+chmod +x /root/.openclaw/bin/llama-server
+rm -rf /tmp/llama-build
+echo "[llama.cpp] Done."
+''';
+
     try {
-      final tmpDir = await getTemporaryDirectory();
-      final tmpFile = File('${tmpDir.path}/llama-server-android-arm64');
-
-      final request = http.Request('GET', Uri.parse(_llamaServerBinaryUrl));
-      final response = await http.Client().send(request);
-
-      if (response.statusCode != 200) {
-        throw HttpException('Binary download failed: HTTP ${response.statusCode}');
-      }
-
-      final total = response.contentLength ?? 0;
-      int received = 0;
-      final sink = tmpFile.openWrite();
-
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) {
-          _updateState(_state.copyWith(downloadProgress: received / total));
-        }
-      }
-      await sink.close();
-
-      // Copy into PRoot and chmod +x
-      final prootBinPath = '/root/.openclaw/bin/llama-server';
-      await NativeBridge.runInProot(
-        'mkdir -p /root/.openclaw/bin && cp "${tmpFile.path}" $prootBinPath && chmod +x $prootBinPath',
-        timeout: 20,
-      );
-      await tmpFile.delete();
-
+      // Long timeout: compiling on ARM64 / 4 threads can take up to 30 min
+      // on older devices. Progress is indeterminate during compile.
+      _updateState(_state.copyWith(downloadProgress: 0.1));
+      await NativeBridge.runInProot(buildScript, timeout: 1800);
       _updateState(_state.copyWith(downloadProgress: 1.0));
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'Failed to install llama-server: $e',
+        errorMessage:
+            'llama-server compile failed. Ensure PRoot/Ubuntu is set up and '
+            'you have a working internet connection.\n\nError: $e',
       ));
     }
   }
+
 
   // --------------------------------------------------------------------------
   // Private — Model Download
@@ -511,7 +523,7 @@ const existing = c.models.providers["local-llm"] || {};
 c.models.providers["local-llm"] = {
   ...existing,
   id: "local-llm",
-  baseUrl: "http://127.0.0.1:${_llamaPort}/v1",
+  baseUrl: "http://127.0.0.1:$_llamaPort/v1",
   api: "openai-completions",
   apiKey: "local",
   models: [$modelJson]

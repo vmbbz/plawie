@@ -14,7 +14,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   final _service = LocalLlmService();
   LocalLlmState _state = const LocalLlmState();
   LocalLlmModel? _selectedModel;
-  Map<String, bool> _downloadedModels = {};
+  final Map<String, bool> _downloadedModels = {};
 
   @override
   void initState() {
@@ -120,7 +120,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
       LocalLlmStatus.ready => (AppColors.statusGreen, Icons.check_circle_rounded, 'Running'),
       LocalLlmStatus.starting => (Colors.amber, Icons.hourglass_top_rounded, 'Starting...'),
       LocalLlmStatus.downloading => (Colors.blueAccent, Icons.cloud_download_rounded, 'Downloading'),
-      LocalLlmStatus.installing => (Colors.purpleAccent, Icons.install_desktop_rounded, 'Installing binary'),
+      LocalLlmStatus.installing => (Colors.purpleAccent, Icons.terminal_rounded, 'Compiling (10-25 min)'),
       LocalLlmStatus.error => (Colors.redAccent, Icons.error_rounded, 'Error'),
       LocalLlmStatus.idle => (Colors.white30, Icons.circle_outlined, 'Offline'),
     };
@@ -243,7 +243,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                   );
                 }
               : null,
-          activeColor: AppColors.statusGreen,
+          activeThumbColor: AppColors.statusGreen,
         ),
       ],
     );
