@@ -530,6 +530,20 @@ try {
           ));
         }
 
+        // Auto-reconnect WebSocket if the gateway is up but WS dropped
+        if (_connection == null || _connection!.state != GatewayConnectionState.connected) {
+          try {
+            final token = await retrieveTokenFromConfig();
+            if (token != null && token.isNotEmpty) {
+              _connection ??= GatewayConnection();
+              _connection!.resetReconnectCounter();
+              unawaited(_connection!.connect(token));
+            }
+          } catch (_) {
+            // Non-fatal — WS will retry on next health tick
+          }
+        }
+
         // 2. Fetch detailed RPC health
         if (_connection?.state == GatewayConnectionState.connected) {
           try {
@@ -541,14 +555,15 @@ try {
         }
       }
     } catch (_) {
-      // Still starting or temporarily unreachable
+      // HTTP HEAD failed — check if gateway process is still alive
       final isRunning = await NativeBridge.isGatewayRunning();
       if (!isRunning && _state.status != GatewayStatus.stopped) {
         _updateState(_state.copyWith(
           status: GatewayStatus.stopped,
           logs: [..._state.logs, '[WARN] Gateway process not running'],
         ));
-        _healthTimer?.cancel();
+        // NOTE: Do NOT cancel the timer here. Keep polling so we detect
+        // when the gateway restarts (e.g. auto-restart via WorkManager).
       }
     }
   }
