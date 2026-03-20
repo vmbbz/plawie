@@ -50,7 +50,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   String? _lastUserMessage;
   
   String _selectedAvatar = 'default_avatar.vrm';
-  String _agentName = 'Clawa Pocket';
+  String _agentName = 'Plawie';
   String _selectedModel = 'google/gemini-3.1-pro-preview';
   
   final List<String> _availableModels = [
@@ -1107,9 +1107,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
+                          _selectedModel.startsWith('local-llm/')
+                            ? '${_selectedAvatar.split('.').first.toUpperCase()} · LOCAL ON-DEVICE'
+                            : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: _selectedModel.startsWith('local-llm/')
+                              ? const Color(0xFF00E5AA)
+                              : Colors.white.withValues(alpha: 0.5),
                             fontSize: 8,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.8,
@@ -1191,27 +1195,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     onTap: () {
                       Navigator.pop(ctx2);
                       Scaffold.of(context).openEndDrawer();
-                    },
-                  ),
-                ),
-              ),
-              PopupMenuItem<String>(
-                enabled: false,
-                child: Builder(
-                  builder: (ctx2) => ListTile(
-                    dense: true,
-                    leading: Icon(
-                      _isChatCollapsed ? Icons.unfold_more : Icons.unfold_less,
-                      color: _isChatCollapsed ? AppColors.statusGreen : Colors.white70,
-                      size: 20,
-                    ),
-                    title: Text(
-                      _isChatCollapsed ? 'Expand Chat' : 'Voice Only Mode',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                    onTap: () {
-                      Navigator.pop(ctx2);
-                      setState(() => _isChatCollapsed = !_isChatCollapsed);
                     },
                   ),
                 ),
@@ -1406,7 +1389,32 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                         child: Column(
                           children: [
+                            // ── Drag handle ──────────────────────────────────
                             if (!_isChatCollapsed)
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragEnd: (details) {
+                                  // Swipe down (positive velocity) → voice-only
+                                  // Swipe up (negative velocity)   → expand
+                                  if (details.primaryVelocity == null) return;
+                                  if (details.primaryVelocity! > 400) {
+                                    setState(() => _isChatCollapsed = true);
+                                  } else if (details.primaryVelocity! < -400) {
+                                    setState(() => _isChatCollapsed = false);
+                                  }
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.25),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                              ),
                               Expanded(
                                 child: ShaderMask(
                                   shaderCallback: (bounds) => const LinearGradient(

@@ -44,32 +44,61 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0D1B2A),
-      body: CustomScrollView(
-        slivers: [
-          _buildAppBar(context),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildStatusCard(),
-                  const SizedBox(height: 20),
-                  _buildToggleRow(),
-                  const SizedBox(height: 20),
-                  _buildThreadSlider(),
-                  const SizedBox(height: 28),
-                  _buildSectionLabel('Model Library'),
-                  const SizedBox(height: 12),
-                  ..._service.catalog.map(_buildModelCard),
-                  const SizedBox(height: 28),
-                  _buildDeviceSpecCard(),
-                  const SizedBox(height: 28),
-                  _buildAgentPromptGuide(),
-                  const SizedBox(height: 60),
-                ],
+      body: Stack(
+        children: [
+          // Ambient glow patches — unified dark space aesthetic
+          Positioned(
+            top: -60,
+            right: -40,
+            child: Container(
+              width: 280,
+              height: 280,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF0097A7).withValues(alpha: 0.08),
               ),
             ),
+          ),
+          Positioned(
+            bottom: 100,
+            left: -60,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF1A3A5C).withValues(alpha: 0.15),
+              ),
+            ),
+          ),
+          CustomScrollView(
+            slivers: [
+              _buildAppBar(context),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildStatusCard(),
+                      const SizedBox(height: 20),
+                      _buildToggleRow(),
+                      const SizedBox(height: 20),
+                      _buildThreadSlider(),
+                      const SizedBox(height: 28),
+                      _buildSectionLabel('Model Library'),
+                      const SizedBox(height: 12),
+                      ..._service.catalog.map(_buildModelCard),
+                      const SizedBox(height: 28),
+                      _buildDeviceSpecCard(),
+                      const SizedBox(height: 28),
+                      _buildAgentPromptGuide(),
+                      const SizedBox(height: 60),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -375,15 +375,17 @@ class _SkillsManagerState extends State<SkillsManager> {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 120.0,
+      expandedHeight: 90.0,
       floating: false,
       pinned: true,
       backgroundColor: Colors.transparent,
       flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsetsDirectional.fromSTEB(16, 0, 0, 14),
         title: Text(
           'Agent Skills',
           style: GoogleFonts.outfit(
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
             color: Theme.of(context).textTheme.titleLarge?.color,
           ),
         ),
