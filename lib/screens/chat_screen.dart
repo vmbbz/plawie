@@ -17,6 +17,7 @@ import '../widgets/chat_bubble.dart';
 import '../main.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
+import '../services/local_llm_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -257,9 +258,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         _agentName = prefs.agentName;
         _selectedAvatar = prefs.selectedAvatar;
         // Load the user's configured model (from setup or settings)
+        // Accepts local-llm/... IDs which are not in the static cloud list
         final configured = prefs.configuredModel;
-        if (configured != null && configured.isNotEmpty && _availableModels.contains(configured)) {
-          _selectedModel = configured;
+        if (configured != null && configured.isNotEmpty) {
+          if (_availableModels.contains(configured) || configured.startsWith('local-llm/')) {
+            _selectedModel = configured;
+          }
         }
       });
     }
@@ -658,9 +662,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _selectedModel.split('/').last.toUpperCase(),
+                          _selectedModel.startsWith('local-llm/')
+                            ? 'LOCAL · ON-DEVICE'
+                            : _selectedModel.split('/').last.toUpperCase(),
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.4),
+                            color: _selectedModel.startsWith('local-llm/')
+                              ? const Color(0xFF00E5AA)
+                              : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.0,
@@ -742,6 +750,49 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
           ),
         ),
+        // Local LLM option shown at top when llama-server is running
+        if (LocalLlmService().state.status == LocalLlmStatus.ready &&
+            LocalLlmService().state.activeModelId != null) ...[
+          PopupMenuItem<void>(
+            enabled: false,
+            child: Text('ON-DEVICE (FREE)', style: TextStyle(color: Color(0xFF00E5AA), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+          ),
+          PopupMenuItem<String>(
+            value: 'model:local-llm/${LocalLlmService().state.activeModelId}',
+            child: Row(
+              children: [
+                Icon(
+                  _selectedModel.startsWith('local-llm/') ? Icons.check_circle : Icons.memory_rounded,
+                  color: _selectedModel.startsWith('local-llm/') ? Color(0xFF00E5AA) : Colors.white38,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        LocalLlmService().state.activeModelId!,
+                        style: TextStyle(
+                          color: _selectedModel.startsWith('local-llm/') ? Colors.white : Colors.white70,
+                          fontWeight: _selectedModel.startsWith('local-llm/') ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const Text('Free · No internet · Private', style: TextStyle(color: Colors.white38, fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem<void>(
+            enabled: false,
+            child: Text('CLOUD', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+          ),
+        ],
         ..._availableModels.map((model) => PopupMenuItem<String>(
           value: 'model:$model',
           child: Row(

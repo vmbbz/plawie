@@ -9,8 +9,10 @@ import '../providers/node_provider.dart';
 import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/preferences_service.dart';
+import '../services/local_llm_service.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
+import 'management/local_llm_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -150,6 +152,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.psychology),
                   trailing: const Icon(Icons.swap_horiz, size: 18),
                   onTap: () => _showChangeModelDialog(context),
+                ),
+                // Local LLM shortcut — shows live server status
+                StreamBuilder<LocalLlmState>(
+                  stream: LocalLlmService().stateStream,
+                  initialData: LocalLlmService().state,
+                  builder: (context, snap) {
+                    final llmState = snap.data ?? const LocalLlmState();
+                    final isReady = llmState.status == LocalLlmStatus.ready;
+                    final statusLabel = switch (llmState.status) {
+                      LocalLlmStatus.ready => 'Running · ${llmState.activeModelId?.split('-').take(3).join('-') ?? ''}',
+                      LocalLlmStatus.starting => 'Starting...',
+                      LocalLlmStatus.downloading => 'Downloading model',
+                      LocalLlmStatus.installing => 'Compiling llama-server',
+                      LocalLlmStatus.error => 'Error — tap to fix',
+                      LocalLlmStatus.idle => 'Offline — tap to set up',
+                    };
+                    return ListTile(
+                      title: const Text('Local LLM'),
+                      subtitle: Text(statusLabel),
+                      leading: Icon(
+                        Icons.memory_rounded,
+                        color: isReady ? AppColors.statusGreen : Colors.white38,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isReady)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.statusGreen.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text('ON', style: TextStyle(color: AppColors.statusGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LocalLlmScreen()),
+                      ),
+                    );
+                  },
                 ),
                 _sectionHeader(theme, 'AVATAR'),
                 ListTile(
@@ -329,7 +376,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Local LLM support removed; gateway-based providers are used.
+  // Local LLM is accessible via Settings > Local LLM tile (StreamBuilder above).
 
   void _changeAvatar(BuildContext context) {
     final avatars = ['gemini.vrm', 'boruto.vrm', 'default_avatar.vrm'];
@@ -357,6 +404,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _getModelLabel(String modelId) {
+    // Local LLM: look up friendly name from catalog
+    if (modelId.startsWith('local-llm/')) {
+      final ggufId = modelId.replaceFirst('local-llm/', '');
+      final match = LocalLlmService().catalog.where((m) => m.id == ggufId);
+      if (match.isNotEmpty) return match.first.name;
+      return 'Local · $ggufId';
+    }
     const models = [
       'google/gemini-3.1-pro-preview',
       'anthropic/claude-opus-4.6',
@@ -375,6 +429,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _getProviderLabel(String modelId) {
+    if (modelId.startsWith('local-llm/')) return 'On-Device (Free)';
     if (modelId.startsWith('google/')) return 'Google';
     if (modelId.startsWith('anthropic/')) return 'Anthropic';
     if (modelId.startsWith('openai/')) return 'OpenAI';
@@ -457,51 +512,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showChangeModelDialog(BuildContext context) {
-    final models = [
+    final cloudModels = [
       'google/gemini-3.1-pro-preview',
       'anthropic/claude-opus-4.6',
       'openai/gpt-4o',
       'groq/llama-3.1-405b',
     ];
-    final labels = [
+    final cloudLabels = [
       'Gemini 3.1 Pro Preview',
       'Claude Opus 4.6',
       'GPT-4o',
       'Llama 3.1 405B',
     ];
-    String current = _prefs.configuredModel ?? models[0];
+
+    final llmService = LocalLlmService();
+    final llmReady = llmService.state.status == LocalLlmStatus.ready;
+    final localModelId = llmReady && llmService.state.activeModelId != null
+        ? 'local-llm/${llmService.state.activeModelId}'
+        : null;
+    final localLabel = llmReady
+        ? '🧠 ${_getModelLabel(localModelId!)} (Free · On-Device)'
+        : null;
+
+    String current = _prefs.configuredModel ?? cloudModels[0];
+
+    Future<void> switchModel(String val, String label) async {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Switching model...')),
+      );
+      try {
+        final gw = context.read<GatewayProvider>();
+        await gw.persistModel(val);
+        _prefs.configuredModel = val;
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Model set to $label. OpenClaw will hot-reload.')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    }
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Select Model'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(models.length, (i) => RadioListTile<String>(
-            title: Text(labels[i]),
-            subtitle: Text(models[i], style: const TextStyle(fontSize: 11)),
-            value: models[i],
-            groupValue: current,
-            onChanged: (val) async {
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Switching model...')),
-              );
-              try {
-                final gw = context.read<GatewayProvider>();
-                await gw.persistModel(val!);
-                _prefs.configuredModel = val;
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Model set to ${labels[i]}. OpenClaw will hot-reload.')),
-                );
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed: $e')),
-                );
-              }
-            },
-          )),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Local LLM option — only shown when llama-server is running
+              if (llmReady && localModelId != null) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+                  child: Text('ON-DEVICE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.statusGreen.withValues(alpha: 0.8))),
+                ),
+                RadioListTile<String>(
+                  title: Text(localLabel!),
+                  subtitle: const Text('No API key · No internet · Private', style: TextStyle(fontSize: 11)),
+                  value: localModelId,
+                  groupValue: current,
+                  activeColor: AppColors.statusGreen,
+                  onChanged: (val) async {
+                    Navigator.pop(ctx);
+                    await switchModel(val!, _getModelLabel(val));
+                  },
+                ),
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
+                  child: Text('CLOUD', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: Colors.white38)),
+                ),
+              ],
+              ...List.generate(cloudModels.length, (i) => RadioListTile<String>(
+                title: Text(cloudLabels[i]),
+                subtitle: Text(cloudModels[i], style: const TextStyle(fontSize: 11)),
+                value: cloudModels[i],
+                groupValue: current,
+                onChanged: (val) async {
+                  Navigator.pop(ctx);
+                  await switchModel(val!, cloudLabels[i]);
+                },
+              )),
+              if (!llmReady)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
+                    'Start Local LLM from Agent Skills to unlock free on-device inference.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
