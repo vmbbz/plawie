@@ -33,6 +33,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   final List<ChatMessage> _messages = [];
   final ChatPersistenceService _persistence = ChatPersistenceService();
   
+  // Scaffold key to allow opening the end drawer from anywhere (e.g. PopupMenu overlays)
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   bool _isThinking = false;
   double _speechIntensity = 0.0;
   bool _isGenerating = false;
@@ -620,7 +623,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Container(
@@ -681,7 +684,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               const Divider(color: Colors.white10),
             ],
           ),
@@ -690,11 +693,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // Avatars Section
         PopupMenuItem<void>(
           enabled: false,
+          height: 28,
           child: Text(
             'ACTIVE AVATAR',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.2,
             ),
@@ -740,11 +744,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // Models Section
         PopupMenuItem<void>(
           enabled: false,
+          height: 28,
           child: Text(
             'ACTIVE MODEL',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.2,
             ),
@@ -821,11 +826,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         const PopupMenuDivider(),
         PopupMenuItem<void>(
           enabled: false,
+          height: 28,
           child: Text(
             'VOICE MODULE',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.2,
             ),
@@ -1062,6 +1068,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     final double barHeight = _isChatCollapsed ? collapsedSize : (size.height * 0.6);
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: _isPipMode ? Colors.transparent : null,
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: false, // Prevents VRM aspect-ratio scaling bounds from squishing
@@ -1145,8 +1152,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
             tooltip: 'More',
             color: const Color(0xFF1A1A2E),
+            constraints: const BoxConstraints(maxWidth: 230),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
             ),
             onSelected: (value) async {
@@ -1165,9 +1173,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             itemBuilder: (ctx) => [
               PopupMenuItem<String>(
                 enabled: false,
+                height: 40,
                 child: Builder(
                   builder: (ctx2) => ListTile(
                     dense: true,
+                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                     leading: Icon(
                       Icons.picture_in_picture_alt,
                       color: Colors.white70,
@@ -1189,12 +1199,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 child: Builder(
                   builder: (ctx2) => ListTile(
                     dense: true,
+                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                     leading: const Icon(Icons.history, color: Colors.white70, size: 20),
                     title: const Text('Chat Sessions',
                         style: TextStyle(color: Colors.white70, fontSize: 13)),
                     onTap: () {
                       Navigator.pop(ctx2);
-                      Scaffold.of(context).openEndDrawer();
+                      // Use scaffoldKey to avoid Scaffold.of() resolving against
+                      // the PopupMenu overlay context instead of our Scaffold.
+                      _scaffoldKey.currentState?.openEndDrawer();
                     },
                   ),
                 ),
