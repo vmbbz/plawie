@@ -1,8 +1,8 @@
 # Plawie — Production Release v1.0 "Gold Star"
 
-> **Date:** March 19, 2026  
-> **Based on:** Commit `af104a4` + this release session  
-> **Architecture reference:** [ARCHITECTURE_REPORT.md](./ARCHITECTURE_REPORT.md) | [PROMOTIONAL_PITCH.md](./PROMOTIONAL_PITCH.md)
+> **Date:** March 19–20, 2026  
+> **Based on:** Commit `6828308` (latest, post v1.0.0 tag)  
+> **Architecture reference:** [ARCHITECTURE_REPORT.md](./ARCHITECTURE_REPORT.md) | [ARCHITECTURE_LOCAL_LLM.md](./ARCHITECTURE_LOCAL_LLM.md) | [PROMOTIONAL_PITCH.md](./PROMOTIONAL_PITCH.md)
 
 ---
 
@@ -39,6 +39,16 @@ Plawie puts enterprise-grade AI infrastructure in your pocket. This release poli
 | **AgentCreditPage** | Rewritten for Valeo Sentinel x402 (correct audit log fields) | `agent_credit_page.dart` |
 | **GatewayProvider** | `GatewaySkillProxy.attach(this)` wired in constructor | `gateway_provider.dart` |
 | **Skills Manager** | Correct skill IDs, Solana built-in card, Register Agent banner | `skills_manager.dart` |
+| **MoonPay skill** | AgentMoonPayPage + 8 MCP method schema + openclaw.json patch | `agent_moonpay_page.dart`, `skills_service.dart` |
+| **Skill tooltips** | Info icon on every skill card, 4-second overlay | `skills_manager.dart` |
+| **AppBar** | 5 icons → 2: new-chat + overflow menu | `chat_screen.dart` |
+| **Avatar** | ZOOM_FACTOR 1.85, GROUND_OFFSET -0.05, 360° orbit camera | `avatar_scene.html` |
+| **Local LLM service** | Compile-from-source llama-server, GGUF downloader, openclaw.json patcher | `local_llm_service.dart` |
+| **Local LLM UI** | Status card, thread slider, model catalog, device spec table | `local_llm_screen.dart` |
+| **Skills Manager** | 6th skill card: Local LLM (teal, memory icon) | `skills_manager.dart` |
+| **Architecture doc** | `ARCHITECTURE_LOCAL_LLM.md` — research, Gemini/Grok reviews, 3-phase plan | new file |
+| **v1.0.0 release** | Tagged `v1.0.0`, 9 dev logs deleted, CONTRIBUTING + LICENSE polished | git tag |
+| **Docs** | README + UPGRADE_PLAN updated with Local LLM section | `README.md`, this file |
 
 ---
 
@@ -112,10 +122,10 @@ MoltLaunch (Base/ETH) and Solana wallet are **two separate features** that can c
 - [ ] Install on clean device → verify icon on homescreen (no black bg)
 - [ ] Run through setup flow → confirm "Plawie Setup" header + default name
 - [ ] Open Bot Management → start gateway → confirm Uptime + Latency show real values
-- [ ] Open Agent Skills → see 4 premium skill cards with ACTIVE/INSTALL state
+- [ ] Open Agent Skills → see **6** skill cards (5 premium + Local LLM)
 - [ ] Confirm Solana BUILT-IN card appears below premium skills grid
 - [ ] Confirm MoltLaunch Register Agent banner appears with "Register" button
-- [ ] Tap uninstalled skill → install prompt → test `skills.install` RPC
+- [ ] Tap **Local LLM** card → LocalLlmScreen loads → model catalog visible
 - [ ] Open BotMethodExplorer → filter "skills" → note actual available methods → compare to `skills.execute`
 - [ ] MoltLaunch Work page: if identity not registered → Registration Gate card shows, no CLI shown
 - [ ] Valeo Credit page: budget visualizer shows "No budget configured" gracefully when offline
@@ -131,10 +141,20 @@ MoltLaunch (Base/ETH) and Solana wallet are **two separate features** that can c
 
 ---
 
-## 📊 Architecture Health: A−
+## 📦 Architecture Health: A
 
-Core PRoot + Node.js + OpenClaw architecture is production-grade and architecturally unique. See `ARCHITECTURE_REPORT.md` for full breakdown. Two remaining gaps (WorkManager heartbeat, Doze-mode AlarmManager) are v1.1 items.
+Core PRoot + Node.js + OpenClaw architecture is production-grade and architecturally unique. Local LLM (Phase 1) implemented as a separate PRoot sibling process. GPU acceleration deferred to Phase 2 (native-host route). See `ARCHITECTURE_LOCAL_LLM.md` for full breakdown.
+
+### Phase 2 Roadmap (Post v1.0)
+
+| Feature | Approach | Priority |
+|---------|----------|----------|
+| GPU acceleration | Native Android host binary (bypasses PRoot OpenCL trap) | High |
+| Thermal management | Auto-reduce `--threads` when device temp > 40°C | Medium |
+| Model update notifications | HuggingFace RSS polling for new GGUF quants | Low |
+| Companion APK (Plawie Local Brain) | Standalone MLC-LLM APK on `127.0.0.1:8081` | Future |
+| WorkManager heartbeat / Doze-mode | Prevents background kill during sustained inference | v1.1 |
 
 ---
 
-*This document is the reference for the "Gold Star" production release. Update this file as each checklist item is completed.*
+*This document is the reference for the "Gold Star" production release. Update as each checklist item is completed.*
