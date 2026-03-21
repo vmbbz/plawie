@@ -441,30 +441,44 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   void _toggleListening() async {
     if (_isListening) {
-      await _speechToText.stop();
-      setState(() => _isListening = false);
-      _syncOverlayState();
-      _addDiagnosticLog('Voice listening stopped.');
+      await _stopListening();
     } else {
-      bool available = await _speechToText.initialize();
-      if (available) {
-        setState(() => _isListening = true);
-        _syncOverlayState();
-        _addDiagnosticLog('Voice listening started.');
-        await _speechToText.listen(
-          onResult: (result) {
-            _textController.text = result.recognizedWords;
-            if (result.hasConfidenceRating && result.confidence > 0 && result.recognizedWords.isNotEmpty && !_speechToText.isListening) {
-                // Done recognizing
-                _addDiagnosticLog('Voice recognized: ${result.recognizedWords}');
-                _handleSubmit(result.recognizedWords);
-            }
-          },
-        );
-      } else {
-        _addDiagnosticLog('Voice recognition unavailable on device.');
-      }
+      await _startListening();
     }
+  }
+
+  /// Start STT — called when user begins holding the mic orb (hold-to-record UX).
+  Future<void> _startListening() async {
+    if (_isListening) return;
+    bool available = await _speechToText.initialize();
+    if (available) {
+      setState(() => _isListening = true);
+      _syncOverlayState();
+      _addDiagnosticLog('Voice listening started.');
+      await _speechToText.listen(
+        onResult: (result) {
+          _textController.text = result.recognizedWords;
+          if (result.hasConfidenceRating &&
+              result.confidence > 0 &&
+              result.recognizedWords.isNotEmpty &&
+              !_speechToText.isListening) {
+            _addDiagnosticLog('Voice recognized: ${result.recognizedWords}');
+            _handleSubmit(result.recognizedWords);
+          }
+        },
+      );
+    } else {
+      _addDiagnosticLog('Voice recognition unavailable on device.');
+    }
+  }
+
+  /// Stop STT — called when user releases the mic orb (hold-to-record UX).
+  Future<void> _stopListening() async {
+    if (!_isListening) return;
+    await _speechToText.stop();
+    setState(() => _isListening = false);
+    _syncOverlayState();
+    _addDiagnosticLog('Voice listening stopped.');
   }
 
   /// Tell native Android to update the PiP RemoteAction icon based on listening state.
@@ -1468,28 +1482,117 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
+                                    // ──────────────────────────────────────────
+                                    // 2026 UX: hold-to-record orb
+                                    //   onLongPressStart  → start listening
+                                    //   onLongPressEnd    → stop  listening
+                                    //   onVerticalDragEnd(up) → expand chat
+                                    //   onTap → no-op (reserved for hold)
+                                    // ──────────────────────────────────────────
                                     GestureDetector(
-                                      onTap: _toggleListening,
-                                      child: AnimatedBuilder(
-                                        animation: _glowController,
-                                        builder: (context, child) {
-                                          return AnimatedContainer(
-                                            duration: const Duration(milliseconds: 300),
-                                            width: _isChatCollapsed ? collapsedSize : 48,
-                                            height: _isChatCollapsed ? collapsedSize : 48,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: _isListening && _isChatCollapsed
-                                                  ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
-                                                  : Colors.transparent,
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: _isChatCollapsed
+                                          ? () {
+                                              // Tap on collapsed orb = show hint
+                                              // (hold me to talk / swipe up to expand)
+                                              ScaffoldMessenger.of(context)
+                                                  .clearSnackBars();
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: const Row(
+                                                    children: [
+                                                      Icon(Icons.info_outline,
+                                                          color: Colors.white70,
+                                                          size: 16),
+                                                      SizedBox(width: 8),
+                                                      Text(
+                                                        'Hold to talk  ·  Swipe ↑ to expand',
+                                                        style: TextStyle(
+                                                            fontSize: 13),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  backgroundColor:
+                                                      const Color(0xFF1A1A2E),
+                                                  duration: const Duration(
+                                                      seconds: 2),
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  shape:
+                                                      RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      12)),
+                                                ),
+                                              );
+                                            }
+                                          : _toggleListening,
+                                      // Hold-to-record (collapsed orb only)
+                                      onLongPressStart: _isChatCollapsed
+                                          ? (_) => _startListening()
+                                          : null,
+                                      onLongPressEnd: _isChatCollapsed
+                                          ? (_) => _stopListening()
+                                          : null,
+                                      // Swipe up on collapsed orb = expand chat
+                                      onVerticalDragEnd: _isChatCollapsed
+                                          ? (details) {
+                                              if ((details.primaryVelocity ?? 0) <
+                                                  -400) {
+                                                setState(() =>
+                                                    _isChatCollapsed = false);
+                                              }
+                                            }
+                                          : null,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // Upward chevron hint (collapsed only) —
+                                          // teaches swipe-up-to-expand gesture
+                                          if (_isChatCollapsed)
+                                            AnimatedBuilder(
+                                              animation: _glowController,
+                                              builder: (_, __) => Transform.translate(
+                                                offset: Offset(
+                                                    0,
+                                                    -3 *
+                                                        _glowController.value),
+                                                child: Icon(
+                                                  Icons.keyboard_arrow_up_rounded,
+                                                  color: Colors.white.withValues(
+                                                      alpha: 0.25 +
+                                                          0.2 *
+                                                              _glowController
+                                                                  .value),
+                                                  size: 14,
+                                                ),
+                                              ),
                                             ),
-                                            child: Icon(
-                                              _isListening ? Icons.mic : Icons.mic_none,
-                                              color: _isListening ? AppColors.statusGreen : Colors.white70,
-                                              size: _isChatCollapsed ? 36 : 24,
-                                            ),
-                                          );
-                                        }
+                                          // Mic orb circle
+                                          AnimatedBuilder(
+                                            animation: _glowController,
+                                            builder: (context, child) {
+                                              return AnimatedContainer(
+                                                duration: const Duration(milliseconds: 300),
+                                                width: _isChatCollapsed ? collapsedSize : 48,
+                                                height: _isChatCollapsed ? collapsedSize : 48,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: _isListening && _isChatCollapsed
+                                                      ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
+                                                      : Colors.transparent,
+                                                ),
+                                                child: Icon(
+                                                  _isListening ? Icons.mic : Icons.mic_none,
+                                                  color: _isListening ? AppColors.statusGreen : Colors.white70,
+                                                  size: _isChatCollapsed ? 36 : 24,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
                                       ),
                                     ),
                                     if (!_isChatCollapsed) ...[
