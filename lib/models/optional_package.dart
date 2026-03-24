@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Metadata for an optional development tool that can be installed
-/// inside the proot Ubuntu environment.
+/// inside proot Ubuntu environment.
 class OptionalPackage {
   final String id;
   final String name;
@@ -10,13 +10,10 @@ class OptionalPackage {
   final Color color;
   final String installCommand;
   final String uninstallCommand;
-
-  /// Path relative to rootfs dir to check if installed.
   final String checkPath;
   final String estimatedSize;
-
-  /// Pattern printed to stdout when installation finishes successfully.
   final String completionSentinel;
+  final SkillCommandType commandType;
 
   const OptionalPackage({
     required this.id,
@@ -29,6 +26,7 @@ class OptionalPackage {
     required this.checkPath,
     required this.estimatedSize,
     required this.completionSentinel,
+    this.commandType = SkillCommandType.install, // Default to new syntax
   });
 
   static const goPackage = OptionalPackage(
@@ -51,9 +49,10 @@ class OptionalPackage {
     checkPath: 'usr/bin/go',
     estimatedSize: '~150 MB',
     completionSentinel: 'GO_INSTALL_COMPLETE',
+    commandType: SkillCommandType.install,
   );
 
-  static const brewPackage = OptionalPackage(
+  static final brewPackage = OptionalPackage(
     id: 'brew',
     name: 'Homebrew',
     description: 'The missing package manager for Linux',
@@ -65,30 +64,71 @@ class OptionalPackage {
         'touch /.dockerenv; '
         'apt-get update -qq && apt-get install -y -qq '
         'build-essential procps curl file git; '
-        'NONINTERACTIVE=1 /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; '
-        r"grep -q 'linuxbrew' /root/.bashrc 2>/dev/null || {"
-        ' echo \'eval "\$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"\' >> /root/.bashrc; '
+        'curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/install.sh; '
+        'chmod +x /tmp/install.sh; '
+        'NONINTERACTIVE=1 /tmp/install.sh; '
+        'grep -q linuxbrew /root/.bashrc 2>/dev/null || {'
+        ' echo "eval /home/linuxbrew/.linuxbrew/bin/brew shellenv" >> /root/.bashrc; '
         '}; '
-        'eval "\$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; '
+        'eval /home/linuxbrew/.linuxbrew/bin/brew shellenv; '
         'brew --version; '
         'echo ">>> BREW_INSTALL_COMPLETE"',
     uninstallCommand:
         'set -e; '
         'echo ">>> Removing Homebrew..."; '
         'touch /.dockerenv; '
-        'NONINTERACTIVE=1 /bin/bash -c "\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)" || true; '
+        'curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh -o /tmp/uninstall.sh; '
+        'chmod +x /tmp/uninstall.sh; '
+        'NONINTERACTIVE=1 /tmp/uninstall.sh || true; '
         'rm -rf /home/linuxbrew/.linuxbrew; '
-        r"sed -i '/linuxbrew/d' /root/.bashrc; "
+        'sed -i "/linuxbrew/d" /root/.bashrc; '
         'echo ">>> BREW_UNINSTALL_COMPLETE"',
     checkPath: 'home/linuxbrew/.linuxbrew/bin/brew',
     estimatedSize: '~500 MB',
     completionSentinel: 'BREW_INSTALL_COMPLETE',
+    commandType: SkillCommandType.install,
+  );
+
+  // Example skill packages with new syntax
+  static const twilioSkill = OptionalPackage(
+    id: 'twilio',
+    name: 'Twilio Integration',
+    description: 'Send and receive SMS/MMS via Twilio API',
+    icon: Icons.phone_android,
+    color: Colors.red,
+    installCommand: 'openclaw skill install twilio',  // NEW: singular "skill"
+    uninstallCommand: 'openclaw skill uninstall twilio',
+    checkPath: 'opt/skills/twilio/package.json',
+    estimatedSize: '~25 MB',
+    completionSentinel: 'TWILIO_INSTALL_COMPLETE',
+    commandType: SkillCommandType.install,
+  );
+
+  static const callsSkill = OptionalPackage(
+    id: 'calls',
+    name: 'Calls',
+    description: 'ERC-8004 identity on Base chain',
+    icon: Icons.call,
+    color: Colors.blue,
+    installCommand: 'openclaw skill install calls',  // NEW: singular "skill"
+    uninstallCommand: 'openclaw skill uninstall calls',
+    checkPath: 'opt/skills/calls/package.json',
+    estimatedSize: '~15 MB',
+    completionSentinel: 'CALLS_INSTALL_COMPLETE',
+    commandType: SkillCommandType.install,
   );
 
   /// All available optional packages.
-  static const all = [goPackage, brewPackage];
+  static final all = [goPackage, brewPackage, twilioSkill, callsSkill];
 
   /// Sentinel for uninstall completion (derived from install sentinel).
   String get uninstallSentinel =>
       completionSentinel.replaceFirst('INSTALL', 'UNINSTALL');
+}
+
+enum SkillCommandType {
+  install,     // openclaw skill install <name>
+  add,         // openclaw skill add <url>
+  register,     // openclaw skill register <path>
+  update,       // openclaw skills update --all
 }

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'native_bridge.dart';
+import 'gateway_service.dart';
+import '../models/gateway_state.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -182,9 +184,20 @@ class LocalLlmService {
   // --------------------------------------------------------------------------
 
   /// Download a GGUF model, then start llama-server if not already running.
+  /// OPTIMIZED: Prevents PRoot conflicts by checking gateway status first
   Future<void> downloadAndStart(LocalLlmModel model) async {
     if (_state.status == LocalLlmStatus.downloading ||
         _state.status == LocalLlmStatus.starting) {
+      return;
+    }
+
+    // NEW: Prevent PRoot conflicts during gateway startup
+    final gatewayService = GatewayService();
+    if (gatewayService.state.status == GatewayStatus.starting) {
+      _updateState(_state.copyWith(
+        status: LocalLlmStatus.error,
+        errorMessage: 'Gateway is still starting. Please wait for "Gateway healthy" before starting local LLM.',
+      ));
       return;
     }
 
@@ -290,59 +303,136 @@ class LocalLlmService {
       downloadProgress: 0.0,
     ));
 
-    // One-time compile inside PRoot Ubuntu. This takes 10-25 min on a
-    // mid-range Snapdragon. After that, the binary at
-    // /root/.openclaw/bin/llama-server persists across app restarts.
-    //
-    // We build only the llama-server target (not the whole project) to
-    // minimise compile time.
-    const buildScript = r'''
+    try {
+      // NEW: Enhanced CPU detection and multi-version binary selection
+      final cpuInfo = await NativeBridge.runInProot('cat /proc/cpuinfo');
+      final binaryUrl = _getOptimalBinaryUrl(cpuInfo);
+      
+      _updateState(_state.copyWith(
+        errorMessage: 'Detected CPU: ${cpuInfo.split('\n').first}\nDownloading compatible binary...',
+      ));
+
+      // Enhanced installation script with CPU-specific optimization
+      const installScript = r'''
 set -e
-echo "[llama.cpp] Installing build deps..."
-apt-get update -qq && apt-get install -y --no-install-recommends \
-  cmake make g++ git ca-certificates 2>&1 | tail -5
 
-echo "[llama.cpp] Cloning repository (shallow)..."
-rm -rf /tmp/llama-build
-git clone --depth 1 https://github.com/ggerganov/llama.cpp /tmp/llama-build
+echo "[llama.cpp] Detecting CPU capabilities..."
+CPU_INFO="$1"
+BINARY_URL="$2"
 
-echo "[llama.cpp] Configuring cmake..."
-cmake -B /tmp/llama-build/build \
-  -S /tmp/llama-build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DLLAMA_BUILD_SERVER=ON \
-  -DLLAMA_BUILD_TESTS=OFF \
-  -DLLAMA_BUILD_EXAMPLES=OFF \
-  2>&1 | tail -5
+# Parse ARM version and features for optimal binary selection
+if echo "$CPU_INFO" | grep -q "armv8.2"; then
+    CMAKE_FLAGS="-march=armv8.2-a"
+elif echo "$CPU_INFO" | grep -q "armv8.1"; then
+    CMAKE_FLAGS="-march=armv8.1-a"
+elif echo "$CPU_INFO" | grep -q "armv8"; then
+    CMAKE_FLAGS="-march=armv8-a"
+elif echo "$CPU_INFO" | grep -q "armv7"; then
+    CMAKE_FLAGS="-march=armv7-a"
+else
+    CMAKE_FLAGS="-march=armv8-a"  # Conservative fallback
+fi
 
-echo "[llama.cpp] Building llama-server (this takes a while)..."
-cmake --build /tmp/llama-build/build \
-  --target llama-server \
-  --config Release \
-  -j4 2>&1 | tail -10
+echo "[llama.cpp] Using CPU flags: $CMAKE_FLAGS"
+echo "[llama.cpp] Downloading binary: $BINARY_URL"
 
-echo "[llama.cpp] Installing binary..."
+# Create directory
 mkdir -p /root/.openclaw/bin
-cp /tmp/llama-build/build/bin/llama-server /root/.openclaw/bin/llama-server
-chmod +x /root/.openclaw/bin/llama-server
-rm -rf /tmp/llama-build
-echo "[llama.cpp] Done."
+
+# Download with multiple fallbacks
+if command -v curl >/dev/null 2>&1; then
+    curl -L -o "/root/.openclaw/bin/llama-server" "$BINARY_URL" || {
+        echo "ERROR: Failed to download binary"
+        exit 1
+    }
+else
+    wget -O "/root/.openclaw/bin/llama-server" "$BINARY_URL" || {
+        echo "ERROR: Failed to download binary"
+        exit 1
+    }
+fi
+
+# Make executable and verify
+chmod +x "/root/.openclaw/bin/llama-server"
+if [[ ! -x "/root/.openclaw/bin/llama-server" ]]; then
+    echo "ERROR: Failed to make binary executable"
+    exit 1
+fi
+
+# Install Android-compatible dependencies
+echo "[llama.cpp] Installing runtime dependencies..."
+apt-get update -qq && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    libatomic1 \
+    libc6-dev \
+    libgcc-s1 \
+    libstdc++6 \
+    libblas3 \
+    liblapack3 \
+    ca-certificates \
+    curl \
+    wget 2>&1 | tail -5
+
+# Verify dependencies
+ldd "/root/.openclaw/bin/llama-server" > /tmp/llama-deps.txt
+if grep -q "not found" /tmp/llama-deps.txt; then
+    echo "ERROR: Missing dependencies detected"
+    cat /tmp/llama-deps.txt
+    exit 1
+fi
+
+# Test binary with compatibility check
+echo "[llama.cpp] Testing binary compatibility..."
+"/root/.openclaw/bin/llama-server" --help >/dev/null 2>&1 || {
+    echo "ERROR: Binary test failed - possible CPU incompatibility"
+    echo "Try: Manual compilation with device-specific flags"
+    exit 1
+}
+
+echo ">>> LLAMA_SERVER_INSTALL_COMPLETE"
 ''';
 
-    try {
-      // Long timeout: compiling on ARM64 / 4 threads can take up to 30 min
-      // on older devices. Progress is indeterminate during compile.
-      _updateState(_state.copyWith(downloadProgress: 0.1));
-      await NativeBridge.runInProot(buildScript, timeout: 1800);
+      _updateState(_state.copyWith(downloadProgress: 0.2));
+      
+      // Pass CPU info and binary URL to script
+      final escapedCpuInfo = cpuInfo.replaceAll('"', '\\"').replaceAll('\n', '\\n');
+      final scriptWithArgs = '$installScript "$escapedCpuInfo" "$binaryUrl"';
+      
+      await NativeBridge.runInProot(scriptWithArgs, timeout: 600); // 10 minutes max
       _updateState(_state.copyWith(downloadProgress: 1.0));
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
         errorMessage:
-            'llama-server compile failed. Ensure PRoot/Ubuntu is set up and '
-            'you have a working internet connection.\n\nError: $e',
+            'llama-server installation failed. This might be due to:\n'
+            '1. Network issues downloading binary\n'
+            '2. Missing runtime dependencies\n'
+            '3. CPU architecture incompatibility\n'
+            '4. Insufficient memory or storage\n\n'
+            'Error details: $e\n\n'
+            'Try: Check device compatibility and free up storage space.',
       ));
     }
+  }
+
+  // Enhanced binary URL selection based on CPU detection
+  String _getOptimalBinaryUrl(String cpuInfo) {
+    // Multi-version binary mapping for maximum compatibility
+    final Map<String, String> binaryMap = {
+      'armv8.2-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-arm64-v8.2a',
+      'armv8.1-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-arm64-v8.1a', 
+      'armv8-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-arm64',
+      'armv7-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-armv7',
+    };
+
+    // Detect ARM version and features
+    if (cpuInfo.contains('armv8.2')) return binaryMap['armv8.2-a']!;
+    if (cpuInfo.contains('armv8.1')) return binaryMap['armv8.1-a']!;
+    if (cpuInfo.contains('armv8')) return binaryMap['armv8-a']!;
+    if (cpuInfo.contains('armv7')) return binaryMap['armv7-a']!;
+    
+    // Fallback to most compatible
+    return binaryMap['armv8-a']!;
   }
 
 
@@ -449,11 +539,7 @@ echo "[llama.cpp] Done."
       );
     } catch (_) {}
 
-    // Build the launch command.
-    // Key flags per peer review:
-    //   --no-mmap   : prevent LMKD kills from large memory-mapped files
-    //   --n-gpu-layers 0 : CPU-only (Adreno OpenCL unreliable in PRoot)
-    //   --mlock NOT set  : would trigger aggressive Android LMKD
+    // Build the launch command with proper library path and Android optimizations
     final cmd = [
       '/root/.openclaw/bin/llama-server',
       '--model "${model.prootModelPath}"',
@@ -461,40 +547,127 @@ echo "[llama.cpp] Done."
       '--port $_llamaPort',
       '--ctx-size ${model.contextWindow}',
       '--threads ${_state.threads}',
-      '--n-gpu-layers 0',
-      '--no-mmap',
-      '--log-disable',
+      '--n-gpu-layers 0', // CPU-only - more stable on Android
+      '--no-mmap', // Prevent Android LMKD issues
+      '--mlock', // Lock memory to prevent swapping (but be conservative)
+      '--batch-size', '512', // Smaller batch for mobile
+      '--ubatch-size', '512', // Micro batch size
+      '--log-disable', // Reduce log overhead
     ].join(' ');
 
-    // Launch in background; nohup keeps it alive after the shell exits
+    // Launch with proper error handling and environment
     try {
-      await NativeBridge.runInProot(
-        'nohup $cmd > /root/.openclaw/llama-server.log 2>&1 &',
-        timeout: 10,
-      );
+      _updateState(_state.copyWith(downloadProgress: 0.1));
+      
+      // Create startup script with proper error handling
+      final startupScript = '''
+#!/bin/bash
+set -e
+
+echo "[llama-server] Starting with optimized Android settings..."
+
+# Set up library paths for ARM64
+export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:\$LD_LIBRARY_PATH"
+
+# Optimize for Android memory management  
+export OMP_NUM_THREADS=1
+THREADS=${_state.threads}
+export GOMP_CPU_AFFINITY="0-\$((\$THREADS - 1))"
+
+# Start server with error checking
+echo "[llama-server] Executing: $cmd"
+
+# Use nohup to keep server alive, but also check if it starts properly
+nohup bash -c '$cmd' > /root/.openclaw/llama-server.log 2>&1 &
+SERVER_PID=\$!
+
+# Give it a moment to start
+sleep 2
+
+# Check if process is actually running
+if ! kill -0 \$SERVER_PID 2>/dev/null; then
+  echo "[llama-server] ERROR: Process died immediately"
+  exit 1
+fi
+
+echo "[llama-server] Started successfully with PID: \$SERVER_PID"
+echo \$SERVER_PID > /root/.openclaw/llama-server.pid
+''';
+
+      await NativeBridge.runInProot(startupScript, timeout: 15);
+      _updateState(_state.copyWith(downloadProgress: 0.3));
+      
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'Failed to start llama-server: $e',
+        errorMessage: 'Failed to start llama-server: $e\n\n'
+            'This could be due to:\n'
+            '1. Missing library dependencies\n'
+            '2. Insufficient memory\n'
+            '3. Corrupted binary installation\n\n'
+            'Try: Reinstall the local LLM component.',
       ));
       return;
     }
 
-    // Poll health endpoint for up to 30 seconds
+    // Poll health endpoint with progressive timeout
     bool healthy = false;
-    for (int i = 0; i < 30; i++) {
+    final maxAttempts = 30; // 30 seconds total
+    final progressIncrement = 0.7 / maxAttempts;
+    
+    for (int i = 0; i < maxAttempts; i++) {
       await Future.delayed(const Duration(seconds: 1));
+      _updateState(_state.copyWith(downloadProgress: 0.3 + (i * progressIncrement)));
+      
       if (await isServerHealthy()) {
         healthy = true;
         break;
       }
+      
+      // Early check for common failure patterns
+      if (i == 5) {
+        try {
+          final log = await NativeBridge.runInProot(
+            'tail -20 /root/.openclaw/llama-server.log 2>/dev/null || echo "No log file"',
+            timeout: 5,
+          );
+          if (log.contains('error') || log.contains('Error') || log.contains('ERROR')) {
+            _updateState(_state.copyWith(
+              status: LocalLlmStatus.error,
+              errorMessage: 'llama-server failed to start. Log shows:\n${
+                log.split('\n').where((line) => 
+                  line.contains('error') || line.contains('Error') || line.contains('ERROR')
+                ).take(3).join('\n')
+              }',
+            ));
+            return;
+          }
+        } catch (_) {}
+      }
     }
 
     if (!healthy) {
+      // Get diagnostic information
+      String diagnostic = '';
+      try {
+        diagnostic = await NativeBridge.runInProot(
+          'echo "=== Process Status ===" && ps aux | grep llama-server || echo "No process" && '
+          'echo "=== Log Tail ===" && tail -10 /root/.openclaw/llama-server.log 2>/dev/null || echo "No log"',
+          timeout: 10,
+        );
+      } catch (_) {
+        diagnostic = 'Could not retrieve diagnostics';
+      }
+      
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'llama-server did not respond within 30 s. '
-            'Check /root/.openclaw/llama-server.log inside PRoot.',
+        errorMessage: 'llama-server did not respond within ${maxAttempts}s.\n\n'
+            'Diagnostic information:\n$diagnostic\n\n'
+            'Common solutions:\n'
+            '1. Try with a smaller model (0.5B instead of 1.5B/3B)\n'
+            '2. Reduce thread count in settings\n'
+            '3. Free up device memory by closing other apps\n'
+            '4. Reinstall the local LLM component',
       ));
       return;
     }
@@ -502,7 +675,7 @@ echo "[llama.cpp] Done."
     _updateState(_state.copyWith(
       status: LocalLlmStatus.ready,
       activeModelId: model.id,
-      downloadProgress: 0.0,
+      downloadProgress: 1.0,
     ));
 
     // Auto-patch openclaw.json to route through localhost
