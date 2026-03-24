@@ -1,7 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:clawa/widgets/glass_card.dart'; // Ensure GlassCard and NebulaBg are imported
 import 'package:clawa/services/native_bridge.dart';
+import 'package:provider/provider.dart';
+import '../../providers/gateway_provider.dart';
 import '../../app.dart';
 
 class StatusDashboard extends StatefulWidget {
@@ -42,9 +45,12 @@ class _StatusDashboardState extends State<StatusDashboard> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
+      backgroundColor: Colors.black, // Dark base for NebulaBg
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          CustomScrollView(
+            slivers: [
           _buildAppBar(context),
           SliverToBoxAdapter(
             child: Padding(
@@ -54,35 +60,52 @@ class _StatusDashboardState extends State<StatusDashboard> {
                 children: [
                   _buildSectionHeader(context, 'Core Engines'),
                   const SizedBox(height: 16),
-                  _buildServiceCard(
-                    context,
-                    'Clawa Gateway',
-                    'Main orchestrator & API bridge',
-                    _gatewayRunning,
-                    Icons.hub_rounded,
+                  Consumer<GatewayProvider>(
+                    builder: (context, provider, _) {
+                      final isHttpReachable = provider.state.isRunning;
+                      final isWsConnected = provider.state.isWebsocketConnected;
+                      
+                      String statusText = 'DOWN';
+                      Color statusColor = Colors.redAccent;
+                      IconData statusIcon = Icons.error_rounded;
+                      
+                      if (isWsConnected) {
+                        statusText = 'WS CONNECTED';
+                        statusColor = AppColors.statusGreen;
+                        statusIcon = Icons.sensors_rounded;
+                      } else if (isHttpReachable) {
+                        statusText = 'HTTP REACHABLE';
+                        statusColor = Colors.cyanAccent;
+                        statusIcon = Icons.hub_rounded;
+                      }
+                      
+                      return _buildServiceCard(
+                        context,
+                        'Plawie Gateway',
+                        'Main orchestrator & API bridge',
+                        isWsConnected || isHttpReachable,
+                        statusIcon,
+                        overrideColor: statusColor,
+                        overrideText: statusText,
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
-                  _buildServiceCard(
-                    context,
-                    'OpenClaw Node',
-                    'Agent execution & WebSocket',
-                    _nodeRunning,
-                    Icons.terminal_rounded,
-                  ),
-                  const SizedBox(height: 32),
-                  _buildSectionHeader(context, 'Background Stability'),
-                  const SizedBox(height: 16),
-                  _buildStabilityConfig(context),
-                  const SizedBox(height: 32),
-                  _buildSectionHeader(context, 'System Persistence'),
-                  const SizedBox(height: 16),
-                  _buildPersistenceInfo(context),
-                ],
+                    _buildServiceCard(
+                      context,
+                      'OpenClaw Node',
+                      'Agent execution rootfs (PRoot)',
+                      _nodeRunning,
+                      Icons.terminal_rounded,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
+    ),
     );
   }
 
@@ -102,9 +125,9 @@ class _StatusDashboardState extends State<StatusDashboard> {
         ),
         background: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
             child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.2), // More liquid glass
             ),
           ),
         ),
@@ -123,32 +146,28 @@ class _StatusDashboardState extends State<StatusDashboard> {
     );
   }
 
-  Widget _buildServiceCard(BuildContext context, String name, String desc, bool isRunning, IconData icon) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+  Widget _buildServiceCard(BuildContext context, String name, String desc, bool isRunning, IconData icon, {Color? overrideColor, String? overrideText}) {
+    final activeColor = overrideColor ?? (isRunning ? AppColors.statusGreen : Colors.redAccent);
+    
+    return GlassCard(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05)),
-      ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: (isRunning ? AppColors.statusGreen : Colors.red).withValues(alpha: 0.1),
+              color: activeColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: isRunning ? AppColors.statusGreen : Colors.redAccent, size: 24),
+            child: Icon(icon, color: activeColor, size: 24),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text(desc, style: TextStyle(fontSize: 12, color: AppColors.statusGrey)),
+                Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(desc, style: const TextStyle(fontSize: 12, color: AppColors.statusGrey)),
               ],
             ),
           ),
@@ -158,13 +177,13 @@ class _StatusDashboardState extends State<StatusDashboard> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                color: (isRunning ? AppColors.statusGreen : Colors.red).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
+                  color: activeColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(
-                  isRunning ? 'REACHABLE' : 'DOWN',
+                  overrideText ?? (isRunning ? 'REACHABLE' : 'DOWN'),
                   style: TextStyle(
-                    color: isRunning ? AppColors.statusGreen : Colors.redAccent,
+                    color: activeColor,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
                   ),
@@ -178,14 +197,8 @@ class _StatusDashboardState extends State<StatusDashboard> {
   }
 
   Widget _buildStabilityConfig(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return GlassCard(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
-      ),
       child: Column(
         children: [
           _buildInfoRow(
@@ -215,14 +228,8 @@ class _StatusDashboardState extends State<StatusDashboard> {
   }
 
   Widget _buildPersistenceInfo(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return GlassCard(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
-      ),
       child: Column(
         children: [
           _buildInfoRow('Database Sync', 'Automatic on skill change', true, Icons.save_rounded),

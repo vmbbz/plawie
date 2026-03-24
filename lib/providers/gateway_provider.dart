@@ -17,6 +17,9 @@ class GatewayProvider extends ChangeNotifier {
   /// Detailed health metrics from the gateway RPC.
   Map<String, dynamic>? get detailedHealth => _state.detailedHealth;
 
+  /// Active skills reported by the gateway.
+  List<Map<String, dynamic>>? get activeSkills => _state.activeSkills;
+
   /// Send a message to the OpenClaw gateway and stream the response
   Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) {
     return _gatewayService.sendMessage(message, model: model);

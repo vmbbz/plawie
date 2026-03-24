@@ -106,7 +106,7 @@ class PreferencesService {
   }
 
   /// User-chosen agent name
-  String get agentName => _p.getString('agent_name') ?? 'Clawa';
+  String get agentName => _p.getString('agent_name') ?? 'Plawie';
   set agentName(String value) => _p.setString('agent_name', value);
 
   /// Whether an API key has been configured

@@ -163,23 +163,23 @@ class _SkillInstallHeroState extends State<SkillInstallHero> {
 
   IconData _getSkillIcon() {
     switch (widget.skill.id) {
-      case 'twilio_voice': return Icons.phone_android_outlined;
-      case 'agent_card': return Icons.credit_card_outlined;
-      case 'molt_launch': return Icons.rocket_launch_outlined;
-      case 'valeo_sentinel': return Icons.security_outlined;
+      case 'twilio-voice': return Icons.phone_android_outlined;
+      case 'agent-card': return Icons.credit_card_outlined;
+      case 'molt-launch': return Icons.rocket_launch_outlined;
+      case 'valeo-sentinel': return Icons.security_outlined;
       default: return Icons.extension_outlined;
     }
   }
 
   List<String> _getSkillFeatures() {
     switch (widget.skill.id) {
-      case 'twilio_voice':
+      case 'twilio-voice':
         return ['AI Voice Bridging', 'Conversation Relay', 'Dual-Channel Audio'];
-      case 'agent_card':
+      case 'agent-card':
         return ['Virtual Visa/MC', 'Instant Issuance', 'Spend Controls'];
-      case 'molt_launch':
+      case 'molt-launch':
         return ['Job Coordination', 'On-Chain Reputation', 'Automated Escrow'];
-      case 'valeo_sentinel':
+      case 'valeo-sentinel':
         return ['Budget Enforcement', 'Compliance Auditing', 'Safe Spend Policies'];
       default:
         return ['Native Integration', 'AI Tool Compatibility', 'Auto-Discovery'];

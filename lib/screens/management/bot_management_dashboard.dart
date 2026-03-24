@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/gateway_provider.dart';
@@ -11,6 +12,8 @@ import 'agent_manager.dart';
 import 'config_editor.dart';
 import 'skills_manager.dart';
 
+import 'package:clawa/widgets/glass_card.dart'; // Ensure GlassCard and NebulaBg are imported
+
 class BotManagementDashboard extends StatelessWidget {
   const BotManagementDashboard({super.key});
 
@@ -20,9 +23,12 @@ class BotManagementDashboard extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
+      backgroundColor: Colors.black, // Dark base for NebulaBg
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          CustomScrollView(
+            slivers: [
           _buildAppBar(context),
           SliverToBoxAdapter(
             child: Padding(
@@ -95,34 +101,50 @@ class BotManagementDashboard extends StatelessWidget {
               ]),
             ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-        ],
-      ),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          ],
+        ),
+      ],
+    ),
     );
   }
 
+
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 120.0,
+      expandedHeight: 100.0,
       floating: false,
       pinned: true,
       stretch: true,
       backgroundColor: Colors.transparent,
-      flexibleSpace: FlexibleSpaceBar(
-        centerTitle: false,
-        titlePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        title: Text(
-          'Bot Management',
-          style: GoogleFonts.outfit(
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).textTheme.titleLarge?.color,
+      centerTitle: true,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            'assets/app_icon_official.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
           ),
-        ),
+          const SizedBox(width: 10),
+          Text(
+            'MANAGEMENT',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 3.0,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+      flexibleSpace: FlexibleSpaceBar(
         background: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.2),
             ),
           ),
         ),
@@ -186,21 +208,19 @@ class StatusSummaryCard extends StatelessWidget {
     return Consumer<GatewayProvider>(
       builder: (context, provider, _) {
         final health = provider.detailedHealth;
-        final uptimeMs = health?['uptimeMs'] as int?;
+        // OpenClaw 2.x health object is flat: { ok, durationMs, agents: [], ts, ... }
         final isHealthy = provider.state.status == GatewayStatus.running;
-        // health RPC returns { uptimeMs, health: { durationMs, agents:[], ok } }
-        final healthInner = health?['health'] as Map<String, dynamic>?;
-        final agentsCount = (healthInner?['agents'] as List?)?.length ?? 0;
+        final agentsCount = (health?['agents'] as List?)?.length ?? 0;
+        final latency = health?['durationMs'] ?? health?['latency_ms'];
+        
+        // Calculate uptime from locally tracked startedAt if remote uptimeMs is missing
+        int? uptimeMs = health?['uptimeMs'] as int?;
+        if (uptimeMs == null && provider.state.startedAt != null && isHealthy) {
+          uptimeMs = DateTime.now().difference(provider.state.startedAt!).inMilliseconds;
+        }
 
-        return Container(
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
-            ),
-          ),
-          padding: const EdgeInsets.all(20),
+        return GlassCard(
+          padding: const EdgeInsets.all(24),
           child: Column(
             children: [
               Row(
@@ -236,9 +256,29 @@ class StatusSummaryCard extends StatelessWidget {
                   _buildMetric(
                     context, 
                     'LATENCY', 
-                    healthInner?['durationMs'] != null ? 'ms' : '--',
+                    latency != null ? '${latency}ms' : '--',
                     Icons.speed_rounded,
                     AppColors.statusAmber,
+                  ),
+                ],
+              ),
+              const Divider(height: 32),
+              Row(
+                children: [
+                   _buildMetric(
+                    context, 
+                    'TOOL CALLS', 
+                    health?['toolCalls']?.toString() ?? '0',
+                    Icons.bolt_rounded,
+                     Colors.purpleAccent,
+                  ),
+                  const Spacer(),
+                  _buildMetric(
+                    context, 
+                    'TOP SKILL', 
+                    health?['topSkill']?.toString() ?? 'None',
+                    Icons.star_outline_rounded,
+                    Colors.blueAccent,
                   ),
                 ],
               ),
@@ -303,64 +343,46 @@ class _CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      borderRadius: 24,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-          child: Container(
-            decoration: BoxDecoration(
-              color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: color, size: 28),
               ),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  color.withOpacity(0.1),
-                  Colors.transparent,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: AppColors.statusGrey,
+                    ),
+                  ),
                 ],
               ),
-            ),
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(icon, color: color, size: 28),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontSize: 11,
-                        color: AppColors.statusGrey,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

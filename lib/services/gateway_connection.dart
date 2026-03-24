@@ -56,10 +56,16 @@ class GatewayConnection {
   Completer<void>? _handshakeCompleter;
   Completer<String?>? _challengeCompleter;
 
+  Future<bool>? _connectFuture;
+
   /// Connect to the gateway with the given auth token.
   Future<bool> connect(String token) async {
     if (_state == GatewayConnectionState.connected && _token == token) {
       return true; // Already connected
+    }
+
+    if (_connectFuture != null) {
+      return _connectFuture!;
     }
 
     _token = token;
@@ -70,7 +76,13 @@ class GatewayConnection {
       _identityLoaded = true;
     }
 
-    return _doConnect();
+    _connectFuture = _doConnect();
+    try {
+      final result = await _connectFuture!;
+      return result;
+    } finally {
+      _connectFuture = null;
+    }
   }
 
   Future<bool> _doConnect() async {
@@ -80,7 +92,7 @@ class GatewayConnection {
     try {
       final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
       _channel = WebSocketChannel.connect(wsUri);
-      await _channel!.ready;
+      await _channel!.ready.timeout(const Duration(seconds: 5));
     } catch (e) {
       _updateState(GatewayConnectionState.disconnected);
       _scheduleReconnect();

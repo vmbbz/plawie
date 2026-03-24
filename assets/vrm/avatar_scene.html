@@ -15,6 +15,7 @@
             padding: 0;
             overflow: hidden;
             background-color: transparent;
+            touch-action: none;
         }
 
         canvas {
@@ -46,8 +47,8 @@
         window.onerror = function (msg, url, lineNo, columnNo, error) {
             const errorMsg = 'ERROR: ' + msg + ' @ ' + url + ':' + lineNo + ':' + columnNo;
             console.error(errorMsg);
-            if (window.ClawaBridge) {
-                window.ClawaBridge.postMessage(errorMsg);
+            if (window.PlawieBridge) {
+                window.PlawieBridge.postMessage(errorMsg);
             }
             return false;
         };
@@ -55,15 +56,15 @@
         window.addEventListener('unhandledrejection', function (event) {
             const msg = 'ERROR (Promise): ' + (event.reason ? event.reason.toString() : 'Unknown rejection');
             console.error(msg);
-            if (window.ClawaBridge) {
-                window.ClawaBridge.postMessage(msg);
+            if (window.PlawieBridge) {
+                window.PlawieBridge.postMessage(msg);
             }
         });
 
         (function () {
             const probe = () => {
-                if (window.ClawaBridge) {
-                    window.ClawaBridge.postMessage('LOG: [JS] Bridge Probe Successful');
+                if (window.PlawieBridge) {
+                    window.PlawieBridge.postMessage('LOG: [JS] Bridge Probe Successful');
                 } else {
                     setTimeout(probe, 100);
                 }
@@ -140,31 +141,26 @@
                     vrm.scene.position.set(0, 0, 0); 
                     vrm.scene.updateMatrixWorld(true);
 
-                    // --- UNIFIED HEIGHT ENGINE (Normalization) ---
-                    vrm.scene.position.set(0, 0, 0);
-                    vrm.scene.scale.set(1, 1, 1);
-                    vrm.scene.updateMatrixWorld(true);
-
+                    // --- PURE aiDreams6Nov CENTERING ENGINE ---
                     const box = new THREE.Box3().setFromObject(vrm.scene);
                     const size = box.getSize(new THREE.Vector3());
+                    const center = box.getCenter(new THREE.Vector3());
                     
-                    // Normalize all models to a standard height (1.44 = 1.6 × 0.9, -10%)
-                    const targetHeight = 1.44;
-                    const scaleFactor = targetHeight / size.y;
-                    vrm.scene.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                    vrm.scene.position.sub(center);
                     vrm.scene.updateMatrixWorld(true);
 
-                    // Re-calculate box and align feet to Y=0
-                    const box2 = new THREE.Box3().setFromObject(vrm.scene);
-                    vrm.scene.position.y = -box2.min.y;
-                    vrm.scene.updateMatrixWorld(true);
+                    const head = vrm.humanoid.getNormalizedBoneNode('head');
+                    const headPos = new THREE.Vector3();
+                    if (head) head.getWorldPosition(headPos);
 
-                    // Standard metrics for the normalized 1.6m scale
+                    const trueHeight = head ? (headPos.y + (size.y / 2)) * 1.1 : size.y;
+                    const trueWidth = size.x;
+                    
                     avatarMetrics = { 
-                        height: targetHeight, 
-                        width: size.x * scaleFactor, 
+                        height: trueHeight, 
+                        width: trueWidth, 
                         centerX: -0.15,
-                        headY: 1.5 // Standard head-center for 1.6m normalized height
+                        headY: head ? headPos.y : 1.45 
                     };
                     
                     updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
@@ -198,18 +194,18 @@
                     });
                 },
                 (progress) => {
-                    if (window.ClawaBridge && progress.total > 0) {
-                        window.ClawaBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
+                    if (window.PlawieBridge && progress.total > 0) {
+                        window.PlawieBridge.postMessage('PROGRESS:' + (progress.loaded / progress.total));
                     }
                 },
                 (err) => {
                     console.error(err);
-                    if (window.ClawaBridge) window.ClawaBridge.postMessage('ERROR: [JS] ' + err);
+                    if (window.PlawieBridge) window.PlawieBridge.postMessage('ERROR: [JS] ' + err);
                 }
             );
         };
 
-        if (window.ClawaBridge) window.ClawaBridge.postMessage('READY');
+        if (window.PlawieBridge) window.PlawieBridge.postMessage('READY');
         
         // --- NEW: Sparkle Manager (Fireworks Effect) ---
         class SparkleManager {
@@ -381,6 +377,8 @@
 
         // --- RESTORED: Optimized Dynamic Framing Engine (Commit b85d7370) ---
         let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15, headY: 1.45 };
+        let userZoomOffset = 0; // Pinch-to-zoom offset
+        let initialPinchDistance = 0;
         
         function updateCameraFraming(containerWidth, containerHeight) {
             if (!containerWidth || !containerHeight) return;
@@ -398,7 +396,7 @@
                 // Show the entire 1.6m avatar inside the small 3:4 PiP window.
                 // We need enough camera distance so the vertical FoV covers
                 // the model height plus some breathing room (10% margin).
-                const PIP_MARGIN = 1.15; // 15% breathing room
+                const PIP_MARGIN = 1; // 15% breathing room
                 const halfFov = (camera.fov * Math.PI) / 360;
                 const tanHalf = Math.tan(halfFov);
                 // Distance so the full height fits vertically
@@ -411,33 +409,29 @@
                 return;
             }
 
-            // ── MAIN CHAT / OVERLAY: Grounded framing ──
-            // The avatar's feet are at Y=0 (set by the Unified Height Engine).
-            // We position the camera so feet appear near the screen bottom
-            // and the avatar fills the view proportionally.
-            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.85;
-            const halfFov = (camera.fov * Math.PI) / 360;
-            const tanHalf = Math.tan(halfFov);
-
-            // Calculate distance to fit the model height
-            let dist = avatarMetrics.height / (2 * tanHalf * ZOOM_FACTOR);
-
-            // On very narrow screens, also ensure width fits
+            // RESTORED: Exact ZOOM and PAN logic for main app / overlay
+            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.5; 
+            const PAN_Y_OFFSET = isOverlay ? 0.5 : 0.15; 
+            const tanFov = Math.tan((camera.fov * Math.PI) / 360); 
+            
+            let distHeight = avatarMetrics.height / (2 * tanFov);
+            let distWidth = 0;
             const containerAspect = camera.aspect;
             if (containerAspect < 0.6) {
-                const distWidth = avatarMetrics.width / (2 * tanHalf * containerAspect * ZOOM_FACTOR);
-                dist = Math.max(dist, distWidth);
+                 distWidth = avatarMetrics.width / (2 * tanFov * containerAspect);
             }
-            targetCameraZ = dist;
-
-            // The camera sees (dist * tanHalf) units above and below its Y.
-            // GROUND_OFFSET = -0.05: negative nudges feet fully into frame at bottom edge.
-            const visibleHalf = dist * tanHalf;
-            const GROUND_OFFSET = isOverlay ? 0.3 : -0.05;
-            const cameraY = visibleHalf + GROUND_OFFSET;
-
+            
+            let baseDist = Math.max(distHeight, distWidth) / ZOOM_FACTOR;
+            targetCameraZ = baseDist + userZoomOffset;
+            
+            const frameCenterY = (baseDist * tanFov) - (avatarMetrics.height * (isOverlay ? 0.4 : 0.5)) - PAN_Y_OFFSET;
+            avatarMetrics.centerY = frameCenterY; // Cache for orbit rotation
+            
+            // ELEVATED TILT: Raise the camera slightly but keep it pointing at the original center
+            const cameraY = frameCenterY + 0.35; 
+            
             camera.position.set(avatarMetrics.centerX, cameraY, targetCameraZ);
-            camera.lookAt(avatarMetrics.centerX, cameraY, 0);
+            camera.lookAt(avatarMetrics.centerX, frameCenterY, 0);
         }
 
         let lastHeight = 0;
@@ -480,7 +474,7 @@
             if (window.ClawaBridge) window.ClawaBridge.postMessage('LOG: [JS] Tap gaze target updated');
         };
 
-        // ── Touch Orbit Camera (360° Y-axis rotation, auto-reset after 4s) ──
+        // ── Touch Orbit Camera (360° Y-axis rotation, auto-reset after 4s) + Pinch Zoom ──
         let orbitAngle = 0;         // Current orbit angle (radians)
         let orbitTarget = 0;        // Target angle to lerp toward
         let lastOrbitTime = -100;   // Time of last drag event
@@ -493,15 +487,32 @@
                 isDragging = true;
                 dragStartX = e.touches[0].clientX;
                 lastOrbitTime = clock.elapsedTime;
+            } else if (e.touches.length === 2) {
+                isDragging = false;
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
             }
         }, { passive: true });
 
         document.addEventListener('touchmove', (e) => {
-            if (!isDragging || e.touches.length !== 1) return;
-            const dx = e.touches[0].clientX - dragStartX;
-            dragStartX = e.touches[0].clientX;
-            orbitTarget += dx * ORBIT_DRAG_SENSITIVITY;
-            lastOrbitTime = clock.elapsedTime;
+            if (e.touches.length === 1 && isDragging) {
+                const dx = e.touches[0].clientX - dragStartX;
+                dragStartX = e.touches[0].clientX;
+                orbitTarget += dx * ORBIT_DRAG_SENSITIVITY;
+                lastOrbitTime = clock.elapsedTime;
+            } else if (e.touches.length === 2) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                const delta = dist - initialPinchDistance;
+                userZoomOffset -= delta * 0.01; // Pinch sensitivity
+                userZoomOffset = Math.max(-1.5, Math.min(3.0, userZoomOffset)); // Clamp zoom range
+                
+                initialPinchDistance = dist;
+                updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
+            }
         }, { passive: true });
 
         document.addEventListener('touchend', () => {
@@ -544,7 +555,7 @@
                     const camY = camera.position.y; // keep existing height
                     camera.position.x = Math.sin(orbitAngle) * currentCameraZ + avatarMetrics.centerX;
                     camera.position.z = Math.cos(orbitAngle) * currentCameraZ;
-                    camera.lookAt(avatarMetrics.centerX, camY, 0);
+                    camera.lookAt(avatarMetrics.centerX, avatarMetrics.centerY || camY, 0); // PRESERVE TILT
                 } else {
                     camera.position.z = currentCameraZ;
                 }

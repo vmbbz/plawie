@@ -65,7 +65,7 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
   }
 
   bool get _isEnabled {
-    final skill = SkillsService().getSkill('molt_launch');
+    final skill = SkillsService().getSkill('molt-launch');
     return skill?.enabled ?? false;
   }
 
@@ -79,7 +79,7 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     setState(() { _loadingIdentity = true; _error = null; });
 
     final result = await SkillsService()
-        .executeSkill('molt_launch', parameters: {'method': 'get_identity'});
+        .executeSkill('molt-launch', parameters: {'method': 'get_identity'});
 
     if (!mounted) return;
     if (result.success) {
@@ -101,7 +101,7 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     setState(() { _loadingRep = true; });
 
     final result = await SkillsService()
-        .executeSkill('molt_launch', parameters: {'method': 'get_rep'});
+        .executeSkill('molt-launch', parameters: {'method': 'get_rep'});
 
     if (!mounted) return;
     if (result.success) {
@@ -119,14 +119,14 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     }
   }
 
-  /// Register the agent on MoltLaunch via gateway → skills.execute → molt_launch.register
+  /// Register the agent on MoltLaunch via gateway → skills.execute → molt-launch.register
   /// Gateway runs: POST https://api.moltlaunch.com/api/agents/register
   Future<void> _registerAgent() async {
     if (!mounted) return;
     setState(() { _loadingIdentity = true; _error = null; });
 
     final result = await SkillsService()
-        .executeSkill('molt_launch', parameters: {'method': 'register'});
+        .executeSkill('molt-launch', parameters: {'method': 'register'});
 
     if (!mounted) return;
     if (result.success) {
@@ -197,7 +197,7 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
   }
 
   Widget _buildInstallHero(BuildContext context) {
-    final skill = SkillsService().getSkill('molt_launch');
+    final skill = SkillsService().getSkill('molt-launch');
     if (skill == null) return const Center(child: Text('Skill not found'));
     return Stack(
       children: [

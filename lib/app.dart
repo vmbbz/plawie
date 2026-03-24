@@ -41,8 +41,8 @@ class AppColors {
   static const Color inverseText = Color(0xFFFFFFFF); // Pure white for dark mode
 }
 
-class ClawaApp extends StatelessWidget {
-  const ClawaApp({super.key});
+class PlawieApp extends StatelessWidget {
+  const PlawieApp({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -12,6 +12,7 @@ class GatewayService {
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
   GatewayConnection? _connection;
+  bool _healthCheckInFlight = false;
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
@@ -57,30 +58,13 @@ class GatewayService {
 
       _subscribeLogs();
       _startHealthCheck();
-      // FIX: Fire an immediate health check so the UI doesn't wait for the
-      // first timer tick (which can be 5–10 seconds after wake-up).
+
+      // Fire an immediate health check AND token fetch concurrently.
+      // _checkHealth() now handles WS connect + RPC discovery internally,
+      // so we don't need to duplicate that logic here.
       unawaited(_checkHealth());
-
-      // Proactively try to get the token from the existing process
-      await fetchAuthenticatedDashboardUrl(force: true);
-
-      // FIX: Connect (or reconnect) the WebSocket after waking from sleep.
-      // Previously, init() never initiated a WS connection, so all RPC
-      // calls (chat, skills, bot management) silently failed even though
-      // the HTTP gateway was reachable. The WS reconnect counter may also
-      // be exhausted after hours of background use — reset it first.
-      try {
-        final token = await retrieveTokenFromConfig();
-        if (token != null && token.isNotEmpty) {
-          _connection ??= GatewayConnection();
-          // Reset exhausted reconnect counter from prior session
-          _connection!.resetReconnectCounter();
-          // Connect asynchronously — don't block init() on WS handshake
-          unawaited(_connection!.connect(token));
-        }
-      } catch (_) {
-        // Non-fatal — WS will retry via its own backoff loop
-      }
+      // Fire token/dashboard URL fetch in parallel — don't block the UI.
+      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) {}));
     } else {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']
@@ -140,6 +124,12 @@ if (!c.gateway.nodes) c.gateway.nodes = {};
 c.gateway.nodes.denyCommands = [];
 c.gateway.nodes.allowCommands = $allowJson;
 c.gateway.mode = "local";
+// Enable Skills Discovery Hub (Port 8765) per OpenClaw 2.x Architecture
+if (!c.skills) c.skills = {};
+c.skills.discovery = "http://127.0.0.1:8765/api/tools";
+c.skills.mode = "auto";
+c.skills.sync = "mirror"; // Enable 2-Way Sync per documentation
+
 // Enable OpenAI-compatible HTTP endpoint for fallback chat
 if (!c.gateway.openaiCompat) c.gateway.openaiCompat = {};
 c.gateway.openaiCompat.enabled = true;
@@ -515,13 +505,59 @@ try {
     );
   }
 
+  /// Ensure the WebSocket is connected. Creates the connection object if
+  /// needed, wires up the state listener, resets backoff, and connects.
+  /// Returns true if the WS is (or became) connected.
+  Future<bool> _ensureWebSocket(String token) async {
+    if (_connection?.state == GatewayConnectionState.connected) return true;
+
+    if (_connection == null) {
+      _connection = GatewayConnection();
+      _connection!.stateStream.listen((wsState) {
+        final connected = wsState == GatewayConnectionState.connected;
+        _updateState(_state.copyWith(
+          isWebsocketConnected: connected,
+          logs: connected
+              ? [..._state.logs, '[INFO] WebSocket connected (session: ${_connection?.mainSessionKey ?? 'pending'})']
+              : _state.logs,
+        ));
+      });
+    }
+
+    _connection!.resetReconnectCounter();
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[INFO] Connecting WebSocket...'],
+    ));
+    final ok = await _connection!.connect(token);
+    if (ok) {
+      _updateState(_state.copyWith(
+        isWebsocketConnected: true,
+        logs: [..._state.logs, '[INFO] WebSocket handshake complete (session: ${_connection!.mainSessionKey ?? 'main'})'],
+      ));
+    } else {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[WARN] WebSocket connect failed — will retry on next health tick'],
+      ));
+    }
+    return ok;
+  }
+
   Future<void> _checkHealth() async {
+    // ── Re-entrancy guard ────────────────────────────────────────────────
+    // Prevent overlapping health ticks. Each tick can involve PRoot calls
+    // and WS handshakes that take several seconds. Without this guard,
+    // timer ticks pile up and cause cascading stalls.
+    if (_healthCheckInFlight) return;
+    _healthCheckInFlight = true;
+
     try {
+      // ── 1. Fast HTTP probe ─────────────────────────────────────────────
       final response = await http
           .head(Uri.parse(AppConstants.gatewayUrl))
           .timeout(const Duration(seconds: 3));
 
       if (response.statusCode < 500) {
+        // Mark gateway as running on first successful probe
         if (_state.status != GatewayStatus.running) {
           _updateState(_state.copyWith(
             status: GatewayStatus.running,
@@ -530,26 +566,101 @@ try {
           ));
         }
 
-        // Auto-reconnect WebSocket if the gateway is up but WS dropped
-        if (_connection == null || _connection!.state != GatewayConnectionState.connected) {
-          try {
-            final token = await retrieveTokenFromConfig();
-            if (token != null && token.isNotEmpty) {
-              _connection ??= GatewayConnection();
-              _connection!.resetReconnectCounter();
-              unawaited(_connection!.connect(token));
-            }
-          } catch (_) {
-            // Non-fatal — WS will retry on next health tick
-          }
+        // ── 2. Single token retrieval (with timeout) ─────────────────────
+        String? token;
+        try {
+          token = await retrieveTokenFromConfig()
+              .timeout(const Duration(seconds: 5));
+        } catch (_) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[WARN] Token retrieval timed out — skipping WS/RPC this tick'],
+          ));
+          return; // Skip WS + RPC work; next tick will retry
         }
 
-        // 2. Fetch detailed RPC health
+        if (token == null || token.isEmpty) {
+          // Token not available yet — not fatal, next tick will retry
+          return;
+        }
+
+        // ── 3. Ensure WebSocket is connected (single consolidated path) ──
+        if (_connection?.state != GatewayConnectionState.connected) {
+          await _ensureWebSocket(token);
+        }
+
+        // ── 4. RPC discovery (health, skills, capabilities) with logging ─
         if (_connection?.state == GatewayConnectionState.connected) {
           try {
             final healthResult = await invoke('health');
-            if (healthResult['ok'] == true) {
-              _updateState(_state.copyWith(detailedHealth: healthResult['payload']));
+            final healthData = healthResult.containsKey('payload')
+                ? healthResult['payload']
+                : healthResult;
+            if (healthData != null &&
+                (healthData['ok'] == true || healthData['health'] != null)) {
+              _updateState(_state.copyWith(
+                detailedHealth: healthData,
+                logs: [..._state.logs, '[INFO] Health RPC: ok=${healthData['ok'] ?? healthData['health']}'],
+              ));
+            }
+          } catch (_) {
+            // Non-fatal — health RPC may not be supported on all gateways
+          }
+
+          try {
+            final skillsResult = await invoke('skills.list');
+            final skillsData = skillsResult.containsKey('payload')
+                ? skillsResult['payload']
+                : skillsResult;
+            if (skillsData != null &&
+                (skillsResult['ok'] == true || skillsData is List)) {
+              final rawList = skillsData is List
+                  ? skillsData
+                  : (skillsData['skills'] ?? skillsData['items'] ?? []);
+              final parsedSkills = <Map<String, dynamic>>[];
+              final parsedIds = <String>{};
+              for (final skill in rawList as List) {
+                if (skill is Map) {
+                  final mapped = Map<String, dynamic>.from(skill);
+                  parsedSkills.add(mapped);
+                  final id = (mapped['id'] ?? mapped['name'] ?? mapped['skillId'])?.toString().toLowerCase() ?? '';
+                  if (id.isNotEmpty) parsedIds.add(id);
+                } else if (skill is String) {
+                  parsedSkills.add({'id': skill, 'name': skill});
+                  parsedIds.add(skill.toLowerCase());
+                }
+              }
+              _updateState(_state.copyWith(
+                activeSkills: parsedSkills,
+                logs: [..._state.logs, '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'],
+              ));
+            }
+          } catch (_) {}
+
+          try {
+            final capResult = await invoke('capabilities.list');
+            final capData = capResult.containsKey('payload')
+                ? capResult['payload']
+                : capResult;
+            if (capData != null &&
+                (capResult['ok'] == true || capData is List)) {
+              final rawList = capData is List
+                  ? capData
+                  : (capData['capabilities'] ??
+                      capData['tools'] ??
+                      capData['items'] ??
+                      []);
+              final caps = <String>[];
+              for (final cap in rawList as List) {
+                final name = (cap is Map
+                        ? (cap['name'] ?? cap['id'])
+                        : cap)
+                    ?.toString() ?? '';
+                if (name.isNotEmpty) caps.add(name);
+              }
+              _updateState(_state.copyWith(
+                capabilities: caps,
+                logs: [..._state.logs, '[INFO] Capabilities: ${caps.isEmpty ? 'none' : caps.join(', ')}'],
+              ));
             }
           } catch (_) {}
         }
@@ -565,6 +676,8 @@ try {
         // NOTE: Do NOT cancel the timer here. Keep polling so we detect
         // when the gateway restarts (e.g. auto-restart via WorkManager).
       }
+    } finally {
+      _healthCheckInFlight = false;
     }
   }
 
@@ -600,6 +713,11 @@ try {
     // Use persistent connection with auto-reconnect
     if (_connection == null) {
       _connection = GatewayConnection();
+      _connection!.stateStream.listen((wsState) {
+        _updateState(_state.copyWith(
+          isWebsocketConnected: wsState == GatewayConnectionState.connected,
+        ));
+      });
     }
 
     if (_connection!.state != GatewayConnectionState.connected) {

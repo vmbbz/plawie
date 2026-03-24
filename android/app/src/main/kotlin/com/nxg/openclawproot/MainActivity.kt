@@ -184,7 +184,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "startGateway" -> {
                     try {
-                        ClawaForegroundService.start(this)
+                        PlawieForegroundService.start(this)
                         val success = processManager.startGateway()
                         result.success(success)
                     } catch (e: Exception) {
@@ -194,7 +194,7 @@ class MainActivity : FlutterActivity() {
                 "stopGateway" -> {
                     try {
                         val success = processManager.stopGateway()
-                        ClawaForegroundService.stop(this)
+                        PlawieForegroundService.stop(this)
                         result.success(success)
                     } catch (e: Exception) {
                         result.error("SERVICE_ERROR", e.message, null)

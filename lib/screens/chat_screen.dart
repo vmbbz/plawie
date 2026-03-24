@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../services/piper_tts_service.dart';
@@ -18,6 +19,7 @@ import '../main.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
+import 'management/local_llm_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -581,18 +583,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   void _showUnifiedMenu(BuildContext context) {
+    HapticFeedback.selectionClick();
     final RenderBox? button = context.findRenderObject() as RenderBox?;
     final position = button?.localToGlobal(Offset.zero) ?? Offset.zero;
     
     showMenu<dynamic>(
       context: context,
-      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 300, 0),
-      color: const Color(0xFF1A1A2E),
-      elevation: 20,
+      color: const Color(0xCC030810), // Increased transparency
+      elevation: 24,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.08), width: 1),
       ),
+      position: RelativeRect.fromLTRB(position.dx, 80, position.dx + 300, 0),
       items: [
         // Premium Header
         PopupMenuItem<void>(
@@ -606,9 +609,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   Text(
                     'AGENT SETTINGS',
                     style: TextStyle(
-                      color: AppColors.statusGreen.withValues(alpha: 0.8),
+                      color: AppColors.statusGreen.withValues(alpha: 0.7),
                       fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600, // Thinner
                       letterSpacing: 2.0,
                     ),
                   ),
@@ -644,21 +647,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [AppColors.statusGreen, AppColors.statusGreen.withValues(alpha: 0.4)],
-                      ),
+                      color: AppColors.statusGreen.withValues(alpha: 0.25), // Soft single shade
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.statusGreen.withValues(alpha: 0.2),
-                          blurRadius: 10,
-                          spreadRadius: 2,
-                        )
-                      ],
+                      border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
                     ),
-                    child: const Icon(Icons.psychology_outlined, color: Colors.white, size: 20),
+                    child: Center(
+                      child: SvgPicture.asset(
+                        'assets/app_icon_official.svg',
+                        width: 18,
+                        height: 18,
+                        colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -707,7 +707,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // Avatars Section
         PopupMenuItem<void>(
           enabled: false,
-          height: 28,
+          height: 20,
           child: Text(
             'ACTIVE AVATAR',
             style: TextStyle(
@@ -720,6 +720,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         ),
         ..._availableAvatars.map((avatar) => PopupMenuItem<String>(
           value: 'avatar:$avatar',
+          height: 36,
           child: Row(
             children: [
               Icon(
@@ -742,6 +743,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'avatar_forge',
+          height: 36,
           child: Row(
             children: [
               Icon(Icons.face, color: AppColors.statusGreen, size: 18),
@@ -758,7 +760,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // Models Section
         PopupMenuItem<void>(
           enabled: false,
-          height: 28,
+          height: 20,
           child: Text(
             'ACTIVE MODEL',
             style: TextStyle(
@@ -769,51 +771,71 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
           ),
         ),
-        // Local LLM option shown at top when llama-server is running
-        if (LocalLlmService().state.status == LocalLlmStatus.ready &&
-            LocalLlmService().state.activeModelId != null) ...[
-          PopupMenuItem<void>(
-            enabled: false,
-            child: Text('ON-DEVICE (FREE)', style: TextStyle(color: Color(0xFF00E5AA), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
-          ),
-          PopupMenuItem<String>(
-            value: 'model:local-llm/${LocalLlmService().state.activeModelId}',
-            child: Row(
-              children: [
-                Icon(
-                  _selectedModel.startsWith('local-llm/') ? Icons.check_circle : Icons.memory_rounded,
-                  color: _selectedModel.startsWith('local-llm/') ? Color(0xFF00E5AA) : Colors.white38,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        LocalLlmService().state.activeModelId!,
-                        style: TextStyle(
-                          color: _selectedModel.startsWith('local-llm/') ? Colors.white : Colors.white70,
-                          fontWeight: _selectedModel.startsWith('local-llm/') ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 12,
-                        ),
+        // --- INTELLIGENT LOCAL LLM ENTRY ---
+        PopupMenuItem<String>(
+          value: LocalLlmService().state.status == LocalLlmStatus.idle 
+              ? 'setup_local_llm' 
+              : 'model:local-llm/${LocalLlmService().state.activeModelId ?? 'llama-server'}',
+          height: 48,
+          child: Row(
+            children: [
+              Icon(
+                LocalLlmService().state.status == LocalLlmStatus.idle 
+                    ? Icons.install_mobile 
+                    : (_selectedModel.startsWith('local-llm/') ? Icons.memory_rounded : Icons.phone_android),
+                color: _selectedModel.startsWith('local-llm/') 
+                    ? const Color(0xFF00E5AA) 
+                    : (LocalLlmService().state.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white38),
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      LocalLlmService().state.status == LocalLlmStatus.idle 
+                          ? 'Setup Local LLM' 
+                          : (LocalLlmService().state.activeModelId ?? 'Local LLM'),
+                      style: TextStyle(
+                        color: _selectedModel.startsWith('local-llm/') 
+                            ? Colors.white 
+                            : (LocalLlmService().state.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white70),
+                        fontSize: 13,
+                        fontWeight: _selectedModel.startsWith('local-llm/') ? FontWeight.bold : FontWeight.normal,
                       ),
-                      const Text('Free · No internet · Private', style: TextStyle(color: Colors.white38, fontSize: 10)),
-                    ],
-                  ),
+                    ),
+                    Text(
+                      LocalLlmService().state.status == LocalLlmStatus.idle 
+                          ? 'Download free model' 
+                          : (_selectedModel.startsWith('local-llm/') ? 'ACTIVE · ON-DEVICE' : 'ON-DEVICE (FREE)'),
+                      style: TextStyle(
+                        color: _selectedModel.startsWith('local-llm/') 
+                            ? const Color(0xFF00E5AA) 
+                            : (LocalLlmService().state.status == LocalLlmStatus.idle ? AppColors.statusAmber.withValues(alpha: 0.6) : Colors.white38),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              if (_selectedModel.startsWith('local-llm/'))
+                const Icon(Icons.check, color: Color(0xFF00E5AA), size: 18),
+            ],
           ),
-          const PopupMenuDivider(),
-          PopupMenuItem<void>(
-            enabled: false,
-            child: Text('CLOUD', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
-          ),
-        ],
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<void>(
+          enabled: false,
+          height: 20,
+          child: Text('CLOUD', style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+        ),
         ..._availableModels.map((model) => PopupMenuItem<String>(
           value: 'model:$model',
+          height: 36,
           child: Row(
             children: [
               Icon(
@@ -840,7 +862,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         const PopupMenuDivider(),
         PopupMenuItem<void>(
           enabled: false,
-          height: 28,
+          height: 20,
           child: Text(
             'VOICE MODULE',
             style: TextStyle(
@@ -905,6 +927,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       
       if (value == 'tts_status' && !_isTtsDownloaded && !_isDownloadingTts) {
         _showTtsDownloadDialog();
+      } else if (value == 'setup_local_llm') {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const LocalLlmScreen(),
+        ));
       } else if (value == 'avatar_forge') {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AvatarForgePage(),
@@ -1088,10 +1114,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       resizeToAvoidBottomInset: false, // Prevents VRM aspect-ratio scaling bounds from squishing
       endDrawer: _buildSessionDrawer(),
       appBar: _isPipMode ? null : AppBar(
-        backgroundColor: Colors.black.withValues(alpha: 0.3),
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.05), // Reduced alpha for more transparency
+            ),
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: Colors.white70),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: AnimatedOpacity(
@@ -1100,17 +1134,22 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           child: GestureDetector(
             onTap: () => _showUnifiedMenu(context),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // Reduced padding
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
+                color: Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                   Icon(Icons.face_unlock_rounded, color: AppColors.statusGreen.withValues(alpha: 0.9), size: 16),
-                   const SizedBox(width: 10),
+                   SvgPicture.asset(
+                    'assets/app_icon_official.svg',
+                    width: 14,
+                    height: 14,
+                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                   ),
+                   const SizedBox(width: 8),
                    Flexible(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1121,7 +1160,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w600, // Thinner, cleaner font weight
                             letterSpacing: 0.3,
                           ),
                           maxLines: 1,
@@ -1282,47 +1321,46 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
           // 3. 3D VRM Avatar
           Positioned.fill(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOutCubic,
-                transform: Matrix4.identity()
-                  ..scale(MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0),
-                transformAlignment: Alignment.bottomCenter,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: size.width.clamp(0.0, 600.0),
-                    maxHeight: size.height,
-                  ),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 600),
-                    transitionBuilder: (child, animation) {
-                      return ScaleTransition(
-                        scale: Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeOutCubic,
-                        )),
-                        child: FadeTransition(opacity: animation, child: child),
-                      );
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.bottomCenter, // Ensure centering
+              transform: Matrix4.identity()
+                ..scale(MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0),
+              transformAlignment: Alignment.bottomCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: size.width, 
+                  maxWidth: size.width.clamp(0.0, 600.0),
+                  maxHeight: size.height,
+                ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300), // Swifter transition
+                  transitionBuilder: (child, animation) {
+                    return ScaleTransition(
+                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: VrmAvatarWidget(
+                    key: ValueKey(_selectedAvatar),
+                    isThinking: _isThinking,
+                    speechIntensity: _speechIntensity,
+                    glowIntensity: _speechIntensity,
+                    avatarFileName: _selectedAvatar,
+                    isCinematic: _isCinematic,
+                    isPip: _isPipMode,
+                    gesture: _currentGesture,
+                    userMessage: _lastUserMessage,
+                    onLog: (log) {
+                      if (log == 'READY') {
+                        setState(() => _isReady = true);
+                      }
+                      _addDiagnosticLog(log);
                     },
-                    child: VrmAvatarWidget(
-                      key: ValueKey(_selectedAvatar),
-                      isThinking: _isThinking,
-                      speechIntensity: _speechIntensity,
-                      glowIntensity: _speechIntensity,
-                      avatarFileName: _selectedAvatar,
-                      isCinematic: _isCinematic,
-                      isPip: _isPipMode,
-                      gesture: _currentGesture,
-                      userMessage: _lastUserMessage,
-                      onLog: (log) {
-                        if (log == 'READY') {
-                          setState(() => _isReady = true);
-                        }
-                        _addDiagnosticLog(log);
-                      },
-                    ),
                   ),
                 ),
               ),
@@ -1430,8 +1468,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                     setState(() => _isChatCollapsed = false);
                                   }
                                 },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                child: Container(
+                                  height: 32, // Larger vertical hit area
+                                  width: double.infinity,
+                                  alignment: Alignment.center,
                                   child: Container(
                                     width: 40,
                                     height: 4,
@@ -1531,10 +1571,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                           : _toggleListening,
                                       // Hold-to-record (collapsed orb only)
                                       onLongPressStart: _isChatCollapsed
-                                          ? (_) => _startListening()
+                                          ? (_) {
+                                              HapticFeedback.mediumImpact();
+                                              _startListening();
+                                            }
                                           : null,
                                       onLongPressEnd: _isChatCollapsed
-                                          ? (_) => _stopListening()
+                                          ? (_) {
+                                              HapticFeedback.lightImpact();
+                                              _stopListening();
+                                            }
                                           : null,
                                       // Swipe up on collapsed orb = expand chat
                                       onVerticalDragEnd: _isChatCollapsed
@@ -1584,6 +1630,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                                       ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
                                                       : Colors.transparent,
                                                 ),
+                                                alignment: Alignment.center, // Fix mic alignment
                                                 child: Icon(
                                                   _isListening ? Icons.mic : Icons.mic_none,
                                                   color: _isListening ? AppColors.statusGreen : Colors.white70,
@@ -1727,8 +1774,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 const Text(
                   'SYSTEM DIAGNOSTICS',
                   style: TextStyle(
-                    color: AppColors.statusGreen,
-                    fontSize: 11,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.5,
                   ),

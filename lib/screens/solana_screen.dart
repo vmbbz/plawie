@@ -1,10 +1,13 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
 import '../services/solana_service.dart';
 import '../widgets/status_card.dart';
 import 'transaction_confirmation_screen.dart';
+import '../widgets/glass_card.dart';
 
 class SolanaScreen extends StatefulWidget {
   const SolanaScreen({super.key});
@@ -55,79 +58,123 @@ class _SolanaScreenState extends State<SolanaScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Solana'),
-        actions: [
-          // Network toggle
-          PopupMenuButton<bool>(
-            icon: Icon(
-              Icons.public,
-              color: _solanaService.useDevnet
-                  ? Colors.orange
-                  : Colors.green.shade400,
-            ),
-            tooltip: 'Network: ${_solanaService.networkName}',
-            onSelected: (useDevnet) async {
-              await _solanaService.setNetwork(devnet: useDevnet);
-              setState(() {});
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: true,
-                child: Row(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          NebulaBg(),
+          CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 100,
+                floating: false,
+                pinned: true,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                centerTitle: true,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.science,
-                        color: _solanaService.useDevnet
-                            ? Colors.orange
-                            : Colors.grey,
-                        size: 20),
-                    const SizedBox(width: 8),
-                    const Text('Devnet (Testing)'),
-                    if (_solanaService.useDevnet) ...[
-                      const Spacer(),
-                      const Icon(Icons.check, size: 18),
-                    ]
+                    SvgPicture.asset(
+                      'assets/app_icon_official.svg',
+                      width: 20,
+                      height: 20,
+                      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'SOLANA',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        letterSpacing: 3.0,
+                        color: Colors.white,
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              PopupMenuItem(
-                value: false,
-                child: Row(
-                  children: [
-                    Icon(Icons.public,
-                        color: !_solanaService.useDevnet
-                            ? Colors.green
-                            : Colors.grey,
-                        size: 20),
-                    const SizedBox(width: 8),
-                    const Text('Mainnet'),
-                    if (!_solanaService.useDevnet) ...[
-                      const Spacer(),
-                      const Icon(Icons.check, size: 18),
-                    ]
-                  ],
+                flexibleSpace: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: FlexibleSpaceBar(
+                      background: Container(color: Colors.black.withValues(alpha: 0.2)),
+                    ),
+                  ),
                 ),
+                actions: [
+                  // Network toggle
+                  PopupMenuButton<bool>(
+                    icon: Icon(
+                      Icons.public,
+                      color: _solanaService.useDevnet
+                          ? Colors.orange
+                          : Colors.green.shade400,
+                    ),
+                    tooltip: 'Network: ${_solanaService.networkName}',
+                    onSelected: (useDevnet) async {
+                      await _solanaService.setNetwork(devnet: useDevnet);
+                      setState(() {});
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: true,
+                        child: Row(
+                          children: [
+                            Icon(Icons.science,
+                                color: _solanaService.useDevnet
+                                    ? Colors.orange
+                                    : Colors.grey,
+                                size: 20),
+                            const SizedBox(width: 8),
+                            const Text('Devnet (Testing)'),
+                            if (_solanaService.useDevnet) ...[
+                              const Spacer(),
+                              const Icon(Icons.check, size: 18),
+                            ]
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: false,
+                        child: Row(
+                          children: [
+                            Icon(Icons.public,
+                                color: !_solanaService.useDevnet
+                                    ? Colors.green
+                                    : Colors.grey,
+                                size: 20),
+                            const SizedBox(width: 8),
+                            const Text('Mainnet'),
+                            if (!_solanaService.useDevnet) ...[
+                              const Spacer(),
+                              const Icon(Icons.check, size: 18),
+                            ]
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_solanaService.isConnected)
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _refreshBalance,
+                      tooltip: 'Refresh balance',
+                    ),
+                ],
               ),
-            ],
-          ),
-          if (_solanaService.isConnected)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _refreshBalance,
-              tooltip: 'Refresh balance',
-            ),
-        ],
-      ),
-      body: _isLoading && !_solanaService.isConnected
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refreshBalance,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              SliverToBoxAdapter(
+                child: _isLoading && !_solanaService.isConnected
+                    ? const Padding(
+                        padding: EdgeInsets.only(top: 100),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _refreshBalance,
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                     // Wallet header with real balance
                     _buildWalletHeader(theme),
 
@@ -304,6 +351,11 @@ class _SolanaScreenState extends State<SolanaScreen> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+        ],
+      ),
     );
   }
 

@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app.dart';
@@ -10,6 +12,7 @@ import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/preferences_service.dart';
 import '../services/local_llm_service.dart';
+import '../widgets/glass_card.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
 import 'management/local_llm_screen.dart';
@@ -80,11 +83,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              children: [
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(color: Colors.black.withValues(alpha: 0.2)),
+          ),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/icon/plawie_icon.png',
+              width: 20,
+              height: 20,
+              color: Colors.white,
+              errorBuilder: (_, __, ___) => const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'SETTINGS',
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+                letterSpacing: 3.0,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : SafeArea(
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    children: [
                 _sectionHeader(theme, 'GENERAL'),
                 SwitchListTile(
                   title: const Text('Auto-start gateway'),
@@ -184,11 +226,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               decoration: BoxDecoration(
                                 color: AppColors.statusGreen.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.statusGreen.withValues(alpha: 0.3),
+                                  width: 1,
+                                ),
                               ),
-                              child: Text('ON', style: TextStyle(color: AppColors.statusGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                              child: Text(
+                                _prefs.configuredModel?.startsWith('local-llm/') == true ? 'ACTIVE' : 'READY',
+                                style: const TextStyle(color: AppColors.statusGreen, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                              ),
                             ),
                           const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right),
+                          const Icon(Icons.chevron_right, color: Colors.white24),
                         ],
                       ),
                       onTap: () => Navigator.push(
@@ -283,6 +332,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             onPressed: () => Navigator.pop(ctx),
                             child: const Text('OK'),
                           ),
+                          ListTile(
+                            title: const Text('Open official documentation'),
+                            subtitle: const Text('View setup guide and usage docs', style: TextStyle(fontSize: 12)),
+                            trailing: const Icon(Icons.open_in_new_rounded, size: 18, color: Colors.white38),
+                            onTap: () => launchUrl(
+                              Uri.parse('https://openclaw.ai/docs'),
+                              mode: LaunchMode.externalApplication,
+                            ),
+                          ),
                         ],
                       ),
                     );
@@ -348,7 +406,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.book),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/clawa-pocket/docs'),
+                    Uri.parse('https://github.com/vmbbz/plawie'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -358,21 +416,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.people),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => launchUrl(
-                    Uri.parse('https://discord.gg/clawa-pocket'),
+                    Uri.parse('https://discord.gg/openclaw'),
                     mode: LaunchMode.externalApplication,
-                  ),
-                ),
-                ListTile(
-                  title: const Text('Email'),
-                  subtitle: const Text('contact@clawa-pocket.com'),
-                  leading: const Icon(Icons.email_outlined),
-                  trailing: const Icon(Icons.open_in_new, size: 18),
-                  onTap: () => launchUrl(
-                    Uri.parse('mailto:contact@clawa-pocket.com'),
                   ),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 

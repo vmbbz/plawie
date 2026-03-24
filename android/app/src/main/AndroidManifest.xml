@@ -19,7 +19,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:label="Clawa Pocket"
+        android:label="Plawie"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
@@ -66,7 +66,7 @@
             android:foregroundServiceType="specialUse" />
 
         <service
-            android:name=".ClawaForegroundService"
+            android:name=".PlawieForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
