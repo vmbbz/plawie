@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../providers/gateway_provider.dart';
 import '../models/gateway_state.dart';
@@ -280,30 +281,51 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
       child: Row(
         children: [
-          // Logo
+          // Glass logo container
           Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF00C853),
-                  const Color(0xFF00C853).withAlpha(180),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
               borderRadius: BorderRadius.circular(12),
+              color: isDark 
+                ? Colors.white.withOpacity(0.08)
+                : Colors.black.withOpacity(0.05),
+              border: Border.all(
+                color: isDark 
+                  ? Colors.white.withOpacity(0.15)
+                  : Colors.black.withOpacity(0.1),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00C853).withAlpha(60),
-                  blurRadius: 12,
+                  color: isDark 
+                    ? Colors.black.withOpacity(0.2)
+                    : Colors.black.withOpacity(0.08),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                  spreadRadius: 0,
+                ),
+                BoxShadow(
+                  color: isDark 
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.white.withOpacity(0.3),
+                  blurRadius: 10,
                   offset: const Offset(0, 4),
+                  spreadRadius: -3,
                 ),
               ],
             ),
-            child: const Icon(Icons.smart_toy_outlined,
-                color: Colors.white, size: 24),
+            child: Center(
+              child: SvgPicture.asset(
+                'assets/app_icon_official.svg',
+                width: 24,
+                height: 24,
+                colorFilter: ColorFilter.mode(
+                  const Color(0xFF00C853),
+                  BlendMode.srcIn,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -329,13 +351,26 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
           // Skip button (only before launch)
           if (_currentStep < 4)
-            TextButton(
-              onPressed: _goToDashboard,
-              child: Text(
-                'Skip',
-                style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
-                  fontSize: 13,
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.transparent,
+                border: Border.all(
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(50),
+                  width: 1,
+                ),
+              ),
+              child: TextButton(
+                onPressed: _goToDashboard,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                child: Text(
+                  'Skip',
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ),
@@ -440,16 +475,52 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     : Colors.black.withAlpha(15)),
             width: isSelected ? 1.5 : 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: isDark 
+                ? Colors.black.withOpacity(0.2)
+                : Colors.black.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+              spreadRadius: 0,
+            ),
+            BoxShadow(
+              color: isDark 
+                ? Colors.white.withOpacity(0.1)
+                : Colors.white.withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+              spreadRadius: -3,
+            ),
+          ],
         ),
         child: Row(
           children: [
-            // Provider icon
+            // Glass provider icon
             Container(
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: provider.color.withAlpha(isDark ? 40 : 25),
                 borderRadius: BorderRadius.circular(12),
+                color: isDark 
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.05),
+                border: Border.all(
+                  color: isDark 
+                    ? Colors.white.withOpacity(0.15)
+                    : Colors.black.withOpacity(0.1),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: isDark 
+                      ? Colors.black.withOpacity(0.15)
+                      : Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                    spreadRadius: 0,
+                  ),
+                ],
               ),
               child: Icon(provider.icon, color: provider.color, size: 24),
             ),
@@ -473,20 +544,32 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ],
               ),
             ),
-            // Selection indicator
+            // Glass selection indicator
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: 24,
               height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isSelected ? provider.color : Colors.transparent,
+                color: isSelected 
+                  ? provider.color 
+                  : (isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.05)),
                 border: Border.all(
                   color: isSelected
                       ? provider.color
                       : theme.colorScheme.onSurfaceVariant.withAlpha(80),
                   width: 2,
                 ),
+                boxShadow: isSelected ? [
+                  BoxShadow(
+                    color: provider.color.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                    spreadRadius: 0,
+                  ),
+                ] : null,
               ),
               child: isSelected
                   ? const Icon(Icons.check, size: 16, color: Colors.white)
@@ -507,96 +590,199 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       children: [
-        // Provider badge
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: provider.color.withAlpha(isDark ? 40 : 20),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(provider.icon, color: provider.color, size: 16),
-                  const SizedBox(width: 6),
-                  Text(
-                    provider.name,
-                    style: TextStyle(
-                      color: provider.color,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
+        // Glass provider badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: isDark 
+              ? Colors.white.withOpacity(0.08)
+              : Colors.black.withOpacity(0.05),
+            border: Border.all(
+              color: isDark 
+                ? Colors.white.withOpacity(0.15)
+                : Colors.black.withOpacity(0.1),
+              width: 1,
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: isDark 
+                  ? Colors.black.withOpacity(0.15)
+                  : Colors.black.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+                spreadRadius: 0,
+              ),
+              BoxShadow(
+                color: isDark 
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.white.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+                spreadRadius: -3,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: provider.color.withAlpha(isDark ? 40 : 25),
+                ),
+                child: Icon(provider.icon, color: provider.color, size: 16),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                provider.name,
+                style: TextStyle(
+                  color: provider.color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
         Text(
           'Enter your ${provider.name} API key',
           style: theme.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           'Your key is stored locally on your device and never shared.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 20),
-        TextField(
-          controller: _apiKeyController,
-          obscureText: _apiKeyObscured,
-          autocorrect: false,
-          enableSuggestions: false,
-          onChanged: (_) => setState(() {}),
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
-          decoration: InputDecoration(
-            hintText: provider.hint,
-            hintStyle: TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 14,
-              color: theme.colorScheme.onSurfaceVariant.withAlpha(80),
+        const SizedBox(height: 24),
+        // Glass text field
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: isDark 
+              ? Colors.white.withOpacity(0.08)
+              : Colors.black.withOpacity(0.05),
+            border: Border.all(
+              color: isDark 
+                ? Colors.white.withOpacity(0.15)
+                : Colors.black.withOpacity(0.1),
+              width: 1,
             ),
-            prefixIcon: Icon(Icons.key, color: provider.color, size: 20),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _apiKeyObscured ? Icons.visibility_off : Icons.visibility,
-                size: 20,
+            boxShadow: [
+              BoxShadow(
+                color: isDark 
+                  ? Colors.black.withOpacity(0.2)
+                  : Colors.black.withOpacity(0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+                spreadRadius: 0,
               ),
-              onPressed: () =>
-                  setState(() => _apiKeyObscured = !_apiKeyObscured),
+              BoxShadow(
+                color: isDark 
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.white.withOpacity(0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+                spreadRadius: -3,
+              ),
+            ],
+          ),
+          child: TextField(
+            controller: _apiKeyController,
+            obscureText: _apiKeyObscured,
+            autocorrect: false,
+            enableSuggestions: false,
+            onChanged: (_) => setState(() {}),
+            style: TextStyle(
+              fontFamily: 'monospace', 
+              fontSize: 14,
+              color: isDark ? Colors.white : Colors.black,
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+            decoration: InputDecoration(
+              hintText: provider.hint,
+              hintStyle: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 14,
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(80),
+              ),
+              prefixIcon: Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: provider.color.withAlpha(isDark ? 40 : 25),
+                ),
+                child: Icon(Icons.key, color: provider.color, size: 20),
+              ),
+              suffixIcon: Container(
+                margin: const EdgeInsets.only(left: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: isDark 
+                    ? Colors.white.withOpacity(0.08)
+                    : Colors.black.withOpacity(0.05),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    _apiKeyObscured ? Icons.visibility_off : Icons.visibility,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  onPressed: () =>
+                      setState(() => _apiKeyObscured = !_apiKeyObscured),
+                ),
+              ),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        // Key format hint
+        const SizedBox(height: 20),
+        // Glass key format hint
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withAlpha(8)
-                : Colors.black.withAlpha(5),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
+            color: isDark 
+              ? Colors.white.withOpacity(0.06)
+              : Colors.black.withOpacity(0.03),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withAlpha(10)
-                  : Colors.black.withAlpha(8),
+              color: isDark 
+                ? Colors.white.withOpacity(0.12)
+                : Colors.black.withOpacity(0.08),
+              width: 1,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: isDark 
+                  ? Colors.black.withOpacity(0.15)
+                  : Colors.black.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+                spreadRadius: 0,
+              ),
+            ],
           ),
           child: Row(
             children: [
-              Icon(Icons.info_outline,
-                  size: 16, color: theme.colorScheme.onSurfaceVariant),
-              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: isDark 
+                    ? Colors.white.withOpacity(0.08)
+                    : Colors.black.withOpacity(0.05),
+                ),
+                child: Icon(Icons.info_outline,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   'Keys typically start with "${provider.prefix}"',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants.dart';
 import '../services/native_bridge.dart';
@@ -173,182 +174,303 @@ class _SplashScreenState extends State<SplashScreen>
             end: Alignment.bottomRight,
             colors: isDark 
               ? [
-                  const Color(0xFF000000),
-                  const Color(0xFF0A0A0A),
-                  const Color(0xFF141414),
+                  const Color(0xFF0F0F0F),
+                  const Color(0xFF1A1A1A),
+                  const Color(0xFF252525),
                 ]
               : [
-                  const Color(0xFFFFFFFF),
-                  const Color(0xFAFAFA),
-                  const Color(0xFFF5F5F5),
+                  const Color(0xFFF8F9FA),
+                  const Color(0xFFF1F3F4),
+                  const Color(0xFFE9ECEF),
                 ],
           ),
         ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Epic logo container with metallic effect
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: isDark
-                        ? [
-                            const Color(0xFF2A2A2A),
-                            const Color(0xFF1A1A1A),
-                            const Color(0xFF0A0A0A),
-                          ]
-                        : [
-                            const Color(0xFFF0F0F0),
-                            const Color(0xFFE0E0E0),
-                            const Color(0xFFD0D0D0),
-                          ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isDark 
-                          ? Colors.black.withOpacity(0.3)
-                          : Colors.black.withOpacity(0.1),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: isDark 
-                          ? const Color(0xFF333333).withOpacity(0.2)
-                          : const Color(0xFFCCCCCC).withOpacity(0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(32),
-                  child: AnimatedBuilder(
-                    animation: _pulseAnimation,
-                    builder: (context, child) {
-                      return Transform.scale(
-                        scale: _pulseAnimation.value,
-                        child: child,
-                      );
-                    },
-                    child: AvatarLogo(
-                      size: 100,
-                      animated: true,
-                      showGlow: true,
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 40),
-                
-                // Epic title with gradient text
-                ShaderMask(
-                  shaderCallback: (bounds) => LinearGradient(
-                    colors: isDark
-                      ? [const Color(0xFFFFFFFF), const Color(0xFFCCCCCC)]
-                      : [const Color(0xFF000000), const Color(0xFF666666)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ).createShader(bounds),
-                  child: Text(
-                    'Plawie',
-                    style: GoogleFonts.inter(
-                      fontSize: 36,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2.0,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 12),
-                
-                // Subtitle with premium styling
-                SlideTransition(
-                  position: _slideAnimation,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: isDark 
-                        ? const Color(0xFF1A1A1A).withOpacity(0.8)
-                        : const Color(0xFFF0F0F0).withOpacity(0.8),
-                      border: Border.all(
-                        color: isDark 
-                          ? const Color(0xFF333333)
-                          : const Color(0xFFE0E0E0),
-                        width: 1,
-                      ),
-                    ),
-                    child: Text(
-                      AppConstants.appMotto,
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                        color: isDark 
-                          ? const Color(0xFFCCCCCC)
-                          : const Color(0xFF666666),
-                      ),
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 60),
-                
-                // Modern loading indicator
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      isDark ? const Color(0xFF00C853) : const Color(0xFF00C853),
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Status text with fade-in
-                FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: isDark 
-                        ? const Color(0xFF1A1A1A).withOpacity(0.6)
-                        : const Color(0xFFF5F5F5).withOpacity(0.8),
-                      border: Border.all(
-                        color: isDark 
-                          ? const Color(0xFF333333).withOpacity(0.3)
-                          : const Color(0xFFE0E0E0).withOpacity(0.5),
-                        width: 1,
-                      ),
-                    ),
-                    child: Text(
-                      _status,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: isDark 
-                          ? const Color(0xFF999999)
-                          : const Color(0xFF666666),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ],
+        child: Stack(
+          children: [
+            // Animated background elements
+            Positioned.fill(
+              child: _buildAnimatedBackground(isDark),
             ),
-          ),
+            
+            // Main content
+            Center(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Liquid glass logo container
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        color: isDark 
+                          ? Colors.white.withOpacity(0.08)
+                          : Colors.black.withOpacity(0.05),
+                        border: Border.all(
+                          color: isDark 
+                            ? Colors.white.withOpacity(0.15)
+                            : Colors.black.withOpacity(0.1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark 
+                              ? Colors.black.withOpacity(0.3)
+                              : Colors.black.withOpacity(0.1),
+                            blurRadius: 30,
+                            offset: const Offset(0, 15),
+                            spreadRadius: 0,
+                          ),
+                          BoxShadow(
+                            color: isDark 
+                              ? Colors.white.withOpacity(0.1)
+                              : Colors.white.withOpacity(0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                            spreadRadius: -5,
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(32),
+                      child: AnimatedBuilder(
+                        animation: _pulseAnimation,
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: _pulseAnimation.value,
+                            child: child,
+                          );
+                        },
+                        child: SvgPicture.asset(
+                          'assets/app_icon_official.svg',
+                          width: 100,
+                          height: 100,
+                          colorFilter: ColorFilter.mode(
+                            isDark ? Colors.white : Colors.black,
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 40),
+                    
+                    // Liquid glass title
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: isDark 
+                          ? Colors.white.withOpacity(0.08)
+                          : Colors.black.withOpacity(0.05),
+                        border: Border.all(
+                          color: isDark 
+                            ? Colors.white.withOpacity(0.15)
+                            : Colors.black.withOpacity(0.1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark 
+                              ? Colors.black.withOpacity(0.2)
+                              : Colors.black.withOpacity(0.08),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                            spreadRadius: 0,
+                          ),
+                        ],
+                      ),
+                      child: ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: isDark
+                            ? [const Color(0xFFFFFFFF), const Color(0xFFE0E0E0)]
+                            : [const Color(0xFF000000), const Color(0xFF333333)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ).createShader(bounds),
+                        child: Text(
+                          'Plawie',
+                          style: GoogleFonts.inter(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Liquid glass subtitle
+                    SlideTransition(
+                      position: _slideAnimation,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: isDark 
+                            ? Colors.white.withOpacity(0.06)
+                            : Colors.black.withOpacity(0.03),
+                          border: Border.all(
+                            color: isDark 
+                              ? Colors.white.withOpacity(0.12)
+                              : Colors.black.withOpacity(0.08),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          AppConstants.appMotto,
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                            color: isDark 
+                              ? const Color(0xFFE0E0E0)
+                              : const Color(0xFF666666),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 60),
+                    
+                    // Modern glass loading indicator
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: isDark 
+                          ? Colors.white.withOpacity(0.08)
+                          : Colors.black.withOpacity(0.05),
+                        border: Border.all(
+                          color: isDark 
+                            ? Colors.white.withOpacity(0.15)
+                            : Colors.black.withOpacity(0.1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark 
+                              ? Colors.black.withOpacity(0.2)
+                              : Colors.black.withOpacity(0.08),
+                            blurRadius: 15,
+                            offset: const Offset(0, 8),
+                            spreadRadius: 0,
+                          ),
+                        ],
+                      ),
+                      child: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isDark ? const Color(0xFF00C853) : const Color(0xFF00C853),
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Glass status text
+                    FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: isDark 
+                            ? Colors.white.withOpacity(0.06)
+                            : Colors.black.withOpacity(0.03),
+                          border: Border.all(
+                            color: isDark 
+                              ? Colors.white.withOpacity(0.12)
+                              : Colors.black.withOpacity(0.08),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          _status,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: isDark 
+                              ? const Color(0xFFE0E0E0)
+                              : const Color(0xFF666666),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAnimatedBackground(bool isDark) {
+    return Stack(
+      children: [
+        // Floating glass orbs
+        Positioned(
+          top: MediaQuery.of(context).size.height * 0.1,
+          left: MediaQuery.of(context).size.width * 0.1,
+          child: _buildFloatingOrb(isDark, 80, 0.3),
+        ),
+        Positioned(
+          top: MediaQuery.of(context).size.height * 0.7,
+          right: MediaQuery.of(context).size.width * 0.15,
+          child: _buildFloatingOrb(isDark, 60, 0.2),
+        ),
+        Positioned(
+          bottom: MediaQuery.of(context).size.height * 0.2,
+          left: MediaQuery.of(context).size.width * 0.2,
+          child: _buildFloatingOrb(isDark, 100, 0.15),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFloatingOrb(bool isDark, double size, double opacity) {
+    return AnimatedBuilder(
+      animation: _pulseAnimation,
+      builder: (context, child) {
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: isDark
+                ? [
+                    Colors.white.withOpacity(opacity * 0.3),
+                    Colors.white.withOpacity(opacity * 0.1),
+                    Colors.transparent,
+                  ]
+                : [
+                    Colors.black.withOpacity(opacity * 0.2),
+                    Colors.black.withOpacity(opacity * 0.05),
+                    Colors.transparent,
+                  ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isDark 
+                  ? Colors.white.withOpacity(opacity * 0.2)
+                  : Colors.black.withOpacity(opacity * 0.1),
+                blurRadius: 20,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
