@@ -39,7 +39,7 @@ class AppConstants {
     }
   }
 
-  static const int healthCheckIntervalMs = 5000;
+  static const int healthCheckIntervalMs = 15000; // Reduced from 5000ms to 15s
   static const int maxAutoRestarts = 3;
 
   // Node constants

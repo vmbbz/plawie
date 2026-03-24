@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../models/optional_package.dart';
 import '../services/native_bridge.dart';
 import '../services/terminal_service.dart';
+import '../services/openclaw_service.dart';
 
 class PackageInstallScreen extends StatefulWidget {
   final OptionalPackage package;
@@ -45,14 +46,15 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
         rows: 40,
       );
 
-      final command = widget.isUninstall
-          ? widget.package.uninstallCommand
-          : widget.package.installCommand;
+      // Adapt command based on OpenClaw version
+      final adaptedCommand = await OpenClawCommandService.adaptSkillCommand(
+        widget.isUninstall ? widget.package.uninstallCommand : widget.package.installCommand
+      );
 
       final cmdArgs = List<String>.from(args);
       cmdArgs.removeLast(); 
       cmdArgs.removeLast(); 
-      cmdArgs.addAll(['/bin/bash', '-lc', command]);
+      cmdArgs.addAll(['/bin/bash', '-lc', adaptedCommand]);
 
       _process = await Process.start(
         config['executable']!,

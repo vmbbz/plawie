@@ -59,6 +59,9 @@ class GatewayService {
       _subscribeLogs();
       _startHealthCheck();
 
+      // IMPROVED: Add process health validation before marking as healthy
+      await _validateGatewayProcess();
+      
       // Fire an immediate health check AND token fetch concurrently.
       // _checkHealth() now handles WS connect + RPC discovery internally,
       // so we don't need to duplicate that logic here.
@@ -77,6 +80,45 @@ class GatewayService {
         start();
       }
     }
+  }
+
+  /// NEW: Validate that the gateway process is actually ready to serve requests
+  Future<void> _validateGatewayProcess() async {
+    const maxAttempts = 6; // 30 seconds total
+    for (int i = 0; i < maxAttempts; i++) {
+      await Future.delayed(const Duration(seconds: 5));
+      
+      try {
+        // Check if gateway process is still running
+        final isRunning = await NativeBridge.isGatewayRunning();
+        if (!isRunning) {
+          _updateState(_state.copyWith(
+            status: GatewayStatus.stopped,
+            logs: [..._state.logs, '[WARN] Gateway process died during validation'],
+          ));
+          return;
+        }
+
+        // Check if gateway is responding to HTTP requests
+        final response = await http.head(Uri.parse(AppConstants.gatewayUrl))
+            .timeout(const Duration(seconds: 3));
+        
+        if (response.statusCode < 500) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[INFO] Gateway process validated and responding'],
+          ));
+          return;
+        }
+      } catch (_) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[DEBUG] Gateway validation attempt ${i + 1}/$maxAttempts'],
+        ));
+      }
+    }
+    
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[WARN] Gateway validation failed - process may be stuck'],
+    ));
   }
 
   void _subscribeLogs() {
