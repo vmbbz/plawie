@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../constants.dart';
@@ -10,6 +12,7 @@ import '../services/package_service.dart';
 import '../services/preferences_service.dart';
 import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
+import '../widgets/glass_card.dart';
 import 'onboarding_screen.dart';
 import 'package_install_screen.dart';
 import 'setup_flow_screen.dart';
@@ -95,80 +98,63 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-                    AppColors.darkBg,
-                    AppColors.darkSurface,
-                    AppColors.darkSurfaceAlt,
-                  ]
-                : [
-                    AppColors.lightBg,
-                    const Color(0xFFF8F9FA),
-                    const Color(0xFFF1F3F4),
-                  ],
-            stops: const [0.0, 0.5, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: Consumer<SetupProvider>(
-            builder: (context, provider, _) {
-              final state = provider.state;
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          SafeArea(
+            child: Consumer<SetupProvider>(
+              builder: (context, provider, _) {
+                final state = provider.state;
+                final theme = Theme.of(context);
+                final isDark = theme.brightness == Brightness.dark;
 
-              // Load package statuses once setup completes
-              if (state.isComplete && _pkgStatuses.isEmpty) {
-                _refreshPkgStatuses();
-              }
+                // Load package statuses once setup completes
+                if (state.isComplete && _pkgStatuses.isEmpty) {
+                  _refreshPkgStatuses();
+                }
 
-              if (state.isComplete && !_didAutoNavigate) {
-                _didAutoNavigate = true;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  Future.delayed(const Duration(milliseconds: 1500), () {
-                    if (mounted) _goToApp(context);
+                if (state.isComplete && !_didAutoNavigate) {
+                  _didAutoNavigate = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Future.delayed(const Duration(milliseconds: 1500), () {
+                      if (mounted) _goToApp(context);
+                    });
                   });
-                });
-              }
+                }
 
-              return FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 32),
-                        _buildPremiumHeader(isDark),
-                        const SizedBox(height: 24),
-                        _buildDescriptionSection(theme, isDark),
-                        const SizedBox(height: 32),
-                        Expanded(
-                          child: _buildSteps(state, theme, isDark),
-                        ),
-                        if (state.hasError) ...[
-                          _buildErrorSection(state, theme),
+                return FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 32),
+                          _buildPremiumHeader(isDark),
+                          const SizedBox(height: 24),
+                          _buildDescriptionSection(theme, isDark),
+                          const SizedBox(height: 32),
+                          Expanded(
+                            child: _buildSteps(state, theme, isDark),
+                          ),
+                          if (state.hasError) ...[
+                            _buildErrorSection(state, theme),
+                            const SizedBox(height: 16),
+                          ],
+                          _buildActionButtons(provider, state, theme, isDark),
                           const SizedBox(height: 16),
                         ],
-                        _buildActionButtons(provider, state, theme, isDark),
-                        if (!_started) ...[
-                          const SizedBox(height: 8),
-                          _buildStorageInfo(theme),
-                        ],
-                        const SizedBox(height: 16),
-                        _buildFooter(theme),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -226,7 +212,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                         : [AppColors.darkBg, AppColors.darkBg.withOpacity(0.8)],
                   ).createShader(bounds),
                   child: Text(
-                    'Setup Clawa',
+                    'Setup Plawie',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -280,7 +266,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
             child: Text(
               _started
                   ? 'Setting up the environment. This may take several minutes.'
-                  : 'This will download Ubuntu, Node.js, and Clawa into a self-contained environment.',
+                  : 'This will download Ubuntu, Node.js, and Plawie into a self-contained environment.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: isDark 
                     ? AppColors.inverseText.withOpacity(0.9)
@@ -570,7 +556,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       (1, 'Download Ubuntu rootfs', SetupStep.downloadingRootfs),
       (2, 'Extract rootfs', SetupStep.extractingRootfs),
       (3, 'Install Node.js', SetupStep.installingNode),
-      (4, 'Install Clawa', SetupStep.installingOpenClaw),
+      (4, 'Install Plawie', SetupStep.installingOpenClaw),
       (5, 'Configure Bionic Bypass', SetupStep.configuringBypass),
     ];
 

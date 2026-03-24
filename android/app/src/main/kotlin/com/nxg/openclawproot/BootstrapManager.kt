@@ -1221,8 +1221,8 @@ os.networkInterfaces = () => ({});
 
         val existing = if (bashrc.exists()) bashrc.readText() else ""
         if (!existing.contains("hijack.js") && !existing.contains("bionic-bypass.js")) {
-            // Use simple hijack.js like original implementation
-            bashrc.appendText("\n# OpenClaw Network Interface Fix\n$bypassLine\n")
+            // Prefer robust bionic-bypass.js which includes the eth0 mock
+            bashrc.appendText("\n# OpenClaw Network Interface Fix\n$complexBypassLine\n")
         }
     }
 

@@ -12,6 +12,9 @@ class GatewayState {
   final DateTime? startedAt;
   final String? dashboardUrl;
   final Map<String, dynamic>? detailedHealth;
+  final List<Map<String, dynamic>>? activeSkills;
+  final List<String>? capabilities;
+  final bool isWebsocketConnected;
 
   const GatewayState({
     this.status = GatewayStatus.stopped,
@@ -20,6 +23,9 @@ class GatewayState {
     this.startedAt,
     this.dashboardUrl,
     this.detailedHealth,
+    this.activeSkills,
+    this.capabilities,
+    this.isWebsocketConnected = false,
   });
 
   GatewayState copyWith({
@@ -32,6 +38,11 @@ class GatewayState {
     String? dashboardUrl,
     Map<String, dynamic>? detailedHealth,
     bool clearDetailedHealth = false,
+    List<Map<String, dynamic>>? activeSkills,
+    bool clearActiveSkills = false,
+    List<String>? capabilities,
+    bool clearCapabilities = false,
+    bool? isWebsocketConnected,
   }) {
     return GatewayState(
       status: status ?? this.status,
@@ -40,6 +51,9 @@ class GatewayState {
       startedAt: clearStartedAt ? null : (startedAt ?? this.startedAt),
       dashboardUrl: dashboardUrl ?? this.dashboardUrl,
       detailedHealth: clearDetailedHealth ? null : (detailedHealth ?? this.detailedHealth),
+      activeSkills: clearActiveSkills ? null : (activeSkills ?? this.activeSkills),
+      capabilities: clearCapabilities ? null : (capabilities ?? this.capabilities),
+      isWebsocketConnected: isWebsocketConnected ?? this.isWebsocketConnected,
     );
   }
 

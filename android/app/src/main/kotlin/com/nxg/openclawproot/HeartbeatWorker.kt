@@ -16,9 +16,9 @@ class HeartbeatWorker(appContext: Context, workerParams: WorkerParameters) :
         Log.i("HeartbeatWorker", "Running background heartbeat check...")
         
         // Ensure the foreground service is active
-        if (!ClawaForegroundService.isRunning) {
-            Log.w("HeartbeatWorker", "Service NOT running, restarting ClawaForegroundService...")
-            ClawaForegroundService.start(applicationContext)
+        if (!PlawieForegroundService.isRunning) {
+            Log.w("HeartbeatWorker", "Service NOT running, restarting PlawieForegroundService...")
+            PlawieForegroundService.start(applicationContext)
         } else {
             Log.i("HeartbeatWorker", "Service is healthy.")
         }
@@ -27,7 +27,7 @@ class HeartbeatWorker(appContext: Context, workerParams: WorkerParameters) :
     }
 
     companion object {
-        private const val WORK_NAME = "clawa_heartbeat_work"
+        private const val WORK_NAME = "plawie_heartbeat_work"
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)

@@ -1,23 +1,30 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/gateway_provider.dart';
+import '../../models/gateway_state.dart';
 import '../../app.dart';
+import '../../widgets/glass_card.dart';
 import 'skills/agent_wallet_page.dart';
 import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
 import 'skills/agent_calls_page.dart';
 import 'skills/agent_moonpay_page.dart';
 import 'local_llm_screen.dart';
+import '../../services/local_llm_service.dart';
 import '../solana_screen.dart';
 import 'bot_method_explorer.dart';
+import 'skills/skill_config_editor.dart';
+import '../../services/native_bridge.dart';
+import 'dart:async';
 
 /// Catalogue of premium skills we offer, mapped to their OpenClaw skill names.
 /// These are the 4 special skills the user explicitly wants to surface.
 const _premiumSkills = [
   _SkillEntry(
-    id: 'agent_card',
+    id: 'agent-card',
     title: 'Wallet',
     subtitle: 'AgentCard.ai',
     description: 'Issue virtual Visa cards, manage balances, and make autonomous payments for your AI agent.',
@@ -26,7 +33,7 @@ const _premiumSkills = [
     tooltip: 'AgentCard.ai gives your agent a virtual Visa card with real spending power. Your agent can create cards, top them up, check balances, and make autonomous payments — all on-chain on Base.',
   ),
   _SkillEntry(
-    id: 'molt_launch',
+    id: 'molt-launch',
     title: 'Work',
     subtitle: 'MoltLaunch',
     description: 'Get hired for AI agent work. Escrow payments on Base chain. ERC-8004 identity + reputation.',
@@ -35,7 +42,7 @@ const _premiumSkills = [
     tooltip: 'MoltLaunch is an on-chain job marketplace for AI agents. Your agent gets an ERC-8004 identity NFT on Base, can browse posted jobs, bid, and receive ETH escrow payments on completion.',
   ),
   _SkillEntry(
-    id: 'valeo_sentinel',
+    id: 'valeo-sentinel',
     title: 'Credit',
     subtitle: 'Valeo Sentinel',
     description: 'x402 spending policy for autonomous agents — per-call, hourly & daily budget caps.',
@@ -44,7 +51,7 @@ const _premiumSkills = [
     tooltip: 'Valeo Sentinel enforces x402 protocol spending rules on your agent. Set per-call, hourly, daily, and lifetime USD budget caps. Every payment is audit-logged on-chain so you can review exactly what your agent spent.',
   ),
   _SkillEntry(
-    id: 'twilio_voice',
+    id: 'twilio-voice',
     title: 'Calls',
     subtitle: 'Twilio AI',
     description: 'ConversationRelay voice orchestration — inbound/outbound with real-time AI transcription.',
@@ -62,7 +69,7 @@ const _premiumSkills = [
     tooltip: 'Give your agent a verified bank account. It can swap tokens, bridge cross-chain, buy/sell crypto via fiat, check portfolio, and run DCA strategies — all from natural language commands in chat.',
   ),
   _SkillEntry(
-    id: 'local_llm',
+    id: 'local-llm',
     title: 'Local LLM',
     subtitle: 'llama-server',
     description: 'Run a free, offline LLM on-device via llama-server inside PRoot. No API key. No internet. Total privacy.',
@@ -72,7 +79,7 @@ const _premiumSkills = [
   ),
 ];
 
-/// Default OpenClaw built-in capabilities (factual, based on OpenClaw core tools).
+/// Fallback OpenClaw built-in capabilities (factual, used when gateway is offline).
 const _defaultCapabilities = [
   _CapabilityEntry('Web Browsing', Icons.language_rounded, 'browser'),
   _CapabilityEntry('Code Interpreter', Icons.code_rounded, 'computer'),
@@ -90,59 +97,26 @@ class SkillsManager extends StatefulWidget {
 }
 
 class _SkillsManagerState extends State<SkillsManager> {
-  bool _isLoading = true;
-  Set<String> _installedSkillIds = {};
   String? _loadError;
+  StreamSubscription<LocalLlmState>? _llmSubscription;
+  LocalLlmState _llmState = const LocalLlmState();
 
   @override
   void initState() {
     super.initState();
-    _loadInstalledSkills();
-  }
-
-  /// Fetches the list of installed skills from the OpenClaw gateway via skills.list RPC.
-  /// Normalises the result to a set of lowercase skill identifiers for easy lookup.
-  Future<void> _loadInstalledSkills() async {
-    setState(() {
-      _isLoading = true;
-      _loadError = null;
+    
+    // Listen to local LLM state for reactive "Premium" card updates
+    _llmSubscription = LocalLlmService().stateStream.listen((state) {
+      if (mounted) setState(() => _llmState = state);
     });
-
-    try {
-      final provider = Provider.of<GatewayProvider>(context, listen: false);
-      final result = await provider.invoke('skills.list');
-
-      if (result['ok'] == true) {
-        final payload = result['payload'];
-        final rawList = payload is List
-            ? payload
-            : (payload is Map ? (payload['skills'] ?? payload['items'] ?? []) : []);
-
-        final ids = <String>{};
-        for (final skill in rawList as List) {
-          final id = (skill is Map
-                  ? (skill['id'] ?? skill['name'] ?? skill['skillId'])
-                  : skill)
-              ?.toString()
-              .toLowerCase() ??
-              '';
-          if (id.isNotEmpty) ids.add(id);
-        }
-        setState(() => _installedSkillIds = ids);
-      } else {
-        // Non-fatal: gateway may not support skills.list yet — show all as uninstalled
-        setState(() => _loadError = 'Gateway offline or skills.list unavailable.');
-      }
-    } catch (_) {
-      // Also non-fatal — gateway might not be running
-      setState(() => _loadError = 'Could not reach gateway — showing discovery mode.');
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    // Set initial state
+    _llmState = LocalLlmService().state;
   }
 
-  bool _isInstalled(_SkillEntry skill) {
-    return _installedSkillIds.any((id) => id.contains(skill.id));
+  @override
+  void dispose() {
+    _llmSubscription?.cancel();
+    super.dispose();
   }
 
   /// Initiates skill installation via the skills.install RPC.
@@ -160,14 +134,31 @@ class _SkillsManagerState extends State<SkillsManager> {
 
     try {
       final provider = Provider.of<GatewayProvider>(context, listen: false);
-      final result = await provider.invoke('skills.install', {
-        'name': skill.id,
-        'installId': '${skill.id}_${DateTime.now().millisecondsSinceEpoch}',
-      });
+      
+      // Execute the native CLI installer inside PRoot to guarantee reliable downloads from ClawHub
+      final cliResult = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw skills install ${skill.id}',
+        timeout: 45, // give it time to fetch
+      );
+
+      // We still invoke the RPC so the running gateway daemon hot-reloads the skill into memory
+      Map<String, dynamic> rpcResult = {};
+      try {
+        if (provider.state.status == GatewayStatus.running) {
+          rpcResult = await provider.invoke('skills.install', {
+            'name': skill.id,
+            'installId': '${skill.id}_${DateTime.now().millisecondsSinceEpoch}',
+          });
+        }
+      } catch (e) {
+        // Ignore RPC failures if CLI succeeded
+      }
 
       navigator.pop(); // Close the bottom sheet
 
-      if (result['ok'] == true) {
+      // Consider it a success if the CLI didn't throw an exception and didn't output an obvious error
+      final lowerResult = cliResult.toLowerCase();
+      if (!lowerResult.contains('error:') && !lowerResult.contains('failed')) {
         messenger.showSnackBar(
           SnackBar(
             content: Text('✅ ${skill.title} skill installed successfully!'),
@@ -175,12 +166,11 @@ class _SkillsManagerState extends State<SkillsManager> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        // Refresh installed skills list
-        _loadInstalledSkills();
+        // Refresh local UI instantly without waiting on gateway loops
       } else {
-        final errMsg = result['error']?['message']?.toString() ??
-            result['payload']?['error']?.toString() ??
-            'Installation failed. Please try again.';
+        final errMsg = rpcResult['error']?['message']?.toString() ??
+            rpcResult['payload']?['error']?.toString() ??
+            'CLI Output: $cliResult';
         messenger.showSnackBar(
           SnackBar(
             content: Text('⚠️ $errMsg'),
@@ -204,22 +194,22 @@ class _SkillsManagerState extends State<SkillsManager> {
   void _navigateToSkillPage(BuildContext context, _SkillEntry skill) {
     Widget page;
     switch (skill.id) {
-      case 'agent_card':
+      case 'agent-card':
         page = const AgentWalletPage();
         break;
-      case 'molt_launch':
+      case 'molt-launch':
         page = const AgentWorkPage();
         break;
-      case 'valeo_sentinel':
+      case 'valeo-sentinel':
         page = const AgentCreditPage();
         break;
-      case 'twilio_voice':
+      case 'twilio-voice':
         page = const AgentCallsPage();
         break;
       case 'moonpay':
         page = const AgentMoonPayPage();
         break;
-      case 'local_llm':
+      case 'local-llm':
         page = const LocalLlmScreen();
         break;
       default:
@@ -230,100 +220,279 @@ class _SkillsManagerState extends State<SkillsManager> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final gatewayState = context.watch<GatewayProvider>().state;
+    final rawSkills = gatewayState.activeSkills ?? [];
+    
+    final installedSkillIds = rawSkills
+        .map((s) => (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final bool isGatewayLoading = gatewayState.status == GatewayStatus.starting;
+
+    // 1. Dynamic Map of Installed Skills (borrowing aesthetic from premium catalogue if available)
+    final List<_SkillEntry> dynamicInstalledSkills = rawSkills.map((s) {
+      final id = (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ?? '';
+      
+      final known = _premiumSkills.firstWhere(
+        (p) => p.id == id,
+        orElse: () => _SkillEntry(
+          id: id,
+          title: (s['title'] ?? s['name'] ?? id).toString(),
+          subtitle: (s['author'] ?? 'Plugin').toString(),
+          description: (s['description'] ?? 'An OpenClaw integrated skill.').toString(),
+          icon: Icons.extension_rounded,
+          color: Colors.blueGrey,
+          tooltip: (s['description'] ?? 'An OpenClaw integrated skill.').toString(),
+        ),
+      );
+
+      return _SkillEntry(
+        id: known.id,
+        title: s['title'] != null ? s['title'].toString() : known.title,
+        subtitle: s['name'] != null ? s['name'].toString() : known.subtitle,
+        description: s['description'] != null ? s['description'].toString() : known.description,
+        icon: known.icon,
+        color: known.color,
+        tooltip: s['description'] != null ? s['description'].toString() : known.tooltip,
+      );
+    }).where((s) => s.id.isNotEmpty).toList();
+
+    // 2. Uninstalled Premium Catalogue
+    final List<_SkillEntry> availableCatalog = _premiumSkills
+        .where((p) => !_isInstalled(installedSkillIds, p))
+        .toList();
+
+    // 3. Merged List for UI
+    final List<_SkillEntry> mergedSkills = [
+      ...dynamicInstalledSkills,
+      ...availableCatalog,
+    ];
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          _buildAppBar(context),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(context, 'Premium Agent Services'),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap to activate • Expands your bot\'s real-world capabilities',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.statusGrey),
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // Nebula background
+          const NebulaBg(),
+          // Scrollable content
+          CustomScrollView(
+            slivers: [
+              _buildAppBar(context),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionHeader(context, 'Premium Agent Services'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Tap to activate • Expands your bot\'s real-world capabilities',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (_loadError != null) ...[
+                        const SizedBox(height: 10),
+                        _buildOfflineBanner(context),
+                      ],
+                      const SizedBox(height: 16),
+                    ],
                   ),
-                  if (_loadError != null) ...[
-                    const SizedBox(height: 10),
-                    _buildOfflineBanner(context),
-                  ],
-                  const SizedBox(height: 16),
-                ],
+                ),
               ),
-            ),
-          ),
-          // Premium skill cards grid
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: 1.1,
-              ),
-              delegate: SliverChildListDelegate([
-                for (final skill in _premiumSkills)
-                  _ServiceCard(
-                    skill: skill,
-                    isInstalled: _isInstalled(skill),
-                    isLoading: _isLoading,
-                    onTap: () {
-                      if (_isInstalled(skill)) {
-                        _navigateToSkillPage(context, skill);
-                      } else {
-                        _showInstallPrompt(context, skill);
-                      }
-                    },
+              // Premium skill cards grid
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 14,
+                    crossAxisSpacing: 14,
+                    childAspectRatio: 1.05,
                   ),
-              ]),
-            ),
-          ),
-          // Register Agent on MoltLaunch — shown below the Work card
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: _buildMoltLaunchRegisterBanner(context),
-            ),
-          ),
-          // Solana built-in section
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 32, 16, 0),
-              child: _buildSolanaBuiltInCard(context),
-            ),
-          ),
-          // Core capabilities section
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(context, 'Core Capability Toolkit'),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Built-in tools available in every OpenClaw gateway',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.statusGrey),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildCoreToolkit(context),
-                  const SizedBox(height: 32),
-                  _buildQuickJump(context),
-                  const SizedBox(height: 40),
-                ],
+                  delegate: SliverChildListDelegate([
+                    for (final skill in mergedSkills)
+                      _ServiceCard(
+                        skill: skill,
+                        isInstalled: _isInstalled(installedSkillIds, skill),
+                        isLoading: isGatewayLoading,
+                        llmState: _llmState,
+                        onTap: () {
+                          if (_isInstalled(installedSkillIds, skill)) {
+                            _navigateToSkillPage(context, skill);
+                          } else {
+                            _showInstallPrompt(context, skill);
+                          }
+                        },
+                      ),
+                  ]),
+                ),
               ),
-            ),
+              // Register Agent on MoltLaunch — shown below the Work card
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                  child: _buildMoltLaunchRegisterBanner(context, installedSkillIds),
+                ),
+              ),
+              // Solana built-in section
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 32, 20, 0),
+                  child: _buildSolanaBuiltInCard(context),
+                ),
+              ),
+              // Core capabilities section
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 40, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionHeader(context, 'Core Capability Toolkit'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Built-in tools available in every OpenClaw gateway',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildCoreToolkit(context, gatewayState.capabilities),
+                      const SizedBox(height: 32),
+                      _buildQuickJump(context),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ),
+              // Dynamic Installed Skills (2-way editor)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionHeader(context, 'Workspace Configurations (2-Way Sync)'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Directly edit raw SKILL.yaml and configuration manifests for installed items on the OpenClaw instance.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildRawInstalledSkillsList(context, rawSkills, isGatewayLoading),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRawInstalledSkillsList(BuildContext context, List<Map<String, dynamic>> rawSkills, bool isLoading) {
+    if (isLoading) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.all(20.0),
+        child: CircularProgressIndicator(),
+      ));
+    }
+    
+    if (rawSkills.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: const Center(
+          child: Text('No active skills detected on gateway.', style: TextStyle(color: AppColors.statusGrey, fontSize: 12)),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: rawSkills.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final skill = rawSkills[index];
+        final skillId = (skill['id'] ?? skill['name'] ?? skill['skillId'])?.toString().toLowerCase() ?? '';
+        final skillTitle = (skill['title'] ?? skill['name'] ?? skillId).toString();
+        final skillDesc = (skill['description'] ?? 'SKILL.yaml Workspace Binding').toString();
+        
+        final isPremium = _premiumSkills.any((s) => s.id == skillId);
+        
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: Icon(
+              isPremium ? Icons.verified_rounded : Icons.extension_rounded, 
+              color: isPremium ? AppColors.statusGreen : AppColors.statusGrey,
+              size: 20
+            ),
+            title: Text(skillTitle, style: GoogleFonts.firaCode(fontSize: 13, fontWeight: FontWeight.bold)),
+            subtitle: Text(skillDesc, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.4))),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.edit_document, size: 14, color: Colors.white70),
+                  SizedBox(width: 6),
+                  Text('EDIT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white70)),
+                ],
+              ),
+            ),
+            onTap: () {
+              Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (_) => SkillConfigEditor(skillId: skillId))
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  bool _isInstalled(Set<String> installedSkillIds, _SkillEntry skill) {
+    // Normalize comparison to handle package variations (matching hyphens vs underscores)
+    final searchId = skill.id.replaceAll('_', '-');
+    return installedSkillIds.any((id) => 
+      id.contains(searchId) || 
+      id.contains(skill.id.replaceAll('-', '_'))
+    );
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    return Text(
+      title.toUpperCase(),
+      style: TextStyle(
+        fontWeight: FontWeight.w800,
+        fontSize: 10,
+        letterSpacing: 2.0,
+        color: AppColors.statusGreen.withValues(alpha: 0.85),
       ),
     );
   }
@@ -364,7 +533,7 @@ class _SkillsManagerState extends State<SkillsManager> {
             ),
           ),
           GestureDetector(
-            onTap: _loadInstalledSkills,
+            onTap: () => Provider.of<GatewayProvider>(context, listen: false).checkHealth(),
             child: const Icon(Icons.refresh,
                 size: 16, color: AppColors.statusAmber),
           ),
@@ -375,47 +544,48 @@ class _SkillsManagerState extends State<SkillsManager> {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 90.0,
+      expandedHeight: 100,
       floating: false,
       pinned: true,
+      elevation: 0,
+      centerTitle: true,
       backgroundColor: Colors.transparent,
-      flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsetsDirectional.fromSTEB(16, 0, 0, 14),
-        title: Text(
-          'Agent Skills',
-          style: GoogleFonts.outfit(
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-            color: Theme.of(context).textTheme.titleLarge?.color,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            'assets/app_icon_official.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
           ),
-        ),
-        background: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5),
+          const SizedBox(width: 12),
+          Text(
+            'AGENT SKILLS',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 3.0,
+              color: Colors.white,
             ),
+          ),
+        ],
+      ),
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: FlexibleSpaceBar(
+            background: Container(color: Colors.black.withValues(alpha: 0.2)),
           ),
         ),
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
           tooltip: 'Refresh skills',
-          onPressed: _loadInstalledSkills,
+          onPressed: () => Provider.of<GatewayProvider>(context, listen: false).checkHealth(),
         ),
       ],
-    );
-  }
-
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Text(
-      title.toUpperCase(),
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
-            color: AppColors.statusGrey.withValues(alpha: 0.8),
-          ),
     );
   }
 
@@ -452,8 +622,29 @@ class _SkillsManagerState extends State<SkillsManager> {
     );
   }
 
-  Widget _buildCoreToolkit(BuildContext context) {
+  Widget _buildCoreToolkit(BuildContext context, List<String>? liveCapabilities) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // Use live capabilities if available, otherwise fallback to defaults
+    final caps = <Widget>[];
+    if (liveCapabilities != null && liveCapabilities.isNotEmpty) {
+      for (final capName in liveCapabilities) {
+        // Map string names to icons if possible, or use a generic extension icon
+        IconData icon;
+        if (capName.contains('browser')) icon = Icons.language_rounded;
+        else if (capName.contains('computer')) icon = Icons.code_rounded;
+        else if (capName.contains('files')) icon = Icons.folder_open_rounded;
+        else if (capName.contains('memory')) icon = Icons.memory_rounded;
+        else if (capName.contains('image')) icon = Icons.palette_rounded;
+        else if (capName.contains('solana')) icon = Icons.currency_bitcoin_rounded;
+        else icon = Icons.extension_rounded;
+        
+        caps.add(_buildCapabilityPill(context, _CapabilityEntry(capName, icon, capName)));
+      }
+    } else {
+      caps.addAll(_defaultCapabilities.map((cap) => _buildCapabilityPill(context, cap)));
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -492,7 +683,7 @@ class _SkillsManagerState extends State<SkillsManager> {
                         fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   Text(
-                    '${_defaultCapabilities.length} tools always available',
+                    '${liveCapabilities?.length ?? _defaultCapabilities.length} tools always available',
                     style: const TextStyle(
                         color: AppColors.statusGrey, fontSize: 11),
                   ),
@@ -501,8 +692,7 @@ class _SkillsManagerState extends State<SkillsManager> {
             ],
           ),
           const SizedBox(height: 20),
-          ...(_defaultCapabilities
-              .map((cap) => _buildCapabilityPill(context, cap))),
+          ...caps,
         ],
       ),
     );
@@ -552,9 +742,9 @@ class _SkillsManagerState extends State<SkillsManager> {
   /// Contextual banner below the Work card — directs user to register their
   /// OpenClaw agent on MoltLaunch to accept on-chain jobs.
   /// Shown inline on the skills page so the CTA is in context.
-  Widget _buildMoltLaunchRegisterBanner(BuildContext context) {
-    final workSkill = _premiumSkills.firstWhere((s) => s.id == 'molt_launch');
-    final isInstalled = _isInstalled(workSkill);
+  Widget _buildMoltLaunchRegisterBanner(BuildContext context, Set<String> installedSkillIds) {
+    final workSkill = _premiumSkills.firstWhere((s) => s.id == 'molt-launch');
+    final isInstalled = installedSkillIds.any((id) => id.contains(workSkill.id));
 
     if (isInstalled) {
       // Already registered — show a compact status row
@@ -755,176 +945,138 @@ class _SkillEntry {
 class _CapabilityEntry {
   final String label;
   final IconData icon;
-  final String key;
-  const _CapabilityEntry(this.label, this.icon, this.key);
+  final String id;
+  const _CapabilityEntry(this.label, this.icon, this.id);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Service Card with install state
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _ServiceCard extends StatelessWidget {
   final _SkillEntry skill;
   final bool isInstalled;
   final bool isLoading;
+  final LocalLlmState llmState;
   final VoidCallback onTap;
 
   const _ServiceCard({
     required this.skill,
     required this.isInstalled,
     required this.isLoading,
+    required this.llmState,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isReady = isInstalled || (skill.id == 'local_llm' && llmState.status == LocalLlmStatus.ready);
 
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.04)
-              : Colors.black.withValues(alpha: 0.02),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isInstalled
-                ? skill.color.withValues(alpha: 0.4)
-                : (isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.05)),
-            width: isInstalled ? 1.5 : 1.0,
-          ),
-          boxShadow: isInstalled
-              ? [
-                  BoxShadow(
-                    color: skill.color.withValues(alpha: 0.08),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  )
-                ]
-              : [],
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isReady ? skill.color.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.1),
+          width: isReady ? 1.5 : 1.0,
         ),
-        child: Stack(
-          children: [
-            // Ghost background icon
-            Positioned(
-              right: -8,
-              top: -8,
-              child: Icon(skill.icon,
-                  size: 80, color: skill.color.withValues(alpha: 0.04)),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  // Skill icon
-                  Container(
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: skill.color.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Icon(skill.icon, color: skill.color, size: 20),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    skill.title,
-                    style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  Text(
-                    skill.subtitle,
-                    style: const TextStyle(
-                        color: AppColors.statusGrey, fontSize: 10),
-                  ),
-                ],
-              ),
-            ),
-            // Status badge
-            Positioned(
-              top: 12,
-              right: 12,
-              child: isLoading
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: skill.color.withValues(alpha: 0.6)),
-                    )
-                  : isInstalled
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: skill.color.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'ACTIVE',
-                            style: TextStyle(
-                              color: skill.color,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        )
-                      : Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.15)),
-                          ),
-                          child: const Text(
-                            'INSTALL',
-                            style: TextStyle(
-                              color: AppColors.statusGrey,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-            ),
-            // Tooltip info icon — long press or tap for detailed capability hint
-            if (skill.tooltip != null)
-              Positioned(
-                bottom: 10,
-                right: 10,
-                child: GestureDetector(
-                  onTap: () {
-                    final overlay = Overlay.of(context);
-                    final entry = OverlayEntry(
-                      builder: (_) => _SkillTooltipOverlay(
-                        message: skill.tooltip!,
-                        color: skill.color,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: skill.color.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    );
-                    overlay.insert(entry);
-                    Future.delayed(const Duration(seconds: 4), entry.remove);
-                  },
+                      child: Icon(skill.icon, color: skill.color, size: 20),
+                    ),
+                    const Spacer(),
+                    Text(
+                      skill.title,
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      skill.subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: isLoading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white24),
+                      )
+                    : isInstalled
+                        ? _buildBadge(skill.color, 'ACTIVE')
+                        : (skill.id == 'local_llm' && llmState.status != LocalLlmStatus.idle)
+                            ? _buildLlmBadge(llmState)
+                            : _buildBadge(Colors.white.withValues(alpha: 0.4), 'INSTALL'),
+              ),
+              if (skill.tooltip != null)
+                Positioned(
+                  bottom: 10,
+                  right: 10,
                   child: Icon(
                     Icons.info_outline_rounded,
                     size: 14,
-                    color: skill.color.withValues(alpha: 0.5),
+                    color: skill.color.withValues(alpha: 0.3),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildBadge(Color color, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+      ),
+    );
+  }
+
+  Widget _buildLlmBadge(LocalLlmState state) {
+    final color = state.status == LocalLlmStatus.ready ? AppColors.statusGreen : Colors.blueAccent;
+    final text = state.status == LocalLlmStatus.ready 
+        ? 'READY' 
+        : state.status == LocalLlmStatus.downloading 
+            ? '${(state.downloadProgress * 100).toInt()}%' 
+            : 'STARTING';
+    return _buildBadge(color, text);
+  }
 }
+
 
 /// Overlay that shows a tooltip over the skill card for 4 seconds
 class _SkillTooltipOverlay extends StatefulWidget {

@@ -503,7 +503,7 @@ class SkillsService {
       }
     }
     try {
-      final data = await proxy.execute('twilio_voice', method,
+      final data = await proxy.execute('twilio-voice', method,
           params: Map<String, dynamic>.from(parameters)..remove('method'));
       return SkillResult.success(data);
     } on SkillProxyException catch (e) {
@@ -538,7 +538,7 @@ class SkillsService {
       }
     }
     try {
-      final data = await proxy.execute('agent_card', method,
+      final data = await proxy.execute('agent-card', method,
           params: Map<String, dynamic>.from(parameters)..remove('method'));
       return SkillResult.success(data);
     } on SkillProxyException catch (e) {
@@ -577,7 +577,7 @@ class SkillsService {
       }
     }
     try {
-      final data = await proxy.execute('molt_launch', method,
+      final data = await proxy.execute('molt-launch', method,
           params: Map<String, dynamic>.from(parameters)..remove('method'));
       return SkillResult.success(data);
     } on SkillProxyException catch (e) {
@@ -612,7 +612,7 @@ class SkillsService {
       }
     }
     try {
-      final data = await proxy.execute('valeo_sentinel', method,
+      final data = await proxy.execute('valeo-sentinel', method,
           params: Map<String, dynamic>.from(parameters)..remove('method'));
       return SkillResult.success(data);
     } on SkillProxyException catch (e) {
@@ -982,7 +982,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
 
   Skill _createTwilioSkill() {
     return Skill(
-      id: 'twilio_voice',
+      id: 'twilio-voice',
       name: 'Twilio AI Voice',
       description: 'Engage in real-time voice conversations via Twilio ConversationRelay',
       version: '1.0.0',
@@ -993,7 +993,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
       body: 'Full Twilio functional skill for AI voice bridging.',
       source: 'bundled',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('twilio_voice'),
+      enabled: _prefs.isSkillEnabled('twilio-voice'),
       parametersSchema: {
         'type': 'object',
         'properties': {
@@ -1012,7 +1012,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
 
   Skill _createAgentCardSkill() {
     return Skill(
-      id: 'agent_card',
+      id: 'agent-card',
       name: 'AgentCard Payments',
       description: 'Issue virtual cards and manage spending budgets',
       version: '1.0.0',
@@ -1023,7 +1023,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
       body: 'AgentCard restorative skill for programmatic financial actions.',
       source: 'bundled',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('agent_card'),
+      enabled: _prefs.isSkillEnabled('agent-card'),
       parametersSchema: {
         'type': 'object',
         'properties': {
@@ -1040,7 +1040,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
 
   Skill _createMoltLaunchSkill() {
     return Skill(
-      id: 'molt_launch',
+      id: 'molt-launch',
       name: 'MoltLaunch Marketplace',
       description: 'Coordinate tasks and build reputation on-chain',
       version: '1.0.0',
@@ -1051,7 +1051,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
       body: 'MoltLaunch workplace skill for agent task coordination.',
       source: 'bundled',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('molt_launch'),
+      enabled: _prefs.isSkillEnabled('molt-launch'),
       parametersSchema: {
         'type': 'object',
         'properties': {
@@ -1069,7 +1069,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
 
   Skill _createValeoSkill() {
     return Skill(
-      id: 'valeo_sentinel',
+      id: 'valeo-sentinel',
       name: 'Valeo Sentinel',
       description: 'Budget enforcement and compliance for payments',
       version: '1.0.0',
@@ -1080,7 +1080,7 @@ Shrinks the avatar into a true transparent floating widget, allowing you to use 
       body: 'Valeo Sentinel budget skill for payment safety.',
       source: 'bundled',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('valeo_sentinel'),
+      enabled: _prefs.isSkillEnabled('valeo-sentinel'),
       parametersSchema: {
         'type': 'object',
         'properties': {

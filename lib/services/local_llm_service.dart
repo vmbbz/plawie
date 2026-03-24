@@ -138,6 +138,9 @@ class LocalLlmState {
     threads: threads,
     isEnabled: isEnabled,
   );
+
+  bool get isDownloaded => status == LocalLlmStatus.ready || status == LocalLlmStatus.starting || activeModelId != null;
+  bool get isDownloading => status == LocalLlmStatus.downloading;
 }
 
 // ---------------------------------------------------------------------------
@@ -378,31 +381,48 @@ echo "[llama.cpp] Done."
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/${model.filename}');
 
-      final request = http.Request('GET', Uri.parse(model.huggingFaceUrl));
-      final response = await http.Client().send(request);
+      final url = Uri.parse(model.huggingFaceUrl);
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 20);
+      
+      final request = await httpClient.getUrl(url).timeout(const Duration(seconds: 20));
+      // Follow redirects automatically by default, but let's be explicit if needed
+      // HttpClient follows up to 5 redirects by default.
+      
+      final response = await request.close().timeout(const Duration(seconds: 20));
 
       if (response.statusCode != 200) {
         throw HttpException('Model download failed: HTTP ${response.statusCode}');
       }
 
-      final total = response.contentLength ?? 0;
+      final total = response.contentLength != -1 ? response.contentLength : 0;
       int received = 0;
       final sink = tmpFile.openWrite();
 
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) {
-          _updateState(_state.copyWith(downloadProgress: received / total));
+      try {
+        await for (final chunk in response.timeout(const Duration(seconds: 60))) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            _updateState(_state.copyWith(downloadProgress: received / total));
+          }
         }
+      } finally {
+        await sink.close();
       }
-      await sink.close();
 
-      // Copy model into PRoot filesystem
-      await NativeBridge.runInProot(
-        'cp "${tmpFile.path}" "${model.prootModelPath}"',
-        timeout: 60,
-      );
+      // Copy model into PRoot filesystem using mapped host path
+      final appSupportDir = await getApplicationSupportDirectory();
+      final prootPath = '${appSupportDir.path}/rootfs';
+      final hostProotModelPath = '$prootPath${model.prootModelPath}';
+      
+      // Ensure target directory exists on the host side
+      final targetDir = Directory('$prootPath/root/.openclaw/models');
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+      
+      await tmpFile.copy(hostProotModelPath);
       await tmpFile.delete();
 
       _updateState(_state.copyWith(downloadProgress: 1.0));

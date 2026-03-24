@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
 import '../app.dart';
+import '../widgets/glass_card.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
@@ -11,30 +12,10 @@ class HelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1B2A),
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Ambient Background Glow
-          Positioned(
-            top: -100,
-            right: -50,
-            child: Container(
-              width: 400,
-              height: 400,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.statusGreen.withValues(alpha: 0.1),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.statusGreen.withValues(alpha: 0.1),
-                    blurRadius: 100,
-                    spreadRadius: 50,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
+          const NebulaBg(),
           CustomScrollView(
             slivers: [
               _buildAppBar(context),
@@ -47,81 +28,53 @@ class HelpScreen extends StatelessWidget {
                       _buildPitchHeader(context),
                       const SizedBox(height: 28),
 
-                      // ═══ #1 FLAGSHIP HERO CARD — OpenClaw on your phone ═══
                       _buildFlagshipCard(context),
                       const SizedBox(height: 40),
 
-                      _buildSectionHeader('Your Pocket AI Power'),
+                      _buildSectionHeader('The Core Foundation'),
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'Always-On Intelligence',
-                        description: 'Your OpenClaw gateway runs 24/7 in the background, even when the app is closed. Your AI is always standing by.',
-                        icon: Icons.auto_awesome_rounded,
-                        gradient: [Colors.blueAccent, Colors.cyanAccent],
+                        title: 'Ubuntu PRoot Sandbox',
+                        description: 'We bundle a complete Linux userland inside the APK. The OpenClaw Node.js execution environment runs securely within PRoot on your processor — no root access required.',
+                        icon: Icons.terminal_rounded,
+                        color: AppColors.statusAmber,
                       ),
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Talk Like a Human',
-                        description: 'Use the floating mic to speak naturally. Your companion understands context and acts on your voice commands in real time.',
-                        icon: Icons.record_voice_over_rounded,
-                        gradient: [Colors.orangeAccent, Colors.redAccent],
+                        title: 'Industrial Background Stability',
+                        description: 'The PlawieForegroundService runs as a sticky Android service with partial CPU WakeLocks. A watchdog monitors the OpenClaw gateway every 30 seconds and self-heals across background pruning.',
+                        icon: Icons.security_rounded,
+                        color: AppColors.statusGreen,
                       ),
                       
                       const SizedBox(height: 32),
-                      _buildSectionHeader('Professional Upgrades'),
+                      _buildSectionHeader('Native Integrations'),
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'Web3 & Financials',
-                        description: 'Manage money, swap tokens, and issue virtual cards. No bank account or complex tech skills needed — your agent handles it.',
+                        title: 'Web3 & Solana Identity',
+                        description: 'Real Ed25519 keypairs are generated and protected in secure on-device storage. Transactions are constructed and signed locally without cloud intermediaries.',
                         icon: Icons.account_balance_wallet_rounded,
-                        gradient: [Colors.purpleAccent, Colors.deepPurpleAccent],
+                        color: const Color(0xFF9945FF),
                       ),
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Auto-Work & Calls',
-                        description: 'Your bot handles phone calls, SMS, and on-chain jobs while you stay focused on what matters most.',
-                        icon: Icons.work_history_rounded,
-                        gradient: [Colors.tealAccent, Colors.lightGreenAccent],
+                        title: 'Procedural XR Engine',
+                        description: 'Our WebGL-based VRM avatars are driven by a mathematical engine. Independent neck and eye-tracking using sum-of-sines algorithms create hyper-realistic saccades driven by real-time TTS events.',
+                        icon: Icons.architecture_rounded,
+                        color: Colors.cyanAccent,
                       ),
-                      const SizedBox(height: 12),
+                      
+                      const SizedBox(height: 32),
+                      _buildSectionHeader('Advanced Extensibility'),
+                      const SizedBox(height: 16),
                       _buildMoonPayCard(context),
 
-                      const SizedBox(height: 24),
-                      _buildPremiumSkillsTable(context),
-
-                      const SizedBox(height: 32),
-                      _buildSectionHeader('Total Control'),
-                      const SizedBox(height: 16),
-                      _buildHelpCard(
-                        context,
-                        title: 'Command from Notifications',
-                        description: 'Stop or restart your gateway directly from the notification shade. Full control without opening the app.',
-                        icon: Icons.notifications_active_rounded,
-                        gradient: [Colors.pinkAccent, Colors.redAccent],
-                      ),
-                      
-                      const SizedBox(height: 32),
-                      _buildSectionHeader('Under the Hood'),
-                      const SizedBox(height: 16),
-                      _buildHelpCard(
-                        context,
-                        title: 'Self-Healing Background Service',
-                        description: 'A watchdog checks your AI server every 30 seconds. If anything goes wrong, it auto-restarts — even after you swipe the app away.',
-                        icon: Icons.security_rounded,
-                        gradient: [const Color(0xFF00B4D8), const Color(0xFF0077B6)],
-                      ),
                       const SizedBox(height: 12),
-                      _buildHelpCard(
-                        context,
-                        title: 'Multi-Model Intelligence',
-                        description: 'Switch between Gemini, Claude, GPT-4o and more. Your gateway orchestrates any AI model through industry-standard protocols.',
-                        icon: Icons.hub_rounded,
-                        gradient: [const Color(0xFFE76F51), const Color(0xFFF4A261)],
-                      ),
+                      _buildPremiumSkillsTable(context),
                       
                       const SizedBox(height: 40),
                       _buildSupportLinks(context),
@@ -139,41 +92,37 @@ class HelpScreen extends StatelessWidget {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 180,
+      expandedHeight: 100,
       floating: false,
       pinned: true,
       elevation: 0,
-      backgroundColor: const Color(0xFF0D1B2A).withValues(alpha: 0.8),
+      centerTitle: true,
+      backgroundColor: Colors.transparent,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            'assets/app_icon_official.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'ARCHITECTURE',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 3.0,
+            ),
+          ),
+        ],
+      ),
       flexibleSpace: ClipRect(
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: FlexibleSpaceBar(
-            centerTitle: true,
-            title: Text(
-              'HELP CENTER',
-              style: GoogleFonts.outfit(
-                fontWeight: FontWeight.w900,
-                fontSize: 14,
-                letterSpacing: 4,
-                color: Colors.white.withValues(alpha: 0.9),
-              ),
-            ),
-            background: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 40),
-                Hero(
-                  tag: 'app_logo',
-                  child: SvgPicture.asset(
-                    'assets/app_icon_official.svg',
-                    width: 70,
-                    height: 70,
-                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-            ),
+            background: Container(color: Colors.black.withValues(alpha: 0.2)),
           ),
         ),
       ),
@@ -185,7 +134,7 @@ class HelpScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Your Phone.\nYour AI. Your Rules.',
+          'Your Pocket\nOpenClaw Companion',
           style: GoogleFonts.outfit(
             fontSize: 32,
             fontWeight: FontWeight.w900,
@@ -193,12 +142,12 @@ class HelpScreen extends StatelessWidget {
             height: 1.1,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Text(
-          'Plawie is the first app to run a complete OpenClaw AI gateway directly on your Android — no cloud, no server fees, total privacy.',
+          'A top 1% engineering achievement embedding a strict Ubuntu + Node.js OpenClaw execution environment running entirely within a sandboxed layer directly on your phone.',
           style: GoogleFonts.outfit(
-            fontSize: 16,
-            color: Colors.white70,
+            fontSize: 15,
+            color: Colors.white.withValues(alpha: 0.7),
             height: 1.5,
           ),
         ),
@@ -206,130 +155,99 @@ class HelpScreen extends StatelessWidget {
     );
   }
 
-  /// The #1 flagship selling point card — full OpenClaw gateway running on-device.
-  /// Based on ARCHITECTURE_REPORT.md: "No known production app ships a bundled
-  /// Linux rootfs + PRoot + Node.js + AI gateway inside a single Flutter APK."
   Widget _buildFlagshipCard(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0A3D2B), Color(0xFF0D2A40)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(
-          color: AppColors.statusGreen.withValues(alpha: 0.4),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.statusGreen.withValues(alpha: 0.15),
-            blurRadius: 30,
-            offset: const Offset(0, 8),
+    return GlassCard(
+      padding: const EdgeInsets.all(24),
+      accentColor: AppColors.statusGreen, // Added accent color
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.settings_system_daydream_rounded, color: AppColors.statusGreen, size: 28),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.statusGreen.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.2)),
+                      ),
+                      child: Text(
+                        'CORE ARCHITECTURE',
+                        style: GoogleFonts.outfit(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
+                          color: AppColors.statusGreen,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Local Execution Engine',
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'This architecture operates entirely independent of cloud boundaries. The on-device PRoot gateway uses WebSockets and native MethodChannels (bionic-bypass.js) to manage complex tool-calling natively across local Android services.',
+            style: GoogleFonts.outfit(
+              fontSize: 13,
+              color: Colors.white.withValues(alpha: 0.8),
+              height: 1.55,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildFlagshipPill(Icons.memory_rounded, 'Snapdragon Optimized', AppColors.statusGreen),
+              _buildFlagshipPill(Icons.bolt_rounded, 'Fully Local', AppColors.statusAmber),
+              _buildFlagshipPill(Icons.terminal_rounded, 'Native PRoot', Colors.blueAccent),
+            ],
           ),
         ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.statusGreen.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppColors.statusGreen.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.lock_rounded,
-                    color: AppColors.statusGreen,
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.statusGreen.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'WORLD FIRST',
-                          style: GoogleFonts.outfit(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                            color: AppColors.statusGreen,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'OpenClaw AI — On Your Phone',
-                        style: GoogleFonts.outfit(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Plawie embeds a full OpenClaw AI gateway — the same server-grade intelligence used by enterprises — directly inside this APK. It runs inside a real Linux environment on your phone via PRoot. No root access. No subscription. No internet required.',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                color: Colors.white.withValues(alpha: 0.8),
-                height: 1.55,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildFlagshipPill('🔒 100% Private'),
-                _buildFlagshipPill('⚡ No Cloud'),
-                _buildFlagshipPill('🐧 Real Linux'),
-                _buildFlagshipPill('📦 One APK'),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildFlagshipPill(String label) {
+  Widget _buildFlagshipPill(IconData icon, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
-      child: Text(
-        label,
-        style: GoogleFonts.outfit(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: Colors.white70,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -338,129 +256,75 @@ class HelpScreen extends StatelessWidget {
     return Text(
       title.toUpperCase(),
       style: GoogleFonts.outfit(
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: FontWeight.w900,
         letterSpacing: 2,
-        color: AppColors.statusGreen.withValues(alpha: 0.8),
+        color: Colors.white.withValues(alpha: 0.4),
       ),
     );
   }
 
-  Widget _buildHelpCard(
-    BuildContext context, {
-    required String title,
-    required String description,
-    required IconData icon,
-    required List<Color> gradient,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.06),
-          width: 1,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {},
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Row(
-                children: [
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: gradient,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: gradient[0].withValues(alpha: 0.3),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: Icon(icon, color: Colors.white, size: 28),
+  Widget _buildHelpCard(BuildContext context, {required String title, required String description, required IconData icon, Color color = Colors.white}) {
+    return GlassCard(
+      padding: const EdgeInsets.all(22),
+      accentColor: color,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: color.withValues(alpha: 0.2)),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
                   ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          description,
-                          style: GoogleFonts.outfit(
-                            color: Colors.white60,
-                            fontSize: 14,
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  description,
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: Colors.white.withValues(alpha: 0.65),
+                    height: 1.5,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildMoonPayCard(BuildContext context) {
-    return Container(
+    return GlassCard(
       padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF2D1060), Color(0xFF0A1F3C)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: const Color(0xFF7B2FBE).withValues(alpha: 0.5),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF7B2FBE).withValues(alpha: 0.15),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF7B2FBE).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(Icons.currency_exchange_rounded,
-                    color: Color(0xFF9B6FDE), size: 24),
+                child: const Icon(Icons.currency_exchange_rounded, color: Colors.white70, size: 20),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -468,16 +332,16 @@ class HelpScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF7B2FBE).withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(10),
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text('NEW — MCP SKILL',
-                          style: TextStyle(color: Color(0xFF9B6FDE), fontSize: 9, fontWeight: FontWeight.bold)),
+                      child: const Text('MCP SERVER SKILL',
+                          style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                     ),
-                    const SizedBox(height: 4),
-                    Text('Agent Banking via MoonPay',
+                    const SizedBox(height: 6),
+                    Text('MoonPay Banking',
                         style: GoogleFonts.outfit(
                             fontWeight: FontWeight.w800, fontSize: 16, color: Colors.white)),
                   ],
@@ -485,27 +349,27 @@ class HelpScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Text(
-            'Give your AI a verified bank account. MoonPay Agents connects your OpenClaw agent to 30+ financial skills — swap tokens, bridge cross-chain, buy/sell crypto via fiat, and run DCA strategies — all from natural language in chat.',
+            '@moonpay/cli seamlessly provisions verified bank accounts inside the OpenClaw gateway context. Support includes cross-chain bridges, token swaps, and dollar-cost algorithmic routing.',
             style: GoogleFonts.outfit(
-                color: Colors.white70, fontSize: 13, height: 1.55),
+                color: Colors.white70, fontSize: 12, height: 1.55),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              'Swap', 'Bridge', 'Buy/Sell', 'DCA', 'Live Prices',
+              'Swap', 'Bridge', 'Fiat Onramps', 'DCA Algorithms', 'Market APIs',
             ].map((label) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFF7B2FBE).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF7B2FBE).withValues(alpha: 0.3)),
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
               child: Text(label,
-                  style: const TextStyle(color: Color(0xFF9B6FDE), fontSize: 11, fontWeight: FontWeight.w600)),
+                  style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w600)),
             )).toList(),
           ),
         ],
@@ -515,60 +379,42 @@ class HelpScreen extends StatelessWidget {
 
   Widget _buildPremiumSkillsTable(BuildContext context) {
     final skills = [
-      (Icons.account_balance_wallet_rounded, 'Wallet', 'AgentCard.ai', 'Virtual Visa cards + autonomous spending on Base'),
-      (Icons.work_rounded, 'Work', 'MoltLaunch', 'On-chain AI jobs • ETH escrow • ERC-8004 identity'),
-      (Icons.credit_score_rounded, 'Credit', 'Valeo Sentinel', 'x402 budget caps: per-call / hourly / daily'),
-      (Icons.phone_in_talk_rounded, 'Calls', 'Twilio AI', 'AI voice calls + real-time transcription (Deepgram)'),
-      (Icons.currency_exchange_rounded, 'Finance', 'MoonPay', 'Swap / bridge / buy / sell / DCA / live prices'),
+      (Icons.account_balance_wallet_rounded, 'AgentCard', 'Virtual Visa + Base execution'),
+      (Icons.work_rounded, 'MoltLaunch', 'On-chain AI jobs via ERC-8004 identity'),
+      (Icons.memory_rounded, 'Local LLM', 'Llama Qwen support without cloud egress'),
+      (Icons.phone_in_talk_rounded, 'Twilio AI', 'Inbound & outbound voice via ConversationRelay'),
     ];
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-      ),
+    return GlassCard(
+      padding: const EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('PREMIUM SKILLS',
+          Text('CORE MCP INTEGRATIONS',
               style: GoogleFonts.outfit(
                   fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: 1.5,
-                  color: AppColors.statusGreen.withValues(alpha: 0.8))),
-          const SizedBox(height: 4),
-          Text('Tap ⓘ on any skill card in Agent Skills to see what your agent can do.',
-              style: GoogleFonts.outfit(
-                  fontSize: 11, color: Colors.white38)),
-          const SizedBox(height: 14),
+                  color: Colors.white54)),
+          const SizedBox(height: 16),
           ...skills.map((s) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.only(bottom: 14),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(s.$1, size: 18, color: AppColors.statusGreen.withValues(alpha: 0.8)),
-                const SizedBox(width: 10),
+                Icon(s.$1, size: 16, color: Colors.white70),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(s.$2,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 6),
-                          Text('/ ${s.$3}',
-                              style: const TextStyle(
-                                  color: Colors.white38, fontSize: 10)),
-                        ],
-                      ),
+                      Text(s.$2,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800)),
                       const SizedBox(height: 2),
-                      Text(s.$4,
+                      Text(s.$3,
                           style: const TextStyle(
                               color: Colors.white54, fontSize: 11, height: 1.4)),
                     ],
@@ -590,27 +436,33 @@ class HelpScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _buildSupportButton(
-              context, 'Explore Code', 'https://github.com/vmbbz/plawie'),
+              context, 'Explore Git Source', 'https://github.com/vmbbz/plawie', Icons.code_rounded),
             const SizedBox(width: 32),
             _buildSupportButton(
-              context, 'Join Discord', 'https://discord.gg/openclaw'),
+              context, 'Join Discord', 'https://discord.gg/openclaw', Icons.forum_rounded),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildSupportButton(BuildContext context, String label, String url) {
+  Widget _buildSupportButton(BuildContext context, String label, String url, IconData icon) {
     return InkWell(
       onTap: () => launchUrl(Uri.parse(url)),
-      child: Text(
-        label,
-        style: GoogleFonts.outfit(
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
-          letterSpacing: 1,
-          color: Colors.white.withValues(alpha: 0.4),
-        ),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Colors.white38),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              letterSpacing: 1,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
       ),
     );
   }

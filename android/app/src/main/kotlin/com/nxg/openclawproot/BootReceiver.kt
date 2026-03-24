@@ -7,7 +7,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 
 /**
- * Boot receiver — auto-starts the Clawa foreground service after device reboot.
+ * Boot receiver — auto-starts the Plawie foreground service after device reboot.
  * Only starts if the user has enabled auto-start in preferences.
  * 
  * directBootAware=false: starts after first unlock (not during Direct Boot).
@@ -27,9 +27,9 @@ class BootReceiver : BroadcastReceiver() {
         val autoStart = prefs.getBoolean(PREF_AUTO_START, false)
 
         if (autoStart) {
-            Log.i(TAG, "Boot completed — auto-starting Clawa services")
+            Log.i(TAG, "Boot completed — auto-starting Plawie services")
             try {
-                ClawaForegroundService.start(context)
+                PlawieForegroundService.start(context)
                 NodeForegroundService.start(context)
             } catch (e: Exception) {
                 // Android 14+ may block foreground service start from a broadcast receiver.

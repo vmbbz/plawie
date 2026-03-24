@@ -13,7 +13,7 @@ import 'package:clawa/app.dart';
 void main() {
   testWidgets('App builds smoke test', (WidgetTester tester) async {
     // Build the app and ensure it renders without throwing.
-    await tester.pumpWidget(const ClawaApp());
-    expect(find.byType(ClawaApp), findsOneWidget);
+    await tester.pumpWidget(const PlawieApp());
+    expect(find.byType(PlawieApp), findsOneWidget);
   });
 }

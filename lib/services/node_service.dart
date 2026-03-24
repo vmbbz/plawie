@@ -81,7 +81,7 @@ class NodeService {
       // Wait briefly for a challenge nonce, proceed without one for local connections
       String? nonce;
       try {
-        nonce = await _challengeCompleter!.future.timeout(const Duration(milliseconds: 500));
+        nonce = await _challengeCompleter!.future.timeout(const Duration(milliseconds: 2000));
       } catch (_) {
         nonce = null;
       }

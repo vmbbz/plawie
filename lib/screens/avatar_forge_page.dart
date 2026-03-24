@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:google_fonts/google_fonts.dart';
 import '../../app.dart';
 import '../../services/preferences_service.dart';
+import '../../widgets/glass_card.dart';
 
 /// Avatar Forge — Manage 3D AI avatar identities and equip on-chain VRM models.
 class AvatarForgePage extends StatefulWidget {
@@ -90,45 +91,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
       ),
       body: Stack(
         children: [
-          // Background gradient
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFF13082A), Color(0xFF080C14)],
-              ),
-            ),
-          ),
-          // Ambient purple/teal glow patches
-          Positioned(
-            top: -60,
-            left: -40,
-            child: AnimatedBuilder(
-              animation: _glowController,
-              builder: (_, __) => Container(
-                width: 280,
-                height: 280,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF7B2FBE)
-                      .withValues(alpha: 0.06 + 0.04 * _glowController.value),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 100,
-            right: -50,
-            child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF00B4D8).withValues(alpha: 0.06),
-              ),
-            ),
-          ),
+          // Universal Nebula Background matching Main Chat
+          const NebulaBg(),
           // Scrollable content
           SafeArea(
             child: SingleChildScrollView(

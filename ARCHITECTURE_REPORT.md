@@ -1,4 +1,4 @@
-# Clawa Pocket — Architecture Deep-Dive & Competitive Landscape
+# Plawie — Architecture Deep-Dive & Competitive Landscape
 
 > **Audit-Grade Technical Report** — March 2026
 > Authors: Architecture Review Team

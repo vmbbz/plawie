@@ -10,5 +10,5 @@ void main() async {
   final skillServer = AgentSkillServer();
   await skillServer.start();
 
-  runApp(const ClawaApp());
+  runApp(const PlawieApp());
 }

@@ -25,10 +25,10 @@ import java.net.URL
  * - Watchdog: health-checks gateway every 30s, auto-restarts after 2 failures
  * - Notification: shows gateway status with uptime chronometer
  */
-class ClawaForegroundService : Service() {
+class PlawieForegroundService : Service() {
     companion object {
-        private const val TAG = "ClawaService"
-        const val CHANNEL_ID = "clawa_local_agent"
+        private const val TAG = "PlawieService"
+        const val CHANNEL_ID = "plawie_local_agent"
         const val NOTIFICATION_ID = 4
         
         // Actions
@@ -44,10 +44,10 @@ class ClawaForegroundService : Service() {
 
         var isRunning = false
             private set
-        private var instance: ClawaForegroundService? = null
+        private var instance: PlawieForegroundService? = null
 
         fun start(context: Context) {
-            val intent = Intent(context, ClawaForegroundService::class.java)
+            val intent = Intent(context, PlawieForegroundService::class.java)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -76,7 +76,7 @@ class ClawaForegroundService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, ClawaForegroundService::class.java)
+            val intent = Intent(context, PlawieForegroundService::class.java)
             context.stopService(intent)
         }
 
@@ -121,7 +121,7 @@ class ClawaForegroundService : Service() {
         isRunning = true
         instance = this
         startTime = System.currentTimeMillis()
-        startForeground(NOTIFICATION_ID, buildNotification("Clawa Local Agent Running"))
+        startForeground(NOTIFICATION_ID, buildNotification("Plawie Local Agent Running"))
         acquireWakeLock()
         
         // Start the localhost HTTP bridge for Node.js
@@ -138,7 +138,7 @@ class ClawaForegroundService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         Log.i(TAG, "onTaskRemoved: App swiped away — service will persist via START_STICKY")
         // Re-deliver start command to ensure onStartCommand fires again if OS kills us
-        val restartIntent = Intent(applicationContext, ClawaForegroundService::class.java)
+        val restartIntent = Intent(applicationContext, PlawieForegroundService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(restartIntent)
         } else {
@@ -305,10 +305,10 @@ class ClawaForegroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Clawa Local Agent",
+                "Plawie Local Agent",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps the Clawa environment running in the background"
+                description = "Keeps the Plawie environment running in the background"
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
@@ -329,18 +329,18 @@ class ClawaForegroundService : Service() {
             Notification.Builder(this)
         }
 
-        builder.setContentTitle("Clawa Local Agent")
+        builder.setContentTitle("Plawie Local Agent")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
 
         // Add Action Buttons (Surgical upgrade for production control)
-        val stopIntent = Intent(this, ClawaForegroundService::class.java).apply { action = ACTION_STOP }
+        val stopIntent = Intent(this, PlawieForegroundService::class.java).apply { action = ACTION_STOP }
         val stopPendingIntent = PendingIntent.getService(this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE)
         builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP", stopPendingIntent)
 
-        val restartIntent = Intent(this, ClawaForegroundService::class.java).apply { action = ACTION_RESTART }
+        val restartIntent = Intent(this, PlawieForegroundService::class.java).apply { action = ACTION_RESTART }
         val restartPendingIntent = PendingIntent.getService(this, 2, restartIntent, PendingIntent.FLAG_IMMUTABLE)
         builder.addAction(android.R.drawable.ic_menu_rotate, "RESTART", restartPendingIntent)
 

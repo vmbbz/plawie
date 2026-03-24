@@ -43,7 +43,6 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
   late final WebViewController _controller;
   final VrmAssetServer _server = VrmAssetServer();
   bool _isReady = false;
-  bool _serverStarted = false;
 
   @override
   void initState() {
@@ -60,7 +59,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
         ),
       )
       ..addJavaScriptChannel(
-        'ClawaBridge',
+        'PlawieBridge',
         onMessageReceived: (JavaScriptMessage message) {
           if (message.message == 'READY') {
             if (mounted) {
@@ -97,13 +96,13 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
   Future<void> _startServerAndLoad() async {
     try {
       await _server.start();
-      _serverStarted = true;
+      
       final params = <String, String>{};
       if (widget.isOverlay) params['overlay'] = 'true';
       if (widget.isPip) params['pip'] = 'true';
       
       final uri = Uri.parse('${_server.origin}/avatar_scene.html').replace(queryParameters: params);
-      widget.onLog?.call('VRM Server started at ${_server.origin}');
+      widget.onLog?.call('VRM Server active at ${_server.origin}');
 
       // Load from localhost HTTP
       _controller.loadRequest(uri);
@@ -161,9 +160,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
 
   @override
   void dispose() {
-    if (_serverStarted) {
-      _server.stop();
-    }
+    // Shared singleton server persists across widget instances
     super.dispose();
   }
 
