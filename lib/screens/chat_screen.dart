@@ -1,9 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
-import '../services/piper_tts_service.dart';
+import '../services/tts_service.dart';
+import '../services/native_bridge.dart';
+import '../services/video_capture_service.dart';
+import '../utils/video_frame_extractor.dart';
+import '../models/agent_info.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 import '../app.dart';
@@ -48,7 +55,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _showDiagnostics = false;
   
   // Voice Pipeline (Piper TTS / Local VITS)
-  final PiperTtsService _piperTts = PiperTtsService();
+  final TtsService _tts = TtsService();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
   String? _currentGesture;
@@ -57,13 +64,25 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   String _selectedAvatar = 'default_avatar.vrm';
   String _agentName = 'Plawie';
   String _selectedModel = 'google/gemini-3.1-pro-preview';
-  
-  final List<String> _availableModels = [
+
+  // Vision / image attachment state
+  String? _pendingImageBase64;   // base64 of photo waiting to be sent
+  bool _isTakingPhoto = false;   // true while camera shutter is in flight
+
+  // Video attachment state
+  String? _pendingVideoBase64;   // base64 of recorded clip waiting to be sent
+  bool _isRecordingVideo = false;
+
+  // Static cloud model list — augmented at runtime with gateway agents
+  List<String> _availableModels = [
     'google/gemini-3.1-pro-preview',
     'anthropic/claude-opus-4.6',
     'openai/gpt-4o',
     'groq/llama-3.1-405b',
   ];
+
+  // Dynamic agents fetched from the gateway
+  List<AgentInfo> _dynamicAgents = [];
 
   final List<String> _availableAvatars = [
     'gemini.vrm',
@@ -74,6 +93,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isTtsDownloaded = false;
   double _downloadProgress = 0.0;
   bool _isDownloadingTts = false;
+
+  // Wake word subscription
+  StreamSubscription<String>? _hotwordSub;
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
@@ -91,6 +113,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _initVoiceParams();
     _loadChatHistory();
     _checkTtsModel();
+    // Fetch gateway agents after first frame — gateway may not be ready yet
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchDynamicAgents());
 
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPModeChanged') {
@@ -139,7 +163,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
     
     // Listen for background download progress
-    _piperTts.onDownloadProgress = (p) {
+    _tts.onDownloadProgress = (p) {
       if (mounted) {
         setState(() {
           _downloadProgress = p;
@@ -155,7 +179,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _checkTtsModel() async {
-    final downloaded = await _piperTts.isModelDownloaded();
+    final downloaded = await _tts.isModelDownloaded();
     if (mounted) {
       setState(() => _isTtsDownloaded = downloaded);
     }
@@ -195,7 +219,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
     try {
       _addDiagnosticLog('Starting Piper TTS background download...');
-      await _piperTts.init(forceDownload: true);
+      await _tts.init(forceDownload: true);
       
       if (mounted) {
         setState(() {
@@ -247,6 +271,21 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         }
       });
       _scrollToBottom();
+    }
+  }
+
+  /// Fetches available agents from the gateway and populates the model menu.
+  /// Called once after first frame; safe to call again when gateway reconnects.
+  Future<void> _fetchDynamicAgents() async {
+    if (!mounted) return;
+    try {
+      final gw = context.read<GatewayProvider>();
+      final agents = await gw.fetchAgents();
+      if (mounted && agents.isNotEmpty) {
+        setState(() => _dynamicAgents = agents);
+      }
+    } catch (_) {
+      // Gateway not ready — agents remain empty; will be populated on next health check
     }
   }
 
@@ -304,16 +343,32 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     // Only initialize the shell STT, don't pre-emptively init Piper (it hangs)
     await _speechToText.initialize();
 
-    _piperTts.onStart = () {
+    // Subscribe to wake word events from HotwordService (no-op if service not running)
+    _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
+      if (event == 'wake_word_detected' && mounted && !_isGenerating && !_isListening) {
+        _addDiagnosticLog('Wake word "Plawie" detected — activating mic');
+        _startListening();
+      }
+    }, onError: (_) {/* service not running — ignore */});
+
+    _tts.onStart = () {
       if (mounted) {
         setState(() => _speechIntensity = 0.8);
       }
     };
 
-    _piperTts.onComplete = () {
+    _tts.onComplete = () {
       if (mounted) {
         setState(() => _speechIntensity = 0.0);
         _syncOverlayState();
+        // Continuous mode: wait 500ms then restart listening automatically
+        if (PreferencesService().continuousMode && !_isGenerating) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isGenerating && !_isListening) {
+              _startListening();
+            }
+          });
+        }
       }
     };
   }
@@ -330,12 +385,121 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Vision — camera capture
+  // ---------------------------------------------------------------------------
+
+  Future<void> _takePicture() async {
+    if (_isTakingPhoto) return;
+    setState(() => _isTakingPhoto = true);
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No camera available on this device.')),
+          );
+        }
+        return;
+      }
+      final controller = CameraController(cameras.first, ResolutionPreset.medium);
+      await controller.initialize();
+      final file = await controller.takePicture();
+      await controller.dispose();
+
+      final bytes = await File(file.path).readAsBytes();
+      await File(file.path).delete().catchError((_) => File(file.path));
+
+      if (mounted) {
+        setState(() => _pendingImageBase64 = base64Encode(bytes));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isTakingPhoto = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Video — clip record + duration picker
+  // ---------------------------------------------------------------------------
+
+  Future<void> _recordVideo({int durationMs = 5000}) async {
+    if (_isRecordingVideo) return;
+    setState(() => _isRecordingVideo = true);
+    try {
+      final bytes = await VideoCaptureService.recordClip(durationMs: durationMs);
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Video capture failed. Check camera permissions.')),
+          );
+        }
+        return;
+      }
+      if (mounted) {
+        setState(() => _pendingVideoBase64 = base64Encode(bytes));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Video error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRecordingVideo = false);
+    }
+  }
+
+  Future<void> _showVideoDurationPicker() async {
+    final options = {'3s': 3000, '5s': 5000, '10s': 10000, '30s': 30000};
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.9),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Video Duration', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            ...options.entries.map((e) => ListTile(
+              title: Text(e.key, style: const TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(ctx, e.value),
+            )),
+          ],
+        ),
+      ),
+    );
+    if (chosen != null) await _recordVideo(durationMs: chosen);
+  }
+
+  // ---------------------------------------------------------------------------
+
   Future<void> _handleSubmit(String text) async {
-    if (text.trim().isEmpty || _isGenerating) return;
-    
+    if ((text.trim().isEmpty && _pendingImageBase64 == null && _pendingVideoBase64 == null) || _isGenerating) return;
+
+    // Capture and clear pending attachments before any async gaps
+    final imageBase64 = _pendingImageBase64;
+    final videoBase64 = _pendingVideoBase64;
     _textController.clear();
     setState(() {
-      _messages.add(ChatMessage(text: text, isUser: true));
+      _pendingImageBase64 = null;
+      _pendingVideoBase64 = null;
+      _messages.add(ChatMessage(
+        text: text.trim().isEmpty && videoBase64 != null ? '🎬 Video clip' : text,
+        isUser: true,
+        imageBase64: imageBase64,
+        imageMimeType: imageBase64 != null ? 'image/jpeg' : null,
+      ));
       _isThinking = true;
       _isGenerating = true;
     });
@@ -345,16 +509,53 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _addDiagnosticLog('Sending message: $text');
     setState(() => _lastUserMessage = text); // Trigger JS keyword listener
 
-    // Add empty message for the assistant
+    // Add empty placeholder for the assistant reply
     setState(() {
       _messages.add(ChatMessage(text: '', isUser: false));
     });
 
     String fullResponse = '';
-    
+
     try {
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-      final stream = gatewayProvider.sendMessage(text, model: _selectedModel);
+      final localLlm = LocalLlmService();
+
+      // Route based on attachment type
+      final Stream<String> stream;
+      if (videoBase64 != null && localLlm.isVisionReady) {
+        // Offline video: extract frames via PRoot ffmpeg then analyse each
+        _addDiagnosticLog('Video path: offline frame analysis');
+        stream = () async* {
+          yield 'Extracting video frames…';
+          final mp4Bytes = base64Decode(videoBase64);
+          final frames = await VideoFrameExtractor.extractFrames(mp4Bytes, fps: 1, maxFrames: 8);
+          if (frames.isEmpty) {
+            yield '⚠️ Could not extract frames. Make sure ffmpeg is installed in PRoot '
+                '(`apt-get install -y ffmpeg` in a terminal session).';
+            return;
+          }
+          yield* localLlm.analyseVideoFrames(frames, text.trim().isEmpty ? 'Describe what is happening.' : text);
+        }();
+      } else if (videoBase64 != null) {
+        // Cloud video: send inline MP4 to Gemini via gateway
+        _addDiagnosticLog('Video path: cloud Gemini video');
+        stream = gatewayProvider.sendCloudVideoMessage(
+          text.trim().isEmpty ? 'Describe what is happening in this video.' : text,
+          videoBase64,
+        );
+      } else if (imageBase64 != null && localLlm.isVisionReady) {
+        _addDiagnosticLog('Vision path: local multimodal model active');
+        stream = gatewayProvider.sendVisionMessage(text, imageBase64);
+      } else if (imageBase64 != null) {
+        stream = Stream.value(
+          '📷 Image captured, but no vision model is active.\n\n'
+          'To analyse images locally, go to **Local LLM** and start either:\n'
+          '• **Qwen2-VL 2B** (compact, ~3 GB RAM)\n'
+          '• **LLaVA 1.5 7B** (flagship phones, ~6 GB RAM)',
+        );
+      } else {
+        stream = gatewayProvider.sendMessage(text, model: _selectedModel);
+      }
       await for (final chunk in stream) {
         if (!mounted) break;
         
@@ -399,7 +600,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
       // Strip markdown symbols before speaking so it doesn't pronounce asterisks
       final cleanTextForSpeech = fullResponse.replaceAll(RegExp(r'[\*\`\#]'), '');
-      _piperTts.speak(cleanTextForSpeech);
+      _tts.speak(cleanTextForSpeech);
       
     } catch (e) {
       _addDiagnosticLog('Exception during Chat: $e');
@@ -431,13 +632,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     
     // Speak the final response (including errors now!)
     if (fullResponse.isNotEmpty) {
-       await _piperTts.stop();
+       await _tts.stop();
        // Clean emojis and markdown for TTS
        final cleanTextForSpeech = fullResponse
          .replaceAll('⚠️', 'Attention, ')
          .replaceAll(RegExp(r'[\*\`\#]'), '')
          .replaceAll(RegExp(r'\(gesture:.*?\)\s*'), ''); // Don't speak the tag
-       await _piperTts.speak(cleanTextForSpeech);
+       await _tts.speak(cleanTextForSpeech);
     }
   }
 
@@ -457,6 +658,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       setState(() => _isListening = true);
       _syncOverlayState();
       _addDiagnosticLog('Voice listening started.');
+      final silenceSecs = PreferencesService().silenceTimeoutSeconds;
       await _speechToText.listen(
         onResult: (result) {
           _textController.text = result.recognizedWords;
@@ -468,6 +670,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             _handleSubmit(result.recognizedWords);
           }
         },
+        pauseFor: Duration(seconds: silenceSecs),
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.confirmation,
+          cancelOnError: true,
+        ),
       );
     } else {
       _addDiagnosticLog('Voice recognition unavailable on device.');
@@ -827,6 +1034,40 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ],
           ),
         ),
+        // ── Dynamic agents from gateway (empty until gateway connects) ──────
+        if (_dynamicAgents.isNotEmpty) ...[
+          const PopupMenuDivider(),
+          PopupMenuItem<void>(
+            enabled: false,
+            height: 20,
+            child: const Text('AGENTS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+          ),
+          ..._dynamicAgents.map((agent) => PopupMenuItem<String>(
+            value: 'model:${agent.modelKey}',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  agent.modelKey == _selectedModel ? Icons.check_circle : Icons.smart_toy_outlined,
+                  color: agent.modelKey == _selectedModel ? Colors.tealAccent : Colors.white38,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    agent.isDefault ? '${agent.name} (default)' : agent.name,
+                    style: TextStyle(
+                      color: agent.modelKey == _selectedModel ? Colors.white : Colors.white70,
+                      fontSize: 13,
+                      fontWeight: agent.modelKey == _selectedModel ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          )),
+        ],
         const PopupMenuDivider(),
         PopupMenuItem<void>(
           enabled: false,
@@ -954,8 +1195,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    _hotwordSub?.cancel();
     _glowController.dispose();
-    _piperTts.stop();
+    _tts.stop();
     _speechToText.stop();
     _textController.dispose();
     _scrollController.dispose();
@@ -1645,22 +1887,123 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                     if (!_isChatCollapsed) ...[
                                       const SizedBox(width: 12),
                                       Expanded(
-                                        child: TextField(
-                                          controller: _textController,
-                                          style: const TextStyle(color: Colors.white, fontSize: 15),
-                                          onChanged: (_) => setState(() {}),
-                                          decoration: InputDecoration(
-                                            hintText: "Message your companion...",
-                                            hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
-                                            border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(30),
-                                              borderSide: BorderSide.none,
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Image preview strip — shown when a photo is pending
+                                            if (_pendingImageBase64 != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(bottom: 6),
+                                                child: Stack(
+                                                  children: [
+                                                    ClipRRect(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      child: Image.memory(
+                                                        base64Decode(_pendingImageBase64!),
+                                                        height: 80,
+                                                        width: 80,
+                                                        fit: BoxFit.cover,
+                                                      ),
+                                                    ),
+                                                    Positioned(
+                                                      top: 2,
+                                                      right: 2,
+                                                      child: GestureDetector(
+                                                        onTap: () => setState(() => _pendingImageBase64 = null),
+                                                        child: Container(
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.black.withValues(alpha: 0.6),
+                                                            shape: BoxShape.circle,
+                                                          ),
+                                                          child: const Icon(Icons.close, color: Colors.white, size: 16),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            Row(
+                                              children: [
+                                                // Camera attach button
+                                                _isTakingPhoto
+                                                    ? const SizedBox(
+                                                        width: 36,
+                                                        height: 36,
+                                                        child: Padding(
+                                                          padding: EdgeInsets.all(8),
+                                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                                                        ),
+                                                      )
+                                                    : IconButton(
+                                                        icon: Icon(
+                                                          _pendingImageBase64 != null
+                                                              ? Icons.image_rounded
+                                                              : Icons.camera_alt_outlined,
+                                                          color: _pendingImageBase64 != null
+                                                              ? Colors.greenAccent
+                                                              : Colors.white54,
+                                                          size: 22,
+                                                        ),
+                                                        tooltip: 'Attach photo',
+                                                        padding: EdgeInsets.zero,
+                                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                                        onPressed: _takePicture,
+                                                      ),
+                                                const SizedBox(width: 2),
+                                                // Video record button
+                                                _isRecordingVideo
+                                                    ? const SizedBox(
+                                                        width: 36,
+                                                        height: 36,
+                                                        child: Padding(
+                                                          padding: EdgeInsets.all(8),
+                                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                                                        ),
+                                                      )
+                                                    : IconButton(
+                                                        icon: Icon(
+                                                          _pendingVideoBase64 != null
+                                                              ? Icons.videocam_rounded
+                                                              : Icons.videocam_outlined,
+                                                          color: _pendingVideoBase64 != null
+                                                              ? Colors.redAccent
+                                                              : Colors.white38,
+                                                          size: 22,
+                                                        ),
+                                                        tooltip: 'Record video clip',
+                                                        padding: EdgeInsets.zero,
+                                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                                        onPressed: _pendingVideoBase64 != null
+                                                            ? () => setState(() => _pendingVideoBase64 = null)
+                                                            : _showVideoDurationPicker,
+                                                      ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: TextField(
+                                                    controller: _textController,
+                                                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                                                    onChanged: (_) => setState(() {}),
+                                                    decoration: InputDecoration(
+                                                      hintText: _pendingVideoBase64 != null
+                                                          ? "Ask about the video..."
+                                                          : _pendingImageBase64 != null
+                                                              ? "Ask about the image..."
+                                                              : "Message your companion...",
+                                                      hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
+                                                      border: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(30),
+                                                        borderSide: BorderSide.none,
+                                                      ),
+                                                      filled: true,
+                                                      fillColor: Colors.white.withValues(alpha: 0.08),
+                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                                    ),
+                                                    onSubmitted: _handleSubmit,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            filled: true,
-                                            fillColor: Colors.white.withValues(alpha: 0.08),
-                                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                          ),
-                                          onSubmitted: _handleSubmit,
+                                          ],
                                         ),
                                       ),
                                       const SizedBox(width: 8),

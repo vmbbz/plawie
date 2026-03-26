@@ -126,4 +126,63 @@ class PreferencesService {
   /// Skill Enablement Persistence
   bool isSkillEnabled(String skillId) => _p.getBool('skill_enabled_$skillId') ?? false;
   Future<void> setSkillEnabled(String skillId, bool enabled) => _p.setBool('skill_enabled_$skillId', enabled);
+
+  // ── Voice & Speech ──────────────────────────────────────────────────────────
+
+  /// TTS engine: 'piper' | 'native' | 'elevenlabs' | 'openai'
+  String get ttsEngine => _p.getString('tts_engine') ?? 'piper';
+  set ttsEngine(String value) => _p.setString('tts_engine', value);
+
+  /// Speech speed multiplier (0.5–2.0). Default 1.2 to match competitor default.
+  double get ttsSpeed => _p.getDouble('tts_speed') ?? 1.2;
+  set ttsSpeed(double value) => _p.setDouble('tts_speed', value);
+
+  /// Auto-restart STT after TTS finishes
+  bool get continuousMode => _p.getBool('continuous_mode') ?? false;
+  set continuousMode(bool value) => _p.setBool('continuous_mode', value);
+
+  /// Silence timeout in seconds before auto-submitting (1–15)
+  int get silenceTimeoutSeconds => _p.getInt('silence_timeout_seconds') ?? 5;
+  set silenceTimeoutSeconds(int value) => _p.setInt('silence_timeout_seconds', value);
+
+  /// ElevenLabs API key
+  String? get elevenLabsApiKey => _p.getString('elevenlabs_api_key');
+  set elevenLabsApiKey(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString('elevenlabs_api_key', value);
+    } else {
+      _p.remove('elevenlabs_api_key');
+    }
+  }
+
+  /// ElevenLabs voice ID
+  String get elevenLabsVoiceId => _p.getString('elevenlabs_voice_id') ?? 'EXAVITQu4vr4xnSDxMaL';
+
+  set elevenLabsVoiceId(String value) => _p.setString('elevenlabs_voice_id', value);
+
+  // ── Wake Word ───────────────────────────────────────────────────────────────
+
+  /// Wake word mode: 'off' | 'foreground' | 'always'
+  String get wakeWordMode => _p.getString('wake_word_mode') ?? 'off';
+  set wakeWordMode(String value) => _p.setString('wake_word_mode', value);
+
+  // ── Cloud TTS API Keys ──────────────────────────────────────────────────────
+
+  /// OpenAI API key (used for TTS — separate from the gateway-injected key)
+  String? get openAiApiKey => _p.getString('openai_api_key_tts');
+  set openAiApiKey(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString('openai_api_key_tts', value);
+    } else {
+      _p.remove('openai_api_key_tts');
+    }
+  }
+
+  /// OpenAI TTS voice (alloy, echo, shimmer, fable, onyx, nova, coral)
+  String get openAiTtsVoice => _p.getString('openai_tts_voice') ?? 'coral';
+  set openAiTtsVoice(String value) => _p.setString('openai_tts_voice', value);
+
+  /// OpenAI TTS model
+  String get openAiTtsModel => _p.getString('openai_tts_model') ?? 'gpt-4o-mini-tts';
+  set openAiTtsModel(String value) => _p.setString('openai_tts_model', value);
 }

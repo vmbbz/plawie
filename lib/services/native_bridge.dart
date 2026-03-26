@@ -175,4 +175,36 @@ class NativeBridge {
   static Future<String> getAppVersion() async {
     return await _channel.invokeMethod('getAppVersion');
   }
+
+  // ── Wake Word "Plawie" — HotwordService bridge ───────────────────────────
+
+  static const _hotwordChannel = MethodChannel('com.nxg.openclawproot/hotword');
+  static const _hotwordEventChannel = EventChannel('com.nxg.openclawproot/hotword_events');
+
+  /// Start the HotwordService foreground service (begins mic listening).
+  static Future<bool> startHotword() async {
+    return await _hotwordChannel.invokeMethod<bool>('startHotword') ?? false;
+  }
+
+  /// Stop the HotwordService and release the mic.
+  static Future<bool> stopHotword() async {
+    return await _hotwordChannel.invokeMethod<bool>('stopHotword') ?? false;
+  }
+
+  /// Set the hotword mode: "off" | "foreground" | "always"
+  static Future<bool> setHotwordMode(String mode) async {
+    return await _hotwordChannel.invokeMethod<bool>('setHotwordMode', {'mode': mode}) ?? false;
+  }
+
+  /// Returns true if HotwordService is currently running.
+  static Future<bool> isHotwordRunning() async {
+    return await _hotwordChannel.invokeMethod<bool>('isHotwordRunning') ?? false;
+  }
+
+  /// Stream of wake word events. Emits "wake_word_detected" each time
+  /// the wake word "Plawie" is recognised.
+  static Stream<String> get hotwordEvents => _hotwordEventChannel
+      .receiveBroadcastStream()
+      .where((e) => e != null)
+      .cast<String>();
 }

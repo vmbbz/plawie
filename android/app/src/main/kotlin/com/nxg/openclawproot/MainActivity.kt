@@ -54,6 +54,19 @@ class MainActivity : FlutterActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var pipMethodChannel: MethodChannel? = null
 
+    // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
+    private var hotwordEventSink: EventChannel.EventSink? = null
+
+    // BroadcastReceiver that relays HotwordService detections to Flutter via EventChannel
+    private val wakeWordReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == HotwordService.ACTION_WAKE_WORD_DETECTED) {
+                Log.i("MainActivity", "Wake word detected — notifying Flutter")
+                hotwordEventSink?.success("wake_word_detected")
+            }
+        }
+    }
+
     // BroadcastReceiver that captures the PIP mic button tap
     private val pipMicReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -533,6 +546,79 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
+
+        // ── Hotword (Wake Word "Plawie") ──────────────────────────────────────
+
+        // Register wake word broadcast receiver
+        val wakeFilter = IntentFilter(HotwordService.ACTION_WAKE_WORD_DETECTED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(wakeWordReceiver, wakeFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(wakeWordReceiver, wakeFilter)
+        }
+
+        // EventChannel: Flutter subscribes to receive wake word events
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.nxg.openclawproot/hotword_events"
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                hotwordEventSink = events
+            }
+            override fun onCancel(arguments: Any?) {
+                hotwordEventSink = null
+            }
+        })
+
+        // MethodChannel: Flutter controls the HotwordService
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.nxg.openclawproot/hotword"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "startHotword" -> {
+                    val intent = Intent(applicationContext, HotwordService::class.java)
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("HOTWORD_ERROR", e.message, null)
+                    }
+                }
+                "stopHotword" -> {
+                    stopService(Intent(applicationContext, HotwordService::class.java))
+                    result.success(true)
+                }
+                "setHotwordMode" -> {
+                    val mode = call.argument<String>("mode") ?: "foreground"
+                    val intent = Intent(applicationContext, HotwordService::class.java).apply {
+                        action = HotwordService.ACTION_SET_MODE
+                        putExtra("mode", mode)
+                    }
+                    if (mode == "off") {
+                        stopService(Intent(applicationContext, HotwordService::class.java))
+                    } else {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(intent)
+                            } else {
+                                startService(intent)
+                            }
+                        } catch (e: Exception) {
+                            result.error("HOTWORD_ERROR", e.message, null)
+                            return@setMethodCallHandler
+                        }
+                    }
+                    result.success(true)
+                }
+                "isHotwordRunning" -> result.success(HotwordService.isRunning)
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun requestNotificationPermission() {
@@ -666,6 +752,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         try { unregisterReceiver(pipMicReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(wakeWordReceiver) } catch (_: Exception) {}
+        hotwordEventSink = null
         super.onDestroy()
     }
 }

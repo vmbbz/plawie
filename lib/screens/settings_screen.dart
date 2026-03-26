@@ -37,6 +37,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _brewInstalled = false;
   String _selectedAvatar = 'gemini.vrm';
 
+  // Voice & Speech
+  String _ttsEngine = 'piper';
+  double _ttsSpeed = 1.2;
+  bool _continuousMode = false;
+
+  // Wake Word
+  String _wakeWordMode = 'off'; // off | foreground | always
+  bool _hotwordRunning = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +57,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _autoStart = _prefs.autoStartGateway;
     _nodeEnabled = _prefs.nodeEnabled;
     _selectedAvatar = _prefs.selectedAvatar;
+    _ttsEngine = _prefs.ttsEngine;
+    _ttsSpeed = _prefs.ttsSpeed;
+    _continuousMode = _prefs.continuousMode;
+    _wakeWordMode = _prefs.wakeWordMode;
+    _hotwordRunning = await NativeBridge.isHotwordRunning();
 
     try {
       final arch = await NativeBridge.getArch();
@@ -255,6 +269,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () => _changeAvatar(context),
                 ),
                 const Divider(),
+                _sectionHeader(theme, 'VOICE & SPEECH'),
+                // TTS engine selector
+                ListTile(
+                  title: const Text('TTS Engine'),
+                  subtitle: Text(_ttsEngineLabel(_ttsEngine)),
+                  leading: const Icon(Icons.record_voice_over),
+                  trailing: const Icon(Icons.swap_horiz, size: 18),
+                  onTap: () => _showTtsEnginePicker(context),
+                ),
+                // Speed slider
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Speech Speed', style: TextStyle(fontSize: 14)),
+                          Text('${_ttsSpeed.toStringAsFixed(1)}×',
+                              style: const TextStyle(fontSize: 14, color: Colors.white54)),
+                        ],
+                      ),
+                      Slider(
+                        value: _ttsSpeed,
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 15,
+                        onChanged: (v) {
+                          setState(() => _ttsSpeed = v);
+                          _prefs.ttsSpeed = v;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                SwitchListTile(
+                  title: const Text('Continuous Mode'),
+                  subtitle: const Text('Auto-restart mic after each response'),
+                  value: _continuousMode,
+                  onChanged: (v) {
+                    setState(() => _continuousMode = v);
+                    _prefs.continuousMode = v;
+                  },
+                ),
+                const Divider(),
+                _sectionHeader(theme, 'WAKE WORD'),
+                // Status tile — shows running/idle
+                ListTile(
+                  leading: Icon(
+                    Icons.hearing,
+                    color: _hotwordRunning ? AppColors.statusGreen : Colors.white38,
+                  ),
+                  title: const Text('Wake Word "Plawie"'),
+                  subtitle: Text(_hotwordRunning
+                      ? 'Listening · mode: $_wakeWordMode'
+                      : 'Off — say "Plawie" to activate hands-free'),
+                  trailing: _hotwordRunning
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.statusGreen.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                          ),
+                          child: const Text('ACTIVE',
+                              style: TextStyle(color: AppColors.statusGreen, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                        )
+                      : null,
+                ),
+                // Mode picker
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Mode', style: TextStyle(fontSize: 14)),
+                      DropdownButton<String>(
+                        value: _wakeWordMode,
+                        dropdownColor: Colors.grey[900],
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        underline: const SizedBox(),
+                        items: const [
+                          DropdownMenuItem(value: 'off',        child: Text('Off')),
+                          DropdownMenuItem(value: 'foreground', child: Text('Foreground only')),
+                          DropdownMenuItem(value: 'always',     child: Text('Always on')),
+                        ],
+                        onChanged: (v) async {
+                          if (v == null) return;
+                          setState(() => _wakeWordMode = v);
+                          _prefs.wakeWordMode = v;
+                          await NativeBridge.setHotwordMode(v);
+                          final running = await NativeBridge.isHotwordRunning();
+                          if (mounted) setState(() => _hotwordRunning = running);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(),
                 _sectionHeader(theme, 'SYSTEM INFO'),
                 ListTile(
                   title: const Text('Architecture'),
@@ -453,6 +567,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  static const _ttsEngines = [
+    ('piper',      'Piper (Offline)'),
+    ('native',     'Device TTS'),
+    ('elevenlabs', 'ElevenLabs'),
+    ('openai',     'OpenAI TTS'),
+  ];
+
+  String _ttsEngineLabel(String id) =>
+      _ttsEngines.firstWhere((e) => e.$1 == id, orElse: () => (id, id)).$2;
+
+  Future<void> _showTtsEnginePicker(BuildContext context) async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('TTS Engine'),
+        children: _ttsEngines.map((e) {
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, e.$1),
+            child: Row(
+              children: [
+                Icon(
+                  _ttsEngine == e.$1 ? Icons.radio_button_checked : Icons.radio_button_off,
+                  size: 20,
+                  color: _ttsEngine == e.$1 ? Theme.of(ctx).colorScheme.primary : Colors.white38,
+                ),
+                const SizedBox(width: 12),
+                Text(e.$2),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+    if (picked != null && picked != _ttsEngine) {
+      setState(() => _ttsEngine = picked);
+      _prefs.ttsEngine = picked;
+    }
   }
 
   String _getModelLabel(String modelId) {

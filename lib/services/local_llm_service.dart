@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'native_bridge.dart';
@@ -22,6 +23,11 @@ class LocalLlmModel {
   final String quality; // "Minimum" | "Recommended" | "Optimal"
   final int contextWindow;
 
+  // Multimodal / Vision support
+  final bool isMultimodal;
+  final String? mmProjUrl;     // HuggingFace URL for the CLIP mmproj file
+  final int? mmProjSizeMb;     // Download size hint for the mmproj file
+
   const LocalLlmModel({
     required this.id,
     required this.name,
@@ -32,10 +38,17 @@ class LocalLlmModel {
     required this.recommendedThreads,
     required this.quality,
     required this.contextWindow,
+    this.isMultimodal = false,
+    this.mmProjUrl,
+    this.mmProjSizeMb,
   });
 
   String get filename => '$id.gguf';
   String get prootModelPath => '/root/.openclaw/models/$filename';
+
+  // mmproj paths (only valid when isMultimodal == true)
+  String get mmProjFilename => '$id-mmproj.gguf';
+  String get prootMmProjPath => '/root/.openclaw/models/$mmProjFilename';
 }
 
 const _modelCatalog = [
@@ -82,6 +95,38 @@ const _modelCatalog = [
     recommendedThreads: 4,
     quality: 'Recommended',
     contextWindow: 8192,
+  ),
+
+  // ── Vision / Multimodal Models ─────────────────────────────────────────────
+
+  LocalLlmModel(
+    id: 'qwen2-vl-2b-instruct-q4_k_m',
+    name: 'Qwen2-VL 2B (Vision, Q4_K_M)',
+    description: 'Compact vision+text model. Understands images and text together. Needs ~3 GB RAM. Best choice for most Android phones.',
+    huggingFaceUrl: 'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/Qwen2-VL-2B-Instruct-Q4_K_M.gguf',
+    mmProjUrl: 'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen2-VL-2B-Instruct-f16.gguf',
+    fileSizeMb: 1430,
+    mmProjSizeMb: 295,
+    requiredRamMb: 2800,
+    recommendedThreads: 4,
+    quality: 'Recommended',
+    contextWindow: 4096,
+    isMultimodal: true,
+  ),
+
+  LocalLlmModel(
+    id: 'llava-1.5-7b-q4_k_m',
+    name: 'LLaVA 1.5 7B (Vision, Q4_K_M)',
+    description: 'Full-size LLaVA vision model. Strong image reasoning. Requires ~6 GB RAM — flagship phones only.',
+    huggingFaceUrl: 'https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/ggml-model-q4_k.gguf',
+    mmProjUrl: 'https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/mmproj-model-f16.gguf',
+    fileSizeMb: 4370,
+    mmProjSizeMb: 624,
+    requiredRamMb: 5800,
+    recommendedThreads: 4,
+    quality: 'Optimal',
+    contextWindow: 4096,
+    isMultimodal: true,
   ),
 ];
 
@@ -174,6 +219,18 @@ class LocalLlmService {
   LocalLlmState get state => _state;
   List<LocalLlmModel> get catalog => _modelCatalog;
 
+  /// Returns the currently active model descriptor, or null if none.
+  LocalLlmModel? get activeModel => _state.activeModelId == null
+      ? null
+      : _modelCatalog.firstWhere(
+          (m) => m.id == _state.activeModelId,
+          orElse: () => _modelCatalog.first,
+        );
+
+  /// True when local LLM is ready AND the active model supports vision.
+  bool get isVisionReady =>
+      _state.status == LocalLlmStatus.ready && (activeModel?.isMultimodal ?? false);
+
   void _updateState(LocalLlmState s) {
     _state = s;
     _stateController.add(s);
@@ -216,6 +273,15 @@ class LocalLlmService {
     if (!modelExists) {
       await _downloadModel(model);
       if (_state.status == LocalLlmStatus.error) return;
+    }
+
+    // 3b. Download mmproj file for multimodal models (CLIP projection weights)
+    if (model.isMultimodal && model.mmProjUrl != null) {
+      final mmProjExists = await _isMmProjInstalled(model);
+      if (!mmProjExists) {
+        await _downloadMmProj(model);
+        if (_state.status == LocalLlmStatus.error) return;
+      }
     }
 
     // 4. Start server
@@ -525,6 +591,82 @@ echo ">>> LLAMA_SERVER_INSTALL_COMPLETE"
   }
 
   // --------------------------------------------------------------------------
+  // Private — MmProj (multimodal CLIP projection) helpers
+  // --------------------------------------------------------------------------
+
+  Future<bool> _isMmProjInstalled(LocalLlmModel model) async {
+    try {
+      final result = await NativeBridge.runInProot(
+        'test -f "${model.prootMmProjPath}" && echo "exists"',
+        timeout: 5,
+      );
+      return result.trim() == 'exists';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _downloadMmProj(LocalLlmModel model) async {
+    if (model.mmProjUrl == null) return;
+
+    _updateState(_state.copyWith(
+      status: LocalLlmStatus.downloading,
+      downloadProgress: 0.0,
+      errorMessage: 'Downloading vision projection file (${model.mmProjSizeMb ?? "?"}MB)...',
+    ));
+
+    try {
+      final tmpDir = await getTemporaryDirectory();
+      final tmpFile = File('${tmpDir.path}/${model.mmProjFilename}');
+
+      final url = Uri.parse(model.mmProjUrl!);
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 20);
+
+      final request = await httpClient.getUrl(url).timeout(const Duration(seconds: 20));
+      final response = await request.close().timeout(const Duration(seconds: 20));
+
+      if (response.statusCode != 200) {
+        throw HttpException('MmProj download failed: HTTP ${response.statusCode}');
+      }
+
+      final total = response.contentLength != -1 ? response.contentLength : 0;
+      int received = 0;
+      final sink = tmpFile.openWrite();
+      try {
+        await for (final chunk in response.timeout(const Duration(seconds: 60))) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            _updateState(_state.copyWith(downloadProgress: received / total));
+          }
+        }
+      } finally {
+        await sink.close();
+      }
+
+      final appSupportDir = await getApplicationSupportDirectory();
+      final prootPath = '${appSupportDir.path}/rootfs';
+      final hostMmProjPath = '$prootPath${model.prootMmProjPath}';
+
+      final targetDir = Directory('$prootPath/root/.openclaw/models');
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      await tmpFile.copy(hostMmProjPath);
+      await tmpFile.delete();
+
+      _updateState(_state.copyWith(downloadProgress: 1.0, errorMessage: null));
+    } catch (e) {
+      _updateState(_state.copyWith(
+        status: LocalLlmStatus.error,
+        errorMessage: 'Vision projection download failed: $e',
+      ));
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // Private — Process Management
   // --------------------------------------------------------------------------
 
@@ -540,20 +682,27 @@ echo ">>> LLAMA_SERVER_INSTALL_COMPLETE"
     } catch (_) {}
 
     // Build the launch command with proper library path and Android optimizations
-    final cmd = [
+    final cmdParts = [
       '/root/.openclaw/bin/llama-server',
       '--model "${model.prootModelPath}"',
       '--host $_llamaHost',
       '--port $_llamaPort',
-      '--ctx-size ${model.contextWindow}',
+      '--ctx-size ${model.contextWindow.clamp(512, 4096)}', // Capped: 8192+ causes OOM under Android LMKD
       '--threads ${_state.threads}',
       '--n-gpu-layers 0', // CPU-only - more stable on Android
-      '--no-mmap', // Prevent Android LMKD issues
-      '--mlock', // Lock memory to prevent swapping (but be conservative)
-      '--batch-size', '512', // Smaller batch for mobile
-      '--ubatch-size', '512', // Micro batch size
+      // --no-mmap removed: forces entire model into malloc buffer, doubles memory pressure under LMKD
+      // --mlock removed: requires CAP_IPC_LOCK kernel capability; proot does not grant it → EPERM crash
+      '--batch-size 256', // Reduced from 512 for Android memory safety
+      '--ubatch-size 256', // Reduced from 512 for Android memory safety
       '--log-disable', // Reduce log overhead
-    ].join(' ');
+    ];
+
+    // Append mmproj for multimodal/vision models (enables image_url content in chat completions)
+    if (model.isMultimodal && model.mmProjUrl != null) {
+      cmdParts.add('--mmproj "${model.prootMmProjPath}"');
+    }
+
+    final cmd = cmdParts.join(' ');
 
     // Launch with proper error handling and environment
     try {
@@ -769,6 +918,114 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     // Wrap in single quotes, escaping any embedded single quotes
     final escaped = s.replaceAll("'", "'\\''");
     return "'$escaped'";
+  }
+
+    // ── Video Vision — multi-frame offline analysis ───────────────────────────
+
+  /// Analyses a list of JPEG frames extracted from a video clip.
+  ///
+  /// For each frame: sends it to the local llama-server vision endpoint.
+  /// Yields progress strings while working, then yields the final summary.
+  ///
+  /// Requires a multimodal model (Qwen2-VL or LLaVA) to be running.
+  Stream<String> analyseVideoFrames(
+    List<Uint8List> frames,
+    String prompt,
+  ) async* {
+    if (frames.isEmpty) {
+      yield '[Error] No frames extracted from video.';
+      return;
+    }
+    if (_state.status != LocalLlmStatus.ready) {
+      yield '[Error] Local vision model is not running. Start it in Local LLM settings.';
+      return;
+    }
+
+    const base = 'http://127.0.0.1:8081/v1/chat/completions';
+    final descriptions = <String>[];
+
+    for (int i = 0; i < frames.length; i++) {
+      yield 'Analysing frame ${i + 1}/${frames.length}…';
+      try {
+        final b64 = base64Encode(frames[i]);
+        final resp = await http
+            .post(
+              Uri.parse(base),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'model': 'local-llm',
+                'messages': [
+                  {
+                    'role': 'user',
+                    'content': [
+                      {
+                        'type': 'image_url',
+                        'image_url': {'url': 'data:image/jpeg;base64,$b64'},
+                      },
+                      {
+                        'type': 'text',
+                        'text': 'Frame ${i + 1}: Briefly describe what you see.',
+                      },
+                    ],
+                  },
+                ],
+                'stream': false,
+                'max_tokens': 256,
+              }),
+            )
+            .timeout(const Duration(seconds: 60));
+
+        if (resp.statusCode == 200) {
+          final json = jsonDecode(resp.body) as Map<String, dynamic>;
+          final content =
+              ((json['choices'] as List?)?.first['message'] as Map?)?['content']
+                  as String?;
+          if (content != null) descriptions.add('Frame ${i + 1}: $content');
+        }
+      } catch (e) {
+        debugPrint('analyseVideoFrames frame ${i + 1} error: $e');
+      }
+    }
+
+    if (descriptions.isEmpty) {
+      yield '[Error] Could not analyse any frames. Is the vision model running?';
+      return;
+    }
+
+    // Final summary pass — ask the model to synthesise all frame descriptions
+    yield 'Summarising scene…';
+    try {
+      final summaryPrompt = descriptions.isEmpty
+          ? prompt
+          : 'Given these video frame descriptions:\n${descriptions.join('\n')}\n\nAnswer this question: $prompt';
+
+      final resp = await http
+          .post(
+            Uri.parse(base),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'model': 'local-llm',
+              'messages': [
+                {'role': 'user', 'content': summaryPrompt},
+              ],
+              'stream': false,
+              'max_tokens': 512,
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final content =
+            ((json['choices'] as List?)?.first['message'] as Map?)?['content']
+                as String?;
+        yield content ?? '[Error] Empty summary from model.';
+      } else {
+        yield '[Error] Summary request failed (HTTP ${resp.statusCode}).';
+      }
+    } catch (e) {
+      yield '[Error] Summary error: $e';
+    }
   }
 
   void dispose() {
