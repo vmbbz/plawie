@@ -363,145 +363,96 @@ class LocalLlmService {
     }
   }
 
+  // Compiles llama-server from source inside PRoot Ubuntu (ARM64).
+  // llama.cpp does not ship pre-built Android ARM64 binaries — source compilation
+  // via cmake is the only supported path. This is a one-time step (~20-40 min).
   Future<void> _compileBinary() async {
     _updateState(_state.copyWith(
       status: LocalLlmStatus.installing,
       downloadProgress: 0.0,
+      errorMessage: 'Preparing build environment...',
     ));
 
     try {
-      // NEW: Enhanced CPU detection and multi-version binary selection
-      final cpuInfo = await NativeBridge.runInProot('cat /proc/cpuinfo');
-      final binaryUrl = _getOptimalBinaryUrl(cpuInfo);
-      
+      // Stage 1 — Install build tools
       _updateState(_state.copyWith(
-        errorMessage: 'Detected CPU: ${cpuInfo.split('\n').first}\nDownloading compatible binary...',
+        downloadProgress: 0.05,
+        errorMessage: 'Installing build tools (cmake, g++, git)...',
       ));
+      await NativeBridge.runInProot(
+        'apt-get update -qq && apt-get install -y --no-install-recommends '
+        'cmake g++ make git ninja-build 2>&1 | tail -5',
+        timeout: 300,
+      );
 
-      // Enhanced installation script with CPU-specific optimization
-      const installScript = r'''
-set -e
+      // Stage 2 — Clone llama.cpp (shallow clone of latest commit)
+      _updateState(_state.copyWith(
+        downloadProgress: 0.15,
+        errorMessage: 'Cloning llama.cpp source...',
+      ));
+      await NativeBridge.runInProot(
+        'rm -rf /tmp/llama_build && '
+        'git clone --depth 1 https://github.com/ggerganov/llama.cpp.git /tmp/llama_build',
+        timeout: 300,
+      );
 
-echo "[llama.cpp] Detecting CPU capabilities..."
-CPU_INFO="$1"
-BINARY_URL="$2"
+      // Stage 3 — Configure cmake
+      // LLAMA_NATIVE=OFF / GGML_NATIVE=OFF: portable ARM64 binary, no host-ISA extensions
+      _updateState(_state.copyWith(
+        downloadProgress: 0.25,
+        errorMessage: 'Configuring build (cmake)...',
+      ));
+      await NativeBridge.runInProot(
+        'cmake -S /tmp/llama_build -B /tmp/llama_build/build '
+        '-DCMAKE_BUILD_TYPE=Release '
+        '-DLLAMA_NATIVE=OFF '
+        '-DGGML_NATIVE=OFF '
+        '-DLLAMA_BUILD_TESTS=OFF '
+        '-DLLAMA_BUILD_EXAMPLES=OFF '
+        '-DBUILD_SHARED_LIBS=OFF '
+        '-G Ninja',
+        timeout: 120,
+      );
 
-# Parse ARM version and features for optimal binary selection
-if echo "$CPU_INFO" | grep -q "armv8.2"; then
-    CMAKE_FLAGS="-march=armv8.2-a"
-elif echo "$CPU_INFO" | grep -q "armv8.1"; then
-    CMAKE_FLAGS="-march=armv8.1-a"
-elif echo "$CPU_INFO" | grep -q "armv8"; then
-    CMAKE_FLAGS="-march=armv8-a"
-elif echo "$CPU_INFO" | grep -q "armv7"; then
-    CMAKE_FLAGS="-march=armv7-a"
-else
-    CMAKE_FLAGS="-march=armv8-a"  # Conservative fallback
-fi
+      // Stage 4 — Compile (-j2 avoids thermal throttling on mobile)
+      _updateState(_state.copyWith(
+        downloadProgress: 0.3,
+        errorMessage: 'Compiling llama-server (20–40 min on first run)...',
+      ));
+      await NativeBridge.runInProot(
+        'cmake --build /tmp/llama_build/build --target llama-server -j2',
+        timeout: 2400, // 40 minutes — compilation is slow on mobile
+      );
 
-echo "[llama.cpp] Using CPU flags: $CMAKE_FLAGS"
-echo "[llama.cpp] Downloading binary: $BINARY_URL"
+      // Stage 5 — Install binary, verify, clean up source tree
+      _updateState(_state.copyWith(
+        downloadProgress: 0.95,
+        errorMessage: 'Installing binary...',
+      ));
+      await NativeBridge.runInProot(
+        'mkdir -p /root/.openclaw/bin && '
+        r'BINARY=$(find /tmp/llama_build/build -name "llama-server" -type f | head -1) && '
+        r'[ -n "$BINARY" ] || { echo "ERROR: llama-server binary not found after build"; exit 1; } && '
+        r'cp "$BINARY" /root/.openclaw/bin/llama-server && '
+        'chmod +x /root/.openclaw/bin/llama-server && '
+        '/root/.openclaw/bin/llama-server --version && '
+        'rm -rf /tmp/llama_build',
+        timeout: 60,
+      );
 
-# Create directory
-mkdir -p /root/.openclaw/bin
-
-# Download with multiple fallbacks
-if command -v curl >/dev/null 2>&1; then
-    curl -L -o "/root/.openclaw/bin/llama-server" "$BINARY_URL" || {
-        echo "ERROR: Failed to download binary"
-        exit 1
-    }
-else
-    wget -O "/root/.openclaw/bin/llama-server" "$BINARY_URL" || {
-        echo "ERROR: Failed to download binary"
-        exit 1
-    }
-fi
-
-# Make executable and verify
-chmod +x "/root/.openclaw/bin/llama-server"
-if [[ ! -x "/root/.openclaw/bin/llama-server" ]]; then
-    echo "ERROR: Failed to make binary executable"
-    exit 1
-fi
-
-# Install Android-compatible dependencies
-echo "[llama.cpp] Installing runtime dependencies..."
-apt-get update -qq && apt-get install -y --no-install-recommends \
-    libgomp1 \
-    libatomic1 \
-    libc6-dev \
-    libgcc-s1 \
-    libstdc++6 \
-    libblas3 \
-    liblapack3 \
-    ca-certificates \
-    curl \
-    wget 2>&1 | tail -5
-
-# Verify dependencies
-ldd "/root/.openclaw/bin/llama-server" > /tmp/llama-deps.txt
-if grep -q "not found" /tmp/llama-deps.txt; then
-    echo "ERROR: Missing dependencies detected"
-    cat /tmp/llama-deps.txt
-    exit 1
-fi
-
-# Test binary with compatibility check
-echo "[llama.cpp] Testing binary compatibility..."
-"/root/.openclaw/bin/llama-server" --help >/dev/null 2>&1 || {
-    echo "ERROR: Binary test failed - possible CPU incompatibility"
-    echo "Try: Manual compilation with device-specific flags"
-    exit 1
-}
-
-echo ">>> LLAMA_SERVER_INSTALL_COMPLETE"
-''';
-
-      _updateState(_state.copyWith(downloadProgress: 0.2));
-
-      // runInProot runs the command via /bin/sh -c "..." — positional args ($1, $2) are never set.
-      // Inline CPU_INFO and BINARY_URL directly as variable assignments at the top of the script.
-      final cleanedCpuInfo = cpuInfo.replaceAll('\n', ' ').replaceAll('"', '').replaceAll("'", '');
-      final fullScript = installScript
-          .replaceFirst('CPU_INFO="\$1"', 'CPU_INFO="$cleanedCpuInfo"')
-          .replaceFirst('BINARY_URL="\$2"', 'BINARY_URL="$binaryUrl"');
-
-      await NativeBridge.runInProot(fullScript, timeout: 600); // 10 minutes max
       _updateState(_state.copyWith(downloadProgress: 1.0));
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
         errorMessage:
-            'llama-server installation failed. This might be due to:\n'
-            '1. Network issues downloading binary\n'
-            '2. Missing runtime dependencies\n'
-            '3. CPU architecture incompatibility\n'
-            '4. Insufficient memory or storage\n\n'
-            'Error details: $e\n\n'
-            'Try: Check device compatibility and free up storage space.',
+            'llama-server build failed.\n'
+            'This is a one-time compile step (~30 min). Common causes:\n'
+            '1. Network issue during git clone — retry with WiFi\n'
+            '2. Storage full — free ≥2 GB and retry\n'
+            '3. Build timeout — retry (compilation is slower on some devices)\n\n'
+            'Error: $e',
       ));
     }
-  }
-
-  // Enhanced binary URL selection based on CPU detection
-  String _getOptimalBinaryUrl(String cpuInfo) {
-    // Multi-version binary mapping for maximum compatibility
-    final Map<String, String> binaryMap = {
-      'armv8.2-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-arm64-v8.2a',
-      'armv8.1-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-arm64-v8.1a', 
-      'armv8-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-arm64',
-      'armv7-a': 'https://github.com/ggerganov/llama.cpp/releases/download/b3170/llama-server-android-armv7',
-    };
-
-    // Detect ARM version and features
-    if (cpuInfo.contains('armv8.2')) return binaryMap['armv8.2-a']!;
-    if (cpuInfo.contains('armv8.1')) return binaryMap['armv8.1-a']!;
-    if (cpuInfo.contains('armv8')) return binaryMap['armv8-a']!;
-    if (cpuInfo.contains('armv7')) return binaryMap['armv7-a']!;
-    
-    // Fallback to most compatible
-    return binaryMap['armv8-a']!;
   }
 
 
