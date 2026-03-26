@@ -136,15 +136,23 @@ class _SkillsManagerState extends State<SkillsManager> {
     try {
       final provider = Provider.of<GatewayProvider>(context, listen: false);
       
-      // Execute the native CLI installer inside PRoot to guarantee reliable downloads from ClawHub.
-      // Use OpenClawCommandService to get the version-correct syntax (singular "skill" for v2026.1.30+).
+      // Execute the native CLI installer inside PRoot.
+      // runInProot throws PlatformException on non-zero exit, so wrap each attempt in try/catch.
       final installCmd = await OpenClawCommandService.getSkillInstallCommand(skill.id);
-      String cliResult = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $installCmd',
-        timeout: 45, // give it time to fetch
-      );
-      // Fallback: if new singular syntax fails, try npx clawhub install
-      if (cliResult.toLowerCase().contains('error:') || cliResult.toLowerCase().contains('too many arguments')) {
+      String cliResult;
+      try {
+        cliResult = await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $installCmd',
+          timeout: 45,
+        );
+      } catch (_) {
+        // Stage 1 failed (e.g. 'unknown command skill' on older gateways) — fall through to clawhub
+        cliResult = 'error:';
+      }
+      // Fallback: if version-specific syntax failed, try npx clawhub install
+      if (cliResult.toLowerCase().contains('error:') ||
+          cliResult.toLowerCase().contains('too many arguments') ||
+          cliResult.toLowerCase().contains('unknown command')) {
         cliResult = await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && npx clawhub install ${skill.id}',
           timeout: 60,
