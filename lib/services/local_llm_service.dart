@@ -353,8 +353,14 @@ class LocalLlmService {
 
   Future<bool> _isBinaryInstalled() async {
     try {
+      // Validate the binary is a real ELF executable, not a stub/corrupt file.
+      // A real llama-server binary is 5–15 MB; the old broken download left a
+      // 9-byte GitHub 404 redirect file that passes `test -x` but crashes the OS.
+      // stat -c%s returns the file size in bytes; we require > 1 MB.
       final result = await NativeBridge.runInProot(
-        'test -x /root/.openclaw/bin/llama-server && echo "exists"',
+        'test -x /root/.openclaw/bin/llama-server && '
+        r'[ $(stat -c%s /root/.openclaw/bin/llama-server 2>/dev/null || echo 0) -gt 1048576 ] && '
+        'echo "exists"',
         timeout: 5,
       );
       return result.trim() == 'exists';
