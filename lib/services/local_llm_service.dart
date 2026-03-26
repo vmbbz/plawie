@@ -459,12 +459,15 @@ echo ">>> LLAMA_SERVER_INSTALL_COMPLETE"
 ''';
 
       _updateState(_state.copyWith(downloadProgress: 0.2));
-      
-      // Pass CPU info and binary URL to script
-      final escapedCpuInfo = cpuInfo.replaceAll('"', '\\"').replaceAll('\n', '\\n');
-      final scriptWithArgs = '$installScript "$escapedCpuInfo" "$binaryUrl"';
-      
-      await NativeBridge.runInProot(scriptWithArgs, timeout: 600); // 10 minutes max
+
+      // runInProot runs the command via /bin/sh -c "..." — positional args ($1, $2) are never set.
+      // Inline CPU_INFO and BINARY_URL directly as variable assignments at the top of the script.
+      final cleanedCpuInfo = cpuInfo.replaceAll('\n', ' ').replaceAll('"', '').replaceAll("'", '');
+      final fullScript = installScript
+          .replaceFirst('CPU_INFO="\$1"', 'CPU_INFO="$cleanedCpuInfo"')
+          .replaceFirst('BINARY_URL="\$2"', 'BINARY_URL="$binaryUrl"');
+
+      await NativeBridge.runInProot(fullScript, timeout: 600); // 10 minutes max
       _updateState(_state.copyWith(downloadProgress: 1.0));
     } catch (e) {
       _updateState(_state.copyWith(
