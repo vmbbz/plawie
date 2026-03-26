@@ -65,4 +65,7 @@ dependencies {
     // MLC-LLM: TVM runtime for native GPU inference (from libs/)
     // implementation(files("libs/tvm4j_core.jar"))
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    // Vosk offline speech recognition for wake word "Plawie"
+    implementation("io.github.alphacephei:vosk-android:0.3.47@aar") { isTransitive = false }
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
 }

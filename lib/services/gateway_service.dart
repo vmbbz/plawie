@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
+import '../models/agent_info.dart';
 import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
@@ -67,7 +68,7 @@ class GatewayService {
       // so we don't need to duplicate that logic here.
       unawaited(_checkHealth());
       // Fire token/dashboard URL fetch in parallel — don't block the UI.
-      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) {}));
+      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
     } else {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']
@@ -976,6 +977,178 @@ try {
       yield '[Error] HTTP chat timed out after 90 seconds.';
     } catch (e) {
       yield '[Error] HTTP chat error: $e';
+    }
+  }
+
+  /// Vision message: POST directly to llama-server :8081 using the OpenAI
+  /// multimodal content format (image_url + text).  Only works when a
+  /// multimodal model (LLaVA, Qwen2-VL) is loaded and running on :8081.
+  ///
+  /// [imageBase64] – raw base64 string (no data-URI prefix).
+  /// [mimeType]    – e.g. "image/jpeg" (default).
+  /// [prompt]      – user text; falls back to a generic describe prompt.
+  Stream<String> sendVisionMessage(
+    String prompt,
+    String imageBase64, {
+    String mimeType = 'image/jpeg',
+  }) async* {
+    final dataUri = 'data:$mimeType;base64,$imageBase64';
+    final effectivePrompt =
+        prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('http://127.0.0.1:8081/v1/chat/completions'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'model': 'local-llm',
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': [
+                    {
+                      'type': 'image_url',
+                      'image_url': {'url': dataUri},
+                    },
+                    {'type': 'text', 'text': effectivePrompt},
+                  ],
+                },
+              ],
+              'stream': false,
+            }),
+          )
+          .timeout(const Duration(seconds: 120));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final choices = json['choices'] as List?;
+        if (choices != null && choices.isNotEmpty) {
+          final content = (choices[0]['message'] as Map?)?['content'] as String?;
+          if (content != null) {
+            yield content;
+            return;
+          }
+        }
+        yield '[Error] Empty vision response from local model.';
+      } else {
+        yield '[Error] Vision request failed (HTTP ${response.statusCode}). '
+            'Make sure a vision model (LLaVA or Qwen2-VL) is running.';
+      }
+    } on TimeoutException {
+      yield '[Error] Vision request timed out. The model may still be loading — try again in a moment.';
+    } catch (e) {
+      yield '[Error] Vision error: $e';
+    }
+  }
+
+  // ── Dynamic Agent & Session Discovery ──────────────────────────────────────
+
+  /// Fetches the list of available OpenClaw agents from the gateway.
+  /// Returns an empty list (not an error) if the gateway is unreachable or
+  /// the RPC is unsupported by the installed OpenClaw version.
+  Future<List<AgentInfo>> fetchAgents() async {
+    try {
+      final frame = await invoke('agents.list');
+      final defaultId = frame['defaultAgent'] as String?;
+      final raw = frame['agents'];
+      if (raw is! List) return [];
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map((j) => AgentInfo.fromJson(j, defaultId: defaultId))
+          .toList();
+    } catch (_) {
+      // Gateway not connected, RPC not supported, or parse error — degrade gracefully
+      return [];
+    }
+  }
+
+  /// Fetches the list of active sessions from the gateway.
+  /// Returns an empty list on failure.
+  Future<List<Map<String, dynamic>>> fetchSessions() async {
+    try {
+      final frame = await invoke('sessions.list');
+      final raw = frame['sessions'];
+      if (raw is! List) return [];
+      return raw.whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── Cloud Video Vision (Gemini inline video) ────────────────────────────────
+
+  /// Sends a short MP4 clip to the gateway for Gemini video understanding.
+  /// Falls back gracefully if the model doesn't support video.
+  ///
+  /// [mp4Base64] – raw base64-encoded MP4 bytes (no data-URI prefix).
+  /// [prompt]    – user's question about the video.
+  Stream<String> sendCloudVideoMessage(
+    String prompt,
+    String mp4Base64,
+  ) async* {
+    String? token;
+    try {
+      token = await retrieveTokenFromConfig();
+    } catch (_) {}
+
+    if (token == null || token.isEmpty) {
+      yield '[Error] No auth token — cannot send video to gateway.';
+      return;
+    }
+
+    final effectivePrompt =
+        prompt.trim().isEmpty ? 'Describe what is happening in this video.' : prompt.trim();
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'model': PreferencesService().configuredModel ?? 'google/gemini-2.0-flash',
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': [
+                    {
+                      'type': 'image_url',
+                      'image_url': {
+                        'url': 'data:video/mp4;base64,$mp4Base64',
+                      },
+                    },
+                    {'type': 'text', 'text': effectivePrompt},
+                  ],
+                },
+              ],
+              'stream': false,
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final choices = json['choices'] as List?;
+        if (choices != null && choices.isNotEmpty) {
+          final content =
+              (choices[0]['message'] as Map?)?['content'] as String?;
+          if (content != null) {
+            yield content;
+            return;
+          }
+        }
+        yield '[Error] Empty response from video analysis.';
+      } else {
+        yield '[Error] Cloud video failed (HTTP ${response.statusCode}). '
+            'Make sure you are using a Gemini model.';
+      }
+    } on TimeoutException {
+      yield '[Error] Video analysis timed out.';
+    } catch (e) {
+      yield '[Error] Cloud video error: $e';
     }
   }
 

@@ -51,8 +51,27 @@ Plawie is your ultimate Web3 co-pilot. We built a robust, fully native Solana in
 - **On-Chain Queries:** Real-time RPC balance checks and historical transaction fetching.
 - **Zero Cloud Intermediaries:** Your private keys never touch a server; transactions are constructed and signed locally.
 
-### 3. Voice-First Pipeline
-A fully local Piper TTS (Text-to-Speech) engine and built-in STT providing lightning-fast, on-device voice interactions without hitting cloud transcription APIs.
+### 3. Voice-First Intelligence Pipeline
+
+Plawie ships a complete, multi-engine voice stack that puts you in full control — no cloud dependency required:
+
+- **4 TTS Engines** — Switch between Piper (fully offline, ONNX VITS), Android Native TTS (uses device voices), ElevenLabs (ultra-realistic cloud), or OpenAI TTS (13 voices) from Settings.
+- **Speech Speed Control** — Smooth 0.5×–2.0× speed slider, persisted across sessions.
+- **Continuous Mode** — After TTS finishes speaking, the mic automatically restarts. Enables truly hands-free, back-and-forth conversations with your agent.
+- **Configurable Silence Timeout** — 1s–15s slider controls how long Plawie waits before auto-submitting your speech.
+- **Wake Word "Plawie"** — Say *"Plawie"* or *"Hey Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine (Grammar-constrained to near-zero false positives).
+
+### 4. Video Vision AI
+
+Your agent can see the world around you:
+
+- **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM (LLaVA / Qwen2-VL) or cloud Gemini automatically.
+- **📹 Video Clips** — Record 2–30s clips, extract key frames via PRoot `ffmpeg`, analyse each frame with the local vision model, then produce a coherent summary — 100% offline.
+- **Cloud Fallback** — When no local vision model is active, video is sent inline (base64 MP4) to Gemini 1.5 / 2.0 Pro via the OpenClaw gateway for cloud-grade analysis.
+
+### 5. Dynamic Agent Discovery
+
+All agents registered on your OpenClaw gateway appear automatically in the chat model picker — no hardcoded list, no manual configuration. Newly installed skills that register as agents surface immediately on gateway connect.
 
 ---
 
@@ -167,7 +186,9 @@ graph TD
     subgraph "Layer 1: The Flutter Isolate (The Shell)"
         A[Native Chat & Audio UI] --> B[SkillsService]
         A --> C[Solana Dart SDK]
-        A --> D[Piper TTS Engine]
+        A --> D[TtsService — Piper / Native / ElevenLabs / OpenAI]
+        A --> V[Video Vision AI — ffmpeg frames + cloud Gemini]
+        A --> W[Wake Word — Vosk offline ASR — HotwordService]
         B --> K[AgentSkillServer - Discovery Hub]
     end
 
@@ -176,6 +197,7 @@ graph TD
         B --> F
         F --> G[35+ Device Skills Executer]
         F -- "GET /api/tools" --> K
+        E --> L[llama-server :8081 — OpenAI-compatible vision API]
     end
 
     subgraph "Layer 3: The UI Layer (The Expression)"
@@ -185,10 +207,14 @@ graph TD
 
     A -- "flutter_overlay_window.shareData" --> H
     D -- "Viseme Synectics" --> I
+    A -- "agents.list RPC" --> F
 ```
 
 ### ⚡ Technology Stack Summary
 - **The Brain:** PRoot, Ubuntu, Node.js v20+ (OpenClaw Server).
+- **The Vision:** llama-server (llama.cpp) with LLaVA / Qwen2-VL multimodal models.
+- **The Voice:** TtsService facade (Piper VITS · Android TTS · ElevenLabs · OpenAI).
+- **The Wake Word:** Vosk offline ASR — `HotwordService` Android foreground service.
 - **The Hub:** AgentSkillServer (Standardized Loopback Discovery).
 - **The Shell:** Flutter (Dart) 3.24+.
 - **The Web3 Layer:** Native `solana` Dart SDK.

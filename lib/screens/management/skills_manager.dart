@@ -18,6 +18,7 @@ import '../solana_screen.dart';
 import 'bot_method_explorer.dart';
 import 'skills/skill_config_editor.dart';
 import '../../services/native_bridge.dart';
+import '../../services/openclaw_service.dart';
 import 'dart:async';
 
 /// Catalogue of premium skills we offer, mapped to their OpenClaw skill names.
@@ -135,11 +136,20 @@ class _SkillsManagerState extends State<SkillsManager> {
     try {
       final provider = Provider.of<GatewayProvider>(context, listen: false);
       
-      // Execute the native CLI installer inside PRoot to guarantee reliable downloads from ClawHub
-      final cliResult = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw skills install ${skill.id}',
+      // Execute the native CLI installer inside PRoot to guarantee reliable downloads from ClawHub.
+      // Use OpenClawCommandService to get the version-correct syntax (singular "skill" for v2026.1.30+).
+      final installCmd = await OpenClawCommandService.getSkillInstallCommand(skill.id);
+      String cliResult = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $installCmd',
         timeout: 45, // give it time to fetch
       );
+      // Fallback: if new singular syntax fails, try npx clawhub install
+      if (cliResult.toLowerCase().contains('error:') || cliResult.toLowerCase().contains('too many arguments')) {
+        cliResult = await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && npx clawhub install ${skill.id}',
+          timeout: 60,
+        );
+      }
 
       // We still invoke the RPC so the running gateway daemon hot-reloads the skill into memory
       Map<String, dynamic> rpcResult = {};

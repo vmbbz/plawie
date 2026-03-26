@@ -7,6 +7,8 @@ import 'dart:isolate';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'package:audioplayers/audioplayers.dart';
 
+// ignore_for_file: unused_import
+
 class PiperTtsService {
   static final PiperTtsService _instance = PiperTtsService._internal();
   factory PiperTtsService() => _instance;
@@ -16,7 +18,11 @@ class PiperTtsService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInit = false;
   bool get isReady => _isInit && _tts != null;
-  
+
+  /// Speech rate passed to sherpa-onnx generate(). 1.0 = normal, 0.8 = slower, 1.4 = faster.
+  /// Exposed so future TTS settings UI can call `piperTts.speed = value`.
+  double speed = 1.0;
+
   double _downloadProgress = 0.0;
   double get downloadProgress => _downloadProgress;
 
@@ -130,7 +136,28 @@ class PiperTtsService {
       );
 
       _tts = sherpa.OfflineTts(config);
-      
+
+      // Configure AudioPlayer for speech output on Android.
+      // Without AudioContext, Android may route to the wrong stream (e.g., MUSIC)
+      // or be blocked by audio focus held by the speech recogniser.
+      await _audioPlayer.setAudioContext(
+        AudioContext(
+          android: AudioContextAndroid(
+            isSpeakerphoneOn: false,
+            stayAwake: false,
+            contentType: AndroidContentType.speech,
+            usageType: AndroidUsageType.assistanceSonification,
+            audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          ),
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.playback,
+            options: {AVAudioSessionOptions.duckOthers},
+          ),
+        ),
+      );
+      // Stop releases resources after each utterance so the next play() starts clean
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+
       _audioPlayer.onPlayerComplete.listen((_) {
         onComplete?.call();
       });
@@ -147,20 +174,30 @@ class PiperTtsService {
     if (!isReady || text.trim().isEmpty) return;
 
     try {
-      // 1. Generate Raw PCM
-      final audioConfig = _tts!.generate(text: text, sid: 0, speed: 1.0);
-      if (audioConfig.samples.isEmpty) return;
-      
+      // 1. Generate PCM — pass current speed so UI slider takes immediate effect
+      final audioConfig = _tts!.generate(text: text, sid: 0, speed: speed);
+      if (audioConfig.samples.isEmpty) {
+        // Nothing to play — still fire onComplete so VRM lip-sync resets
+        onComplete?.call();
+        return;
+      }
+
       onStart?.call();
 
-      // 2. Save to WAV file
+      // 2. Write WAV to temp file
       final tempDir = await getTemporaryDirectory();
       final wavFile = File('${tempDir.path}/piper_speech.wav');
       await _writeWav(audioConfig.samples, audioConfig.sampleRate, wavFile);
 
-      // 3. Play WAV
+      // 3. Stop any previous playback so the AudioPlayer is in a clean state.
+      //    Without this, audioplayers v6 on Android can silently skip play()
+      //    if the previous session wasn't fully released.
+      await _audioPlayer.stop();
+
+      // 4. Play — returns when playback STARTS (not finishes).
+      //    onComplete fires via onPlayerComplete listener set in init().
       await _audioPlayer.play(DeviceFileSource(wavFile.path));
-      
+
     } catch (e) {
       print('PiperTTS Speak Error: $e');
       onComplete?.call();

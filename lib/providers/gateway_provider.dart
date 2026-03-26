@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/gateway_state.dart';
+import '../models/agent_info.dart';
 import '../services/gateway_service.dart' as svc;
 import '../services/gateway_skill_proxy.dart';
 
@@ -20,10 +21,32 @@ class GatewayProvider extends ChangeNotifier {
   /// Active skills reported by the gateway.
   List<Map<String, dynamic>>? get activeSkills => _state.activeSkills;
 
-  /// Send a message to the OpenClaw gateway and stream the response
+  /// Send a message to the OpenClaw gateway and stream the response.
   Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) {
     return _gatewayService.sendMessage(message, model: model);
   }
+
+  /// Send an image + optional text directly to the local vision model on :8081.
+  /// Requires a multimodal model (LLaVA, Qwen2-VL) to be active and ready.
+  Stream<String> sendVisionMessage(
+    String prompt,
+    String imageBase64, {
+    String mimeType = 'image/jpeg',
+  }) {
+    return _gatewayService.sendVisionMessage(prompt, imageBase64, mimeType: mimeType);
+  }
+
+  /// Fetch available OpenClaw agents from the gateway at runtime.
+  /// Returns an empty list silently if the gateway is not yet connected.
+  Future<List<AgentInfo>> fetchAgents() => _gatewayService.fetchAgents();
+
+  /// Fetch active sessions from the gateway.
+  Future<List<Map<String, dynamic>>> fetchSessions() =>
+      _gatewayService.fetchSessions();
+
+  /// Send a short MP4 clip to the gateway for Gemini video understanding.
+  Stream<String> sendCloudVideoMessage(String prompt, String mp4Base64) =>
+      _gatewayService.sendCloudVideoMessage(prompt, mp4Base64);
 
   GatewayProvider() {
     _subscription = _gatewayService.stateStream.listen((state) {

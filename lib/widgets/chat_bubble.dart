@@ -1,4 +1,5 @@
 // ignore_for_file: unused_import, unused_local_variable
+import 'dart:convert';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -62,47 +63,72 @@ class ChatBubble extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: isThinking
                   ? const _TypingIndicator()
-                  : isUser
-                    ? Text(
-                        message.text,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
-                          fontSize: 15,
-                          height: 1.4,
-                          letterSpacing: 0.2,
-                        ),
-                      )
-                    : MarkdownBody(
-                        data: message.text,
-                        selectable: true,
-                        styleSheet: MarkdownStyleSheet(
-                          p: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
-                          h1: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                          h2: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                          h3: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                          strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          em: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
-                          code: TextStyle(
-                            color: Colors.cyanAccent.shade100,
-                            backgroundColor: Colors.white.withValues(alpha: 0.08),
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                          ),
-                          codeblockDecoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                          ),
-                          codeblockPadding: const EdgeInsets.all(12),
-                          blockquoteDecoration: BoxDecoration(
-                            border: Border(
-                              left: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 3),
+                  : Column(
+                      crossAxisAlignment: isUser
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Image thumbnail shown above text when message carries an image
+                        if (message.hasImage) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.memory(
+                              base64Decode(message.imageBase64!),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: 180,
+                              gaplessPlayback: true,
                             ),
                           ),
-                          listBullet: const TextStyle(color: Colors.white70),
-                          a: const TextStyle(color: Colors.cyanAccent, decoration: TextDecoration.underline),
-                        ),
-                      ),
+                          if (message.text.isNotEmpty) const SizedBox(height: 8),
+                        ],
+                        // Text / markdown content
+                        if (message.text.isNotEmpty)
+                          if (isUser)
+                            Text(
+                              message.text,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.white,
+                                fontSize: 15,
+                                height: 1.4,
+                                letterSpacing: 0.2,
+                              ),
+                            )
+                          else
+                            MarkdownBody(
+                              data: message.text,
+                              selectable: true,
+                              styleSheet: MarkdownStyleSheet(
+                                p: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+                                h1: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                h2: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                h3: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                em: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
+                                code: TextStyle(
+                                  color: Colors.cyanAccent.shade100,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                  fontFamily: 'monospace',
+                                  fontSize: 13,
+                                ),
+                                codeblockDecoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                ),
+                                codeblockPadding: const EdgeInsets.all(12),
+                                blockquoteDecoration: BoxDecoration(
+                                  border: Border(
+                                    left: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 3),
+                                  ),
+                                ),
+                                listBullet: const TextStyle(color: Colors.white70),
+                                a: const TextStyle(color: Colors.cyanAccent, decoration: TextDecoration.underline),
+                              ),
+                            ),
+                      ],
+                    ),
             ),
           ),
         ),
