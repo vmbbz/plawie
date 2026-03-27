@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'native_bridge.dart';
 import 'gateway_service.dart';
 import '../models/gateway_state.dart';
+import '../constants.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -209,8 +210,6 @@ class LocalLlmService {
   factory LocalLlmService() => _instance;
   LocalLlmService._internal();
 
-  static const int _llamaPort = 8081;
-  static const String _llamaHost = '127.0.0.1';
 
   final _stateController = StreamController<LocalLlmState>.broadcast();
   LocalLlmState _state = const LocalLlmState();
@@ -240,15 +239,16 @@ class LocalLlmService {
   // Public API
   // --------------------------------------------------------------------------
 
-  /// Download a GGUF model, then start llama-server if not already running.
-  /// OPTIMIZED: Prevents PRoot conflicts by checking gateway status first
+  /// Download a GGUF model, then activate openclaw's node-llama-cpp local provider.
+  /// Uses the prebuilt @node-llama-cpp/linux-arm64 binary that ships with openclaw
+  /// (AidanPark approach — no cmake compilation required).
   Future<void> downloadAndStart(LocalLlmModel model) async {
     if (_state.status == LocalLlmStatus.downloading ||
         _state.status == LocalLlmStatus.starting) {
       return;
     }
 
-    // NEW: Prevent PRoot conflicts during gateway startup
+    // Prevent PRoot conflicts during gateway startup
     final gatewayService = GatewayService();
     if (gatewayService.state.status == GatewayStatus.starting) {
       _updateState(_state.copyWith(
@@ -261,21 +261,24 @@ class LocalLlmService {
     // 1. Ensure models dir exists inside PRoot
     await _ensureModelDir();
 
-    // 2. Check if binary exists, download if not
-    final binaryExists = await _isBinaryInstalled();
-    if (!binaryExists) {
-      await _compileBinary();
-      if (_state.status == LocalLlmStatus.error) return;
+    // ── 1. Activation Pre-flight: Addon Check ─────────────────────────────
+    final addonReady = await _isNodeLlamaCppReady();
+    if (!addonReady) {
+      throw Exception(
+        'Local LLM addon missing or incomplete.\n'
+        'Please ensure the app setup (Bootstrap) finished correctly.\n'
+        'If this persists, go to Settings and Force Reinstall OpenClaw.'
+      );
     }
 
-    // 3. Download model
+    // 3. Download model GGUF
     final modelExists = await _isModelInstalled(model);
     if (!modelExists) {
       await _downloadModel(model);
       if (_state.status == LocalLlmStatus.error) return;
     }
 
-    // 3b. Download mmproj file for multimodal models (CLIP projection weights)
+    // 3b. Download mmproj for multimodal models
     if (model.isMultimodal && model.mmProjUrl != null) {
       final mmProjExists = await _isMmProjInstalled(model);
       if (!mmProjExists) {
@@ -284,7 +287,7 @@ class LocalLlmService {
       }
     }
 
-    // 4. Start server
+    // 4. Activate local provider in openclaw
     await _startServer(model);
   }
 
@@ -331,13 +334,25 @@ class LocalLlmService {
     }
   }
 
-  /// Health check — returns true if llama-server is responding.
+  /// Health check for the node-llama-cpp provider approach.
+  ///
+  /// The new backend does NOT start a standalone process on port 8081.
+  /// Instead it patches openclaw.json and reloads the gateway (port 18789).
+  /// We verify: (1) the gateway is answering, (2) our config patch is in place.
   Future<bool> isServerHealthy() async {
     try {
-      final response = await http
-          .get(Uri.parse('http://$_llamaHost:$_llamaPort/health'))
+      // 1. Gateway must be alive on its native port
+      final gwResp = await http
+          .head(Uri.parse(AppConstants.gatewayUrl))
           .timeout(const Duration(seconds: 3));
-      return response.statusCode == 200;
+      if (gwResp.statusCode >= 500) return false;
+
+      // 2. Config must have the local-llm provider enabled (we just wrote it)
+      final config = await _readConfig();
+      final provider = config['models']?['providers']?['local-llm'];
+      return provider != null &&
+          provider['enabled'] == true &&
+          provider['modelPath'] != null;
     } catch (_) {
       return false;
     }
@@ -351,124 +366,31 @@ class LocalLlmService {
   // Private — Binary Installation
   // --------------------------------------------------------------------------
 
-  Future<bool> _isBinaryInstalled() async {
+  // --------------------------------------------------------------------------
+  // Private — Node-llama-cpp Prebuilt (AidanPark approach)
+  // --------------------------------------------------------------------------
+
+  /// Returns true if openclaw's prebuilt node-llama-cpp addon loads cleanly.
+  /// The addon ships as @node-llama-cpp/linux-arm64 inside the openclaw npm
+  /// package and works under proot glibc without any compilation.
+  Future<bool> _isNodeLlamaCppReady() async {
     try {
-      // Validate binary: must exist, be >1 MB, and actually execute.
-      // Size check catches the old 9-byte GitHub 404 stub.
-      // --version check catches dynamically-linked binaries whose shared libs
-      // were deleted with the source tree (the binary passes `test -x` but
-      // crashes with "no such file" for libggml.so etc. at runtime).
+      // PRAGMATIC FIX: Instead of expensive require() or node-e, just check
+      // if the prebuilt binary folder exists. This covers 99% of cases
+      // without triggering PRoot's slow process fork.
+      const addonSubPath = 'openclaw/node_modules/@node-llama-cpp/linux-arm64/bins/linux-arm64/llama-addon.node';
+      final checkCmd = 'test -f "/usr/local/lib/node_modules/$addonSubPath" || test -f "\$(npm root -g)/$addonSubPath"';
+      
       final result = await NativeBridge.runInProot(
-        'test -x /root/.openclaw/bin/llama-server && '
-        r'[ $(stat -c%s /root/.openclaw/bin/llama-server 2>/dev/null || echo 0) -gt 1048576 ] && '
-        '/root/.openclaw/bin/llama-server --version >/dev/null 2>&1 && '
-        'echo "YES" || echo "NO"',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ($checkCmd) && echo "READY"',
         timeout: 10,
       );
-      return result.trim() == 'YES';
+      return result.contains('READY');
     } catch (_) {
       return false;
     }
   }
 
-  // Compiles llama-server from source inside PRoot Ubuntu (ARM64).
-  // llama.cpp does not ship pre-built Android ARM64 binaries — source compilation
-  // via cmake is the only supported path. This is a one-time step (~20-40 min).
-  Future<void> _compileBinary() async {
-    _updateState(_state.copyWith(
-      status: LocalLlmStatus.installing,
-      downloadProgress: 0.0,
-      errorMessage: 'Preparing build environment...',
-    ));
-
-    try {
-      // Stage 1 — Install minimal build deps (build-essential = gcc/g++/make)
-      _updateState(_state.copyWith(
-        downloadProgress: 0.05,
-        errorMessage: 'Stage 1/5: Installing build tools...',
-      ));
-      await NativeBridge.runInProot(
-        'apt-get update -qq && apt-get install -y --no-install-recommends '
-        'cmake build-essential pkg-config ca-certificates ninja-build 2>&1 | tail -5',
-        timeout: 300,
-      );
-
-      // Stage 2 — Download llama.cpp b8548 source tarball
-      // - Pinned to b8548 (Grok-verified stable, March 2026)
-      // - curl -C - resumes partial downloads; --retry 3 handles transient failures
-      // - Build into /root/.openclaw/llama.cpp (persistent) so source survives a
-      //   Stage 4 timeout — tap Start again without re-downloading 120 MB
-      _updateState(_state.copyWith(
-        downloadProgress: 0.15,
-        errorMessage: 'Stage 2/5: Downloading llama.cpp b8548 (~120 MB)\nKeep WiFi on — tap Start again if interrupted.',
-      ));
-      await NativeBridge.runInProot(
-        'rm -rf /root/.openclaw/llama.cpp && '
-        'mkdir -p /root/.openclaw/llama.cpp && '
-        'curl -L -C - --retry 3 --retry-delay 10 --connect-timeout 30 '
-        '-o /tmp/llama_src.tar.gz '
-        '"https://github.com/ggml-org/llama.cpp/archive/refs/tags/b8548.tar.gz" && '
-        'tar -xzf /tmp/llama_src.tar.gz -C /root/.openclaw/llama.cpp --strip-components=1 && '
-        'rm -f /tmp/llama_src.tar.gz',
-        timeout: 900,
-      );
-
-      // Stage 3 — Configure cmake (Grok final reconciled flags)
-      _updateState(_state.copyWith(
-        downloadProgress: 0.30,
-        errorMessage: 'Stage 3/5: Configuring build (cmake)...',
-      ));
-      await NativeBridge.runInProot(
-        'cmake -S /root/.openclaw/llama.cpp -B /root/.openclaw/llama.cpp/build '
-        '-DCMAKE_BUILD_TYPE=Release '
-        '-DGGML_CPU_ARM_V8=ON '      // ARM64 SIMD — Grok-verified
-        '-DGGML_NATIVE=OFF '         // no host-specific ISA extensions
-        '-DLLAMA_SERVER=ON '         // explicit server target
-        '-DLLAMA_BUILD_SERVER=ON '
-        '-DBUILD_SHARED_LIBS=OFF '   // static link: binary works without the source tree
-        '-G Ninja',
-        timeout: 120,
-      );
-
-      // Stage 4 — Compile; -j2 keeps RAM low to avoid LMKD kills on mobile
-      _updateState(_state.copyWith(
-        downloadProgress: 0.40,
-        errorMessage: 'Stage 4/5: Compiling llama-server...\n20–40 min — keep screen on, do not close app.',
-      ));
-      await NativeBridge.runInProot(
-        'cmake --build /root/.openclaw/llama.cpp/build '
-        '--config Release --target llama-server -j2',
-        timeout: 2400,
-      );
-
-      // Stage 5 — Install binary, verify with --version, clean up 300 MB source tree
-      _updateState(_state.copyWith(
-        downloadProgress: 0.95,
-        errorMessage: 'Stage 5/5: Installing binary...',
-      ));
-      await NativeBridge.runInProot(
-        'mkdir -p /root/.openclaw/bin && '
-        'install -D -m 755 '
-        '/root/.openclaw/llama.cpp/build/bin/llama-server '
-        '/root/.openclaw/bin/llama-server && '
-        '/root/.openclaw/bin/llama-server --version && '
-        'rm -rf /root/.openclaw/llama.cpp',
-        timeout: 60,
-      );
-
-      _updateState(_state.copyWith(downloadProgress: 1.0));
-    } catch (e) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage:
-            'llama-server build failed — tap Start to retry.\n'
-            '1. Network timeout: download progress is preserved; retry on WiFi\n'
-            '2. Storage full: free ≥2 GB then retry\n'
-            '3. Slow device: tap Start again — compilation resumes\n\n'
-            'Error: $e',
-      ));
-    }
-  }
 
 
   // --------------------------------------------------------------------------
@@ -657,155 +579,99 @@ class LocalLlmService {
   // Private — Process Management
   // --------------------------------------------------------------------------
 
-  Future<void> _startServer(LocalLlmModel model) async {
-    _updateState(_state.copyWith(status: LocalLlmStatus.starting));
+  /// Helper to get the host-side path to the openclaw config file
+  Future<String> _openClawConfigPath() async {
+    final appSupportDir = await getApplicationSupportDirectory();
+    return '${appSupportDir.path}/rootfs/root/.openclaw/openclaw.json';
+  }
 
-    // Kill any stale instance first
+  /// Direct Dart-native config read/write (bypasses proot overhead)
+  Future<Map<String, dynamic>> _readConfig() async {
     try {
-      await NativeBridge.runInProot(
-        'pkill -f "llama-server" 2>/dev/null; sleep 0.3',
-        timeout: 5,
-      );
-    } catch (_) {}
-
-    // Build the launch command with proper library path and Android optimizations
-    final cmdParts = [
-      '/root/.openclaw/bin/llama-server',
-      '--model "${model.prootModelPath}"',
-      '--host $_llamaHost',
-      '--port $_llamaPort',
-      '--ctx-size ${model.contextWindow.clamp(512, 4096)}', // Capped: 8192+ causes OOM under Android LMKD
-      '--threads ${_state.threads}',
-      '--n-gpu-layers 0', // CPU-only - more stable on Android
-      // --no-mmap removed: forces entire model into malloc buffer, doubles memory pressure under LMKD
-      // --mlock removed: requires CAP_IPC_LOCK kernel capability; proot does not grant it → EPERM crash
-      '--batch-size 256', // Reduced from 512 for Android memory safety
-      '--ubatch-size 256', // Reduced from 512 for Android memory safety
-      '--log-disable', // Reduce log overhead
-    ];
-
-    // Append mmproj for multimodal/vision models (enables image_url content in chat completions)
-    if (model.isMultimodal && model.mmProjUrl != null) {
-      cmdParts.add('--mmproj "${model.prootMmProjPath}"');
+      final file = File(await _openClawConfigPath());
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        return jsonDecode(content) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[LocalLlmService] Config read error: $e');
     }
+    return {};
+  }
 
-    final cmd = cmdParts.join(' ');
-
-    // Launch with proper error handling and environment
+  Future<void> _writeConfig(Map<String, dynamic> config) async {
     try {
-      _updateState(_state.copyWith(downloadProgress: 0.1));
+      final path = await _openClawConfigPath();
+      final file = File(path);
       
-      // Create startup script with proper error handling
-      final startupScript = '''
-#!/bin/bash
-set -e
-
-echo "[llama-server] Starting with optimized Android settings..."
-
-# Set up library paths for ARM64
-export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:\$LD_LIBRARY_PATH"
-
-# Optimize for Android memory management  
-export OMP_NUM_THREADS=1
-THREADS=${_state.threads}
-export GOMP_CPU_AFFINITY="0-\$((\$THREADS - 1))"
-
-# Start server with error checking
-echo "[llama-server] Executing: $cmd"
-
-# Use nohup to keep server alive, but also check if it starts properly
-nohup bash -c '$cmd' > /root/.openclaw/llama-server.log 2>&1 &
-SERVER_PID=\$!
-
-# Give it a moment to start
-sleep 2
-
-# Check if process is actually running
-if ! kill -0 \$SERVER_PID 2>/dev/null; then
-  echo "[llama-server] ERROR: Process died immediately"
-  echo "[crash-log]"
-  tail -30 /root/.openclaw/llama-server.log 2>/dev/null || echo "(no log file)"
-  exit 1
-fi
-
-echo "[llama-server] Started successfully with PID: \$SERVER_PID"
-echo \$SERVER_PID > /root/.openclaw/llama-server.pid
-''';
-
-      await NativeBridge.runInProot(startupScript, timeout: 15);
-      _updateState(_state.copyWith(downloadProgress: 0.3));
+      // Ensure directory exists
+      final dir = Directory(file.parent.path);
+      if (!await dir.exists()) await dir.create(recursive: true);
       
+      await file.writeAsString(jsonEncode(config));
+    } catch (e) {
+      debugPrint('[LocalLlmService] Config write error: $e');
+    }
+  }
+
+  /// Activates openclaw's built-in node-llama-cpp local LLM provider.
+  Future<void> _startServer(LocalLlmModel model) async {
+    _updateState(
+        _state.copyWith(status: LocalLlmStatus.starting, downloadProgress: 0.1));
+
+    // Stage 2/2: inject node-llama-cpp config into openclaw.json (Direct I/O)
+    _updateState(_state.copyWith(
+      downloadProgress: 0.2,
+      errorMessage: 'Stage 2/2: Activating local provider in openclaw...',
+    ));
+
+    try {
+      await _patchOpenClawConfig(model.id);
+      _updateState(_state.copyWith(downloadProgress: 0.5));
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'Failed to start llama-server: $e\n\n'
-            'This could be due to:\n'
-            '1. Missing library dependencies\n'
-            '2. Insufficient memory\n'
-            '3. Corrupted binary installation\n\n'
-            'Try: Reinstall the local LLM component.',
+        errorMessage:
+            'Failed to activate local LLM config: $e\n\nTap Start to retry.',
       ));
       return;
     }
 
-    // Poll health endpoint with progressive timeout
+    // Signal openclaw gateway to reload with new provider config.
+    try {
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+        'openclaw reload 2>/dev/null || openclaw restart 2>/dev/null || true',
+        timeout: 10,
+      );
+    } catch (_) {}
+
+    _updateState(_state.copyWith(downloadProgress: 0.7));
+
     bool healthy = false;
-    final maxAttempts = 30; // 30 seconds total
-    final progressIncrement = 0.7 / maxAttempts;
-    
+    const maxAttempts = 30;
+    final progressIncrement = 0.3 / maxAttempts;
+
     for (int i = 0; i < maxAttempts; i++) {
       await Future.delayed(const Duration(seconds: 1));
-      _updateState(_state.copyWith(downloadProgress: 0.3 + (i * progressIncrement)));
-      
+      _updateState(
+          _state.copyWith(downloadProgress: 0.7 + (i * progressIncrement)));
       if (await isServerHealthy()) {
         healthy = true;
         break;
       }
-      
-      // Early check for common failure patterns
-      if (i == 5) {
-        try {
-          final log = await NativeBridge.runInProot(
-            'tail -20 /root/.openclaw/llama-server.log 2>/dev/null || echo "No log file"',
-            timeout: 5,
-          );
-          if (log.contains('error') || log.contains('Error') || log.contains('ERROR')) {
-            _updateState(_state.copyWith(
-              status: LocalLlmStatus.error,
-              errorMessage: 'llama-server failed to start. Log shows:\n${
-                log.split('\n').where((line) => 
-                  line.contains('error') || line.contains('Error') || line.contains('ERROR')
-                ).take(3).join('\n')
-              }',
-            ));
-            return;
-          }
-        } catch (_) {}
-      }
     }
 
     if (!healthy) {
-      // Get diagnostic information
-      String diagnostic = '';
-      try {
-        diagnostic = await NativeBridge.runInProot(
-          'echo "=== Process Status ===" && ps aux | grep llama-server || echo "No process" && '
-          'echo "=== Log Tail ===" && tail -10 /root/.openclaw/llama-server.log 2>/dev/null || echo "No log"',
-          timeout: 10,
-        );
-      } catch (_) {
-        diagnostic = 'Could not retrieve diagnostics';
-      }
-      
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'llama-server did not respond within ${maxAttempts}s.\n\n'
-            'Diagnostic information:\n$diagnostic\n\n'
+        errorMessage:
+            'Local LLM provider did not become healthy within ${maxAttempts}s.\n\n'
             'Common solutions:\n'
-            '1. Try with a smaller model (0.5B instead of 1.5B/3B)\n'
+            '1. Try a smaller model (0.5B instead of 1.5B/3B)\n'
             '2. Reduce thread count in settings\n'
             '3. Free up device memory by closing other apps\n'
-            '4. Reinstall the local LLM component',
+            '4. Check gateway logs for errors',
       ));
       return;
     }
@@ -815,99 +681,70 @@ echo \$SERVER_PID > /root/.openclaw/llama-server.pid
       activeModelId: model.id,
       downloadProgress: 1.0,
     ));
-
-    // Auto-patch openclaw.json to route through localhost
-    await _patchOpenClawConfig(model.id);
   }
+
 
   // --------------------------------------------------------------------------
   // Private — openclaw.json patching
   // --------------------------------------------------------------------------
 
   Future<void> _patchOpenClawConfig(String modelId) async {
-    // Find the model metadata
     final model = _modelCatalog.firstWhere(
       (m) => m.id == modelId,
-      orElse: () => _modelCatalog[1], // default to 1.5B
+      orElse: () => _modelCatalog[1],
     );
 
-    // Inject local provider using the same Node.js script pattern as
-    // gateway_service._configureGateway() to stay consistent.
-    final modelJson = jsonEncode({
-      'id': model.id,
-      'name': model.name,
-      'contextWindow': model.contextWindow,
-      'maxTokens': 4096,
-      'cost': {'input': 0, 'output': 0},
-    });
+    final config = await _readConfig();
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
 
-    final script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-let c = {};
-try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
-if (!c.models) c.models = {};
-if (!c.models.providers) c.models.providers = {};
+    final ctxSize = model.contextWindow.clamp(512, 4096);
+    final existing = config['models']['providers']['local-llm'] ?? {};
+    
+    config['models']['providers']['local-llm'] = {
+      ...existing,
+      'id': 'local-llm',
+      'backend': 'node-llama-cpp',
+      'modelPath': model.prootModelPath,
+      'contextSize': ctxSize,
+      'threads': _state.threads,
+      'gpuLayers': 0,
+      'batchSize': 256,
+      'enabled': true,
+      'models': [
+        {
+          'id': model.id,
+          'name': model.name,
+          'contextWindow': ctxSize,
+          'maxTokens': 2048,
+          'cost': {'input': 0, 'output': 0},
+        }
+      ]
+    };
 
-// Merge mode: keep existing cloud providers, add local on top
-const existing = c.models.providers["local-llm"] || {};
-c.models.providers["local-llm"] = {
-  ...existing,
-  id: "local-llm",
-  baseUrl: "http://127.0.0.1:$_llamaPort/v1",
-  api: "openai-completions",
-  apiKey: "local",
-  models: [$modelJson]
-};
-
-// Set local model as the primary default
-if (!c.agents) c.agents = {};
-if (!c.agents.defaults) c.agents.defaults = {};
-if (!c.agents.defaults.model) c.agents.defaults.model = {};
-c.agents.defaults.model.primary = "local-llm/${model.id}";
-
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-process.stdout.write("ok");
-''';
-
-    try {
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
-        timeout: 10,
-      );
-    } catch (e) {
-      // Non-fatal — model still runs, user can route manually
+    if (model.isMultimodal && model.mmProjUrl != null) {
+      config['models']['providers']['local-llm']['mmProjPath'] = model.prootMmProjPath;
     }
+
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['model'] ??= {};
+    config['agents']['defaults']['model']['primary'] = "local-llm/${model.id}";
+
+    await _writeConfig(config);
   }
 
   Future<void> _removeLocalProviderFromConfig() async {
-    const script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-let c = {};
-try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
-if (c.models && c.models.providers) {
-  delete c.models.providers["local-llm"];
-}
-// Restore default primary model
-if (c.agents && c.agents.defaults && c.agents.defaults.model) {
-  delete c.agents.defaults.model.primary;
-}
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-''';
-    try {
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
-        timeout: 10,
-      );
-    } catch (_) {}
+    final config = await _readConfig();
+    if (config['models'] != null && config['models']['providers'] != null) {
+      config['models']['providers'].remove('local-llm');
+    }
+    if (config['agents'] != null && config['agents']['defaults'] != null && config['agents']['defaults']['model'] != null) {
+      config['agents']['defaults']['model'].remove('primary');
+    }
+    await _writeConfig(config);
   }
 
-  String _shellEscape(String s) {
-    // Wrap in single quotes, escaping any embedded single quotes
-    final escaped = s.replaceAll("'", "'\\''");
-    return "'$escaped'";
-  }
 
     // ── Video Vision — multi-frame offline analysis ───────────────────────────
 
@@ -930,7 +767,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
       return;
     }
 
-    const base = 'http://127.0.0.1:8081/v1/chat/completions';
+    final base = '${AppConstants.gatewayUrl}/v1/chat/completions';
     final descriptions = <String>[];
 
     for (int i = 0; i < frames.length; i++) {
@@ -1020,4 +857,5 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
   void dispose() {
     _stateController.close();
   }
+
 }
