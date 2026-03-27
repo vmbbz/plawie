@@ -24,11 +24,10 @@ import 'bot_method_explorer.dart';
 import 'skills/skill_config_editor.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Premium skill metadata catalogue.
-// Used ONLY as a display-metadata lookup — never as an "available to install"
-// list.  Skills appear in My Skills only when the gateway confirms they are
-// installed.  Skills marked comingSoon=true show an info sheet instead of an
-// install prompt until their ClawHub registry slug is confirmed.
+// Premium skill metadata catalogue — always rendered as cards in My Skills.
+// Installed cards (confirmed by gateway) show ACTIVE badge + navigate on tap.
+// Uninstalled cards show INSTALL badge + install prompt on tap, with an
+// Explore button to open the rich stub page before installing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _premiumSkills = [
@@ -42,7 +41,6 @@ const _premiumSkills = [
     color: Color(0xFF3D52D5),
     tooltip:
         'AgentCard.ai gives your agent a virtual Visa card with real spending power. Your agent can create cards, top them up, check balances, and make autonomous payments — all on-chain on Base.',
-    comingSoon: true,
   ),
   _SkillEntry(
     id: 'molt-launch',
@@ -54,7 +52,6 @@ const _premiumSkills = [
     color: Colors.orangeAccent,
     tooltip:
         'MoltLaunch is an on-chain job marketplace for AI agents. Your agent gets an ERC-8004 identity NFT on Base, can browse posted jobs, bid, and receive ETH escrow payments on completion.',
-    comingSoon: true,
   ),
   _SkillEntry(
     id: 'valeo-sentinel',
@@ -66,7 +63,6 @@ const _premiumSkills = [
     color: AppColors.statusGreen,
     tooltip:
         'Valeo Sentinel enforces x402 protocol spending rules on your agent. Set per-call, hourly, daily, and lifetime USD budget caps. Every payment is audit-logged on-chain so you can review exactly what your agent spent.',
-    comingSoon: true,
   ),
   _SkillEntry(
     id: 'twilio-voice',
@@ -78,7 +74,6 @@ const _premiumSkills = [
     color: Colors.redAccent,
     tooltip:
         'Your agent can make and receive phone calls, transcribe conversations in real-time using Deepgram, and orchestrate AI-driven call flows via Twilio ConversationRelay.',
-    comingSoon: true,
   ),
   _SkillEntry(
     id: 'moonpay',
@@ -100,7 +95,7 @@ const _premiumSkills = [
     icon: Icons.memory_rounded,
     color: Color(0xFF0097A7),
     tooltip:
-        'Downloads a GGUF model (Qwen2.5-1.5B recommended) and runs llama-server as a sibling process inside PRoot. OpenClaw routes to localhost:8081 when enabled. CPU-only for stability.',
+        'Downloads a GGUF model (Qwen2.5-1.5B recommended) and runs llama-server as a sibling process inside PRoot. OpenClaw routes via the gateway when enabled. CPU-only for stability.',
   ),
 ];
 
@@ -144,10 +139,6 @@ class _SkillsManagerState extends State<SkillsManager>
     BuildContext context,
     _SkillEntry skill,
   ) async {
-    if (skill.comingSoon) {
-      _showInstallPrompt(context, skill);
-      return;
-    }
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = Provider.of<GatewayProvider>(context, listen: false);
@@ -301,15 +292,6 @@ class _SkillsManagerState extends State<SkillsManager>
   }
 
   void _showInstallPrompt(BuildContext context, _SkillEntry skill) {
-    if (skill.comingSoon) {
-      showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => _ComingSoonSheet(skill: skill),
-      );
-      return;
-    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -319,6 +301,10 @@ class _SkillsManagerState extends State<SkillsManager>
         onInstall: () {
           Navigator.pop(context);
           _installSkill(context, skill);
+        },
+        onExplore: () {
+          Navigator.pop(context);
+          _navigateToSkillPage(context, skill.id);
         },
       ),
     );
@@ -567,7 +553,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                             id.contains(skill.id) ||
                                             id.contains(skill.id
                                                 .replaceAll('-', '_')));
-                                if (installed || skill.comingSoon) {
+                                if (installed) {
                                   widget.onNavigate(skill.id);
                                 } else {
                                   widget.onShowPrompt(skill);
@@ -1254,37 +1240,68 @@ class _ServiceCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(24),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: skill.color.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(skill.icon, color: skill.color, size: 20),
+                    ),
+                    const Spacer(),
+                    Text(
+                      skill.title,
+                      style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: Colors.white),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      skill.subtitle,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    color: skill.color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
+                    color: isInstalled
+                        ? skill.color.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isInstalled
+                          ? skill.color.withValues(alpha: 0.4)
+                          : Colors.white.withValues(alpha: 0.2),
+                    ),
                   ),
-                  child: Icon(skill.icon, color: skill.color, size: 20),
+                  child: Text(
+                    isInstalled ? 'ACTIVE' : 'INSTALL',
+                    style: TextStyle(
+                      color: isInstalled ? skill.color : Colors.white54,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ),
-                const Spacer(),
-                Text(
-                  skill.title,
-                  style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: Colors.white),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  skill.subtitle,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1725,9 +1742,6 @@ class _SkillEntry {
   final IconData icon;
   final Color color;
   final String? tooltip;
-  /// True when the ClawHub registry slug is unconfirmed.
-  /// Shows an info sheet instead of an install prompt.
-  final bool comingSoon;
 
   const _SkillEntry({
     required this.id,
@@ -1737,7 +1751,6 @@ class _SkillEntry {
     required this.icon,
     required this.color,
     this.tooltip,
-    this.comingSoon = false,
   });
 }
 
@@ -1745,135 +1758,16 @@ class _SkillEntry {
 // Bottom Sheets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ComingSoonSheet extends StatelessWidget {
-  final _SkillEntry skill;
-  const _ComingSoonSheet({required this.skill});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C2433) : Colors.white,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: skill.color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Icon(skill.icon, color: skill.color, size: 28),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(skill.title,
-                          style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.w800, fontSize: 20)),
-                      Text(skill.subtitle,
-                          style: const TextStyle(
-                              color: AppColors.statusGrey, fontSize: 13)),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.statusAmber.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text('SOON',
-                      style: TextStyle(
-                          color: AppColors.statusAmber,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.04)
-                    : Colors.black.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(skill.description,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: AppColors.statusGrey)),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.statusAmber.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: AppColors.statusAmber.withValues(alpha: 0.2)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.hourglass_top_rounded,
-                      size: 16, color: AppColors.statusAmber),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'This skill is coming soon. The install channel is being set up '
-                      'with the provider — check the Discover tab after the next update.',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.statusAmber,
-                          height: 1.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text('Got it'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _InstallPromptSheet extends StatelessWidget {
   final _SkillEntry skill;
   final VoidCallback onInstall;
+  final VoidCallback? onExplore;
 
-  const _InstallPromptSheet(
-      {required this.skill, required this.onInstall});
+  const _InstallPromptSheet({
+    required this.skill,
+    required this.onInstall,
+    this.onExplore,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1955,17 +1849,31 @@ class _InstallPromptSheet extends StatelessWidget {
             const SizedBox(height: 20),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                if (onExplore != null)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onExplore,
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: const Text('Explore'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
                     ),
-                    child: const Text('Cancel'),
+                  )
+                else
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
                   ),
-                ),
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
