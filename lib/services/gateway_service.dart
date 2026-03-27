@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:path_provider/path_provider.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
 import '../models/agent_info.dart';
@@ -141,10 +144,49 @@ class GatewayService {
     });
   }
 
-  /// Patch /root/.openclaw/openclaw.json to clear denyCommands, set allowCommands,
-  /// and configure gateway host/port (automates binding — no CLI `--binding` flag needed).
+  /// Helper to get the host-side path to the openclaw config file
+  Future<String> _openClawConfigPath() async {
+    final appSupportDir = await getApplicationSupportDirectory();
+    return '${appSupportDir.path}/rootfs/root/.openclaw/openclaw.json';
+  }
+
+  /// Direct Dart-native config read/write (bypasses proot overhead)
+  Future<Map<String, dynamic>> _readConfig() async {
+    try {
+      final file = File(await _openClawConfigPath());
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        return jsonDecode(content) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[GatewayService] Config read error: $e');
+    }
+    return {};
+  }
+
+  Future<void> _writeConfig(Map<String, dynamic> config) async {
+    try {
+      final path = await _openClawConfigPath();
+      final file = File(path);
+      
+      // Ensure directory exists
+      final dir = Directory(file.parent.path);
+      if (!await dir.exists()) await dir.create(recursive: true);
+      
+      await file.writeAsString(jsonEncode(config));
+    } catch (e) {
+      debugPrint('[GatewayService] Config write error: $e');
+    }
+  }
+
+  /// Direct I/O: configure gateway binding and node per AidanPark optimization
   Future<void> _configureGateway() async {
-    const allowCommands = [
+    final config = await _readConfig();
+    
+    config['gateway'] ??= {};
+    config['gateway']['nodes'] ??= {};
+    config['gateway']['nodes']['denyCommands'] = [];
+    config['gateway']['nodes']['allowCommands'] = [
       'camera.snap', 'camera.clip', 'camera.list',
       'canvas.navigate', 'canvas.eval', 'canvas.snapshot',
       'flash.on', 'flash.off', 'flash.toggle', 'flash.status',
@@ -153,81 +195,27 @@ class GatewayService {
       'sensor.read', 'sensor.list',
       'haptic.vibrate',
     ];
+    config['gateway']['mode'] = 'local';
     
-    final allowJson = jsonEncode(allowCommands);
-    
-    // Node.js script to merge configurations
-    var script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-let c = {};
-try { c = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
-if (!c.gateway) c.gateway = {};
-if (!c.gateway.nodes) c.gateway.nodes = {};
-c.gateway.nodes.denyCommands = [];
-c.gateway.nodes.allowCommands = $allowJson;
-c.gateway.mode = "local";
-// Enable Skills Discovery Hub (Port 8765) per OpenClaw 2.x Architecture
-if (!c.skills) c.skills = {};
-c.skills.discovery = "http://127.0.0.1:8765/api/tools";
-c.skills.mode = "auto";
-c.skills.sync = "mirror"; // Enable 2-Way Sync per documentation
+    config['skills'] ??= {};
+    config['skills']['discovery'] = "http://127.0.0.1:8765/api/tools";
+    config['skills']['mode'] = "auto";
+    config['skills']['sync'] = "mirror";
 
-// Enable OpenAI-compatible HTTP endpoint for fallback chat
-if (!c.gateway.openaiCompat) c.gateway.openaiCompat = {};
-c.gateway.openaiCompat.enabled = true;
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-''';
+    config['gateway']['openaiCompat'] ??= {};
+    config['gateway']['openaiCompat']['enabled'] = true;
 
-    try {
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
-        timeout: 15,
-      );
-      // Clean up any stale/invalid keys from previous versions
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw doctor --fix',
-        timeout: 15,
-      );
-    } catch (_) {
-      // Non-fatal
-    }
+    await _writeConfig(config);
   }
 
-  /// Persist the selected model using OpenClaw CLI (schema-safe).
-  /// Sets the primary model via `openclaw config set` and runs doctor to validate.
+  /// Direct I/O: Persist the selected model (no proot overhead).
   Future<void> persistModel(String model) async {
-    try {
-      // Set primary model via official CLI (avoids schema violations from manual JSON)
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw config set agents.defaults.model.primary "$model"',
-        timeout: 15,
-      );
-    } catch (_) {
-      // Fallback: direct JSON patch if CLI not available
-      final script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-let c = {}; try { c = JSON.parse(fs.readFileSync(p,"utf8")); } catch {}
-if (!c.agents) c.agents = {};
-if (!c.agents.defaults) c.agents.defaults = {};
-if (!c.agents.defaults.model) c.agents.defaults.model = {};
-c.agents.defaults.model.primary = "$model";
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-''';
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
-        timeout: 15,
-      );
-    }
-
-    // Always run doctor --fix to clean up any invalid keys
-    try {
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw doctor --fix',
-        timeout: 15,
-      );
-    } catch (_) {}
+    final config = await _readConfig();
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['model'] ??= {};
+    config['agents']['defaults']['model']['primary'] = model;
+    await _writeConfig(config);
   }
 
   /// Map a provider name to its default model string (provider/model).
@@ -265,72 +253,62 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2));
     }
   }
 
-  /// Write an API key + ensure models array (pure Node.js — no flaky CLI)
+  /// Write an API key (Direct I/O — avoids proot / node-e overhead)
   Future<void> configureApiKey(String provider, String key) async {
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
 
-    String modelsJson;
+    final List<Map<String, dynamic>> defaultModels;
     if (openClawProvider == 'google') {
-      modelsJson = '[ { "id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview" } ]';
+      defaultModels = [{'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'}];
     } else if (openClawProvider == 'anthropic') {
-      modelsJson = '[ { "id": "claude-opus-4.6", "name": "Claude Opus 4.6" } ]';
+      defaultModels = [{'id': 'claude-opus-4.6', 'name': 'Claude Opus 4.6'}];
     } else if (openClawProvider == 'openai') {
-      modelsJson = '[ { "id": "gpt-4o", "name": "GPT-4o" } ]';
+      defaultModels = [{'id': 'gpt-4o', 'name': 'GPT-4o'}];
     } else if (openClawProvider == 'groq') {
-      modelsJson = '[ { "id": "llama-3.1-405b", "name": "Llama 3.1 405B" } ]';
+      defaultModels = [{'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'}];
     } else {
-      modelsJson = '[ { "id": "default", "name": "Default Model" } ]';
+      defaultModels = [{'id': 'default', 'name': 'Default Model'}];
     }
 
-    final script = '''
-const fs = require("fs");
-const path = require("path");
+    // 1. Update openclaw.json
+    final config = await _readConfig();
+    config['env'] ??= {};
+    config['env']['vars'] ??= {};
+    if (envKey.isNotEmpty) config['env']['vars'][envKey] = key;
 
-function updateJson(p, updater) {
-  try {
-    let c = {};
-    if (fs.existsSync(p)) c = JSON.parse(fs.readFileSync(p, "utf8"));
-    else {
-      const dir = path.dirname(p);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
+    final prov = config['models']['providers'][openClawProvider] ?? {};
+    config['models']['providers'][openClawProvider] = {
+      ...prov,
+      'apiKey': key,
+      'models': prov['models'] ?? defaultModels,
+    };
+    if (openClawProvider == 'google' && config['models']['providers']['google']['baseUrl'] == null) {
+      config['models']['providers']['google']['baseUrl'] = "https://generativelanguage.googleapis.com/v1beta";
     }
-    updater(c);
-    fs.writeFileSync(p, JSON.stringify(c, null, 2));
-  } catch (e) { console.error(e.message); }
-}
+    await _writeConfig(config);
 
-// 1. Global config
-updateJson("/root/.openclaw/openclaw.json", (c) => {
-  if (!c.env) c.env = {};
-  if (!c.env.vars) c.env.vars = {};
-  if ("$envKey") c.env.vars["$envKey"] = "$key";
-
-  if (!c.models) c.models = {};
-  if (!c.models.providers) c.models.providers = {};
-  const prov = c.models.providers["$openClawProvider"] || {};
-  c.models.providers["$openClawProvider"] = {
-    ...prov,
-    apiKey: "$key",
-    models: prov.models || $modelsJson
-  };
-  if ("$openClawProvider" === "google" && !c.models.providers.google.baseUrl) {
-    c.models.providers.google.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
-  }
-});
-
-// 2. Agent auth-profiles
-const agentAuthPath = "/root/.openclaw/agents/main/agent/auth-profiles.json";
-updateJson(agentAuthPath, (c) => {
-  if (!c.providers) c.providers = {};
-  c.providers["$openClawProvider"] = { ...(c.providers["$openClawProvider"] || {}), apiKey: "$key" };
-});
-''';
-
-    await NativeBridge.runInProot(
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
-      timeout: 15,
-    );
+    // 2. Update agent auth-profiles.json
+    try {
+      final appSupportDir = await getApplicationSupportDirectory();
+      final authPath = '${appSupportDir.path}/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json';
+      final authFile = File(authPath);
+      Map<String, dynamic> auth = {};
+      
+      if (await authFile.exists()) {
+        auth = jsonDecode(await authFile.readAsString());
+      } else {
+        await Directory(authFile.parent.path).create(recursive: true);
+      }
+      
+      auth['providers'] ??= {};
+      (auth['providers'][openClawProvider] ??= {})['apiKey'] = key;
+      await authFile.writeAsString(jsonEncode(auth));
+    } catch (e) {
+      debugPrint('[GatewayService] Auth patch error: $e');
+    }
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
@@ -415,45 +393,24 @@ updateJson(agentAuthPath, (c) => {
   String? _cachedToken;
   DateTime? _lastTokenFetch;
 
-  /// Use Node.js to read the token directly from the openclaw.json config file.
+  /// Direct I/O: Retrieve token from config file (instant, no proot)
   Future<String?> retrieveTokenFromConfig({bool force = false}) async {
-    // Use cache if available and fresh (under 5 mins)
     if (!force && _cachedToken != null && _lastTokenFetch != null &&
         DateTime.now().difference(_lastTokenFetch!).inMinutes < 5) {
       return _cachedToken;
     }
 
-    const script = '''
-const fs = require("fs");
-const p = "/root/.openclaw/openclaw.json";
-try {
-  const c = JSON.parse(fs.readFileSync(p, "utf8"));
-  if (c.gateway && c.gateway.auth && c.gateway.auth.token) {
-    process.stdout.write(c.gateway.auth.token);
-  }
-} catch (e) {}
-''';
-    try {
-      final token = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && node -e ${_shellEscape(script)}',
-        timeout: 5,
-      );
-      final trimmedToken = token.trim();
-      if (trimmedToken.isNotEmpty) {
-        _cachedToken = trimmedToken;
-        _lastTokenFetch = DateTime.now();
-        return trimmedToken;
-      }
-      return null;
-    } catch (_) {
-      return null;
+    final config = await _readConfig();
+    final token = config['gateway']?['auth']?['token'] as String?;
+    
+    if (token != null && token.isNotEmpty) {
+      _cachedToken = token;
+      _lastTokenFetch = DateTime.now();
+      return token;
     }
+    return null;
   }
 
-  /// Escape a string for use as a single-quoted shell argument.
-  static String _shellEscape(String s) {
-    return "'${s.replaceAll("'", "'\\''")}'";
-  }
 
   Future<void> start() async {
     final prefs = PreferencesService();
@@ -493,18 +450,7 @@ try {
       } catch (_) {}
 
       if (!success) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[WARN] Native start failed, attempting doctor fix...'],
-        ));
-        try {
-          await NativeBridge.runInProot(
-            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw doctor --fix',
-            timeout: 30,
-          );
-        } catch (_) {}
-        await Future.delayed(const Duration(milliseconds: 500));
-        final retrySuccess = await NativeBridge.startGateway();
-        if (!retrySuccess) throw Exception('Native start failed after doctor fix');
+        throw Exception('Native start failed. Check your PRoot installation or Force Reinstall in settings.');
       }
       
       await Future.delayed(const Duration(seconds: 1)); // Give tmux/proot time (reduced from 3s)
@@ -916,7 +862,7 @@ try {
         throw Exception('Gateway not connected and no auth token available.');
       }
       
-      if (_connection == null) _connection = GatewayConnection();
+      _connection ??= GatewayConnection();
       final ok = await _connection!.connect(token);
       if (!ok) throw Exception('Failed to connect to gateway.');
     }
