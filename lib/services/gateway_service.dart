@@ -139,8 +139,10 @@ class GatewayService {
         dashboardUrl = urlMatch.group(0);
         final prefs = PreferencesService();
         prefs.init().then((_) => prefs.dashboardUrl = dashboardUrl);
+        _updateState(_state.copyWith(logs: logs, dashboardUrl: dashboardUrl));
+      } else {
+        _updateState(_state.copyWith(logs: logs));
       }
-      _updateState(_state.copyWith(logs: logs, dashboardUrl: dashboardUrl));
     });
   }
 
@@ -401,32 +403,39 @@ class GatewayService {
     }
 
     final config = await _readConfig();
-    final token = config['gateway']?['auth']?['token'] as String?;
+    
+    // Check multiple potential paths in the JSON
+    final token = config['gateway']?['auth']?['token'] as String? ??
+                 config['gateway']?['token'] as String? ??
+                 config['gateway']?['apiKey'] as String?;
     
     if (token != null && token.isNotEmpty) {
       _cachedToken = token;
       _lastTokenFetch = DateTime.now();
       return token;
     }
+    // FALLBACK: Extract from dashboard URL if config is missing it
+    if (_state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
+      final uri = Uri.parse(_state.dashboardUrl!.replaceAll('#', '?')); // fragment to query
+      final urlToken = uri.queryParameters['token'];
+      if (urlToken != null && urlToken.isNotEmpty) {
+        _cachedToken = urlToken;
+        _lastTokenFetch = DateTime.now();
+        return urlToken;
+      }
+    }
+
     return null;
   }
 
 
   Future<void> start() async {
+    // IDEMPOTENCY GUARD: Don't start if already active
+    if (_state.status == GatewayStatus.running || _state.status == GatewayStatus.starting) {
+      return;
+    }
+
     final prefs = PreferencesService();
-    await prefs.init();
-    final savedUrl = prefs.dashboardUrl;
-
-    _updateState(_state.copyWith(
-      status: GatewayStatus.starting,
-      clearError: true,
-      logs: [..._state.logs, '[INFO] Starting gateway...'],
-      dashboardUrl: savedUrl,
-    ));
-
-    try {
-      // PRODUCTION UPGRADE: Acquire wake lock to prevent Android PPK
-      await NativeBridge.acquirePartialWakeLock();
       
       await _configureGateway();
       // Android 14+ requires the activity to be fully visible before
@@ -686,7 +695,8 @@ class GatewayService {
   ///
   /// Uses auto-reconnecting GatewayConnection. Falls back to per-message
   /// connection if the persistent one isn't available.
-  Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) async* {
+  Stream<String> sendMessage(String message, {String? model}) async* {
+    model = await _resolveModel(model);
     // Retrieve auth token
     String? token;
     try {
@@ -881,7 +891,8 @@ class GatewayService {
   /// HTTP fallback: POST to /v1/chat/completions (OpenAI-compatible endpoint).
   ///
   /// Used when WebSocket connection fails. Simpler but doesn't support streaming.
-  Stream<String> sendMessageHttp(String message, {String model = 'google/gemini-3.1-pro-preview', String? token}) async* {
+  Stream<String> sendMessageHttp(String message, {String? model, String? token}) async* {
+    model = await _resolveModel(model);
     token ??= await retrieveTokenFromConfig();
     if (token == null || token.isEmpty) {
       yield '[Error] No auth token for HTTP fallback.';
@@ -1096,6 +1107,17 @@ class GatewayService {
     } catch (e) {
       yield '[Error] Cloud video error: $e';
     }
+  }
+  
+  /// Resolves the intended model ID, falling back to openclaw.json primary defaults.
+  Future<String> _resolveModel(String? model) async {
+    if (model != null && model.isNotEmpty) return model;
+    
+    final config = await _readConfig();
+    final primary = config['agents']?['defaults']?['model']?['primary'] as String?;
+    if (primary != null && primary.isNotEmpty) return primary;
+    
+    return 'google/gemini-3.1-pro-preview'; // Final hard fallback
   }
 
   void dispose() {
