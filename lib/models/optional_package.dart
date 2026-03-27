@@ -96,8 +96,8 @@ class OptionalPackage {
     description: 'Send and receive SMS/MMS via Twilio API',
     icon: Icons.phone_android,
     color: Colors.red,
-    installCommand: 'openclaw skill install twilio',  // NEW: singular "skill"
-    uninstallCommand: 'openclaw skill uninstall twilio',
+    installCommand: 'openclaw skills install twilio',  // plural: modern syntax
+    uninstallCommand: 'openclaw skills uninstall twilio',
     checkPath: 'opt/skills/twilio/package.json',
     estimatedSize: '~25 MB',
     completionSentinel: 'TWILIO_INSTALL_COMPLETE',
@@ -110,8 +110,8 @@ class OptionalPackage {
     description: 'ERC-8004 identity on Base chain',
     icon: Icons.call,
     color: Colors.blue,
-    installCommand: 'openclaw skill install calls',  // NEW: singular "skill"
-    uninstallCommand: 'openclaw skill uninstall calls',
+    installCommand: 'openclaw skills install calls',  // plural: modern syntax
+    uninstallCommand: 'openclaw skills uninstall calls',
     checkPath: 'opt/skills/calls/package.json',
     estimatedSize: '~15 MB',
     completionSentinel: 'CALLS_INSTALL_COMPLETE',
