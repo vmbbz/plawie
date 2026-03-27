@@ -71,6 +71,8 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 32),
                       _buildSectionHeader('Advanced Extensibility'),
                       const SizedBox(height: 16),
+                      _buildSkillsManagerCard(context),
+                      const SizedBox(height: 12),
                       _buildMoonPayCard(context),
 
                       const SizedBox(height: 12),
@@ -310,6 +312,87 @@ class HelpScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildSkillsManagerCard(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.all(22),
+      accentColor: Colors.purpleAccent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purpleAccent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.purpleAccent.withValues(alpha: 0.2)),
+                ),
+                child: const Icon(Icons.extension_rounded, color: Colors.purpleAccent, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.purpleAccent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.purpleAccent.withValues(alpha: 0.2)),
+                      ),
+                      child: Text('SKILLS MANAGER',
+                          style: GoogleFonts.outfit(
+                              color: Colors.purpleAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.5)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text('3-Tab Skills Interface',
+                        style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w800, fontSize: 16, color: Colors.white)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...[
+            (Icons.check_circle_rounded, Colors.greenAccent, 'My Skills',
+                'Your installed skills, Local LLM status, Solana identity, and workspace config — all in one place.'),
+            (Icons.explore_rounded, Colors.cyanAccent, 'Discover',
+                'Live search against the ClawHub community registry. Browse, preview, and install skills with one tap.'),
+            (Icons.build_rounded, Colors.amberAccent, 'Tools',
+                'Reads your running gateway\'s tools.allow config live — no hardcoded list, always accurate.'),
+          ].map((t) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(t.$1, size: 16, color: t.$2),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(t.$3, style: GoogleFonts.outfit(
+                          color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(t.$4, style: GoogleFonts.outfit(
+                          color: Colors.white54, fontSize: 11, height: 1.45)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMoonPayCard(BuildContext context) {
     return GlassCard(
       padding: const EdgeInsets.all(22),
@@ -378,11 +461,20 @@ class HelpScreen extends StatelessWidget {
   }
 
   Widget _buildPremiumSkillsTable(BuildContext context) {
+    // (icon, name, subtitle, description, comingSoon)
     final skills = [
-      (Icons.account_balance_wallet_rounded, 'AgentCard', 'Virtual Visa + Base execution'),
-      (Icons.work_rounded, 'MoltLaunch', 'On-chain AI jobs via ERC-8004 identity'),
-      (Icons.memory_rounded, 'Local LLM', 'Llama Qwen support without cloud egress'),
-      (Icons.phone_in_talk_rounded, 'Twilio AI', 'Inbound & outbound voice via ConversationRelay'),
+      (Icons.account_balance_wallet_rounded, 'Wallet', 'AgentCard.ai',
+          'Issue virtual Visa cards and make autonomous on-chain payments via Base.', true),
+      (Icons.work_rounded, 'Work', 'MoltLaunch',
+          'On-chain AI job marketplace with ERC-8004 identity and ETH escrow.', true),
+      (Icons.credit_score_rounded, 'Credit', 'Valeo Sentinel',
+          'x402 spending policy: per-call, hourly & daily budget caps with on-chain audit log.', true),
+      (Icons.phone_android_rounded, 'Calls', 'Twilio AI',
+          'Inbound & outbound voice via ConversationRelay with real-time AI transcription.', true),
+      (Icons.currency_exchange_rounded, 'Finance', 'MoonPay',
+          'Verified agent bank account — swap, bridge, DCA, fiat onramps and live market prices.', false),
+      (Icons.memory_rounded, 'Local LLM', 'llama-server',
+          'Compile-from-source Qwen on-device inference. No API key, no cloud, total privacy.', false),
     ];
 
     return GlassCard(
@@ -390,7 +482,7 @@ class HelpScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('CORE MCP INTEGRATIONS',
+          Text('PREMIUM SKILLS',
               style: GoogleFonts.outfit(
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
@@ -400,23 +492,48 @@ class HelpScreen extends StatelessWidget {
           ...skills.map((s) => Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(s.$1, size: 16, color: Colors.white70),
+                Icon(s.$1, size: 16, color: s.$5 ? Colors.white38 : Colors.white70),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(s.$2,
+                      Row(
+                        children: [
+                          Text(s.$2,
+                              style: TextStyle(
+                                  color: s.$5 ? Colors.white54 : Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800)),
+                          const SizedBox(width: 8),
+                          Text(s.$3,
+                              style: const TextStyle(
+                                  color: Colors.white38, fontSize: 10)),
+                          if (s.$5) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                              ),
+                              child: const Text('SOON',
+                                  style: TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.8)),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(s.$4,
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 2),
-                      Text(s.$3,
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 11, height: 1.4)),
+                              color: Colors.white38, fontSize: 11, height: 1.4)),
                     ],
                   ),
                 ),
