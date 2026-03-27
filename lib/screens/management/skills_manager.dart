@@ -480,34 +480,36 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             .toSet()
         : (_offlineInstalledIds?.toSet() ?? <String>{});
 
-    // Always show ALL premium skills in the grid (restored from pre-Option-C).
-    // Enrich each premium entry with live gateway data where available.
-    // installedIds is used to set the active border and determine tap behaviour.
-    final List<_SkillEntry> mergedSkills = widget.premiumSkills
-        .where((p) => p.id != 'local-llm') // local-llm has its own pinned card
-        .map((p) {
-      final liveData = rawSkills.cast<Map<String, dynamic>?>().firstWhere(
-        (s) {
-          final id = (s?['id'] ?? s?['name'] ?? s?['skillId'])
-                  ?.toString()
-                  .toLowerCase() ??
+    // 1. All gateway-confirmed installed skills (enriched with premium metadata
+    //    where the ID matches; blueGrey fallback card for non-premium plugins).
+    final dynamicInstalled = rawSkills.map((s) {
+      final id =
+          (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ??
               '';
-          return id == p.id || id.contains(p.id.replaceAll('-', '_'));
-        },
-        orElse: () => null,
+      return widget.premiumSkills.firstWhere(
+        (p) =>
+            p.id == id || id.contains(p.id.replaceAll('-', '_')),
+        orElse: () => _SkillEntry(
+          id: id,
+          title: (s['title'] ?? s['name'] ?? id).toString(),
+          subtitle: (s['author'] ?? 'Plugin').toString(),
+          description:
+              (s['description'] ?? 'An installed OpenClaw skill.').toString(),
+          icon: Icons.extension_rounded,
+          color: Colors.blueGrey,
+        ),
       );
-      if (liveData == null) return p;
-      return _SkillEntry(
-        id: p.id,
-        title: liveData['title']?.toString() ?? p.title,
-        subtitle: liveData['name']?.toString() ?? p.subtitle,
-        description: liveData['description']?.toString() ?? p.description,
-        icon: p.icon,
-        color: p.color,
-        tooltip: liveData['description']?.toString() ?? p.tooltip,
-        comingSoon: p.comingSoon,
-      );
-    }).toList();
+    }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
+
+    // 2. Uninstalled premium catalogue — appended below so the grid always
+    //    shows all 6 premium skill tiles even when none are installed yet.
+    final availableCatalog = widget.premiumSkills
+        .where((p) => p.id != 'local-llm')
+        .where((p) => !dynamicInstalled.any((d) => d.id == p.id))
+        .toList();
+
+    // 3. Merged: installed first (with active border), uninstalled catalog below.
+    final mergedSkills = [...dynamicInstalled, ...availableCatalog];
 
     return CustomScrollView(
       slivers: [
