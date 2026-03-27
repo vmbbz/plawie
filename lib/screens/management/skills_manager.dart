@@ -480,25 +480,44 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             .toSet()
         : (_offlineInstalledIds?.toSet() ?? <String>{});
 
-    // Build display entries: gateway data enriched with premium metadata
-    final installedEntries = rawSkills.map((s) {
-      final id =
-          (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ??
-              '';
-      final meta = widget.premiumSkills.firstWhere(
-        (p) => p.id == id,
-        orElse: () => _SkillEntry(
-          id: id,
-          title: (s['title'] ?? s['name'] ?? id).toString(),
-          subtitle: (s['author'] ?? 'Plugin').toString(),
-          description: (s['description'] ?? 'An installed OpenClaw skill.')
-              .toString(),
-          icon: Icons.extension_rounded,
-          color: Colors.blueGrey,
-        ),
-      );
-      return meta;
-    }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
+    // Build display entries: gateway live data enriched with premium metadata.
+    // When the gateway is stopped, fall back to the CLI-discovered IDs so the
+    // grid is not empty just because the gateway process is down.
+    final List<_SkillEntry> installedEntries;
+    if (rawSkills.isNotEmpty) {
+      installedEntries = rawSkills.map((s) {
+        final id =
+            (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ??
+                '';
+        return widget.premiumSkills.firstWhere(
+          (p) => p.id == id,
+          orElse: () => _SkillEntry(
+            id: id,
+            title: (s['title'] ?? s['name'] ?? id).toString(),
+            subtitle: (s['author'] ?? 'Plugin').toString(),
+            description:
+                (s['description'] ?? 'An installed OpenClaw skill.').toString(),
+            icon: Icons.extension_rounded,
+            color: Colors.blueGrey,
+          ),
+        );
+      }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
+    } else {
+      // Gateway stopped — show what the CLI reported as installed
+      installedEntries = (_offlineInstalledIds ?? []).map((id) {
+        return widget.premiumSkills.firstWhere(
+          (p) => p.id == id,
+          orElse: () => _SkillEntry(
+            id: id,
+            title: id,
+            subtitle: 'Installed',
+            description: 'An installed OpenClaw skill.',
+            icon: Icons.extension_rounded,
+            color: Colors.blueGrey,
+          ),
+        );
+      }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
+    }
 
     return CustomScrollView(
       slivers: [
@@ -561,7 +580,6 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                   _ServiceCard(
                     skill: skill,
                     isInstalled: true,
-                    isLoading: false,
                     onTap: () => widget.onNavigate(skill.id),
                   ),
               ]),
@@ -760,8 +778,9 @@ class _DiscoverTabState extends State<_DiscoverTab>
   @override
   void initState() {
     super.initState();
-    _loadInstalled();
-    _loadFeatured();
+    // Chain: load installed slugs first, then featured, so isInstalled is
+    // accurate on the first render.
+    _loadInstalledThenFeatured();
   }
 
   @override
@@ -772,9 +791,25 @@ class _DiscoverTabState extends State<_DiscoverTab>
     super.dispose();
   }
 
-  Future<void> _loadInstalled() async {
+  /// Loads installed slugs, then pre-populates the featured list.
+  Future<void> _loadInstalledThenFeatured() async {
     final ids = await OpenClawCommandService.getInstalledSkills();
-    if (mounted) setState(() => _installedSlugs = ids.toSet());
+    if (!mounted) return;
+    setState(() => _installedSlugs = ids.toSet());
+    await _loadFeatured();
+  }
+
+  /// Refreshes the installed-slug set and re-marks all current results.
+  /// Called after a successful install so the ACTIVE badge updates immediately.
+  Future<void> _refreshInstalledStatus() async {
+    final ids = await OpenClawCommandService.getInstalledSkills();
+    if (!mounted) return;
+    setState(() {
+      _installedSlugs = ids.toSet();
+      _results = _results
+          .map((s) => s.copyWith(isInstalled: _installedSlugs.contains(s.slug)))
+          .toList();
+    });
   }
 
   Future<void> _loadFeatured() async {
@@ -799,10 +834,9 @@ class _DiscoverTabState extends State<_DiscoverTab>
   void _onQueryChanged(String query) {
     _debounce?.cancel();
     if (query.trim().isEmpty) {
-      setState(() {
-        _searched = false;
-        _results = [];
-      });
+      // Don't zero _results here — _loadFeatured will replace them, avoiding
+      // a flash of empty state between clear and featured load completing.
+      setState(() => _searched = false);
       _loadFeatured();
       return;
     }
@@ -927,10 +961,13 @@ class _DiscoverTabState extends State<_DiscoverTab>
                         skill: _results[i],
                         onInstall: _rateLimitCountdown > 0
                             ? null
-                            : () => widget.onInstall(
+                            : () async {
+                                await widget.onInstall(
                                   _results[i].slug,
                                   _results[i].name,
-                                ),
+                                );
+                                await _refreshInstalledStatus();
+                              },
                       ),
                     ),
         ),
@@ -945,8 +982,16 @@ class _DiscoverTabState extends State<_DiscoverTab>
 // Zero hardcoding.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ToolsTab extends StatelessWidget {
+class _ToolsTab extends StatefulWidget {
   const _ToolsTab();
+
+  @override
+  State<_ToolsTab> createState() => _ToolsTabState();
+}
+
+class _ToolsTabState extends State<_ToolsTab> {
+  // Stored once in initState so FutureBuilder never re-fires on gateway rebuilds.
+  late final Future<List<String>> _toolsFuture;
 
   static const _iconMap = {
     'browser': Icons.language_rounded,
@@ -965,6 +1010,12 @@ class _ToolsTab extends StatelessWidget {
     'shell': Icons.terminal_rounded,
   };
 
+  @override
+  void initState() {
+    super.initState();
+    _toolsFuture = OpenClawCommandService.getCoreTools();
+  }
+
   IconData _iconFor(String toolId) {
     final lower = toolId.toLowerCase();
     for (final entry in _iconMap.entries) {
@@ -976,7 +1027,7 @@ class _ToolsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<String>>(
-      future: OpenClawCommandService.getCoreTools(),
+      future: _toolsFuture,
       builder: (context, snap) {
         final gatewayState = context.watch<GatewayProvider>().state;
         final isOffline = gatewayState.status == GatewayStatus.stopped;
@@ -1159,10 +1210,9 @@ class _RateLimitBanner extends StatelessWidget {
             const Icon(Icons.hourglass_bottom_rounded,
                 size: 14, color: AppColors.statusAmber),
             const SizedBox(width: 8),
-            Text(
-              'ClawHub rate limited — resets in ${secondsLeft}s',
-              style: const TextStyle(
-                  fontSize: 12, color: AppColors.statusAmber),
+            const Text(
+              'ClawHub rate limited — resets in',
+              style: TextStyle(fontSize: 12, color: AppColors.statusAmber),
             ),
             const Spacer(),
             Text(
@@ -1183,13 +1233,11 @@ class _RateLimitBanner extends StatelessWidget {
 class _ServiceCard extends StatelessWidget {
   final _SkillEntry skill;
   final bool isInstalled;
-  final bool isLoading;
   final VoidCallback onTap;
 
   const _ServiceCard({
     required this.skill,
     required this.isInstalled,
-    required this.isLoading,
     required this.onTap,
   });
 
