@@ -19,6 +19,8 @@ class GatewayService {
   bool _healthCheckInFlight = false;
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
+  bool _isStarting = false;
+  bool _isStopping = false;
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
 
@@ -45,45 +47,88 @@ class GatewayService {
   /// Check if the gateway is already running (e.g. after app restart)
   /// and sync the UI state accordingly.  If not running but auto-start
   /// is enabled, start it automatically.
+  /// Check if the gateway is already running (e.g. after app restart)
+  /// and sync the UI state accordingly.
   Future<void> init() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    await _attachOrStart(autoStart: prefs.autoStartGateway);
+  }
+
+  /// Unified entry point for starting or attaching to the gateway.
+  /// Prevents double-spawns and handles self-healing.
+  Future<void> _attachOrStart({bool autoStart = false, bool forceStart = false}) async {
+    if (_isStarting || _isStopping) return;
+
     final prefs = PreferencesService();
     await prefs.init();
     final savedUrl = prefs.dashboardUrl;
 
+    // First check if already running
     final alreadyRunning = await NativeBridge.isGatewayRunning();
+
     if (alreadyRunning) {
-      // PROD FIX: If already running, DO NOT call start().
-      // Just attach to the existing process.
+      if (_state.status == GatewayStatus.running) return; // Already fully attached
+
       _updateState(_state.copyWith(
-        status: GatewayStatus.starting, // Transitioning to attached state
+        status: GatewayStatus.starting,
         dashboardUrl: savedUrl,
-        logs: [..._state.logs, '[INFO] Gateway process detected, reconnecting...'],
+        logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
       _subscribeLogs();
       _startHealthCheck();
-
-      // IMPROVED: Add process health validation before marking as healthy
       await _validateGatewayProcess();
-      
-      // Fire an immediate health check AND token fetch concurrently.
-      // _checkHealth() now handles WS connect + RPC discovery internally,
-      // so we don't need to duplicate that logic here.
       unawaited(_checkHealth());
-      // Fire token/dashboard URL fetch in parallel — don't block the UI.
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-    } else {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] GatewayService.init: alreadyRunning=$alreadyRunning, autoStartGateway=${prefs.autoStartGateway}']
-      ));
-      if (prefs.autoStartGateway) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[INFO] Auto-starting gateway...'],
-        ));
-        // Don't await here to avoid blocking splash screen if initialization takes time
-        start();
-      }
+      return;
     }
+
+    // Not running. Should we start it?
+    if (!autoStart && !forceStart) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[DEBUG] Gateway not running. Auto-start is off.']
+      ));
+      return;
+    }
+
+    // Attempting a fresh start
+    _isStarting = true;
+    _updateState(_state.copyWith(
+      status: GatewayStatus.starting,
+      clearError: true,
+      logs: [..._state.logs, '[INFO] Starting gateway...'],
+      dashboardUrl: savedUrl,
+    ));
+
+    try {
+      await NativeBridge.acquirePartialWakeLock();
+      await _configureGateway();
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      final success = await NativeBridge.startGateway();
+      
+      if (!success) {
+        throw Exception('Native start failed.');
+      }
+      
+      await Future.delayed(const Duration(seconds: 1));
+      _subscribeLogs();
+      _startHealthCheck();
+      await fetchAuthenticatedDashboardUrl(force: true);
+    } catch (e) {
+      _updateState(_state.copyWith(
+        status: GatewayStatus.error,
+        errorMessage: 'Failed to start: $e',
+        logs: [..._state.logs, '[ERROR] Failed to start: $e'],
+      ));
+    } finally {
+      _isStarting = false;
+    }
+  }
+
+  Future<void> start() async {
+    await _attachOrStart(forceStart: true);
   }
 
   /// NEW: Validate that the gateway process is actually ready to serve requests
@@ -407,7 +452,8 @@ class GatewayService {
     // Check multiple potential paths in the JSON
     final token = config['gateway']?['auth']?['token'] as String? ??
                  config['gateway']?['token'] as String? ??
-                 config['gateway']?['apiKey'] as String?;
+                 config['gateway']?['apiKey'] as String? ??
+                 config['auth']?['token'] as String?;
     
     if (token != null && token.isNotEmpty) {
       _cachedToken = token;
@@ -429,55 +475,10 @@ class GatewayService {
   }
 
 
-  Future<void> start() async {
-    // IDEMPOTENCY GUARD: Don't start if already active
-    if (_state.status == GatewayStatus.running || _state.status == GatewayStatus.starting) {
-      return;
-    }
-
-    final prefs = PreferencesService();
-      
-      await _configureGateway();
-      // Android 14+ requires the activity to be fully visible before
-      // startForegroundService(). Reduced delay for perceived speed.
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      final success = await NativeBridge.startGateway();
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] GatewayService.start: NativeBridge.startGateway success=$success'],
-      ));
-
-      // PROD UPGRADE: Proactive Check for Battery Optimization
-      try {
-        final isOptimized = await NativeBridge.isBatteryOptimized();
-        if (isOptimized) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE. This may kill the server in the background.'],
-          ));
-          await NativeBridge.requestBatteryOptimization();
-        }
-      } catch (_) {}
-
-      if (!success) {
-        throw Exception('Native start failed. Check your PRoot installation or Force Reinstall in settings.');
-      }
-      
-      await Future.delayed(const Duration(seconds: 1)); // Give tmux/proot time (reduced from 3s)
-      _subscribeLogs();
-      _startHealthCheck();
-      
-      // Proactively acquire auth token
-      await fetchAuthenticatedDashboardUrl(force: true);
-    } catch (e) {
-      _updateState(_state.copyWith(
-        status: GatewayStatus.error,
-        errorMessage: 'Failed to start: $e',
-        logs: [..._state.logs, '[ERROR] Failed to start: $e'],
-      ));
-    }
-  }
 
   Future<void> stop() async {
+    if (_isStopping) return;
+    _isStopping = true;
     _healthTimer?.cancel();
     _logSubscription?.cancel();
 
@@ -492,6 +493,8 @@ class GatewayService {
         status: GatewayStatus.error,
         errorMessage: 'Failed to stop: $e',
       ));
+    } finally {
+      _isStopping = false;
     }
   }
 
@@ -577,7 +580,8 @@ class GatewayService {
         }
 
         if (token == null || token.isEmpty) {
-          // Token not available yet — not fatal, next tick will retry
+          // Actively probe for token in background so it's ready before the next tick
+          unawaited(fetchAuthenticatedDashboardUrl(force: true));
           return;
         }
 
@@ -671,8 +675,13 @@ class GatewayService {
           status: GatewayStatus.stopped,
           logs: [..._state.logs, '[WARN] Gateway process not running'],
         ));
-        // NOTE: Do NOT cancel the timer here. Keep polling so we detect
-        // when the gateway restarts (e.g. auto-restart via WorkManager).
+
+        // SELF-HEALING: Auto-restart if dead and policy allows
+        final prefs = PreferencesService();
+        await prefs.init();
+        if (prefs.autoStartGateway) {
+          unawaited(_attachOrStart(autoStart: true));
+        }
       }
     } finally {
       _healthCheckInFlight = false;
@@ -702,6 +711,15 @@ class GatewayService {
     try {
       token = await retrieveTokenFromConfig();
     } catch (_) {}
+
+    // Lazy recovery: if not cached yet, do one live CLI probe before giving up.
+    // By the time the user sends their first message the gateway is always stable.
+    if (token == null || token.isEmpty) {
+      try {
+        await fetchAuthenticatedDashboardUrl(force: true);
+        token = await retrieveTokenFromConfig();
+      } catch (_) {}
+    }
 
     if (token == null || token.isEmpty) {
       yield '[Error] No gateway auth token available.\n'
@@ -956,7 +974,7 @@ class GatewayService {
     try {
       final response = await http
           .post(
-            Uri.parse('http://127.0.0.1:8081/v1/chat/completions'),
+            Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'model': 'local-llm',
