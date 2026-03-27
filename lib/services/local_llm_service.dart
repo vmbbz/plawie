@@ -399,11 +399,16 @@ class LocalLlmService {
 
   Future<bool> _isModelInstalled(LocalLlmModel model) async {
     try {
-      final result = await NativeBridge.runInProot(
-        'test -f "${model.prootModelPath}" && echo "exists"',
-        timeout: 5,
-      );
-      return result.trim() == 'exists';
+      // Check host filesystem directly — no PRoot needed, instant, never
+      // times out. PRoot maps {appSupportDir}/rootfs → /, so the model at
+      // /root/.openclaw/models/<file> lives on the host at rootfs/root/...
+      final appSupportDir = await getApplicationSupportDirectory();
+      final hostPath =
+          '${appSupportDir.path}/rootfs${model.prootModelPath}';
+      final file = File(hostPath);
+      if (!await file.exists()) return false;
+      // Guard against a 0-byte or corrupt partial file
+      return await file.length() > 1048576; // > 1 MB
     } catch (_) {
       return false;
     }
@@ -505,11 +510,12 @@ class LocalLlmService {
 
   Future<bool> _isMmProjInstalled(LocalLlmModel model) async {
     try {
-      final result = await NativeBridge.runInProot(
-        'test -f "${model.prootMmProjPath}" && echo "exists"',
-        timeout: 5,
-      );
-      return result.trim() == 'exists';
+      final appSupportDir = await getApplicationSupportDirectory();
+      final hostPath =
+          '${appSupportDir.path}/rootfs${model.prootMmProjPath}';
+      final file = File(hostPath);
+      if (!await file.exists()) return false;
+      return await file.length() > 1048576;
     } catch (_) {
       return false;
     }
