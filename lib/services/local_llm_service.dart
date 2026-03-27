@@ -403,7 +403,8 @@ class LocalLlmService {
         'mkdir -p /tmp/llama_build && '
         'curl -L -C - --retry 3 --retry-delay 10 --connect-timeout 30 '
         '-o /tmp/llama_src.tar.gz '
-        '"https://github.com/ggml-org/llama.cpp/archive/refs/heads/master.tar.gz" && '
+        // Pinned to b8546 (March 2026 stable, Grok-verified) — reproducible builds
+        '"https://github.com/ggml-org/llama.cpp/archive/refs/tags/b8546.tar.gz" && '
         'tar -xzf /tmp/llama_src.tar.gz -C /tmp/llama_build --strip-components=1 && '
         'rm -f /tmp/llama_src.tar.gz',
         timeout: 900,
@@ -418,10 +419,15 @@ class LocalLlmService {
       await NativeBridge.runInProot(
         'cmake -S /tmp/llama_build -B /tmp/llama_build/build '
         '-DCMAKE_BUILD_TYPE=Release '
+        '-DGGML_NATIVE=OFF '       // no host-specific ISA — portable ARM64
         '-DLLAMA_NATIVE=OFF '
-        '-DGGML_NATIVE=OFF '
+        '-DGGML_CPU_ARM_V8=ON '    // explicit ARM64 SIMD path (Grok-recommended)
         '-DLLAMA_BUILD_TESTS=OFF '
-        '-DLLAMA_BUILD_EXAMPLES=OFF '
+        // NOTE: -DLLAMA_BUILD_EXAMPLES=OFF removed — in some llama.cpp versions
+        // the server target is classified as an example; excluding examples silently
+        // skips the server build. Use explicit server flags instead:
+        '-DLLAMA_BUILD_SERVER=ON '
+        '-DLLAMA_SERVER=ON '
         '-DBUILD_SHARED_LIBS=OFF '
         '-G Ninja',
         timeout: 120,
@@ -444,10 +450,9 @@ class LocalLlmService {
       ));
       await NativeBridge.runInProot(
         'mkdir -p /root/.openclaw/bin && '
-        r'BINARY=$(find /tmp/llama_build/build -name "llama-server" -type f | head -1) && '
-        r'[ -n "$BINARY" ] || { echo "ERROR: llama-server binary not found after build"; exit 1; } && '
-        r'cp "$BINARY" /root/.openclaw/bin/llama-server && '
-        'chmod +x /root/.openclaw/bin/llama-server && '
+        // Try canonical path first (b8546 build output), fall back to find for safety
+        r'install -D -m 755 /tmp/llama_build/build/bin/llama-server /root/.openclaw/bin/llama-server 2>/dev/null || '
+        r'install -D -m 755 $(find /tmp/llama_build/build -name "llama-server" -type f | head -1) /root/.openclaw/bin/llama-server && '
         '/root/.openclaw/bin/llama-server --version && '
         'rm -rf /tmp/llama_build',
         timeout: 60,
