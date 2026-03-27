@@ -206,8 +206,16 @@ class BootstrapService {
       // ---------------------------------------------------------
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Installing OpenClaw (this may take a few minutes)...', 80);
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && npm install -g openclaw', timeout: 1800);
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Verifying OpenClaw installation...', 80);
+      
+      final checkOpenClaw = await NativeBridge.runInProot('command -v openclaw || echo "missing"');
+      if (checkOpenClaw.contains('missing')) {
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Installing OpenClaw (this may take 10-15 minutes, please wait)...', 82);
+        // --ignore-scripts: skip node-llama-cpp postinstall (cmake build) — fails on phones
+        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && npm install -g openclaw --ignore-scripts', timeout: 1800);
+      } else {
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.5, 'OpenClaw already installed, skipping...', 84);
+      }
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.7, 'Creating bin wrappers...', 85);
       await NativeBridge.createBinWrappers('openclaw');
