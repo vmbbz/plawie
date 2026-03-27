@@ -360,10 +360,10 @@ class LocalLlmService {
       final result = await NativeBridge.runInProot(
         'test -x /root/.openclaw/bin/llama-server && '
         r'[ $(stat -c%s /root/.openclaw/bin/llama-server 2>/dev/null || echo 0) -gt 1048576 ] && '
-        'echo "exists"',
+        'echo "YES" || echo "NO"',
         timeout: 5,
       );
-      return result.trim() == 'exists';
+      return result.trim() == 'YES';
     } catch (_) {
       return false;
     }
@@ -380,81 +380,76 @@ class LocalLlmService {
     ));
 
     try {
-      // Stage 1 — Install build tools
+      // Stage 1 — Install minimal build deps (build-essential = gcc/g++/make)
       _updateState(_state.copyWith(
         downloadProgress: 0.05,
-        errorMessage: 'Installing build tools (cmake, g++, git)...',
+        errorMessage: 'Stage 1/5: Installing build tools...',
       ));
       await NativeBridge.runInProot(
         'apt-get update -qq && apt-get install -y --no-install-recommends '
-        'cmake g++ make git ninja-build 2>&1 | tail -5',
+        'cmake build-essential pkg-config ca-certificates ninja-build 2>&1 | tail -5',
         timeout: 300,
       );
 
-      // Stage 2 — Download llama.cpp source tarball
-      // Tarball (~120 MB) is faster than git clone and supports -C - (resume).
-      // Timeout 900 s covers slow mobile connections (~1 Mbps).
+      // Stage 2 — Download llama.cpp b8548 source tarball
+      // - Pinned to b8548 (Grok-verified stable, March 2026)
+      // - curl -C - resumes partial downloads; --retry 3 handles transient failures
+      // - Build into /root/.openclaw/llama.cpp (persistent) so source survives a
+      //   Stage 4 timeout — tap Start again without re-downloading 120 MB
       _updateState(_state.copyWith(
         downloadProgress: 0.15,
-        errorMessage: 'Stage 2/5: Downloading llama.cpp source (~120 MB)\nKeep WiFi on — tap Start again if interrupted.',
+        errorMessage: 'Stage 2/5: Downloading llama.cpp b8548 (~120 MB)\nKeep WiFi on — tap Start again if interrupted.',
       ));
       await NativeBridge.runInProot(
-        // -C - resumes a partial download; --retry 3 retries transient failures
-        'mkdir -p /tmp/llama_build && '
+        'rm -rf /root/.openclaw/llama.cpp && '
+        'mkdir -p /root/.openclaw/llama.cpp && '
         'curl -L -C - --retry 3 --retry-delay 10 --connect-timeout 30 '
         '-o /tmp/llama_src.tar.gz '
-        // Pinned to b8546 (March 2026 stable, Grok-verified) — reproducible builds
-        '"https://github.com/ggml-org/llama.cpp/archive/refs/tags/b8546.tar.gz" && '
-        'tar -xzf /tmp/llama_src.tar.gz -C /tmp/llama_build --strip-components=1 && '
+        '"https://github.com/ggml-org/llama.cpp/archive/refs/tags/b8548.tar.gz" && '
+        'tar -xzf /tmp/llama_src.tar.gz -C /root/.openclaw/llama.cpp --strip-components=1 && '
         'rm -f /tmp/llama_src.tar.gz',
         timeout: 900,
       );
 
-      // Stage 3 — Configure cmake
-      // LLAMA_NATIVE=OFF / GGML_NATIVE=OFF: portable ARM64 binary, no host-ISA extensions
+      // Stage 3 — Configure cmake (Grok final reconciled flags)
       _updateState(_state.copyWith(
         downloadProgress: 0.30,
         errorMessage: 'Stage 3/5: Configuring build (cmake)...',
       ));
       await NativeBridge.runInProot(
-        'cmake -S /tmp/llama_build -B /tmp/llama_build/build '
+        'cmake -S /root/.openclaw/llama.cpp -B /root/.openclaw/llama.cpp/build '
         '-DCMAKE_BUILD_TYPE=Release '
-        '-DGGML_NATIVE=OFF '       // no host-specific ISA — portable ARM64
-        '-DLLAMA_NATIVE=OFF '
-        '-DGGML_CPU_ARM_V8=ON '    // explicit ARM64 SIMD path (Grok-recommended)
-        '-DLLAMA_BUILD_TESTS=OFF '
-        // NOTE: -DLLAMA_BUILD_EXAMPLES=OFF removed — in some llama.cpp versions
-        // the server target is classified as an example; excluding examples silently
-        // skips the server build. Use explicit server flags instead:
+        '-DGGML_CPU_ARM_V8=ON '   // ARM64 SIMD — Grok-verified
+        '-DGGML_NATIVE=OFF '      // no host-specific ISA extensions
+        '-DLLAMA_SERVER=ON '      // explicit server target
         '-DLLAMA_BUILD_SERVER=ON '
-        '-DLLAMA_SERVER=ON '
-        '-DBUILD_SHARED_LIBS=OFF '
         '-G Ninja',
         timeout: 120,
       );
 
-      // Stage 4 — Compile (-j2 avoids thermal throttling on mobile)
+      // Stage 4 — Compile; -j2 keeps RAM low to avoid LMKD kills on mobile
       _updateState(_state.copyWith(
         downloadProgress: 0.40,
         errorMessage: 'Stage 4/5: Compiling llama-server...\n20–40 min — keep screen on, do not close app.',
       ));
       await NativeBridge.runInProot(
-        'cmake --build /tmp/llama_build/build --target llama-server -j2',
-        timeout: 2400, // 40 minutes — compilation is slow on mobile
+        'cmake --build /root/.openclaw/llama.cpp/build '
+        '--config Release --target llama-server -j2',
+        timeout: 2400,
       );
 
-      // Stage 5 — Install binary, verify, clean up source tree
+      // Stage 5 — Install binary, verify with --version, clean up 300 MB source tree
       _updateState(_state.copyWith(
         downloadProgress: 0.95,
         errorMessage: 'Stage 5/5: Installing binary...',
       ));
       await NativeBridge.runInProot(
         'mkdir -p /root/.openclaw/bin && '
-        // Try canonical path first (b8546 build output), fall back to find for safety
-        r'install -D -m 755 /tmp/llama_build/build/bin/llama-server /root/.openclaw/bin/llama-server 2>/dev/null || '
-        r'install -D -m 755 $(find /tmp/llama_build/build -name "llama-server" -type f | head -1) /root/.openclaw/bin/llama-server && '
+        'install -D -m 755 '
+        '/root/.openclaw/llama.cpp/build/bin/llama-server '
+        '/root/.openclaw/bin/llama-server && '
         '/root/.openclaw/bin/llama-server --version && '
-        'rm -rf /tmp/llama_build',
+        'rm -rf /root/.openclaw/llama.cpp',
         timeout: 60,
       );
 
