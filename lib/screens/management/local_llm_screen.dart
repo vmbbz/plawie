@@ -210,10 +210,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              '${(_state.downloadProgress * 100).toStringAsFixed(1)}%',
-              style: TextStyle(color: color, fontSize: 11),
-            ),
+            if (_state.errorMessage != null)
+              Text(
+                _state.errorMessage!,
+                style: TextStyle(color: color, fontSize: 11),
+                textAlign: TextAlign.center,
+              )
+            else
+              Text(
+                '${(_state.downloadProgress * 100).toStringAsFixed(1)}%',
+                style: TextStyle(color: color, fontSize: 11),
+              ),
           ],
           if (_state.status == LocalLlmStatus.error &&
               _state.errorMessage != null) ...[

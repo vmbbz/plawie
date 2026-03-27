@@ -391,22 +391,29 @@ class LocalLlmService {
         timeout: 300,
       );
 
-      // Stage 2 — Clone llama.cpp (shallow clone of latest commit)
+      // Stage 2 — Download llama.cpp source tarball
+      // Tarball (~120 MB) is faster than git clone and supports -C - (resume).
+      // Timeout 900 s covers slow mobile connections (~1 Mbps).
       _updateState(_state.copyWith(
         downloadProgress: 0.15,
-        errorMessage: 'Cloning llama.cpp source...',
+        errorMessage: 'Stage 2/5: Downloading llama.cpp source (~120 MB)\nKeep WiFi on — tap Start again if interrupted.',
       ));
       await NativeBridge.runInProot(
-        'rm -rf /tmp/llama_build && '
-        'git clone --depth 1 https://github.com/ggerganov/llama.cpp.git /tmp/llama_build',
-        timeout: 300,
+        // -C - resumes a partial download; --retry 3 retries transient failures
+        'mkdir -p /tmp/llama_build && '
+        'curl -L -C - --retry 3 --retry-delay 10 --connect-timeout 30 '
+        '-o /tmp/llama_src.tar.gz '
+        '"https://github.com/ggml-org/llama.cpp/archive/refs/heads/master.tar.gz" && '
+        'tar -xzf /tmp/llama_src.tar.gz -C /tmp/llama_build --strip-components=1 && '
+        'rm -f /tmp/llama_src.tar.gz',
+        timeout: 900,
       );
 
       // Stage 3 — Configure cmake
       // LLAMA_NATIVE=OFF / GGML_NATIVE=OFF: portable ARM64 binary, no host-ISA extensions
       _updateState(_state.copyWith(
-        downloadProgress: 0.25,
-        errorMessage: 'Configuring build (cmake)...',
+        downloadProgress: 0.30,
+        errorMessage: 'Stage 3/5: Configuring build (cmake)...',
       ));
       await NativeBridge.runInProot(
         'cmake -S /tmp/llama_build -B /tmp/llama_build/build '
@@ -422,8 +429,8 @@ class LocalLlmService {
 
       // Stage 4 — Compile (-j2 avoids thermal throttling on mobile)
       _updateState(_state.copyWith(
-        downloadProgress: 0.3,
-        errorMessage: 'Compiling llama-server (20–40 min on first run)...',
+        downloadProgress: 0.40,
+        errorMessage: 'Stage 4/5: Compiling llama-server...\n20–40 min — keep screen on, do not close app.',
       ));
       await NativeBridge.runInProot(
         'cmake --build /tmp/llama_build/build --target llama-server -j2',
@@ -433,7 +440,7 @@ class LocalLlmService {
       // Stage 5 — Install binary, verify, clean up source tree
       _updateState(_state.copyWith(
         downloadProgress: 0.95,
-        errorMessage: 'Installing binary...',
+        errorMessage: 'Stage 5/5: Installing binary...',
       ));
       await NativeBridge.runInProot(
         'mkdir -p /root/.openclaw/bin && '
@@ -451,11 +458,10 @@ class LocalLlmService {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
         errorMessage:
-            'llama-server build failed.\n'
-            'This is a one-time compile step (~30 min). Common causes:\n'
-            '1. Network issue during git clone — retry with WiFi\n'
-            '2. Storage full — free ≥2 GB and retry\n'
-            '3. Build timeout — retry (compilation is slower on some devices)\n\n'
+            'llama-server build failed — tap Start to retry.\n'
+            '1. Network timeout: download progress is preserved; retry on WiFi\n'
+            '2. Storage full: free ≥2 GB then retry\n'
+            '3. Slow device: tap Start again — compilation resumes\n\n'
             'Error: $e',
       ));
     }
@@ -491,61 +497,79 @@ class LocalLlmService {
     _updateState(_state.copyWith(
       status: LocalLlmStatus.downloading,
       downloadProgress: 0.0,
+      errorMessage: 'Connecting...',
     ));
 
     try {
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/${model.filename}');
 
-      final url = Uri.parse(model.huggingFaceUrl);
-      final httpClient = HttpClient();
-      httpClient.connectionTimeout = const Duration(seconds: 20);
-      
-      final request = await httpClient.getUrl(url).timeout(const Duration(seconds: 20));
-      // Follow redirects automatically by default, but let's be explicit if needed
-      // HttpClient follows up to 5 redirects by default.
-      
-      final response = await request.close().timeout(const Duration(seconds: 20));
+      // Resume: check bytes already saved from a previous partial download
+      final alreadyBytes = await tmpFile.exists() ? await tmpFile.length() : 0;
 
-      if (response.statusCode != 200) {
-        throw HttpException('Model download failed: HTTP ${response.statusCode}');
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 30);
+      final request = await client.getUrl(Uri.parse(model.huggingFaceUrl))
+          .timeout(const Duration(seconds: 30));
+      if (alreadyBytes > 0) {
+        request.headers.add('Range', 'bytes=$alreadyBytes-');
       }
+      final response = await request.close().timeout(const Duration(seconds: 30));
 
-      final total = response.contentLength != -1 ? response.contentLength : 0;
-      int received = 0;
-      final sink = tmpFile.openWrite();
-
-      try {
-        await for (final chunk in response.timeout(const Duration(seconds: 60))) {
-          sink.add(chunk);
-          received += chunk.length;
-          if (total > 0) {
-            _updateState(_state.copyWith(downloadProgress: received / total));
-          }
+      // 416 = Range Not Satisfiable: file already complete but not installed
+      if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
+        // tmpFile is complete — skip download, go straight to install
+      } else {
+        final isResume = response.statusCode == HttpStatus.partialContent; // 206
+        if (response.statusCode != HttpStatus.ok && !isResume) {
+          throw HttpException('Download failed: HTTP ${response.statusCode}');
         }
-      } finally {
-        await sink.close();
+
+        // If server ignored Range (returned 200), overwrite; else append
+        final openMode = isResume ? FileMode.append : FileMode.write;
+        final startOffset = isResume ? alreadyBytes : 0;
+        final serverLength = response.contentLength != -1 ? response.contentLength : 0;
+        final totalBytes = serverLength > 0 ? startOffset + serverLength : 0;
+        int received = startOffset;
+
+        String fmtMb(int b) => '${(b / 1048576).toStringAsFixed(1)} MB';
+
+        final sink = tmpFile.openWrite(mode: openMode);
+        try {
+          await for (final chunk in response.timeout(const Duration(seconds: 60))) {
+            sink.add(chunk);
+            received += chunk.length;
+            final progress = totalBytes > 0 ? received / totalBytes : 0.0;
+            final label = totalBytes > 0
+                ? 'Downloading: ${fmtMb(received)} / ${fmtMb(totalBytes)}'
+                : 'Downloading: ${fmtMb(received)}';
+            _updateState(_state.copyWith(
+              downloadProgress: progress,
+              errorMessage: label,
+            ));
+          }
+        } finally {
+          await sink.close();
+        }
       }
 
-      // Copy model into PRoot filesystem using mapped host path
+      // Install into PRoot filesystem
+      _updateState(_state.copyWith(errorMessage: 'Installing model into PRoot...'));
       final appSupportDir = await getApplicationSupportDirectory();
       final prootPath = '${appSupportDir.path}/rootfs';
       final hostProotModelPath = '$prootPath${model.prootModelPath}';
-      
-      // Ensure target directory exists on the host side
       final targetDir = Directory('$prootPath/root/.openclaw/models');
       if (!await targetDir.exists()) {
         await targetDir.create(recursive: true);
       }
-      
       await tmpFile.copy(hostProotModelPath);
       await tmpFile.delete();
 
-      _updateState(_state.copyWith(downloadProgress: 1.0));
+      _updateState(_state.copyWith(downloadProgress: 1.0, errorMessage: null));
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'Model download failed: $e',
+        errorMessage: 'Model download failed: $e\nTap Start to resume from where it stopped.',
       ));
     }
   }
