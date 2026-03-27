@@ -480,44 +480,34 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             .toSet()
         : (_offlineInstalledIds?.toSet() ?? <String>{});
 
-    // Build display entries: gateway live data enriched with premium metadata.
-    // When the gateway is stopped, fall back to the CLI-discovered IDs so the
-    // grid is not empty just because the gateway process is down.
-    final List<_SkillEntry> installedEntries;
-    if (rawSkills.isNotEmpty) {
-      installedEntries = rawSkills.map((s) {
-        final id =
-            (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ??
-                '';
-        return widget.premiumSkills.firstWhere(
-          (p) => p.id == id,
-          orElse: () => _SkillEntry(
-            id: id,
-            title: (s['title'] ?? s['name'] ?? id).toString(),
-            subtitle: (s['author'] ?? 'Plugin').toString(),
-            description:
-                (s['description'] ?? 'An installed OpenClaw skill.').toString(),
-            icon: Icons.extension_rounded,
-            color: Colors.blueGrey,
-          ),
-        );
-      }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
-    } else {
-      // Gateway stopped — show what the CLI reported as installed
-      installedEntries = (_offlineInstalledIds ?? []).map((id) {
-        return widget.premiumSkills.firstWhere(
-          (p) => p.id == id,
-          orElse: () => _SkillEntry(
-            id: id,
-            title: id,
-            subtitle: 'Installed',
-            description: 'An installed OpenClaw skill.',
-            icon: Icons.extension_rounded,
-            color: Colors.blueGrey,
-          ),
-        );
-      }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
-    }
+    // Always show ALL premium skills in the grid (restored from pre-Option-C).
+    // Enrich each premium entry with live gateway data where available.
+    // installedIds is used to set the active border and determine tap behaviour.
+    final List<_SkillEntry> mergedSkills = widget.premiumSkills
+        .where((p) => p.id != 'local-llm') // local-llm has its own pinned card
+        .map((p) {
+      final liveData = rawSkills.cast<Map<String, dynamic>?>().firstWhere(
+        (s) {
+          final id = (s?['id'] ?? s?['name'] ?? s?['skillId'])
+                  ?.toString()
+                  .toLowerCase() ??
+              '';
+          return id == p.id || id.contains(p.id.replaceAll('-', '_'));
+        },
+        orElse: () => null,
+      );
+      if (liveData == null) return p;
+      return _SkillEntry(
+        id: p.id,
+        title: liveData['title']?.toString() ?? p.title,
+        subtitle: liveData['name']?.toString() ?? p.subtitle,
+        description: liveData['description']?.toString() ?? p.description,
+        icon: p.icon,
+        color: p.color,
+        tooltip: liveData['description']?.toString() ?? p.tooltip,
+        comingSoon: p.comingSoon,
+      );
+    }).toList();
 
     return CustomScrollView(
       slivers: [
@@ -538,53 +528,45 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             ),
           ),
         ),
-        // ── Installed skills grid ─────────────────────────────────────────
+        // ── Premium skills grid — always shows all 6 cards ───────────────
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
-            child: _sectionLabel(
-              installedEntries.isEmpty
-                  ? 'INSTALLED SKILLS'
-                  : 'INSTALLED SKILLS  ·  ${installedEntries.length}',
-            ),
+            child: _sectionLabel('PREMIUM AGENT SERVICES'),
           ),
         ),
-        if (isLoading)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 14,
+              childAspectRatio: 1.05,
             ),
-          )
-        else if (installedEntries.isEmpty)
-          SliverToBoxAdapter(
-            child: _EmptyState(
-              icon: Icons.extension_off_rounded,
-              message: gatewayState.status == GatewayStatus.stopped
-                  ? 'Start your gateway to see active skills'
-                  : 'No skills installed yet\nDiscover skills in the Discover tab',
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 1.05,
-              ),
-              delegate: SliverChildListDelegate([
-                for (final skill in installedEntries)
-                  _ServiceCard(
-                    skill: skill,
-                    isInstalled: true,
-                    onTap: () => widget.onNavigate(skill.id),
-                  ),
-              ]),
-            ),
+            delegate: SliverChildListDelegate([
+              for (final skill in mergedSkills)
+                _ServiceCard(
+                  skill: skill,
+                  isInstalled: installedIds.contains(skill.id) ||
+                      installedIds.any((id) =>
+                          id.contains(skill.id) ||
+                          id.contains(skill.id.replaceAll('-', '_'))),
+                  onTap: () {
+                    final installed = installedIds.contains(skill.id) ||
+                        installedIds.any((id) =>
+                            id.contains(skill.id) ||
+                            id.contains(skill.id.replaceAll('-', '_')));
+                    if (installed || skill.comingSoon) {
+                      widget.onNavigate(skill.id);
+                    } else {
+                      widget.onShowPrompt(skill);
+                    }
+                  },
+                ),
+            ]),
           ),
+        ),
         // ── MoltLaunch register banner ─────────────────────────────────────
         SliverToBoxAdapter(
           child: Padding(
