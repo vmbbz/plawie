@@ -353,15 +353,17 @@ class LocalLlmService {
 
   Future<bool> _isBinaryInstalled() async {
     try {
-      // Validate the binary is a real ELF executable, not a stub/corrupt file.
-      // A real llama-server binary is 5–15 MB; the old broken download left a
-      // 9-byte GitHub 404 redirect file that passes `test -x` but crashes the OS.
-      // stat -c%s returns the file size in bytes; we require > 1 MB.
+      // Validate binary: must exist, be >1 MB, and actually execute.
+      // Size check catches the old 9-byte GitHub 404 stub.
+      // --version check catches dynamically-linked binaries whose shared libs
+      // were deleted with the source tree (the binary passes `test -x` but
+      // crashes with "no such file" for libggml.so etc. at runtime).
       final result = await NativeBridge.runInProot(
         'test -x /root/.openclaw/bin/llama-server && '
         r'[ $(stat -c%s /root/.openclaw/bin/llama-server 2>/dev/null || echo 0) -gt 1048576 ] && '
+        '/root/.openclaw/bin/llama-server --version >/dev/null 2>&1 && '
         'echo "YES" || echo "NO"',
-        timeout: 5,
+        timeout: 10,
       );
       return result.trim() == 'YES';
     } catch (_) {
@@ -419,10 +421,11 @@ class LocalLlmService {
       await NativeBridge.runInProot(
         'cmake -S /root/.openclaw/llama.cpp -B /root/.openclaw/llama.cpp/build '
         '-DCMAKE_BUILD_TYPE=Release '
-        '-DGGML_CPU_ARM_V8=ON '   // ARM64 SIMD — Grok-verified
-        '-DGGML_NATIVE=OFF '      // no host-specific ISA extensions
-        '-DLLAMA_SERVER=ON '      // explicit server target
+        '-DGGML_CPU_ARM_V8=ON '      // ARM64 SIMD — Grok-verified
+        '-DGGML_NATIVE=OFF '         // no host-specific ISA extensions
+        '-DLLAMA_SERVER=ON '         // explicit server target
         '-DLLAMA_BUILD_SERVER=ON '
+        '-DBUILD_SHARED_LIBS=OFF '   // static link: binary works without the source tree
         '-G Ninja',
         timeout: 120,
       );
@@ -720,6 +723,8 @@ sleep 2
 # Check if process is actually running
 if ! kill -0 \$SERVER_PID 2>/dev/null; then
   echo "[llama-server] ERROR: Process died immediately"
+  echo "[crash-log]"
+  tail -30 /root/.openclaw/llama-server.log 2>/dev/null || echo "(no log file)"
   exit 1
 fi
 
