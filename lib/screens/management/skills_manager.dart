@@ -591,10 +591,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: _MoltLaunchBanner(
               isInstalled: installedIds.any((id) => id.contains('molt')),
-              onRegister: () => widget.onShowPrompt(
-                widget.premiumSkills
-                    .firstWhere((p) => p.id == 'molt-launch'),
-              ),
+              onRegister: () => widget.onNavigate('molt-launch'),
             ),
           ),
         ),
@@ -1594,46 +1591,50 @@ class _MoltLaunchBanner extends StatelessWidget {
         ),
       );
     }
-    // Coming-soon state — no install button, just context
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [
-          Colors.orange.withValues(alpha: 0.06),
-          Colors.deepOrange.withValues(alpha: 0.03),
-        ]),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.15)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
+    // Preview state — page exists, tap to open it
+    return GestureDetector(
+      onTap: onRegister,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [
+            Colors.orange.withValues(alpha: 0.06),
+            Colors.deepOrange.withValues(alpha: 0.03),
+          ]),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.work_outline_rounded,
+                  color: Colors.orange, size: 18),
             ),
-            child: const Icon(Icons.work_outline_rounded,
-                color: Colors.orange, size: 18),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('MoltLaunch — On-chain Agent Jobs',
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('MoltLaunch — On-chain Agent Jobs',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 13)),
+                  SizedBox(height: 2),
+                  Text(
+                    'AI job marketplace · ERC-8004 identity · ETH escrow on Base',
                     style: TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13)),
-                SizedBox(height: 2),
-                Text(
-                  'Coming soon — find it in the Discover tab once the registry slug is confirmed',
-                  style: TextStyle(
-                      color: AppColors.statusGrey, fontSize: 11, height: 1.4),
-                ),
-              ],
+                        color: AppColors.statusGrey, fontSize: 11, height: 1.4),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const Icon(Icons.chevron_right_rounded, color: Colors.orange, size: 20),
+          ],
+        ),
       ),
     );
   }
