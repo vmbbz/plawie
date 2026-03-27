@@ -530,43 +530,57 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             ),
           ),
         ),
-        // ── Premium skills grid — always shows all 6 cards ───────────────
+        // ── Premium skills grid — always shows all cards ─────────────────
+        // Uses SliverToBoxAdapter + LayoutBuilder-based grid to avoid the
+        // SliverGrid zero-height bug inside NestedScrollView bodies.
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
-            child: _sectionLabel('PREMIUM AGENT SERVICES'),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-              childAspectRatio: 1.05,
-            ),
-            delegate: SliverChildListDelegate([
-              for (final skill in mergedSkills)
-                _ServiceCard(
-                  skill: skill,
-                  isInstalled: installedIds.contains(skill.id) ||
-                      installedIds.any((id) =>
-                          id.contains(skill.id) ||
-                          id.contains(skill.id.replaceAll('-', '_'))),
-                  onTap: () {
-                    final installed = installedIds.contains(skill.id) ||
-                        installedIds.any((id) =>
-                            id.contains(skill.id) ||
-                            id.contains(skill.id.replaceAll('-', '_')));
-                    if (installed || skill.comingSoon) {
-                      widget.onNavigate(skill.id);
-                    } else {
-                      widget.onShowPrompt(skill);
-                    }
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionLabel('PREMIUM AGENT SERVICES'),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardW = (constraints.maxWidth - 14) / 2;
+                    final cardH = cardW / 1.05;
+                    return Wrap(
+                      spacing: 14,
+                      runSpacing: 14,
+                      children: [
+                        for (final skill in mergedSkills)
+                          SizedBox(
+                            width: cardW,
+                            height: cardH,
+                            child: _ServiceCard(
+                              skill: skill,
+                              isInstalled: installedIds.contains(skill.id) ||
+                                  installedIds.any((id) =>
+                                      id.contains(skill.id) ||
+                                      id.contains(
+                                          skill.id.replaceAll('-', '_'))),
+                              onTap: () {
+                                final installed =
+                                    installedIds.contains(skill.id) ||
+                                        installedIds.any((id) =>
+                                            id.contains(skill.id) ||
+                                            id.contains(skill.id
+                                                .replaceAll('-', '_')));
+                                if (installed || skill.comingSoon) {
+                                  widget.onNavigate(skill.id);
+                                } else {
+                                  widget.onShowPrompt(skill);
+                                }
+                              },
+                            ),
+                          ),
+                      ],
+                    );
                   },
                 ),
-            ]),
+              ],
+            ),
           ),
         ),
         // ── MoltLaunch register banner ─────────────────────────────────────
