@@ -699,18 +699,11 @@ class GatewayService {
       return;
     }
 
-    // Local LLM: always use HTTP with explicit model param so the gateway routes
-    // to node-llama-cpp directly. WS chat.send uses session config which may lag
-    // behind openclaw reload; the HTTP model param is always authoritative.
-    // Conversation history is passed in the messages array for multi-turn context.
-    if (model.startsWith('local-llm/')) {
-      yield* sendMessageHttp(message,
-          model: model, token: token, conversationHistory: conversationHistory);
-      return;
-    }
-
-    // Cloud models: use persistent WS connection for server-side session persistence.
-    // _ensureWebSocket() handles creation, listener registration, and connect — single path.
+    // All models (cloud + local-llm) use the WS chat.send path.
+    // Gateway routes based on agents.defaults.model.primary in its running config.
+    // For local-llm: after openclaw reload + disconnectWebSocket(), the new WS
+    // session picks up the patched config automatically.
+    // HTTP /v1/chat/completions is NOT served on port 18789 — WS is the only path.
     final wsOk = await _ensureWebSocket(token);
     if (!wsOk) {
       yield* sendMessageHttp(message, model: model, token: token,
