@@ -1,336 +1,1173 @@
-# ARCHITECTURE: Local LLM Integration Strategy for Plawie
+# ARCHITECTURE: Local LLM on Android — Plawie / OpenClaw
 
-**Document type:** Research & Architecture Proposal  
-**Author:** Antigravity (Google DeepMind Advanced Agentic Coding)  
-**Date:** March 2026  
-**Repo:** https://github.com/vmbbz/plawie  
-**Status:** Draft — open for peer review and community audit
+**Document type:** Living engineering reference — architecture, history, refactor roadmap
+**Last updated:** 2026-03-28 (commit `5238893`)
+**Status:** Phase 1 complete — fllama NDK inference active. PRoot retained for gateway only.
+**Repo:** https://github.com/vmbbz/plawie
 
----
-
-## Abstract
-
-Plawie currently routes all LLM inference through cloud APIs (Claude, Gemini, GPT-4o) via the
-OpenClaw Node.js gateway running inside a PRoot/Ubuntu sandbox on Android. This document
-investigates the feasibility of running a **free, offline, on-device local LLM server** inside that
-same PRoot environment, intercepting OpenClaw's default LLM provider and replacing it with a
-localhost inference endpoint — no internet required, no API cost, total privacy.
-
-The goal is not to replace cloud APIs permanently, but to offer local LLM as a free-tier fallback
-that is reliable, lightweight, downloaded post-install (not bundled in the APK), and stable enough
-for production use on mid-range Android hardware.
+> **For AI agents and engineers arriving fresh:**
+> This document is designed for you. It records every dead end, every exact error message,
+> and every root cause discovered during months of iteration. Start at §2 if you want to
+> understand where we came from. Start at §3 if you just want to understand what's running now.
+> Start at §7 if you have a specific bug or task.
 
 ---
 
-## 1. How OpenClaw Selects Its LLM Provider
+## Table of Contents
 
-OpenClaw reads model configuration from `~/.openclaw/openclaw.json`. The relevant section:
+1. [System Context — What This App Is](#1-system-context)
+2. [The Journey: Everything We Tried Before It Worked](#2-the-journey)
+3. [Current Architecture — fllama Hybrid](#3-current-architecture)
+4. [Inference Flow — Message to First Token](#4-inference-flow)
+5. [Model Download & Activation Flow](#5-model-download--activation-flow)
+6. [fllama API Reference](#6-fllama-api-reference)
+7. [Known Bugs, Errors & Exact Fixes](#7-known-bugs--errors--exact-fixes)
+8. [Remaining Refactor Tasks](#8-remaining-refactor-tasks)
+9. [Performance Guide](#9-performance-guide)
+10. [Stability & Safety Concerns](#10-stability--safety-concerns)
+11. [Future Roadmap](#11-future-roadmap)
+12. [File Map — Every File That Touches Local LLM](#12-file-map)
+13. [Key NativeBridge Contract (Must Read)](#13-nativebridge-contract)
+14. [Community & Peer Review](#14-community--peer-review)
 
-```json
-{
-  "models": {
-    "providers": {
-      "mode": "merge",
-      "providers": [
-        {
-          "id": "local-llm",
-          "baseUrl": "http://127.0.0.1:8081/v1",
-          "api": "openai-completions",
-          "apiKey": "local",
-          "models": [
-            {
-              "id": "qwen2.5-1.5b-instruct",
-              "name": "Qwen 2.5 1.5B (Local)",
-              "contextWindow": 32768,
-              "maxTokens": 4096,
-              "cost": { "input": 0, "output": 0 }
-            }
-          ]
-        }
-      ]
-    }
-  }
+---
+
+## 1. System Context
+
+### What This App Is
+
+Plawie is a Flutter/Android AI assistant app. It runs a **self-contained AI gateway** — no Termux,
+no root, no external app required. Everything ships inside the APK's app storage.
+
+```
+Android App (one self-contained APK)
+  │
+  ├─ Flutter (Dart) UI — chat, avatar, local LLM screen, settings
+  │
+  ├─ PRoot Ubuntu ARM64 userland (downloaded on first run, ~700MB)
+  │     └─ Node.js 22 → OpenClaw gateway (cloud model routing, skills, agents)
+  │           └─ port :18789 (WebSocket + HTTP)
+  │
+  └─ fllama (NDK — built into APK at compile time)
+        └─ llama.cpp running natively on ARM64
+              └─ GGUF model files loaded directly from host filesystem
+```
+
+### Two Separate Inference Paths
+
+```
+Cloud models (Claude, Gemini, GPT-4o):
+  Flutter → GatewayService (WebSocket) → PRoot → Node.js → OpenClaw → cloud API
+
+Local LLM (any GGUF model):
+  Flutter → LocalLlmService → fllama (NDK) → llama.cpp → response
+  [No PRoot. No Node.js. No HTTP server. Runs entirely inside Flutter's process.]
+```
+
+The gateway (PRoot) and fllama are **completely independent**. If PRoot crashes, local inference
+keeps working. If the user hasn't set up PRoot yet, local inference still works.
+
+---
+
+## 2. The Journey
+
+> This section documents every approach tried, in order, with the exact errors produced.
+> It exists so future engineers and AI agents don't repeat these paths.
+
+### Approach 1 — Download Pre-built llama-server Binary (FAILED)
+
+**What we tried:** Download a pre-compiled `llama-server` ARM64 binary from the official
+llama.cpp GitHub releases, copy to PRoot rootfs, `chmod +x`, execute.
+
+**The code:**
+```dart
+// constants.dart (now deleted)
+static const String _llamaBuild = 'b5616';
+static String getLlamaServerZipUrl() =>
+    'https://github.com/ggerganov/llama.cpp/releases/download/$_llamaBuild/'
+    'llama-b${_llamaBuild}-bin-ubuntu-x64.zip';
+```
+
+**The error:**
+```
+HTTP 404 — asset does not exist
+```
+
+**Root cause:** **llama.cpp has never shipped Ubuntu ARM64 binaries in any GitHub release.**
+Verified against releases b5616, b8545–b8548 (March 2026). Available assets per release:
+- `llama-*-bin-ubuntu-x64.zip` ✅
+- `llama-*-bin-macos-arm64.zip` ✅
+- `llama-*-bin-win-arm64.zip` ✅
+- `llama-*-bin-ubuntu-arm64.zip` ❌ — DOES NOT EXIST IN ANY RELEASE
+
+**Also checked:** `avdg/llama-server-binaries` GitHub repo — only contains Windows binaries.
+
+**Conclusion:** There is no official pre-built Ubuntu ARM64 binary for llama-server. Do not
+search for one. Do not attempt this path again.
+
+---
+
+### Approach 2 — Compile llama-server from Source Inside PRoot (FAILED)
+
+**What we tried:** Instead of downloading a binary, compile it inside the PRoot Ubuntu layer
+using cmake + g++. The PRoot container has `apt-get` and can install build tools.
+
+**Problems encountered:**
+
+**2a. Shell positional args `$1`/`$2` never set:**
+```dart
+// The install script used:
+CPU_INFO="$1"     // ← positional arg, never set
+BINARY_URL="$2"   // ← positional arg, never set
+
+// Called via:
+NativeBridge.runInProot(fullScript, timeout: 600);
+// runInProot executes as: /bin/sh -c "<script>"
+// In this form, $1/$2 are the outer shell's positional params — always empty.
+```
+
+**Error produced:** `curl: (3) URL rejected: Malformed input to a URL function`
+(curl received an empty string as the URL)
+
+**Fix:** Inline the values before execution:
+```dart
+final fullScript = installScript
+    .replaceFirst('CPU_INFO="\$1"', 'CPU_INFO="$cleanedCpuInfo"')
+    .replaceFirst('BINARY_URL="\$2"', 'BINARY_URL="$binaryUrl"');
+```
+
+**2b. Corrupt 9-byte binary bypassed the install check:**
+```dart
+// The guard check:
+Future<bool> _isBinaryInstalled() async {
+  final result = await NativeBridge.runInProot(
+    'test -x /root/.openclaw/bin/llama-server && echo "exists"',
+  );
+  return result.trim() == 'exists';
+}
+```
+`test -x` only checks the **executable permission bit**, not file size or content.
+A previous failed download had applied `chmod +x` to a 9-byte HTML error page (GitHub's 404
+redirect body). The check returned `true`. The compile step was never triggered.
+
+**Fix for check:**
+```bash
+test -x /path/to/bin \
+  && [ $(stat -c%s /path/to/bin 2>/dev/null || echo 0) -gt 1048576 ] \
+  && echo "exists"
+```
+
+**2c. Git clone timeout at ~15% progress:**
+```dart
+await NativeBridge.runInProot(
+  'git clone --depth 1 https://github.com/ggerganov/llama.cpp.git /tmp/llama_build',
+  timeout: 300, // 5 minutes
+);
+```
+A shallow clone of llama.cpp transfers ~100–150MB even with `--depth 1`.
+At mobile speeds (1–5 Mbps) this takes 240–750 seconds. The 300s timeout expired every time.
+`git clone` has **no resume capability** — each timeout restarts from 0 bytes.
+
+**Fix:** Use `curl` tarball download with `-C -` (resume):
+```bash
+curl -L -C - --retry 3 --retry-delay 10 --connect-timeout 30 \
+  -o /tmp/llama_src.tar.gz \
+  "https://github.com/ggml-org/llama.cpp/archive/refs/heads/master.tar.gz"
+```
+
+**2d. Total compilation time:** Even with all fixes, cmake configure + build on a mobile CPU
+takes **20–40 minutes**. This is untenable UX for a production app feature.
+
+**Conclusion:** Compile-from-source works but is too slow and fragile for production. A user
+waiting 40 minutes on first run will uninstall the app.
+
+---
+
+### Approach 3 — npm + node-llama-cpp HTTP Server Inside PRoot (FAILED)
+
+**What we tried:** Write a `server.js` + `package.json` to the PRoot rootfs, run `npm install`
+to download `@node-llama-cpp/linux-arm64` (prebuilt), then run a Node.js HTTP server on `:8081`.
+
+**Problems encountered:**
+
+**3a. `--ignore-scripts` skipped the prebuilt download:**
+
+OpenClaw bootstrap installs the gateway as:
+```bash
+npm install -g openclaw --ignore-scripts
+```
+The `--ignore-scripts` flag skips the npm `postinstall` script. node-llama-cpp uses a
+postinstall script to download its prebuilt native addon (`@node-llama-cpp/linux-arm64`).
+Because `--ignore-scripts` was set globally, **the prebuilt binary was never downloaded**.
+Running `node server.js` immediately threw:
+```
+Error: Cannot find module '@node-llama-cpp/linux-arm64-gnu'
+```
+
+**3b. PRoot mkdir race condition:**
+```dart
+// Flutter code:
+final serverDir = '$filesDir/rootfs/root/.openclaw/local-server';
+await Directory(serverDir).create(recursive: true);
+// ↑ Creates directory on the HOST filesystem
+
+// Then:
+await NativeBridge.runInProot(
+  'cd /root/.openclaw/local-server && npm install',
+);
+```
+**Error produced:**
+```
+PlatformException(PROOT_ERROR, cd: /root/.openclaw/local-server: No such file or directory)
+```
+
+**Root cause:** `Directory.create()` operates in the **host Android filesystem namespace**.
+PRoot processes run in their **own Linux namespace**. When PRoot spawns a new process, it
+mounts `$filesDir/rootfs` as its `/`. A directory created by Flutter via `dart:io` at
+`$filesDir/rootfs/root/.openclaw/local-server` IS visible inside PRoot at
+`/root/.openclaw/local-server` — but ONLY if PRoot is already running. When `runInProot`
+spawns a new PRoot process, the mount happens at spawn time. The directory must exist
+**before** the spawn.
+
+Workaround: Have PRoot create the directory itself:
+```bash
+mkdir -p /root/.openclaw/local-server && \
+cp /root/.openclaw/llama-pkg.json /root/.openclaw/local-server/package.json && \
+cd /root/.openclaw/local-server && npm install
+```
+This is safe because `/root/.openclaw/` always exists (OpenClaw config lives there).
+
+**3c. `bionic-bypass.js` requirement:**
+Node.js inside PRoot Ubuntu links against `glibc`. The prebuilt
+`@node-llama-cpp/linux-arm64-gnu` binary also expects glibc. PRoot provides glibc (Ubuntu),
+but there can be dynamic linker version mismatches. A `bionic-bypass.js` preload script was
+needed to patch the runtime environment.
+
+**3d. Still required an internet connection during first use (npm install ~50MB)**
+
+**Conclusion:** Every piece of this approach required a different hack. Even if all hacks worked,
+the server would be: one more process (RAM overhead), one more HTTP layer (latency), and
+fragile across npm registry availability and bionic compatibility.
+
+---
+
+### Approach 4 — fllama (Flutter NDK Plugin) ✅ CURRENT IMPLEMENTATION
+
+**Why this works:**
+- No binary download (NDK library compiled at APK build time)
+- No npm, no Node.js, no PRoot for inference
+- No HTTP server (direct Dart API)
+- No process to kill or restart
+- No namespace issues (runs in Flutter's own Dart isolate)
+- Cancel support via `fllamaCancelInference(requestId)`
+- Runs inside Flutter's process — survives as long as the app does
+
+**What was needed:**
+1. Add `fllama` git dependency to `pubspec.yaml`
+2. Pin NDK version to `27.0.12077973` in `android/app/build.gradle.kts`
+3. Rewrite `LocalLlmService` to replace HTTP/PRoot methods with fllama calls
+4. Update `GatewayService` to route `local-llm/*` model IDs to `LocalLlmService.chat()`
+
+**Total code change:** 393 lines removed, 207 lines added.
+
+---
+
+## 3. Current Architecture
+
+### System Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Android Application                           │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                    Flutter (Dart) Process                    │    │
+│  │                                                              │    │
+│  │   ┌────────────┐     ┌──────────────────────────────────┐   │    │
+│  │   │  Flutter   │     │       LocalLlmService             │   │    │
+│  │   │    UI      │◄───►│  _activeModelPath  (host FS path) │   │    │
+│  │   │  chat,     │     │  _activeMmprojPath (vision only)  │   │    │
+│  │   │  local LLM │     │  _activeRequestId  (cancel token) │   │    │
+│  │   │  screen    │     │  status: idle/downloading/ready/  │   │    │
+│  │   └─────┬──────┘     │         starting/error            │   │    │
+│  │         │            │                                    │   │    │
+│  │         │            │  chat() → fllamaChat()             │   │    │
+│  │         │            │  testInference() → fllamaChat()    │   │    │
+│  │         │            │  analyseVideoFrames() → fllamaChat()│  │    │
+│  │         │            └──────────────┬───────────────────-─┘   │    │
+│  │         │                           │                          │    │
+│  │         │            ┌──────────────▼──────────────────────┐  │    │
+│  │         │            │  fllama (Dart isolate → JNI → NDK)  │  │    │
+│  │         │            │  libfllama.so (arm64-v8a)            │  │    │
+│  │         │            │  llama.cpp compiled at APK build     │  │    │
+│  │         │            └─────────────────────────────────────-┘  │    │
+│  │         │                                                       │    │
+│  │         │            ┌────────────────────────────────────┐   │    │
+│  │         └───────────►│      GatewayService                │   │    │
+│  │                      │  cloud: WebSocket → :18789          │   │    │
+│  │                      │  local: → LocalLlmService.chat()   │   │    │
+│  │                      └──────────────┬─────────────────────┘   │    │
+│  │                                     │ NativeBridge (JNI)       │    │
+│  └─────────────────────────────────────┼───────────────────────--─┘    │
+│                                        │                                │
+│   ┌────────────────────────────────────▼──────────────────────────┐    │
+│   │           PRoot Ubuntu ARM64 (gateway only, not inference)     │    │
+│   │   /usr/local/bin/node → openclaw gateway → port :18789         │    │
+│   │   /root/.openclaw/models/*.gguf  ← SAME FILES fllama reads     │    │
+│   │   (accessed by fllama via host path: $filesDir/rootfs/...)     │    │
+│   └────────────────────────────────────────────────────────────────    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Message Routing Decision Tree
+
+```
+GatewayService.sendMessage(message, model)
+         │
+         ├─ model.startsWith('local-llm')  ─────────────────────────────►
+         │                                                                │
+         │                                              LocalLlmService   │
+         │                                              .chat(hist, msg)  │
+         │                                                    │           │
+         │                                              fllamaChat()      │
+         │                                                    │           │
+         │                                              NDK / llama.cpp   │
+         │                                                    │           │
+         │                                              Stream<String>    │
+         │                                              token deltas ◄────┘
+         │
+         └─ cloud model (claude-*, gemini-*, gpt-*)
+                   │
+                   └── WebSocket :18789 → PRoot → OpenClaw → API
+```
+
+---
+
+## 4. Inference Flow
+
+### Text Chat (Full Detail)
+
+```
+1. User submits message
+         │
+2. chat_screen.dart → GatewayService.sendMessage(msg, 'local-llm/qwen2.5-1.5b-instruct-q4_k_m')
+         │
+3. GatewayService detects 'local-llm' prefix
+         │
+4. LocalLlmService.chat(conversationHistory, userMessage)
+         │
+         ├── _state.status != ready → yield '[Error] Local LLM not ready'
+         ├── _activeModelPath == null → yield '[Error] No model path'
+         │
+         ├── Convert history:
+         │     List<Map<String,dynamic>>  →  List<Message>
+         │     {role:'user', content:'...'}  →  Message(Role.user, '...')
+         │     {role:'assistant', content:'...'}  →  Message(Role.assistant, '...')
+         │     {role:'system', content:'...'}  →  Message(Role.system, '...')
+         │
+         ├── StreamController<String> controller = StreamController()
+         │
+         ├── fllamaChat(
+         │     OpenAiRequest(
+         │       messages: [...history, Message(Role.user, userMessage)],
+         │       modelPath: _activeModelPath,    // e.g. /data/user/0/.../rootfs/root/.openclaw/models/qwen2.5-1.5b.gguf
+         │       mmprojPath: null,               // null for text models
+         │       maxTokens: 1024,
+         │       contextSize: 4096,
+         │       numGpuLayers: 99,               // llama.cpp tries GPU, falls back to CPU
+         │       temperature: 0.7,
+         │     ),
+         │     (String response, String responseJson, bool done) {
+         │       final delta = response.substring(lastResponse.length);
+         │       // ↑ response is ACCUMULATED text — must compute delta yourself
+         │       lastResponse = response;
+         │       if (delta.isNotEmpty) controller.add(delta);
+         │       if (done) controller.close();
+         │     }
+         │   ).then((id) => _activeRequestId = id)
+         │   // ↑ requestId stored for cancellation
+         │
+5. return controller.stream
+         │
+6. chat_screen.dart listens to stream → renders tokens as they arrive
+```
+
+### Vision Chat
+
+```
+GatewayService.sendVisionMessage(prompt, imageBase64)
+         │
+LocalLlmService.analyseVideoFrames([base64Decode(imageBase64)], prompt)
+         │
+         ├── Encode first frame: base64Encode(frames.first)
+         ├── Build vision prompt: "data:image/jpeg;base64,<...>\n\n<prompt>"
+         │
+         └── fllamaChat(OpenAiRequest{
+               modelPath: _activeModelPath,    // e.g. Qwen2-VL-2B-Q4_K_M.gguf
+               mmprojPath: _activeMmprojPath,  // e.g. mmproj-Qwen2-VL-2B-f16.gguf
+               messages: [Message(Role.user, visionPrompt)],
+             }, callback → Completer<String>)
+             // non-streaming for vision: wait for complete response
+```
+
+---
+
+## 5. Model Download & Activation Flow
+
+```
+LocalLlmService.downloadAndStart(LocalLlmModel model)
+         │
+         ├── Already downloading/starting/installing? → return (no double-start)
+         │
+         ├── _isModelInstalled(model)?
+         │     File('$filesDir/rootfs/root/.openclaw/models/${model.id}.gguf').exists()
+         │     && file.length() > 1MB
+         │
+         │   NOT INSTALLED → _downloadModel(model):
+         │         ├── HttpClient.getUrl(model.huggingFaceUrl)
+         │         │     Example URL: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
+         │         ├── alreadyBytes = existing tmpFile.length() (resume support)
+         │         ├── Range: bytes=$alreadyBytes-  (HuggingFace CDN supports Range)
+         │         ├── 206 Partial → FileMode.append
+         │         │   200 Full → FileMode.write
+         │         │   416 Range Not Satisfiable → file complete, skip to copy
+         │         ├── Stream → tmpFile (temp dir, survives app restart)
+         │         └── tmpFile.copy → $filesDir/rootfs/root/.openclaw/models/
+         │
+         ├── model.isMultimodal?
+         │     → _isMmProjInstalled? NOT → _downloadMmProj(model)
+         │         (same resume logic, different URL)
+         │
+         └── _activateFllama(model):
+               ├── _activeModelPath = '$filesDir/rootfs${model.prootModelPath}'
+               │     Note: this is the HOST filesystem path, not the PRoot path
+               │     PRoot path:  /root/.openclaw/models/file.gguf
+               │     Host path:   /data/user/0/com.nxg.openclawproot/files/rootfs/root/.openclaw/models/file.gguf
+               │     fllama needs the HOST path (it runs outside PRoot)
+               ├── _activeMmprojPath = same pattern for mmproj (or null)
+               ├── File.existsSync(_activeModelPath) → throws if missing
+               ├── PreferencesService.configuredModel = 'local-llm/${model.id}'
+               └── _state = { status: ready, activeModelId: model.id }
+
+
+Model File Locations:
+  Host path (what fllama uses):  $filesDir/rootfs/root/.openclaw/models/
+  PRoot path (what gateway uses): /root/.openclaw/models/
+  Same physical bytes — PRoot mounts $filesDir/rootfs as its root /
+  No file duplication. No sync needed.
+```
+
+---
+
+## 6. fllama API Reference
+
+### Package Location
+
+```
+Pub cache: C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/
+pubspec.yaml:
+  fllama:
+    git:
+      url: https://github.com/Telosnex/fllama.git
+      ref: main
+```
+
+### Core API
+
+```dart
+// ─── Main inference call ────────────────────────────────────────────────────
+// Returns immediately. Inference happens in a Dart isolate.
+// Returns the request ID (use for cancellation).
+Future<int> fllamaChat(OpenAiRequest request, FllamaInferenceCallback callback)
+
+// ─── Callback type ─────────────────────────────────────────────────────────
+// Called on EVERY token generated.
+// response = ACCUMULATED text (not delta!) — must compute delta yourself
+// done = true on FINAL call (last token or cancelled)
+typedef FllamaInferenceCallback =
+    void Function(String response, String openaiResponseJsonString, bool done)
+
+// ─── Cancellation ──────────────────────────────────────────────────────────
+// Sends cancel to the isolate → C++ fllama_inference_cancel(requestId)
+// The callback WILL still be called with done=true and the partial output
+void fllamaCancelInference(int requestId)
+
+// ─── Request class ─────────────────────────────────────────────────────────
+class OpenAiRequest {
+  final String modelPath;        // REQUIRED: absolute host FS path to .gguf
+  final String? mmprojPath;      // optional: mmproj .gguf for vision models
+  final List<Message> messages;  // conversation history + current user message
+  final List<Tool> tools;        // tool/function definitions (default: [])
+  final int maxTokens;           // default: 333 — increase for longer responses
+  final int contextSize;         // default: 2048 — max context length in tokens
+  final int numGpuLayers;        // 0=CPU only, 99=all layers on GPU (auto-detects)
+  final double temperature;      // default: 0.7
+  final double topP;             // default: 1.0
+  final double frequencyPenalty; // default: 0.0
+  final double presencePenalty;  // default: 1.1 (matches llama.cpp default)
+  final Function(String)? logger;// optional: receives llama.cpp log lines
+}
+
+// ─── Message class ─────────────────────────────────────────────────────────
+class Message {
+  final Role role;   // Role.user | Role.assistant | Role.system | Role.tool
+  final String text; // message content (string only — no multipart natively)
+}
+
+// ─── Tokenizer ─────────────────────────────────────────────────────────────
+// Returns token count for a string — use for context overflow detection
+Future<List<int>> fllamaTokenize(FllamaTokenizeRequest request)
+class FllamaTokenizeRequest { final String input; final String modelPath; }
+```
+
+### Critical: The Accumulated Response Pattern
+
+```dart
+// ❌ WRONG — this would yield the entire response on every token
+(response, _, done) { controller.add(response); }
+
+// ✅ CORRECT — compute delta from accumulated text
+String lastResponse = '';
+(response, _, done) {
+  final delta = response.substring(lastResponse.length);
+  lastResponse = response;
+  if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
+  if (done && !controller.isClosed) controller.close();
 }
 ```
 
-Key facts confirmed from openclaw.ai documentation:
-- `baseUrl` **must end with `/v1`**
-- `api` value for OpenAI-compatible servers: `"openai-completions"`
-- Any OpenAI-compatible HTTP server listening on 127.0.0.1 works out of the box
-- `mode: "merge"` preserves cloud providers alongside the local one
-- Cost can be set to `0` for local models
+### Threading Model
 
-This means any inference server that serves the `/v1/chat/completions` endpoint can be swapped
-in **with zero changes to OpenClaw's core code** — only `openclaw.json` needs a new provider block.
+```
+Main Isolate (Flutter UI thread)
+    │
+    │  fllamaChat() → SendPort → _helperIsolateSendPort
+    ▼
+fllama Helper Isolate (spawned once at first call, lives forever)
+    │
+    │  _toNative(request) → Pointer<fllama_inference_request>
+    │  fllamaBindings.fllama_inference(nativeRequest, nativeCallback)
+    ▼
+libfllama.so (JNI, Android NDK arm64-v8a)
+    │
+    │  [llama.cpp token loop]
+    │  each token → NativeCallback → _IsolateInferenceResponse → SendPort
+    ▼
+Main Isolate receives _IsolateInferenceResponse
+    │
+    └── FllamaInferenceCallback(response, jsonStr, done)
+         └── StreamController.add(delta) → UI
+```
+
+**The helper isolate is long-lived.** One inference runs at a time. Concurrent calls are
+queued in the isolate's ReceivePort. If you need immediate cancellation on a new message,
+call `fllamaCancelInference(oldRequestId)` before starting the new request.
+
+### Android NDK Build (How fllama Gets into the APK)
+
+```
+android/app/build.gradle.kts:
+  ndkVersion = "27.0.12077973"  // PINNED — must not change without testing
+  // fllama's CMakeLists.txt builds llama.cpp with:
+  //   ANDROID_ABI = arm64-v8a
+  //   ANDROID_PLATFORM = android-29
+  //   GGML_VULKAN = OFF (currently — GPU not enabled yet)
+  //   GGML_OPENMP = OFF
+
+// The built library is:
+//   android/app/build/intermediates/cmake/debug/obj/arm64-v8a/libfllama.so
+// Packaged in APK as:
+//   lib/arm64-v8a/libfllama.so
+```
+
+**Warning:** Changing `ndkVersion` from `27.0.12077973` breaks the build. fllama's native
+code has NDK-specific build flags. Pin this and don't change it without a full `flutter build
+apk` validation.
 
 ---
 
-## 2. The PRoot Environment Constraint
+## 7. Known Bugs, Errors & Exact Fixes
 
-Plawie's stack:
+### Error: `fllamaCancel` not defined
 
-```
-Android OS
-└── Flutter (Dart) — main app process
-    └── PRoot/Ubuntu layer (no root required)
-        └── Node.js 20+ — OpenClaw gateway + skills server
-            └── [PROPOSED] llama-server — listening on 127.0.0.1:8081
-```
+**When it appears:** Dart analysis error during migration from old code.
 
-The PRoot container is a real Linux userland (Ubuntu 22.04 LTS via proot-distro). It shares the
-Android kernel but provides a full glibc environment. This matters because:
+**Cause:** The correct function name is `fllamaCancelInference(int requestId)`, not
+`fllamaCancel`. This is exported from `fllama_io_inference.dart`.
 
-- Ollama ships a statically-linked Go binary that includes llama.cpp — **it works inside PRoot**
-  but its GPU acceleration layer (which uses CUDA/ROCm) does not apply on Android. CPU-only.
-- `llama-server` (from `llama.cpp`) compiles natively inside Termux/PRoot against Android's
-  ARM64 architecture using clang. It is the most direct and reliable path.
-- MLC-LLM requires a compiled Android native library and is better suited as a standalone APK
-  approach, not embedded in PRoot.
-- `llamafile` (Mozilla / Justine Tunney) is a single self-contained binary using APE format —
-  it does not execute on Android without Termux by design, but works inside PRoot.
-
-**Verdict: `llama-server` from `llama.cpp` is the optimal choice for the PRoot environment.**
+**Fix:** Use `fllamaCancelInference(_activeRequestId!)`.
 
 ---
 
-## 3. Competing Apps That Shipped Local LLM on Android (2024–2025)
+### Error: `PlatformException(PROOT_ERROR, cd: /root/.openclaw/local-server: No such file or directory)`
 
-The following production implementations were identified during research:
+**When it appears:** Any attempt to run `cd` into a directory that Flutter created via
+`Directory.create()` before the PRoot spawn.
 
-| App / Project | Inference Engine | Notes |
-|---------------|-----------------|-------|
-| **MLC Chat** (mlc-ai/mlc-llm) | MLC-LLM (TVM backend) | APK + model download, NPU-aware on some devices. Supports Qwen2.5, Phi-3.5, Llama 3.2. https://github.com/mlc-ai/mlc-llm |
-| **SmolChat** | llama.cpp via JNI | Open-source Android app, GGUF models downloaded in-app. Simple ChatGPT-style UI. https://github.com/shubham0204/SmolChat-Android |
-| **LLM Hub** | llama.cpp + LiteRT + ONNX | Multi-backend Android app. https://github.com/timmyy123/LLM-Hub |
-| **ToolNeuron** | llama.cpp (GGUF) | Offline AI with vision + image gen on Android. https://github.com/Siddhesh2377/ToolNeuron |
-| **Google AI Edge Gallery** | LiteRT (Gemma 3n) | Experimental; Google's official on-device LLM showcase |
-| **Ollama on Termux** | llama.cpp (via Ollama) | `pkg install ollama` in Termux — CPU only, no GPU. Works without root |
-| **node-llama-cpp** | llama.cpp via Node.js bindings | Native Node.js binding for llama.cpp — directly compatible with our Node.js gateway inside PRoot. https://github.com/withcatai/node-llama-cpp |
+**Root cause:** See §2, Approach 3b — namespace mismatch between Flutter's host filesystem
+operations and PRoot's spawned namespace.
 
-**The most architecturally aligned option for Plawie is `node-llama-cpp`** — it runs directly inside
-our existing Node.js gateway process as a module, eliminating the need for a separate process and
-IPC overhead. The tradeoff is that native `.node` bindings must be compiled for Android ARM64 inside
-our PRoot layer.
-
-An alternative is to run `llama-server` as a separate child process (like we do with the OpenClaw
-gateway itself) and point OpenClaw's provider config at `http://127.0.0.1:8081/v1`.
-
----
-
-## 4. Recommended Local Inference Architecture
-
-### Option A — Separate llama-server process (Recommended for stability)
-
-```
-GatewayService (Flutter)
-├── spawns: openclaw gateway (Node.js) on :3000
-└── spawns: llama-server (ARM64 binary) on :8081
-    └── serves: GET /v1/models, POST /v1/chat/completions
-
-openclaw.json → models.providers → baseUrl: "http://127.0.0.1:8081/v1"
-```
-
-**Pros:** Fully isolated. If the model crashes, OpenClaw keeps running. Clean separation.  
-**Cons:** Two child processes. Memory footprint is higher. Startup latency ~3s for model load.
-
-**How to install in PRoot (user runs once via OpenClaw terminal):**
+**Fix:** Let PRoot create its own directories:
 ```bash
-# Inside PRoot Ubuntu via Plawie's built-in terminal
-apt-get update && apt-get install -y cmake make g++ git
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target llama-server -j4
-# Binary: llama.cpp/build/bin/llama-server
+# Instead of Flutter creating the dir, let PRoot do it:
+await NativeBridge.runInProot(
+  'mkdir -p /root/.openclaw/local-server && ...',
+);
 ```
 
-**To launch (added to gateway startup in GatewayService.dart):**
+---
+
+### Error: `curl: (3) URL rejected: Malformed input to a URL function`
+
+**When it appears:** Any shell script using `$1`/`$2` positional args passed via `runInProot`.
+
+**Root cause:** See §2, Approach 2a.
+
+**Fix:** Inline variable values in the Dart string before passing to `runInProot`:
+```dart
+final cmd = 'URL="$theUrl" && curl -L "\$URL" -o /tmp/output';
+```
+
+---
+
+### Error: `not a dynamic executable` (or binary is 9 bytes)
+
+**When it appears:** After a failed GitHub binary download where the URL returned 404 HTML.
+
+**Root cause:** See §2, Approach 1. GitHub 302→404 redirect body is ~9 bytes.
+`chmod +x` was applied to it. OS rejects it as not a valid ELF.
+
+**Fix:** After any binary download, validate:
 ```bash
-./llama-server \
-  --model ~/.openclaw/models/qwen2.5-1.5b-instruct-q4_k_m.gguf \
-  --host 127.0.0.1 \
-  --port 8081 \
-  --n-gpu-layers 0 \
-  --threads 4 \
-  --ctx-size 4096 \
-  --memory-f32 false
+[ $(stat -c%s /path/to/binary) -gt 1048576 ] && file /path/to/binary | grep -q ELF
 ```
 
 ---
 
-### Option B — node-llama-cpp inside OpenClaw gateway (Tighter integration)
+### Error: `Error: Cannot find module '@node-llama-cpp/linux-arm64-gnu'`
 
-OpenClaw's Node.js process loads `node-llama-cpp` directly. A small MCP skill or local HTTP
-adapter proxies `/v1/chat/completions` to `node-llama-cpp`.
+**When it appears:** node-llama-cpp require() inside PRoot Node.js after bootstrap.
 
-```javascript
-// Inside openclaw gateway: local_llm_provider.js
-import { getLlama, LlamaChatSession } from 'node-llama-cpp';
-const llama = await getLlama();
-const model = await llama.loadModel({ modelPath: '~/.openclaw/models/qwen2.5-1.5b-q4.gguf' });
+**Root cause:** See §2, Approach 3a. `--ignore-scripts` during `npm install -g openclaw`
+skipped the postinstall step that downloads the prebuilt native addon.
+
+**This error means node-llama-cpp is not installed.** Running `npm install` again in the
+right directory (without `--ignore-scripts`) would fix it, but see all the other approach 3
+problems for why we abandoned this path entirely.
+
+---
+
+### Error: `disabledUntil` — local model locked out for 1 hour
+
+**When it appears:** After the first inference attempt through the OpenClaw gateway, when
+model load time (60–90s) exceeded OpenClaw's inference timeout.
+
+**Root cause:** OpenClaw's provider backoff system misclassifies slow responses as rate limits.
+Writes `disabledUntil` to `auth-profiles.json`. Sequence: 1min → 5min → 25min → 1hour.
+
+**This bug is now fully eliminated by fllama.** fllama bypasses the gateway entirely for
+local inference — no OpenClaw provider layer, no timeout, no backoff.
+
+**If you see this in old code:** The fix was `_clearLocalLlmCooldown()` which deleted
+`usageStats` + `disabledUntil` from `auth-profiles.json` before each restart.
+
+---
+
+### Error: `[Error] Local LLM is not ready. Status: idle`
+
+**When it appears:** User sends a message to local-llm before calling `downloadAndStart()` or
+`startWithModel()`, OR after `stop()` was called.
+
+**Fix in code:** Check `_state.status == LocalLlmStatus.ready` before inference calls.
+LocalLlmService.chat() handles this gracefully — yields the error string and closes the stream.
+
+---
+
+### Warning: `Unused import: '../constants.dart'`
+
+**When it appears:** After removing the `llamaServerUrl`/`llamaServerPort` references.
+
+**Fix:** The import in `local_llm_service.dart` was removed. The constants still exist in
+`constants.dart` (harmless, unused). They can be deleted from constants.dart too.
+
+---
+
+## 8. Remaining Refactor Tasks
+
+### P1 — Critical for Production Quality
+
+#### 8.1 Vision: Temp File Path vs Data URI
+
+**Current:** `analyseVideoFrames` embeds image as base64 data URI string in the prompt text.
+**Problem:** llama.cpp multimodal requires images to be file paths in some model architectures
+(LLaVA, Qwen2-VL may handle data URLs differently depending on the chat template).
+
+```dart
+// TODO: Replace data URI approach with temp file
+final frameFile = File('${tmpDir.path}/frame_${DateTime.now().millisecondsSinceEpoch}.jpg');
+await frameFile.writeAsBytes(frames.first);
+// Then construct proper multipart content (needs OpenAiRequest extension or file:// URI)
 ```
 
-**Pros:** One process. Deeper integration. Can expose as tool-use skill.  
-**Cons:** Requires compiling `node-llama-cpp` native bindings for Android ARM64 inside PRoot.
-This is non-trivial and may be fragile across Node.js versions.
+**File:** `local_llm_service.dart` line ~370
+
+#### 8.2 Context Window Per-Model
+
+**Current:** Hard-coded `contextSize: 4096` in `chat()`, `contextSize: 2048` in `testInference()`.
+Qwen2.5-1.5B supports 32768. SmolLM2 supports 8192. Using 4096 for all wastes capability.
+
+```dart
+// Add to LocalLlmService:
+int get _activeContextSize =>
+    (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
+
+// Then in chat() and testInference():
+contextSize: _activeContextSize,
+```
+
+**File:** `local_llm_service.dart`
+
+#### 8.3 Concurrent Inference Guard
+
+**Current:** No mutex. Two rapid messages could spawn two overlapping fllama calls → undefined behavior.
+
+```dart
+bool _isInferring = false;
+
+Stream<String> chat(...) {
+  if (_isInferring && _activeRequestId != null) {
+    fllamaCancelInference(_activeRequestId!);
+  }
+  _isInferring = true;
+  // callback: set _isInferring = false when done=true
+}
+```
+
+**File:** `local_llm_service.dart`
+
+#### 8.4 Thread Count Binding
+
+**Current:** `setThreads()` persists thread count in state but doesn't pass it to fllama.
+fllama defaults to 2 threads regardless. SD 8 Gen 3 has 8 cores — 2 threads is wasteful.
+
+`OpenAiRequest` doesn't expose `numThreads`. It lives on `FllamaInferenceRequest`.
+Options:
+- Use `fllamaInference()` directly (lower level than `fllamaChat()`) — gives access to `numThreads`
+- Submit PR to fllama adding `numThreads` field to `OpenAiRequest`
+
+**File:** `local_llm_service.dart`, optionally fllama upstream
 
 ---
 
-## 5. Model Recommendations
+### P2 — Quality & UX
 
-All models must be in **GGUF format**. Download from Hugging Face — never bundled in the APK.
+#### 8.5 System Prompt
 
-| Model | Size (Q4_K_M) | RAM Required | Tool Use | Recommended For |
-|-------|---------------|--------------|----------|-----------------|
-| `Qwen2.5-0.5B-Instruct` | ~350 MB | 1.5 GB | Limited | Minimum viable, very fast |
-| **`Qwen2.5-1.5B-Instruct`** | ~1.0 GB | 3 GB | Good | **Recommended default** |
-| `Phi-3-Mini-4k-Instruct` | ~2.2 GB | 4 GB | Good | Strong reasoning, slightly larger |
-| `Qwen2.5-3B-Instruct` | ~1.9 GB | 4.5 GB | Excellent | Best quality on 8GB+ devices |
-| `SmolLM2-1.7B-Instruct` | ~1.1 GB | 3 GB | Moderate | Speed-focused, HuggingFace-trained |
+```dart
+// In chat() and testInference():
+final messages = [
+  Message(Role.system,
+      'You are Plawie, a helpful AI assistant running locally on this Android device. '
+      'Be concise and direct.'),
+  ...historyMessages,
+  Message(Role.user, userMessage),
+];
+```
 
-**Quantization recommendation:** `Q4_K_M` strikes the best quality/RAM balance on ARM64 CPU.
-`Q6_K` gives noticeably better quality at ~30% larger file size — viable on 12GB+ devices.
-Avoid `Q2_K` — quality degrades too much for coherent tool-use / function-calling.
+#### 8.6 Context Overflow / History Trimming
 
-**Tool-use / function-calling:** Qwen2.5-Instruct models have native tool-use format support
-recognized by `llama-server`. The OpenClaw gateway can construct tool-call requests using the
-standard OpenAI tool schema. Phi-3-Mini uses a different prompt format for tool calls and may
-require a wrapper.
+Long conversations exceed context window → undefined behavior.
 
----
+```dart
+// Rough approach (accurate approach: use fllamaTokenize())
+int get _activeContextSize => (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
 
-## 6. Model Download Strategy (Post-Install, Not in APK)
+List<Map<String, dynamic>> _trimHistory(
+    List<Map<String, dynamic>> history, String newMessage) {
+  const avgCharsPerToken = 4;
+  final budget = (_activeContextSize - 1024 - 100) * avgCharsPerToken;
+  var chars = newMessage.length;
+  final result = <Map<String, dynamic>>[];
+  for (final msg in history.reversed) {
+    chars += (msg['content'] as String? ?? '').length;
+    if (chars > budget) break;
+    result.insert(0, msg);
+  }
+  return result;
+}
+```
 
-Following the same pattern Plawie already uses for Piper TTS voice models:
+#### 8.7 Labels in `local_llm_screen.dart`
 
-1. Add a "Local LLM" section to the Agent Settings page in the Flutter UI
-2. Show a list of curated models (name, file size, RAM required, quality rating)
-3. User taps "Download" — model downloads direct from Hugging Face CDN to
-   `~/.openclaw/models/` inside the PRoot filesystem
-4. After download, GatewayService restarts llama-server pointing to the new model file
-5. openclaw.json is updated automatically with the local provider block
+- "Health Check" button → "Engine Status"
+- "View Logs" → "View Engine Info"
+- Status card: "Direct inference via node-llama-cpp on :8081" → "fllama NDK on-device"
+- Any references to "server" in local LLM context → "engine" or "model"
 
-Model files live inside the PRoot layer, not in Flutter's app data directory, so they survive APK
-updates and are accessible directly to llama-server and node-llama-cpp.
+#### 8.8 Tool-Use / Function Calling
 
----
-
-## 7. Recommended Device Specifications
-
-Running a local 1.5B–3B parameter model requires significant sustained device resources. The user
-should be clearly informed before attempting installation.
-
-### Minimum (1.5B model, basic functionality)
-- **SoC:** Snapdragon 7 Gen 1 / Dimensity 9000 or equivalent (2022+)
-- **RAM:** 8 GB total (model needs ~3 GB; OS + Plawie + Node.js consume ~4 GB)
-- **Storage:** 4 GB free (1 GB model + llama-server binary + scratch space)
-- **Expected speed:** 4–8 tokens/second (CPU-only, no GPU offload)
-
-### Recommended (1.5B–3B model, good performance)
-- **SoC:** Snapdragon 8 Gen 1 / 8 Gen 2 or equivalent
-- **RAM:** 12 GB total
-- **Storage:** 8 GB free (room for multiple models)
-- **Expected speed:** 10–20 tokens/second
-
-### Optimal (3B–7B model, near-desktop performance)
-- **SoC:** Snapdragon 8 Gen 3 / 8 Elite
-- **RAM:** 16 GB total
-- **Storage:** 16 GB free
-- **Expected speed:** 15–30 tokens/second (potential Adreno GPU acceleration in future builds)
-
-**Note on GPU offload:** As of early 2026, Qualcomm Adreno GPU acceleration via OpenCL in
-`llama.cpp` is still experimental within PRoot (OpenCL ICD loader is not exposed cleanly through
-the PRoot layer). GPU offload (`--n-gpu-layers N`) may work on some devices if the Adreno OpenCL
-runtime is accessible. This is an area of active community investigation.
+Qwen2.5-Instruct supports OpenAI tool-call format natively. fllama passes `tools` via
+`openAiRequestJsonString` to llama.cpp. When `done=true`, check `openaiResponseJsonString`
+for tool_calls instead of plain text.
 
 ---
 
-## 8. Risks and Open Questions
+### P3 — Architecture Cleanup
 
-| Risk | Severity | Notes |
-|------|----------|-------|
-| PRoot kernel call overhead | Medium | PRoot adds ~5–15% CPU overhead vs native. Acceptable for inference. |
-| ARM64 compilation inside PRoot | Medium | Requires build tools (~500 MB). One-time setup. |
-| OpenClaw tool-use compatibility | Medium | llama-server tool_calls format needs validation against OpenClaw's parsing. |
-| Model staleness | Low | GGUF format is stable. Models downloaded from HF are versioned. |
-| Thermal throttling | High | Sustained inference at 100% CPU will thermal-throttle on many phones. Need to benchmark real-world sustained token throughput, not burst. |
-| Background process survival | Medium | llama-server must be registered as a child of the gateway foreground service. Same WorkManager heartbeat applies. |
+#### 8.9 Remove Unused Constants
 
----
+```dart
+// constants.dart — delete:
+static const int llamaServerPort = 8081;      // unused since fllama
+static const String llamaServerUrl = '...';   // unused since fllama
+```
 
-## 9. Phased Implementation Plan
+#### 8.10 Remove Gateway Check from `downloadAndStart()`
 
-**Phase 1 — Spike (1 week)**
-- Manually install llama-server inside Plawie's PRoot layer on a test device
-- Validate that `llama-server --port 8081` starts correctly and serves `/v1/chat/completions`
-- Add a one-line provider block to `openclaw.json` and confirm OpenClaw routes to local model
-- Measure token throughput on Snapdragon 8 Gen 1 and 8 Gen 3
+```dart
+// Remove this — fllama doesn't need PRoot gateway to be running:
+if (GatewayService().state.status == GatewayStatus.starting) {
+  _updateState(error('Gateway is still starting...'));
+  return;
+}
+```
 
-**Phase 2 — Integration (2 weeks)**
-- Add llama-server binary download to Plawie's onboarding flow (packaged as a pre-compiled
-  ARM64 release binary from the llama.cpp GitHub Releases page)
-- Add model download UI in Agent Settings (same component as TTS model chooser)
-- Add local provider block auto-generation in `openclaw.json` after model download
-- Register llama-server as a foreground service child process in `GatewayService.dart`
+#### 8.11 Host Path Helper
 
-**Phase 3 — Polish (1 week)**
-- Add local LLM status indicator in the dashboard (port health check)
-- Add fallback logic: if local model fails to respond within 10s, route to cloud provider
-- Add minimum device spec check before allowing download (RAM check via Flutter `device_info_plus`)
-- Write user-facing setup guide in the Help screen
+Currently `_activateFllama` does the host path conversion inline. Extract to a clean method
+to make it testable and avoid duplication if model paths are needed elsewhere:
+```dart
+Future<String> _hostPath(String prootPath) async {
+  final filesDir = await NativeBridge.getFilesDir();
+  return '$filesDir/rootfs$prootPath';
+}
+```
 
 ---
 
-## 10. Alternative Approach: Separate Companion APK
+## 9. Performance Guide
 
-If bundling llama-server inside the PRoot gateway proves too fragile, an alternative is to publish
-a separate **"Plawie Local Brain"** APK that:
-- Ships as a standalone Android service
-- Uses MLC-LLM or llama.cpp JNI to run models natively with potential NPU access
-- Exposes an HTTP server on `127.0.0.1:8081` that Plawie's OpenClaw gateway connects to
+### Token Throughput by Device Class (CPU-only, fllama default)
 
-This is how apps like MLC Chat operate. The main Plawie app would check if "Plawie Local Brain"
-is installed and configured before adding the local provider to `openclaw.json`. This is cleaner
-architecturally but requires distributing two APKs.
+```
+Device Class          SoC                Threads  Qwen2.5-1.5B  Qwen2.5-3B
+──────────────────────────────────────────────────────────────────────────────
+Budget (6GB)          SD 7 Gen 1         2        4–8 tok/s     2–4 tok/s
+Mid-range (8GB)       SD 8 Gen 1         4        10–15 tok/s   6–10 tok/s
+Flagship (12GB)       SD 8 Gen 2/3       4        15–22 tok/s   10–15 tok/s
+Ultra flagship (16GB) SD 8 Elite         6        22–35 tok/s   15–22 tok/s
 
-**Recommendation:** Attempt Option A (PRoot llama-server) first. Fall back to the companion APK
-approach only if PRoot compilation/stability proves untenable after Phase 1 spike results.
+Note: fllama defaults to numThreads=2. Thread count must be passed explicitly
+      for devices with more available cores. See §8.4.
+```
+
+### GPU Offload Status (2026-03)
+
+```
+fllama sets numGpuLayers=99 in our code, instructing llama.cpp to use GPU.
+
+Current reality:
+  GGML_VULKAN is NOT enabled in fllama's NDK build → silently falls back to CPU
+  All numbers above are CPU-only
+
+When GGML_VULKAN is enabled (future work):
+  Adreno 730 (SD 8 Gen 1):   ~50–70 tok/s for 1.5B Q4_K_M
+  Adreno 740 (SD 8 Gen 2):   ~70–90 tok/s
+  Adreno 830 (SD 8 Elite):   ~100–130 tok/s
+  Expected improvement: 3–5× over CPU
+
+How to enable: fork fllama, add -DGGML_VULKAN=ON to android/CMakeLists.txt,
+               add Vulkan validation before use (some OEM drivers are buggy).
+```
+
+### RAM Requirements
+
+```
+Component                      RAM
+───────────────────────────────────────────────────────────────
+Flutter engine (base)          ~80MB
+PRoot + Node.js (idle)         ~180MB
+PRoot + Node.js (active RPC)   ~250MB
+────────────────────────────────────────────
+Qwen2.5-0.5B Q4_K_M           ~500MB tensors
+Qwen2.5-1.5B Q4_K_M           ~1.1GB tensors  ← Recommended
+Qwen2.5-3B Q4_K_M             ~2.1GB tensors
+Qwen2-VL-2B Q4_K_M            ~1.4GB + 300MB mmproj
+LLaVA-1.5-7B Q4_K_M           ~4.4GB + 600MB mmproj
+────────────────────────────────────────────
+8GB device available budget:   ~6GB (Android keeps ~2GB)
+Safe max: Qwen2.5-3B or Qwen2-VL-2B
+7B models: risky on 8GB, OK on 12GB+
+```
+
+### Quantization Guide
+
+```
+Format    Size (1.5B)  Quality      Speed   Use When
+──────────────────────────────────────────────────────────────────
+Q2_K      550MB        Poor/incoherent  Fast  Never — too low quality
+Q3_K_M    750MB        Acceptable   Fast    Storage < 1GB only
+Q4_K_M    1.0GB        Good         Fast    ✅ Default — best balance
+Q5_K_M    1.2GB        Better       Med     12GB+ devices
+Q6_K      1.4GB        Best native  Med     Diminishing returns vs Q5
+Q8_0      1.8GB        ~FP16        Slow    Not worth it on mobile
+F16       3.0GB        Reference    Slow    Never on mobile
+```
+
+### Thermal Management
+
+```
+Observation: Sustained 100% CPU inference causes thermal throttling in 3–7 min on most phones.
+
+Mitigation strategies:
+1. Thread cap: SD 8 Gen 3 → 4 threads (P-cores only) instead of 8
+   Loses ~15% throughput, runs ~30°C cooler under sustained load
+
+2. Minimum context: Use model.contextWindow.clamp(512, 4096) not full 32768
+   KV cache for 32768 context costs 3–4× more RAM + compute than 4096
+
+3. User awareness: Warn users that long-form generation (essays, code)
+   will throttle. Short Q&A queries are fine indefinitely.
+
+4. GPU offload (future): Shifts compute from CPU to GPU,
+   reducing CPU thermal load significantly
+```
 
 ---
 
-## 11. Conclusion and Call for Peer Review
+## 10. Stability & Safety Concerns
 
-The research indicates that running a local LLM inside Plawie's PRoot environment is **technically
-feasible** using `llama-server` from `llama.cpp`, which can be compiled natively for ARM64 inside
-the existing Ubuntu PRoot layer. The OpenClaw provider system supports localhost OpenAI-compatible
-endpoints natively via `openclaw.json` with zero code changes to the gateway core.
+### 10.1 fllama Helper Isolate is Unrecoverable if Dead
 
-The primary unknowns are: (1) sustained thermal performance on real devices under inference load,
-(2) Adreno GPU offload availability through PRoot, and (3) OpenClaw's tool-use parsing
-compatibility with `llama-server`'s function-calling schema. These should be resolved in Phase 1.
+fllama's helper isolate is spawned once and lives for the app's lifecycle. If it dies (OOM,
+unhandled exception), `fllamaChat()` calls will hang forever waiting on `_helperIsolateSendPort`.
 
-**Recommended starting model:** `Qwen2.5-1.5B-Instruct` at `Q4_K_M` quantization (~1 GB download).
-**Recommended server:** `llama-server` from `llama.cpp` (https://github.com/ggerganov/llama.cpp).
-**Minimum device:** 8 GB RAM, Snapdragon 8 Gen 1 or equivalent.
+**Symptom:** Inference never completes, no error, no timeout.
+**Detection:** Look for absence of `[fllama inference isolate]` log lines after a request.
+**Mitigation:** Add an inference timeout:
+```dart
+fllamaChat(request, callback)
+    .timeout(const Duration(minutes: 3), onTimeout: () {
+      controller.addError('[Error] Inference timed out');
+      controller.close();
+      return -1;
+    });
+```
+
+### 10.2 GGUF File Integrity
+
+The download check `file.length() > 1MB` is insufficient. A 1GB file that's 50% downloaded
+passes this check but will cause a native crash (SIGSEGV) when llama.cpp tries to read past
+the end of the file.
+
+**Better check:**
+```dart
+// Compare actual size vs expected
+final expected = model.fileSizeMb * 1024 * 1024;
+final actual = await file.length();
+return (actual - expected).abs() / expected < 0.05; // within 5%
+```
+
+### 10.3 Model Loading and the "First Call" Delay
+
+fllama does NOT pre-load the model on `_activateFllama()`. The model is loaded on the **first
+`fllamaChat()` call**. First call = 5–30 seconds of silence before any token appears.
+Subsequent calls (same session, model already in memory) = <500ms TTFT.
+
+**Do NOT call `stop()` between turns.** `stop()` clears `_activeModelPath` but does NOT
+unload the model from fllama's memory. A subsequent `downloadAndStart()` will re-activate
+(fast path), but the first inference after any `stop()` will re-trigger the model load delay.
+
+**UI recommendation:** Show "Loading model..." state during the first inference call after
+activation. Track `_isFirstInference` flag and show spinner accordingly.
+
+### 10.4 Concurrent Inference (Current Gap — see §8.3)
+
+Two simultaneous `fllamaChat()` calls on the same context = undefined behavior in llama.cpp.
+This is not currently guarded against. The `_isInferring` guard described in §8.3 must be
+added before production release.
+
+### 10.5 Model Files Inside PRoot Rootfs
+
+Model files are stored at `$filesDir/rootfs/root/.openclaw/models/`.
+If the user resets the PRoot environment (full reinstall in bootstrap settings), model files
+are deleted. Re-download required.
+
+**Future fix:** Move model storage to `$filesDir/models/` (outside rootfs). fllama reads the
+host path directly — it doesn't need models inside PRoot. A symlink inside PRoot can be
+created for gateway compatibility if needed.
+
+### 10.6 NDK Version Must Be Pinned
+
+`android/app/build.gradle.kts` has:
+```kotlin
+ndkVersion = "27.0.12077973"
+```
+**Do not change this.** fllama's native build requires specific NDK toolchain behavior.
+Newer NDK versions may break the build silently (no error, wrong binary produced).
 
 ---
 
-## Community Review Section
+## 11. Future Roadmap
 
-*If you have hands-on experience running local LLM inference on Android (with or without root,
-inside/outside PRoot, with Termux, MLC-LLM, or custom setups), please add your findings below
-using the same format. Include your device specs, model tested, token throughput, and any
-stability notes. This document is a living reference and will be updated as new data comes in.*
+```
+Phase 1 ─── COMPLETE (2026-03-28) ─────────────────────────────────────►
+  fllama NDK inference replaces all PRoot/HTTP inference paths
+  Text inference: working
+  Vision: stubbed (data URI — needs validation)
+  Gateway: cloud models still via PRoot (unchanged)
+
+Phase 2 ─── GPU Vulkan (1–3 months) ────────────────────────────────────►
+  Enable GGML_VULKAN in fllama NDK build
+  Adreno Vulkan validation (OEM driver bugs)
+  GPU/CPU toggle UI in diagnostics
+  Expected: 3–5× throughput on Snapdragon 8 Gen 2+
+
+Phase 3 ─── Tool-Use / Skills Integration (1–2 months) ─────────────────►
+  OpenAiRequest.tools populated from OpenClaw skill definitions
+  Parse tool_calls from openaiResponseJsonString
+  Dispatch to GatewayService.invokeSkill() or local Android API
+  Qwen2.5-Instruct required (best mobile tool-use)
+
+Phase 4 ─── Context Optimization (1 month) ─────────────────────────────►
+  Per-model contextSize (§8.2)
+  fllamaTokenize() for accurate history trimming (§8.6)
+  KV cache sharing between turns (no reload)
+
+Phase 5 ─── PRoot Gateway Modernization (2–4 months) ───────────────────►
+  Option A: Trim Ubuntu rootfs to ~30MB (vs current ~700MB download)
+            3–4× faster gateway startup, smaller install
+  Option B: Replace Node.js gateway with native Dart routing
+            Eliminate PRoot entirely for all model types
+
+Phase 6 ─── Multi-model / Hot-swap (3–6 months) ────────────────────────►
+  _textModel + _visionModel independent instances
+  Hot-swap model without full restart
+  RAM-aware dual-load (unload text model before loading vision if RAM tight)
+```
 
 ---
 
-### Review 1 — [Your Name / Handle]
+## 12. File Map
 
-**Date:**  
-**Device:** [SoC, RAM, Android version]  
-**Method:** [llama-server / Ollama / MLC-LLM / node-llama-cpp / other]  
-**Model tested:** [name + quantization]  
-**Token throughput:** [tokens/second]  
-**Tool-use worked?:** [yes / no / partial — explain]  
-**Stability notes:**  
-**Findings:**  
+### Core Files — Local LLM Path
+
+| File | Role | Status |
+|------|------|--------|
+| `lib/services/local_llm_service.dart` | Model catalog, download, fllama activation, inference (text+vision), state machine | ✅ Migrated |
+| `lib/services/gateway_service.dart` | Routes `local-llm/*` → `LocalLlmService.chat()`, cloud models → WebSocket | ✅ Updated |
+| `lib/screens/management/local_llm_screen.dart` | Model selection UI, download progress, diagnostics playground | ⚠️ Labels need update |
+| `lib/constants.dart` | `llamaServerPort/Url` now unused — safe to delete | ⚠️ Cleanup |
+| `android/app/build.gradle.kts` | NDK pinned to `27.0.12077973`, fllama dependencies | ✅ Correct |
+| `pubspec.yaml` | `fllama: git: url: Telosnex/fllama ref: main` | ✅ Added |
+
+### Supporting Services
+
+| File | Role |
+|------|------|
+| `lib/services/bootstrap_service.dart` | One-time setup: Ubuntu rootfs download, Node.js, OpenClaw npm install |
+| `lib/services/native_bridge.dart` | JNI → Kotlin: `getFilesDir()`, `runInProot()`, `startGateway()` |
+| `lib/services/preferences_service.dart` | Persist `configuredModel`, thread count, user settings |
+| `lib/services/piper_tts_service.dart` | Reference: uses same model download pattern as local_llm_service |
+
+### fllama Package (Read-Only Reference)
+
+| File | What to look at |
+|------|----------------|
+| `fllama/lib/fllama.dart` | Main export — imports everything |
+| `fllama/lib/fllama_universal.dart` | `fllamaChat()`, `OpenAiRequest`, `Message`, `Role` |
+| `fllama/lib/io/fllama_io_inference.dart` | `fllamaInference()`, `fllamaCancelInference()`, threading model |
+| `fllama/lib/misc/openai.dart` | `OpenAiRequest` constructor, `Message`, `Role`, `toJsonString()` |
+| `fllama/lib/misc/openai_tool.dart` | `Tool` class for function calling |
+
+### PRoot Gateway Files (Separate from Inference)
+
+| File | Role |
+|------|------|
+| `lib/services/gateway_service.dart` | WS :18789, cloud model routing, `_configureGateway()`, health polling |
+| `assets/openclaw/skills/` | Skill .md definitions bundled into PRoot at bootstrap |
+| `$filesDir/rootfs/root/.openclaw/openclaw.json` | Gateway config: providers, API endpoints |
+| `$filesDir/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json` | Provider auth, `disabledUntil` state |
 
 ---
+
+## 13. NativeBridge Contract
+
+**This section is critical for any engineer writing PRoot shell commands.**
+
+```dart
+// NativeBridge.runInProot(String command, {int timeout = 30})
+//
+// Behavior:
+//   Executes: /bin/sh -c "<command>"
+//   Returns:  stdout as String (on success)
+//   Throws:   PlatformException(code: 'PROOT_ERROR') on any non-zero exit code
+//
+// What this means for you:
+//
+// 1. POSITIONAL ARGS ($1, $2) ARE NEVER SET
+//    The command runs as /bin/sh -c "..." with no positional arguments.
+//    $1, $2, etc. expand to empty string. Inline values instead:
+//       ❌  'BINARY_URL="$2" && curl "$BINARY_URL"'  ← $2 = empty
+//       ✅  'BINARY_URL="$theUrl" && curl "\$BINARY_URL"'  ← inlined
+//
+// 2. ANY NON-ZERO EXIT THROWS — use try/catch for expected failures:
+//       try {
+//         final result = await NativeBridge.runInProot('cmd');
+//       } catch (e) {
+//         // command failed — handle here
+//       }
+//    DO NOT try to read the error from cliResult — you never reach that line.
+//
+// 3. FLUTTER mkdir IS NOT VISIBLE TO A FRESH PROOT SPAWN
+//    Directory.create() creates on host FS. PRoot mounts rootfs at spawn time.
+//    If PRoot is not already running, directories created after the last spawn
+//    ARE visible only if they are in the mounted rootfs path.
+//    Rule: Let PRoot create directories with mkdir -p when possible.
+//
+// 4. TIMEOUTS ARE HARD LIMITS
+//    runInProot throws PlatformException on timeout too.
+//    git clone = no resume, set timeout conservatively.
+//    curl with -C - = resume supported, set timeout per-attempt not per-total.
+```
+
+---
+
+## 14. Community & Peer Review
+
+### Comparable Projects (for reference)
+
+| Project | Approach | Notes |
+|---------|----------|-------|
+| **AidanPark/openclaw-android** | Termux + glibc shim + node-llama-cpp | Requires Termux installed separately. 3–4× faster gateway startup. Our inspiration for node-llama-cpp approach. |
+| **AnyClaw/openclaw-android-assistant** | Minimal trimmed Termux userland (~5MB vs our ~700MB) | Self-contained APK. Smaller setup. No Ubuntu overhead. |
+| **SmolChat-Android** | llama.cpp via JNI (no fllama) | Open source Android GGUF chat. Reference for JNI patterns. |
+| **MLC Chat** | MLC-LLM (TVM) + OpenCL GPU | NPU-aware. Best GPU performance but complex toolchain. |
+| **Ollama in Termux** | llama.cpp via Ollama | `pkg install ollama`. CPU only, no GPU. No root. |
+
+### Open Questions for Future Engineers
+
+**Q: Thread count optimal value?**
+fllama defaults to 2 threads based on benchmarks on Pixel Fold (2024). On Snapdragon 8 Gen 3
+(8 cores), 4 threads on P-cores only gives better throughput with acceptable thermals. Should
+thread count be auto-detected from `DeviceInfoPlus.cpuCoreCount`?
+
+**Q: Vulkan driver reliability by OEM?**
+Samsung Exynos and some MediaTek devices have buggy Vulkan drivers. Before enabling GPU offload,
+a validation layer should query `VkPhysicalDeviceProperties.apiVersion` and skip GPU on known
+bad versions. Community data on which OEMs are safe would be valuable.
+
+**Q: Context window: clamped vs full?**
+We clamp contextSize to `model.contextWindow.clamp(512, 8192)` but the model supports 32768.
+Loading a full 32K KV cache takes ~4GB RAM on 1.5B models (the KV cache scales quadratically
+with context length). What's the right default cap for mobile devices?
+
+**Q: GGUF file location after PRoot reset?**
+Currently models live inside `$filesDir/rootfs/`. If user resets PRoot, models are lost.
+Is there a better default location that's independent of the PRoot rootfs lifecycle?
+
+---
+
+*Architecture document maintained by the Plawie development team.*
+*For corrections or contributions, open a PR against this file.*
+*Last validated against commit `5238893` (2026-03-28).*
