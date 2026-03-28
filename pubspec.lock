@@ -161,6 +161,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.5+3"
+  change_case:
+    dependency: transitive
+    description:
+      name: change_case
+      sha256: e41ef3df58521194ef8d7649928954805aeb08061917cf658322305e61568003
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.0"
   characters:
     dependency: transitive
     description:
@@ -321,6 +329,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  fllama:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: main
+      resolved-ref: e812a796f557dd95360830f1f8577a25076f6aba
+      url: "https://github.com/Telosnex/fllama.git"
+    source: git
+    version: "0.0.1"
   flutter:
     dependency: "direct main"
     description: flutter
@@ -520,6 +537,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  html_unescape:
+    dependency: transitive
+    description:
+      name: html_unescape
+      sha256: "15362d7a18f19d7b742ef8dcb811f5fd2a2df98db9f80ea393c075189e0b61e3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.0"
   http:
     dependency: "direct main"
     description:
@@ -544,6 +569,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.8.0"
+  jinja:
+    dependency: transitive
+    description:
+      name: jinja
+      sha256: "67485c43c8551688669a81b4e01fe94f6126578ba8c194908d00f254f23f9b8b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.5"
   js:
     dependency: transitive
     description:
@@ -656,6 +689,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.17.5"
+  native_toolchain_cmake:
+    dependency: transitive
+    description:
+      name: native_toolchain_cmake
+      sha256: fe40e8483183ced98e851e08a9cd2a547fd412cccab98277aa23f2377e43d66f
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.4"
   nested:
     dependency: transitive
     description:
@@ -1125,6 +1166,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7"
+  textwrap:
+    dependency: transitive
+    description:
+      name: textwrap
+      sha256: "7e79503c220a9c772d370075e0d4117204546ed4c6479ab1c9ee4d4c27add606"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.0"
   typed_data:
     dependency: transitive
     description:
