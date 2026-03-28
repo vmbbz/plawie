@@ -39,10 +39,6 @@ class AppConstants {
     }
   }
 
-  // llama-server sidecar (runs alongside OpenClaw gateway, inside PRoot)
-  static const int llamaServerPort = 8081;
-  static const String llamaServerUrl = 'http://127.0.0.1:$llamaServerPort';
-
   static const int healthCheckIntervalMs = 15000; // Reduced from 5000ms to 15s
   static const int maxAutoRestarts = 3;
 
