@@ -565,7 +565,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           '• **LLaVA 1.5 7B** (flagship phones, ~6 GB RAM)',
         );
       } else {
-        stream = gatewayProvider.sendMessage(text, model: _selectedModel);
+        // Build conversation history for the local-llm HTTP path (multi-turn context).
+        // Excludes the empty assistant placeholder we just added (_messages.last).
+        final conversationHistory = _messages
+            .take(_messages.length - 1)
+            .where((m) => m.text.isNotEmpty)
+            .map((m) => <String, dynamic>{
+                  'role': m.isUser ? 'user' : 'assistant',
+                  'content': m.text,
+                })
+            .toList();
+        stream = gatewayProvider.sendMessage(text,
+            model: _selectedModel, conversationHistory: conversationHistory);
       }
       await for (final chunk in stream) {
         if (!mounted) break;
@@ -631,10 +642,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         _speechIntensity = 0.0; // Stop mouth
         _syncOverlayState();
         
-        // If the upstream AI provider rate-limited silently, the message stream will be empty.
-        // Catch this and provide a human-readable fallback instead of a blank bubble.
+        // Empty stream: model may still be loading, gateway unavailable, or provider error.
         if (fullResponse.trim().isEmpty) {
-          fullResponse = '⚠️ **API Rate Limit Reached**. Please wait a moment before trying again.';
+          fullResponse = '⚠️ No response received. The model may still be loading — please try again in a moment.';
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         }
       });

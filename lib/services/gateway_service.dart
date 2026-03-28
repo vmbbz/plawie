@@ -83,7 +83,6 @@ class GatewayService {
 
       _subscribeLogs();
       _startHealthCheck();
-      unawaited(_validateGatewayProcess()); 
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
       return;
@@ -137,45 +136,6 @@ class GatewayService {
 
   Future<void> start() async {
     await _attachOrStart(forceStart: true);
-  }
-
-  /// NEW: Validate that the gateway process is actually ready to serve requests
-  Future<void> _validateGatewayProcess() async {
-    const maxAttempts = 6; // 30 seconds total
-    for (int i = 0; i < maxAttempts; i++) {
-      await Future.delayed(const Duration(seconds: 5));
-      
-      try {
-        // Check if gateway process is still running
-        final isRunning = await NativeBridge.isGatewayRunning();
-        if (!isRunning) {
-          _updateState(_state.copyWith(
-            status: GatewayStatus.stopped,
-            logs: [..._state.logs, '[WARN] Gateway process died during validation'],
-          ));
-          return;
-        }
-
-        // Check if gateway is responding to HTTP requests
-        final response = await http.head(Uri.parse(AppConstants.gatewayUrl))
-            .timeout(const Duration(seconds: 3));
-        
-        if (response.statusCode < 500) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[INFO] Gateway process validated and responding'],
-          ));
-          return;
-        }
-      } catch (_) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[DEBUG] Gateway validation attempt ${i + 1}/$maxAttempts'],
-        ));
-      }
-    }
-    
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[WARN] Gateway validation failed - process may be stuck'],
-    ));
   }
 
   void _subscribeLogs() {
@@ -712,13 +672,11 @@ class GatewayService {
   ///
   /// Uses auto-reconnecting GatewayConnection. Falls back to per-message
   /// connection if the persistent one isn't available.
-  Stream<String> sendMessage(String message, {String? model}) async* {
+  Stream<String> sendMessage(String message, {
+    String? model,
+    List<Map<String, dynamic>>? conversationHistory,
+  }) async* {
     model = await _resolveModel(model);
-
-    // All models — cloud and local — use the WS chat.send path for session persistence.
-    // Local LLM: after openclaw reload, the gateway's primary model is "local-llm/..."
-    //            and a fresh WS session (post-disconnect) picks it up automatically.
-    // HTTP sendMessageHttp remains as the WS fallback path only.
 
     // Retrieve auth token
     String? token;
@@ -741,23 +699,23 @@ class GatewayService {
       return;
     }
 
-    // Use persistent connection with auto-reconnect
-    if (_connection == null) {
-      _connection = GatewayConnection();
-      _connection!.stateStream.listen((wsState) {
-        _updateState(_state.copyWith(
-          isWebsocketConnected: wsState == GatewayConnectionState.connected,
-        ));
-      });
+    // Local LLM: always use HTTP with explicit model param so the gateway routes
+    // to node-llama-cpp directly. WS chat.send uses session config which may lag
+    // behind openclaw reload; the HTTP model param is always authoritative.
+    // Conversation history is passed in the messages array for multi-turn context.
+    if (model.startsWith('local-llm/')) {
+      yield* sendMessageHttp(message,
+          model: model, token: token, conversationHistory: conversationHistory);
+      return;
     }
 
-    if (_connection!.state != GatewayConnectionState.connected) {
-      final ok = await _connection!.connect(token);
-      if (!ok) {
-        // Fallback to HTTP if WS fails
-        yield* sendMessageHttp(message, model: model, token: token);
-        return;
-      }
+    // Cloud models: use persistent WS connection for server-side session persistence.
+    // _ensureWebSocket() handles creation, listener registration, and connect — single path.
+    final wsOk = await _ensureWebSocket(token);
+    if (!wsOk) {
+      yield* sendMessageHttp(message, model: model, token: token,
+          conversationHistory: conversationHistory);
+      return;
     }
 
     final requestId = const Uuid().v4();
@@ -924,13 +882,21 @@ class GatewayService {
   /// 
   /// Used for specific model overrides (like Local LLM) where the WS RPC
   /// parameters are too rigid. Now supports real-time text deltas.
-  Stream<String> sendMessageHttp(String message, {String? model, String? token}) async* {
+  Stream<String> sendMessageHttp(String message, {
+    String? model,
+    String? token,
+    List<Map<String, dynamic>>? conversationHistory,
+  }) async* {
     model = await _resolveModel(model);
     token ??= await retrieveTokenFromConfig();
     if (token == null || token.isEmpty) {
       yield '[Error] No auth token for model routing.';
       return;
     }
+
+    final messages = conversationHistory != null && conversationHistory.isNotEmpty
+        ? [...conversationHistory, {'role': 'user', 'content': message}]
+        : [{'role': 'user', 'content': message}];
 
     final client = http.Client();
     try {
@@ -941,7 +907,7 @@ class GatewayService {
         })
         ..body = jsonEncode({
           'model': model,
-          'messages': [{'role': 'user', 'content': message}],
+          'messages': messages,
           'stream': true,
         });
 
