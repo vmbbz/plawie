@@ -13,6 +13,10 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 
 class GatewayService {
+  static final GatewayService _instance = GatewayService._internal();
+  factory GatewayService() => _instance;
+  GatewayService._internal();
+
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
   GatewayConnection? _connection;
@@ -52,19 +56,20 @@ class GatewayService {
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
-    await _attachOrStart(autoStart: prefs.autoStartGateway);
+    // 9a9614a Optimization: Do not block splash screen during auto-start
+    unawaited(_attachOrStart(autoStart: prefs.autoStartGateway));
   }
 
   /// Unified entry point for starting or attaching to the gateway.
   /// Prevents double-spawns and handles self-healing.
   Future<void> _attachOrStart({bool autoStart = false, bool forceStart = false}) async {
+    // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
 
     final prefs = PreferencesService();
     await prefs.init();
-    final savedUrl = prefs.dashboardUrl;
 
-    // First check if already running
+    // 1. ALWAYS check if already running and attach if so
     final alreadyRunning = await NativeBridge.isGatewayRunning();
 
     if (alreadyRunning) {
@@ -72,25 +77,27 @@ class GatewayService {
 
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
-        dashboardUrl: savedUrl,
+        // (savedUrl should be retrieved here if needed, but prefs.init already happened)
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
       _subscribeLogs();
       _startHealthCheck();
-      await _validateGatewayProcess();
+      unawaited(_validateGatewayProcess()); 
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
       return;
     }
 
-    // Not running. Should we start it?
+    // 2. Not running. POLICY: Should we spawn a NEW one?
     if (!autoStart && !forceStart) {
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] Gateway not running. Auto-start is off.']
       ));
       return;
     }
+
+    final savedUrl = prefs.dashboardUrl;
 
     // Attempting a fresh start
     _isStarting = true;
@@ -115,7 +122,8 @@ class GatewayService {
       await Future.delayed(const Duration(seconds: 1));
       _subscribeLogs();
       _startHealthCheck();
-      await fetchAuthenticatedDashboardUrl(force: true);
+      // Use unawaited to avoid blocking the main startup sequence
+      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
     } catch (e) {
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
@@ -449,7 +457,7 @@ class GatewayService {
 
     final config = await _readConfig();
     
-    // Check multiple potential paths in the JSON
+    // MERGED: Robust multi-path token discovery while maintaining host-side file I/O speed.
     final token = config['gateway']?['auth']?['token'] as String? ??
                  config['gateway']?['token'] as String? ??
                  config['gateway']?['apiKey'] as String? ??
@@ -706,6 +714,15 @@ class GatewayService {
   /// connection if the persistent one isn't available.
   Stream<String> sendMessage(String message, {String? model}) async* {
     model = await _resolveModel(model);
+
+    // SEAMLESS ROUTING: Use the OpenAI-compatible HTTP path for specific model overrides.
+    // This supports per-message model selection (including Local LLM) with full streaming,
+    // avoiding the rigid parameter constraints of the main WebSocket RPC.
+    if (model.startsWith('local-llm') || model.contains('/')) {
+      yield* sendMessageHttp(message, model: model);
+      return;
+    }
+
     // Retrieve auth token
     String? token;
     try {
@@ -906,52 +923,63 @@ class GatewayService {
     return frame;
   }
 
-  /// HTTP fallback: POST to /v1/chat/completions (OpenAI-compatible endpoint).
-  ///
-  /// Used when WebSocket connection fails. Simpler but doesn't support streaming.
+  /// HTTP fallback: POST to /v1/chat/completions with STREAMING support.
+  /// 
+  /// Used for specific model overrides (like Local LLM) where the WS RPC
+  /// parameters are too rigid. Now supports real-time text deltas.
   Stream<String> sendMessageHttp(String message, {String? model, String? token}) async* {
     model = await _resolveModel(model);
     token ??= await retrieveTokenFromConfig();
     if (token == null || token.isEmpty) {
-      yield '[Error] No auth token for HTTP fallback.';
+      yield '[Error] No auth token for model routing.';
       return;
     }
 
+    final client = http.Client();
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
-        headers: {
+      final request = http.Request('POST', Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'))
+        ..headers.addAll({
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
+        })
+        ..body = jsonEncode({
           'model': model,
-          'messages': [
-            {'role': 'user', 'content': message},
-          ],
-        }),
-      ).timeout(const Duration(seconds: 90));
+          'messages': [{'role': 'user', 'content': message}],
+          'stream': true,
+        });
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final choices = json['choices'] as List?;
-        if (choices != null && choices.isNotEmpty) {
-          final content = (choices[0]['message'] as Map?)?['content'] as String?;
-          if (content != null) {
-            yield content;
-          } else {
-            yield '[Error] Empty response from HTTP endpoint.';
+      final streamedResponse = await client.send(request).timeout(const Duration(seconds: 90));
+
+      if (streamedResponse.statusCode != 200) {
+        final body = await streamedResponse.stream.bytesToString();
+        yield '[Error] HTTP ${streamedResponse.statusCode}: $body';
+        return;
+      }
+
+      // Process the SSE stream: "data: { ... }"
+      await for (final chunk in streamedResponse.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        if (chunk.startsWith('data: ')) {
+          final data = chunk.substring(6).trim();
+          if (data == '[DONE]') break;
+          try {
+            final json = jsonDecode(data);
+            final delta = (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
+            if (delta != null && delta.isNotEmpty) {
+              yield delta;
+            }
+          } catch (_) {
+            // Malformed chunk or heartbeat, skip
           }
-        } else {
-          yield '[Error] No choices in HTTP response.';
         }
-      } else {
-        yield '[Error] HTTP ${response.statusCode}: ${response.body}';
       }
     } on TimeoutException {
-      yield '[Error] HTTP chat timed out after 90 seconds.';
+      yield '[Error] Chat stream timed out.';
     } catch (e) {
-      yield '[Error] HTTP chat error: $e';
+      yield '[Error] Connection failed: $e';
+    } finally {
+      client.close();
     }
   }
 
@@ -1127,15 +1155,28 @@ class GatewayService {
     }
   }
   
-  /// Resolves the intended model ID, falling back to openclaw.json primary defaults.
+  /// Resolves the intended model ID, falling back to preferences then openclaw.json defaults.
   Future<String> _resolveModel(String? model) async {
     if (model != null && model.isNotEmpty) return model;
+    
+    final prefs = PreferencesService();
+    await prefs.init();
+    final configured = prefs.configuredModel;
+    if (configured != null && configured.isNotEmpty) return configured;
     
     final config = await _readConfig();
     final primary = config['agents']?['defaults']?['model']?['primary'] as String?;
     if (primary != null && primary.isNotEmpty) return primary;
     
     return 'google/gemini-3.1-pro-preview'; // Final hard fallback
+  }
+
+  /// Clear the cached auth token so the next request re-probes for a fresh one.
+  /// Call this after openclaw reload/restart, which generates a new token.
+  void invalidateTokenCache() {
+    _cachedToken = null;
+    _lastTokenFetch = null;
+    _updateState(_state.copyWith(clearDashboardUrl: true));
   }
 
   void dispose() {
