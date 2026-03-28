@@ -99,6 +99,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   StreamSubscription<String>? _hotwordSub;
   // Auto-sync model when local LLM starts/stops
   StreamSubscription<LocalLlmState>? _localLlmSub;
+  LocalLlmState _localLlmState = const LocalLlmState();
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
@@ -115,10 +116,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _loadPreferences();
     _localLlmSub = LocalLlmService().stateStream.listen((llmState) {
       if (!mounted) return;
+      setState(() => _localLlmState = llmState);
+      
       if (llmState.status == LocalLlmStatus.ready && llmState.activeModelId != null) {
         final localModel = 'local-llm/${llmState.activeModelId}';
-        setState(() => _selectedModel = localModel);
-        PreferencesService().configuredModel = localModel;
+        if (_selectedModel != localModel) {
+          setState(() => _selectedModel = localModel);
+          PreferencesService().configuredModel = localModel;
+        }
       } else if (llmState.status == LocalLlmStatus.idle &&
                  _selectedModel.startsWith('local-llm/')) {
         setState(() => _selectedModel = _availableModels.first);
@@ -1011,19 +1016,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         ),
         // --- INTELLIGENT LOCAL LLM ENTRY ---
         PopupMenuItem<String>(
-          value: LocalLlmService().state.status == LocalLlmStatus.idle 
+          value: _localLlmState.status == LocalLlmStatus.idle 
               ? 'setup_local_llm' 
-              : 'model:local-llm/${LocalLlmService().state.activeModelId ?? 'llama-server'}',
+              : 'model:local-llm/${_localLlmState.activeModelId ?? 'llama-server'}',
           height: 48,
           child: Row(
             children: [
               Icon(
-                LocalLlmService().state.status == LocalLlmStatus.idle 
+                _localLlmState.status == LocalLlmStatus.idle 
                     ? Icons.install_mobile 
                     : (_selectedModel.startsWith('local-llm/') ? Icons.memory_rounded : Icons.phone_android),
                 color: _selectedModel.startsWith('local-llm/') 
                     ? const Color(0xFF00E5AA) 
-                    : (LocalLlmService().state.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white38),
+                    : (_localLlmState.status == LocalLlmStatus.starting ? Colors.amber : (_localLlmState.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white38)),
                 size: 18,
               ),
               const SizedBox(width: 10),
@@ -1033,25 +1038,31 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      LocalLlmService().state.status == LocalLlmStatus.idle 
+                      _localLlmState.status == LocalLlmStatus.idle 
                           ? 'Setup Local LLM' 
-                          : (LocalLlmService().state.activeModelId ?? 'Local LLM'),
+                          : (_localLlmState.activeModelId ?? 'Local LLM'),
                       style: TextStyle(
                         color: _selectedModel.startsWith('local-llm/') 
                             ? Colors.white 
-                            : (LocalLlmService().state.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white70),
+                            : (_localLlmState.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white70),
                         fontSize: 13,
                         fontWeight: _selectedModel.startsWith('local-llm/') ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                     Text(
-                      LocalLlmService().state.status == LocalLlmStatus.idle 
-                          ? 'Download free model' 
-                          : (_selectedModel.startsWith('local-llm/') ? 'ACTIVE · ON-DEVICE' : 'ON-DEVICE (FREE)'),
+                      _localLlmState.status == LocalLlmStatus.starting
+                          ? 'WAKING UP...'
+                          : (_localLlmState.status == LocalLlmStatus.error
+                              ? 'ERROR: CHECK SETUP'
+                              : (_localLlmState.status == LocalLlmStatus.idle 
+                                ? 'Download free model' 
+                                : (_selectedModel.startsWith('local-llm/') ? 'ACTIVE · ON-DEVICE' : 'ON-DEVICE (READY)'))),
                       style: TextStyle(
-                        color: _selectedModel.startsWith('local-llm/') 
-                            ? const Color(0xFF00E5AA) 
-                            : (LocalLlmService().state.status == LocalLlmStatus.idle ? AppColors.statusAmber.withValues(alpha: 0.6) : Colors.white38),
+                        color: _localLlmState.status == LocalLlmStatus.starting
+                            ? Colors.amber
+                            : (_selectedModel.startsWith('local-llm/') 
+                                ? const Color(0xFF00E5AA) 
+                                : (_localLlmState.status == LocalLlmStatus.idle ? AppColors.statusAmber.withValues(alpha: 0.6) : Colors.white38)),
                         fontSize: 8,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
@@ -1060,7 +1071,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   ],
                 ),
               ),
-              if (_selectedModel.startsWith('local-llm/'))
+              if (_localLlmState.status == LocalLlmStatus.starting)
+                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
+              else if (_selectedModel.startsWith('local-llm/'))
                 const Icon(Icons.check, color: Color(0xFF00E5AA), size: 18),
             ],
           ),
@@ -1450,11 +1463,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         ),
                         Text(
                           _selectedModel.startsWith('local-llm/')
-                            ? '${_selectedAvatar.split('.').first.toUpperCase()} · LOCAL ON-DEVICE'
+                            ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
                             : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
-                              ? const Color(0xFF00E5AA)
+                              ? (_localLlmState.status == LocalLlmStatus.starting ? Colors.amber : const Color(0xFF00E5AA))
                               : Colors.white.withValues(alpha: 0.5),
                             fontSize: 8,
                             fontWeight: FontWeight.w600,
