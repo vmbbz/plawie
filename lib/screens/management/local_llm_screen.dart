@@ -24,6 +24,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   double _tokensPerSec = 0;
   DateTime? _testStartTime;
   int _tokenCount = 0;
+  String _healthStatus = '';
+  bool _isCheckingHealth = false;
+  String _serverLogs = '';
+  bool _isFetchingLogs = false;
+  bool _showLogs = false;
 
   @override
   void initState() {
@@ -90,8 +95,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildStatusCard(),
-                      const SizedBox(height: 20),
-                      _buildToggleRow(),
                       const SizedBox(height: 20),
                       _buildThreadSlider(),
                       const SizedBox(height: 28),
@@ -255,48 +258,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildToggleRow() {
-    final isRunning = _state.status == LocalLlmStatus.ready;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Route to local model',
-                style: GoogleFonts.outfit(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                isRunning
-                    ? 'openclaw.json patched — agent uses local provider'
-                    : 'Start a model first to enable',
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-        Switch(
-          value: _state.isEnabled,
-          onChanged: isRunning
-              ? (v) async {
-                  await _service.setEnabled(
-                    v,
-                    modelId: _state.activeModelId,
-                  );
-                }
-              : null,
-          activeThumbColor: AppColors.statusGreen,
-        ),
-      ],
     );
   }
 
@@ -494,11 +455,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     }
 
     if (isDownloaded) {
-      final isStartingThis = _state.status == LocalLlmStatus.starting && isSelected;
+      final isStartingThis = _state.status == LocalLlmStatus.starting && _selectedModel?.id == model.id;
       return TextButton.icon(
         onPressed: _state.status == LocalLlmStatus.starting
             ? null
-            : () => _service.startWithModel(model),
+            : () {
+                setState(() => _selectedModel = model);
+                _service.startWithModel(model);
+              },
         icon: isStartingThis
             ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
             : const Icon(Icons.play_arrow_rounded, size: 14, color: AppColors.statusGreen),
@@ -680,6 +644,74 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                 ),
             ],
           ),
+          const SizedBox(height: 12),
+          // Server health probe row
+          Row(
+            children: [
+              Text(
+                'Endpoint: http://127.0.0.1:8081',
+                style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _isCheckingHealth ? null : _checkHealth,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: _isCheckingHealth
+                      ? const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38))
+                      : Text('Health Check', style: GoogleFonts.jetBrainsMono(color: Colors.white38, fontSize: 9)),
+                ),
+              ),
+            ],
+          ),
+          if (_healthStatus.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              _healthStatus,
+              style: GoogleFonts.jetBrainsMono(
+                color: _healthStatus.startsWith('HTTP 200') ? AppColors.statusGreen : Colors.redAccent,
+                fontSize: 9,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          // Server log viewer
+          Row(
+            children: [
+              GestureDetector(
+                onTap: _isFetchingLogs ? null : _toggleLogs,
+                child: Row(
+                  children: [
+                    Icon(_showLogs ? Icons.expand_less : Icons.expand_more, color: Colors.white24, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      _isFetchingLogs ? 'Loading logs…' : (_showLogs ? 'Hide server log' : 'View server log'),
+                      style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_showLogs && _serverLogs.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                _serverLogs,
+                style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 8, height: 1.5),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _testPromptController,
@@ -767,6 +799,22 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _checkHealth() async {
+    setState(() { _isCheckingHealth = true; _healthStatus = ''; });
+    final result = await _service.fetchServerHealth();
+    if (mounted) setState(() { _healthStatus = result; _isCheckingHealth = false; });
+  }
+
+  Future<void> _toggleLogs() async {
+    if (_showLogs) {
+      setState(() => _showLogs = false);
+      return;
+    }
+    setState(() { _isFetchingLogs = true; _showLogs = true; });
+    final logs = await _service.fetchServerLogs();
+    if (mounted) setState(() { _serverLogs = logs; _isFetchingLogs = false; });
   }
 
   Future<void> _runTest() async {

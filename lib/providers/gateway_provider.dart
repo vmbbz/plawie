@@ -120,6 +120,11 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.invoke(method, params);
   }
 
+  /// Force a WebSocket disconnection to trigger a fresh handshake on next send.
+  void disconnectWebSocket() {
+    _gatewayService.disconnectWebSocket();
+  }
+
 
   @override
   void dispose() {

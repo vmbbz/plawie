@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'package:path_provider/path_provider.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
 import '../models/agent_info.dart';
@@ -120,21 +119,28 @@ class GatewayService {
         throw Exception('Native start failed.');
       }
 
-      // Warn user if battery optimization is active — Android can kill PRoot
-      try {
-        final isOptimized = await NativeBridge.isBatteryOptimized();
-        if (isOptimized) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
-          ));
-          await NativeBridge.requestBatteryOptimization();
-        }
-      } catch (_) {}
+      // Warn user if battery optimization is active — Android can kill PRoot.
+      // Fire-and-forget: showing the dialog must NOT block _startHealthCheck().
+      // If requestBatteryOptimization() uses startActivityForResult it can wait
+      // indefinitely, stalling the health timer from ever starting.
+      unawaited(() async {
+        try {
+          final isOptimized = await NativeBridge.isBatteryOptimized();
+          if (isOptimized) {
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
+            ));
+            await NativeBridge.requestBatteryOptimization();
+          }
+        } catch (_) {}
+      }());
 
       await Future.delayed(const Duration(milliseconds: 500));
       _subscribeLogs();
       _startHealthCheck();
-      // Use unawaited to avoid blocking the main startup sequence
+      // Probe immediately — same as the attach path — so we don't wait a full
+      // 15s timer tick before discovering the gateway is already responding.
+      unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
     } catch (e) {
       _updateState(_state.copyWith(
@@ -740,18 +746,19 @@ class GatewayService {
       return;
     }
 
-    // ROUTING DECISION:
-    // - Local LLM models MUST use the HTTP /v1/chat/completions path because it
-    //   lets us pass the model ID explicitly. The WS chat.send RPC has NO model
-    //   parameter — it relies on agents.defaults.model.primary being reloaded,
-    //   which can race and silently fall back to cloud (causing "API rate limit").
-    // - Cloud models use WS (agentic, stateful, supports tools/skills).
-    if (model != null && model.startsWith('local-llm')) {
-      yield* sendMessageHttp(message, model: model, token: token,
-          conversationHistory: conversationHistory);
+    // Local-llm: bypass the gateway entirely — POST directly to llama-server
+    // on port 8081. This eliminates the disabledUntil bug, stale WS session
+    // races, and OpenClaw provider layer overhead.
+    if (model.startsWith('local-llm')) {
+      yield* sendMessageHttp(message,
+          model: model,
+          token: token,
+          conversationHistory: conversationHistory,
+          directUrl: '${AppConstants.llamaServerUrl}/v1/chat/completions');
       return;
     }
 
+    // Cloud models: use the WebSocket chat.send RPC.
     final wsOk = await _ensureWebSocket(token);
     if (!wsOk) {
       yield* sendMessageHttp(message, model: model, token: token,
@@ -856,8 +863,9 @@ class GatewayService {
                 if (!chunkController.isClosed) chunkController.close();
               }
             } else if (stream == 'error') {
-               // Gateway stream=error (e.g. seq gap / unknown provider error)
-               final error = (innerData?['error'] ?? payload?['error'] ?? payload?['reason'] ?? frame['reason'] ?? frame['error'])?.toString() ?? 'Unknown API stream error';
+               // Gateway stream=error: provider failure, seq gap, or disabledUntil cooldown.
+               final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason'] ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
+               final error = rawErr.isNotEmpty ? rawErr : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
                chunkController.add('[Error] $error');
                if (!chunkController.isClosed) chunkController.close();
             }
@@ -927,39 +935,38 @@ class GatewayService {
     String? model,
     String? token,
     List<Map<String, dynamic>>? conversationHistory,
+    String? directUrl, // if set, bypass the gateway and POST directly to this URL
   }) async* {
     model = await _resolveModel(model);
-    token ??= await retrieveTokenFromConfig();
-    if (token == null || token.isEmpty) {
-      yield '[Error] No auth token for model routing.';
-      return;
+
+    final url = directUrl ?? '${AppConstants.gatewayUrl}/v1/chat/completions';
+    final isDirectLlama = directUrl != null;
+
+    // For direct llama-server calls, no gateway token or openclaw headers needed.
+    if (!isDirectLlama) {
+      token ??= await retrieveTokenFromConfig();
+      if (token == null || token.isEmpty) {
+        yield '[Error] No auth token for model routing.';
+        return;
+      }
     }
 
     final messages = conversationHistory != null && conversationHistory.isNotEmpty
         ? [...conversationHistory, {'role': 'user', 'content': message}]
         : [{'role': 'user', 'content': message}];
 
-    // The gateway's OpenAI-compat API is agent-centric: the model field MUST be
-    // "openclaw/default" (not a raw provider ID like "local-llm/...").
-    // The gateway resolves "openclaw/default" → agents.defaults.model.primary
-    // which _patchOpenClawConfig() already sets to "local-llm/<id>".
-    // We also send x-openclaw-model as an explicit routing hint.
-    final isLocalLlm = model.startsWith('local-llm');
-    final gatewayModel = isLocalLlm ? 'openclaw/default' : model;
+    final effectiveModel = isDirectLlama ? 'local-llm' : model;
 
     final client = http.Client();
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
+        if (!isDirectLlama && token != null) 'Authorization': 'Bearer $token',
       };
-      if (isLocalLlm) {
-        headers['x-openclaw-model'] = model; // explicit provider hint
-      }
-      final request = http.Request('POST', Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'))
+      final request = http.Request('POST', Uri.parse(url))
         ..headers.addAll(headers)
         ..body = jsonEncode({
-          'model': gatewayModel,
+          'model': effectiveModel,
           'messages': messages,
           'stream': true,
         });
@@ -1016,17 +1023,14 @@ class GatewayService {
         prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
 
     try {
-      final token = await retrieveTokenFromConfig();
       final response = await http
           .post(
-            Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
+            Uri.parse('${AppConstants.llamaServerUrl}/v1/chat/completions'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${token ?? ''}',
-              'x-openclaw-model': 'local-llm',
             },
             body: jsonEncode({
-              'model': 'openclaw/default',
+              'model': 'local-llm',
               'messages': [
                 {
                   'role': 'user',
