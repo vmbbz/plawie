@@ -22,8 +22,12 @@ class GatewayProvider extends ChangeNotifier {
   List<Map<String, dynamic>>? get activeSkills => _state.activeSkills;
 
   /// Send a message to the OpenClaw gateway and stream the response.
-  Stream<String> sendMessage(String message, {String model = 'google/gemini-3.1-pro-preview'}) {
-    return _gatewayService.sendMessage(message, model: model);
+  Stream<String> sendMessage(String message, {
+    String model = 'google/gemini-3.1-pro-preview',
+    List<Map<String, dynamic>>? conversationHistory,
+  }) {
+    return _gatewayService.sendMessage(message,
+        model: model, conversationHistory: conversationHistory);
   }
 
   /// Send an image + optional text directly to the local vision model on :8081.
