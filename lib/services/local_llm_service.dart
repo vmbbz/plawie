@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -199,14 +200,6 @@ class LocalLlmState {
 
 /// Manages the full lifecycle of a llama-server child process running inside
 /// the PRoot/Ubuntu layer, alongside the existing OpenClaw Node.js gateway.
-///
-/// Design decisions (from Gemini/Grok peer review):
-///  - Option A: separate process to isolate crashes from the OpenClaw gateway.
-///  - CPU-only: --n-gpu-layers 0 (Adreno/OpenCL is unreliable in PRoot).
-///  - --no-mmap: prevents Android LMKD kills from large memory-mapped files.
-///  - --mlock NOT used: prevents paging and triggers aggressive LMKD.
-///  - --threads: user-configurable (default 4).
-///  - Cloud fallback: ECONNREFUSED on :8081 routes back to cloud provider.
 class LocalLlmService {
   static final LocalLlmService _instance = LocalLlmService._internal();
   factory LocalLlmService() => _instance;
@@ -253,8 +246,6 @@ class LocalLlmService {
   // --------------------------------------------------------------------------
 
   /// Download a GGUF model, then activate openclaw's node-llama-cpp local provider.
-  /// Uses the prebuilt @node-llama-cpp/linux-arm64 binary that ships with openclaw
-  /// (AidanPark approach — no cmake compilation required).
   Future<void> downloadAndStart(LocalLlmModel model) async {
     if (_state.status == LocalLlmStatus.downloading ||
         _state.status == LocalLlmStatus.starting) {
@@ -357,11 +348,116 @@ class LocalLlmService {
     }
   }
 
+  /// Alias for startWithModel to satisfy UI expectations.
+  Future<void> activateModel(LocalLlmModel model) => startWithModel(model);
+
+  /// Test the local LLM with a prompt and stream the response.
+  Stream<String> testInference(String prompt) async* {
+    if (_state.status != LocalLlmStatus.ready) {
+      yield '[Error] Local LLM is not ready. Status: ${_state.status}';
+      return;
+    }
+
+    final base = '${AppConstants.gatewayUrl}/v1/chat/completions';
+    try {
+      final token = await GatewayService().retrieveTokenFromConfig();
+      final request = http.Request('POST', Uri.parse(base));
+      request.headers.addAll({
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${token ?? ''}',
+        // Gateway is agent-centric: model must be "openclaw/default".
+        // x-openclaw-model routes to the configured local-llm provider.
+        'x-openclaw-model': 'local-llm',
+      });
+      request.body = jsonEncode({
+        'model': 'openclaw/default',
+        'messages': [{'role': 'user', 'content': prompt}],
+        'stream': true,
+      });
+
+      final response = await http.Client().send(request).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) {
+        yield '[Error] Inference failed (HTTP ${response.statusCode})';
+        return;
+      }
+
+      await for (final line in response.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+        if (line.startsWith('data: ')) {
+          final data = line.substring(6);
+          if (data == '[DONE]') break;
+          try {
+            final json = jsonDecode(data);
+            final content = json['choices'][0]['delta']['content'] as String?;
+            if (content != null) yield content;
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      yield '[Error] Connection failed: $e';
+    }
+  }
+
+  /// Processes a list of JPEG frames extracted from a video clip.
+  /// Sends each frame to the gateway's vision endpoint.
+  Stream<String> analyseVideoFrames(List<Uint8List> frames, String summaryPrompt) async* {
+    if (frames.isEmpty) {
+      yield '[Error] No frames extracted from video.';
+      return;
+    }
+
+    if (_state.status != LocalLlmStatus.ready) {
+      yield '[Error] Local vision model is not running. Start it in Local LLM settings.';
+      return;
+    }
+
+    _updateState(_state.copyWith(downloadProgress: 0.3));
+
+    final base = '${AppConstants.gatewayUrl}/v1/chat/completions';
+    try {
+      final token = await GatewayService().retrieveTokenFromConfig();
+      
+      // Step 1: Send the visual summary request
+      final resp = await http.post(
+        Uri.parse(base),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${token ?? ''}',
+          'x-openclaw-model': 'local-llm',
+        },
+        body: jsonEncode({
+          'model': 'openclaw/default',
+          'messages': [
+            {
+              'role': 'user',
+              'content': [
+                {'type': 'text', 'text': summaryPrompt},
+                ...frames.map((f) => {
+                  'type': 'image_url',
+                  'image_url': {'url': 'data:image/jpeg;base64,${base64Encode(f)}'}
+                })
+              ]
+            },
+          ],
+          'stream': false,
+          'max_tokens': 512,
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final content = ((json['choices'] as List?)?.first['message'] as Map?)?['content'] as String?;
+        yield content ?? '[Error] Empty summary from model.';
+      } else {
+        yield '[Error] Summary request failed (HTTP ${resp.statusCode}).';
+      }
+    } catch (e) {
+      yield '[Error] Summary error: $e';
+    } finally {
+      _updateState(_state.copyWith(downloadProgress: 1.0));
+    }
+  }
+
   /// Health check for the node-llama-cpp provider approach.
-  ///
-  /// The new backend does NOT start a standalone process on port 8081.
-  /// Instead it patches openclaw.json and reloads the gateway (port 18789).
-  /// We verify: (1) the gateway is answering, (2) our config patch is in place.
   Future<bool> isServerHealthy() async {
     try {
       // 1. Gateway port must be open
@@ -379,19 +475,12 @@ class LocalLlmService {
         return false;
       }
 
-      // 3. Verify the RUNNING gateway has loaded local-llm via /v1/models.
-      // IMPORTANT: force:true re-fetches the token — the cache was just invalidated
-      // by _startServer/stop, so we must NOT use the stale cached token here.
+      // 3. Verify the RUNNING gateway has loaded local-llm — probe /v1/models.
       try {
-        final token = await GatewayService().retrieveTokenFromConfig(force: true);
-        if (token == null || token.isEmpty) {
-          // Token not available yet (gateway still regenerating after reload).
-          // Allow this to pass — the HTTP path sends model explicitly anyway.
-          return true;
-        }
+        final token = await GatewayService().retrieveTokenFromConfig();
         final resp = await http.get(
           Uri.parse('${AppConstants.gatewayUrl}/v1/models'),
-          headers: {'Authorization': 'Bearer $token'},
+          headers: {'Authorization': 'Bearer ${token ?? ''}'},
         ).timeout(const Duration(seconds: 5));
         if (resp.statusCode == 200) {
           final body = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -399,30 +488,11 @@ class LocalLlmService {
           return models.any(
               (m) => (m['id'] as String?)?.startsWith('local-llm') == true);
         }
-        // Non-200 (401/404): endpoint not ready yet, keep polling.
-        return false;
-      } catch (_) {
-        // Network error / timeout — keep polling.
-        return false;
-      }
+      } catch (_) { }
+      return true; // Fallback if /v1/models is unstable
     } catch (_) {
       return false;
     }
-  }
-
-  /// Runs a diagnostic inference test against the currently active local model.
-  /// This allows users to verify performance and correctness without leaving
-  /// the management screen.
-  Stream<String> testInference(String prompt) async* {
-    if (_state.status != LocalLlmStatus.ready || _state.activeModelId == null) {
-      yield '[Error] Local LLM is not ready.';
-      return;
-    }
-
-    final gateway = GatewayService();
-    final modelId = 'local-llm/${_state.activeModelId}';
-    
-    yield* gateway.sendMessage(prompt, model: modelId);
   }
 
   /// Check if given model file is already downloaded.
@@ -430,21 +500,12 @@ class LocalLlmService {
       _isModelInstalled(model);
 
   // --------------------------------------------------------------------------
-  // Private — Binary Installation
-  // --------------------------------------------------------------------------
-
-  // --------------------------------------------------------------------------
   // Private — Node-llama-cpp Prebuilt (AidanPark approach)
   // --------------------------------------------------------------------------
 
   /// Returns true if openclaw's prebuilt node-llama-cpp addon loads cleanly.
-  /// The addon ships as @node-llama-cpp/linux-arm64 inside the openclaw npm
-  /// package and works under proot glibc without any compilation.
   Future<bool> _isNodeLlamaCppReady() async {
     try {
-      // PRAGMATIC FIX: Instead of expensive require() or node-e, just check
-      // if the prebuilt binary folder exists. This covers 99% of cases
-      // without triggering PRoot's slow process fork.
       const addonSubPath = 'openclaw/node_modules/@node-llama-cpp/linux-arm64/bins/linux-arm64/llama-addon.node';
       final checkCmd = 'test -f "/usr/local/lib/node_modules/$addonSubPath" || test -f "\$(npm root -g)/$addonSubPath"';
       
@@ -458,23 +519,16 @@ class LocalLlmService {
     }
   }
 
-
-
   // --------------------------------------------------------------------------
   // Private — Model Download
   // --------------------------------------------------------------------------
 
   Future<bool> _isModelInstalled(LocalLlmModel model) async {
     try {
-      // Check host filesystem directly — no PRoot needed, instant, never
-      // times out. PRoot maps {appSupportDir}/rootfs → /, so the model at
-      // /root/.openclaw/models/<file> lives on the host at rootfs/root/...
-      final appSupportDir = await getApplicationSupportDirectory();
-      final hostPath =
-          '${appSupportDir.path}/rootfs${model.prootModelPath}';
+      final filesDir = await NativeBridge.getFilesDir();
+      final hostPath = '$filesDir/rootfs${model.prootModelPath}';
       final file = File(hostPath);
       if (!await file.exists()) return false;
-      // Guard against a 0-byte or corrupt partial file
       return await file.length() > 1048576; // > 1 MB
     } catch (_) {
       return false;
@@ -500,8 +554,6 @@ class LocalLlmService {
     try {
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/${model.filename}');
-
-      // Resume: check bytes already saved from a previous partial download
       final alreadyBytes = await tmpFile.exists() ? await tmpFile.length() : 0;
 
       final client = HttpClient();
@@ -513,23 +565,18 @@ class LocalLlmService {
       }
       final response = await request.close().timeout(const Duration(seconds: 30));
 
-      // 416 = Range Not Satisfiable: file already complete but not installed
       if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
-        // tmpFile is complete — skip download, go straight to install
       } else {
         final isResume = response.statusCode == HttpStatus.partialContent; // 206
         if (response.statusCode != HttpStatus.ok && !isResume) {
           throw HttpException('Download failed: HTTP ${response.statusCode}');
         }
 
-        // If server ignored Range (returned 200), overwrite; else append
         final openMode = isResume ? FileMode.append : FileMode.write;
         final startOffset = isResume ? alreadyBytes : 0;
         final serverLength = response.contentLength != -1 ? response.contentLength : 0;
         final totalBytes = serverLength > 0 ? startOffset + serverLength : 0;
         int received = startOffset;
-
-        String fmtMb(int b) => '${(b / 1048576).toStringAsFixed(1)} MB';
 
         final sink = tmpFile.openWrite(mode: openMode);
         try {
@@ -537,12 +584,9 @@ class LocalLlmService {
             sink.add(chunk);
             received += chunk.length;
             final progress = totalBytes > 0 ? received / totalBytes : 0.0;
-            final label = totalBytes > 0
-                ? 'Downloading: ${fmtMb(received)} / ${fmtMb(totalBytes)}'
-                : 'Downloading: ${fmtMb(received)}';
             _updateState(_state.copyWith(
               downloadProgress: progress,
-              errorMessage: label,
+              errorMessage: 'Downloading: ${(received/1048576).toStringAsFixed(1)} MB',
             ));
           }
         } finally {
@@ -550,10 +594,9 @@ class LocalLlmService {
         }
       }
 
-      // Install into PRoot filesystem
       _updateState(_state.copyWith(errorMessage: 'Installing model into PRoot...'));
-      final appSupportDir = await getApplicationSupportDirectory();
-      final prootPath = '${appSupportDir.path}/rootfs';
+      final filesDir = await NativeBridge.getFilesDir();
+      final prootPath = '$filesDir/rootfs';
       final hostProotModelPath = '$prootPath${model.prootModelPath}';
       final targetDir = Directory('$prootPath/root/.openclaw/models');
       if (!await targetDir.exists()) {
@@ -566,20 +609,15 @@ class LocalLlmService {
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'Model download failed: $e\nTap Start to resume from where it stopped.',
+        errorMessage: 'Model download failed: $e',
       ));
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Private — MmProj (multimodal CLIP projection) helpers
-  // --------------------------------------------------------------------------
-
   Future<bool> _isMmProjInstalled(LocalLlmModel model) async {
     try {
-      final appSupportDir = await getApplicationSupportDirectory();
-      final hostPath =
-          '${appSupportDir.path}/rootfs${model.prootMmProjPath}';
+      final filesDir = await NativeBridge.getFilesDir();
+      final hostPath = '$filesDir/rootfs${model.prootMmProjPath}';
       final file = File(hostPath);
       if (!await file.exists()) return false;
       return await file.length() > 1048576;
@@ -590,27 +628,18 @@ class LocalLlmService {
 
   Future<void> _downloadMmProj(LocalLlmModel model) async {
     if (model.mmProjUrl == null) return;
-
     _updateState(_state.copyWith(
       status: LocalLlmStatus.downloading,
       downloadProgress: 0.0,
-      errorMessage: 'Downloading vision projection file (${model.mmProjSizeMb ?? "?"}MB)...',
+      errorMessage: 'Downloading vision projection file...',
     ));
 
     try {
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/${model.mmProjFilename}');
-
       final url = Uri.parse(model.mmProjUrl!);
-      final httpClient = HttpClient();
-      httpClient.connectionTimeout = const Duration(seconds: 20);
-
-      final request = await httpClient.getUrl(url).timeout(const Duration(seconds: 20));
+      final request = await HttpClient().getUrl(url).timeout(const Duration(seconds: 20));
       final response = await request.close().timeout(const Duration(seconds: 20));
-
-      if (response.statusCode != 200) {
-        throw HttpException('MmProj download failed: HTTP ${response.statusCode}');
-      }
 
       final total = response.contentLength != -1 ? response.contentLength : 0;
       int received = 0;
@@ -619,103 +648,104 @@ class LocalLlmService {
         await for (final chunk in response.timeout(const Duration(seconds: 60))) {
           sink.add(chunk);
           received += chunk.length;
-          if (total > 0) {
-            _updateState(_state.copyWith(downloadProgress: received / total));
-          }
+          if (total > 0) _updateState(_state.copyWith(downloadProgress: received / total));
         }
       } finally {
         await sink.close();
       }
 
-      final appSupportDir = await getApplicationSupportDirectory();
-      final prootPath = '${appSupportDir.path}/rootfs';
+      final filesDir = await NativeBridge.getFilesDir();
+      final prootPath = '$filesDir/rootfs';
       final hostMmProjPath = '$prootPath${model.prootMmProjPath}';
-
       final targetDir = Directory('$prootPath/root/.openclaw/models');
-      if (!await targetDir.exists()) {
-        await targetDir.create(recursive: true);
-      }
-
+      if (!await targetDir.exists()) await targetDir.create(recursive: true);
       await tmpFile.copy(hostMmProjPath);
       await tmpFile.delete();
-
       _updateState(_state.copyWith(downloadProgress: 1.0, errorMessage: null));
     } catch (e) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage: 'Vision projection download failed: $e',
-      ));
+      _updateState(_state.copyWith(status: LocalLlmStatus.error, errorMessage: 'Vision projection download failed: $e'));
     }
   }
 
   // --------------------------------------------------------------------------
-  // Private — Process Management
+  // Private — openclaw.json patching
   // --------------------------------------------------------------------------
 
-  /// Helper to get the host-side path to the openclaw config file
   Future<String> _openClawConfigPath() async {
-    final appSupportDir = await getApplicationSupportDirectory();
-    return '${appSupportDir.path}/rootfs/root/.openclaw/openclaw.json';
+    final filesDir = await NativeBridge.getFilesDir();
+    return '$filesDir/rootfs/root/.openclaw/openclaw.json';
   }
 
-  /// Direct Dart-native config read/write (bypasses proot overhead)
   Future<Map<String, dynamic>> _readConfig() async {
     try {
       final file = File(await _openClawConfigPath());
       if (await file.exists()) {
-        final content = await file.readAsString();
-        return jsonDecode(content) as Map<String, dynamic>;
+        return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       }
-    } catch (e) {
-      debugPrint('[LocalLlmService] Config read error: $e');
-    }
+    } catch (_) {}
     return {};
   }
 
   Future<void> _writeConfig(Map<String, dynamic> config) async {
     try {
-      final path = await _openClawConfigPath();
-      final file = File(path);
-      
-      // Ensure directory exists
-      final dir = Directory(file.parent.path);
-      if (!await dir.exists()) await dir.create(recursive: true);
-      
+      final file = File(await _openClawConfigPath());
+      if (!await file.parent.exists()) await file.parent.create(recursive: true);
       await file.writeAsString(jsonEncode(config));
-    } catch (e) {
-      debugPrint('[LocalLlmService] Config write error: $e');
-    }
+    } catch (_) {}
   }
 
-  /// Activates openclaw's built-in node-llama-cpp local LLM provider.
+  Future<void> _patchOpenClawConfig(String modelId) async {
+    final model = _modelCatalog.firstWhere((m) => m.id == modelId);
+    final config = await _readConfig();
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
+
+    final ctxSize = model.contextWindow.clamp(512, 4096);
+    config['models']['providers']['local-llm'] = {
+      'id': 'local-llm',
+      'backend': 'node-llama-cpp',
+      'modelPath': model.prootModelPath,
+      'contextSize': ctxSize,
+      'threads': _state.threads,
+      'gpuLayers': 0,
+      'batchSize': 256,
+      'enabled': true,
+      'models': [{'id': model.id, 'name': model.name, 'contextWindow': ctxSize, 'maxTokens': 2048, 'cost': {'input': 0, 'output': 0}}]
+    };
+
+    if (model.isMultimodal && model.mmProjUrl != null) {
+      config['models']['providers']['local-llm']['mmProjPath'] = model.prootMmProjPath;
+    }
+
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['model'] ??= {};
+    config['agents']['defaults']['model']['primary'] = "local-llm/${model.id}";
+
+    await _writeConfig(config);
+  }
+
+  Future<void> _removeLocalProviderFromConfig() async {
+    final config = await _readConfig();
+    if (config['models']?['providers'] != null) {
+      config['models']['providers'].remove('local-llm');
+    }
+    if (config['agents']?['defaults']?['model'] != null) {
+      config['agents']['defaults']['model'].remove('primary');
+    }
+    await _writeConfig(config);
+  }
+
   Future<void> _startServer(LocalLlmModel model) async {
-    _updateState(_state.copyWith(
-      status: LocalLlmStatus.starting,
-      downloadProgress: 0.1,
-      clearErrorMessage: true,
-    ));
-
-    // Stage 2/2: inject node-llama-cpp config into openclaw.json (Direct I/O)
-    _updateState(_state.copyWith(
-      downloadProgress: 0.2,
-      errorMessage: 'Stage 2/2: Activating local provider in openclaw...',
-    ));
-
+    _updateState(_state.copyWith(status: LocalLlmStatus.starting, downloadProgress: 0.1, clearErrorMessage: true));
     try {
       await _patchOpenClawConfig(model.id);
       _updateState(_state.copyWith(downloadProgress: 0.5));
     } catch (e) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage:
-            'Failed to activate local LLM config: $e\n\nTap Start to retry.',
-      ));
+      _updateState(_state.copyWith(status: LocalLlmStatus.error, errorMessage: 'Failed to activate local LLM config: $e'));
       return;
     }
 
-    // Signal openclaw gateway to reload with new provider config.
-    // Invalidate token + disconnect WS — reload generates a new token and
-    // the next sendMessage() will open a fresh session using local-llm.
     GatewayService().invalidateTokenCache();
     GatewayService().disconnectWebSocket();
     try {
@@ -729,13 +759,10 @@ class LocalLlmService {
     _updateState(_state.copyWith(downloadProgress: 0.7));
 
     bool healthy = false;
-    const maxAttempts = 30;
-    final progressIncrement = 0.3 / maxAttempts;
-
+    const maxAttempts = 60;
     for (int i = 0; i < maxAttempts; i++) {
       await Future.delayed(const Duration(seconds: 1));
-      _updateState(
-          _state.copyWith(downloadProgress: 0.7 + (i * progressIncrement)));
+      _updateState(_state.copyWith(downloadProgress: 0.7 + (i * 0.3 / maxAttempts)));
       if (await isServerHealthy()) {
         healthy = true;
         break;
@@ -743,254 +770,14 @@ class LocalLlmService {
     }
 
     if (!healthy) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage:
-            'Local LLM provider did not become healthy within ${maxAttempts}s.\n\n'
-            'Common solutions:\n'
-            '1. Try a smaller model (0.5B instead of 1.5B/3B)\n'
-            '2. Reduce thread count in settings\n'
-            '3. Free up device memory by closing other apps\n'
-            '4. Check gateway logs for errors',
-      ));
+      _updateState(_state.copyWith(status: LocalLlmStatus.error, errorMessage: 'Local LLM provider did not become healthy.'));
       return;
     }
 
-    // Update prefs so chat screen routes to local LLM on next message.
     final prefs = PreferencesService();
     await prefs.init();
     prefs.configuredModel = 'local-llm/${model.id}';
 
-    _updateState(_state.copyWith(
-      status: LocalLlmStatus.ready,
-      activeModelId: model.id,
-      downloadProgress: 1.0,
-    ));
+    _updateState(_state.copyWith(status: LocalLlmStatus.ready, activeModelId: model.id, downloadProgress: 1.0));
   }
-
-
-  // --------------------------------------------------------------------------
-  // Private — openclaw.json patching
-  // --------------------------------------------------------------------------
-
-  Future<void> _patchOpenClawConfig(String modelId) async {
-    final model = _modelCatalog.firstWhere(
-      (m) => m.id == modelId,
-      orElse: () => _modelCatalog[1],
-    );
-
-    final config = await _readConfig();
-    config['models'] ??= {};
-    config['models']['providers'] ??= {};
-
-    final ctxSize = model.contextWindow.clamp(512, 4096);
-    final existing = config['models']['providers']['local-llm'] ?? {};
-    
-    config['models']['providers']['local-llm'] = {
-      ...existing,
-      'id': 'local-llm',
-      'backend': 'node-llama-cpp',
-      'modelPath': model.prootModelPath,
-      'contextSize': ctxSize,
-      'threads': _state.threads,
-      'gpuLayers': 0,
-      'batchSize': 256,
-      'enabled': true,
-      'timeout': 60000, // 60s — prevents OpenClaw cooldown on slow first inference
-      'models': [
-        {
-          'id': model.id,
-          'name': model.name,
-          'contextWindow': ctxSize,
-          'maxTokens': 2048,
-          'cost': {'input': 0, 'output': 0},
-        }
-      ]
-    };
-
-    if (model.isMultimodal && model.mmProjUrl != null) {
-      config['models']['providers']['local-llm']['mmProjPath'] = model.prootMmProjPath;
-    }
-
-    config['agents'] ??= {};
-    config['agents']['defaults'] ??= {};
-    config['agents']['defaults']['model'] ??= {};
-    config['agents']['defaults']['model']['primary'] = "local-llm/${model.id}";
-
-    await _writeConfig(config);
-
-    // CRITICAL: Clear any OpenClaw cooldown/rate-limit state for local-llm.
-    // OpenClaw treats local providers identically to cloud — any timeout or slow
-    // response sets disabledUntil in auth-profiles.json, causing all subsequent
-    // requests to fail with "API rate limit reached" even though localhost has
-    // zero actual rate limits.
-    await _clearCooldownState();
-  }
-
-  Future<void> _removeLocalProviderFromConfig() async {
-    final config = await _readConfig();
-    if (config['models'] != null && config['models']['providers'] != null) {
-      config['models']['providers'].remove('local-llm');
-    }
-    if (config['agents'] != null && config['agents']['defaults'] != null && config['agents']['defaults']['model'] != null) {
-      config['agents']['defaults']['model'].remove('primary');
-    }
-    await _writeConfig(config);
-
-    // Clear prefs so chat screen reverts to cloud model.
-    final prefs = PreferencesService();
-    await prefs.init();
-    prefs.configuredModel = null;
-  }
-
-  /// Wipe any OpenClaw cooldown/rate-limit timestamps from auth-profiles.json
-  /// for the local-llm provider. This prevents the gateway from refusing to
-  /// route requests after a slow first inference or connection hiccup.
-  Future<void> _clearCooldownState() async {
-    try {
-      final appSupportDir = await getApplicationSupportDirectory();
-      final authPath = '${appSupportDir.path}/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json';
-      final authFile = File(authPath);
-      if (!await authFile.exists()) return;
-
-      final auth = jsonDecode(await authFile.readAsString()) as Map<String, dynamic>;
-      final providers = auth['providers'] as Map<String, dynamic>?;
-      if (providers == null) return;
-
-      // Clear cooldown fields on local-llm AND any wildcard/global entries
-      bool changed = false;
-      for (final key in ['local-llm', 'local', 'localhost']) {
-        final prov = providers[key];
-        if (prov is Map) {
-          for (final field in ['disabledUntil', 'cooldownUntil', 'rateLimitUntil', 'retryAfter']) {
-            if (prov.containsKey(field)) {
-              prov.remove(field);
-              changed = true;
-            }
-          }
-        }
-      }
-
-      if (changed) {
-        await authFile.writeAsString(jsonEncode(auth));
-        debugPrint('[LocalLlmService] Cleared cooldown state from auth-profiles.json');
-      }
-    } catch (e) {
-      debugPrint('[LocalLlmService] Failed to clear cooldown: $e');
-    }
-  }
-
-
-    // ── Video Vision — multi-frame offline analysis ───────────────────────────
-
-  /// Analyses a list of JPEG frames extracted from a video clip.
-  ///
-  /// For each frame: sends it to the local llama-server vision endpoint.
-  /// Yields progress strings while working, then yields the final summary.
-  ///
-  /// Requires a multimodal model (Qwen2-VL or LLaVA) to be running.
-  Stream<String> analyseVideoFrames(
-    List<Uint8List> frames,
-    String prompt,
-  ) async* {
-    if (frames.isEmpty) {
-      yield '[Error] No frames extracted from video.';
-      return;
-    }
-    if (_state.status != LocalLlmStatus.ready) {
-      yield '[Error] Local vision model is not running. Start it in Local LLM settings.';
-      return;
-    }
-
-    final base = '${AppConstants.gatewayUrl}/v1/chat/completions';
-    final descriptions = <String>[];
-
-    for (int i = 0; i < frames.length; i++) {
-      yield 'Analysing frame ${i + 1}/${frames.length}…';
-      try {
-        final b64 = base64Encode(frames[i]);
-        final resp = await http
-            .post(
-              Uri.parse(base),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'model': 'local-llm',
-                'messages': [
-                  {
-                    'role': 'user',
-                    'content': [
-                      {
-                        'type': 'image_url',
-                        'image_url': {'url': 'data:image/jpeg;base64,$b64'},
-                      },
-                      {
-                        'type': 'text',
-                        'text': 'Frame ${i + 1}: Briefly describe what you see.',
-                      },
-                    ],
-                  },
-                ],
-                'stream': false,
-                'max_tokens': 256,
-              }),
-            )
-            .timeout(const Duration(seconds: 60));
-
-        if (resp.statusCode == 200) {
-          final json = jsonDecode(resp.body) as Map<String, dynamic>;
-          final content =
-              ((json['choices'] as List?)?.first['message'] as Map?)?['content']
-                  as String?;
-          if (content != null) descriptions.add('Frame ${i + 1}: $content');
-        }
-      } catch (e) {
-        debugPrint('analyseVideoFrames frame ${i + 1} error: $e');
-      }
-    }
-
-    if (descriptions.isEmpty) {
-      yield '[Error] Could not analyse any frames. Is the vision model running?';
-      return;
-    }
-
-    // Final summary pass — ask the model to synthesise all frame descriptions
-    yield 'Summarising scene…';
-    try {
-      final summaryPrompt = descriptions.isEmpty
-          ? prompt
-          : 'Given these video frame descriptions:\n${descriptions.join('\n')}\n\nAnswer this question: $prompt';
-
-      final resp = await http
-          .post(
-            Uri.parse(base),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'model': 'local-llm',
-              'messages': [
-                {'role': 'user', 'content': summaryPrompt},
-              ],
-              'stream': false,
-              'max_tokens': 512,
-            }),
-          )
-          .timeout(const Duration(seconds: 60));
-
-      if (resp.statusCode == 200) {
-        final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final content =
-            ((json['choices'] as List?)?.first['message'] as Map?)?['content']
-                as String?;
-        yield content ?? '[Error] Empty summary from model.';
-      } else {
-        yield '[Error] Summary request failed (HTTP ${resp.statusCode}).';
-      }
-    } catch (e) {
-      yield '[Error] Summary error: $e';
-    }
-  }
-
-  void dispose() {
-    _stateController.close();
-  }
-
 }
