@@ -174,8 +174,8 @@ class GatewayService {
 
   /// Helper to get the host-side path to the openclaw config file
   Future<String> _openClawConfigPath() async {
-    final appSupportDir = await getApplicationSupportDirectory();
-    return '${appSupportDir.path}/rootfs/root/.openclaw/openclaw.json';
+    final filesDir = await NativeBridge.getFilesDir();
+    return '$filesDir/rootfs/root/.openclaw/openclaw.json';
   }
 
   /// Direct Dart-native config read/write (bypasses proot overhead)
@@ -338,8 +338,8 @@ class GatewayService {
 
     // 2. Update agent auth-profiles.json
     try {
-      final appSupportDir = await getApplicationSupportDirectory();
-      final authPath = '${appSupportDir.path}/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json';
+      final filesDir = await NativeBridge.getFilesDir();
+      final authPath = '$filesDir/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json';
       final authFile = File(authPath);
       Map<String, dynamic> auth = {};
       
@@ -939,15 +939,27 @@ class GatewayService {
         ? [...conversationHistory, {'role': 'user', 'content': message}]
         : [{'role': 'user', 'content': message}];
 
+    // The gateway's OpenAI-compat API is agent-centric: the model field MUST be
+    // "openclaw/default" (not a raw provider ID like "local-llm/...").
+    // The gateway resolves "openclaw/default" → agents.defaults.model.primary
+    // which _patchOpenClawConfig() already sets to "local-llm/<id>".
+    // We also send x-openclaw-model as an explicit routing hint.
+    final isLocalLlm = model.startsWith('local-llm');
+    final gatewayModel = isLocalLlm ? 'openclaw/default' : model;
+
     final client = http.Client();
     try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
+      if (isLocalLlm) {
+        headers['x-openclaw-model'] = model; // explicit provider hint
+      }
       final request = http.Request('POST', Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'))
-        ..headers.addAll({
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        })
+        ..headers.addAll(headers)
         ..body = jsonEncode({
-          'model': model,
+          'model': gatewayModel,
           'messages': messages,
           'stream': true,
         });
@@ -1004,12 +1016,17 @@ class GatewayService {
         prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
 
     try {
+      final token = await retrieveTokenFromConfig();
       final response = await http
           .post(
             Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${token ?? ''}',
+              'x-openclaw-model': 'local-llm',
+            },
             body: jsonEncode({
-              'model': 'local-llm',
+              'model': 'openclaw/default',
               'messages': [
                 {
                   'role': 'user',
