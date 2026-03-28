@@ -217,8 +217,13 @@ class GatewayService {
     config['skills']['mode'] = "auto";
     config['skills']['sync'] = "mirror";
 
-    config['gateway']['openaiCompat'] ??= {};
-    config['gateway']['openaiCompat']['enabled'] = true;
+    // Enable the OpenAI-compatible REST endpoints on port 18789.
+    // Correct key: gateway.http.endpoints.chatCompletions.enabled
+    // (gateway.openaiCompat.enabled is the wrong/legacy key — endpoint stays 404 with it)
+    config['gateway']['http'] ??= {};
+    config['gateway']['http']['endpoints'] ??= {};
+    config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
+    config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
     await _writeConfig(config);
   }
@@ -699,11 +704,16 @@ class GatewayService {
       return;
     }
 
-    // All models (cloud + local-llm) use the WS chat.send path.
-    // Gateway routes based on agents.defaults.model.primary in its running config.
-    // For local-llm: after openclaw reload + disconnectWebSocket(), the new WS
-    // session picks up the patched config automatically.
-    // HTTP /v1/chat/completions is NOT served on port 18789 — WS is the only path.
+    // Local LLM: use HTTP /v1/chat/completions with explicit model param.
+    // Endpoint is on the same port 18789, enabled via gateway.http.endpoints.chatCompletions.
+    // This bypasses WS session config lag after openclaw reload — model param is authoritative.
+    if (model.startsWith('local-llm/')) {
+      yield* sendMessageHttp(message,
+          model: model, token: token, conversationHistory: conversationHistory);
+      return;
+    }
+
+    // Cloud models: WS chat.send for server-side session persistence.
     final wsOk = await _ensureWebSocket(token);
     if (!wsOk) {
       yield* sendMessageHttp(message, model: model, token: token,
