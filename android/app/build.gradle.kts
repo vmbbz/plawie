@@ -8,7 +8,10 @@ plugins {
 android {
     namespace = "com.nxg.openclawproot"
     compileSdk = 36
-    ndkVersion = "27.0.12077973" // pinned for fllama llama.cpp NDK build
+    // NDK pinned for Gradle's own JNI builds (Vosk, etc.).
+    // fllama's Dart hooks_runner uses the highest installed NDK independently —
+    // that's fine, both produce ABI-compatible arm64-v8a .so files.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -25,6 +28,14 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        ndk {
+            // arm64-v8a only: all modern Android devices (2017+) are 64-bit.
+            // armeabi-v7a (32-bit) is excluded — a 32-bit process can only
+            // address ~3.5 GB RAM, making local LLM inference unviable anyway.
+            // Excluding it halves fllama's NDK build time and reduces APK size.
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
