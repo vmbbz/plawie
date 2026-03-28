@@ -561,7 +561,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             return;
           }
           yield* localLlm.analyseVideoFrames(frames, text.trim().isEmpty ? 'Describe what is happening.' : text);
-        }();
+        }().cast<String>();
       } else if (videoBase64 != null) {
         // Cloud video: send inline MP4 to Gemini via gateway
         _addDiagnosticLog('Video path: cloud Gemini video');
@@ -1226,11 +1226,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         PreferencesService().configuredModel = model;
         // Persist config instantly. For cloud models a reload is NOT needed —
         // the gateway reads agents.defaults.model.primary on each chat.send.
-        // Only local-llm transitions need a reload (to swap the GGUF in RAM).
         final needsReload = model.startsWith('local-llm');
-        GatewayService().persistModel(model, reload: needsReload);
-        // Disconnect WS so next chat.send reconnects with the fresh config.
-        if (!needsReload) GatewayService().disconnectWebSocket();
+        if (needsReload) {
+          final modelId = model.split('/').last;
+          final localModel = LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
+          LocalLlmService().activateModel(localModel);
+        } else {
+          // For cloud models, just update preferences. 
+          // Disconnect WS so next chat.send reconnects with the fresh config.
+          context.read<GatewayProvider>().disconnectWebSocket();
+        }
         _addDiagnosticLog('Swapped and persisted AI model: $model');
       } else if (value.toString().startsWith('avatar:')) {
         final avatar = value.toString().substring(7);
@@ -1824,121 +1829,82 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                     //   onVerticalDragEnd(up) → expand chat
                                     //   onTap → no-op (reserved for hold)
                                     // ──────────────────────────────────────────
-                                    GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: _isChatCollapsed
-                                          ? () {
-                                              // Tap on collapsed orb = show hint
-                                              // (hold me to talk / swipe up to expand)
-                                              ScaffoldMessenger.of(context)
-                                                  .clearSnackBars();
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
-                                                SnackBar(
-                                                  content: const Row(
-                                                    children: [
-                                                      Icon(Icons.info_outline,
-                                                          color: Colors.white70,
-                                                          size: 16),
-                                                      SizedBox(width: 8),
-                                                      Text(
-                                                        'Hold to talk  ·  Swipe ↑ to expand',
-                                                        style: TextStyle(
-                                                            fontSize: 13),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  backgroundColor:
-                                                      const Color(0xFF1A1A2E),
-                                                  duration: const Duration(
-                                                      seconds: 2),
-                                                  behavior:
-                                                      SnackBarBehavior.floating,
-                                                  shape:
-                                                      RoundedRectangleBorder(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(
-                                                                      12)),
-                                                ),
-                                              );
-                                            }
-                                          : _toggleListening,
-                                      // Hold-to-record (collapsed orb only)
-                                      onLongPressStart: _isChatCollapsed
-                                          ? (_) {
-                                              HapticFeedback.mediumImpact();
-                                              _startListening();
-                                            }
-                                          : null,
-                                      onLongPressEnd: _isChatCollapsed
-                                          ? (_) {
-                                              HapticFeedback.lightImpact();
-                                              _stopListening();
-                                            }
-                                          : null,
-                                      // Swipe up on collapsed orb = expand chat
-                                      onVerticalDragEnd: _isChatCollapsed
-                                          ? (details) {
-                                              if ((details.primaryVelocity ?? 0) <
-                                                  -400) {
-                                                setState(() =>
-                                                    _isChatCollapsed = false);
-                                              }
-                                            }
-                                          : null,
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Upward chevron hint (collapsed only) —
-                                          // teaches swipe-up-to-expand gesture
-                                          if (_isChatCollapsed)
+                                    if (_isChatCollapsed)
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
+                                          // Tap on collapsed orb = show hint
+                                          ScaffoldMessenger.of(context).clearSnackBars();
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: const Row(
+                                                children: [
+                                                  Icon(Icons.info_outline, color: Colors.white70, size: 16),
+                                                  SizedBox(width: 8),
+                                                  Text('Hold to talk  ·  Swipe ↑ to expand', style: TextStyle(fontSize: 13)),
+                                                ],
+                                              ),
+                                              backgroundColor: const Color(0xFF1A1A2E),
+                                              duration: const Duration(seconds: 2),
+                                              behavior: SnackBarBehavior.floating,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            ),
+                                          );
+                                        },
+                                        onLongPressStart: (_) {
+                                          HapticFeedback.mediumImpact();
+                                          _startListening();
+                                        },
+                                        onLongPressEnd: (_) {
+                                          HapticFeedback.lightImpact();
+                                          _stopListening();
+                                        },
+                                        onVerticalDragEnd: (details) {
+                                          if ((details.primaryVelocity ?? 0) < -400) {
+                                            setState(() => _isChatCollapsed = false);
+                                          }
+                                        },
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
                                             AnimatedBuilder(
                                               animation: _glowController,
                                               builder: (_, __) => Transform.translate(
-                                                offset: Offset(
-                                                    0,
-                                                    -3 *
-                                                        _glowController.value),
+                                                offset: Offset(0, -3 * _glowController.value),
                                                 child: Icon(
                                                   Icons.keyboard_arrow_up_rounded,
-                                                  color: Colors.white.withValues(
-                                                      alpha: 0.25 +
-                                                          0.2 *
-                                                              _glowController
-                                                                  .value),
+                                                  color: Colors.white.withValues(alpha: 0.25 + 0.2 * _glowController.value),
                                                   size: 14,
                                                 ),
                                               ),
                                             ),
-                                          // Mic orb circle
-                                          AnimatedBuilder(
-                                            animation: _glowController,
-                                            builder: (context, child) {
-                                              return AnimatedContainer(
-                                                duration: const Duration(milliseconds: 300),
-                                                width: _isChatCollapsed ? collapsedSize : 48,
-                                                height: _isChatCollapsed ? collapsedSize : 48,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  color: _isListening && _isChatCollapsed
-                                                      ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
-                                                      : Colors.transparent,
-                                                ),
-                                                alignment: Alignment.center, // Fix mic alignment
-                                                child: Icon(
-                                                  _isListening ? Icons.mic : Icons.mic_none,
-                                                  color: _isListening ? AppColors.statusGreen : Colors.white70,
-                                                  size: _isChatCollapsed ? 36 : 24,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ],
+                                            AnimatedBuilder(
+                                              animation: _glowController,
+                                              builder: (context, child) {
+                                                return AnimatedContainer(
+                                                  duration: const Duration(milliseconds: 300),
+                                                  width: collapsedSize,
+                                                  height: collapsedSize,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: _isListening 
+                                                        ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
+                                                        : Colors.transparent,
+                                                  ),
+                                                  alignment: Alignment.center,
+                                                  child: Icon(
+                                                    _isListening ? Icons.mic : Icons.mic_none,
+                                                    color: _isListening ? AppColors.statusGreen : Colors.white70,
+                                                    size: 36,
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
                                     if (!_isChatCollapsed) ...[
-                                      const SizedBox(width: 12),
+                                      const SizedBox(width: 8),
                                       Expanded(
                                         child: Column(
                                           mainAxisSize: MainAxisSize.min,
@@ -1996,6 +1962,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                                   onSelected: (value) {
                                                     if (value == 'camera') _takePicture();
                                                     if (value == 'video') _showVideoDurationPicker();
+                                                    if (value == 'voice') _toggleListening();
                                                     if (value == 'clear') {
                                                       setState(() {
                                                         _pendingImageBase64 = null;
@@ -2004,6 +1971,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                                     }
                                                   },
                                                   itemBuilder: (ctx) => [
+                                                    PopupMenuItem(
+                                                      value: 'voice',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(_isListening ? Icons.mic : Icons.mic_none, color: _isListening ? AppColors.statusGreen : Colors.white70, size: 20),
+                                                          const SizedBox(width: 12),
+                                                          Text(_isListening ? 'Stop Listening' : 'Voice Input', style: TextStyle(color: _isListening ? AppColors.statusGreen : Colors.white, fontSize: 13)),
+                                                        ],
+                                                      ),
+                                                    ),
                                                     PopupMenuItem(
                                                       value: 'camera',
                                                       child: Row(
