@@ -244,13 +244,26 @@ class GatewayService {
   }
 
   /// Direct I/O: Persist the selected model (no proot overhead).
-  Future<void> persistModel(String model) async {
+  /// If [reload] is true, triggers an openclaw reload to make it active immediately.
+  Future<void> persistModel(String model, {bool reload = false}) async {
     final config = await _readConfig();
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
     config['agents']['defaults']['model'] ??= {};
     config['agents']['defaults']['model']['primary'] = model;
     await _writeConfig(config);
+
+    if (reload) {
+      invalidateTokenCache();
+      disconnectWebSocket();
+      try {
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+          'openclaw reload 2>/dev/null || true',
+          timeout: 5
+        );
+      } catch (_) {}
+    }
   }
 
   /// Map a provider name to its default model string (provider/model).
