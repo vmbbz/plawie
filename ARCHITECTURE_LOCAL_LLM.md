@@ -692,156 +692,58 @@ LocalLlmService.chat() handles this gracefully — yields the error string and c
 
 ---
 
-## 8. Remaining Refactor Tasks
+## 8. Refactor Task Status
 
-### P1 — Critical for Production Quality
+> **Last updated: 2026-03-29** — All P1, P2 (except tool-use), and P3 tasks are complete.
 
-#### 8.1 Vision: Temp File Path vs Data URI
+### ✅ P1 — Production Critical (all done)
 
-**Current:** `analyseVideoFrames` embeds image as base64 data URI string in the prompt text.
-**Problem:** llama.cpp multimodal requires images to be file paths in some model architectures
-(LLaVA, Qwen2-VL may handle data URLs differently depending on the chat template).
+| Task | Commit | Notes |
+|------|--------|-------|
+| **8.1** Vision image format | fd5e319 | `<img src="data:...">` — fllama's actual C++ parser format (confirmed from example app) |
+| **8.2** Context window per-model | fd5e319 | `_activeContextSize` getter, clamps to 512–8192, replaces hardcoded 4096/2048 |
+| **8.3** Concurrent inference guard | fd5e319 | `_isInferring` flag; cancel-on-overlap via `fllamaCancelInference` |
+| **8.4** Thread count binding | fd5e319 | Replaced `fllamaChat()` → `fllamaInference(_buildInferenceRequest())` which sets `numThreads: _state.threads` |
 
-```dart
-// TODO: Replace data URI approach with temp file
-final frameFile = File('${tmpDir.path}/frame_${DateTime.now().millisecondsSinceEpoch}.jpg');
-await frameFile.writeAsBytes(frames.first);
-// Then construct proper multipart content (needs OpenAiRequest extension or file:// URI)
-```
-
-**File:** `local_llm_service.dart` line ~370
-
-#### 8.2 Context Window Per-Model
-
-**Current:** Hard-coded `contextSize: 4096` in `chat()`, `contextSize: 2048` in `testInference()`.
-Qwen2.5-1.5B supports 32768. SmolLM2 supports 8192. Using 4096 for all wastes capability.
-
-```dart
-// Add to LocalLlmService:
-int get _activeContextSize =>
-    (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
-
-// Then in chat() and testInference():
-contextSize: _activeContextSize,
-```
-
-**File:** `local_llm_service.dart`
-
-#### 8.3 Concurrent Inference Guard
-
-**Current:** No mutex. Two rapid messages could spawn two overlapping fllama calls → undefined behavior.
-
-```dart
-bool _isInferring = false;
-
-Stream<String> chat(...) {
-  if (_isInferring && _activeRequestId != null) {
-    fllamaCancelInference(_activeRequestId!);
-  }
-  _isInferring = true;
-  // callback: set _isInferring = false when done=true
-}
-```
-
-**File:** `local_llm_service.dart`
-
-#### 8.4 Thread Count Binding
-
-**Current:** `setThreads()` persists thread count in state but doesn't pass it to fllama.
-fllama defaults to 2 threads regardless. SD 8 Gen 3 has 8 cores — 2 threads is wasteful.
-
-`OpenAiRequest` doesn't expose `numThreads`. It lives on `FllamaInferenceRequest`.
-Options:
-- Use `fllamaInference()` directly (lower level than `fllamaChat()`) — gives access to `numThreads`
-- Submit PR to fllama adding `numThreads` field to `OpenAiRequest`
-
-**File:** `local_llm_service.dart`, optionally fllama upstream
+**Key implementation notes:**
+- `fllamaChat()` hardcodes `numThreads=2` and never exposes it via `OpenAiRequest`. The fix is `fllamaInference()` + a private `_buildInferenceRequest()` helper that mirrors `fllamaChat()`'s behavior (setting `input: ''` — the C++ side reads `openAiRequestJsonString` directly).
+- Vision: fllama's C++ parser expects `<img src="data:image/jpeg;base64,...">`. Bare data URIs do NOT work.
 
 ---
 
-### P2 — Quality & UX
+### ✅ P2 — Quality & UX (done except 8.8)
 
-#### 8.5 System Prompt
+| Task | Commit | Notes |
+|------|--------|-------|
+| **8.5** System prompt | fd5e319 | `Role.system "You are Plawie..."` injected at head of `chat()` message list |
+| **8.6** History trimming | fd5e319 | `_trimHistory()` — chars-per-token budget, drops oldest messages first |
+| **8.7** UI labels | fd5e319 | "Health Check" → "Engine Status", "View server log" → "View engine info", status card updated |
+| **8.8** Tool-use / function calling | ❌ pending | See below |
 
-```dart
-// In chat() and testInference():
-final messages = [
-  Message(Role.system,
-      'You are Plawie, a helpful AI assistant running locally on this Android device. '
-      'Be concise and direct.'),
-  ...historyMessages,
-  Message(Role.user, userMessage),
-];
-```
+#### 8.8 Tool-Use / Function Calling (pending — next major feature)
 
-#### 8.6 Context Overflow / History Trimming
+Qwen2.5-Instruct supports OpenAI tool-call format natively. The pipeline is:
 
-Long conversations exceed context window → undefined behavior.
+1. Pass `tools: [Tool(...)]` and `toolChoice: ToolChoice.auto` to `OpenAiRequest`
+2. `_buildInferenceRequest()` serializes this via `req.toJsonString()` → C++ handles it
+3. In the callback, check `openaiResponseJsonString` for `choices[0].delta.tool_calls`
+4. Parse accumulated tool call: `{index, function: {name, arguments}, id}`
+5. Execute the tool locally, build `Message(Role.tool, result, toolResponseName: name)`
+6. Re-invoke `chat()` with the tool result appended to history
 
-```dart
-// Rough approach (accurate approach: use fllamaTokenize())
-int get _activeContextSize => (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
+**Why deferred:** Requires a tool dispatcher (which tools does Plawie expose locally?), a multi-turn inference loop, and a streaming protocol change — `chat()` currently returns `Stream<String>`. Extending to `Stream<Either<String, ToolCall>>` is a meaningful API change that touches GatewayService.
 
-List<Map<String, dynamic>> _trimHistory(
-    List<Map<String, dynamic>> history, String newMessage) {
-  const avgCharsPerToken = 4;
-  final budget = (_activeContextSize - 1024 - 100) * avgCharsPerToken;
-  var chars = newMessage.length;
-  final result = <Map<String, dynamic>>[];
-  for (final msg in history.reversed) {
-    chars += (msg['content'] as String? ?? '').length;
-    if (chars > budget) break;
-    result.insert(0, msg);
-  }
-  return result;
-}
-```
-
-#### 8.7 Labels in `local_llm_screen.dart`
-
-- "Health Check" button → "Engine Status"
-- "View Logs" → "View Engine Info"
-- Status card: "Direct inference via node-llama-cpp on :8081" → "fllama NDK on-device"
-- Any references to "server" in local LLM context → "engine" or "model"
-
-#### 8.8 Tool-Use / Function Calling
-
-Qwen2.5-Instruct supports OpenAI tool-call format natively. fllama passes `tools` via
-`openAiRequestJsonString` to llama.cpp. When `done=true`, check `openaiResponseJsonString`
-for tool_calls instead of plain text.
+**Reference:** fllama example app `_parseStreamChunk()` shows the full delta accumulation pattern.
 
 ---
 
-### P3 — Architecture Cleanup
+### ✅ P3 — Architecture Cleanup (all done)
 
-#### 8.9 Remove Unused Constants
-
-```dart
-// constants.dart — delete:
-static const int llamaServerPort = 8081;      // unused since fllama
-static const String llamaServerUrl = '...';   // unused since fllama
-```
-
-#### 8.10 Remove Gateway Check from `downloadAndStart()`
-
-```dart
-// Remove this — fllama doesn't need PRoot gateway to be running:
-if (GatewayService().state.status == GatewayStatus.starting) {
-  _updateState(error('Gateway is still starting...'));
-  return;
-}
-```
-
-#### 8.11 Host Path Helper
-
-Currently `_activateFllama` does the host path conversion inline. Extract to a clean method
-to make it testable and avoid duplication if model paths are needed elsewhere:
-```dart
-Future<String> _hostPath(String prootPath) async {
-  final filesDir = await NativeBridge.getFilesDir();
-  return '$filesDir/rootfs$prootPath';
-}
-```
+| Task | Commit | Notes |
+|------|--------|-------|
+| **8.9** Remove unused constants | fd5e319 | `llamaServerPort` / `llamaServerUrl` deleted from `constants.dart` |
+| **8.10** Remove gateway check | fd5e319 | PRoot conflict guard removed from `downloadAndStart()` |
+| **8.11** Stale imports/comments | fd5e319 | `GatewayService` import removed, class doc updated |
 
 ---
 
@@ -857,8 +759,8 @@ Mid-range (8GB)       SD 8 Gen 1         4        10–15 tok/s   6–10 tok/s
 Flagship (12GB)       SD 8 Gen 2/3       4        15–22 tok/s   10–15 tok/s
 Ultra flagship (16GB) SD 8 Elite         6        22–35 tok/s   15–22 tok/s
 
-Note: fllama defaults to numThreads=2. Thread count must be passed explicitly
-      for devices with more available cores. See §8.4.
+Note: Thread count is set from LocalLlmState.threads (user-adjustable slider,
+      default 4). Passed via _buildInferenceRequest() → FllamaInferenceRequest.numThreads.
 ```
 
 ### GPU Offload Status (2026-03)
