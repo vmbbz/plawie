@@ -319,10 +319,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       _diagnosticLogs.add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
       if (_diagnosticLogs.length > 100) _diagnosticLogs.removeAt(0);
 
-      // Auto-show diagnostics on first error
-      if (log.contains('ERROR:') && !_showDiagnostics) {
-        _showDiagnostics = true;
-      }
+      // Auto-show diagnostics on first error - REMOVED for better UX
     });
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_logScrollController.hasClients) {
@@ -796,7 +793,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     
     showMenu<dynamic>(
       context: context,
-      color: const Color(0xCC030810), // Increased transparency
+      color: Colors.black.withValues(alpha: 0.7), // Deeper frosted alpha
       elevation: 24,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
@@ -1346,7 +1343,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
     // --- Dynamic Sizing for Floating Mic ---
     const double collapsedSize = 80.0;
-    final double barWidth = _isChatCollapsed ? collapsedSize : size.width - 24;
+    // Removed the -24 margin to make chat container flush with screen edges
+    final double barWidth = _isChatCollapsed ? collapsedSize : size.width;
     final double barHeight = _isChatCollapsed ? collapsedSize : (size.height * 0.6);
 
     return Scaffold(
@@ -1446,11 +1444,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
             tooltip: 'More',
-            color: const Color(0xFF1A1A2E),
-            constraints: const BoxConstraints(maxWidth: 230),
+            color: Colors.black.withValues(alpha: 0.7), // Deeper frosted alpha
+            constraints: const BoxConstraints(maxWidth: 210),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
             ),
             onSelected: (value) async {
               if (value == 'pip') {
@@ -1666,10 +1664,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     curve: Curves.elasticOut,
                     width: barWidth,
                     height: barHeight,
-                    margin: EdgeInsets.only(bottom: _isChatCollapsed ? 40 : 12),
+                    margin: EdgeInsets.only(bottom: _isChatCollapsed ? 40 : 0),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(_isChatCollapsed ? collapsedSize / 2 : 32),
+                      borderRadius: BorderRadius.circular(_isChatCollapsed ? collapsedSize / 2 : 24),
                       border: Border.all(
                         color: Colors.white.withValues(alpha: _isChatCollapsed ? 0.2 : 0.12),
                         width: _isChatCollapsed ? 2 : 1.5,
@@ -1760,7 +1758,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                               ),
                               child: SafeArea(
                                 top: false,
-                                bottom: !_isChatCollapsed,
+                                bottom: false, // Ensure container is flush against the bottom edge
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
@@ -1924,59 +1922,66 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                               ),
                                             Row(
                                               children: [
-                                                // Camera attach button
-                                                _isTakingPhoto
-                                                    ? const SizedBox(
-                                                        width: 36,
-                                                        height: 36,
-                                                        child: Padding(
-                                                          padding: EdgeInsets.all(8),
-                                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
-                                                        ),
-                                                      )
-                                                    : IconButton(
-                                                        icon: Icon(
-                                                          _pendingImageBase64 != null
-                                                              ? Icons.image_rounded
-                                                              : Icons.camera_alt_outlined,
-                                                          color: _pendingImageBase64 != null
-                                                              ? Colors.greenAccent
-                                                              : Colors.white54,
-                                                          size: 22,
-                                                        ),
-                                                        tooltip: 'Attach photo',
-                                                        padding: EdgeInsets.zero,
-                                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                                        onPressed: _takePicture,
+                                                // 3-Dots Utility Menu (Camera / Video)
+                                                PopupMenuButton<String>(
+                                                  icon: Icon(
+                                                    Icons.more_horiz_rounded,
+                                                    color: (_pendingImageBase64 != null || _pendingVideoBase64 != null)
+                                                        ? AppColors.statusGreen
+                                                        : Colors.white54,
+                                                    size: 22,
+                                                  ),
+                                                  padding: EdgeInsets.zero,
+                                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                                  color: Colors.black.withValues(alpha: 0.9),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(16),
+                                                    side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.8),
+                                                  ),
+                                                  onSelected: (value) {
+                                                    if (value == 'camera') _takePicture();
+                                                    if (value == 'video') _showVideoDurationPicker();
+                                                    if (value == 'clear') {
+                                                      setState(() {
+                                                        _pendingImageBase64 = null;
+                                                        _pendingVideoBase64 = null;
+                                                      });
+                                                    }
+                                                  },
+                                                  itemBuilder: (ctx) => [
+                                                    PopupMenuItem(
+                                                      value: 'camera',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(_isTakingPhoto ? Icons.hourglass_empty : Icons.camera_alt_outlined, color: Colors.white70, size: 20),
+                                                          const SizedBox(width: 12),
+                                                          const Text('Take Photo', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                                        ],
                                                       ),
-                                                const SizedBox(width: 2),
-                                                // Video record button
-                                                _isRecordingVideo
-                                                    ? const SizedBox(
-                                                        width: 36,
-                                                        height: 36,
-                                                        child: Padding(
-                                                          padding: EdgeInsets.all(8),
-                                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
-                                                        ),
-                                                      )
-                                                    : IconButton(
-                                                        icon: Icon(
-                                                          _pendingVideoBase64 != null
-                                                              ? Icons.videocam_rounded
-                                                              : Icons.videocam_outlined,
-                                                          color: _pendingVideoBase64 != null
-                                                              ? Colors.redAccent
-                                                              : Colors.white38,
-                                                          size: 22,
-                                                        ),
-                                                        tooltip: 'Record video clip',
-                                                        padding: EdgeInsets.zero,
-                                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                                        onPressed: _pendingVideoBase64 != null
-                                                            ? () => setState(() => _pendingVideoBase64 = null)
-                                                            : _showVideoDurationPicker,
+                                                    ),
+                                                    PopupMenuItem(
+                                                      value: 'video',
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(_isRecordingVideo ? Icons.hourglass_empty : Icons.videocam_outlined, color: Colors.white70, size: 20),
+                                                          const SizedBox(width: 12),
+                                                          const Text('Record Clip', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                                        ],
                                                       ),
+                                                    ),
+                                                    if (_pendingImageBase64 != null || _pendingVideoBase64 != null)
+                                                      const PopupMenuItem(
+                                                        value: 'clear',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                                            const SizedBox(width: 12),
+                                                            const Text('Clear Attachment', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
                                                 const SizedBox(width: 4),
                                                 Expanded(
                                                   child: TextField(
@@ -1989,14 +1994,22 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                                           : _pendingImageBase64 != null
                                                               ? "Ask about the image..."
                                                               : "Message your companion...",
-                                                      hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
+                                                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
                                                       border: OutlineInputBorder(
                                                         borderRadius: BorderRadius.circular(30),
-                                                        borderSide: BorderSide.none,
+                                                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.8),
+                                                      ),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(30),
+                                                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.8),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(30),
+                                                        borderSide: const BorderSide(color: AppColors.statusGreen, width: 1.0),
                                                       ),
                                                       filled: true,
-                                                      fillColor: Colors.white.withValues(alpha: 0.08),
-                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                                      fillColor: Colors.white.withValues(alpha: 0.05),
+                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                                     ),
                                                     onSubmitted: _handleSubmit,
                                                   ),
