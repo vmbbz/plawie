@@ -112,7 +112,7 @@ class GatewayService {
     try {
       await NativeBridge.acquirePartialWakeLock();
       await _configureGateway();
-      await Future.delayed(const Duration(milliseconds: 800));
+      await Future.delayed(const Duration(milliseconds: 300));
 
       final success = await NativeBridge.startGateway();
 
@@ -131,7 +131,7 @@ class GatewayService {
         }
       } catch (_) {}
 
-      await Future.delayed(const Duration(seconds: 1));
+      await Future.delayed(const Duration(milliseconds: 500));
       _subscribeLogs();
       _startHealthCheck();
       // Use unawaited to avoid blocking the main startup sequence
@@ -740,12 +740,18 @@ class GatewayService {
       return;
     }
 
-    // All models (cloud + local-llm) use WS chat.send.
-    // Local LLM routing is handled by agents.defaults.model.primary written to
-    // openclaw.json by _patchOpenClawConfig() + openclaw reload in _startServer().
-    // The HTTP /v1/chat/completions endpoint on port 18789 is unreliable (requires
-    // gateway restart to enable, not just reload) — WS is the stable path.
-    // WS falls back to HTTP on connect failure below.
+    // ROUTING DECISION:
+    // - Local LLM models MUST use the HTTP /v1/chat/completions path because it
+    //   lets us pass the model ID explicitly. The WS chat.send RPC has NO model
+    //   parameter — it relies on agents.defaults.model.primary being reloaded,
+    //   which can race and silently fall back to cloud (causing "API rate limit").
+    // - Cloud models use WS (agentic, stateful, supports tools/skills).
+    if (model != null && model.startsWith('local-llm')) {
+      yield* sendMessageHttp(message, model: model, token: token,
+          conversationHistory: conversationHistory);
+      return;
+    }
+
     final wsOk = await _ensureWebSocket(token);
     if (!wsOk) {
       yield* sendMessageHttp(message, model: model, token: token,
