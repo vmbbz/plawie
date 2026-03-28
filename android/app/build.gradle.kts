@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.nxg.openclawproot"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973" // pinned for fllama llama.cpp NDK build
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8

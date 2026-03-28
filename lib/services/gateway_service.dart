@@ -10,6 +10,7 @@ import '../models/agent_info.dart';
 import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
+import 'local_llm_service.dart';
 
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();
@@ -746,15 +747,9 @@ class GatewayService {
       return;
     }
 
-    // Local-llm: bypass the gateway entirely — POST directly to llama-server
-    // on port 8081. This eliminates the disabledUntil bug, stale WS session
-    // races, and OpenClaw provider layer overhead.
+    // Local-llm: bypass the gateway entirely — run inference via fllama NDK.
     if (model.startsWith('local-llm')) {
-      yield* sendMessageHttp(message,
-          model: model,
-          token: token,
-          conversationHistory: conversationHistory,
-          directUrl: '${AppConstants.llamaServerUrl}/v1/chat/completions');
+      yield* LocalLlmService().chat(conversationHistory ?? [], message);
       return;
     }
 
@@ -1006,68 +1001,19 @@ class GatewayService {
     }
   }
 
-  /// Vision message: POST directly to llama-server :8081 using the OpenAI
-  /// multimodal content format (image_url + text).  Only works when a
-  /// multimodal model (LLaVA, Qwen2-VL) is loaded and running on :8081.
+  /// Vision message via fllama — no HTTP server required.
   ///
   /// [imageBase64] – raw base64 string (no data-URI prefix).
-  /// [mimeType]    – e.g. "image/jpeg" (default).
   /// [prompt]      – user text; falls back to a generic describe prompt.
   Stream<String> sendVisionMessage(
     String prompt,
     String imageBase64, {
     String mimeType = 'image/jpeg',
   }) async* {
-    final dataUri = 'data:$mimeType;base64,$imageBase64';
     final effectivePrompt =
         prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse('${AppConstants.llamaServerUrl}/v1/chat/completions'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'model': 'local-llm',
-              'messages': [
-                {
-                  'role': 'user',
-                  'content': [
-                    {
-                      'type': 'image_url',
-                      'image_url': {'url': dataUri},
-                    },
-                    {'type': 'text', 'text': effectivePrompt},
-                  ],
-                },
-              ],
-              'stream': false,
-            }),
-          )
-          .timeout(const Duration(seconds: 120));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final choices = json['choices'] as List?;
-        if (choices != null && choices.isNotEmpty) {
-          final content = (choices[0]['message'] as Map?)?['content'] as String?;
-          if (content != null) {
-            yield content;
-            return;
-          }
-        }
-        yield '[Error] Empty vision response from local model.';
-      } else {
-        yield '[Error] Vision request failed (HTTP ${response.statusCode}). '
-            'Make sure a vision model (LLaVA or Qwen2-VL) is running.';
-      }
-    } on TimeoutException {
-      yield '[Error] Vision request timed out. The model may still be loading — try again in a moment.';
-    } catch (e) {
-      yield '[Error] Vision error: $e';
-    }
+    final imageBytes = base64Decode(imageBase64);
+    yield* LocalLlmService().analyseVideoFrames([imageBytes], effectivePrompt);
   }
 
   // ── Dynamic Agent & Session Discovery ──────────────────────────────────────

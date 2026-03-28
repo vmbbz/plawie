@@ -60,6 +60,11 @@ dependencies:
   equatable: ^2.0.5
   sherpa_onnx: ^1.12.28
   audioplayers: ^6.6.0
+  # On-device LLM inference via Android NDK — no PRoot, no Node.js
+  fllama:
+    git:
+      url: https://github.com/Telosnex/fllama.git
+      ref: main
   # flutter_overlay_window: ^0.5.0
 
 dev_dependencies:

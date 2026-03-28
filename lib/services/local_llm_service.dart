@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
+import 'package:fllama/fllama.dart';
 import 'native_bridge.dart';
 import 'gateway_service.dart';
 import 'preferences_service.dart';
 import '../models/gateway_state.dart';
-import '../constants.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -202,22 +201,15 @@ class LocalLlmState {
 class LocalLlmService {
   static final LocalLlmService _instance = LocalLlmService._internal();
   factory LocalLlmService() => _instance;
-  LocalLlmService._internal() {
-    // Monitor the gateway: if it crashes after local LLM is ready, reflect that.
-    GatewayService().stateStream.listen((gwState) {
-      if (_state.status == LocalLlmStatus.ready &&
-          (gwState.status == GatewayStatus.stopped ||
-           gwState.status == GatewayStatus.error)) {
-        _updateState(_state.copyWith(
-          status: LocalLlmStatus.error,
-          errorMessage: 'Gateway stopped unexpectedly. Tap Start to reload the model.',
-        ));
-      }
-    });
-  }
+  LocalLlmService._internal();
 
   final _stateController = StreamController<LocalLlmState>.broadcast();
   LocalLlmState _state = const LocalLlmState();
+
+  // fllama state — model path on host filesystem, active request ID for cancellation
+  String? _activeModelPath;
+  String? _activeMmprojPath;
+  int? _activeRequestId;
 
   Stream<LocalLlmState> get stateStream => _stateController.stream;
   LocalLlmState get state => _state;
@@ -277,10 +269,10 @@ class LocalLlmService {
       }
     }
 
-    await _startLlamaServer(model);
+    await _activateFllama(model);
   }
 
-  /// Start llama-server with an already-downloaded model.
+  /// Activate fllama with an already-downloaded model.
   Future<void> startWithModel(LocalLlmModel model) async {
     // No-op if this exact model is already running.
     if (_state.status == LocalLlmStatus.ready && _state.activeModelId == model.id) return;
@@ -288,18 +280,17 @@ class LocalLlmService {
       await downloadAndStart(model);
       return;
     }
-    await _startLlamaServer(model);
+    await _activateFllama(model);
   }
 
-  /// Kill the llama-server tmux session and reset state.
+  /// Stop the active fllama inference and reset state.
   Future<void> stop() async {
-    try {
-      await NativeBridge.runInProot(
-        'tmux kill-session -t llama-server 2>/dev/null; '
-        'pkill -f "node.*local-server/server.js" 2>/dev/null || true',
-        timeout: 5,
-      );
-    } catch (_) {}
+    if (_activeRequestId != null) {
+      fllamaCancelInference(_activeRequestId!);
+      _activeRequestId = null;
+    }
+    _activeModelPath = null;
+    _activeMmprojPath = null;
     _updateState(_state.copyWith(
       status: LocalLlmStatus.idle,
       activeModelId: null,
@@ -307,13 +298,10 @@ class LocalLlmService {
     ));
   }
 
-  /// Update thread count and restart if already running.
+  /// Update thread count — fllama auto-detects threads; just persist the preference.
   Future<void> setThreads(int threads, {LocalLlmModel? currentModel}) async {
     _updateState(_state.copyWith(threads: threads));
-    if (_state.status == LocalLlmStatus.ready && currentModel != null) {
-      await stop();
-      await _startLlamaServer(currentModel);
-    }
+    // fllama re-reads contextSize on next inference call; no restart needed.
   }
 
   /// Toggle local LLM on/off.
@@ -329,140 +317,135 @@ class LocalLlmService {
   /// Alias for startWithModel to satisfy UI expectations.
   Future<void> activateModel(LocalLlmModel model) => startWithModel(model);
 
-  /// Test inference — streams directly from llama-server on :8081.
-  /// No gateway involvement. No disabledUntil. No WS session race.
-  Stream<String> testInference(String prompt) async* {
-    if (_state.status != LocalLlmStatus.ready) {
-      yield '[Error] Local LLM is not ready. Status: ${_state.status}';
-      return;
+  /// Test inference — runs directly via fllama (no HTTP, no PRoot).
+  Stream<String> testInference(String prompt) {
+    final controller = StreamController<String>();
+    if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
+      controller.add('[Error] Local LLM is not ready. Status: ${_state.status}');
+      controller.close();
+      return controller.stream;
     }
-    final base = '${AppConstants.llamaServerUrl}/v1/chat/completions';
-    try {
-      final request = http.Request('POST', Uri.parse(base));
-      request.headers['Content-Type'] = 'application/json';
-      request.body = jsonEncode({
-        'model': 'local',
-        'messages': [{'role': 'user', 'content': prompt}],
-        'stream': true,
-      });
-      final response = await http.Client().send(request).timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) {
-        yield '[Error] Inference failed (HTTP ${response.statusCode})';
-        return;
-      }
-      await for (final line in response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
-        if (line.startsWith('data: ')) {
-          final data = line.substring(6);
-          if (data == '[DONE]') break;
-          try {
-            final json = jsonDecode(data);
-            final content = json['choices'][0]['delta']['content'] as String?;
-            if (content != null) yield content;
-          } catch (_) {}
-        }
-      }
-    } catch (e) {
-      yield '[Error] Connection failed: $e';
-    }
+    String lastResponse = '';
+    fllamaChat(
+      OpenAiRequest(
+        maxTokens: 512,
+        messages: [Message(Role.user, prompt)],
+        modelPath: _activeModelPath!,
+        mmprojPath: _activeMmprojPath,
+        numGpuLayers: 99,
+        contextSize: 2048,
+        temperature: 0.7,
+      ),
+      (response, jsonString, done) {
+        final delta = response.substring(lastResponse.length);
+        lastResponse = response;
+        if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
+        if (done && !controller.isClosed) controller.close();
+      },
+    ).then((id) => _activeRequestId = id);
+    return controller.stream;
   }
 
-  /// Returns the raw JSON body from llama-server's /health endpoint,
-  /// or an error string if the server is unreachable.
+  /// Full chat with conversation history — used by GatewayService for local-llm routing.
+  /// [history] is a list of {role, content} maps (OpenAI format).
+  Stream<String> chat(List<Map<String, dynamic>> history, String userMessage) {
+    final controller = StreamController<String>();
+    if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
+      controller.add('[Error] Local LLM is not ready. Status: ${_state.status}');
+      controller.close();
+      return controller.stream;
+    }
+    final messages = [
+      for (final m in history)
+        Message(
+          (m['role'] as String?) == 'assistant' ? Role.assistant
+              : (m['role'] as String?) == 'system' ? Role.system
+              : Role.user,
+          (m['content'] as String?) ?? '',
+        ),
+      Message(Role.user, userMessage),
+    ];
+    String lastResponse = '';
+    fllamaChat(
+      OpenAiRequest(
+        maxTokens: 1024,
+        messages: messages,
+        modelPath: _activeModelPath!,
+        mmprojPath: _activeMmprojPath,
+        numGpuLayers: 99,
+        contextSize: 4096,
+        temperature: 0.7,
+      ),
+      (response, jsonString, done) {
+        final delta = response.substring(lastResponse.length);
+        lastResponse = response;
+        if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
+        if (done && !controller.isClosed) controller.close();
+      },
+    ).then((id) => _activeRequestId = id);
+    return controller.stream;
+  }
+
+  /// Returns fllama engine status (replaces HTTP health probe).
   Future<String> fetchServerHealth() async {
-    try {
-      final resp = await http
-          .get(Uri.parse('${AppConstants.llamaServerUrl}/health'))
-          .timeout(const Duration(seconds: 5));
-      return 'HTTP ${resp.statusCode} — ${resp.body.trim()}';
-    } catch (e) {
-      return 'Unreachable: $e';
-    }
+    final status = _state.status.name;
+    final model = _state.activeModelId ?? 'none';
+    return 'fllama — status: $status, model: $model, path: ${_activeModelPath ?? 'n/a'}';
   }
 
-  /// Returns the last 30 lines of the llama-server log from inside PRoot.
+  /// Returns fllama state info (replaces PRoot log tail).
   Future<String> fetchServerLogs() async {
-    try {
-      final out = await NativeBridge.runInProot(
-        'tail -30 /root/.openclaw/llama-server.log 2>/dev/null || echo "(log empty)"',
-        timeout: 8,
-      );
-      return out.trim().isEmpty ? '(log empty)' : out.trim();
-    } catch (e) {
-      return 'Could not read log: $e';
-    }
+    return 'fllama inference engine (no external log).\n'
+        'Status: ${_state.status.name}\n'
+        'Model: ${_state.activeModelId ?? 'none'}\n'
+        'Host path: ${_activeModelPath ?? 'n/a'}\n'
+        'Mmproj: ${_activeMmprojPath ?? 'n/a'}';
   }
 
-  /// Processes a list of JPEG frames extracted from a video clip.
-  /// Sends each frame to the gateway's vision endpoint.
+  /// Processes a list of JPEG frames via fllama vision inference.
   Stream<String> analyseVideoFrames(List<Uint8List> frames, String summaryPrompt) async* {
     if (frames.isEmpty) {
       yield '[Error] No frames extracted from video.';
       return;
     }
-
-    if (_state.status != LocalLlmStatus.ready) {
+    if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
       yield '[Error] Local vision model is not running. Start it in Local LLM settings.';
       return;
     }
-
     _updateState(_state.copyWith(downloadProgress: 0.3));
-
-    final base = '${AppConstants.llamaServerUrl}/v1/chat/completions';
     try {
-      // Step 1: Send the visual summary request
-      final resp = await http.post(
-        Uri.parse(base),
-        headers: {
-          'Content-Type': 'application/json',
+      // Embed first representative frame as a base64 data URL in the prompt.
+      // llama.cpp's multimodal path picks up data URLs when mmprojPath is set.
+      final base64Image = base64Encode(frames.first);
+      final visionPrompt =
+          'data:image/jpeg;base64,$base64Image\n\n$summaryPrompt';
+      final completer = Completer<String>();
+      await fllamaChat(
+        OpenAiRequest(
+          maxTokens: 512,
+          messages: [Message(Role.user, visionPrompt)],
+          modelPath: _activeModelPath!,
+          mmprojPath: _activeMmprojPath,
+          numGpuLayers: 99,
+          contextSize: 2048,
+          temperature: 0.3,
+        ),
+        (response, jsonString, done) {
+          if (done && !completer.isCompleted) completer.complete(response);
         },
-        body: jsonEncode({
-          'model': 'local-llm',
-          'messages': [
-            {
-              'role': 'user',
-              'content': [
-                {'type': 'text', 'text': summaryPrompt},
-                ...frames.map((f) => {
-                  'type': 'image_url',
-                  'image_url': {'url': 'data:image/jpeg;base64,${base64Encode(f)}'}
-                })
-              ]
-            },
-          ],
-          'stream': false,
-          'max_tokens': 512,
-        }),
-      ).timeout(const Duration(seconds: 60));
-
-      if (resp.statusCode == 200) {
-        final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final content = ((json['choices'] as List?)?.first['message'] as Map?)?['content'] as String?;
-        yield content ?? '[Error] Empty summary from model.';
-      } else {
-        yield '[Error] Summary request failed (HTTP ${resp.statusCode}).';
-      }
+      );
+      final result = await completer.future.timeout(const Duration(seconds: 60));
+      yield result;
     } catch (e) {
-      yield '[Error] Summary error: $e';
+      yield '[Error] Vision analysis failed: $e';
     } finally {
       _updateState(_state.copyWith(downloadProgress: 1.0));
     }
   }
 
-  /// Health check: probe llama-server's /health endpoint on :8081.
-  /// Returns true only when the server is up and the model is fully loaded.
+  /// Health check via fllama state (no HTTP probe needed).
   Future<bool> isServerHealthy() async {
-    try {
-      final resp = await http
-          .get(Uri.parse('${AppConstants.llamaServerUrl}/health'))
-          .timeout(const Duration(seconds: 3));
-      // llama-server returns {"status":"ok"} when the model is loaded.
-      // Any 200 response means it's ready; non-200 means still loading.
-      return resp.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
+    return _state.status == LocalLlmStatus.ready;
   }
 
   /// Check if given model file is already downloaded.
@@ -618,215 +601,48 @@ class LocalLlmService {
   }
 
   // --------------------------------------------------------------------------
-  // Private — llama HTTP server (node-llama-cpp standalone)
+  // Private — fllama activation (no PRoot, no HTTP server)
   // --------------------------------------------------------------------------
 
-  /// Host path of the embedded server script.
-  /// Written to /root/.openclaw/ (always exists) — avoids creating new dirs from Flutter.
-  Future<String> _llamaHttpServerScriptPath() async {
-    final filesDir = await NativeBridge.getFilesDir();
-    return '$filesDir/rootfs/root/.openclaw/llama-server.js';
-  }
-
-  /// True once npm install has completed (node_modules is present).
-  Future<bool> _isLlamaHttpServerReady() async {
-    final scriptPath = await _llamaHttpServerScriptPath();
-    if (!File(scriptPath).existsSync()) return false;
-    final filesDir = await NativeBridge.getFilesDir();
-    return Directory(
-      '$filesDir/rootfs/root/.openclaw/local-server/node_modules/node-llama-cpp',
-    ).existsSync();
-  }
-
-  /// Write server.js + package.json to /root/.openclaw/ (guaranteed to exist),
-  /// then let PRoot create the local-server subdir and run npm install inside it.
-  Future<void> _setupLlamaHttpServer() async {
-    _updateState(_state.copyWith(
-      status: LocalLlmStatus.installing,
-      downloadProgress: 0.0,
-      errorMessage: 'Setting up llama HTTP server...',
-    ));
-
-    // Write both files into /root/.openclaw/ — this dir always exists (openclaw config lives here).
-    final filesDir = await NativeBridge.getFilesDir();
-    final openclawDir = '$filesDir/rootfs/root/.openclaw';
-
-    await File('$openclawDir/llama-server.js').writeAsString(_llamaHttpServerScript);
-    await File('$openclawDir/llama-pkg.json').writeAsString(
-      '{"name":"llama-http-server","version":"1.0.0","dependencies":{"node-llama-cpp":"3"}}',
-    );
-
-    _updateState(_state.copyWith(
-      downloadProgress: 0.1,
-      errorMessage: 'Downloading node-llama-cpp ARM64 (~50 MB, one-time)...',
-    ));
-
-    // PRoot creates the subdir, copies package.json, and runs npm install.
-    // Using PRoot's own mkdir guarantees the directory exists in PRoot's namespace.
-    await NativeBridge.runInProot(
-      'mkdir -p /root/.openclaw/local-server && '
-      'cp /root/.openclaw/llama-pkg.json /root/.openclaw/local-server/package.json && '
-      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-      'cd /root/.openclaw/local-server && npm install 2>&1 | tail -10',
-      timeout: 600,
-    );
-
-    _updateState(_state.copyWith(downloadProgress: 1.0, errorMessage: null));
-  }
-
-  Future<void> _ensureLlamaHttpServer() async {
-    if (!await _isLlamaHttpServerReady()) await _setupLlamaHttpServer();
-  }
-
-  // Embedded server.js — no network fetch, written to PRoot rootfs at setup time.
-  static const String _llamaHttpServerScript = r"""
-'use strict';
-const http = require('http');
-const { getLlama, LlamaChatSession } = require('node-llama-cpp');
-
-const PORT = parseInt(process.env.PORT || '8081');
-const MODEL = process.argv[2];
-const CTX = parseInt(process.env.CTX_SIZE || '2048');
-
-if (!MODEL) { console.error('Usage: node server.js <model-path>'); process.exit(1); }
-
-let ready = false, llama, model, ctx;
-
-async function init() {
-  llama = await getLlama();
-  model = await llama.loadModel({ modelPath: MODEL });
-  ctx = await model.createContext({ contextSize: CTX });
-  ready = true;
-  console.log('[llama-http] ready port=' + PORT);
-}
-
-http.createServer(async (req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ status: ready ? 'ok' : 'loading' }));
-  }
-  if (req.method === 'POST' && req.url === '/v1/chat/completions') {
-    if (!ready) { res.writeHead(503); return res.end(JSON.stringify({ error: 'loading' })); }
-    let body = '';
-    req.on('data', d => body += d);
-    req.on('end', async () => {
-      try {
-        const { messages, stream } = JSON.parse(body);
-        const seq = ctx.getSequence();
-        const session = new LlamaChatSession({ contextSequence: seq });
-        const prompt = messages.filter(m => m.role === 'user').pop()?.content || '';
-        if (stream) {
-          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          await session.prompt(prompt, {
-            onTextChunk(t) {
-              res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: t }, finish_reason: null }] }) + '\n\n');
-            }
-          });
-          res.write('data: [DONE]\n\n');
-          res.end();
-        } else {
-          const text = await session.prompt(prompt);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: text } }] }));
-        }
-      } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: String(e) })); }
-    });
-    return;
-  }
-  res.writeHead(404); res.end();
-}).listen(PORT, '127.0.0.1');
-
-init().catch(e => { console.error('[llama-http] init failed:', e); process.exit(1); });
-""";
-
-  // --------------------------------------------------------------------------
-  // Private — llama-server lifecycle
-  // --------------------------------------------------------------------------
-
-  Future<void> _startLlamaServer(LocalLlmModel model) async {
+  /// Store host model paths and flip state to ready — fllama needs no server process.
+  Future<void> _activateFllama(LocalLlmModel model) async {
     _updateState(_state.copyWith(
       status: LocalLlmStatus.starting,
-      downloadProgress: 0.1,
+      downloadProgress: 0.5,
       clearErrorMessage: true,
     ));
 
-    // Ensure node-llama-cpp HTTP server is installed (one-time npm install).
     try {
-      await _ensureLlamaHttpServer();
-    } catch (e) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage: 'Failed to install llama HTTP server: $e',
-      ));
-      return;
-    }
+      final filesDir = await NativeBridge.getFilesDir();
+      final prootRoot = '$filesDir/rootfs';
 
-    _updateState(_state.copyWith(status: LocalLlmStatus.starting, downloadProgress: 0.3));
+      _activeModelPath = '$prootRoot${model.prootModelPath}';
+      _activeMmprojPath = model.isMultimodal
+          ? '$prootRoot${model.prootMmProjPath}'
+          : null;
 
-    // Kill any existing session before starting a new one.
-    try {
-      await NativeBridge.runInProot(
-        'tmux kill-session -t llama-server 2>/dev/null; '
-        'pkill -f "node.*local-server/server.js" 2>/dev/null || true',
-        timeout: 5,
-      );
-    } catch (_) {}
-
-    final ctxSize = model.contextWindow.clamp(512, 4096);
-    final modelPath = model.prootModelPath;
-
-    final launchCmd =
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'CTX_SIZE=$ctxSize PORT=${AppConstants.llamaServerPort} '
-        'node /root/.openclaw/llama-server.js $modelPath';
-
-    // Start in a detached tmux session so it survives PRoot foreground exit.
-    final tmuxCmd =
-        'mkdir -p /root/.openclaw && '
-        'tmux new-session -d -s llama-server \'$launchCmd '
-        '>> /root/.openclaw/llama-server.log 2>&1\'';
-
-    try {
-      await NativeBridge.runInProot(tmuxCmd, timeout: 10);
-    } catch (e) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage: 'Failed to start llama server: $e',
-      ));
-      return;
-    }
-
-    _updateState(_state.copyWith(downloadProgress: 0.5));
-
-    // Poll /health until llama-server finishes loading the model.
-    // The server only responds 200 once the GGUF is fully mapped into RAM.
-    bool healthy = false;
-    const maxAttempts = 120; // 2 min for large models on slow phones
-    for (int i = 0; i < maxAttempts; i++) {
-      await Future.delayed(const Duration(seconds: 1));
-      _updateState(_state.copyWith(downloadProgress: 0.5 + (i * 0.5 / maxAttempts)));
-      if (await isServerHealthy()) {
-        healthy = true;
-        break;
+      if (!File(_activeModelPath!).existsSync()) {
+        throw Exception('Model file not found: $_activeModelPath');
       }
-    }
+      // Non-fatal: mmproj missing → text-only fallback
+      if (_activeMmprojPath != null && !File(_activeMmprojPath!).existsSync()) {
+        _activeMmprojPath = null;
+      }
 
-    if (!healthy) {
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.configuredModel = 'local-llm/${model.id}';
+
+      _updateState(_state.copyWith(
+        status: LocalLlmStatus.ready,
+        activeModelId: model.id,
+        downloadProgress: 1.0,
+      ));
+    } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
-        errorMessage: 'llama-server did not become healthy within 2 minutes.',
+        errorMessage: 'Failed to activate fllama: $e',
       ));
-      return;
     }
-
-    final prefs = PreferencesService();
-    await prefs.init();
-    prefs.configuredModel = 'local-llm/${model.id}';
-
-    _updateState(_state.copyWith(
-      status: LocalLlmStatus.ready,
-      activeModelId: model.id,
-      downloadProgress: 1.0,
-    ));
   }
 }
