@@ -26,6 +26,7 @@ import '../main.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
+import '../services/gateway_service.dart';
 import 'management/local_llm_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -284,7 +285,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           _messages.add(ChatMessage(text: "Hello! I'm $_agentName, your fully local AI companion. How can I help you today?", isUser: false));
         }
       });
-      _scrollToBottom();
+      _scrollToBottom(instant: true);
     }
   }
 
@@ -384,15 +385,24 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     };
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool instant = false}) {
+    // Use two nested post-frame callbacks: the first waits for setState to rebuild
+    // the list, the second waits for the new layout to be measured. This guarantees
+    // maxScrollExtent reflects the real list height and the scroll lands at the bottom.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        final max = _scrollController.position.maxScrollExtent;
+        if (instant) {
+          _scrollController.jumpTo(max);
+        } else {
+          _scrollController.animateTo(
+            max,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     });
   }
 

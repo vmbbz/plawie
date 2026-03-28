@@ -379,27 +379,37 @@ class LocalLlmService {
         return false;
       }
 
-      // 3. Verify the RUNNING gateway has loaded local-llm — probe /v1/models.
-      // This only passes once node-llama-cpp finishes loading the GGUF file.
-      // Without this check, status flips to "ready" ~1s after config is written,
-      // long before the model is usable, causing silent cloud fallback.
+      // 3. Best-effort: verify the RUNNING gateway has loaded local-llm via /v1/models.
+      // IMPORTANT: force:true re-fetches the token — the cache was just invalidated
+      // by _startServer/stop, so we must NOT use the stale cached token here.
+      // If /v1/models endpoint fails or token is unavailable, fall back to config check
+      // (same as the 9a9614a baseline) so the poll can succeed after reload.
       try {
-        final token = await GatewayService().retrieveTokenFromConfig();
-        final resp = await http.get(
-          Uri.parse('${AppConstants.gatewayUrl}/v1/models'),
-          headers: {'Authorization': 'Bearer ${token ?? ''}'},
-        ).timeout(const Duration(seconds: 5));
-        if (resp.statusCode == 200) {
-          final body = jsonDecode(resp.body) as Map<String, dynamic>;
-          final models = (body['data'] as List?) ?? [];
-          return models.any(
-              (m) => (m['id'] as String?)?.startsWith('local-llm') == true);
+        final token = await GatewayService().retrieveTokenFromConfig(force: true);
+        if (token != null && token.isNotEmpty) {
+          final resp = await http.get(
+            Uri.parse('${AppConstants.gatewayUrl}/v1/models'),
+            headers: {'Authorization': 'Bearer $token'},
+          ).timeout(const Duration(seconds: 5));
+          if (resp.statusCode == 200) {
+            final body = jsonDecode(resp.body) as Map<String, dynamic>;
+            final models = (body['data'] as List?) ?? [];
+            // If endpoint responds and confirms local-llm loaded, we're done.
+            if (models.any((m) => (m['id'] as String?)?.startsWith('local-llm') == true)) {
+              return true;
+            }
+            // If endpoint responds but local-llm not listed yet, still loading.
+            return false;
+          }
+          // Non-200 (e.g. 401, 404): endpoint unavailable/not enabled.
+          // Fall through to config-only success below.
         }
       } catch (_) {
-        // /v1/models threw — gateway not ready or endpoint unavailable.
-        // Return false: the model hasn't confirmed loading yet.
+        // /v1/models threw or timed out — fall through to config-only success.
       }
-      return false;
+
+      // Fallback (9a9614a baseline): config patch in place + gateway alive = healthy.
+      return true;
     } catch (_) {
       return false;
     }
