@@ -47,20 +47,28 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
 
   Future<void> _loadUrl({bool forceRefresh = false}) async {
     final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-    
+
     String? url;
     if (forceRefresh) {
       if (mounted) setState(() => _loading = true);
       url = await gatewayProvider.refreshDashboardUrl();
     } else {
+      // Priority: widget arg → in-memory auth URL (has ?token=) → saved prefs → fresh CLI probe
       url = widget.url;
+      if (url == null || url.isEmpty) {
+        url = gatewayProvider.state.dashboardUrl;
+      }
       if (url == null || url.isEmpty) {
         final prefs = PreferencesService();
         await prefs.init();
         url = prefs.dashboardUrl;
       }
+      if (url == null || url.isEmpty) {
+        // Gateway running but token URL not cached yet — probe once
+        url = await gatewayProvider.fetchAuthenticatedDashboardUrl();
+      }
     }
-    
+
     if (mounted) {
       _controller.loadRequest(Uri.parse(url ?? AppConstants.gatewayUrl));
     }

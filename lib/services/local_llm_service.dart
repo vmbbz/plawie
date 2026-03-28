@@ -167,6 +167,7 @@ class LocalLlmState {
     String? activeModelId,
     double? downloadProgress,
     String? errorMessage,
+    bool clearErrorMessage = false,
     int? threads,
     bool? isEnabled,
   }) {
@@ -174,7 +175,7 @@ class LocalLlmState {
       status: status ?? this.status,
       activeModelId: activeModelId ?? this.activeModelId,
       downloadProgress: downloadProgress ?? this.downloadProgress,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
       threads: threads ?? this.threads,
       isEnabled: isEnabled ?? this.isEnabled,
     );
@@ -209,8 +210,19 @@ class LocalLlmState {
 class LocalLlmService {
   static final LocalLlmService _instance = LocalLlmService._internal();
   factory LocalLlmService() => _instance;
-  LocalLlmService._internal();
-
+  LocalLlmService._internal() {
+    // Monitor the gateway: if it crashes after local LLM is ready, reflect that.
+    GatewayService().stateStream.listen((gwState) {
+      if (_state.status == LocalLlmStatus.ready &&
+          (gwState.status == GatewayStatus.stopped ||
+           gwState.status == GatewayStatus.error)) {
+        _updateState(_state.copyWith(
+          status: LocalLlmStatus.error,
+          errorMessage: 'Gateway stopped unexpectedly. Tap Start to reload the model.',
+        ));
+      }
+    });
+  }
 
   final _stateController = StreamController<LocalLlmState>.broadcast();
   LocalLlmState _state = const LocalLlmState();
@@ -301,17 +313,27 @@ class LocalLlmService {
     await _startServer(model);
   }
 
-  /// Stop the running llama-server process.
+  /// Stop the local LLM: remove its provider from openclaw.json and reload
+  /// the gateway so the model is actually unloaded from memory.
   Future<void> stop() async {
+    // Remove config first so gateway reloads without the local-llm provider.
+    await _removeLocalProviderFromConfig();
+
+    // Reload gateway to free the model's RAM.
+    GatewayService().invalidateTokenCache();
+    GatewayService().disconnectWebSocket();
     try {
       await NativeBridge.runInProot(
-        'pkill -f "llama-server" 2>/dev/null; sleep 0.5',
-        timeout: 5,
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+        'openclaw reload 2>/dev/null || openclaw restart 2>/dev/null || true',
+        timeout: 10,
       );
     } catch (_) {}
+
     _updateState(_state.copyWith(
       status: LocalLlmStatus.idle,
       activeModelId: null,
+      isEnabled: false,
     ));
   }
 
@@ -327,11 +349,11 @@ class LocalLlmService {
   /// Toggle local LLM on/off. When enabled, patches openclaw.json to add the
   /// local provider block. When disabled, removes it and routes cloud.
   Future<void> setEnabled(bool enabled, {String? modelId}) async {
-    _updateState(_state.copyWith(isEnabled: enabled));
     if (enabled && modelId != null) {
+      _updateState(_state.copyWith(isEnabled: true));
       await _patchOpenClawConfig(modelId);
     } else {
-      await _removeLocalProviderFromConfig();
+      await stop();
     }
   }
 
@@ -623,8 +645,11 @@ class LocalLlmService {
 
   /// Activates openclaw's built-in node-llama-cpp local LLM provider.
   Future<void> _startServer(LocalLlmModel model) async {
-    _updateState(
-        _state.copyWith(status: LocalLlmStatus.starting, downloadProgress: 0.1));
+    _updateState(_state.copyWith(
+      status: LocalLlmStatus.starting,
+      downloadProgress: 0.1,
+      clearErrorMessage: true,
+    ));
 
     // Stage 2/2: inject node-llama-cpp config into openclaw.json (Direct I/O)
     _updateState(_state.copyWith(
@@ -645,8 +670,10 @@ class LocalLlmService {
     }
 
     // Signal openclaw gateway to reload with new provider config.
-    // Invalidate token cache first — reload generates a new auth token.
+    // Invalidate token + disconnect WS — reload generates a new token and
+    // the next sendMessage() will open a fresh session using local-llm.
     GatewayService().invalidateTokenCache();
+    GatewayService().disconnectWebSocket();
     try {
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '

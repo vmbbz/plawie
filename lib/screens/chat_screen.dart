@@ -96,6 +96,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
+  // Auto-sync model when local LLM starts/stops
+  StreamSubscription<LocalLlmState>? _localLlmSub;
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
@@ -110,6 +112,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
     _loadPreferences();
+    _localLlmSub = LocalLlmService().stateStream.listen((llmState) {
+      if (!mounted) return;
+      if (llmState.status == LocalLlmStatus.ready && llmState.activeModelId != null) {
+        final localModel = 'local-llm/${llmState.activeModelId}';
+        setState(() => _selectedModel = localModel);
+        PreferencesService().configuredModel = localModel;
+      } else if (llmState.status == LocalLlmStatus.idle &&
+                 _selectedModel.startsWith('local-llm/')) {
+        setState(() => _selectedModel = _availableModels.first);
+        PreferencesService().configuredModel = _availableModels.first;
+      }
+    });
     _initVoiceParams();
     _loadChatHistory();
     _checkTtsModel();
@@ -1193,6 +1207,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _hotwordSub?.cancel();
+    _localLlmSub?.cancel();
     _glowController.dispose();
     _tts.stop();
     _speechToText.stop();

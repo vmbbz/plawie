@@ -715,13 +715,10 @@ class GatewayService {
   Stream<String> sendMessage(String message, {String? model}) async* {
     model = await _resolveModel(model);
 
-    // SEAMLESS ROUTING: Use the OpenAI-compatible HTTP path for specific model overrides.
-    // This supports per-message model selection (including Local LLM) with full streaming,
-    // avoiding the rigid parameter constraints of the main WebSocket RPC.
-    if (model.startsWith('local-llm') || model.contains('/')) {
-      yield* sendMessageHttp(message, model: model);
-      return;
-    }
+    // All models — cloud and local — use the WS chat.send path for session persistence.
+    // Local LLM: after openclaw reload, the gateway's primary model is "local-llm/..."
+    //            and a fresh WS session (post-disconnect) picks it up automatically.
+    // HTTP sendMessageHttp remains as the WS fallback path only.
 
     // Retrieve auth token
     String? token;
@@ -1169,6 +1166,13 @@ class GatewayService {
     if (primary != null && primary.isNotEmpty) return primary;
     
     return 'google/gemini-3.1-pro-preview'; // Final hard fallback
+  }
+
+  /// Disconnect the persistent WS connection so the next sendMessage() opens a
+  /// fresh session — picking up any gateway config change (e.g. local-llm reload).
+  void disconnectWebSocket() {
+    _connection?.dispose();
+    _connection = null;
   }
 
   /// Clear the cached auth token so the next request re-probes for a fresh one.
