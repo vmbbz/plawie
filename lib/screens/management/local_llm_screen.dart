@@ -169,7 +169,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 10),
               Text(
-                'llama-server · port 8081',
+                'openclaw · node-llama-cpp',
                 style: GoogleFonts.outfit(
                   color: color,
                   fontWeight: FontWeight.w700,

@@ -29,7 +29,7 @@ class AppColors {
   static const Color lightHighlight = Color(0xFFCCCCCC); // Highlight accent
 
   // Status colors (monochromatic with intensity)
-  static const Color statusGreen = Color(0xFF00C853); // Vibrant green
+  static const Color statusGreen = Color(0xFF00FFA3); // Premium Neon Mint
   static const Color statusAmber = Color(0xFFFFB300); // Vibrant amber
   static const Color statusRed = Color(0xFFFF1744); // Vibrant red
   static const Color statusGrey = Color(0xFF757575); // Neutral grey
