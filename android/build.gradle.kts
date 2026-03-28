@@ -23,6 +23,15 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 }
+// Lift any Flutter plugin that ships with compileSdk < 36 to avoid AAR metadata
+// version-check failures (e.g. solana_mobile_client still targets API 31).
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure<com.android.build.gradle.LibraryExtension> {
+            compileSdk = maxOf(compileSdk ?: 0, 36)
+        }
+    }
+}
 
 tasks.register<Delete>("clean") {
     // Clean both the local Gradle build dir and the Flutter build dir

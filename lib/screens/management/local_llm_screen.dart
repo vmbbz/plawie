@@ -167,7 +167,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
       LocalLlmStatus.ready => (AppColors.statusGreen, Icons.check_circle_rounded, 'Running'),
       LocalLlmStatus.starting => (Colors.amber, Icons.hourglass_top_rounded, 'Starting...'),
       LocalLlmStatus.downloading => (Colors.blueAccent, Icons.cloud_download_rounded, 'Downloading'),
-      LocalLlmStatus.installing => (Colors.purpleAccent, Icons.terminal_rounded, 'Compiling (10-25 min)'),
+      LocalLlmStatus.installing => (Colors.purpleAccent, Icons.memory_rounded, 'Activating...'),
       LocalLlmStatus.error => (Colors.redAccent, Icons.error_rounded, 'Error'),
       LocalLlmStatus.idle => (Colors.white30, Icons.circle_outlined, 'Offline'),
     };
@@ -187,7 +187,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 10),
               Text(
-                'openclaw · node-llama-cpp',
+                'openclaw · fllama (llama.cpp NDK)',
                 style: GoogleFonts.outfit(
                   color: color,
                   fontWeight: FontWeight.w700,
@@ -558,9 +558,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   }
 
   Widget _buildAgentPromptGuide() {
-    const prompt = '''When using the local LLM skill (llama-server · 127.0.0.1:8081):
+    const prompt = '''When using the local LLM skill (fllama · on-device NDK inference):
 
-- You are running as Qwen2.5-Instruct via llama-server on-device.
+- You are running as Qwen2.5-Instruct via fllama (llama.cpp compiled into the app as a native library).
 - Your context window may be limited (8K–32K tokens). Keep system prompts concise.
 - For tool use, strictly output valid JSON inside <tool_call> tags.
 - If a tool call fails, retry once with simplified parameters before reporting the error.
@@ -663,7 +663,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                   ),
                   child: _isCheckingHealth
                       ? const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38))
-                      : Text('Health Check', style: GoogleFonts.jetBrainsMono(color: Colors.white38, fontSize: 9)),
+                      : Text('Engine Status', style: GoogleFonts.jetBrainsMono(color: Colors.white38, fontSize: 9)),
                 ),
               ),
             ],
@@ -689,7 +689,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     Icon(_showLogs ? Icons.expand_less : Icons.expand_more, color: Colors.white24, size: 14),
                     const SizedBox(width: 4),
                     Text(
-                      _isFetchingLogs ? 'Loading logs…' : (_showLogs ? 'Hide server log' : 'View server log'),
+                      _isFetchingLogs ? 'Loading…' : (_showLogs ? 'Hide engine info' : 'View engine info'),
                       style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
                     ),
                   ],

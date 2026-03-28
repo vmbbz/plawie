@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:fllama/fllama.dart';
 import 'native_bridge.dart';
-import 'gateway_service.dart';
 import 'preferences_service.dart';
 import '../models/gateway_state.dart';
 
@@ -138,7 +137,7 @@ const _modelCatalog = [
 enum LocalLlmStatus {
   idle,        // no model / server not running
   downloading, // downloading model file
-  installing,  // compiling llama-server from source inside PRoot
+  installing,  // reserved / unused — fllama activation uses `starting` directly
   starting,    // starting llama-server process
   ready,       // server up and responding
   error,       // unrecoverable error
@@ -196,8 +195,9 @@ class LocalLlmState {
 // Service
 // ---------------------------------------------------------------------------
 
-/// Manages the full lifecycle of a llama-server child process running inside
-/// the PRoot/Ubuntu layer, alongside the existing OpenClaw Node.js gateway.
+/// Manages the fllama inference engine lifecycle.
+/// Downloads GGUF models, activates them, and runs inference directly via the
+/// fllama NDK plugin (llama.cpp compiled into the APK — no PRoot, no HTTP server).
 class LocalLlmService {
   static final LocalLlmService _instance = LocalLlmService._internal();
   factory LocalLlmService() => _instance;
@@ -210,6 +210,7 @@ class LocalLlmService {
   String? _activeModelPath;
   String? _activeMmprojPath;
   int? _activeRequestId;
+  bool _isInferring = false;
 
   Stream<LocalLlmState> get stateStream => _stateController.stream;
   LocalLlmState get state => _state;
@@ -222,6 +223,29 @@ class LocalLlmService {
           (m) => m.id == _state.activeModelId,
           orElse: () => _modelCatalog.first,
         );
+
+  /// Context window clamped to a safe range for the active model.
+  int get _activeContextSize =>
+      (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
+
+  /// Mirrors fllamaChat() but injects numThreads from the user's thread setting.
+  /// fllamaChat() hard-codes numThreads=2 and never exposes it via OpenAiRequest.
+  FllamaInferenceRequest _buildInferenceRequest(OpenAiRequest req) {
+    return FllamaInferenceRequest(
+      contextSize: req.contextSize,
+      input: '', // C++ reads openAiRequestJsonString directly; input is unused
+      maxTokens: req.maxTokens,
+      modelPath: req.modelPath,
+      modelMmprojPath: req.mmprojPath,
+      numGpuLayers: req.numGpuLayers,
+      penaltyFrequency: req.frequencyPenalty,
+      penaltyRepeat: req.presencePenalty,
+      temperature: req.temperature,
+      topP: req.topP,
+      numThreads: _state.threads,
+      openAiRequestJsonString: req.toJsonString(),
+    );
+  }
 
   /// True when local LLM is ready AND the active model supports vision.
   bool get isVisionReady =>
@@ -236,20 +260,11 @@ class LocalLlmService {
   // Public API
   // --------------------------------------------------------------------------
 
-  /// Download GGUF + ensure llama-server binary + start the server.
+  /// Download GGUF + activate via fllama.
   Future<void> downloadAndStart(LocalLlmModel model) async {
     if (_state.status == LocalLlmStatus.downloading ||
         _state.status == LocalLlmStatus.starting ||
         _state.status == LocalLlmStatus.installing) {
-      return;
-    }
-
-    // Prevent PRoot conflicts during gateway startup
-    if (GatewayService().state.status == GatewayStatus.starting) {
-      _updateState(_state.copyWith(
-        status: LocalLlmStatus.error,
-        errorMessage: 'Gateway is still starting. Wait for "Gateway healthy" before starting local LLM.',
-      ));
       return;
     }
 
@@ -325,22 +340,30 @@ class LocalLlmService {
       controller.close();
       return controller.stream;
     }
+    // Cancel any in-flight request before starting a new one.
+    if (_isInferring && _activeRequestId != null) {
+      fllamaCancelInference(_activeRequestId!);
+    }
+    _isInferring = true;
     String lastResponse = '';
-    fllamaChat(
-      OpenAiRequest(
+    fllamaInference(
+      _buildInferenceRequest(OpenAiRequest(
         maxTokens: 512,
         messages: [Message(Role.user, prompt)],
         modelPath: _activeModelPath!,
         mmprojPath: _activeMmprojPath,
         numGpuLayers: 99,
-        contextSize: 2048,
+        contextSize: _activeContextSize,
         temperature: 0.7,
-      ),
+      )),
       (response, jsonString, done) {
         final delta = response.substring(lastResponse.length);
         lastResponse = response;
         if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
-        if (done && !controller.isClosed) controller.close();
+        if (done) {
+          _isInferring = false;
+          if (!controller.isClosed) controller.close();
+        }
       },
     ).then((id) => _activeRequestId = id);
     return controller.stream;
@@ -355,8 +378,17 @@ class LocalLlmService {
       controller.close();
       return controller.stream;
     }
+    // Cancel any in-flight request before starting a new one.
+    if (_isInferring && _activeRequestId != null) {
+      fllamaCancelInference(_activeRequestId!);
+    }
+    _isInferring = true;
+    final trimmed = _trimHistory(history, userMessage);
     final messages = [
-      for (final m in history)
+      Message(Role.system,
+          'You are Plawie, a helpful AI assistant running locally on this Android device. '
+          'Be concise and direct.'),
+      for (final m in trimmed)
         Message(
           (m['role'] as String?) == 'assistant' ? Role.assistant
               : (m['role'] as String?) == 'system' ? Role.system
@@ -366,24 +398,44 @@ class LocalLlmService {
       Message(Role.user, userMessage),
     ];
     String lastResponse = '';
-    fllamaChat(
-      OpenAiRequest(
+    fllamaInference(
+      _buildInferenceRequest(OpenAiRequest(
         maxTokens: 1024,
         messages: messages,
         modelPath: _activeModelPath!,
         mmprojPath: _activeMmprojPath,
         numGpuLayers: 99,
-        contextSize: 4096,
+        contextSize: _activeContextSize,
         temperature: 0.7,
-      ),
+      )),
       (response, jsonString, done) {
         final delta = response.substring(lastResponse.length);
         lastResponse = response;
         if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
-        if (done && !controller.isClosed) controller.close();
+        if (done) {
+          _isInferring = false;
+          if (!controller.isClosed) controller.close();
+        }
       },
     ).then((id) => _activeRequestId = id);
     return controller.stream;
+  }
+
+  /// Trims history to fit within the active context window.
+  /// Keeps the most recent messages — older ones are dropped first.
+  List<Map<String, dynamic>> _trimHistory(
+      List<Map<String, dynamic>> history, String newMessage) {
+    const avgCharsPerToken = 4;
+    // Reserve 1024 tokens for the response + 100 for system prompt overhead.
+    final budget = (_activeContextSize - 1024 - 100) * avgCharsPerToken;
+    var chars = newMessage.length;
+    final result = <Map<String, dynamic>>[];
+    for (final msg in history.reversed) {
+      chars += (msg['content'] as String? ?? '').length;
+      if (chars > budget) break;
+      result.insert(0, msg);
+    }
+    return result;
   }
 
   /// Returns fllama engine status (replaces HTTP health probe).
@@ -412,31 +464,40 @@ class LocalLlmService {
       yield '[Error] Local vision model is not running. Start it in Local LLM settings.';
       return;
     }
+    if (_isInferring && _activeRequestId != null) {
+      fllamaCancelInference(_activeRequestId!);
+    }
+    _isInferring = true;
     _updateState(_state.copyWith(downloadProgress: 0.3));
     try {
-      // Embed first representative frame as a base64 data URL in the prompt.
-      // llama.cpp's multimodal path picks up data URLs when mmprojPath is set.
+      // fllama expects the HTML <img src="data:..."> format — confirmed from
+      // fllama's own example app. The C++ side parses this tag to extract and
+      // embed the image when mmprojPath is set.
       final base64Image = base64Encode(frames.first);
       final visionPrompt =
-          'data:image/jpeg;base64,$base64Image\n\n$summaryPrompt';
+          '<img src="data:image/jpeg;base64,$base64Image">\n\n$summaryPrompt';
       final completer = Completer<String>();
-      await fllamaChat(
-        OpenAiRequest(
+      await fllamaInference(
+        _buildInferenceRequest(OpenAiRequest(
           maxTokens: 512,
           messages: [Message(Role.user, visionPrompt)],
           modelPath: _activeModelPath!,
           mmprojPath: _activeMmprojPath,
           numGpuLayers: 99,
-          contextSize: 2048,
+          contextSize: _activeContextSize,
           temperature: 0.3,
-        ),
+        )),
         (response, jsonString, done) {
-          if (done && !completer.isCompleted) completer.complete(response);
+          if (done) {
+            _isInferring = false;
+            if (!completer.isCompleted) completer.complete(response);
+          }
         },
       );
       final result = await completer.future.timeout(const Duration(seconds: 60));
       yield result;
     } catch (e) {
+      _isInferring = false;
       yield '[Error] Vision analysis failed: $e';
     } finally {
       _updateState(_state.copyWith(downloadProgress: 1.0));
