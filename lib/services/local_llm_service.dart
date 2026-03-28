@@ -364,18 +364,41 @@ class LocalLlmService {
   /// We verify: (1) the gateway is answering, (2) our config patch is in place.
   Future<bool> isServerHealthy() async {
     try {
-      // 1. Gateway must be alive on its native port
+      // 1. Gateway port must be open
       final gwResp = await http
           .head(Uri.parse(AppConstants.gatewayUrl))
           .timeout(const Duration(seconds: 3));
       if (gwResp.statusCode >= 500) return false;
 
-      // 2. Config must have the local-llm provider enabled (we just wrote it)
+      // 2. Config file must have local-llm block (fast sanity check)
       final config = await _readConfig();
       final provider = config['models']?['providers']?['local-llm'];
-      return provider != null &&
-          provider['enabled'] == true &&
-          provider['modelPath'] != null;
+      if (provider == null ||
+          provider['enabled'] != true ||
+          provider['modelPath'] == null) {
+        return false;
+      }
+
+      // 3. Verify the RUNNING gateway has loaded local-llm — probe /v1/models.
+      // This only passes once node-llama-cpp finishes loading the GGUF file.
+      // Without this check, status flips to "ready" ~1s after config is written,
+      // long before the model is usable, causing silent cloud fallback.
+      try {
+        final token = await GatewayService().retrieveTokenFromConfig();
+        final resp = await http.get(
+          Uri.parse('${AppConstants.gatewayUrl}/v1/models'),
+          headers: {'Authorization': 'Bearer ${token ?? ''}'},
+        ).timeout(const Duration(seconds: 5));
+        if (resp.statusCode == 200) {
+          final body = jsonDecode(resp.body) as Map<String, dynamic>;
+          final models = (body['data'] as List?) ?? [];
+          return models.any(
+              (m) => (m['id'] as String?)?.startsWith('local-llm') == true);
+        }
+      } catch (_) {
+        // /v1/models not supported — fall back to config-file check only
+      }
+      return true;
     } catch (_) {
       return false;
     }
