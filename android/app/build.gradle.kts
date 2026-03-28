@@ -8,10 +8,10 @@ plugins {
 android {
     namespace = "com.nxg.openclawproot"
     compileSdk = 36
-    // NDK pinned for Gradle's own JNI builds (Vosk, etc.).
-    // fllama's Dart hooks_runner uses the highest installed NDK independently —
-    // that's fine, both produce ABI-compatible arm64-v8a .so files.
-    ndkVersion = "27.0.12077973"
+    // Minimum NDK required across all plugins (speech_to_text requires 28.2.13676358).
+    // NDK versions are backward compatible — safe to use the highest required.
+    // fllama's Dart hooks_runner picks the highest installed NDK independently.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
