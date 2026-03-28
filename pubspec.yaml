@@ -99,7 +99,8 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/ic_launcher.png"
   min_sdk_android: 21
-  # Adaptive icon (Android 8+ / API 26+): foreground fills the full 108dp
-  # frame with no inset — produces a full-bleed / "fullscreen" icon shape.
+  # Adaptive icon (Android 8+): foreground has icon scaled to the 72dp safe zone
+  # (288px centered in the 432px/xxxhdpi canvas) with transparent padding.
+  # Generated via Python: icon at 66.7% of canvas = no launcher cropping.
   adaptive_icon_background: "#000000"
-  adaptive_icon_foreground: "assets/ic_launcher.png"
+  adaptive_icon_foreground: "assets/ic_launcher_foreground_padded.png"
