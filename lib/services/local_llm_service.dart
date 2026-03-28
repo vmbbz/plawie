@@ -396,9 +396,10 @@ class LocalLlmService {
               (m) => (m['id'] as String?)?.startsWith('local-llm') == true);
         }
       } catch (_) {
-        // /v1/models not supported — fall back to config-file check only
+        // /v1/models threw — gateway not ready or endpoint unavailable.
+        // Return false: the model hasn't confirmed loading yet.
       }
-      return true;
+      return false;
     } catch (_) {
       return false;
     }

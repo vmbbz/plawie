@@ -21,6 +21,7 @@ class GatewayService {
   StreamSubscription? _logSubscription;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
+  bool _rpcDiscoveryDone = false; // RPC discovery runs once after first WS connect
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
@@ -84,6 +85,8 @@ class GatewayService {
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
+      // Write correct config to disk (idempotent) so it's ready for next restart.
+      unawaited(_configureGateway().catchError((_) {}));
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
       return;
     }
@@ -100,6 +103,7 @@ class GatewayService {
 
     // Attempting a fresh start
     _isStarting = true;
+    _rpcDiscoveryDone = false; // ensure discovery runs on this new session
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
       clearError: true,
@@ -113,11 +117,22 @@ class GatewayService {
       await Future.delayed(const Duration(milliseconds: 800));
 
       final success = await NativeBridge.startGateway();
-      
+
       if (!success) {
         throw Exception('Native start failed.');
       }
-      
+
+      // Warn user if battery optimization is active — Android can kill PRoot
+      try {
+        final isOptimized = await NativeBridge.isBatteryOptimized();
+        if (isOptimized) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
+          ));
+          await NativeBridge.requestBatteryOptimization();
+        }
+      } catch (_) {}
+
       await Future.delayed(const Duration(seconds: 1));
       _subscribeLogs();
       _startHealthCheck();
@@ -452,6 +467,7 @@ class GatewayService {
   Future<void> stop() async {
     if (_isStopping) return;
     _isStopping = true;
+    _rpcDiscoveryDone = false; // reset so next start re-runs discovery
     _healthTimer?.cancel();
     _logSubscription?.cancel();
 
@@ -563,10 +579,17 @@ class GatewayService {
           await _ensureWebSocket(token);
         }
 
-        // ── 4. RPC discovery (health, skills, capabilities) with logging ─
-        if (_connection?.state == GatewayConnectionState.connected) {
+        // ── 4. RPC discovery (health, skills, capabilities) ─────────────
+        // Runs ONCE after the first successful WS connect, then skips on
+        // subsequent ticks. Each RPC has an 8s timeout (was 30s) so a
+        // slow-booting gateway can't stall the health loop for 90s.
+        if (_connection?.state == GatewayConnectionState.connected &&
+            !_rpcDiscoveryDone) {
+          _rpcDiscoveryDone = true; // set first so a timeout doesn't re-run
+
           try {
-            final healthResult = await invoke('health');
+            final healthResult = await invoke('health')
+                .timeout(const Duration(seconds: 8));
             final healthData = healthResult.containsKey('payload')
                 ? healthResult['payload']
                 : healthResult;
@@ -582,7 +605,8 @@ class GatewayService {
           }
 
           try {
-            final skillsResult = await invoke('skills.list');
+            final skillsResult = await invoke('skills.list')
+                .timeout(const Duration(seconds: 8));
             final skillsData = skillsResult.containsKey('payload')
                 ? skillsResult['payload']
                 : skillsResult;
@@ -612,7 +636,8 @@ class GatewayService {
           } catch (_) {}
 
           try {
-            final capResult = await invoke('capabilities.list');
+            final capResult = await invoke('capabilities.list')
+                .timeout(const Duration(seconds: 8));
             final capData = capResult.containsKey('payload')
                 ? capResult['payload']
                 : capResult;
@@ -704,16 +729,12 @@ class GatewayService {
       return;
     }
 
-    // Local LLM: use HTTP /v1/chat/completions with explicit model param.
-    // Endpoint is on the same port 18789, enabled via gateway.http.endpoints.chatCompletions.
-    // This bypasses WS session config lag after openclaw reload — model param is authoritative.
-    if (model.startsWith('local-llm/')) {
-      yield* sendMessageHttp(message,
-          model: model, token: token, conversationHistory: conversationHistory);
-      return;
-    }
-
-    // Cloud models: WS chat.send for server-side session persistence.
+    // All models (cloud + local-llm) use WS chat.send.
+    // Local LLM routing is handled by agents.defaults.model.primary written to
+    // openclaw.json by _patchOpenClawConfig() + openclaw reload in _startServer().
+    // The HTTP /v1/chat/completions endpoint on port 18789 is unreliable (requires
+    // gateway restart to enable, not just reload) — WS is the stable path.
+    // WS falls back to HTTP on connect failure below.
     final wsOk = await _ensureWebSocket(token);
     if (!wsOk) {
       yield* sendMessageHttp(message, model: model, token: token,
