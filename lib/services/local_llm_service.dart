@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'native_bridge.dart';
 import 'gateway_service.dart';
+import 'preferences_service.dart';
 import '../models/gateway_state.dart';
 import '../constants.dart';
 
@@ -644,6 +645,8 @@ class LocalLlmService {
     }
 
     // Signal openclaw gateway to reload with new provider config.
+    // Invalidate token cache first — reload generates a new auth token.
+    GatewayService().invalidateTokenCache();
     try {
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
@@ -681,6 +684,11 @@ class LocalLlmService {
       ));
       return;
     }
+
+    // Update prefs so chat screen routes to local LLM on next message.
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.configuredModel = 'local-llm/${model.id}';
 
     _updateState(_state.copyWith(
       status: LocalLlmStatus.ready,
@@ -749,6 +757,11 @@ class LocalLlmService {
       config['agents']['defaults']['model'].remove('primary');
     }
     await _writeConfig(config);
+
+    // Clear prefs so chat screen reverts to cloud model.
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.configuredModel = null;
   }
 
 
