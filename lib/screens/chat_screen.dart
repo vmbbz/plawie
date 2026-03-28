@@ -1201,6 +1201,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         final model = value.toString().substring(6);
         setState(() => _selectedModel = model);
         PreferencesService().configuredModel = model;
+        // Persist config instantly. For cloud models a reload is NOT needed —
+        // the gateway reads agents.defaults.model.primary on each chat.send.
+        // Only local-llm transitions need a reload (to swap the GGUF in RAM).
+        final needsReload = model.startsWith('local-llm');
+        GatewayService().persistModel(model, reload: needsReload);
+        // Disconnect WS so next chat.send reconnects with the fresh config.
+        if (!needsReload) GatewayService().disconnectWebSocket();
         _addDiagnosticLog('Swapped and persisted AI model: $model');
       } else if (value.toString().startsWith('avatar:')) {
         final avatar = value.toString().substring(7);
