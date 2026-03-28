@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../app.dart';
 import '../../../services/local_llm_service.dart';
@@ -15,6 +16,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   LocalLlmState _state = const LocalLlmState();
   LocalLlmModel? _selectedModel;
   final Map<String, bool> _downloadedModels = {};
+
+  // Diagnostics state
+  final _testPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
+  String _testResponse = '';
+  bool _isTesting = false;
+  double _tokensPerSec = 0;
+  DateTime? _testStartTime;
+  int _tokenCount = 0;
 
   @override
   void initState() {
@@ -93,6 +102,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       _buildDeviceSpecCard(),
                       const SizedBox(height: 28),
                       _buildAgentPromptGuide(),
+                      const SizedBox(height: 28),
+                      if (_state.status == LocalLlmStatus.ready) ...[
+                        _buildSectionLabel('Diagnostics Playground'),
+                        const SizedBox(height: 12),
+                        _buildDiagnosticsPanel(),
+                      ],
                       const SizedBox(height: 60),
                     ],
                   ),
@@ -479,15 +494,24 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     }
 
     if (isDownloaded) {
+      final isStartingThis = _state.status == LocalLlmStatus.starting && isSelected;
       return TextButton.icon(
         onPressed: _state.status == LocalLlmStatus.starting
             ? null
             : () => _service.startWithModel(model),
-        icon: const Icon(Icons.play_arrow_rounded, size: 14, color: AppColors.statusGreen),
-        label: const Text('Start', style: TextStyle(color: AppColors.statusGreen, fontSize: 11)),
+        icon: isStartingThis
+            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
+            : const Icon(Icons.play_arrow_rounded, size: 14, color: AppColors.statusGreen),
+        label: Text(
+          isStartingThis ? 'Starting...' : 'Start',
+          style: TextStyle(
+            color: isStartingThis ? Colors.amber : AppColors.statusGreen,
+            fontSize: 11,
+          ),
+        ),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          backgroundColor: AppColors.statusGreen.withValues(alpha: 0.1),
+          backgroundColor: (isStartingThis ? Colors.amber : AppColors.statusGreen).withValues(alpha: 0.1),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
@@ -612,5 +636,172 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildDiagnosticsPanel() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E2E), // Deep space violet
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.query_stats_rounded, color: AppColors.statusGreen, size: 18),
+              const SizedBox(width: 10),
+              Text(
+                'Test Inference',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              if (_isTesting)
+                Text(
+                  '${_tokensPerSec.toStringAsFixed(1)} tok/s',
+                  style: GoogleFonts.jetBrainsMono(
+                    color: AppColors.statusGreen,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _testPromptController,
+            maxLines: 2,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Enter a test prompt...',
+              hintStyle: const TextStyle(color: Colors.white24),
+              filled: true,
+              fillColor: Colors.black26,
+              contentPadding: const EdgeInsets.all(12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_testResponse.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Response:', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                      if (!_isTesting) ...[
+                        Text('${_tokenCount} tokens', style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: _testResponse));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Copied to clipboard'), duration: Duration(seconds: 1)),
+                            );
+                          },
+                          child: const Icon(Icons.copy_rounded, size: 12, color: AppColors.statusGreen),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  SelectableText(
+                    _testResponse,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: 12,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          ElevatedButton.icon(
+            onPressed: _isTesting ? null : _runTest,
+            icon: _isTesting 
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
+              : const Icon(Icons.bolt_rounded, size: 16),
+            label: Text(_isTesting ? 'Inferring...' : 'Run Diagnostics'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.statusGreen,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+          ),
+          if (!_isTesting && _testResponse.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: TextButton(
+                onPressed: () => setState(() => _testResponse = ''),
+                child: const Text('Clear Results', style: TextStyle(color: Colors.white24, fontSize: 11)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runTest() async {
+    if (_testPromptController.text.isEmpty) return;
+    
+    setState(() {
+      _isTesting = true;
+      _testResponse = '';
+      _tokenCount = 0;
+      _tokensPerSec = 0;
+      _testStartTime = DateTime.now();
+    });
+
+    try {
+      final stream = _service.testInference(_testPromptController.text);
+      await for (final chunk in stream) {
+        if (!mounted) break;
+        setState(() {
+          _testResponse += chunk;
+          _tokenCount++;
+          final now = DateTime.now();
+          final elapsed = now.difference(_testStartTime!).inMilliseconds / 1000;
+          if (elapsed > 0) {
+            _tokensPerSec = _tokenCount / elapsed;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _testResponse = '[Error] $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTesting = false);
+      }
+    }
   }
 }

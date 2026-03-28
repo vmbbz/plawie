@@ -410,6 +410,21 @@ class LocalLlmService {
     }
   }
 
+  /// Runs a diagnostic inference test against the currently active local model.
+  /// This allows users to verify performance and correctness without leaving
+  /// the management screen.
+  Stream<String> testInference(String prompt) async* {
+    if (_state.status != LocalLlmStatus.ready || _state.activeModelId == null) {
+      yield '[Error] Local LLM is not ready.';
+      return;
+    }
+
+    final gateway = GatewayService();
+    final modelId = 'local-llm/${_state.activeModelId}';
+    
+    yield* gateway.sendMessage(prompt, model: modelId);
+  }
+
   /// Check if given model file is already downloaded.
   Future<bool> isModelDownloaded(LocalLlmModel model) =>
       _isModelInstalled(model);
@@ -781,6 +796,7 @@ class LocalLlmService {
       'gpuLayers': 0,
       'batchSize': 256,
       'enabled': true,
+      'timeout': 60000, // 60s — prevents OpenClaw cooldown on slow first inference
       'models': [
         {
           'id': model.id,
@@ -802,6 +818,13 @@ class LocalLlmService {
     config['agents']['defaults']['model']['primary'] = "local-llm/${model.id}";
 
     await _writeConfig(config);
+
+    // CRITICAL: Clear any OpenClaw cooldown/rate-limit state for local-llm.
+    // OpenClaw treats local providers identically to cloud — any timeout or slow
+    // response sets disabledUntil in auth-profiles.json, causing all subsequent
+    // requests to fail with "API rate limit reached" even though localhost has
+    // zero actual rate limits.
+    await _clearCooldownState();
   }
 
   Future<void> _removeLocalProviderFromConfig() async {
@@ -818,6 +841,43 @@ class LocalLlmService {
     final prefs = PreferencesService();
     await prefs.init();
     prefs.configuredModel = null;
+  }
+
+  /// Wipe any OpenClaw cooldown/rate-limit timestamps from auth-profiles.json
+  /// for the local-llm provider. This prevents the gateway from refusing to
+  /// route requests after a slow first inference or connection hiccup.
+  Future<void> _clearCooldownState() async {
+    try {
+      final appSupportDir = await getApplicationSupportDirectory();
+      final authPath = '${appSupportDir.path}/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json';
+      final authFile = File(authPath);
+      if (!await authFile.exists()) return;
+
+      final auth = jsonDecode(await authFile.readAsString()) as Map<String, dynamic>;
+      final providers = auth['providers'] as Map<String, dynamic>?;
+      if (providers == null) return;
+
+      // Clear cooldown fields on local-llm AND any wildcard/global entries
+      bool changed = false;
+      for (final key in ['local-llm', 'local', 'localhost']) {
+        final prov = providers[key];
+        if (prov is Map) {
+          for (final field in ['disabledUntil', 'cooldownUntil', 'rateLimitUntil', 'retryAfter']) {
+            if (prov.containsKey(field)) {
+              prov.remove(field);
+              changed = true;
+            }
+          }
+        }
+      }
+
+      if (changed) {
+        await authFile.writeAsString(jsonEncode(auth));
+        debugPrint('[LocalLlmService] Cleared cooldown state from auth-profiles.json');
+      }
+    } catch (e) {
+      debugPrint('[LocalLlmService] Failed to clear cooldown: $e');
+    }
   }
 
 
