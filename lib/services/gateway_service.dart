@@ -85,8 +85,6 @@ class GatewayService {
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
-      // Write correct config to disk (idempotent) so it's ready for next restart.
-      unawaited(_configureGateway().catchError((_) {}));
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
       return;
     }
