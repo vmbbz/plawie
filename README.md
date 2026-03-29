@@ -114,7 +114,7 @@ We've integrated high-fidelity, functional skills standardized for Claude's "Too
 | 🛡️ **Credit** | Valeo Sentinel | x402 budget caps (per-call / hourly / daily), full audit log |
 | 📞 **Calls** | Twilio AI | Inbound & outbound voice via ConversationRelay, real-time transcription |
 | 💸 **Finance** | MoonPay Agents | Buy, sell, swap, bridge crypto • portfolio check • DCA strategies • live prices |
-| 🧠 **Local LLM** | llama-server | Free, offline, on-device inference via Qwen2.5 — no API key, no internet |
+| 🧠 **Local LLM** | fllama NDK | Free, offline, on-device inference via Qwen2.5 — llama.cpp ARM64, no API key, no internet, instant start |
 
 #### 🌙 MoonPay Agents — Agent Banking
 
@@ -150,31 +150,33 @@ mcp:
 
 ---
 
-#### 🧠 Local LLM — Free On-Device Inference (Phase 1)
+#### 🧠 Local LLM — Free On-Device Inference
 
-Plawie can run a **completely free, offline LLM** on your device alongside the existing OpenClaw gateway — no API key, no internet, total privacy.
+Plawie runs a **completely free, offline LLM** directly on your device via the **[fllama](https://github.com/Telosnex/fllama) NDK plugin** — llama.cpp compiled as a native ARM64 `.so` inside the APK. No PRoot, no HTTP server, no compilation step, no internet required after model download.
 
 **How it works:**
-- `llama-server` (from [llama.cpp](https://github.com/ggerganov/llama.cpp)) is compiled inside our PRoot Ubuntu layer on first setup.
-- A GGUF model is downloaded post-install (not bundled in the APK).
-- `openclaw.json` is automatically patched to route OpenClaw to `http://127.0.0.1:8081/v1`.
-- Cloud APIs remain available as automatic fallback if the local server is offline.
+- fllama is a Flutter plugin that ships llama.cpp as a pre-compiled Android ARM64 native library.
+- A GGUF model is downloaded on first use (not bundled in the APK — models are 400 MB–4 GB).
+- Inference runs via a direct Dart→NDK call. The model activates in under 1 second.
+- Multi-turn tool-use (function calling) is supported — the model can call local tools (e.g. `get_current_datetime`) and recurse up to 3 turns automatically.
+- Cloud APIs remain available as fallback at any time.
 
-**Recommended model:** `Qwen2.5-1.5B-Instruct-Q4_K_M` (~1 GB download, ~14–18 tok/s on Snapdragon 8 Gen 2)
+**Recommended model:** `Qwen2.5-1.5B-Instruct-Q4_K_M` (~1 GB download, ~15–22 tok/s on Snapdragon 8 Gen 2)
 
 **Setup via Agent Skills → Local LLM in the app:**
 1. Tap **Local LLM** in the Agent Skills grid
-2. Select a model and tap **Download** (~1 GB)
-3. Tap **Start** — first-time setup compiles llama-server (~10–25 min, one-time only)
-4. Toggle **Route to local model** to activate free, offline inference
+2. Select a model from the catalog and tap **Download** (400 MB–1 GB, one-time)
+3. Tap **Activate** — the model loads in under 1 second, no compilation required
+4. Chat directly — the local model handles all inference on-device
 
-| Device Tier | RAM | SoC | Speed |
-|-------------|-----|-----|-------|
-| Minimum | 8 GB | Snapdragon 8 Gen 1 | ~4–8 tok/s |
-| Recommended | 12 GB | 8 Gen 2 | ~10–18 tok/s |
-| Optimal | 16 GB | 8 Gen 3 / Elite | ~20–30 tok/s |
+| Device Tier | RAM | SoC | Speed (1.5B Q4_K_M) |
+|-------------|-----|-----|----------------------|
+| Minimum | 6 GB | SD 7 Gen 1 | ~4–8 tok/s |
+| Recommended | 12 GB | SD 8 Gen 2 | ~15–22 tok/s |
+| Optimal | 16 GB | SD 8 Elite | ~22–35 tok/s |
 
-> See `ARCHITECTURE_LOCAL_LLM.md` for the full research doc, peer reviews (Gemini + Grok), and the 3-phase implementation roadmap.
+> GPU/Vulkan acceleration (Phase 2) will target 3–5× throughput on Adreno 730+.
+> See `ARCHITECTURE_LOCAL_LLM.md` for the full engineering reference, performance benchmarks, and roadmap.
 
 
 ## 🏗️ Technical Architecture
@@ -197,7 +199,7 @@ graph TD
         B --> F
         F --> G[35+ Device Skills Executer]
         F -- "GET /api/tools" --> K
-        E --> L[llama-server :8081 — OpenAI-compatible vision API]
+        L[fllama NDK — llama.cpp ARM64 — text + vision inference]
     end
 
     subgraph "Layer 3: The UI Layer (The Expression)"
@@ -211,14 +213,14 @@ graph TD
 ```
 
 ### ⚡ Technology Stack Summary
-- **The Brain:** PRoot, Ubuntu, Node.js v20+ (OpenClaw Server).
-- **The Vision:** llama-server (llama.cpp) with LLaVA / Qwen2-VL multimodal models.
-- **The Voice:** TtsService facade (Piper VITS · Android TTS · ElevenLabs · OpenAI).
+- **The Gateway:** PRoot + Ubuntu ARM64 + Node.js v20+ — OpenClaw AI gateway, 35+ device skills, cloud model routing.
+- **The Local LLM:** [fllama](https://github.com/Telosnex/fllama) — llama.cpp compiled as native ARM64 `.so` via Android NDK. Text inference, vision inference (LLaVA/Qwen2-VL), multi-turn tool-use. No HTTP server, no PRoot dependency, instant activation.
+- **The Voice:** TtsService facade (Piper VITS offline · Android TTS · ElevenLabs · OpenAI TTS).
 - **The Wake Word:** Vosk offline ASR — `HotwordService` Android foreground service.
 - **The Hub:** AgentSkillServer (Standardized Loopback Discovery).
-- **The Shell:** Flutter (Dart) 3.24+.
-- **The Web3 Layer:** Native `solana` Dart SDK.
-- **The Expression:** Three.js + VRM bone-tracking renderer.
+- **The Shell:** Flutter (Dart) 3.24+ · minSdk 29 (Android 10+).
+- **The Web3 Layer:** Native `solana` Dart SDK · Jupiter Ultra API · MoonPay MCP.
+- **The Expression:** Three.js + VRM bone-tracking renderer (WebGL).
 
 ---
 
@@ -227,26 +229,26 @@ graph TD
 Experience the future of local AI companions.
 
 ### Prerequisites
-- **Android Device**: API 26+ (Android 8.0+). **Snapdragon 8 Gen 1 or newer recommended** — required for Local LLM (8 GB+ RAM). Older devices work fine for cloud-only mode.
+- **Android Device**: API 29+ (Android 10+). Snapdragon 8 Gen 1 or newer with 8 GB+ RAM recommended for Local LLM. Any Android 10+ device works for cloud-only mode.
 - **Flutter SDK**: 3.24+
-- **Node.js**: 20.0+ (for local development)
+- **Android NDK**: 28.2.13676358 (installed automatically by Android Studio / SDK Manager)
+- **Node.js**: 20.0+ (for local development only)
 
 ### Build Instructions
 ```bash
-# 1. Clone & Install Dependencies
+# 1. Clone & install Flutter dependencies
 git clone https://github.com/vmbbz/plawie.git
 cd openclaw_final
 flutter pub get
 
-# 2. Prepare the local AI Gateway
-cd android/app/src/main/assets/nodejs-project
-npm install
-
-# 3. Compile and Run
-cd ../../../../../../
+# 2. Build (fllama NDK compiles automatically on first build — takes ~30s incremental)
 flutter build apk --release
+
+# 3. Install
 flutter install
 ```
+
+> **First build note:** `flutter pub get` triggers fllama's Dart native-asset hook which compiles llama.cpp for ARM64 via the Android NDK. This takes 3–5 minutes on first run and is fully cached for subsequent builds.
 
 ---
 
