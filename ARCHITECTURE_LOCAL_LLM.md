@@ -683,12 +683,11 @@ LocalLlmService.chat() handles this gracefully — yields the error string and c
 
 ---
 
-### Warning: `Unused import: '../constants.dart'`
+### ~~Warning: `Unused import: '../constants.dart'`~~ (resolved)
 
-**When it appears:** After removing the `llamaServerUrl`/`llamaServerPort` references.
-
-**Fix:** The import in `local_llm_service.dart` was removed. The constants still exist in
-`constants.dart` (harmless, unused). They can be deleted from constants.dart too.
+`llamaServerUrl`/`llamaServerPort` constants deleted from `constants.dart` (commit `fd5e319`).
+`gateway_state.dart` import removed from `local_llm_service.dart` (commit `9fb122f`).
+`flutter analyze` passes clean.
 
 ---
 
@@ -711,29 +710,45 @@ LocalLlmService.chat() handles this gracefully — yields the error string and c
 
 ---
 
-### ✅ P2 — Quality & UX (done except 8.8)
+### ✅ P2 — Quality & UX (all done)
 
 | Task | Commit | Notes |
 |------|--------|-------|
 | **8.5** System prompt | fd5e319 | `Role.system "You are Plawie..."` injected at head of `chat()` message list |
 | **8.6** History trimming | fd5e319 | `_trimHistory()` — chars-per-token budget, drops oldest messages first |
 | **8.7** UI labels | fd5e319 | "Health Check" → "Engine Status", "View server log" → "View engine info", status card updated |
-| **8.8** Tool-use / function calling | ❌ pending | See below |
+| **8.8** Tool-use / function calling | ✅ 9fb122f | Multi-turn local tool dispatch loop — see below |
 
-#### 8.8 Tool-Use / Function Calling (pending — next major feature)
+#### 8.8 Tool-Use / Function Calling (complete — 2026-03-29)
 
-Qwen2.5-Instruct supports OpenAI tool-call format natively. The pipeline is:
+Implemented in `local_llm_service.dart` commit `9fb122f`. Key design:
 
-1. Pass `tools: [Tool(...)]` and `toolChoice: ToolChoice.auto` to `OpenAiRequest`
-2. `_buildInferenceRequest()` serializes this via `req.toJsonString()` → C++ handles it
-3. In the callback, check `openaiResponseJsonString` for `choices[0].delta.tool_calls`
-4. Parse accumulated tool call: `{index, function: {name, arguments}, id}`
-5. Execute the tool locally, build `Message(Role.tool, result, toolResponseName: name)`
-6. Re-invoke `chat()` with the tool result appended to history
+- `_localTools` — static list of `Tool` objects exposed to the model (currently: `get_current_datetime`)
+- `_dispatchLocalTool(name, argumentsJson)` — synchronous dispatcher returning JSON result string
+- `_runChatTurn(messages, controller, {depth})` — core multi-turn loop:
+  1. Runs one inference turn with `tools: _localTools, toolChoice: ToolChoice.auto`
+  2. Streams text deltas to the controller as they arrive
+  3. Accumulates `tool_calls` data across streaming chunks (fllama delta pattern from example app)
+  4. On `finish_reason == 'tool_calls'`: dispatches tools, appends `Message(Role.assistant, toolCalls: [...])` + `Message(Role.tool, result)`, recurses with `depth+1`
+  5. Depth limit: 3. On normal `finish_reason` (or no tool calls): closes stream.
+- `chat()` — builds initial message list and delegates entirely to `_runChatTurn()`
+- `stop()` — closes `_activeChatController` immediately
 
-**Why deferred:** Requires a tool dispatcher (which tools does Plawie expose locally?), a multi-turn inference loop, and a streaming protocol change — `chat()` currently returns `Stream<String>`. Extending to `Stream<Either<String, ToolCall>>` is a meaningful API change that touches GatewayService.
+**Tool call wire format** (`Message.toolCalls` list element):
+```dart
+{
+  'id': tc['id'],
+  'type': 'function',
+  'function': {'name': name, 'arguments': argumentsJsonString},
+}
+```
 
-**Reference:** fllama example app `_parseStreamChunk()` shows the full delta accumulation pattern.
+**To add a new local tool:**
+1. Add a `Tool(name: ..., jsonSchema: ..., description: ...)` to `_localTools`
+2. Add a `case 'tool_name':` branch in `_dispatchLocalTool()` returning a JSON string
+3. That's it — the loop handles multi-turn automatically
+
+**Reference:** `fllama/example/lib/main.dart` `_parseStreamChunk()` lines 523–571 for the delta accumulation pattern.
 
 ---
 
@@ -903,10 +918,9 @@ created for gateway compatibility if needed.
 
 `android/app/build.gradle.kts` has:
 ```kotlin
-ndkVersion = "27.0.12077973"
+ndkVersion = "28.2.13676358"
 ```
-**Do not change this.** fllama's native build requires specific NDK toolchain behavior.
-Newer NDK versions may break the build silently (no error, wrong binary produced).
+**Do not change this without testing.** This version is required by `speech_to_text` (the highest NDK requirement across all plugins). fllama's Dart hook auto-selects the highest installed NDK, so both fllama and speech_to_text are satisfied by this single version. NDK versions are backward-compatible for fllama's C++ code — the constraint is `speech_to_text ≥ 28.2`, not an upper bound.
 
 ---
 
@@ -915,34 +929,30 @@ Newer NDK versions may break the build silently (no error, wrong binary produced
 ```
 Phase 1 ─── COMPLETE (2026-03-28) ─────────────────────────────────────►
   fllama NDK inference replaces all PRoot/HTTP inference paths
-  Text inference: working
-  Vision: stubbed (data URI — needs validation)
+  Text inference: ✅ working (§8.1–8.7 all done)
+  Vision: ✅ working — <img src="data:..."> HTML format confirmed
+  Tool-use: ✅ working — multi-turn local dispatch loop (§8.8, commit 9fb122f)
   Gateway: cloud models still via PRoot (unchanged)
 
-Phase 2 ─── GPU Vulkan (1–3 months) ────────────────────────────────────►
+Phase 2 ─── GPU Vulkan (in progress) ───────────────────────────────────►
   Enable GGML_VULKAN in fllama NDK build
-  Adreno Vulkan validation (OEM driver bugs)
-  GPU/CPU toggle UI in diagnostics
-  Expected: 3–5× throughput on Snapdragon 8 Gen 2+
+  Requirements: LLVM (clang++ for vulkan-shaders-gen host build) +
+                NDK 26 vulkan.hpp headers (or LunarG Vulkan SDK)
+  Adreno Vulkan validation layer (OEM driver bugs on Samsung Exynos/some MediaTek)
+  GPU/CPU toggle in diagnostics UI
+  Expected: 3–5× throughput (Adreno 730+: ~70–90 tok/s for 1.5B Q4_K_M)
 
-Phase 3 ─── Tool-Use / Skills Integration (1–2 months) ─────────────────►
-  OpenAiRequest.tools populated from OpenClaw skill definitions
-  Parse tool_calls from openaiResponseJsonString
-  Dispatch to GatewayService.invokeSkill() or local Android API
-  Qwen2.5-Instruct required (best mobile tool-use)
+Phase 3 ─── Context Optimization (1 month) ─────────────────────────────►
+  fllamaTokenize() for token-accurate history trimming (replaces 4 chars/token heuristic)
+  KV cache sharing between turns (avoid full context reload each turn)
 
-Phase 4 ─── Context Optimization (1 month) ─────────────────────────────►
-  Per-model contextSize (§8.2)
-  fllamaTokenize() for accurate history trimming (§8.6)
-  KV cache sharing between turns (no reload)
-
-Phase 5 ─── PRoot Gateway Modernization (2–4 months) ───────────────────►
+Phase 4 ─── PRoot Gateway Modernization (2–4 months) ───────────────────►
   Option A: Trim Ubuntu rootfs to ~30MB (vs current ~700MB download)
             3–4× faster gateway startup, smaller install
   Option B: Replace Node.js gateway with native Dart routing
             Eliminate PRoot entirely for all model types
 
-Phase 6 ─── Multi-model / Hot-swap (3–6 months) ────────────────────────►
+Phase 5 ─── Multi-model / Hot-swap (3–6 months) ────────────────────────►
   _textModel + _visionModel independent instances
   Hot-swap model without full restart
   RAM-aware dual-load (unload text model before loading vision if RAM tight)
@@ -958,9 +968,9 @@ Phase 6 ─── Multi-model / Hot-swap (3–6 months) ────────
 |------|------|--------|
 | `lib/services/local_llm_service.dart` | Model catalog, download, fllama activation, inference (text+vision), state machine | ✅ Migrated |
 | `lib/services/gateway_service.dart` | Routes `local-llm/*` → `LocalLlmService.chat()`, cloud models → WebSocket | ✅ Updated |
-| `lib/screens/management/local_llm_screen.dart` | Model selection UI, download progress, diagnostics playground | ⚠️ Labels need update |
-| `lib/constants.dart` | `llamaServerPort/Url` now unused — safe to delete | ⚠️ Cleanup |
-| `android/app/build.gradle.kts` | NDK pinned to `27.0.12077973`, fllama dependencies | ✅ Correct |
+| `lib/screens/management/local_llm_screen.dart` | Model selection UI, download progress, diagnostics playground | ✅ Labels updated |
+| `lib/constants.dart` | `llamaServerPort/Url` deleted (were unused post-migration) | ✅ Clean |
+| `android/app/build.gradle.kts` | NDK pinned to `28.2.13676358`, arm64-v8a only, 16k page size | ✅ Correct |
 | `pubspec.yaml` | `fllama: git: url: Telosnex/fllama ref: main` | ✅ Added |
 
 ### Supporting Services

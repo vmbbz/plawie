@@ -746,7 +746,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     children: [
                       const Text('Response:', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
                       if (!_isTesting) ...[
-                        Text('${_tokenCount} tokens', style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                        Text('$_tokenCount tokens', style: const TextStyle(color: Colors.white24, fontSize: 10)),
                         const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () {
