@@ -546,52 +546,80 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
       final localLlm = LocalLlmService();
 
-      // Route based on attachment type
+      // Route based on attachment type & model
       final Stream<String> stream;
-      if (videoBase64 != null && localLlm.isVisionReady) {
-        // Offline video: extract frames via PRoot ffmpeg then analyse each
-        _addDiagnosticLog('Video path: offline frame analysis');
-        stream = () async* {
-          yield 'Extracting video frames…';
-          final mp4Bytes = base64Decode(videoBase64);
-          final frames = await VideoFrameExtractor.extractFrames(mp4Bytes, fps: 1, maxFrames: 8);
-          if (frames.isEmpty) {
-            yield '⚠️ Could not extract frames. Make sure ffmpeg is installed in PRoot '
-                '(`apt-get install -y ffmpeg` in a terminal session).';
-            return;
+      final isLocalModelSelected = _selectedModel.startsWith('local-llm/');
+
+      if (isLocalModelSelected) {
+        // --- PATH A: Native Local LLM (fllama bypass) ---
+        if (videoBase64 != null) {
+          if (localLlm.isVisionReady) {
+            _addDiagnosticLog('Local Video path: offline frame analysis');
+            stream = () async* {
+              yield 'Extracting video frames…';
+              final mp4Bytes = base64Decode(videoBase64);
+              final frames = await VideoFrameExtractor.extractFrames(mp4Bytes, fps: 1, maxFrames: 8);
+              if (frames.isEmpty) {
+                yield '⚠️ Could not extract frames. Make sure ffmpeg is installed in PRoot '
+                    '(`apt-get install -y ffmpeg` in a terminal session).';
+                return;
+              }
+              yield* localLlm.analyseVideoFrames(frames, text.trim().isEmpty ? 'Describe what is happening.' : text);
+            }().cast<String>();
+          } else {
+            stream = Stream.value('🎥 Video captured, but no local vision model is active. Please start a multimodal model like Qwen2-VL.');
           }
-          yield* localLlm.analyseVideoFrames(frames, text.trim().isEmpty ? 'Describe what is happening.' : text);
-        }().cast<String>();
-      } else if (videoBase64 != null) {
-        // Cloud video: send inline MP4 to Gemini via gateway
-        _addDiagnosticLog('Video path: cloud Gemini video');
-        stream = gatewayProvider.sendCloudVideoMessage(
-          text.trim().isEmpty ? 'Describe what is happening in this video.' : text,
-          videoBase64,
-        );
-      } else if (imageBase64 != null && localLlm.isVisionReady) {
-        _addDiagnosticLog('Vision path: local multimodal model active');
-        stream = gatewayProvider.sendVisionMessage(text, imageBase64);
-      } else if (imageBase64 != null) {
-        stream = Stream.value(
-          '📷 Image captured, but no vision model is active.\n\n'
-          'To analyse images locally, go to **Local LLM** and start either:\n'
-          '• **Qwen2-VL 2B** (compact, ~3 GB RAM)\n'
-          '• **LLaVA 1.5 7B** (flagship phones, ~6 GB RAM)',
-        );
+        } else if (imageBase64 != null) {
+          if (localLlm.isVisionReady) {
+            _addDiagnosticLog('Local Vision path: local multimodal model active');
+            stream = gatewayProvider.sendVisionMessage(text, imageBase64);
+          } else {
+            stream = Stream.value(
+              '📷 Image captured, but no local vision model is active.\n\n'
+              'To analyse images locally, go to **Local LLM** and start either:\n'
+              '• **Qwen2-VL 2B** (compact, ~3 GB RAM)\n'
+              '• **LLaVA 1.5 7B** (flagship phones, ~6 GB RAM)',
+            );
+          }
+        } else {
+          // Local Text
+          final conversationHistory = _messages
+              .take(_messages.length - 1)
+              .where((m) => m.text.isNotEmpty)
+              .map((m) => <String, dynamic>{
+                    'role': m.isUser ? 'user' : 'assistant',
+                    'content': m.text,
+                  })
+              .toList();
+          stream = gatewayProvider.sendMessage(text,
+              model: _selectedModel, conversationHistory: conversationHistory);
+        }
       } else {
-        // Build conversation history for the local-llm HTTP path (multi-turn context).
-        // Excludes the empty assistant placeholder we just added (_messages.last).
-        final conversationHistory = _messages
-            .take(_messages.length - 1)
-            .where((m) => m.text.isNotEmpty)
-            .map((m) => <String, dynamic>{
-                  'role': m.isUser ? 'user' : 'assistant',
-                  'content': m.text,
-                })
-            .toList();
-        stream = gatewayProvider.sendMessage(text,
-            model: _selectedModel, conversationHistory: conversationHistory);
+        // --- PATH B: Cloud / Integrated Node Gateway ---
+        if (videoBase64 != null) {
+          _addDiagnosticLog('Cloud Video path: sending MP4 via gateway');
+          stream = gatewayProvider.sendCloudVideoMessage(
+            text.trim().isEmpty ? 'Describe what is happening in this video.' : text,
+            videoBase64,
+          );
+        } else if (imageBase64 != null) {
+          _addDiagnosticLog('Cloud Vision path: sending Image via gateway');
+          stream = gatewayProvider.sendCloudImageMessage(
+            text.trim().isEmpty ? 'Describe what you see in this image.' : text,
+            imageBase64,
+          );
+        } else {
+          final conversationHistory = _messages
+              .take(_messages.length - 1)
+              .where((m) => m.text.isNotEmpty)
+              .map((m) => <String, dynamic>{
+                    'role': m.isUser ? 'user' : 'assistant',
+                    'content': m.text,
+                  })
+              .toList();
+          stream = gatewayProvider.sendMessage(text,
+              model: _selectedModel, conversationHistory: conversationHistory);
+        }
       }
       await for (final chunk in stream) {
         if (!mounted) break;
@@ -1402,10 +1430,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     final size = MediaQuery.of(context).size;
 
     // --- Dynamic Sizing for Floating Mic ---
-    const double collapsedSize = 80.0;
+    const double collapsedSize = 96.0;
     // Removed the -24 margin to make chat container flush with screen edges
     final double barWidth = _isChatCollapsed ? collapsedSize : size.width;
-    final double barHeight = _isChatCollapsed ? collapsedSize : (size.height * 0.6);
+    
+    // Adaptive height: Capped to avoid keyboard overflow on small screens
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final double barHeight = _isChatCollapsed 
+        ? collapsedSize 
+        : (size.height * 0.6).clamp(320.0, size.height - keyboardHeight - (keyboardHeight > 0 ? 80 : 160));
 
     return Scaffold(
       key: _scaffoldKey,
@@ -1883,8 +1916,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                               builder: (context, child) {
                                                 return AnimatedContainer(
                                                   duration: const Duration(milliseconds: 300),
-                                                  width: collapsedSize,
-                                                  height: collapsedSize,
+                                                  width: 64,
+                                                  height: 64,
                                                   decoration: BoxDecoration(
                                                     shape: BoxShape.circle,
                                                     color: _isListening 

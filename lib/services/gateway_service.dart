@@ -238,14 +238,310 @@ class GatewayService {
     config['skills']['sync'] = "mirror";
 
     // Enable the OpenAI-compatible REST endpoints on port 18789.
-    // Correct key: gateway.http.endpoints.chatCompletions.enabled
-    // (gateway.openaiCompat.enabled is the wrong/legacy key — endpoint stays 404 with it)
     config['gateway']['http'] ??= {};
     config['gateway']['http']['endpoints'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
+    // Ollama Default Provider (Disabled by default if no baseUrl)
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
+    config['models']['providers']['ollama'] ??= {
+      'baseUrl': 'http://127.0.0.1:11434',
+      'apiKey': 'ollama-local',
+      'api': 'ollama',
+      'models': [
+        {'id': 'qwen2.5:0.5b', 'name': 'Qwen 2.5 0.5B (Light)'},
+        {'id': 'llama3.2:1b', 'name': 'Llama 3.2 1B (Balanced)'},
+      ]
+    };
+
     await _writeConfig(config);
+  }
+
+  /// Register Ollama as the gateway provider and optionally set it as primary.
+  Future<void> configureOllama({
+    String baseUrl = 'http://127.0.0.1:11434',
+    String? primaryModel,
+    bool setAsPrimary = true,
+  }) async {
+    final config = await _readConfig();
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
+    config['models']['providers']['ollama'] = {
+      'baseUrl': baseUrl,
+      'apiKey': 'ollama-local',
+      'api': 'ollama',
+    };
+
+    if (setAsPrimary) {
+      config['agents'] ??= {};
+      config['agents']['defaults'] ??= {};
+      config['agents']['defaults']['provider'] = 'ollama';
+      if (primaryModel != null) {
+        config['agents']['defaults']['model'] ??= {};
+        config['agents']['defaults']['model']['primary'] = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
+      }
+    }
+
+    await _writeConfig(config);
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[INFO] Ollama provider configured at $baseUrl'],
+    ));
+  }
+
+  /// Probe the Ollama server directly via HTTP.
+  Future<bool> checkOllamaHealth({String baseUrl = 'http://127.0.0.1:11434'}) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/api/tags'))
+          .timeout(const Duration(seconds: 2));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── Internal Ollama Management (Integrated Sandbox) ─────────────────
+
+  Future<bool> isInternalOllamaInstalled() async {
+    return await NativeBridge.isOllamaInstalled();
+  }
+
+  Future<bool> isInternalOllamaRunning() async {
+    return await NativeBridge.isOllamaRunning();
+  }
+
+  Future<bool> startInternalOllama() async {
+    final success = await NativeBridge.startOllama();
+    if (success) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[INFO] Internal Ollama server started.'],
+      ));
+    }
+    return success;
+  }
+
+  /// Extracts diagnostic logs from the integrated Ollama hub.
+  Future<String> _getOllamaLogsInternal() async {
+    try {
+      final logs = await NativeBridge.runInProot(
+        'cat /root/.openclaw/ollama.log 2>/dev/null || echo "[No Hub logs found]"',
+        timeout: 5,
+      );
+      final lines = logs.split('\n');
+      if (lines.length <= 100) return logs;
+      return lines.sublist(lines.length - 100).join('\n');
+    } catch (e) {
+      return 'Failed to fetch hub logs: $e';
+    }
+  }
+
+  Future<String> getOllamaLogs() => _getOllamaLogsInternal();
+
+  Future<void> syncLocalModelsWithOllama() async {
+    final catalog = LocalLlmService().catalog;
+    
+    // Safety check: is Ollama actually reachable?
+    if (!await isInternalOllamaRunning()) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[ERROR] Cannot sync: Integrated Hub is OFFLINE.'],
+      ));
+      return;
+    }
+
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[INFO] Scanning for local GGUF models...'],
+    ));
+
+    int synced = 0;
+    for (final model in catalog) {
+      if (await LocalLlmService().isModelDownloaded(model)) {
+        try {
+          final success = await _createOllamaModelFromGguf(model.id, model.prootModelPath);
+          if (success) {
+            synced++;
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[INFO] Registered ${model.id} with Ollama Hub.'],
+            ));
+          } else {
+            // Error is already logged inside _createOllamaModelFromGguf
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[WARN] Hub rejected ${model.id}.'],
+            ));
+          }
+        } catch (e) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[ERROR] Sync error for ${model.id}: $e'],
+          ));
+        }
+      }
+    }
+
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[INFO] Hub Sync Done. $synced models available.'],
+    ));
+  }
+
+  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath) async {
+    // Robust Modelfile: Quoted path to handle special characters and mandatory newline
+    final modelfile = 'FROM "$ggufPath"\n';
+    
+    // Security-First: Loopback connection with retry loop to allow server initialization
+    int maxAttempts = 5;
+    int delayMs = 1500;
+    
+    for (int i = 0; i < maxAttempts; i++) {
+      try {
+        final response = await http.post(
+          Uri.parse('http://127.0.0.1:11434/api/create'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'name': name,
+            'modelfile': modelfile,
+            'stream': false,
+          }),
+        ).timeout(const Duration(seconds: 45)); // Large GGUFs need time to manifest
+
+        if (response.statusCode != 200) {
+          if (i < maxAttempts - 1) {
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[INFO] Hub busy (${response.statusCode})... retrying in ${delayMs}ms'],
+            ));
+            await Future.delayed(Duration(milliseconds: delayMs));
+            delayMs += 1000;
+            continue;
+          }
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[DEBUG] Ollama creation failed (${response.statusCode}): ${response.body}'],
+          ));
+          return false;
+        }
+        return true;
+      } catch (e) {
+        if (i < maxAttempts - 1) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[INFO] Hub is initializing... retrying in ${delayMs}ms'],
+          ));
+          await Future.delayed(Duration(milliseconds: delayMs));
+          delayMs += 1000; // Exponential backoff
+          continue;
+        }
+        
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[DEBUG] Ollama API error after $maxAttempts attempts: $e'],
+        ));
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// Pull a model from the Ollama library into the integrated hub.
+  Stream<double> pullOllamaModel(String name) async* {
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[INFO] Pulling Ollama model: $name'],
+    ));
+
+    final client = http.Client();
+    try {
+      final request = http.Request('POST', Uri.parse('http://127.0.0.1:11434/api/pull'));
+      request.body = jsonEncode({'name': name});
+      
+      final response = await client.send(request);
+      if (response.statusCode != 200) {
+        throw Exception('Pull failed: ${response.statusCode}');
+      }
+
+      await for (final line in response.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+        if (line.trim().isEmpty) continue;
+        try {
+          final data = jsonDecode(line);
+          if (data['status'] == 'success') {
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[INFO] Successfully pulled $name'],
+            ));
+            yield 1.0;
+          } else if (data['total'] != null && data['completed'] != null) {
+            yield data['completed'].toDouble() / data['total'].toDouble();
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[ERROR] Pull failed for $name: $e'],
+      ));
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<bool> stopInternalOllama() async {
+    return await NativeBridge.stopOllama();
+  }
+
+  Future<void> installInternalOllama({Function(double)? onProgress}) async {
+    const url = 'https://github.com/ollama/ollama/releases/download/v0.19.0/ollama-linux-arm64.tar.zst';
+    int attempts = 0;
+    
+    while (attempts < 3) {
+      attempts++;
+      final client = http.Client();
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[INFO] Downloading internal Ollama binary (ARM64) [Attempt $attempts/3]...'],
+      ));
+
+      try {
+        final request = http.Request('GET', Uri.parse(url));
+        final response = await client.send(request);
+        
+        if (response.statusCode != 200) {
+          throw Exception('Download failed: ${response.statusCode}');
+        }
+
+        final contentLength = response.contentLength ?? 0;
+        int downloaded = 0;
+        
+        final tempFile = File('${Directory.systemTemp.path}/ollama_dl.tar.zst');
+        if (await tempFile.exists()) await tempFile.delete();
+        final sink = tempFile.openWrite();
+
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          downloaded += chunk.length;
+          if (contentLength > 0 && onProgress != null) {
+            onProgress(downloaded / contentLength);
+          }
+        }
+        await sink.close();
+
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[INFO] Binary downloaded. Calling native installer...'],
+        ));
+
+        final success = await NativeBridge.installOllama(tempFile.path);
+        if (!success) throw Exception('Native installation failed.');
+
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[INFO] Internal Ollama installed successfully.'],
+        ));
+        return; // Success!
+      } catch (e) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[WARNING] Attempt $attempts failed: $e'],
+        ));
+        if (attempts >= 3) {
+           _updateState(_state.copyWith(
+            logs: [..._state.logs, '[ERROR] All download attempts failed.'],
+          ));
+          rethrow;
+        }
+        await Future.delayed(Duration(seconds: 2 * attempts));
+      } finally {
+        client.close();
+      }
+    }
   }
 
   /// Direct I/O: Persist the selected model (no proot overhead).
@@ -279,6 +575,7 @@ class GatewayService {
       case 'anthropic': return 'anthropic/claude-opus-4.6';
       case 'openai': return 'openai/gpt-4o';
       case 'groq': return 'groq/llama-3.1-405b';
+      case 'ollama': return 'ollama/qwen2.5:0.5b';
       default: return provider;
     }
   }
@@ -292,6 +589,7 @@ class GatewayService {
     if (p.contains('openai')) return 'openai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
+    if (p.contains('ollama')) return 'ollama';
     return p;
   }
 
@@ -1123,6 +1421,81 @@ class GatewayService {
       yield '[Error] Video analysis timed out.';
     } catch (e) {
       yield '[Error] Cloud video error: $e';
+    }
+  }
+
+  /// Sends an image to the gateway for Google/OpenAI/Anthropic cloud vision.
+  ///
+  /// [imageBase64] – raw base64-encoded bytes (no data-URI prefix).
+  /// [prompt]      – user's question about the image.
+  Stream<String> sendCloudImageMessage(
+    String prompt,
+    String imageBase64, {
+    String mimeType = 'image/jpeg',
+  }) async* {
+    String? token;
+    try {
+      token = await retrieveTokenFromConfig();
+    } catch (_) {}
+
+    if (token == null || token.isEmpty) {
+      yield '[Error] No auth token — cannot send image to gateway.';
+      return;
+    }
+
+    final effectivePrompt =
+        prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${AppConstants.gatewayUrl}/v1/chat/completions'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'model': PreferencesService().configuredModel ?? 'google/gemini-2.0-flash',
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': [
+                    {
+                      'type': 'image_url',
+                      'image_url': {
+                        'url': 'data:$mimeType;base64,$imageBase64',
+                      },
+                    },
+                    {'type': 'text', 'text': effectivePrompt},
+                  ],
+                },
+              ],
+              // Vision endpoints handle non-streamed robustly. Gateway supports streaming eventually.
+              'stream': false,
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final choices = json['choices'] as List?;
+        if (choices != null && choices.isNotEmpty) {
+          final content =
+              (choices[0]['message'] as Map?)?['content'] as String?;
+          if (content != null) {
+            yield content;
+            return;
+          }
+        }
+        yield '[Error] Empty response from vision analysis.';
+      } else {
+        yield '[Error] Cloud vision failed (HTTP ${response.statusCode}). '
+            'Make sure you are using a vision-capable proxy model.';
+      }
+    } on TimeoutException {
+      yield '[Error] Vision analysis timed out.';
+    } catch (e) {
+      yield '[Error] Cloud vision error: $e';
     }
   }
   

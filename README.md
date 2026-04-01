@@ -69,9 +69,12 @@ Your agent can see the world around you:
 - **📹 Video Clips** — Record 2–30s clips, extract key frames via PRoot `ffmpeg`, analyse each frame with the local vision model, then produce a coherent summary — 100% offline.
 - **Cloud Fallback** — When no local vision model is active, video is sent inline (base64 MP4) to Gemini 1.5 / 2.0 Pro via the OpenClaw gateway for cloud-grade analysis.
 
-### 5. Dynamic Agent Discovery
+### 5. Integrated Agent Hub (Ollama)
 
-All agents registered on your OpenClaw gateway appear automatically in the chat model picker — no hardcoded list, no manual configuration. Newly installed skills that register as agents surface immediately on gateway connect.
+Beyond the NDK-based fllama engine, Plawie includes a full, native **Ollama Hub** running inside the PRoot sandbox. This provides a standard OpenAI-compatible REST API for the OpenClaw gateway, enabling:
+- **Zero-Config Setup**: One-tap installation of the official Ollama Linux ARM64 binary.
+- **GGUF Bridging**: Instantly register existing GGUF models as Ollama models using our "Zero-Copy" sync bridge.
+- **Library Discovery**: Pull any model from the [Ollama Library](https://ollama.com/library) directly onto your device.
 
 ---
 

@@ -402,8 +402,62 @@ class ProcessManager(
     }
 
     fun stopLogStreaming() {
-        logSink = null
         logThread?.interrupt()
         logThread = null
+        logSink = null
+    }
+
+    fun startOllama(): Boolean {
+        return try {
+            android.util.Log.i("ProcessManager", "Starting internal Ollama server")
+            // Ensure any existing instances are cleared first to avoid port collision
+            stopOllama()
+            
+            // Start ollama as a separate process inside PRoot. 
+            // - OLLAMA_HOST=127.0.0.1:11434 ensures accessibility across PRoot namespaces securely.
+            // - OLLAMA_ORIGINS=* ensures the Flutter client can connect across the bridge.
+            val ollamaCmd = "env OLLAMA_HOST=127.0.0.1:11434 OLLAMA_ORIGINS=\"*\" /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1"
+            val fullCmd = buildGatewayCommand(ollamaCmd)
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            pb.environment().putAll(prootEnv())
+            pb.start()
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("ProcessManager", "Failed to start Ollama", e)
+            false
+        }
+    }
+
+    fun stopOllama(): Boolean {
+        return try {
+            // Forcefully kill ollama and any related inference subprocesses
+            val stopCmd = "pkill -9 -f '[o]llama' || true"
+            val fullCmd = buildGatewayCommand(stopCmd)
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            pb.environment().putAll(prootEnv())
+            pb.start().waitFor()
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("ProcessManager", "Failed to stop Ollama", e)
+            false
+        }
+    }
+
+    fun isOllamaRunning(): Boolean {
+        return try {
+            // Check for any process with 'ollama' in the command line
+            val checkCmd = "pgrep -f '[o]llama serve' > /dev/null 2>&1"
+            val fullCmd = buildGatewayCommand(checkCmd)
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            pb.environment().putAll(prootEnv())
+            val process = pb.start()
+            process.waitFor()
+            process.exitValue() == 0
+        } catch (e: Exception) {
+            false
+        }
     }
 }
