@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../app.dart';
-import '../../../services/local_llm_service.dart';
+import 'package:clawa/app.dart';
+import 'package:clawa/services/local_llm_service.dart';
+import 'package:clawa/services/gateway_service.dart';
+import 'package:clawa/services/openclaw_service.dart';
+import 'package:clawa/services/native_bridge.dart';
 
 class LocalLlmScreen extends StatefulWidget {
   const LocalLlmScreen({super.key});
@@ -30,19 +34,273 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   bool _isFetchingLogs = false;
   bool _showLogs = false;
 
+  bool _isRegisteringOllama = false;
+  
+  // Ollama Integration State
+  bool _isOllamaHealthy = false;
+  bool _isCheckingOllama = false;
+  List<Map<String, String>> _ollamaModels = [];
+  String? _selectedOllamaModel;
+
+  // Integrated Ollama State
+  bool _isInternalOllamaInstalled = false;
+  bool _isInstallingInternal = false;
+  double _installProgress = 0;
+  bool _isInternalOllamaRunning = false;
+  bool _isTogglingOllama = false;
+  
+  // Model Sync/Pull State
+  bool _isSyncingOllama = false;
+  bool _isPullingOllama = false;
+  double _ollamaPullProgress = 0;
+  final _pullModelController = TextEditingController();
+
+  StreamSubscription? _serviceSub;
+
   @override
   void initState() {
     super.initState();
     _state = _service.state;
-    _service.stateStream.listen((s) {
+    _serviceSub = _service.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
     });
+    _checkInternalStatus();
     _checkDownloadedModels();
+    _checkOllamaStatus();
     // Default selection to the recommended model
     _selectedModel = _service.catalog.firstWhere(
       (m) => m.quality == 'Recommended',
       orElse: () => _service.catalog.first,
     );
+  }
+
+  @override
+  void dispose() {
+    _serviceSub?.cancel();
+    _testPromptController.dispose();
+    _pullModelController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkInternalStatus() async {
+    final installed = await GatewayService().isInternalOllamaInstalled();
+    final running = await GatewayService().isInternalOllamaRunning();
+    if (mounted) {
+      setState(() {
+        _isInternalOllamaInstalled = installed;
+        _isInternalOllamaRunning = running;
+      });
+    }
+  }
+
+  Future<void> _installInternalOllama() async {
+    setState(() {
+      _isInstallingInternal = true;
+      _installProgress = 0;
+    });
+    try {
+      await GatewayService().installInternalOllama(
+        onProgress: (p) => setState(() => _installProgress = p),
+      );
+      await _checkInternalStatus();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Integrated Agent Hub ready!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Installation failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isInstallingInternal = false);
+    }
+  }
+
+  Future<void> _toggleInternalOllama() async {
+    if (_isTogglingOllama) return;
+    setState(() => _isTogglingOllama = true);
+    
+    try {
+      if (_isInternalOllamaRunning) {
+        await GatewayService().stopInternalOllama();
+      } else {
+        await GatewayService().startInternalOllama();
+      }
+      
+      // Wait for process state to settle
+      await Future.delayed(const Duration(milliseconds: 1500));
+      await _checkInternalStatus();
+      
+      // Trigger a health check if it should be running
+      if (_isInternalOllamaRunning) {
+        await _checkOllamaStatus();
+      } else {
+        if (mounted) setState(() => _isOllamaHealthy = false);
+      }
+    } finally {
+      if (mounted) setState(() => _isTogglingOllama = false);
+    }
+  }
+
+  Future<void> _showOllamaLogsDialog() async {
+    final logs = await GatewayService().getOllamaLogs();
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: Row(
+          children: [
+            const Icon(Icons.terminal_rounded, color: Colors.blueAccent, size: 20),
+            const SizedBox(width: 8),
+            Text('Integrated Hub Logs', 
+              style: GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: Container(
+          width: double.maxFinite,
+          height: 300,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: SingleChildScrollView(
+            child: Text(
+              logs,
+              style: GoogleFonts.jetBrainsMono(color: Colors.white70, fontSize: 10),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CLOSE'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showOllamaLogsDialog();
+            },
+            child: const Text('REFRESH'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _checkOllamaStatus() async {
+    if (_isCheckingOllama) return;
+    setState(() => _isCheckingOllama = true);
+    try {
+      final healthy = await GatewayService().checkOllamaHealth();
+      if (mounted) {
+        setState(() {
+          _isOllamaHealthy = healthy;
+          _isCheckingOllama = false;
+        });
+        if (healthy) {
+          _fetchOllamaModels();
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isCheckingOllama = false);
+    }
+  }
+
+  Future<void> _fetchOllamaModels() async {
+    final models = await OpenClawCommandService.getOllamaModels();
+    if (mounted) {
+      setState(() {
+        _ollamaModels = models;
+        if (_ollamaModels.isNotEmpty && _selectedOllamaModel == null) {
+          _selectedOllamaModel = _ollamaModels.first['id'];
+        }
+      });
+    }
+  }
+
+  Future<void> _registerOllamaAsDriver() async {
+    if (_selectedOllamaModel == null) return;
+    setState(() => _isRegisteringOllama = true);
+    try {
+      await GatewayService().configureOllama(
+        primaryModel: _selectedOllamaModel,
+        setAsPrimary: true,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ollama registered as Gateway Driver: $_selectedOllamaModel'),
+            backgroundColor: AppColors.statusGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to register Ollama: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRegisteringOllama = false);
+    }
+  }
+  Future<void> _handleOllamaSync() async {
+    setState(() => _isSyncingOllama = true);
+    try {
+      await GatewayService().syncLocalModelsWithOllama();
+      await _fetchOllamaModels();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('GGUF models synced to Ollama!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sync failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncingOllama = false);
+    }
+  }
+
+  Future<void> _handleOllamaPull() async {
+    final modelName = _pullModelController.text.trim();
+    if (modelName.isEmpty) return;
+
+    setState(() {
+      _isPullingOllama = true;
+      _ollamaPullProgress = 0;
+    });
+
+    try {
+      final stream = GatewayService().pullOllamaModel(modelName);
+      await for (final progress in stream) {
+        if (mounted) setState(() => _ollamaPullProgress = progress);
+      }
+      _pullModelController.clear();
+      await _fetchOllamaModels();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully pulled $modelName!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Pull failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isPullingOllama = false);
+    }
   }
 
   Future<void> _checkDownloadedModels() async {
@@ -60,7 +318,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
       backgroundColor: const Color(0xFF0D1B2A),
       body: Stack(
         children: [
-          // Ambient glow patches — unified dark space aesthetic
+          // Ambient glow patches
           Positioned(
             top: -60,
             right: -40,
@@ -105,6 +363,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       _buildDeviceSpecCard(),
                       const SizedBox(height: 28),
                       _buildAgentPromptGuide(),
+                      const SizedBox(height: 28),
+                      _buildOllamaSection(),
                       const SizedBox(height: 28),
                       if (_state.status == LocalLlmStatus.ready) ...[
                         _buildSectionLabel('Diagnostics Playground'),
@@ -602,20 +862,285 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     );
   }
 
+  Widget _buildOllamaSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionLabel('Gateway Agent Hub'),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E2E),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: _isOllamaHealthy
+                  ? AppColors.statusGreen.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    _isInternalOllamaInstalled ? Icons.settings_input_component : Icons.auto_awesome,
+                    color: _isInternalOllamaInstalled ? AppColors.statusGreen : Colors.amber,
+                    size: 20
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isInternalOllamaInstalled ? 'Integrated Agent Hub' : 'Setup Agent Gateway',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        Text(
+                          _isInternalOllamaInstalled 
+                            ? (_isInternalOllamaRunning ? 'Service Active' : 'Service Standby') 
+                            : 'Recommended for one-tap agent skills',
+                          style: TextStyle(
+                            color: _isInternalOllamaRunning ? AppColors.statusGreen : Colors.white38,
+                            fontSize: 11
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_isInternalOllamaInstalled) 
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: IconButton(
+                        icon: const Icon(Icons.wysiwyg_rounded, color: Colors.white24, size: 18),
+                        onPressed: _showOllamaLogsDialog,
+                        tooltip: 'View Hub Logs',
+                      ),
+                    ),
+                  _buildOllamaStatusBadge(),
+                ],
+              ),
+              const SizedBox(height: 18),
+              if (!_isInternalOllamaInstalled) ...[
+                if (_isInstallingInternal) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _installProgress,
+                      backgroundColor: Colors.white10,
+                      valueColor: const AlwaysStoppedAnimation(Colors.amber),
+                      minHeight: 8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      'Downloading Runtime: ${(_installProgress * 100).toStringAsFixed(1)}%',
+                      style: GoogleFonts.jetBrainsMono(color: Colors.amber, fontSize: 10),
+                    ),
+                  ),
+                ] else ...[
+                  Text(
+                    'Enables Plawie to use a powerful local inference engine (Ollama) for reasoning and tools. No external apps required.',
+                    style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _installInternalOllama,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber.withValues(alpha: 0.1),
+                      foregroundColor: Colors.amber,
+                      side: BorderSide(color: Colors.amber.withValues(alpha: 0.3)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
+                    child: Text('Initialize Agent Gateway (Internal)', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildOllamaModelDropdown(),
+                    ),
+                    const SizedBox(width: 12),
+                    _buildOllamaActionButton(),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // --- Model Management Sub-section ---
+                const Divider(color: Colors.white10, height: 1),
+                const SizedBox(height: 12),
+                Text(
+                  'MODEL HUB',
+                  style: GoogleFonts.outfit(
+                      fontSize: 9, 
+                      fontWeight: FontWeight.w800, 
+                      color: Colors.white30, 
+                      letterSpacing: 1.5
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Sync Action
+                _buildModelActionRow(
+                  icon: Icons.sync_rounded,
+                  title: 'Sync Installed GGUFs',
+                  subtitle: 'Register local files with Ollama',
+                  trailing: _isSyncingOllama
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : TextButton(
+                        onPressed: _handleOllamaSync,
+                        child: const Text('SYNC', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                      ),
+                ),
+                
+                const SizedBox(height: 8),
+                
+                // Pull Action
+                _buildModelActionRow(
+                  icon: Icons.download_for_offline_rounded,
+                  title: 'Pull from Library',
+                  subtitle: 'Download tags (e.g. phi3)',
+                  trailing: _isPullingOllama
+                    ? SizedBox(
+                        width: 40,
+                        child: Center(
+                          child: Text('${(_ollamaPullProgress * 100).toInt()}%', 
+                            style: const TextStyle(fontSize: 10, color: Colors.amber, fontWeight: FontWeight.bold)),
+                        )
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.add_circle_outline, color: Colors.amber, size: 20),
+                        onPressed: _showPullDialog,
+                      ),
+                ),
+
+                const SizedBox(height: 16),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: (_isOllamaHealthy && !_isRegisteringOllama) 
+                      ? _registerOllamaAsDriver 
+                      : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isOllamaHealthy ? AppColors.statusGreen.withValues(alpha: 0.1) : Colors.white12,
+                      foregroundColor: _isOllamaHealthy ? AppColors.statusGreen : Colors.white24,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
+                    child: _isRegisteringOllama
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Set as Primary Gateway Driver', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOllamaStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: (_isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: (_isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent).withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            _isOllamaHealthy ? 'ONLINE' : 'OFFLINE',
+            style: GoogleFonts.outfit(
+              color: _isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOllamaModelDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedOllamaModel,
+          dropdownColor: const Color(0xFF1E1E2E),
+          isExpanded: true,
+          hint: const Text('No models found', style: TextStyle(color: Colors.white24, fontSize: 12)),
+          items: _ollamaModels.map((m) {
+            return DropdownMenuItem<String>(
+              value: m['id'],
+              child: Text(
+                m['name'] ?? m['id']!,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+              ),
+            );
+          }).toList(),
+          onChanged: (val) => setState(() => _selectedOllamaModel = val),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOllamaActionButton() {
+    return ElevatedButton(
+      onPressed: _isInternalOllamaInstalled ? _toggleInternalOllama : _checkOllamaStatus,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white.withValues(alpha: 0.1),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        minimumSize: const Size(80, 45),
+        padding: EdgeInsets.zero,
+      ),
+      child: _isTogglingOllama
+          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+          : Icon(
+              _isInternalOllamaInstalled 
+                ? (_isInternalOllamaRunning ? Icons.stop_rounded : Icons.play_arrow_rounded)
+                : Icons.refresh_rounded,
+              size: 20,
+            ),
+    );
+  }
+
   Widget _buildDiagnosticsPanel() {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E2E), // Deep space violet
+        color: const Color(0xFF1E1E2E),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -645,7 +1170,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          // Server health probe row
           Row(
             children: [
               Text(
@@ -673,129 +1197,55 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
             Text(
               _healthStatus,
               style: GoogleFonts.jetBrainsMono(
-                color: _healthStatus.startsWith('HTTP 200') ? AppColors.statusGreen : Colors.redAccent,
+                color: _healthStatus.contains('healthy') ? AppColors.statusGreen : Colors.redAccent,
                 fontSize: 9,
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          // Server log viewer
-          Row(
-            children: [
-              GestureDetector(
-                onTap: _isFetchingLogs ? null : _toggleLogs,
-                child: Row(
-                  children: [
-                    Icon(_showLogs ? Icons.expand_less : Icons.expand_more, color: Colors.white24, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      _isFetchingLogs ? 'Loading…' : (_showLogs ? 'Hide engine info' : 'View engine info'),
-                      style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (_showLogs && _serverLogs.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                _serverLogs,
-                style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 8, height: 1.5),
               ),
             ),
           ],
           const SizedBox(height: 16),
           TextField(
             controller: _testPromptController,
-            maxLines: 2,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            maxLines: 3,
+            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
             decoration: InputDecoration(
-              hintText: 'Enter a test prompt...',
+              hintText: 'Enter test prompt...',
               hintStyle: const TextStyle(color: Colors.white24),
               filled: true,
-              fillColor: Colors.black26,
-              contentPadding: const EdgeInsets.all(12),
+              fillColor: Colors.black.withValues(alpha: 0.2),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
+              contentPadding: const EdgeInsets.all(12),
             ),
           ),
-          const SizedBox(height: 16),
-          if (_testResponse.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.black38,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Response:', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
-                      if (!_isTesting) ...[
-                        Text('$_tokenCount tokens', style: const TextStyle(color: Colors.white24, fontSize: 10)),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: _testResponse));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Copied to clipboard'), duration: Duration(seconds: 1)),
-                            );
-                          },
-                          child: const Icon(Icons.copy_rounded, size: 12, color: AppColors.statusGreen),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    _testResponse,
-                    style: GoogleFonts.outfit(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 12,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          ElevatedButton.icon(
-            onPressed: _isTesting ? null : _runTest,
-            icon: _isTesting 
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
-              : const Icon(Icons.bolt_rounded, size: 16),
-            label: Text(_isTesting ? 'Inferring...' : 'Run Diagnostics'),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: _isTesting ? null : _runTestInference,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.statusGreen,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              backgroundColor: AppColors.statusGreen.withValues(alpha: 0.1),
+              foregroundColor: AppColors.statusGreen,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
+              minimumSize: const Size(double.infinity, 45),
             ),
+            child: _isTesting
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.statusGreen))
+              : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          if (!_isTesting && _testResponse.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: TextButton(
-                onPressed: () => setState(() => _testResponse = ''),
-                child: const Text('Clear Results', style: TextStyle(color: Colors.white24, fontSize: 11)),
+          if (_testResponse.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SelectableText(
+                _testResponse,
+                style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -803,53 +1253,112 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
   Future<void> _checkHealth() async {
     setState(() { _isCheckingHealth = true; _healthStatus = ''; });
-    final result = await _service.fetchServerHealth();
-    if (mounted) setState(() { _healthStatus = result; _isCheckingHealth = false; });
-  }
-
-  Future<void> _toggleLogs() async {
-    if (_showLogs) {
-      setState(() => _showLogs = false);
-      return;
+    final bool healthy = _service.state.status == LocalLlmStatus.ready;
+    if (mounted) {
+      setState(() {
+        _isCheckingHealth = false;
+        _healthStatus = healthy ? 'Engine is healthy' : 'Engine is offline';
+      });
     }
-    setState(() { _isFetchingLogs = true; _showLogs = true; });
-    final logs = await _service.fetchServerLogs();
-    if (mounted) setState(() { _serverLogs = logs; _isFetchingLogs = false; });
   }
 
-  Future<void> _runTest() async {
-    if (_testPromptController.text.isEmpty) return;
-    
+  Future<void> _runTestInference() async {
     setState(() {
       _isTesting = true;
       _testResponse = '';
-      _tokenCount = 0;
       _tokensPerSec = 0;
+      _tokenCount = 0;
       _testStartTime = DateTime.now();
     });
 
     try {
-      final stream = _service.testInference(_testPromptController.text);
-      await for (final chunk in stream) {
+      await for (final token in _service.testInference(_testPromptController.text)) {
         if (!mounted) break;
         setState(() {
-          _testResponse += chunk;
+          _testResponse += token;
           _tokenCount++;
-          final now = DateTime.now();
-          final elapsed = now.difference(_testStartTime!).inMilliseconds / 1000;
-          if (elapsed > 0) {
-            _tokensPerSec = _tokenCount / elapsed;
+          final duration = DateTime.now().difference(_testStartTime!).inMilliseconds / 1000;
+          if (duration > 0) {
+            _tokensPerSec = _tokenCount / duration;
           }
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _testResponse = '[Error] $e');
-      }
+      if (mounted) setState(() => _testResponse = 'Error: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isTesting = false);
-      }
+      if (mounted) setState(() => _isTesting = false);
     }
+  }
+  Widget _buildModelActionRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget trailing,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 16, color: Colors.white30),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(subtitle, style: const TextStyle(color: Colors.white30, fontSize: 10)),
+            ],
+          ),
+        ),
+        trailing,
+      ],
+    );
+  }
+
+  void _showPullDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: Text('Pull Ollama Model', style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter a model tag from ollama.com/library (e.g., phi3:latest)', 
+              style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _pullModelController,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'e.g. qwen2.5:1.5b',
+                hintStyle: TextStyle(color: Colors.white24),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
+                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white30)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _handleOllamaPull();
+            },
+            child: const Text('PULL', style: TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 }
