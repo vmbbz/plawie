@@ -219,6 +219,33 @@ class MainActivity : FlutterActivity() {
                 "getGatewayLogs" -> {
                     result.success(processManager.getRecentLogs())
                 }
+                "installOllama" -> {
+                    val tempPath = call.argument<String>("tempPath")
+                    if (tempPath != null) {
+                        Thread {
+                            try {
+                                bootstrapManager.installOllama(tempPath)
+                                runOnUiThread { result.success(true) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("OLLAMA_ERROR", e.message, null) }
+                            }
+                        }.start()
+                    } else {
+                        result.error("INVALID_ARGS", "tempPath required", null)
+                    }
+                }
+                "isOllamaInstalled" -> {
+                    result.success(bootstrapManager.isOllamaInstalled())
+                }
+                "startOllama" -> {
+                    result.success(processManager.startOllama())
+                }
+                "stopOllama" -> {
+                    result.success(processManager.stopOllama())
+                }
+                "isOllamaRunning" -> {
+                    result.success(processManager.isOllamaRunning())
+                }
                 "startTerminalService" -> {
                     try {
                         TerminalSessionService.start(applicationContext)
@@ -300,6 +327,34 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("WAKELOCK_ERROR", e.message, null)
+                    }
+                }
+                "launchTermux" -> {
+                    val command = call.argument<String>("command") ?: "ollama serve"
+                    try {
+                        val intent = Intent("com.termux.RUN_COMMAND").apply {
+                            setPackage("com.termux")
+                            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/ollama")
+                            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("serve"))
+                            putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
+                            putExtra("com.termux.RUN_COMMAND_BACKGROUND", false)
+                            putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0")
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        // Fallback: Try to just launch the app
+                        try {
+                            val launchIntent = packageManager.getLaunchIntentForPackage("com.termux")
+                            if (launchIntent != null) {
+                                startActivity(launchIntent)
+                                result.success(true)
+                            } else {
+                                result.error("TERMUX_NOT_FOUND", "Termux app not found", null)
+                            }
+                        } catch (e2: Exception) {
+                            result.error("LAUNCH_ERROR", e2.message, null)
+                        }
                     }
                 }
                 "setupDirs" -> {

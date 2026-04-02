@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import '../services/native_bridge.dart';
+import 'package:http/http.dart' as http;
+import 'native_bridge.dart';
 
 /// Service for detecting OpenClaw version and adapting command syntax.
 ///
 /// SYNTAX (Grok-verified 2026-03-27):
 ///   Modern (≥2026.1.30): `openclaw skills install <name>`   ← PLURAL
-///   Legacy  (&lt;2026.1.30): `openclaw skill  install <name>`  ← singular
+///   Legacy  (<2026.1.30): `openclaw skill  install <name>`  ← singular
 class OpenClawCommandService {
   // ── Version cache — avoids a `runInProot` call on every tap ──────────────
   static String? _cachedVersion;
@@ -48,9 +49,6 @@ class OpenClawCommandService {
   }
 
   /// Returns the correct install command for the detected gateway version.
-  ///
-  /// Modern: `openclaw skills install <name>` (plural)
-  /// Legacy: `openclaw skill install <name>`  (singular)
   static Future<String> getSkillInstallCommand(
     String skillName, {
     String? version,
@@ -70,28 +68,20 @@ class OpenClawCommandService {
         : 'openclaw skill uninstall $skillName';
   }
 
-  /// Normalises any hardcoded `openclaw skill(s) …` command string to the
-  /// syntax the running gateway actually expects.
-  ///
-  /// Modern (≥2026.1.30) uses PLURAL `skills`; legacy uses singular `skill`.
-  /// Call this before running any command string sourced from a package manifest.
+  /// Normalises any hardcoded `openclaw skill(s) …` command string.
   static Future<String> adaptSkillCommand(String baseCommand) async {
     final modern = await isModernSyntax();
     if (modern) {
-      // Ensure PLURAL — replace bare `openclaw skill ` (singular, no 's') with plural
       return baseCommand.replaceAllMapped(
         RegExp(r'openclaw skill (?!s)'),
         (m) => 'openclaw skills ',
       );
     } else {
-      // Ensure SINGULAR — replace `openclaw skills ` (plural) with singular
       return baseCommand.replaceAll('openclaw skills ', 'openclaw skill ');
     }
   }
 
   /// Returns the list of tool IDs in `tools.allow` from openclaw.json.
-  /// These are the core tools always active in the running gateway.
-  /// Returns [] when the gateway is offline or the key is missing.
   static Future<List<String>> getCoreTools() async {
     final config = await getOpenClawConfig();
     final allow = config?['tools']?['allow'];
@@ -99,13 +89,11 @@ class OpenClawCommandService {
     return [];
   }
 
-  /// `skills list` is valid on both modern and legacy gateways.
   static String getSkillListCommand() => 'openclaw skills list';
 
   // ── Extended service methods ──────────────────────────────────────────────
 
   /// Reads /root/.openclaw/openclaw.json from PRoot.
-  /// Returns null if the gateway is offline or the file does not exist.
   static Future<Map<String, dynamic>?> getOpenClawConfig() async {
     try {
       final result = await NativeBridge.runInProot(
@@ -119,12 +107,10 @@ class OpenClawCommandService {
     }
   }
 
-  /// Returns the list of installed skill IDs from the gateway CLI.
-  /// Falls back to an empty list if the gateway is offline.
+  /// Returns the list of installed skill IDs.
   static Future<List<String>> getInstalledSkills() async {
     try {
       final result = await NativeBridge.runInProot(
-        // Try modern plural first, fall back to singular, fall back to empty JSON
         'openclaw skills list --json 2>/dev/null '
         '|| openclaw skill list --json 2>/dev/null '
         '|| echo "[]"',
@@ -150,19 +136,59 @@ class OpenClawCommandService {
   }
 
   /// Asks the running gateway to rescan and hot-reload skills.
-  /// Non-critical — gateway will auto-discover on the next request anyway.
   static Future<void> reloadGateway() async {
     try {
       await NativeBridge.runInProot(
         'openclaw reload 2>/dev/null || true',
         timeout: 10,
       );
-    } catch (_) {
-      // Intentionally swallowed — reload is best-effort
-    }
+    } catch (_) {}
   }
 
-  /// Invalidates the version cache (call after a gateway upgrade).
+  /// Lists models currently available in the local Ollama instance.
+  static Future<List<Map<String, String>>> getOllamaModels({
+    String baseUrl = 'http://127.0.0.1:11434',
+  }) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/api/tags'))
+          .timeout(const Duration(seconds: 3));
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['models'] is List) {
+          return (data['models'] as List).map((m) {
+            final name = m['name']?.toString() ?? 'unknown';
+            return {
+              'id': name,
+              'name': name.split(':').first.toUpperCase(),
+            };
+          }).toList();
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final result = await NativeBridge.runInProot(
+        'openclaw models list --json 2>/dev/null || echo "[]"',
+        timeout: 10,
+      );
+      final decoded = jsonDecode(result.trim());
+      if (decoded is List) {
+        return decoded
+            .where((m) => m['provider'] == 'ollama')
+            .map((m) => {
+              'id': m['id']?.toString() ?? '',
+              'name': m['name']?.toString() ?? '',
+            })
+            .where((m) => m['id']!.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
   static void invalidateVersionCache() {
     _cachedVersion = null;
     _cacheTime = null;
