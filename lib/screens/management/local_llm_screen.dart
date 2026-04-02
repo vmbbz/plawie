@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
@@ -44,9 +45,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   int _tokenCount = 0;
   String _healthStatus = '';
   bool _isCheckingHealth = false;
-  String _serverLogs = '';
-  bool _isFetchingLogs = false;
-  bool _showLogs = false;
 
   bool _isRegisteringOllama = false;
   
@@ -203,7 +201,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CLOSE'),
+            child: const Text('CLOSE', style: TextStyle(color: Colors.white30)),
+          ),
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: logs));
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Logs copied to clipboard')),
+              );
+            },
+            child: const Text('COPY', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -397,6 +405,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       ..._service.catalog
                           .where((m) => m.supportsToolCalls)
                           .map(_buildModelCard),
+                      const SizedBox(height: 16),
+                      _buildModelInstructions(),
                       const SizedBox(height: 28),
                       _buildDeviceSpecCard(),
                       const SizedBox(height: 28),
@@ -485,7 +495,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 10),
               Text(
-                'openclaw · fllama (llama.cpp NDK)',
+                'NDK Direct Mode  ·  fllama',
                 style: GoogleFonts.outfit(
                   color: color,
                   fontWeight: FontWeight.w700,
@@ -855,15 +865,80 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     );
   }
 
-  Widget _buildAgentPromptGuide() {
-    const prompt = '''When using the local LLM skill (fllama · on-device NDK inference):
+  Widget _buildModelInstructions() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blueAccent.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.info_outline_rounded, color: Colors.blueAccent, size: 15),
+            const SizedBox(width: 8),
+            Text('How to use local models',
+                style: GoogleFonts.outfit(
+                    color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12)),
+          ]),
+          const SizedBox(height: 10),
+          _instructionStep('1  Download', 'Tap Download on the model card above to save it to your device (~1–2 GB).'),
+          const SizedBox(height: 6),
+          _instructionStep('2  Start (NDK)', 'Tap Start to load the model via the on-device NDK engine (fllama). Select it in the chat model picker for private, offline chat — no internet needed.'),
+          const SizedBox(height: 6),
+          _instructionStep('3  Agent Hub', 'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 13),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NDK mode = direct private chat only. No tools, skills, or agent features. For the full OpenClaw experience use the Integrated Agent Hub.',
+                  style: const TextStyle(color: Colors.amber, fontSize: 10, height: 1.4),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
 
-- You are running as Qwen2.5-Instruct via fllama (llama.cpp compiled into the app as a native library).
-- Your context window may be limited (8K–32K tokens). Keep system prompts concise.
-- For tool use, strictly output valid JSON inside <tool_call> tags.
-- If a tool call fails, retry once with simplified parameters before reporting the error.
-- Warn the user if a task requires more reasoning than a 1.5B model can reliably provide.
-- Always prefer small, focused tool calls over large multi-step ones to stay within context.''';
+  Widget _instructionStep(String label, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 72,
+          child: Text(label,
+              style: const TextStyle(
+                  color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w700)),
+        ),
+        Expanded(
+          child: Text(text,
+              style: const TextStyle(color: Colors.white38, fontSize: 10, height: 1.4)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAgentPromptGuide() {
+    const prompt =
+        'fllama (NDK) system prompt hint — paste into your custom agent system prompt '
+        'when using the NDK direct-chat mode:\n\n'
+        'You are running via fllama (llama.cpp NDK, on-device). Context window is '
+        'limited — keep responses focused. No tool calls are available in this mode. '
+        'For multi-step tasks or tool use, ask the user to switch to the Integrated '
+        'Agent Hub (ollama/ model) in chat settings.';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -880,7 +955,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               const Icon(Icons.smart_toy_outlined, color: Colors.white54, size: 16),
               const SizedBox(width: 8),
               Text(
-                'Agent System Prompt Snippet',
+                'NDK Direct Mode — Prompt Hint',
                 style: GoogleFonts.outfit(
                     color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
               ),
