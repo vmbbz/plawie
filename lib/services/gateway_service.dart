@@ -12,6 +12,68 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 
+/// Ollama Modelfile TEMPLATE directive for Qwen2.5 instruct models.
+/// Sourced from the official Ollama Qwen2.5 model card template.
+/// Includes {{ .Tools }} support so the gateway agent loop can send
+/// function schemas and the model returns structured tool_call JSON.
+const _kQwen25OllamaTemplate = r'''
+TEMPLATE """{{- if .Messages }}
+{{- if or .System .Tools }}<|im_start|>system
+{{- if .System }}
+{{ .System }}
+{{- end }}
+{{- if .Tools }}
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+
+<tools>
+{{- range .Tools }}
+{"type": "function", "function": {{ .Function }}}
+{{- end }}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call>
+{{- end }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ if .Content }}{{ .Content }}
+{{- else if .ToolCalls }}
+{{- range .ToolCalls }}
+<tool_call>
+{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
+</tool_call>
+{{- end }}
+{{- end }}{{- if not $last }}<|im_end|>
+{{ end }}
+{{- else if eq .Role "tool" }}<|im_start|>user
+<tool_response>
+{{ .Content }}
+</tool_response><|im_end|>
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ end }}"""
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+''';
+
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
@@ -486,7 +548,8 @@ class GatewayService {
     for (final model in catalog) {
       if (await LocalLlmService().isModelDownloaded(model)) {
         final ollamaName = _toOllamaModelName(model.id);
-        if (registered.contains(ollamaName)) {
+        if (registered.contains(ollamaName) && !model.supportsToolCalls) {
+          // Already registered + no tool template needed — skip re-creation.
           synced++;
           syncedModelNames.add(ollamaName);
           _updateState(_state.copyWith(
@@ -494,8 +557,17 @@ class GatewayService {
           ));
           continue;
         }
+        // Tool-capable models always re-create so the template is kept current.
+        if (registered.contains(ollamaName) && model.supportsToolCalls) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[HUB] Refreshing $ollamaName template for tool support...'],
+          ));
+        }
         try {
-          final success = await _createOllamaModelFromGguf(ollamaName, model.prootModelPath);
+          final success = await _createOllamaModelFromGguf(
+            ollamaName, model.prootModelPath,
+            supportsToolCalls: model.supportsToolCalls,
+          );
           if (success) {
             synced++;
             syncedModelNames.add(ollamaName);
@@ -646,7 +718,7 @@ class GatewayService {
   ///
   /// The Modelfile is written to $filesDir/rootfs/ubuntu/tmp/ (Android host FS), which
   /// appears as /tmp/ inside PRoot — accessible by the Ollama CLI process.
-  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath) async {
+  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath, {bool supportsToolCalls = false}) async {
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[HUB] Registering $name...'],
     ));
@@ -657,7 +729,13 @@ class GatewayService {
       final filesDir = await NativeBridge.getFilesDir();
       final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
       tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
-      await tempModelfile.writeAsString('FROM $ggufPath\n');
+      // For tool-capable models inject the Qwen2.5 chat template so Ollama
+      // registers the {{ .Tools }} marker and allows the gateway agent loop
+      // to pass function schemas without receiving HTTP 400.
+      final modelfileContent = supportsToolCalls
+          ? 'FROM $ggufPath\n$_kQwen25OllamaTemplate'
+          : 'FROM $ggufPath\n';
+      await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
 
@@ -1349,17 +1427,32 @@ class GatewayService {
       return;
     }
 
-    // Ollama Hub: route DIRECTLY to Ollama at :11434, bypassing the gateway
-    // agent loop entirely. The gateway's /v1/chat/completions endpoint runs
-    // full agent logic (tools schemas), which causes HTTP 400 on models that
-    // don't declare a tools template (e.g. qwen2.5-1.5b-instruct:q4_k_m).
-    // Direct call: no auth token, no tools, plain streaming chat.
+    // Ollama Hub routing: depends on whether the model has tool-call support.
+    //
+    // Tool-capable models (qwen2.5-1.5b, qwen2.5-3b): registered with the
+    // Qwen2.5 TEMPLATE in the Modelfile so Ollama accepts {{ .Tools }}.
+    // Route via gateway /v1/chat/completions → full agent loop (skills, agents).
+    //
+    // Non-capable models (smollm2, vision, 0.5b): no tools template, Ollama
+    // returns HTTP 400 if the gateway sends tool schemas.
+    // Route DIRECTLY to :11434 — plain streaming chat, no tools.
     if (model.startsWith('ollama/')) {
       final ollamaModel = model.substring('ollama/'.length);
-      yield* sendMessageHttp(message,
-          model: ollamaModel,
-          directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-          conversationHistory: conversationHistory);
+      final toolCapableNames = LocalLlmService().catalog
+          .where((m) => m.supportsToolCalls)
+          .map((m) => _toOllamaModelName(m.id))
+          .toSet();
+      if (toolCapableNames.contains(ollamaModel)) {
+        // Full gateway route — agent loop, tool calls, skills
+        yield* sendMessageHttp(message, model: model, token: token,
+            conversationHistory: conversationHistory);
+      } else {
+        // Direct Ollama — plain chat, no tool schemas
+        yield* sendMessageHttp(message,
+            model: ollamaModel,
+            directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+            conversationHistory: conversationHistory);
+      }
       return;
     }
 

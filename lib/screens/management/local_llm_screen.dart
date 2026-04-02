@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/openclaw_service.dart';
-import 'package:clawa/services/native_bridge.dart';
 
 class LocalLlmScreen extends StatefulWidget {
   const LocalLlmScreen({super.key});
@@ -1103,33 +1101,126 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     );
   }
 
+  /// Returns the catalog entry for an Ollama model name, or null.
+  LocalLlmModel? _catalogEntryFor(String ollamaId) {
+    final catalog = LocalLlmService().catalog;
+    try {
+      // ollamaId format: "qwen2.5-1.5b-instruct:q4_k_m"
+      // catalog id:      "qwen2.5-1.5b-instruct-q4_k_m"
+      // Match by stripping all punctuation and comparing lowercase.
+      final stripped = ollamaId.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase();
+      return catalog.firstWhere(
+        (m) => m.id.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase() == stripped,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Widget _buildOllamaModelDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedOllamaModel,
-          dropdownColor: const Color(0xFF1E1E2E),
-          isExpanded: true,
-          hint: const Text('No models found', style: TextStyle(color: Colors.white24, fontSize: 12)),
-          items: _ollamaModels.map((m) {
-            return DropdownMenuItem<String>(
-              value: m['id'],
-              child: Text(
-                m['name'] ?? m['id']!,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
-              ),
-            );
-          }).toList(),
-          onChanged: (val) => setState(() => _selectedOllamaModel = val),
+    // Only show tool-capable models as gateway driver candidates.
+    // Chat-only models are not suitable as the primary model because the
+    // gateway always sends tool schemas which would cause HTTP 400.
+    final toolModels = _ollamaModels.where((m) {
+      final entry = _catalogEntryFor(m['id']!);
+      return entry?.supportsToolCalls ?? false;
+    }).toList();
+
+    // If no tool-capable models are synced yet, show all with a warning.
+    final displayModels = toolModels.isNotEmpty ? toolModels : _ollamaModels;
+    final showNoToolsWarning = toolModels.isEmpty && _ollamaModels.isNotEmpty;
+
+    // Ensure selected model stays valid after filtering.
+    final validValue = displayModels.any((m) => m['id'] == _selectedOllamaModel)
+        ? _selectedOllamaModel
+        : (displayModels.isNotEmpty ? displayModels.first['id'] : null);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showNoToolsWarning) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: AppColors.statusAmber.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.statusAmber.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.statusAmber),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'No tool-capable models synced. Download Qwen 2.5 1.5B or 3B for full gateway features.',
+                    style: TextStyle(fontSize: 11, color: AppColors.statusAmber),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: validValue,
+              dropdownColor: const Color(0xFF1E1E2E),
+              isExpanded: true,
+              hint: const Text('No models found', style: TextStyle(color: Colors.white24, fontSize: 12)),
+              items: displayModels.map((m) {
+                final entry = _catalogEntryFor(m['id']!);
+                final hasTools = entry?.supportsToolCalls ?? false;
+                return DropdownMenuItem<String>(
+                  value: m['id'],
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          m['name'] ?? m['id']!,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: hasTools
+                              ? AppColors.statusGreen.withValues(alpha: 0.15)
+                              : Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: hasTools
+                                ? AppColors.statusGreen.withValues(alpha: 0.4)
+                                : Colors.white.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        child: Text(
+                          hasTools ? 'TOOLS' : 'CHAT',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: hasTools ? AppColors.statusGreen : Colors.white38,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (val) => setState(() => _selectedOllamaModel = val),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
