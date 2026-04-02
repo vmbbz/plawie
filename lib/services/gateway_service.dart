@@ -121,11 +121,13 @@ class GatewayService {
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
-    // Probe Ollama on startup — it may already be running from a previous session.
-    // Do this before _attachOrStart so isOllamaRunning is populated when chat opens.
-    unawaited(_probeOllamaOnInit());
-    // 9a9614a Optimization: Do not block splash screen during auto-start
-    unawaited(_attachOrStart(autoStart: prefs.autoStartGateway));
+    // Sequence: _attachOrStart first, THEN _probeOllamaOnInit.
+    // Both issue PRoot commands; running them concurrently jams the PRoot
+    // command queue and causes the auth-token probe to appear hung.
+    // Using .then() keeps init() non-blocking (splash screen stays fast)
+    // while guaranteeing no overlapping PRoot work.
+    unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
+        .then((_) => unawaited(_probeOllamaOnInit())));
   }
 
   /// Called once at init. If Ollama is already running (e.g. survived app restart),
@@ -177,6 +179,13 @@ class GatewayService {
           timeout: 5,
         );
       } catch (_) {}
+
+      // After openclaw reload the gateway may issue a new token — wipe the
+      // cache and existing WS object so _checkHealth() re-probes fresh.
+      _connection?.dispose();
+      _connection = null;
+      _cachedToken = null;
+      _lastTokenFetch = null;
 
       _subscribeLogs();
       _startHealthCheck();
@@ -1151,6 +1160,14 @@ class GatewayService {
     _rpcDiscoveryDone = false; // reset so next start re-runs discovery
     _healthTimer?.cancel();
     _logSubscription?.cancel();
+    // Tear down WS and invalidate token cache BEFORE stopping the process.
+    // The next session generates a fresh token; keeping the old one causes
+    // _checkHealth() on re-start to authenticate with a stale token → WS
+    // handshake fails → gateway appears hung for up to 5 min (cache TTL).
+    _connection?.dispose();
+    _connection = null;
+    _cachedToken = null;
+    _lastTokenFetch = null;
 
     try {
       await NativeBridge.stopGateway();
