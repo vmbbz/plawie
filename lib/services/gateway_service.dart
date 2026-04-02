@@ -260,11 +260,6 @@ class GatewayService {
     ];
     config['gateway']['mode'] = 'local';
     
-    config['skills'] ??= {};
-    config['skills']['discovery'] = "http://127.0.0.1:8765/api/tools";
-    config['skills']['mode'] = "auto";
-    config['skills']['sync'] = "mirror";
-
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
     config['gateway']['http']['endpoints'] ??= {};
@@ -282,10 +277,19 @@ class GatewayService {
     // Schema requires models to always be an array. Fix any existing entry missing it.
     ollama['models'] ??= <Map<String, dynamic>>[];
 
-    // Remove unrecognized key written by an older build — OpenClaw schema rejects it.
+    // Remove keys that have never been part of the OpenClaw schema.
+    // These were written by earlier builds and must be stripped so the gateway
+    // passes schema validation instead of running in best-effort mode.
     final agentsDefaults = config['agents']?['defaults'];
     if (agentsDefaults is Map) {
-      agentsDefaults.remove('provider');
+      agentsDefaults.remove('provider');          // not in agents.defaults schema
+    }
+    final skills = config['skills'];
+    if (skills is Map) {
+      skills.remove('discovery');                 // not in skills schema
+      skills.remove('mode');                      // not in skills schema
+      skills.remove('sync');                      // not in skills schema
+      if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
 
     await _writeConfig(config);
