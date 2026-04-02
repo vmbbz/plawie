@@ -1007,6 +1007,16 @@ class GatewayService {
 
 
 
+  /// Reset the RPC discovery flag so the next health-check tick re-runs
+  /// `health`, `skills.list`, and `capabilities.list`. Call this after
+  /// installing/uninstalling a skill or any time the user wants a fresh read.
+  void refreshRpcDiscovery() {
+    _rpcDiscoveryDone = false;
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[INFO] RPC discovery refreshed — will re-query on next tick'],
+    ));
+  }
+
   Future<void> stop() async {
     if (_isStopping) return;
     _isStopping = true;
