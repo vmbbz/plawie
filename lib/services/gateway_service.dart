@@ -72,6 +72,8 @@ For each function call, return a json object with function name and arguments wi
 {{ end }}"""
 PARAMETER stop "<|im_start|>"
 PARAMETER stop "<|im_end|>"
+PARAMETER num_ctx 2048
+PARAMETER num_thread 4
 ''';
 
 class GatewayService {
@@ -548,19 +550,12 @@ class GatewayService {
     for (final model in catalog) {
       if (await LocalLlmService().isModelDownloaded(model)) {
         final ollamaName = _toOllamaModelName(model.id);
-        if (registered.contains(ollamaName) && !model.supportsToolCalls) {
-          // Already registered + no tool template needed — skip re-creation.
-          synced++;
-          syncedModelNames.add(ollamaName);
+        // Always re-create: ensures num_ctx/num_thread params from the current
+        // Modelfile are applied. ollama create reuses the existing GGUF blob
+        // (no re-hashing) so this is fast.
+        if (registered.contains(ollamaName)) {
           _updateState(_state.copyWith(
-            logs: [..._state.logs, '[INFO] ${model.id} already in Hub — skipping.'],
-          ));
-          continue;
-        }
-        // Tool-capable models always re-create so the template is kept current.
-        if (registered.contains(ollamaName) && model.supportsToolCalls) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[HUB] Refreshing $ollamaName template for tool support...'],
+            logs: [..._state.logs, '[HUB] Refreshing $ollamaName params...'],
           ));
         }
         try {
@@ -734,7 +729,7 @@ class GatewayService {
       // to pass function schemas without receiving HTTP 400.
       final modelfileContent = supportsToolCalls
           ? 'FROM $ggufPath\n$_kQwen25OllamaTemplate'
-          : 'FROM $ggufPath\n';
+          : 'FROM $ggufPath\nPARAMETER num_ctx 1024\nPARAMETER num_thread 4\n';
       await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
@@ -1427,32 +1422,16 @@ class GatewayService {
       return;
     }
 
-    // Ollama Hub routing: depends on whether the model has tool-call support.
-    //
-    // Tool-capable models (qwen2.5-1.5b, qwen2.5-3b): registered with the
-    // Qwen2.5 TEMPLATE in the Modelfile so Ollama accepts {{ .Tools }}.
-    // Route via gateway /v1/chat/completions → full agent loop (skills, agents).
-    //
-    // Non-capable models (smollm2, vision, 0.5b): no tools template, Ollama
-    // returns HTTP 400 if the gateway sends tool schemas.
-    // Route DIRECTLY to :11434 — plain streaming chat, no tools.
+    // Ollama Hub routing: always bypass the gateway agent loop.
+    // The gateway's embedded agent injects a 26K system prompt that overloads
+    // small LLMs on mobile (OOM, hang, retry storm, overheating).
+    // Route directly to Ollama at :11434 — clean conversation history only.
     if (model.startsWith('ollama/')) {
       final ollamaModel = model.substring('ollama/'.length);
-      final toolCapableNames = LocalLlmService().catalog
-          .where((m) => m.supportsToolCalls)
-          .map((m) => _toOllamaModelName(m.id))
-          .toSet();
-      if (toolCapableNames.contains(ollamaModel)) {
-        // Full gateway route — agent loop, tool calls, skills
-        yield* sendMessageHttp(message, model: model, token: token,
-            conversationHistory: conversationHistory);
-      } else {
-        // Direct Ollama — plain chat, no tool schemas
-        yield* sendMessageHttp(message,
-            model: ollamaModel,
-            directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-            conversationHistory: conversationHistory);
-      }
+      yield* sendMessageHttp(message,
+          model: ollamaModel,
+          directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+          conversationHistory: conversationHistory);
       return;
     }
 
