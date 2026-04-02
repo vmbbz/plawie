@@ -72,7 +72,7 @@ For each function call, return a json object with function name and arguments wi
 {{ end }}"""
 PARAMETER stop "<|im_start|>"
 PARAMETER stop "<|im_end|>"
-PARAMETER num_ctx 2048
+PARAMETER num_ctx 4096
 PARAMETER num_thread 4
 ''';
 
@@ -729,7 +729,7 @@ class GatewayService {
       // to pass function schemas without receiving HTTP 400.
       final modelfileContent = supportsToolCalls
           ? 'FROM $ggufPath\n$_kQwen25OllamaTemplate'
-          : 'FROM $ggufPath\nPARAMETER num_ctx 1024\nPARAMETER num_thread 4\n';
+          : 'FROM $ggufPath\nPARAMETER num_ctx 2048\nPARAMETER num_thread 4\n';
       await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
@@ -810,6 +810,18 @@ class GatewayService {
       rethrow;
     } finally {
       client.close();
+    }
+  }
+
+  /// Called after a successful `ollama pull` to add the model to hub state
+  /// so it appears in the chat dropdown immediately without a full re-sync.
+  void registerPulledModel(String modelName) {
+    if (!_state.ollamaHubModels.contains(modelName)) {
+      _updateState(_state.copyWith(
+        ollamaHubModels: [..._state.ollamaHubModels, modelName],
+        logs: [..._state.logs, '[HUB] Registered pulled model: $modelName'],
+      ));
+      unawaited(configureOllama(syncedModels: _state.ollamaHubModels));
     }
   }
 
