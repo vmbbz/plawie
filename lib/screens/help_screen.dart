@@ -54,6 +54,16 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
+                        title: 'On-Device Local LLM',
+                        description: 'Two local inference modes:\n\n'
+                            '• NDK Direct (fllama) — models run entirely inside the app via llama.cpp. Zero network, maximum privacy. For private offline chat only — no tools, no skills, no agent features.\n\n'
+                            '• Integrated Agent Hub (Ollama) — the same models routed through the OpenClaw gateway agent loop. Full tool-use, skills, and multi-step reasoning. Start Ollama in Local LLM settings and pick an ollama/ model in the chat model picker.',
+                        icon: Icons.memory_rounded,
+                        color: AppColors.statusGreen,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
                         title: 'Web3 & Solana Identity',
                         description: 'Real Ed25519 keypairs are generated and protected in secure on-device storage. Transactions are constructed and signed locally without cloud intermediaries.',
                         icon: Icons.account_balance_wallet_rounded,
