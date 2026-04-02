@@ -6,6 +6,22 @@ import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/openclaw_service.dart';
 
+/// Curated list of tool-capable Ollama library models, sorted smallest → largest.
+/// These are pulled directly from ollama.com/library (not local GGUFs) and
+/// already contain proper chat templates for tool/function calling.
+const _kToolModels = [
+  {'tag': 'qwen2.5:0.5b',    'label': 'Qwen 2.5 0.5B',    'size': '394 MB'},
+  {'tag': 'qwen2.5:1.5b',    'label': 'Qwen 2.5 1.5B',    'size': '986 MB'},
+  {'tag': 'qwen2.5:3b',      'label': 'Qwen 2.5 3B',      'size': '1.9 GB'},
+  {'tag': 'qwen2.5:7b',      'label': 'Qwen 2.5 7B',      'size': '4.7 GB'},
+  {'tag': 'qwen2.5:14b',     'label': 'Qwen 2.5 14B',     'size': '9.0 GB'},
+  {'tag': 'llama3.2:1b',     'label': 'Llama 3.2 1B',     'size': '1.3 GB'},
+  {'tag': 'llama3.2:3b',     'label': 'Llama 3.2 3B',     'size': '2.0 GB'},
+  {'tag': 'llama3.1:8b',     'label': 'Llama 3.1 8B',     'size': '4.7 GB'},
+  {'tag': 'phi4-mini:3.8b',  'label': 'Phi-4 Mini 3.8B',  'size': '2.5 GB'},
+  {'tag': 'mistral:7b',      'label': 'Mistral 7B',       'size': '4.1 GB'},
+];
+
 class LocalLlmScreen extends StatefulWidget {
   const LocalLlmScreen({super.key});
 
@@ -74,9 +90,10 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _checkDownloadedModels();
     _checkOllamaStatus();
     // Default selection to the recommended model
-    _selectedModel = _service.catalog.firstWhere(
+    final toolCatalog = _service.catalog.where((m) => m.supportsToolCalls).toList();
+    _selectedModel = toolCatalog.firstWhere(
       (m) => m.quality == 'Recommended',
-      orElse: () => _service.catalog.first,
+      orElse: () => toolCatalog.first,
     );
   }
 
@@ -304,6 +321,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
         if (mounted) setState(() => _ollamaPullProgress = progress);
       }
       _pullModelController.clear();
+      GatewayService().registerPulledModel(modelName);
       await _fetchOllamaModels();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -376,7 +394,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       const SizedBox(height: 28),
                       _buildSectionLabel('Model Library'),
                       const SizedBox(height: 12),
-                      ..._service.catalog.map(_buildModelCard),
+                      ..._service.catalog
+                          .where((m) => m.supportsToolCalls)
+                          .map(_buildModelCard),
                       const SizedBox(height: 28),
                       _buildDeviceSpecCard(),
                       const SizedBox(height: 28),
@@ -1432,43 +1452,240 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   }
 
   void _showPullDialog() {
+    String? selected;
+    List<Map<String, dynamic>> searchResults = [];
+    bool searching = false;
+    final searchCtrl = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E2E),
-        title: Text('Pull Ollama Model', style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Enter a model tag from ollama.com/library (e.g., phi3:latest)', 
-              style: TextStyle(color: Colors.white54, fontSize: 12)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _pullModelController,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'e.g. qwen2.5:1.5b',
-                hintStyle: TextStyle(color: Colors.white24),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
-                focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E1E2E),
+            title: Text('Pull from Ollama Hub',
+                style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Curated tool-use models ──────────────────────────
+                    const Text('TOOL-USE MODELS',
+                        style: TextStyle(
+                            color: Colors.white30,
+                            fontSize: 10,
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _kToolModels.map((m) {
+                        final isSel = selected == m['tag'];
+                        return GestureDetector(
+                          onTap: () {
+                            setS(() => selected = m['tag']);
+                            _pullModelController.text = m['tag']!;
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isSel
+                                  ? AppColors.statusGreen.withValues(alpha: 0.15)
+                                  : Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSel
+                                    ? AppColors.statusGreen
+                                    : Colors.white12,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(m['label']!,
+                                    style: TextStyle(
+                                        color: isSel
+                                            ? AppColors.statusGreen
+                                            : Colors.white70,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
+                                Text(m['size']!,
+                                    style: const TextStyle(
+                                        color: Colors.white38, fontSize: 9)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(height: 16),
+                    // ── Search divider ───────────────────────────────────
+                    Row(children: [
+                      const Expanded(child: Divider(color: Colors.white12)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('OR SEARCH',
+                            style: TextStyle(
+                                color: Colors.white24,
+                                fontSize: 10,
+                                letterSpacing: 1)),
+                      ),
+                      const Expanded(child: Divider(color: Colors.white12)),
+                    ]),
+                    const SizedBox(height: 10),
+
+                    // ── Search row ───────────────────────────────────────
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: searchCtrl,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
+                          decoration: const InputDecoration(
+                            hintText: 'Search ollama.com...',
+                            hintStyle: TextStyle(color: Colors.white24),
+                            isDense: true,
+                            enabledBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Colors.white12)),
+                            focusedBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(
+                                    color: AppColors.statusGreen)),
+                          ),
+                          onSubmitted: (_) async {
+                            final q = searchCtrl.text.trim();
+                            if (q.isEmpty) return;
+                            setS(() => searching = true);
+                            final r = await GatewayService()
+                                .fetchOllamaRegistryModels(q);
+                            setS(() {
+                              searchResults = r;
+                              searching = false;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      searching
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.statusGreen))
+                          : IconButton(
+                              icon: const Icon(Icons.search,
+                                  color: Colors.white38, size: 20),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () async {
+                                final q = searchCtrl.text.trim();
+                                if (q.isEmpty) return;
+                                setS(() => searching = true);
+                                final r = await GatewayService()
+                                    .fetchOllamaRegistryModels(q);
+                                setS(() {
+                                  searchResults = r;
+                                  searching = false;
+                                });
+                              },
+                            ),
+                    ]),
+
+                    // ── Search results ───────────────────────────────────
+                    if (searchResults.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 130,
+                        child: ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: searchResults.length,
+                          itemBuilder: (_, i) {
+                            final r = searchResults[i];
+                            final tag = r['name'] as String? ?? '';
+                            final isSel = selected == tag;
+                            return InkWell(
+                              onTap: () {
+                                setS(() => selected = tag);
+                                _pullModelController.text = tag;
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 6, horizontal: 4),
+                                color: isSel
+                                    ? AppColors.statusGreen
+                                        .withValues(alpha: 0.08)
+                                    : Colors.transparent,
+                                child: Row(children: [
+                                  Expanded(
+                                    child: Text(tag,
+                                        style: TextStyle(
+                                            color: isSel
+                                                ? AppColors.statusGreen
+                                                : Colors.white70,
+                                            fontSize: 12)),
+                                  ),
+                                  if (r['pulls'] != null)
+                                    Text(
+                                        '${(r['pulls'] as num) ~/ 1000}K↓',
+                                        style: const TextStyle(
+                                            color: Colors.white24,
+                                            fontSize: 10)),
+                                ]),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 12),
+                    // ── Final model tag field ────────────────────────────
+                    TextField(
+                      controller: _pullModelController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Model tag to pull',
+                        labelStyle: TextStyle(color: Colors.white38),
+                        hintText: 'e.g. qwen2.5:1.5b',
+                        hintStyle: TextStyle(color: Colors.white24),
+                        enabledBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(color: Colors.white12)),
+                        focusedBorder: UnderlineInputBorder(
+                            borderSide:
+                                BorderSide(color: AppColors.statusGreen)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL', style: TextStyle(color: Colors.white30)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _handleOllamaPull();
-            },
-            child: const Text('PULL', style: TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.bold)),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('CANCEL',
+                    style: TextStyle(color: Colors.white30)),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _handleOllamaPull();
+                },
+                child: const Text('PULL',
+                    style: TextStyle(
+                        color: AppColors.statusGreen,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
