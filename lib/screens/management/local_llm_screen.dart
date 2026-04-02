@@ -56,6 +56,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   final _pullModelController = TextEditingController();
 
   StreamSubscription? _serviceSub;
+  StreamSubscription? _gatewaySub;
 
   @override
   void initState() {
@@ -63,6 +64,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _state = _service.state;
     _serviceSub = _service.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
+    });
+    // React to gateway hub state so the Ollama model picker updates
+    // automatically when sync completes (without needing a manual refresh).
+    _gatewaySub = GatewayService().stateStream.listen((gwState) {
+      if (mounted && gwState.ollamaHubModels.isNotEmpty) {
+        _fetchOllamaModels();
+      }
     });
     _checkInternalStatus();
     _checkDownloadedModels();
@@ -77,6 +85,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   @override
   void dispose() {
     _serviceSub?.cancel();
+    _gatewaySub?.cancel();
     _testPromptController.dispose();
     _pullModelController.dispose();
     super.dispose();
@@ -213,7 +222,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   }
 
   Future<void> _fetchOllamaModels() async {
-    final models = await OpenClawCommandService.getOllamaModels();
+    // Prefer the managed list from GatewayService (canonical names from our
+    // GGUFs only) to avoid showing old-format stale registrations as duplicates.
+    // Fall back to raw Ollama registry when sync hasn't run yet.
+    final managed = GatewayService().state.ollamaHubModels;
+    final List<Map<String, String>> models;
+    if (managed.isNotEmpty) {
+      models = managed
+          .map((n) => <String, String>{'id': n, 'name': n.toUpperCase()})
+          .toList();
+    } else {
+      models = await OpenClawCommandService.getOllamaModels();
+    }
     if (mounted) {
       setState(() {
         _ollamaModels = models;
