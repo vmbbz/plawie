@@ -380,6 +380,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         if (gwState.ollamaHubModels.isNotEmpty) {
           _availableModels.removeWhere((m) => m.startsWith('ollama/'));
           _availableModels.addAll(gwState.ollamaHubModels.map((m) => 'ollama/$m'));
+        } else if (gwState.isOllamaRunning) {
+          // Ollama is running but ollamaHubModels is empty — this happens when
+          // the gateway was restarted (stop() now preserves isOllamaRunning but
+          // sync hasn't re-fired yet). Kick off a background sync so _gatewaySub
+          // receives the state event with the model list shortly after.
+          GatewayService().syncLocalModelsWithOllama();
         }
 
         // Load the user's configured model (from setup or settings).
