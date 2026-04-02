@@ -1661,7 +1661,10 @@ class GatewayService {
         ? [...conversationHistory, {'role': 'user', 'content': message}]
         : [{'role': 'user', 'content': message}];
 
-    final effectiveModel = isDirectLlama ? 'local-llm' : model;
+    // Always use the actual model name. The old 'local-llm' override was for
+    // llama-server, but that path exits early before reaching here. directUrl
+    // now exclusively means Ollama direct routing, which needs the real name.
+    final effectiveModel = model;
 
     final client = http.Client();
     try {
