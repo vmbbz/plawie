@@ -40,6 +40,15 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.sendVisionMessage(prompt, imageBase64, mimeType: mimeType);
   }
 
+  /// Sends an image to the gateway for Gemini/GPT-4o cloud vision.
+  Stream<String> sendCloudImageMessage(
+    String prompt,
+    String imageBase64, {
+    String mimeType = 'image/jpeg',
+  }) {
+    return _gatewayService.sendCloudImageMessage(prompt, imageBase64, mimeType: mimeType);
+  }
+
   /// Fetch available OpenClaw agents from the gateway at runtime.
   /// Returns an empty list silently if the gateway is not yet connected.
   Future<List<AgentInfo>> fetchAgents() => _gatewayService.fetchAgents();

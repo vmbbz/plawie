@@ -16,6 +16,7 @@ import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
+import '../models/gateway_state.dart';
 import '../widgets/vrm_avatar_widget.dart';
 
 import 'dart:ui';
@@ -65,6 +66,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   String _selectedAvatar = 'default_avatar.vrm';
   String _agentName = 'Plawie';
   String _selectedModel = 'google/gemini-3.1-pro-preview';
+  // Cloud model to fall back to when a local model (NDK or Ollama) stops.
+  // Set at load time from onboarding provider; updated when user picks a cloud model.
+  String _cloudFallbackModel = 'google/gemini-3.1-pro-preview';
 
   // Vision / image attachment state
   String? _pendingImageBase64;   // base64 of photo waiting to be sent
@@ -100,6 +104,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   // Auto-sync model when local LLM starts/stops
   StreamSubscription<LocalLlmState>? _localLlmSub;
   LocalLlmState _localLlmState = const LocalLlmState();
+  // Ollama Hub model sync — surfaces 'ollama/*' models in the dropdown
+  StreamSubscription<GatewayState>? _gatewaySub;
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
@@ -126,8 +132,46 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         }
       } else if (llmState.status == LocalLlmStatus.idle &&
                  _selectedModel.startsWith('local-llm/')) {
-        setState(() => _selectedModel = _availableModels.first);
-        PreferencesService().configuredModel = _availableModels.first;
+        setState(() => _selectedModel = _cloudFallbackModel);
+        PreferencesService().configuredModel = _cloudFallbackModel;
+      }
+    });
+    // React to Ollama Hub start/stop and agent-arena model changes.
+    _gatewaySub = GatewayService().stateStream.listen((gwState) {
+      if (!mounted) return;
+
+      // If agent arena (or any other writer) changed prefs.configuredModel,
+      // sync it to the UI — but only if Ollama is running for ollama/ models.
+      final prefsModel = PreferencesService().configuredModel;
+      if (prefsModel != null && prefsModel.isNotEmpty &&
+          prefsModel != _selectedModel) {
+        final isOllama = prefsModel.startsWith('ollama/');
+        if (!isOllama || gwState.isOllamaRunning) {
+          setState(() => _selectedModel = prefsModel);
+        }
+      }
+
+      if (!gwState.isOllamaRunning) {
+        // Ollama stopped or crashed — remove hub entries and fall back to cloud.
+        final wasOnOllama = _selectedModel.startsWith('ollama/');
+        setState(() {
+          _availableModels.removeWhere((m) => m.startsWith('ollama/'));
+          if (wasOnOllama) {
+            _selectedModel = _cloudFallbackModel;
+            PreferencesService().configuredModel = _cloudFallbackModel;
+          }
+        });
+        return;
+      }
+
+      // Ollama running — merge hub models into dropdown.
+      if (gwState.ollamaHubModels.isNotEmpty) {
+        setState(() {
+          _availableModels.removeWhere((m) => m.startsWith('ollama/'));
+          _availableModels.addAll(
+            gwState.ollamaHubModels.map((m) => 'ollama/$m'),
+          );
+        });
       }
     });
     _initVoiceParams();
@@ -321,12 +365,35 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       setState(() {
         _agentName = prefs.agentName;
         _selectedAvatar = prefs.selectedAvatar;
-        // Load the user's configured model (from setup or settings)
-        // Accepts local-llm/... IDs which are not in the static cloud list
+
+        // Derive the cloud fallback from the onboarding-chosen provider.
+        final provider = prefs.apiProvider;
+        if (provider != null && provider.isNotEmpty &&
+            provider != 'ollama' && !provider.startsWith('local')) {
+          _cloudFallbackModel = GatewayService().getModelForProvider(provider);
+        }
+
+        // Seed any already-synced Ollama Hub models from current gateway state.
+        // The stateStream listener only fires on NEW events; at open time we must
+        // read the current snapshot so the dropdown is populated immediately.
+        final gwState = GatewayService().state;
+        if (gwState.ollamaHubModels.isNotEmpty) {
+          _availableModels.removeWhere((m) => m.startsWith('ollama/'));
+          _availableModels.addAll(gwState.ollamaHubModels.map((m) => 'ollama/$m'));
+        }
+
+        // Load the user's configured model (from setup or settings).
         final configured = prefs.configuredModel;
         if (configured != null && configured.isNotEmpty) {
-          if (_availableModels.contains(configured) || configured.startsWith('local-llm/')) {
+          final ollamaOk = gwState.isOllamaRunning;
+          final isOllama = configured.startsWith('ollama/');
+          final isLocal = configured.startsWith('local-llm/');
+          if (_availableModels.contains(configured) || isLocal ||
+              (isOllama && ollamaOk)) {
             _selectedModel = configured;
+          } else if (isOllama && !ollamaOk) {
+            // Ollama not running — don't restore a stale ollama/ model.
+            _selectedModel = _cloudFallbackModel;
           }
         }
       });
@@ -952,11 +1019,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         Text(
                           _selectedModel.startsWith('local-llm/')
                             ? 'LOCAL · ON-DEVICE'
-                            : _selectedModel.split('/').last.toUpperCase(),
+                            : _selectedModel.startsWith('ollama/')
+                              ? 'LOCAL · HUB'
+                              : _selectedModel.split('/').last.toUpperCase(),
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
                               ? const Color(0xFF00E5AA)
-                              : Colors.white.withValues(alpha: 0.4),
+                              : _selectedModel.startsWith('ollama/')
+                                ? const Color(0xFF00C8FF)
+                                : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.0,
@@ -1250,7 +1321,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         ));
       } else if (value.toString().startsWith('model:')) {
         final model = value.toString().substring(6);
-        setState(() => _selectedModel = model);
+        setState(() {
+          _selectedModel = model;
+          // Track cloud models as fallback so local-model stops have somewhere to return.
+          if (!model.startsWith('local-llm/') && !model.startsWith('ollama/')) {
+            _cloudFallbackModel = model;
+          }
+        });
         PreferencesService().configuredModel = model;
         // Persist config instantly. For cloud models a reload is NOT needed —
         // the gateway reads agents.defaults.model.primary on each chat.send.
@@ -1281,6 +1358,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   void dispose() {
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
+    _gatewaySub?.cancel();
     _glowController.dispose();
     _tts.stop();
     _speechToText.stop();
@@ -1502,11 +1580,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         Text(
                           _selectedModel.startsWith('local-llm/')
                             ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
-                            : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
+                            : _selectedModel.startsWith('ollama/')
+                              ? '${_selectedAvatar.split('.').first.toUpperCase()} · LOCAL HUB'
+                              : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
                               ? (_localLlmState.status == LocalLlmStatus.starting ? Colors.amber : const Color(0xFF00E5AA))
-                              : Colors.white.withValues(alpha: 0.5),
+                              : _selectedModel.startsWith('ollama/')
+                                ? const Color(0xFF00C8FF)
+                                : Colors.white.withValues(alpha: 0.5),
                             fontSize: 8,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.8,

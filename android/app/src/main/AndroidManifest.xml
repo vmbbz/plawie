@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
     <application
         android:label="Plawie"
@@ -98,6 +99,7 @@
     </application>
 
     <queries>
+        <package android:name="com.termux" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

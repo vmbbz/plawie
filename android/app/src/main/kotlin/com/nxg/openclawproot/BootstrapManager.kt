@@ -1329,13 +1329,87 @@ os.networkInterfaces = () => ({});
         }
     }
 
-    private fun checkOpenClawInProot(): Boolean {
-        return try {
-            val pm = ProcessManager(filesDir, nativeLibDir)
-            val output = pm.runInProotSync("command -v openclaw")
-            output.trim().isNotEmpty()
-        } catch (e: Exception) {
-            false
+    fun installOllama(sourcePath: String) {
+        val dest = File("$rootfsDir/usr/local/bin/ollama")
+        val source = File(sourcePath)
+        if (!source.exists()) {
+            throw RuntimeException("Source download missing: $sourcePath")
         }
+        dest.parentFile?.mkdirs()
+
+        try {
+            // Handle .tgz, .zst extraction or direct binary copy
+            val isZstdFile = sourcePath.endsWith(".zst") || isZstd(source)
+            val isGzipFile = sourcePath.endsWith(".tgz") || sourcePath.endsWith(".tar.gz") || isGzip(source)
+
+            if (isZstdFile || isGzipFile) {
+                FileInputStream(source).use { fis ->
+                    val bis = java.io.BufferedInputStream(fis)
+                    val decompressor: java.io.InputStream = if (isZstdFile) {
+                        org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream(bis)
+                    } else {
+                        java.util.zip.GZIPInputStream(bis)
+                    }
+
+                    org.apache.commons.compress.archivers.tar.TarArchiveInputStream(decompressor).use { tis ->
+                        var entry = tis.nextEntry
+                        var found = false
+                        while (entry != null) {
+                            // Match both "bin/ollama" and just "ollama" in the archive
+                            if (entry.name == "bin/ollama" || entry.name == "ollama" || entry.name.endsWith("/ollama")) {
+                                if (!entry.isDirectory) {
+                                    FileOutputStream(dest).use { fos ->
+                                        val buf = ByteArray(65536)
+                                        var len: Int
+                                        while (tis.read(buf).also { len = it } != -1) {
+                                            fos.write(buf, 0, len)
+                                        }
+                                    }
+                                    found = true
+                                    break
+                                }
+                            }
+                            entry = tis.nextEntry
+                        }
+                        if (!found) throw RuntimeException("Ollama binary not found in archive")
+                    }
+                }
+            } else {
+                source.copyTo(dest, overwrite = true)
+            }
+
+            dest.setExecutable(true, false)
+            dest.setReadable(true, false)
+        } catch (e: Exception) {
+            throw RuntimeException("Installer failed: ${e.message}")
+        } finally {
+            try { source.delete() } catch (_: Exception) {}
+        }
+    }
+
+    private fun isGzip(file: File): Boolean {
+        return try {
+            FileInputStream(file).use { fis ->
+                val b1 = fis.read()
+                val b2 = fis.read()
+                b1 == 0x1f && b2 == 0x8b
+            }
+        } catch (e: Exception) { false }
+    }
+
+    private fun isZstd(file: File): Boolean {
+        return try {
+            FileInputStream(file).use { fis ->
+                val b = ByteArray(4)
+                fis.read(b)
+                // Zstd magic: 0x28B52FFD
+                b[0].toUByte().toInt() == 0x28 && b[1].toUByte().toInt() == 0xb5 &&
+                b[2].toUByte().toInt() == 0x2f && b[3].toUByte().toInt() == 0xfd
+            }
+        } catch (e: Exception) { false }
+    }
+
+    fun isOllamaInstalled(): Boolean {
+        return File("$rootfsDir/usr/local/bin/ollama").exists()
     }
 }

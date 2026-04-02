@@ -15,6 +15,13 @@ class GatewayState {
   final List<Map<String, dynamic>>? activeSkills;
   final List<String>? capabilities;
   final bool isWebsocketConnected;
+  /// Ollama Hub model names that were successfully synced in the last sync run.
+  /// Each entry is the raw Ollama name (e.g. "qwen2-5-0-5b-instruct-q4-k-m:latest").
+  /// The chat screen prefixes these with "ollama/" for the model dropdown.
+  final List<String> ollamaHubModels;
+  /// True when the Ollama server is confirmed reachable at :11434.
+  /// Cleared to false when Ollama is stopped or crashes.
+  final bool isOllamaRunning;
 
   const GatewayState({
     this.status = GatewayStatus.stopped,
@@ -26,6 +33,8 @@ class GatewayState {
     this.activeSkills,
     this.capabilities,
     this.isWebsocketConnected = false,
+    this.ollamaHubModels = const [],
+    this.isOllamaRunning = false,
   });
 
   GatewayState copyWith({
@@ -44,6 +53,8 @@ class GatewayState {
     List<String>? capabilities,
     bool clearCapabilities = false,
     bool? isWebsocketConnected,
+    List<String>? ollamaHubModels,
+    bool? isOllamaRunning,
   }) {
     return GatewayState(
       status: status ?? this.status,
@@ -55,6 +66,8 @@ class GatewayState {
       activeSkills: clearActiveSkills ? null : (activeSkills ?? this.activeSkills),
       capabilities: clearCapabilities ? null : (capabilities ?? this.capabilities),
       isWebsocketConnected: isWebsocketConnected ?? this.isWebsocketConnected,
+      ollamaHubModels: ollamaHubModels ?? this.ollamaHubModels,
+      isOllamaRunning: isOllamaRunning ?? this.isOllamaRunning,
     );
   }
 
