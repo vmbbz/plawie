@@ -525,7 +525,26 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _sectionLabel('PREMIUM AGENT SERVICES'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _sectionLabel('PREMIUM AGENT SERVICES'),
+                    if (gatewayState.status == GatewayStatus.running)
+                      GestureDetector(
+                        onTap: () {
+                          context.read<GatewayProvider>().refreshRpcDiscovery();
+                          _loadOfflineInstalled();
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
+                            const SizedBox(width: 4),
+                            Text('REFRESH', style: TextStyle(fontSize: 10, letterSpacing: 1.2, color: AppColors.statusGreen.withValues(alpha: 0.85))),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -1031,7 +1050,31 @@ class _ToolsTabState extends State<_ToolsTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _sectionLabel('ACTIVE GATEWAY TOOLS'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _sectionLabel('ACTIVE GATEWAY TOOLS'),
+                        if (!isOffline)
+                          GestureDetector(
+                            onTap: () {
+                              context.read<GatewayProvider>().refreshRpcDiscovery();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Refreshing gateway tools…'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
+                                const SizedBox(width: 4),
+                                Text('REFRESH', style: TextStyle(fontSize: 10, letterSpacing: 1.2, color: AppColors.statusGreen.withValues(alpha: 0.85))),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       'Tools enabled in your running OpenClaw instance',
