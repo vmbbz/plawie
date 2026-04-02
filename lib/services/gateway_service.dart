@@ -78,9 +78,19 @@ class GatewayService {
 
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
-        // (savedUrl should be retrieved here if needed, but prefs.init already happened)
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
+
+      // Fix the config on disk (removes stale keys, ensures required fields),
+      // then reload so the running gateway picks up the clean config.
+      try {
+        await _configureGateway();
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+          'openclaw reload 2>/dev/null || true',
+          timeout: 5,
+        );
+      } catch (_) {}
 
       _subscribeLogs();
       _startHealthCheck();
@@ -179,10 +189,11 @@ class GatewayService {
     });
   }
 
-  /// Helper to get the host-side path to the openclaw config file
+  /// Helper to get the host-side path to the openclaw config file.
+  /// Must match the PRoot ubuntu rootfs: $filesDir/rootfs/ubuntu/root/...
   Future<String> _openClawConfigPath() async {
     final filesDir = await NativeBridge.getFilesDir();
-    return '$filesDir/rootfs/root/.openclaw/openclaw.json';
+    return '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
   /// Direct Dart-native config read/write (bypasses proot overhead)
@@ -243,45 +254,60 @@ class GatewayService {
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
-    // Ollama Default Provider (Disabled by default if no baseUrl)
+    // Ollama Default Provider — always ensure models array is present.
     config['models'] ??= {};
     config['models']['providers'] ??= {};
-    config['models']['providers']['ollama'] ??= {
-      'baseUrl': 'http://127.0.0.1:11434',
-      'apiKey': 'ollama-local',
-      'api': 'ollama',
-      'models': [
-        {'id': 'qwen2.5:0.5b', 'name': 'Qwen 2.5 0.5B (Light)'},
-        {'id': 'llama3.2:1b', 'name': 'Llama 3.2 1B (Balanced)'},
-      ]
-    };
+    config['models']['providers']['ollama'] ??= <String, dynamic>{};
+    final ollama = config['models']['providers']['ollama'] as Map<String, dynamic>;
+    ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
+    ollama['apiKey'] ??= 'ollama-local';
+    ollama['api'] ??= 'ollama';
+    // Schema requires models to always be an array. Fix any existing entry missing it.
+    ollama['models'] ??= <Map<String, dynamic>>[];
+
+    // Remove unrecognized key written by an older build — OpenClaw schema rejects it.
+    final agentsDefaults = config['agents']?['defaults'];
+    if (agentsDefaults is Map) {
+      agentsDefaults.remove('provider');
+    }
 
     await _writeConfig(config);
   }
 
   /// Register Ollama as the gateway provider and optionally set it as primary.
+  ///
+  /// [syncedModels] — list of Ollama model names (e.g. "qwen2-5-0-5b:latest")
+  /// that were successfully synced. Written to openclaw.json so the gateway
+  /// exposes them on /v1/models. Pass empty list to skip updating the model list.
   Future<void> configureOllama({
     String baseUrl = 'http://127.0.0.1:11434',
     String? primaryModel,
     bool setAsPrimary = true,
+    List<String> syncedModels = const [],
   }) async {
     final config = await _readConfig();
     config['models'] ??= {};
     config['models']['providers'] ??= {};
-    config['models']['providers']['ollama'] = {
+    final ollamaConfig = <String, dynamic>{
       'baseUrl': baseUrl,
       'apiKey': 'ollama-local',
       'api': 'ollama',
+      // Schema requires models to always be an array (never undefined).
+      'models': syncedModels.map((n) => {'id': n, 'name': n}).toList(),
     };
 
-    if (setAsPrimary) {
+    config['models']['providers']['ollama'] = ollamaConfig;
+
+    if (setAsPrimary && primaryModel != null) {
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
-      config['agents']['defaults']['provider'] = 'ollama';
-      if (primaryModel != null) {
-        config['agents']['defaults']['model'] ??= {};
-        config['agents']['defaults']['model']['primary'] = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
-      }
+      config['agents']['defaults']['model'] ??= {};
+      final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
+      config['agents']['defaults']['model']['primary'] = fullModel;
+      // Persist to Flutter prefs so the chat screen restores it on next open.
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.configuredModel = fullModel;
     }
 
     await _writeConfig(config);
@@ -314,11 +340,12 @@ class GatewayService {
 
   Future<bool> startInternalOllama() async {
     final success = await NativeBridge.startOllama();
-    if (success) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[INFO] Internal Ollama server started.'],
-      ));
-    }
+    _updateState(_state.copyWith(
+      isOllamaRunning: success,
+      logs: [..._state.logs, success
+          ? '[INFO] Internal Ollama server started.'
+          : '[WARN] Ollama start returned failure.'],
+    ));
     return success;
   }
 
@@ -341,7 +368,7 @@ class GatewayService {
 
   Future<void> syncLocalModelsWithOllama() async {
     final catalog = LocalLlmService().catalog;
-    
+
     // Safety check: is Ollama actually reachable?
     if (!await isInternalOllamaRunning()) {
       _updateState(_state.copyWith(
@@ -350,24 +377,46 @@ class GatewayService {
       return;
     }
 
+    // Log Ollama version for diagnostics.
+    final version = await getOllamaVersion();
+    if (version != null) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[INFO] Ollama version: $version'],
+      ));
+    }
+
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[INFO] Scanning for local GGUF models...'],
     ));
 
+    // Pre-fetch registered models to skip re-hashing on every startup.
+    final registered = await _getRegisteredOllamaModels();
+
     int synced = 0;
+    final syncedModelNames = <String>[]; // collect for gateway config + state emit
+
     for (final model in catalog) {
       if (await LocalLlmService().isModelDownloaded(model)) {
+        final ollamaName = _toOllamaModelName(model.id);
+        if (registered.contains(ollamaName)) {
+          synced++;
+          syncedModelNames.add(ollamaName);
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[INFO] ${model.id} already in Hub — skipping.'],
+          ));
+          continue;
+        }
         try {
-          final success = await _createOllamaModelFromGguf(model.id, model.prootModelPath);
+          final success = await _createOllamaModelFromGguf(ollamaName, model.prootModelPath);
           if (success) {
             synced++;
+            syncedModelNames.add(ollamaName);
             _updateState(_state.copyWith(
-              logs: [..._state.logs, '[INFO] Registered ${model.id} with Ollama Hub.'],
+              logs: [..._state.logs, '[INFO] Registered ${model.id} as $ollamaName.'],
             ));
           } else {
-            // Error is already logged inside _createOllamaModelFromGguf
             _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] Hub rejected ${model.id}.'],
+              logs: [..._state.logs, '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'],
             ));
           }
         } catch (e) {
@@ -381,60 +430,174 @@ class GatewayService {
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[INFO] Hub Sync Done. $synced models available.'],
     ));
+
+    // Write synced models into openclaw.json so the gateway exposes them on
+    // /v1/models, and emit to state so the chat dropdown can surface them.
+    if (syncedModelNames.isNotEmpty) {
+      await configureOllama(syncedModels: syncedModelNames, setAsPrimary: false);
+      _updateState(_state.copyWith(
+        isOllamaRunning: true,
+        ollamaHubModels: syncedModelNames,
+      ));
+    }
   }
 
-  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath) async {
-    // Robust Modelfile: Quoted path to handle special characters and mandatory newline
-    final modelfile = 'FROM "$ggufPath"\n';
-    
-    // Security-First: Loopback connection with retry loop to allow server initialization
-    int maxAttempts = 5;
-    int delayMs = 1500;
-    
-    for (int i = 0; i < maxAttempts; i++) {
-      try {
-        final response = await http.post(
-          Uri.parse('http://127.0.0.1:11434/api/create'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'name': name,
-            'modelfile': modelfile,
-            'stream': false,
-          }),
-        ).timeout(const Duration(seconds: 45)); // Large GGUFs need time to manifest
-
-        if (response.statusCode != 200) {
-          if (i < maxAttempts - 1) {
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[INFO] Hub busy (${response.statusCode})... retrying in ${delayMs}ms'],
-            ));
-            await Future.delayed(Duration(milliseconds: delayMs));
-            delayMs += 1000;
-            continue;
-          }
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[DEBUG] Ollama creation failed (${response.statusCode}): ${response.body}'],
-          ));
-          return false;
-        }
-        return true;
-      } catch (e) {
-        if (i < maxAttempts - 1) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[INFO] Hub is initializing... retrying in ${delayMs}ms'],
-          ));
-          await Future.delayed(Duration(milliseconds: delayMs));
-          delayMs += 1000; // Exponential backoff
-          continue;
-        }
-        
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[DEBUG] Ollama API error after $maxAttempts attempts: $e'],
-        ));
-        return false;
-      }
+  /// Converts a catalog model ID to a valid Ollama model name.
+  ///
+  /// Ollama validates names via round-trip: ParseNameBestEffort(name).String()
+  /// must equal the original input. Short names like "model:latest" fail because
+  /// Ollama fills in the registry prefix, making String() return
+  /// "registry.ollama.ai/library/model:latest" which doesn't match "model:latest".
+  ///
+  /// Strategy: split on the quantization suffix (e.g. "-q4_k_m") to produce
+  /// a proper model:tag pair. Dots are preserved because Ollama natively uses
+  /// them (e.g. qwen2.5:7b). Underscores are kept in the tag (valid there).
+  ///
+  /// Examples:
+  ///   qwen2.5-0.5b-instruct-q4_k_m  →  qwen2.5-0.5b-instruct:q4_k_m
+  ///   qwen2.5-1.5b-instruct-q4_k_m  →  qwen2.5-1.5b-instruct:q4_k_m
+  String _toOllamaModelName(String catalogId) {
+    final id = catalogId.toLowerCase();
+    // Find the quantization suffix: last occurrence of "-q<digit>" pattern.
+    final qMatch = RegExp(r'-q(\d)').allMatches(id).lastOrNull;
+    if (qMatch != null) {
+      final modelPart = id.substring(0, qMatch.start);
+      final tagPart = id.substring(qMatch.start + 1); // strip leading '-'
+      return '$modelPart:$tagPart';
     }
-    return false;
+    // Fallback: no quantization marker found — use id as model name, local as tag.
+    return '$id:local';
+  }
+
+  /// Returns the set of model names already registered in the running Ollama instance.
+  Future<Set<String>> _getRegisteredOllamaModels() async {
+    try {
+      final response = await http
+          .get(Uri.parse('http://127.0.0.1:11434/api/tags'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final models = data['models'] as List? ?? [];
+        return models.map((m) => m['name'] as String).toSet();
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  /// Returns the Ollama server version string, or null on failure.
+  Future<String?> getOllamaVersion() async {
+    try {
+      final r = await http
+          .get(Uri.parse('http://127.0.0.1:11434/api/version'))
+          .timeout(const Duration(seconds: 3));
+      if (r.statusCode == 200) {
+        return (jsonDecode(r.body) as Map<String, dynamic>)['version'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Removes a catalog model from the Ollama Hub registry.
+  /// Safe to call even if Ollama is offline (silently no-ops).
+  /// Wire this up in deleteModel() when model deletion is implemented.
+  Future<void> deregisterOllamaModel(String catalogId) async {
+    if (!await isInternalOllamaRunning()) return;
+    final ollamaName = _toOllamaModelName(catalogId);
+    try {
+      await http.delete(
+        Uri.parse('http://127.0.0.1:11434/api/delete'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'model': ollamaName}),
+      ).timeout(const Duration(seconds: 10));
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[INFO] Deregistered $ollamaName from Hub.'],
+      ));
+    } catch (e) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[WARN] Could not deregister $ollamaName: $e'],
+      ));
+    }
+  }
+
+  /// Searches the Ollama model registry for available models.
+  /// Returns a list of model metadata maps with keys: name, description, pulls, tags.
+  Future<List<Map<String, dynamic>>> fetchOllamaRegistryModels(String query) async {
+    try {
+      final uri = Uri.parse('https://ollama.com/api/search').replace(
+        queryParameters: {'q': query, 'sort': 'popular'},
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final list = jsonDecode(response.body);
+        if (list is List) {
+          return list.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Register a local GGUF file with the integrated Ollama Hub.
+  ///
+  /// APPROACH: Write a minimal Modelfile to the PRoot filesystem from Dart, then run
+  /// `ollama create` CLI inside PRoot pointing at that file. This avoids:
+  ///   - HTTP API path resolution failure (PRoot ptrace doesn't translate HTTP socket paths)
+  ///   - /dev/stdin unreliability in non-interactive PRoot (heredoc stdin gets no data)
+  ///
+  /// The Modelfile is written to $filesDir/rootfs/ubuntu/tmp/ (Android host FS), which
+  /// appears as /tmp/ inside PRoot — accessible by the Ollama CLI process.
+  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath) async {
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[HUB] Registering $name...'],
+    ));
+    File? tempModelfile;
+    try {
+      // Write Modelfile to the rootfs /tmp directory.
+      // Dart writes to the Android host path; PRoot sees it at /tmp/oc_mf.
+      final filesDir = await NativeBridge.getFilesDir();
+      final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
+      tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
+      await tempModelfile.writeAsString('FROM $ggufPath\n');
+
+      final prootModelfilePath = '/tmp/oc_mf_$safeName';
+
+      // Verify the GGUF is visible from inside PRoot before calling ollama.
+      // Helps confirm the bind mount is working; emits a clear log if not.
+      final checkResult = await NativeBridge.runInProot(
+        'test -f "$ggufPath" && echo "GGUF_OK" || echo "GGUF_MISSING: $ggufPath"',
+        timeout: 10,
+      ).catchError((_) => 'CHECK_FAILED');
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[DEBUG] model file check: ${checkResult.trim()}'],
+      ));
+
+      final result = await NativeBridge.runInProot(
+        'OLLAMA_HOST=127.0.0.1:11434 ollama create "$name" -f "$prootModelfilePath"',
+        timeout: 180,
+      );
+
+      final lower = result.toLowerCase();
+      final success = lower.contains('success') && !lower.contains('error:');
+      if (success) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[HUB] $name — success'],
+        ));
+      } else {
+        final trimmed = result.trim().split('\n').take(8).join(' | ');
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[DEBUG] ollama create output: $trimmed'],
+        ));
+      }
+      return success;
+    } catch (e) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[DEBUG] ollama create failed: $e'],
+      ));
+      return false;
+    } finally {
+      // Clean up temp Modelfile regardless of outcome.
+      try { await tempModelfile?.delete(); } catch (_) {}
+    }
   }
 
   /// Pull a model from the Ollama library into the integrated hub.
@@ -478,7 +641,14 @@ class GatewayService {
   }
 
   Future<bool> stopInternalOllama() async {
-    return await NativeBridge.stopOllama();
+    final success = await NativeBridge.stopOllama();
+    // Clear hub models from state so the chat dropdown removes ollama/ entries.
+    _updateState(_state.copyWith(
+      isOllamaRunning: false,
+      ollamaHubModels: const [],
+      logs: [..._state.logs, '[INFO] Ollama Hub stopped.'],
+    ));
+    return success;
   }
 
   Future<void> installInternalOllama({Function(double)? onProgress}) async {
@@ -644,7 +814,7 @@ class GatewayService {
     // 2. Update agent auth-profiles.json
     try {
       final filesDir = await NativeBridge.getFilesDir();
-      final authPath = '$filesDir/rootfs/root/.openclaw/agents/main/agent/auth-profiles.json';
+      final authPath = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json';
       final authFile = File(authPath);
       Map<String, dynamic> auth = {};
       
@@ -1048,6 +1218,15 @@ class GatewayService {
     // Local-llm: bypass the gateway entirely — run inference via fllama NDK.
     if (model.startsWith('local-llm')) {
       yield* LocalLlmService().chat(conversationHistory ?? [], message);
+      return;
+    }
+
+    // Ollama Hub: route via HTTP /v1/chat/completions which passes the model field.
+    // The WS chat.send path has no model override — the gateway uses its own
+    // in-memory default, ignoring the selected ollama/ model entirely.
+    if (model.startsWith('ollama/')) {
+      yield* sendMessageHttp(message, model: model, token: token,
+          conversationHistory: conversationHistory);
       return;
     }
 

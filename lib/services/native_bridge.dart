@@ -41,8 +41,6 @@ class NativeBridge {
     return await _channel.invokeMethod('extractRootfs', {'tarPath': tarPath});
   }
 
-  // NOTE: No isolate needed — Kotlin already dispatches runInProotSync
-  // inside a background Thread{}, so this call returns to Dart instantly.
   static Future<String> runInProot(String command, {int timeout = 900}) async {
     return await _channel.invokeMethod('runInProot', {'command': command, 'timeout': timeout});
   }
@@ -159,7 +157,6 @@ class NativeBridge {
     return await _channel.invokeMethod('stopScreenCapture');
   }
 
-  // Device info methods for node registration
   static Future<String> getDeviceId() async {
     return await _channel.invokeMethod('getDeviceId');
   }
@@ -176,33 +173,49 @@ class NativeBridge {
     return await _channel.invokeMethod('getAppVersion');
   }
 
-  // ── Wake Word "Plawie" — HotwordService bridge ───────────────────────────
+  // ── Integrated Ollama Management ──────────────────────────────────────────
+
+  static Future<bool> isOllamaInstalled() async {
+    return await _channel.invokeMethod<bool>('isOllamaInstalled') ?? false;
+  }
+
+  static Future<bool> isOllamaRunning() async {
+    return await _channel.invokeMethod<bool>('isOllamaRunning') ?? false;
+  }
+
+  static Future<bool> startOllama() async {
+    return await _channel.invokeMethod<bool>('startOllama') ?? false;
+  }
+
+  static Future<bool> stopOllama() async {
+    return await _channel.invokeMethod<bool>('stopOllama') ?? false;
+  }
+
+  static Future<bool> installOllama(String tempPath) async {
+    return await _channel.invokeMethod<bool>('installOllama', {'tempPath': tempPath}) ?? false;
+  }
+
+  // ── Wake Word "Plawie" ─────────────────────────────────────────────────────
 
   static const _hotwordChannel = MethodChannel('com.nxg.openclawproot/hotword');
   static const _hotwordEventChannel = EventChannel('com.nxg.openclawproot/hotword_events');
 
-  /// Start the HotwordService foreground service (begins mic listening).
   static Future<bool> startHotword() async {
     return await _hotwordChannel.invokeMethod<bool>('startHotword') ?? false;
   }
 
-  /// Stop the HotwordService and release the mic.
   static Future<bool> stopHotword() async {
     return await _hotwordChannel.invokeMethod<bool>('stopHotword') ?? false;
   }
 
-  /// Set the hotword mode: "off" | "foreground" | "always"
   static Future<bool> setHotwordMode(String mode) async {
     return await _hotwordChannel.invokeMethod<bool>('setHotwordMode', {'mode': mode}) ?? false;
   }
 
-  /// Returns true if HotwordService is currently running.
   static Future<bool> isHotwordRunning() async {
     return await _hotwordChannel.invokeMethod<bool>('isHotwordRunning') ?? false;
   }
 
-  /// Stream of wake word events. Emits "wake_word_detected" each time
-  /// the wake word "Plawie" is recognised.
   static Stream<String> get hotwordEvents => _hotwordEventChannel
       .receiveBroadcastStream()
       .where((e) => e != null)

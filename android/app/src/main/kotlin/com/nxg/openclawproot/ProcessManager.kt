@@ -105,6 +105,14 @@ class ProcessManager(
             "--bind=$rootfsDir:$rootfsDir",
         )
 
+        // Model directory bind: models are stored at $filesDir/rootfs/root/.openclaw/models
+        // (outside the ubuntu rootfs at $filesDir/rootfs/ubuntu/) so they need an explicit
+        // bind mount to be visible at /root/.openclaw/models inside PRoot. Without this,
+        // Ollama's HTTP create API returns "invalid model name" (misleading error for file not found).
+        val modelsHostDir = java.io.File("$filesDir/rootfs/root/.openclaw/models")
+        modelsHostDir.mkdirs() // ensure host dir exists before binding
+        flags.add("--bind=${modelsHostDir.absolutePath}:/root/.openclaw/models")
+
         // GPU and Hardware Acceleration bindings (conditional — only bind if device exists)
         for (path in listOf("/dev/kgsl-3d0", "/dev/mali0", "/dev/dri")) {
             if (java.io.File(path).exists()) flags.add("--bind=$path:$path")
