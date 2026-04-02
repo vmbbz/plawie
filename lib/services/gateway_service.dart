@@ -57,8 +57,25 @@ class GatewayService {
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
+    // Probe Ollama on startup — it may already be running from a previous session.
+    // Do this before _attachOrStart so isOllamaRunning is populated when chat opens.
+    unawaited(_probeOllamaOnInit());
     // 9a9614a Optimization: Do not block splash screen during auto-start
     unawaited(_attachOrStart(autoStart: prefs.autoStartGateway));
+  }
+
+  /// Called once at init. If Ollama is already running (e.g. survived app restart),
+  /// emit the correct state and re-sync models so the chat dropdown is populated.
+  Future<void> _probeOllamaOnInit() async {
+    try {
+      final running = await NativeBridge.isOllamaRunning();
+      if (!running) return;
+      _updateState(_state.copyWith(
+        isOllamaRunning: true,
+        logs: [..._state.logs, '[INFO] Ollama Hub already running — syncing models...'],
+      ));
+      await syncLocalModelsWithOllama();
+    } catch (_) {}
   }
 
   /// Unified entry point for starting or attaching to the gateway.
@@ -343,10 +360,34 @@ class GatewayService {
     _updateState(_state.copyWith(
       isOllamaRunning: success,
       logs: [..._state.logs, success
-          ? '[INFO] Internal Ollama server started.'
+          ? '[INFO] Ollama Hub starting — waiting for ready signal...'
           : '[WARN] Ollama start returned failure.'],
     ));
+    if (success) {
+      // Poll health in the background; auto-sync once Ollama responds.
+      unawaited(_waitForOllamaHealthThenSync());
+    }
     return success;
+  }
+
+  /// Polls :11434 every 3 s for up to 30 s, then triggers model sync.
+  /// Runs fire-and-forget after startInternalOllama().
+  Future<void> _waitForOllamaHealthThenSync() async {
+    const maxAttempts = 10;
+    for (int i = 0; i < maxAttempts; i++) {
+      await Future.delayed(const Duration(seconds: 3));
+      if (await checkOllamaHealth()) {
+        _updateState(_state.copyWith(
+          isOllamaRunning: true,
+          logs: [..._state.logs, '[INFO] Ollama Hub ready — auto-syncing models...'],
+        ));
+        await syncLocalModelsWithOllama();
+        return;
+      }
+    }
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[WARN] Ollama Hub did not respond after 30 s — check logs.'],
+    ));
   }
 
   /// Extracts diagnostic logs from the integrated Ollama hub.
@@ -431,10 +472,22 @@ class GatewayService {
       logs: [..._state.logs, '[INFO] Hub Sync Done. $synced models available.'],
     ));
 
-    // Write synced models into openclaw.json so the gateway exposes them on
-    // /v1/models, and emit to state so the chat dropdown can surface them.
+    // Write synced models into openclaw.json and emit to state.
+    // Auto-select the first synced model only if the user isn't already on a
+    // local model — avoids silently hijacking an explicit cloud preference.
     if (syncedModelNames.isNotEmpty) {
-      await configureOllama(syncedModels: syncedModelNames, setAsPrimary: false);
+      final prefs = PreferencesService();
+      await prefs.init();
+      final currentModel = prefs.configuredModel ?? '';
+      final alreadyLocal = currentModel.startsWith('ollama/') ||
+          currentModel.startsWith('local-llm/');
+
+      await configureOllama(
+        syncedModels: syncedModelNames,
+        primaryModel: alreadyLocal ? null : syncedModelNames.first,
+        setAsPrimary: !alreadyLocal,
+      );
+
       _updateState(_state.copyWith(
         isOllamaRunning: true,
         ollamaHubModels: syncedModelNames,

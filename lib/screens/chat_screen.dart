@@ -1211,13 +1211,89 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
           )),
         ],
+        // ── LOCAL HUB section (Ollama models) ─────────────────────────────
+        ...() {
+          final hubModels = _availableModels
+              .where((m) => m.startsWith('ollama/'))
+              .toList();
+          if (hubModels.isEmpty) return <PopupMenuEntry<dynamic>>[];
+          return <PopupMenuEntry<dynamic>>[
+            const PopupMenuDivider(),
+            PopupMenuItem<dynamic>(
+              enabled: false,
+              height: 20,
+              child: Row(
+                children: [
+                  const Icon(Icons.lan_rounded, color: Color(0xFF00C8FF), size: 12),
+                  const SizedBox(width: 6),
+                  const Text('LOCAL HUB', style: TextStyle(color: Color(0xFF00C8FF), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+                ],
+              ),
+            ),
+            ...hubModels.map((model) {
+              final isSelected = model == _selectedModel;
+              final displayName = model.replaceFirst('ollama/', '');
+              return PopupMenuItem<dynamic>(
+                value: 'model:$model',
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(
+                      isSelected ? Icons.check_circle : Icons.lan_rounded,
+                      color: isSelected ? const Color(0xFF00C8FF) : Colors.white38,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            displayName,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.white70,
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'LOCAL · HUB',
+                            style: TextStyle(
+                              color: isSelected
+                                  ? const Color(0xFF00C8FF)
+                                  : Colors.white38,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ];
+        }(),
+        // ── CLOUD section ──────────────────────────────────────────────────
         const PopupMenuDivider(),
-        PopupMenuItem<void>(
+        PopupMenuItem<dynamic>(
           enabled: false,
           height: 20,
-          child: Text('CLOUD', style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+          child: Row(
+            children: [
+              const Icon(Icons.cloud_outlined, color: Colors.white38, size: 12),
+              const SizedBox(width: 6),
+              const Text('CLOUD', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+            ],
+          ),
         ),
-        ..._availableModels.map((model) => PopupMenuItem<String>(
+        ..._availableModels
+            .where((m) => !m.startsWith('ollama/'))
+            .map((model) => PopupMenuItem<String>(
           value: 'model:$model',
           height: 36,
           child: Row(
