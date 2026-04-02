@@ -99,9 +99,14 @@ class GatewayService {
       ));
 
       // Fix the config on disk (removes stale keys, ensures required fields),
-      // then reload so the running gateway picks up the clean config.
+      // then run openclaw doctor --fix as a belt-and-suspenders pass in case
+      // any keys survived our manual sanitisation, then reload.
       try {
         await _configureGateway();
+        await NativeBridge.runInProot(
+          'openclaw doctor --fix 2>/dev/null || true',
+          timeout: 10,
+        );
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
           'openclaw reload 2>/dev/null || true',
@@ -411,6 +416,34 @@ class GatewayService {
 
   Future<String> getOllamaLogs() => _getOllamaLogsInternal();
 
+  /// Removes Ollama registrations that belong to OUR GGUFs but use a stale
+  /// name format (e.g., dots replaced with dashes from a previous build).
+  /// Identified by stripping all punctuation and comparing the result.
+  Future<void> _cleanupStaleOllamaRegistrations(Set<String> canonicalNames) async {
+    final registered = await _getRegisteredOllamaModels();
+    for (final name in registered) {
+      if (canonicalNames.contains(name)) continue; // already canonical — keep
+      final stripped = name.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase();
+      final isOurs = canonicalNames.any(
+        (c) => c.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase() == stripped,
+      );
+      if (!isOurs) continue;
+      // Old-format registration for a model we own — delete it.
+      try {
+        await http
+            .delete(
+              Uri.parse('http://127.0.0.1:11434/api/delete'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'model': name}),
+            )
+            .timeout(const Duration(seconds: 10));
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[HUB] Removed stale registration: $name'],
+        ));
+      } catch (_) {}
+    }
+  }
+
   Future<void> syncLocalModelsWithOllama() async {
     final catalog = LocalLlmService().catalog;
 
@@ -433,6 +466,16 @@ class GatewayService {
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[INFO] Scanning for local GGUF models...'],
     ));
+
+    // Compute canonical names for all downloaded GGUFs, then clean up any
+    // old-format registrations (from previous builds with different naming).
+    final canonicalNames = <String>{};
+    for (final m in catalog) {
+      if (await LocalLlmService().isModelDownloaded(m)) {
+        canonicalNames.add(_toOllamaModelName(m.id));
+      }
+    }
+    await _cleanupStaleOllamaRegistrations(canonicalNames);
 
     // Pre-fetch registered models to skip re-hashing on every startup.
     final registered = await _getRegisteredOllamaModels();
@@ -1026,8 +1069,16 @@ class GatewayService {
 
     try {
       await NativeBridge.stopGateway();
-      _updateState(GatewayState(
+      // Use copyWith so Ollama Hub state (isOllamaRunning, ollamaHubModels) is
+      // preserved — the gateway stopping does NOT stop Ollama. Clearing these
+      // here would make the chat dropdown lose its LOCAL HUB entries.
+      _updateState(_state.copyWith(
         status: GatewayStatus.stopped,
+        isWebsocketConnected: false,
+        clearError: true,
+        clearStartedAt: true,
+        clearDashboardUrl: true,
+        clearDetailedHealth: true,
         logs: [..._state.logs, '[INFO] Gateway stopped'],
       ));
     } catch (e) {
@@ -1107,6 +1158,16 @@ class GatewayService {
             startedAt: _state.startedAt ?? DateTime.now(),
             logs: [..._state.logs, '[INFO] Gateway is healthy'],
           ));
+          // After gateway (re)start, re-probe Ollama in case it was already
+          // running when the gateway stopped (stop() no longer clears
+          // isOllamaRunning, but after a process restart we must re-confirm).
+          if (!_state.isOllamaRunning) {
+            unawaited(Future(() async {
+              if (await checkOllamaHealth()) {
+                unawaited(syncLocalModelsWithOllama());
+              }
+            }));
+          }
         }
 
         // ── 2. Single token retrieval (with timeout) ─────────────────────
@@ -1288,11 +1349,16 @@ class GatewayService {
       return;
     }
 
-    // Ollama Hub: route via HTTP /v1/chat/completions which passes the model field.
-    // The WS chat.send path has no model override — the gateway uses its own
-    // in-memory default, ignoring the selected ollama/ model entirely.
+    // Ollama Hub: route DIRECTLY to Ollama at :11434, bypassing the gateway
+    // agent loop entirely. The gateway's /v1/chat/completions endpoint runs
+    // full agent logic (tools schemas), which causes HTTP 400 on models that
+    // don't declare a tools template (e.g. qwen2.5-1.5b-instruct:q4_k_m).
+    // Direct call: no auth token, no tools, plain streaming chat.
     if (model.startsWith('ollama/')) {
-      yield* sendMessageHttp(message, model: model, token: token,
+      final ollamaModel = model.substring('ollama/'.length);
+      yield* sendMessageHttp(message,
+          model: ollamaModel,
+          directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
           conversationHistory: conversationHistory);
       return;
     }
