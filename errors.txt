@@ -1,0 +1,19 @@
+Analyzing chat_screen.dart...                                   
+
+   info - The import of 'package:vector_math/vector_math_64.dart' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/material.dart' - lib\screens\chat_screen.dart:8:8 - unnecessary_import
+   info - The imported package 'vector_math' isn't a dependency of the importing package - lib\screens\chat_screen.dart:8:8 - depend_on_referenced_packages
+warning - Unused import: '../main.dart' - lib\screens\chat_screen.dart:25:8 - unused_import
+warning - Unused import: 'avatar_forge_page.dart' - lib\screens\chat_screen.dart:26:8 - unused_import
+warning - The value of the field '_isReady' isn't used - lib\screens\chat_screen.dart:51:8 - unused_field
+   info - The private field _availableModels could be 'final' - lib\screens\chat_screen.dart:77:16 - prefer_final_fields
+warning - The value of the field '_dynamicAgents' isn't used - lib\screens\chat_screen.dart:85:19 - unused_field
+warning - The declaration '_nextAvatar' isn't referenced - lib\screens\chat_screen.dart:703:8 - unused_element
+warning - The declaration '_prevAvatar' isn't referenced - lib\screens\chat_screen.dart:716:8 - unused_element
+warning - The declaration '_nextModel' isn't referenced - lib\screens\chat_screen.dart:729:8 - unused_element
+warning - The declaration '_prevModel' isn't referenced - lib\screens\chat_screen.dart:738:8 - unused_element
+   info - Don't use 'BuildContext's across async gaps - lib\screens\chat_screen.dart:1207:29 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\screens\chat_screen.dart:1346:42 - use_build_context_synchronously
+   info - 'scale' is deprecated and shouldn't be used. Use scaleByVector3, scaleByVector4, or scaleByDouble instead - lib\screens\chat_screen.dart:1456:19 - deprecated_member_use
+warning - The declaration '_buildFloatingChip' isn't referenced - lib\screens\chat_screen.dart:1782:10 - unused_element
+
+15 issues found. (ran in 2.0s)

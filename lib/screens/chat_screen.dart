@@ -1419,9 +1419,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           final localModel = LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
           LocalLlmService().activateModel(localModel);
         } else {
-          // For cloud models, just update preferences. 
-          // Disconnect WS so next chat.send reconnects with the fresh config.
-          context.read<GatewayProvider>().disconnectWebSocket();
+          // For cloud/ollama models: persist to openclaw.json so the gateway
+          // session uses the correct model on next chat.send, then reconnect.
+          unawaited(GatewayService().persistModel(model));
+          GatewayService().disconnectWebSocket();
         }
         _addDiagnosticLog('Swapped and persisted AI model: $model');
       } else if (value.toString().startsWith('avatar:')) {

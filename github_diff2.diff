@@ -1,0 +1,245 @@
+commit 9fb122fcf594fe254d2ac52ce8425a3c513f567e
+Author: vchat-meme-blip <limeikenji@gmail.com>
+Date:   Sun Mar 29 05:17:06 2026 +0200
+
+    feat(local-llm): 8.8 tool-use / function calling via fllama
+    
+    Add multi-turn local tool dispatch loop to LocalLlmService.chat():
+    - _localTools: get_current_datetime (extensible)
+    - _dispatchLocalTool(): synchronous tool dispatcher
+    - _runChatTurn(): streams text deltas, accumulates tool_calls across
+      streaming chunks (fllama delta pattern), dispatches local tools on
+      finish_reason=tool_calls, then recurses with updated message list
+      (depth limit 3, OpenAI wire format tool_calls messages)
+    - chat() delegates to _runChatTurn(); stop() closes _activeChatController
+    - Remove stale gateway_state.dart import
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+diff --git a/lib/services/local_llm_service.dart b/lib/services/local_llm_service.dart
+index 5de5a43..b77a8f4 100644
+--- a/lib/services/local_llm_service.dart
++++ b/lib/services/local_llm_service.dart
+@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
+ import 'package:fllama/fllama.dart';
+ import 'native_bridge.dart';
+ import 'preferences_service.dart';
+-import '../models/gateway_state.dart';
+ 
+ // ---------------------------------------------------------------------------
+ // Model Catalog
+@@ -211,6 +210,7 @@ class LocalLlmService {
+   String? _activeMmprojPath;
+   int? _activeRequestId;
+   bool _isInferring = false;
++  StreamController<String>? _activeChatController;
+ 
+   Stream<LocalLlmState> get stateStream => _stateController.stream;
+   LocalLlmState get state => _state;
+@@ -304,6 +304,9 @@ class LocalLlmService {
+       fllamaCancelInference(_activeRequestId!);
+       _activeRequestId = null;
+     }
++    _activeChatController?.close();
++    _activeChatController = null;
++    _isInferring = false;
+     _activeModelPath = null;
+     _activeMmprojPath = null;
+     _updateState(_state.copyWith(
+@@ -370,6 +373,7 @@ class LocalLlmService {
+   }
+ 
+   /// Full chat with conversation history — used by GatewayService for local-llm routing.
++  /// Supports multi-turn local tool calls (get_current_datetime, etc.) with depth limit 3.
+   /// [history] is a list of {role, content} maps (OpenAI format).
+   Stream<String> chat(List<Map<String, dynamic>> history, String userMessage) {
+     final controller = StreamController<String>();
+@@ -378,11 +382,12 @@ class LocalLlmService {
+       controller.close();
+       return controller.stream;
+     }
+-    // Cancel any in-flight request before starting a new one.
+     if (_isInferring && _activeRequestId != null) {
+       fllamaCancelInference(_activeRequestId!);
+     }
+-    _isInferring = true;
++    _activeChatController?.close();
++    _activeChatController = controller;
++
+     final trimmed = _trimHistory(history, userMessage);
+     final messages = [
+       Message(Role.system,
+@@ -397,8 +402,65 @@ class LocalLlmService {
+         ),
+       Message(Role.user, userMessage),
+     ];
++    _runChatTurn(messages, controller);
++    return controller.stream;
++  }
++
++  /// Trims history to fit within the active context window.
++  /// Keeps the most recent messages — older ones are dropped first.
++  List<Map<String, dynamic>> _trimHistory(
++      List<Map<String, dynamic>> history, String newMessage) {
++    const avgCharsPerToken = 4;
++    // Reserve 1024 tokens for the response + 100 for system prompt overhead.
++    final budget = (_activeContextSize - 1024 - 100) * avgCharsPerToken;
++    var chars = newMessage.length;
++    final result = <Map<String, dynamic>>[];
++    for (final msg in history.reversed) {
++      chars += (msg['content'] as String? ?? '').length;
++      if (chars > budget) break;
++      result.insert(0, msg);
++    }
++    return result;
++  }
++
++  // --------------------------------------------------------------------------
++  // Tool-use (8.8)
++  // --------------------------------------------------------------------------
++
++  static final _localTools = [
++    Tool(
++      name: 'get_current_datetime',
++      jsonSchema: '{"type":"object","properties":{},"required":[]}',
++      description: 'Returns the current date and time on the device.',
++    ),
++  ];
++
++  String _dispatchLocalTool(String name, String argumentsJson) {
++    switch (name) {
++      case 'get_current_datetime':
++        return jsonEncode({'datetime': DateTime.now().toIso8601String()});
++      default:
++        return jsonEncode({'error': 'Unknown tool: $name'});
++    }
++  }
++
++  /// Runs one inference turn with local tools.  Streams text deltas to
++  /// [controller], then on completion checks for tool calls.  If the model
++  /// requested tool calls, dispatches them and recurses (depth-limited to 3).
++  Future<void> _runChatTurn(
++      List<Message> messages,
++      StreamController<String> controller,
++      {int depth = 0}) async {
++    if (depth > 3 || controller.isClosed) return;
++    _isInferring = true;
++
++    // Per-turn tool call accumulator (index → {name, arguments, id}).
++    final accToolCalls = <int, Map<String, String>>{};
++    String finishReason = '';
+     String lastResponse = '';
+-    fllamaInference(
++    final completer = Completer<void>();
++
++    await fllamaInference(
+       _buildInferenceRequest(OpenAiRequest(
+         maxTokens: 1024,
+         messages: messages,
+@@ -407,35 +469,89 @@ class LocalLlmService {
+         numGpuLayers: 99,
+         contextSize: _activeContextSize,
+         temperature: 0.7,
++        tools: _localTools,
++        toolChoice: ToolChoice.auto,
+       )),
+       (response, jsonString, done) {
++        // Stream text deltas as they arrive.
+         final delta = response.substring(lastResponse.length);
+         lastResponse = response;
+         if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
++
++        // Accumulate tool_calls from each streaming JSON chunk.
++        if (jsonString.isNotEmpty) {
++          try {
++            final raw = jsonDecode(jsonString);
++            final chunks = raw is List ? raw : [raw];
++            for (final c in chunks) {
++              if (c is! Map<String, dynamic>) continue;
++              final choices = c['choices'] as List<dynamic>? ?? [];
++              if (choices.isEmpty) continue;
++              final choice = choices.first as Map<String, dynamic>;
++              final reason = choice['finish_reason'] as String?;
++              if (reason != null && reason.isNotEmpty) finishReason = reason;
++              final deltaMap = choice['delta'] as Map<String, dynamic>? ?? {};
++              final tcList = deltaMap['tool_calls'] as List<dynamic>?;
++              if (tcList != null) {
++                for (final tc in tcList) {
++                  if (tc is! Map<String, dynamic>) continue;
++                  final idx = tc['index'] as int? ?? 0;
++                  accToolCalls.putIfAbsent(idx, () => {'name': '', 'arguments': '', 'id': ''});
++                  final fn = tc['function'] as Map<String, dynamic>? ?? {};
++                  if (fn['name'] is String && (fn['name'] as String).isNotEmpty) {
++                    accToolCalls[idx]!['name'] = fn['name'] as String;
++                  }
++                  if (fn['arguments'] is String) {
++                    accToolCalls[idx]!['arguments'] =
++                        accToolCalls[idx]!['arguments']! + (fn['arguments'] as String);
++                  }
++                  if (tc['id'] is String) {
++                    accToolCalls[idx]!['id'] = tc['id'] as String;
++                  }
++                }
++              }
++            }
++          } catch (_) {}
++        }
++
+         if (done) {
+           _isInferring = false;
+-          if (!controller.isClosed) controller.close();
++          completer.complete();
+         }
+       },
+     ).then((id) => _activeRequestId = id);
+-    return controller.stream;
+-  }
+ 
+-  /// Trims history to fit within the active context window.
+-  /// Keeps the most recent messages — older ones are dropped first.
+-  List<Map<String, dynamic>> _trimHistory(
+-      List<Map<String, dynamic>> history, String newMessage) {
+-    const avgCharsPerToken = 4;
+-    // Reserve 1024 tokens for the response + 100 for system prompt overhead.
+-    final budget = (_activeContextSize - 1024 - 100) * avgCharsPerToken;
+-    var chars = newMessage.length;
+-    final result = <Map<String, dynamic>>[];
+-    for (final msg in history.reversed) {
+-      chars += (msg['content'] as String? ?? '').length;
+-      if (chars > budget) break;
+-      result.insert(0, msg);
++    await completer.future;
++    if (controller.isClosed) return;
++
++    // No tool calls → inference is complete.
++    if (finishReason != 'tool_calls' || accToolCalls.isEmpty) {
++      controller.close();
++      return;
+     }
+-    return result;
++
++    // Build tool_calls list in OpenAI wire format and dispatch each tool.
++    final sorted = accToolCalls.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
++    final toolCallsList = sorted.map((e) => <String, dynamic>{
++      'id': e.value['id'],
++      'type': 'function',
++      'function': {
++        'name': e.value['name'],
++        'arguments': e.value['arguments'],
++      },
++    }).toList();
++    final toolResultMessages = sorted.map((e) => Message(
++      Role.tool,
++      _dispatchLocalTool(e.value['name']!, e.value['arguments']!),
++      toolResponseName: e.value['name'],
++    )).toList();
++
++    final updated = [
++      ...messages,
++      Message(Role.assistant, '', toolCalls: toolCallsList),
++      ...toolResultMessages,
++    ];
++    await _runChatTurn(updated, controller, depth: depth + 1);
+   }
+ 
+   /// Returns fllama engine status (replaces HTTP health probe).

@@ -73,7 +73,6 @@ For each function call, return a json object with function name and arguments wi
 PARAMETER stop "<|im_start|>"
 PARAMETER stop "<|im_end|>"
 PARAMETER num_ctx 4096
-PARAMETER num_thread 4
 ''';
 
 class GatewayService {
@@ -90,6 +89,13 @@ class GatewayService {
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
   bool _isStopping = false;
+  bool _isSyncing = false; // guard against concurrent syncLocalModelsWithOllama calls
+  final _chatActivityController = StreamController<String>.broadcast();
+
+  /// Live stream of human-readable chat and hub events for the Agent Hub panel.
+  /// Emits: Flutter-side send/receive events + parsed Ollama server signals.
+  Stream<String> get chatActivityStream => _chatActivityController.stream;
+
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
 
@@ -281,6 +287,39 @@ class GatewayService {
       } else {
         _updateState(_state.copyWith(logs: logs));
       }
+
+      // Parse key Ollama server log lines into human-readable hub events.
+      // Skip verbose startup spam (print_info:, load:, load_tensors:, etc.)
+      if (log.contains('llama runner started')) {
+        final m = RegExp(r'started in ([\d.]+) seconds').firstMatch(log);
+        if (m != null) {
+          _chatActivityController.add('[HUB] Model ready in ${m.group(1)}s');
+        }
+      } else if (log.contains('n_ctx =') && !log.contains('n_ctx_train')) {
+        final m = RegExp(r'n_ctx = (\d+)').firstMatch(log);
+        if (m != null) {
+          _chatActivityController.add('[HUB] Context: ${m.group(1)} tokens');
+        }
+      } else if (log.contains('KV buffer size')) {
+        final m = RegExp(r'size = ([\d.]+) MiB').firstMatch(log);
+        if (m != null) {
+          _chatActivityController.add('[HUB] KV cache: ${m.group(1)} MiB');
+        }
+      } else if (log.contains('[GIN]') && log.contains('chat/completions')) {
+        // GIN format: "| 200 | 2.3s |" or "| 500 | 1m30s |"
+        final m = RegExp(r'\|\s*(\d+)\s*\|\s*([^\|]+)\s*\|').firstMatch(log);
+        if (m != null) {
+          final code = m.group(1);
+          final dur = m.group(2)?.trim();
+          _chatActivityController.add(
+            '[HUB] ${code == '200' ? '✓' : '✗'} HTTP $code ($dur)',
+          );
+        }
+      } else if (log.contains('aborting completion')) {
+        _chatActivityController.add('[HUB] ⚠ Inference aborted (client disconnected)');
+      }
+      // Intentionally skip: GET /api/tags (health-check noise),
+      // print_info:, load:, load_tensors:, llama_model_loader: (verbose startup spam)
     });
   }
 
@@ -518,6 +557,16 @@ class GatewayService {
   }
 
   Future<void> syncLocalModelsWithOllama() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      await _syncLocalModelsWithOllamaInternal();
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
+  Future<void> _syncLocalModelsWithOllamaInternal() async {
     final catalog = LocalLlmService().catalog;
 
     // Safety check: is Ollama actually reachable?
@@ -540,11 +589,11 @@ class GatewayService {
       logs: [..._state.logs, '[INFO] Scanning for local GGUF models...'],
     ));
 
-    // Compute canonical names for all downloaded GGUFs, then clean up any
-    // old-format registrations (from previous builds with different naming).
+    // Compute canonical names for tool-capable downloaded GGUFs, then clean up
+    // any stale registrations (old-format names OR deprecated non-tool models).
     final canonicalNames = <String>{};
     for (final m in catalog) {
-      if (await LocalLlmService().isModelDownloaded(m)) {
+      if (m.supportsToolCalls && await LocalLlmService().isModelDownloaded(m)) {
         canonicalNames.add(_toOllamaModelName(m.id));
       }
     }
@@ -557,9 +606,12 @@ class GatewayService {
     final syncedModelNames = <String>[]; // collect for gateway config + state emit
 
     for (final model in catalog) {
+      // Only sync tool-capable models to Ollama Hub — non-tool models are
+      // hidden from the UI and should not appear as selectable hub models.
+      if (!model.supportsToolCalls) continue;
       if (await LocalLlmService().isModelDownloaded(model)) {
         final ollamaName = _toOllamaModelName(model.id);
-        // Always re-create: ensures num_ctx/num_thread params from the current
+        // Always re-create: ensures num_ctx params from the current
         // Modelfile are applied. ollama create reuses the existing GGUF blob
         // (no re-hashing) so this is fast.
         if (registered.contains(ollamaName)) {
@@ -738,7 +790,7 @@ class GatewayService {
       // to pass function schemas without receiving HTTP 400.
       final modelfileContent = supportsToolCalls
           ? 'FROM $ggufPath\n$_kQwen25OllamaTemplate'
-          : 'FROM $ggufPath\nPARAMETER num_ctx 2048\nPARAMETER num_thread 4\n';
+          : 'FROM $ggufPath\nPARAMETER num_ctx 2048\n';
       await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
@@ -1414,10 +1466,13 @@ class GatewayService {
   }
 
 
-  /// Send a message using the persistent WebSocket connection.
+  /// Route a chat message to the correct backend based on model prefix.
   ///
-  /// Uses auto-reconnecting GatewayConnection. Falls back to per-message
-  /// connection if the persistent one isn't available.
+  /// • local-llm/ → fllama NDK (on-device inference, no network)
+  /// • ollama/    → direct :11434 with num_ctx:4096 to avoid the 26K gateway
+  ///                system-prompt crash on small models (no dashboard logging —
+  ///                fundamental limitation; fixable only at the gateway level)
+  /// • cloud      → WS chat.send → gateway agent loop → visible in dashboard
   Stream<String> sendMessage(String message, {
     String? model,
     List<Map<String, dynamic>>? conversationHistory,
@@ -1451,20 +1506,23 @@ class GatewayService {
       return;
     }
 
-    // Ollama Hub routing: always bypass the gateway agent loop.
-    // The gateway's embedded agent injects a 26K system prompt that overloads
-    // small LLMs on mobile (OOM, hang, retry storm, overheating).
-    // Route directly to Ollama at :11434 — clean conversation history only.
+    // Ollama: bypass gateway agent loop — route direct to :11434.
+    // The gateway agent loop injects a 26K system prompt (~6,700 tokens) into
+    // every Ollama request, which forces n_ctx=32768 (896 MB KV cache) on small
+    // models → crash/overheat. We cap context at 4,096 tokens via the Ollama
+    // options field. Trade-off: these chats are NOT visible in the web dashboard.
     if (model.startsWith('ollama/')) {
       final ollamaModel = model.substring('ollama/'.length);
       yield* sendMessageHttp(message,
           model: ollamaModel,
           directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-          conversationHistory: conversationHistory);
+          conversationHistory: conversationHistory,
+          ollamaOptions: {'num_ctx': 4096});
       return;
     }
 
     // Cloud models: use the WebSocket chat.send RPC.
+    // WS chat.send creates gateway agent sessions visible in the web dashboard.
     final wsOk = await _ensureWebSocket(token);
     if (!wsOk) {
       yield* sendMessageHttp(message, model: model, token: token,
@@ -1495,9 +1553,7 @@ class GatewayService {
         try {
           final type = frame['type'] as String?;
 
-          // 1. Gateway Native 'error' bounds:
-          // The gateway directly passes unrecoverable provider failures (like rate limits)
-          // as a root frame with type: "error" and payload: { message: ... }
+          // Gateway-level error (e.g. rate limit, provider failure)
           if (type == 'error') {
             final payload = frame['payload'] as Map<String, dynamic>?;
             final errMsg = payload?['message'] as String? ?? 'API Error encountered';
@@ -1506,8 +1562,7 @@ class GatewayService {
             return;
           }
 
-          // Ultimate Fallback: Intercept ANY frame that natively carries an 'error' field
-          // to guarantee the UI reflects it, regardless of the event nesting layer.
+          // Any frame carrying a root-level 'error' field
           if (frame.containsKey('error') && frame['error'] != null) {
             final errObj = frame['error'];
             final errStr = errObj is Map ? (errObj['message']?.toString() ?? errObj.toString()) : errObj.toString();
@@ -1518,28 +1573,23 @@ class GatewayService {
             }
           }
 
-          // Response to our chat.send request — this is just an ACK.
-          // The gateway responds with ok:true + runId when streaming starts.
-          // Actual text comes via 'agent' events.
+          // ACK from chat.send — ok:true means streaming started; ok:false means rejected
           if (type == 'res' && frame['id'] == requestId) {
             final ok = frame['ok'] as bool? ?? false;
             if (!ok) {
-              // chat.send was rejected
               final error = frame['error'] as Map<String, dynamic>?;
               final msg = error?['message'] as String? ?? 'chat.send failed';
               chunkController.add('[Error] $msg');
               if (!chunkController.isClosed) chunkController.close();
             }
-            // ok:true → streaming has started, wait for agent events
             return;
           }
 
-          // Chat events — terminal state signals
+          // Chat lifecycle events (final / aborted / error → close stream)
           if (type == 'event' && frame['event'] == 'chat') {
             final Map<String, dynamic> data = (frame['payload'] as Map<String, dynamic>?)
                 ?? (frame['data'] as Map<String, dynamic>?)
-                ?? frame; 
-
+                ?? frame;
             final state = data['state'] as String?;
             if (state == 'final' || state == 'aborted' || state == 'error') {
               if (!chunkController.isClosed) chunkController.close();
@@ -1550,18 +1600,14 @@ class GatewayService {
           if (type == 'event' && frame['event'] == 'agent') {
             final payload = frame['payload'] as Map<String, dynamic>?;
             final innerData = payload?['data'] as Map<String, dynamic>? ?? frame['data'] as Map<String, dynamic>?;
-
-            // Extract stream from payload or frame
             final stream = (payload?['stream'] ?? frame['stream']) as String?;
 
             if (stream == 'assistant') {
-              // Text delta from the AI
               final text = (innerData?['text'] ?? payload?['text'] ?? frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
                 chunkController.add(text);
               }
             } else if (stream == 'lifecycle') {
-              // Lifecycle events (start, error, end)
               final phase = (innerData?['phase'] ?? payload?['phase'] ?? frame['phase']) as String?;
               if (phase == 'error') {
                 final error = (innerData?['error'] ?? payload?['error'] ?? frame['error'])?.toString() ?? 'Unknown API error';
@@ -1569,11 +1615,10 @@ class GatewayService {
                 if (!chunkController.isClosed) chunkController.close();
               }
             } else if (stream == 'error') {
-               // Gateway stream=error: provider failure, seq gap, or disabledUntil cooldown.
-               final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason'] ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
-               final error = rawErr.isNotEmpty ? rawErr : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
-               chunkController.add('[Error] $error');
-               if (!chunkController.isClosed) chunkController.close();
+              final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason'] ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
+              final error = rawErr.isNotEmpty ? rawErr : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
+              chunkController.add('[Error] $error');
+              if (!chunkController.isClosed) chunkController.close();
             }
           }
         } catch (_) {}
@@ -1589,7 +1634,6 @@ class GatewayService {
       },
     );
 
-    // Yield chunks
     try {
       await for (final chunk in chunkController.stream
           .timeout(const Duration(seconds: 90))) {
@@ -1642,6 +1686,7 @@ class GatewayService {
     String? token,
     List<Map<String, dynamic>>? conversationHistory,
     String? directUrl, // if set, bypass the gateway and POST directly to this URL
+    Map<String, dynamic>? ollamaOptions, // Ollama-specific inference options (e.g. num_ctx)
   }) async* {
     model = await _resolveModel(model);
 
@@ -1678,17 +1723,37 @@ class GatewayService {
           'model': effectiveModel,
           'messages': messages,
           'stream': true,
+          if (ollamaOptions != null) 'options': ollamaOptions,
+          // Keep model loaded indefinitely — prevents 3-4 s reload on every message.
+          if (isDirectLlama) 'keep_alive': -1,
         });
 
-      final streamedResponse = await client.send(request).timeout(const Duration(seconds: 90));
+      // Ollama on mobile can be slow; give it 3 minutes before giving up.
+      final timeoutDuration = isDirectLlama
+          ? const Duration(seconds: 180)
+          : const Duration(seconds: 90);
+
+      if (isDirectLlama) {
+        _chatActivityController.add('[CHAT] → Sending to $effectiveModel');
+      }
+
+      final streamedResponse = await client.send(request).timeout(timeoutDuration);
 
       if (streamedResponse.statusCode != 200) {
         final body = await streamedResponse.stream.bytesToString();
+        if (isDirectLlama) {
+          _chatActivityController.add('[CHAT] ✗ HTTP ${streamedResponse.statusCode}');
+        }
         yield '[Error] HTTP ${streamedResponse.statusCode}: $body';
         return;
       }
 
+      if (isDirectLlama) {
+        _chatActivityController.add('[CHAT] ← Ollama accepted (HTTP 200)');
+      }
+
       // Process the SSE stream: "data: { ... }"
+      bool firstChunk = true;
       await for (final chunk in streamedResponse.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
@@ -1699,6 +1764,10 @@ class GatewayService {
             final json = jsonDecode(data);
             final delta = (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
             if (delta != null && delta.isNotEmpty) {
+              if (firstChunk && isDirectLlama) {
+                firstChunk = false;
+                _chatActivityController.add('[CHAT] ✓ First token received');
+              }
               yield delta;
             }
           } catch (_) {
@@ -1706,8 +1775,15 @@ class GatewayService {
           }
         }
       }
+      if (isDirectLlama) _chatActivityController.add('[CHAT] ✓ Stream complete');
     } on TimeoutException {
-      yield '[Error] Chat stream timed out.';
+      if (isDirectLlama) {
+        _chatActivityController.add('[CHAT] ✗ Timed out after 180 s');
+        yield '[Error] Ollama timed out (180 s). '
+              'The device may be thermally throttled — try a shorter message or wait for it to cool.';
+      } else {
+        yield '[Error] Gateway chat timed out.';
+      }
     } catch (e) {
       yield '[Error] Connection failed: $e';
     } finally {
@@ -1951,5 +2027,6 @@ class GatewayService {
     _logSubscription?.cancel();
     _connection?.dispose();
     _stateController.close();
+    _chatActivityController.close();
   }
 }

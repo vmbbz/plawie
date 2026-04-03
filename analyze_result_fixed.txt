@@ -1,0 +1,5 @@
+Analyzing local_llm_service.dart...                             
+
+warning - The declaration '_shellEscape' isn't referenced - lib\services\local_llm_service.dart:850:10 - unused_element
+
+1 issue found. (ran in 2.4s)
