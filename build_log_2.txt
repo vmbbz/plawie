@@ -1,0 +1,1381 @@
+> Task :gradle:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle:compileKotlin UP-TO-DATE
+> Task :gradle:compileJava NO-SOURCE
+> Task :gradle:compileGroovy NO-SOURCE
+> Task :gradle:pluginDescriptors UP-TO-DATE
+> Task :gradle:processResources UP-TO-DATE
+> Task :gradle:classes UP-TO-DATE
+> Task :gradle:jar UP-TO-DATE
+> Task :app:DebugMinSdkCheck
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+
+> Task :app:compileFlutterBuildDebug
+Looking for ndk-build on PATH.
+
+Running `where ndk-build.cmd`.
+
+INFO: Could not find files for the given pattern(s).
+
+
+Did not find ndk-build on PATH.
+
+Looking for Android NDK relative to [] with .
+
+Found no Android NDK relative to [].
+
+Looking for Android NDK in [C:\platform-tools/ndk/*/, $HOME/AppData/Local/Android/Sdk/ndk/*/].
+
+Found [ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/), ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/), ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/), ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/)].
+
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+
+Android (13989888, based on r563880c) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+
+Found version for ToolInstance(Clang, 21.0.0, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 21.0.0
+
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+
+LLVM (http://llvm.org/):
+  LLVM version 21.0.0
+  Optimized build.
+
+
+Found version for ToolInstance(LLVM archiver, 21.0.0, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 21.0.0
+
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+
+LLD 21.0.0 (/mnt/disks/build-disk/src/googleplex-android/llvm-r563880-release/out/llvm-project/llvm 5e96669f06077099aa41290cdb4c5e6fa0f59349) (compatible with GNU linkers)
+
+
+Found version for ToolInstance(LLD, 21.0.0, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 21.0.0
+
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+
+Android (13624864, based on r530567e) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project 97a699bf4812a18fb657c2779f5296a4ab2694d2)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+
+Found version for ToolInstance(Clang, 19.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 19.0.1
+
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+
+LLVM (http://llvm.org/):
+  LLVM version 19.0.1 (/mnt/disks/build-disk/src/android/llvm-r530567/out/llvm-project/llvm 97a699bf4812a18fb657c2779f5296a4ab2694d2)
+  Optimized build.
+
+
+Found version for ToolInstance(LLVM archiver, 19.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 19.0.1
+
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+
+LLD 19.0.1 (compatible with GNU linkers)
+
+
+Found version for ToolInstance(LLD, 19.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 19.0.1
+
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+
+Android (12027248, based on r522817) clang version 18.0.1 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+
+Found version for ToolInstance(Clang, 18.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 18.0.1
+
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+
+LLVM (http://llvm.org/):
+  LLVM version 18.0.1
+  Optimized build.
+
+
+Found version for ToolInstance(LLVM archiver, 18.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 18.0.1
+
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+
+LLD 18.0.1 (compatible with GNU linkers)
+
+
+Found version for ToolInstance(LLD, 18.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 18.0.1
+
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\26.1.10909125\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+
+Android (10552028, based on r487747d) clang version 17.0.2 (https://android.googlesource.com/toolchain/llvm-project d9f89f4d16663d5012e5c09495f3b30ece3d2362)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+
+Found version for ToolInstance(Clang, 17.0.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 17.0.2
+
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\26.1.10909125\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+
+LLVM (http://llvm.org/):
+  LLVM version 17.0.2
+  Optimized build.
+
+
+Found version for ToolInstance(LLVM archiver, 17.0.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 17.0.2
+
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\26.1.10909125\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+
+LLD 17.0.2 (compatible with GNU linkers)
+
+
+Found version for ToolInstance(LLD, 17.0.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 17.0.2
+
+Looking for Ninja in [C:\platform-tools/cmake/*/bin/ninja.exe, $HOME/AppData/Local/Android/Sdk/cmake/*/bin/ninja.exe].
+
+Found [ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe)].
+
+Looking up version with --version for ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\ninja.exe --version`.
+
+1.10.2
+
+
+Found version for ToolInstance(Ninja, 1.10.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe). 1.10.2
+
+Found Android Ninja: ToolInstance(Ninja, 1.10.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe)
+Looking for Ninja on PATH.
+Running `ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS where ninja`.
+
+C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links\ninja.exe
+
+
+
+
+Found ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe).
+
+Looking up version with --version for ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe).
+Running `C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe\ninja.exe --version`.
+
+1.13.2
+
+
+Found version for ToolInstance(Ninja, 1.13.2, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe). 1.13.2
+
+Found System Ninja: ToolInstance(Ninja, 1.13.2, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe)
+
+Found Ninja: ToolInstance(Ninja, 1.10.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe), ToolInstance(Ninja, 1.13.2, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe)
+
+Looking for CMake in [C:\platform-tools/cmake/*/bin/cmake.exe, $HOME/AppData/Local/Android/Sdk/cmake/*/bin/cmake.exe].
+
+Found [ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)].
+
+Looking up version with --version for ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --version`.
+
+cmake version 3.22.1-g37088a8-dirty
+
+
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+
+
+Found version for ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe). 3.22.1-g37088a8-dirty
+
+Found Android CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+
+Looking for CMake on PATH.
+Running `ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS where cmake`.
+
+INFO: Could not find files for the given pattern(s).
+
+
+Did not find CMake on PATH.
+
+Found System CMake: 
+
+Found CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+
+Running `(cd C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\; ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --log-level=STATUS -S C:\Users\cosyc\AppData\Local\Pub\Cache\git\fllama-e812a796f557dd95360830f1f8577a25076f6aba\src\ -B C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\ -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\build\cmake\android.toolchain.cmake -DANDROID_PLATFORM=android-29 -DANDROID_ABI=armeabi-v7a -DANDROID_STL=c++_static -DANDROID_ARM_NEON=true -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DLLAMA_NATIVE=OFF -DLLAMA_HTTPLIB=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_NUMBER=1 -DLLAMA_BUILD_COMMIT=unknown -DGGML_LLAMAFILE=OFF -DGGML_OPENMP=OFF -DCMAKE_PROGRAM_PATH=C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin )`.
+
+-- Android build detected
+
+
+-- CMAKE_ANDROID_ARCH_ABI: armeabi-v7a
+-- CMAKE_SYSTEM_PROCESSOR: armv7-a
+-- Non-ARM64 Android build (armeabi-v7a) - skipping ARM optimizations
+-- Android Vulkan: GGML_VULKAN=ON ├â┬ó├óΓÇÜ┬¼├óΓé¼┬¥ pre-configuring NDK Vulkan paths
+
+
+CMAKE_BUILD_TYPE=Release
+
+
+
+
+-- Setting GGML_NATIVE_DEFAULT to OFF
+
+
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+
+
+-- CMAKE_SYSTEM_PROCESSOR: armv7-a
+
+
+-- GGML_SYSTEM_ARCH: ARM
+
+
+-- Including CPU backend
+
+
+-- ARM detected
+
+
+-- Checking for ARM features using flags:
+
+
+-- Adding CPU backend variant ggml-cpu:  
+
+
+-- Vulkan found
+
+
+-- GL_KHR_cooperative_matrix not supported by glslc
+
+
+-- GL_NV_cooperative_matrix2 not supported by glslc
+
+
+-- GL_EXT_integer_dot_product not supported by glslc
+
+
+-- GL_EXT_bfloat16 not supported by glslc
+
+
+-- vulkan-shaders-gen toolchain file: C:/dev-shared/openclaw-projects/openclaw_final/android/vulkan-host-toolchain.cmake
+
+
+-- Including Vulkan backend
+
+
+-- ggml version: 0.9.7
+
+
+-- ggml commit:  e812a79-dirty
+
+
+CMake Warning at llama.cpp/common/CMakeLists.txt:31 (message):
+
+
+  Git repository not found; to enable automatic generation of build info,
+  make sure Git is installed and the project is a Git repository.
+
+
+
+
+-- Configuring done
+
+
+-- Generating done
+
+
+-- Build files have been written to: C:/dev-shared/openclaw-projects/openclaw_final/.dart_tool/hooks_runner/shared/fllama/build/9e4442506d
+
+
+Looking for CMake in [C:\platform-tools/cmake/*/bin/cmake.exe, $HOME/AppData/Local/Android/Sdk/cmake/*/bin/cmake.exe].
+
+Found [ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)].
+
+Looking up version with --version for ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe).
+
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --version`.
+
+cmake version 3.22.1-g37088a8-dirty
+
+
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+
+
+Found version for ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe). 3.22.1-g37088a8-dirty
+Found Android CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+
+Looking for CMake on PATH.
+
+Running `ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS where cmake`.
+
+INFO: Could not find files for the given pattern(s).
+
+
+Did not find CMake on PATH.
+
+Found System CMake: 
+
+Found CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+Running `(cd C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\; ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --build C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\ --config Release --target fllama )`.
+
+[
+
+0/2] Re-checking globbed directories...
+
+
+[
+
+1/149] Performing build step for 'vulkan-shaders-gen'
+ninja: no work to do.
+
+
+[2/149] Performing install step for 'vulkan-shaders-gen'
+-- Up-to-date: C:/dev-shared/openclaw-projects/openclaw_final/.dart_tool/hooks_runner/shared/fllama/build/9e4442506d/Release/./vulkan-shaders-gen.exe
+
+
+[
+
+3/149] Completed 'vulkan-shaders-gen'
+
+
+[
+
+4
+
+/149] Buil
+d
+ing CXX object l
+
+lama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggm
+
+l
+-threading.cpp.o
+
+
+[5/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o
+
+
+[6/149] Building C object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o
+
+
+[
+
+7/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o
+
+
+[
+
+8/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o
+
+
+[9/149] Building C object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o
+
+
+[
+10/149] Building C object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o
+
+
+[11/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o
+
+
+[
+
+12/149] Linking CXX static library llama.cpp\ggml\src\libggml-base.a
+
+
+[
+
+13/149] Generate vulkan shaders for flash_attn_cm2.comp
+
+
+[
+
+14/149] Generate vulkan shaders for flash_attn_cm1.comp
+
+
+[
+
+15/149] Generate vulkan shaders for mul_mat_vecq.comp
+
+
+[16/149] Generate vulkan shaders for mul_mm_cm2.comp
+
+
+[
+17/149] Generate vulkan shaders for mul_mmq.comp
+
+
+[18/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir
+
+/
+
+flash_attn_cm2.comp.cpp.o
+
+
+[19/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/flash_attn_cm1.comp.cpp.o
+
+
+[
+
+20/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mm_cm2.comp.cpp.o
+
+
+[21/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vecq.comp.cpp.o
+
+
+[
+
+22/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mmq.comp.cpp.o
+
+
+[23/149] Building CXX object llama.cpp/src/CMakeFiles/llama.di
+
+r
+
+/models/codeshell.cpp.o
+
+
+[
+
+24/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/deci.cpp.o
+
+
+[25/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/command-r.cpp.o
+
+
+[26/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/d
+
+b
+
+rx.cpp.o
+
+
+[
+27/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/dots1.cpp.o
+
+
+[
+
+28/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/dream.cpp.o
+
+
+[29/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/mo
+
+d
+
+e
+
+ls/cohere2-iswa.cpp.o
+
+
+[
+30/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/cogvlm.cpp.o
+
+
+[
+
+31/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/ernie4-5-moe.cpp.o
+
+
+[32/149] Building CXX object llama.cpp/ggml
+
+/
+
+src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o
+
+
+FAILED: llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o 
+C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi29 --sysroot=C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/sysroot -DGGML_SCHED_MAX_COPIES=4 -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -IC:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/.. -IC:/dev-shared/openclaw-projects/openclaw_final/.dart_tool/hooks_runner/shared/fllama/build/9e4442506d/llama.cpp/ggml/src/ggml-vulkan -IC:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/../include -isystem C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wunreachable-code-break -Wunreachable-code-return -Wmissing-prototypes -Wextra-semi -std=gnu++17 -MD -MT llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o -MF llama.cpp\ggml\src\ggml-vulkan\CMakeFiles\ggml-vulkan.dir\ggml-vulkan.cpp.o.d -o llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o -c C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+
+
+
+
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:3247:33: error: redefinition of 'toHexString'
+ 3247 |   VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:17:33: note: previous definition is here
+   17 |   VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4734:33: error: redefinition of 'to_string'
+ 4734 |   VULKAN_HPP_INLINE std::string to_string( MemoryMapFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:1852:33: note: previous definition is here
+ 1852 |   VULKAN_HPP_INLINE std::string to_string( MemoryMapFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4788:33: error: redefinition of 'to_string'
+ 4788 |   VULKAN_HPP_INLINE std::string to_string( SemaphoreCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:1948:33: note: previous definition is here
+ 1948 |   VULKAN_HPP_INLINE std::string to_string( SemaphoreCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4867:33: error: redefinition of 'to_string'
+ 4867 |   VULKAN_HPP_INLINE std::string to_string( QueryPoolCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2064:33: note: previous definition is here
+ 2064 |   VULKAN_HPP_INLINE std::string to_string( QueryPoolCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4933:33: error: redefinition of 'to_string'
+ 4933 |   VULKAN_HPP_INLINE std::string to_string( BufferViewCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2170:33: note: previous definition is here
+ 2170 |   VULKAN_HPP_INLINE std::string to_string( BufferViewCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5390:33: error: redefinition of 'to_string'
+ 5390 |   VULKAN_HPP_INLINE std::string to_string( PipelineDynamicStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2767:33: note: previous definition is here
+ 2767 |   VULKAN_HPP_INLINE std::string to_string( PipelineDynamicStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5395:33: error: redefinition of 'to_string'
+ 5395 |   VULKAN_HPP_INLINE std::string to_string( PipelineInputAssemblyStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2772:33: note: previous definition is here
+ 2772 |   VULKAN_HPP_INLINE std::string to_string( PipelineInputAssemblyStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5400:33: error: redefinition of 'to_string'
+ 5400 |   VULKAN_HPP_INLINE std::string to_string( PipelineMultisampleStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2787:33: note: previous definition is here
+ 2787 |   VULKAN_HPP_INLINE std::string to_string( PipelineMultisampleStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5405:33: error: redefinition of 'to_string'
+ 5405 |   VULKAN_HPP_INLINE std::string to_string( PipelineRasterizationStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2792:33: note: previous definition is here
+ 2792 |   VULKAN_HPP_INLINE std::string to_string( PipelineRasterizationStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5410:33: error: redefinition of 'to_string'
+ 5410 |   VULKAN_HPP_INLINE std::string to_string( PipelineTessellationStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2797:33: note: previous definition is here
+ 2797 |   VULKAN_HPP_INLINE std::string to_string( PipelineTessellationStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5415:33: error: redefinition of 'to_string'
+ 5415 |   VULKAN_HPP_INLINE std::string to_string( PipelineVertexInputStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2802:33: note: previous definition is here
+ 2802 |   VULKAN_HPP_INLINE std::string to_string( PipelineVertexInputStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5420:33: error: redefinition of 'to_string'
+ 5420 |   VULKAN_HPP_INLINE std::string to_string( PipelineViewportStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2807:33: note: previous definition is here
+ 2807 |   VULKAN_HPP_INLINE std::string to_string( PipelineViewportStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5537:33: error: redefinition of 'to_string'
+ 5537 |   VULKAN_HPP_INLINE std::string to_string( DescriptorPoolResetFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2946:33: note: previous definition is here
+ 2946 |   VULKAN_HPP_INLINE std::string to_string( DescriptorPoolResetFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5803:33: error: redefinition of 'to_string'
+ 5803 |   VULKAN_HPP_INLINE std::string to_string( CommandPoolTrimFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:3318:33: note: previous definition is here
+ 3318 |   VULKAN_HPP_INLINE std::string to_string( CommandPoolTrimFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5828:33: error: redefinition of 'to_string'
+ 5828 |   VULKAN_HPP_INLINE std::string to_string( DeviceQueueCreateFlagBits value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:3351:33: note: previous definition is here
+ 3351 |   VULKAN_HPP_INLINE std::string to_string( DeviceQueueCreateFlagBits value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5880:33: error: redefinition of 'to_string'
+ 5880 |   VULKAN_HPP_INLINE std::string to_string( DescriptorUpdateTemplateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:3405:33: note: previous definition is here
+ 3405 |   VULKAN_HPP_INLINE std::string to_string( DescriptorUpdateTemplateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:6089:33: error: redefinition of 'to_string'
+ 6089 |   VULKAN_HPP_INLINE std::string to_string( PipelineCreationFeedbackFlagBits value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:4046:33: note: previous definition is here
+ 4046 |   VULKAN_HPP_INLINE std::string to_string( PipelineCreationFeedbackFlagBits value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:6100:33: error: redefinition of 'to_string'
+ 6100 |   VULKAN_HPP_INLINE std::string to_string( ToolPurposeFlagBits value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:4058:33: note: previous definition is here
+ 4058 |   VULKAN_HPP_INLINE std::string to_string( ToolPurposeFlagBits value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:6115:33: error: redefinition of 'to_string'
+ 6115 |   VULKAN_HPP_INLINE std::string to_string( PrivateDataSlotCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:4074:33: note: previous definition is here
+ 4074 |   VULKAN_HPP_INLINE std::string to_string( PrivateDataSlotCreateFlagBits )
+      |                                 ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+
+
+[33/149] Building CXX object llama.cpp/src/CMakeFiles/ll
+
+a
+
+m
+
+a.dir/models/ernie4-5.cpp.o
+
+
+[
+
+34/149] Building 
+
+C
+X
+X
+
+
+o
+b
+j
+ect llama.cpp/src/CMakeFiles/llam
+
+a
+.dir/models/deepseek2.cpp.o
+
+
+[
+
+3
+
+5
+
+/
+
+1
+4
+9
+] Building CXX obj
+e
+
+ct llama.cpp/src/CMakeFiles/llama.dir/models/deepseek.cpp.o
+
+
+[
+
+36/149] Building CXX object llama.cpp/src/CMakeFiles/llama.d
+
+i
+r/models/delta-ne
+
+t
+-
+b
+a
+s
+e
+
+.cpp.o
+
+
+[37/149] Building CXX obj
+
+e
+
+c
+t
+ llama.cpp/src/CMakeFiles/llama.dir/models/eurob
+
+e
+
+r
+
+t.cpp.o
+
+
+[
+
+38/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/exaone.cpp.o
+
+
+[
+
+39/149] Building CXX ob
+j
+e
+c
+t
+
+ llama.cpp/src/CMakeFiles/llama.dir/models/falcon-h1.cpp.o
+
+
+[
+
+40/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/falcon.cpp.o
+
+
+[41/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/exaon
+
+e-moe
+
+.cpp.o
+
+
+n
+inja: build stopped: subcommand f
+ailed.
+
+
+Unhandled exception:
+Exception: Failed to build CMake project: 
+#0      RunCMakeBuilder.run (package:native_toolchain_cmake/src/builder/run_builder.dart:185:7)
+<asynchronous suspension>
+#1      CMakeBuilder.run (package:native_toolchain_cmake/src/builder/builder.dart:344:5)
+<asynchronous suspension>
+#2      main.<anonymous closure> (file:///c:/users/cosyc/appdata/local/pub/cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/hook/build.dart:73:5)
+<asynchronous suspension>
+#3      build (package:hooks/src/api/build_and_link.dart:191:5)
+<asynchronous suspension>
+#4      main (file:///c:/users/cosyc/appdata/local/pub/cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/hook/build.dart:9:3)
+<asynchronous suspension>
+
+  Building assets for package:fllama failed.
+  build.dart returned with exit code: 255.
+  To reproduce run:
+  (cd C:\Users\cosyc\AppData\Local\Pub\Cache\git\fllama-e812a796f557dd95360830f1f8577a25076f6aba\; C:\flutter\bin\cache\dart-sdk\bin\dart --packages=C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\package_config.json C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\fllama\9e4442506d4d6c1f278a87ed54357fcd\hook.dill --config=C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\fllama\9e4442506d4d6c1f278a87ed54357fcd\input.json )
+  stderr:
+  Looking for ndk-build on PATH.
+Running `where ndk-build.cmd`.
+INFO: Could not find files for the given pattern(s).
+
+Did not find ndk-build on PATH.
+Looking for Android NDK relative to [] with .
+Found no Android NDK relative to [].
+Looking for Android NDK in [C:\platform-tools/ndk/*/, $HOME/AppData/Local/Android/Sdk/ndk/*/].
+Found [ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/), ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/), ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/), ToolInstance(Android NDK, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/)].
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+Android (13989888, based on r563880c) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+Found version for ToolInstance(Clang, 21.0.0, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 21.0.0
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+LLVM (http://llvm.org/):
+  LLVM version 21.0.0
+  Optimized build.
+
+Found version for ToolInstance(LLVM archiver, 21.0.0, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 21.0.0
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+LLD 21.0.0 (/mnt/disks/build-disk/src/googleplex-android/llvm-r563880-release/out/llvm-project/llvm 5e96669f06077099aa41290cdb4c5e6fa0f59349) (compatible with GNU linkers)
+
+Found version for ToolInstance(LLD, 21.0.0, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 21.0.0
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+Android (13624864, based on r530567e) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project 97a699bf4812a18fb657c2779f5296a4ab2694d2)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+Found version for ToolInstance(Clang, 19.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 19.0.1
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+LLVM (http://llvm.org/):
+  LLVM version 19.0.1 (/mnt/disks/build-disk/src/android/llvm-r530567/out/llvm-project/llvm 97a699bf4812a18fb657c2779f5296a4ab2694d2)
+  Optimized build.
+
+Found version for ToolInstance(LLVM archiver, 19.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 19.0.1
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+LLD 19.0.1 (compatible with GNU linkers)
+
+Found version for ToolInstance(LLD, 19.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 19.0.1
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+Android (12027248, based on r522817) clang version 18.0.1 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+Found version for ToolInstance(Clang, 18.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 18.0.1
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+LLVM (http://llvm.org/):
+  LLVM version 18.0.1
+  Optimized build.
+
+Found version for ToolInstance(LLVM archiver, 18.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 18.0.1
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+LLD 18.0.1 (compatible with GNU linkers)
+
+Found version for ToolInstance(LLD, 18.0.1, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 18.0.1
+Looking up version with --version for ToolInstance(Clang, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\26.1.10909125\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe --version`.
+Android (10552028, based on r487747d) clang version 17.0.2 (https://android.googlesource.com/toolchain/llvm-project d9f89f4d16663d5012e5c09495f3b30ece3d2362)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin
+
+Found version for ToolInstance(Clang, 17.0.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe). 17.0.2
+Looking up version with --version for ToolInstance(LLVM archiver, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\26.1.10909125\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-ar.exe --version`.
+LLVM (http://llvm.org/):
+  LLVM version 17.0.2
+  Optimized build.
+
+Found version for ToolInstance(LLVM archiver, 17.0.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe). 17.0.2
+Looking up version with --version for ToolInstance(LLD, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\26.1.10909125\toolchains\llvm\prebuilt\windows-x86_64\bin\ld.lld.exe --version`.
+LLD 17.0.2 (compatible with GNU linkers)
+
+Found version for ToolInstance(LLD, 17.0.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.lld.exe). 17.0.2
+Looking for Ninja in [C:\platform-tools/cmake/*/bin/ninja.exe, $HOME/AppData/Local/Android/Sdk/cmake/*/bin/ninja.exe].
+Found [ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe)].
+Looking up version with --version for ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\ninja.exe --version`.
+1.10.2
+
+Found version for ToolInstance(Ninja, 1.10.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe). 1.10.2
+Found Android Ninja: ToolInstance(Ninja, 1.10.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe)
+Looking for Ninja on PATH.
+Running `ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS where ninja`.
+C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links\ninja.exe
+
+
+Found ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe).
+Looking up version with --version for ToolInstance(Ninja, null, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe).
+Running `C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe\ninja.exe --version`.
+1.13.2
+
+Found version for ToolInstance(Ninja, 1.13.2, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe). 1.13.2
+Found System Ninja: ToolInstance(Ninja, 1.13.2, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe)
+Found Ninja: ToolInstance(Ninja, 1.10.2, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/ninja.exe), ToolInstance(Ninja, 1.13.2, file:///C:/Users/cosyc/AppData/Local/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe)
+Looking for CMake in [C:\platform-tools/cmake/*/bin/cmake.exe, $HOME/AppData/Local/Android/Sdk/cmake/*/bin/cmake.exe].
+Found [ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)].
+Looking up version with --version for ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --version`.
+cmake version 3.22.1-g37088a8-dirty
+
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+
+Found version for ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe). 3.22.1-g37088a8-dirty
+Found Android CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+Looking for CMake on PATH.
+Running `ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS where cmake`.
+INFO: Could not find files for the given pattern(s).
+
+Did not find CMake on PATH.
+Found System CMake: 
+Found CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+Running `(cd C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\; ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --log-level=STATUS -S C:\Users\cosyc\AppData\Local\Pub\Cache\git\fllama-e812a796f557dd95360830f1f8577a25076f6aba\src\ -B C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\ -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\build\cmake\android.toolchain.cmake -DANDROID_PLATFORM=android-29 -DANDROID_ABI=armeabi-v7a -DANDROID_STL=c++_static -DANDROID_ARM_NEON=true -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DLLAMA_NATIVE=OFF -DLLAMA_HTTPLIB=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_NUMBER=1 -DLLAMA_BUILD_COMMIT=unknown -DGGML_LLAMAFILE=OFF -DGGML_OPENMP=OFF -DCMAKE_PROGRAM_PATH=C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin )`.
+-- Android build detected
+
+-- CMAKE_ANDROID_ARCH_ABI: armeabi-v7a
+-- CMAKE_SYSTEM_PROCESSOR: armv7-a
+-- Non-ARM64 Android build (armeabi-v7a) - skipping ARM optimizations
+-- Android Vulkan: GGML_VULKAN=ON ├â┬ó├óΓÇÜ┬¼├óΓé¼┬¥ pre-configuring NDK Vulkan paths
+
+CMAKE_BUILD_TYPE=Release
+
+
+-- Setting GGML_NATIVE_DEFAULT to OFF
+
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+
+-- CMAKE_SYSTEM_PROCESSOR: armv7-a
+
+-- GGML_SYSTEM_ARCH: ARM
+
+-- Including CPU backend
+
+-- ARM detected
+
+-- Checking for ARM features using flags:
+
+-- Adding CPU backend variant ggml-cpu:  
+
+-- Vulkan found
+
+-- GL_KHR_cooperative_matrix not supported by glslc
+
+-- GL_NV_cooperative_matrix2 not supported by glslc
+
+-- GL_EXT_integer_dot_product not supported by glslc
+
+-- GL_EXT_bfloat16 not supported by glslc
+
+-- vulkan-shaders-gen toolchain file: C:/dev-shared/openclaw-projects/openclaw_final/android/vulkan-host-toolchain.cmake
+
+-- Including Vulkan backend
+
+-- ggml version: 0.9.7
+
+-- ggml commit:  e812a79-dirty
+
+CMake Warning at llama.cpp/common/CMakeLists.txt:31 (message):
+
+  Git repository not found; to enable automatic generation of build info,
+  make sure Git is installed and the project is a Git repository.
+
+
+
+-- Configuring done
+
+-- Generating done
+
+-- Build files have been written to: C:/dev-shared/openclaw-projects/openclaw_final/.dart_tool/hooks_runner/shared/fllama/build/9e4442506d
+
+Looking for CMake in [C:\platform-tools/cmake/*/bin/cmake.exe, $HOME/AppData/Local/Android/Sdk/cmake/*/bin/cmake.exe].
+Found [ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)].
+Looking up version with --version for ToolInstance(CMake, null, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe).
+Running `C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --version`.
+cmake version 3.22.1-g37088a8-dirty
+
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+
+Found version for ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe). 3.22.1-g37088a8-dirty
+Found Android CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+Looking for CMake on PATH.
+Running `ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS where cmake`.
+INFO: Could not find files for the given pattern(s).
+
+Did not find CMake on PATH.
+Found System CMake: 
+Found CMake: ToolInstance(CMake, 3.22.1-g37088a8-dirty, file:///C:/Users/cosyc/AppData/Local/Android/Sdk/cmake/3.22.1/bin/cmake.exe)
+Running `(cd C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\; ANDROID_HOME=C:\platform-tools COMSPEC=C:\WINDOWS\SYSTEM32\cmd.exe PATH=C:\Program Files\PowerShell\7;C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\PowerShell\7\;C:\Program Files\Rust stable MSVC 1.93\bin;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python311\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\Scripts\;C:\Users\cosyc\AppData\Local\Programs\Python\Python313\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\cosyc\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\HP\HP One Agent;C:\Program Files\Git\cmd;C:\Program Files\FireDaemon OpenSSL 3\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\NVIDIA Corporation\NGCCLI\amd64\;C:\Program Files\nodejs\;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\\platform-tools;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\Users\cosyc\AppData\Roaming\npm;C:\Program Files\Supabase;C:\Users\cosyc\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\cosyc\AppData\Local\Programs\Windsurf\bin;C:\Use;C:\Users\cosyc\AppData\Local\GitHubDesktop\bin;C:\Users\cosyc\AppData\Local\Microsoft\WindowsApps;C:\Users\cosyc\AppData\Local\Programs\Azure Dev CLI\;C:\flutter\bin;C:\Users\cosyc\AppData\Local\Programs\Antigravity\bin;C:\Users\cosyc\AppData\Local\Programs\Ollama;C:\Users\cosyc\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\cosyc\AppData\Local\Microsoft\WinGet\Links;;C:\flutter\bin\mingit\cmd PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC PROGRAMDATA=C:\ProgramData PROMPT=$P$G SYSTEMDRIVE=C: SYSTEMROOT=C:\WINDOWS TEMP=C:\Users\cosyc\AppData\Local\Temp TMP=C:\Users\cosyc\AppData\Local\Temp USERPROFILE=C:\Users\cosyc WINDIR=C:\WINDOWS C:\Users\cosyc\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe --build C:\dev-shared\openclaw-projects\openclaw_final\.dart_tool\hooks_runner\shared\fllama\build\9e4442506d\ --config Release --target fllama )`.
+[
+0/2] Re-checking globbed directories...
+
+[
+1/149] Performing build step for 'vulkan-shaders-gen'
+ninja: no work to do.
+
+[2/149] Performing install step for 'vulkan-shaders-gen'
+-- Up-to-date: C:/dev-shared/openclaw-projects/openclaw_final/.dart_tool/hooks_runner/shared/fllama/build/9e4442506d/Release/./vulkan-shaders-gen.exe
+
+[
+3/149] Completed 'vulkan-shaders-gen'
+
+[
+4
+/149] Buil
+d
+ing CXX object l
+lama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggm
+l
+-threading.cpp.o
+
+[5/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o
+
+[6/149] Building C object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o
+
+[
+7/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o
+
+[
+8/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o
+
+[9/149] Building C object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o
+
+[
+10/149] Building C object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o
+
+[11/149] Building CXX object llama.cpp/ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o
+
+[
+12/149] Linking CXX static library llama.cpp\ggml\src\libggml-base.a
+
+[
+13/149] Generate vulkan shaders for flash_attn_cm2.comp
+
+[
+14/149] Generate vulkan shaders for flash_attn_cm1.comp
+
+[
+15/149] Generate vulkan shaders for mul_mat_vecq.comp
+
+[16/149] Generate vulkan shaders for mul_mm_cm2.comp
+
+[
+17/149] Generate vulkan shaders for mul_mmq.comp
+
+[18/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir
+/
+flash_attn_cm2.comp.cpp.o
+
+[19/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/flash_attn_cm1.comp.cpp.o
+
+[
+20/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mm_cm2.comp.cpp.o
+
+[21/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mat_vecq.comp.cpp.o
+
+[
+22/149] Building CXX object llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/mul_mmq.comp.cpp.o
+
+[23/149] Building CXX object llama.cpp/src/CMakeFiles/llama.di
+r
+/models/codeshell.cpp.o
+
+[
+24/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/deci.cpp.o
+
+[25/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/command-r.cpp.o
+
+[26/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/d
+b
+rx.cpp.o
+
+[
+27/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/dots1.cpp.o
+
+[
+28/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/dream.cpp.o
+
+[29/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/mo
+d
+e
+ls/cohere2-iswa.cpp.o
+
+[
+30/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/cogvlm.cpp.o
+
+[
+31/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/ernie4-5-moe.cpp.o
+
+[32/149] Building CXX object llama.cpp/ggml
+/
+src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o
+
+FAILED: llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o 
+C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\29.0.14206865\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=armv7-none-linux-androideabi29 --sysroot=C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/sysroot -DGGML_SCHED_MAX_COPIES=4 -D_GNU_SOURCE -D_XOPEN_SOURCE=600 -IC:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/.. -IC:/dev-shared/openclaw-projects/openclaw_final/.dart_tool/hooks_runner/shared/fllama/build/9e4442506d/llama.cpp/ggml/src/ggml-vulkan -IC:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/../include -isystem C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -fPIC -Wmissing-declarations -Wmissing-noreturn -Wall -Wextra -Wpedantic -Wcast-qual -Wno-unused-function -Wunreachable-code-break -Wunreachable-code-return -Wmissing-prototypes -Wextra-semi -std=gnu++17 -MD -MT llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o -MF llama.cpp\ggml\src\ggml-vulkan\CMakeFiles\ggml-vulkan.dir\ggml-vulkan.cpp.o.d -o llama.cpp/ggml/src/ggml-vulkan/CMakeFiles/ggml-vulkan.dir/ggml-vulkan.cpp.o -c C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+
+
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:3247:33: error: redefinition of 'toHexString'
+ 3247 |   VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:17:33: note: previous definition is here
+   17 |   VULKAN_HPP_INLINE std::string toHexString( uint32_t value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4734:33: error: redefinition of 'to_string'
+ 4734 |   VULKAN_HPP_INLINE std::string to_string( MemoryMapFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:1852:33: note: previous definition is here
+ 1852 |   VULKAN_HPP_INLINE std::string to_string( MemoryMapFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4788:33: error: redefinition of 'to_string'
+ 4788 |   VULKAN_HPP_INLINE std::string to_string( SemaphoreCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:1948:33: note: previous definition is here
+ 1948 |   VULKAN_HPP_INLINE std::string to_string( SemaphoreCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4867:33: error: redefinition of 'to_string'
+ 4867 |   VULKAN_HPP_INLINE std::string to_string( QueryPoolCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2064:33: note: previous definition is here
+ 2064 |   VULKAN_HPP_INLINE std::string to_string( QueryPoolCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:4933:33: error: redefinition of 'to_string'
+ 4933 |   VULKAN_HPP_INLINE std::string to_string( BufferViewCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2170:33: note: previous definition is here
+ 2170 |   VULKAN_HPP_INLINE std::string to_string( BufferViewCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5390:33: error: redefinition of 'to_string'
+ 5390 |   VULKAN_HPP_INLINE std::string to_string( PipelineDynamicStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2767:33: note: previous definition is here
+ 2767 |   VULKAN_HPP_INLINE std::string to_string( PipelineDynamicStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5395:33: error: redefinition of 'to_string'
+ 5395 |   VULKAN_HPP_INLINE std::string to_string( PipelineInputAssemblyStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2772:33: note: previous definition is here
+ 2772 |   VULKAN_HPP_INLINE std::string to_string( PipelineInputAssemblyStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5400:33: error: redefinition of 'to_string'
+ 5400 |   VULKAN_HPP_INLINE std::string to_string( PipelineMultisampleStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2787:33: note: previous definition is here
+ 2787 |   VULKAN_HPP_INLINE std::string to_string( PipelineMultisampleStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5405:33: error: redefinition of 'to_string'
+ 5405 |   VULKAN_HPP_INLINE std::string to_string( PipelineRasterizationStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2792:33: note: previous definition is here
+ 2792 |   VULKAN_HPP_INLINE std::string to_string( PipelineRasterizationStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5410:33: error: redefinition of 'to_string'
+ 5410 |   VULKAN_HPP_INLINE std::string to_string( PipelineTessellationStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2797:33: note: previous definition is here
+ 2797 |   VULKAN_HPP_INLINE std::string to_string( PipelineTessellationStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5415:33: error: redefinition of 'to_string'
+ 5415 |   VULKAN_HPP_INLINE std::string to_string( PipelineVertexInputStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2802:33: note: previous definition is here
+ 2802 |   VULKAN_HPP_INLINE std::string to_string( PipelineVertexInputStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5420:33: error: redefinition of 'to_string'
+ 5420 |   VULKAN_HPP_INLINE std::string to_string( PipelineViewportStateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2807:33: note: previous definition is here
+ 2807 |   VULKAN_HPP_INLINE std::string to_string( PipelineViewportStateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5537:33: error: redefinition of 'to_string'
+ 5537 |   VULKAN_HPP_INLINE std::string to_string( DescriptorPoolResetFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:2946:33: note: previous definition is here
+ 2946 |   VULKAN_HPP_INLINE std::string to_string( DescriptorPoolResetFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5803:33: error: redefinition of 'to_string'
+ 5803 |   VULKAN_HPP_INLINE std::string to_string( CommandPoolTrimFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:3318:33: note: previous definition is here
+ 3318 |   VULKAN_HPP_INLINE std::string to_string( CommandPoolTrimFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5828:33: error: redefinition of 'to_string'
+ 5828 |   VULKAN_HPP_INLINE std::string to_string( DeviceQueueCreateFlagBits value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:3351:33: note: previous definition is here
+ 3351 |   VULKAN_HPP_INLINE std::string to_string( DeviceQueueCreateFlagBits value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:5880:33: error: redefinition of 'to_string'
+ 5880 |   VULKAN_HPP_INLINE std::string to_string( DescriptorUpdateTemplateCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:3405:33: note: previous definition is here
+ 3405 |   VULKAN_HPP_INLINE std::string to_string( DescriptorUpdateTemplateCreateFlagBits )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:6089:33: error: redefinition of 'to_string'
+ 6089 |   VULKAN_HPP_INLINE std::string to_string( PipelineCreationFeedbackFlagBits value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:4046:33: note: previous definition is here
+ 4046 |   VULKAN_HPP_INLINE std::string to_string( PipelineCreationFeedbackFlagBits value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:6100:33: error: redefinition of 'to_string'
+ 6100 |   VULKAN_HPP_INLINE std::string to_string( ToolPurposeFlagBits value )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:4058:33: note: previous definition is here
+ 4058 |   VULKAN_HPP_INLINE std::string to_string( ToolPurposeFlagBits value )
+      |                                 ^
+In file included from C:/Users/cosyc/AppData/Local/Pub/Cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/src/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:39:
+In file included from C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan.hpp:6116:
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_to_string.hpp:6115:33: error: redefinition of 'to_string'
+ 6115 |   VULKAN_HPP_INLINE std::string to_string( PrivateDataSlotCreateFlagBits )
+      |                                 ^
+C:/Users/cosyc/AppData/Local/Android/Sdk/ndk/26.1.10909125/sources/third_party/vulkan/src/include/vulkan/vulkan_enums.hpp:4074:33: note: previous definition is here
+ 4074 |   VULKAN_HPP_INLINE std::string to_string( PrivateDataSlotCreateFlagBits )
+      |                                 ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+
+[33/149] Building CXX object llama.cpp/src/CMakeFiles/ll
+a
+m
+a.dir/models/ernie4-5.cpp.o
+
+[
+34/149] Building 
+C
+X
+X
+
+o
+b
+j
+ect llama.cpp/src/CMakeFiles/llam
+a
+.dir/models/deepseek2.cpp.o
+
+[
+3
+5
+/
+1
+4
+9
+] Building CXX obj
+e
+ct llama.cpp/src/CMakeFiles/llama.dir/models/deepseek.cpp.o
+
+[
+36/149] Building CXX object llama.cpp/src/CMakeFiles/llama.d
+i
+r/models/delta-ne
+t
+-
+b
+a
+s
+e
+.cpp.o
+
+[37/149] Building CXX obj
+e
+c
+t
+ llama.cpp/src/CMakeFiles/llama.dir/models/eurob
+e
+r
+t.cpp.o
+
+[
+38/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/exaone.cpp.o
+
+[
+39/149] Building CXX ob
+j
+e
+c
+t
+ llama.cpp/src/CMakeFiles/llama.dir/models/falcon-h1.cpp.o
+
+[
+40/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/falcon.cpp.o
+
+[41/149] Building CXX object llama.cpp/src/CMakeFiles/llama.dir/models/exaon
+e-moe
+.cpp.o
+
+n
+inja: build stopped: subcommand f
+ailed.
+
+Unhandled exception:
+Exception: Failed to build CMake project: 
+#0      RunCMakeBuilder.run (package:native_toolchain_cmake/src/builder/run_builder.dart:185:7)
+<asynchronous suspension>
+#1      CMakeBuilder.run (package:native_toolchain_cmake/src/builder/builder.dart:344:5)
+<asynchronous suspension>
+#2      main.<anonymous closure> (file:///c:/users/cosyc/appdata/local/pub/cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/hook/build.dart:73:5)
+<asynchronous suspension>
+#3      build (package:hooks/src/api/build_and_link.dart:191:5)
+<asynchronous suspension>
+#4      main (file:///c:/users/cosyc/appdata/local/pub/cache/git/fllama-e812a796f557dd95360830f1f8577a25076f6aba/hook/build.dart:9:3)
+<asynchronous suspension>
+
+  stdout:
+
+
+Target dart_build failed: Error: Building native assets failed. See the logs for more details.
+
+
+> Task :app:compileFlutterBuildDebug FAILED
+
+[Incubating] Problems report is available at: file:///C:/dev-shared/openclaw-projects/openclaw_final/android/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildDebug'.
+> Process 'command 'C:\flutter\bin\flutter.bat'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 43s
+6 actionable tasks: 2 executed, 4 up-to-date

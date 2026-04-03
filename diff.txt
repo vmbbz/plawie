@@ -1,0 +1,13 @@
+diff --git a/lib/screens/management/local_llm_screen.dart b/lib/screens/management/local_llm_screen.dart
+index 2349102..ee4ad72 100644
+--- a/lib/screens/management/local_llm_screen.dart
++++ b/lib/screens/management/local_llm_screen.dart
+@@ -746,7 +746,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
+                     children: [
+                       const Text('Response:', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                       if (!_isTesting) ...[
+-                        Text('${_tokenCount} tokens', style: const TextStyle(color: Colors.white24, fontSize: 10)),
++                        Text('$_tokenCount tokens', style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                         const SizedBox(width: 8),
+                         GestureDetector(
+                           onTap: () {

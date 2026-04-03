@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \":*)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:ollama.readthedocs.io)",
+      "WebFetch(domain:www.betterclaw.io)",
+      "WebFetch(domain:openclaws.io)",
+      "WebFetch(domain:lumadock.com)",
+      "WebFetch(domain:www.getopenclaw.ai)",
+      "Bash(wc -l c:/dev-shared/openclaw-projects/openclaw_final/lib/screens/management/skills/agent_*.dart)",
+      "Bash(grep -v \"//.*local-llm\\\\|startsWith\\\\|local-llm/\\\\|override\\\\|was for\")",
+      "Bash(grep -l \"ollama\\\\|Ollama\\\\|OLLAMA\" android/app/src/main/kotlin/com/nxg/openclawproot/*.kt)",
+      "Bash(grep -n \"ollama\\\\|Ollama\\\\|OLLAMA\" android/app/src/main/kotlin/com/nxg/openclawproot/*.kt)",
+      "Bash(find . -name openclaw.json* -type f)",
+      "WebFetch(domain:node-llama-cpp.withcat.ai)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:www.stratosphereips.org)",
+      "WebFetch(domain:unpkg.com)",
+      "WebFetch(domain:cdn.jsdelivr.net)"
+    ]
+  }
+}

@@ -69,6 +69,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
   StreamSubscription? _serviceSub;
   StreamSubscription? _gatewaySub;
+  StreamSubscription<String>? _activitySub;
+
+  // Live activity panel state
+  final List<String> _activityLogs = [];
+  final ScrollController _activityScrollController = ScrollController();
 
   @override
   void initState() {
@@ -83,6 +88,23 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
       if (mounted && gwState.ollamaHubModels.isNotEmpty) {
         _fetchOllamaModels();
       }
+    });
+    // Live activity panel: subscribe to chat/hub events from GatewayService.
+    _activitySub = GatewayService().chatActivityStream.listen((event) {
+      if (!mounted) return;
+      setState(() {
+        _activityLogs.add(event);
+        if (_activityLogs.length > 40) _activityLogs.removeAt(0);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_activityScrollController.hasClients) {
+          _activityScrollController.animateTo(
+            _activityScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     });
     _checkInternalStatus();
     _checkDownloadedModels();
@@ -99,6 +121,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   void dispose() {
     _serviceSub?.cancel();
     _gatewaySub?.cancel();
+    _activitySub?.cancel();
+    _activityScrollController.dispose();
     _testPromptController.dispose();
     _pullModelController.dispose();
     super.dispose();
@@ -613,7 +637,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           ),
         ),
         const Text(
-          'Higher threads = faster tokens but more heat. 4 is optimal for most phones.',
+          '1 thread is fastest on most phones (single big-core focus). Increase only if responses feel slow.',
           style: TextStyle(color: Colors.white30, fontSize: 10),
         ),
       ],
@@ -1087,7 +1111,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+                _buildActivityPanel(),
+                const SizedBox(height: 16),
+
                 // --- Model Management Sub-section ---
                 const Divider(color: Colors.white10, height: 1),
                 const SizedBox(height: 12),
@@ -1160,6 +1186,65 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildActivityPanel() {
+    return Container(
+      height: 130,
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.black38,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.monitor_heart_rounded, color: Colors.white30, size: 12),
+              const SizedBox(width: 6),
+              Text(
+                'LIVE ACTIVITY',
+                style: GoogleFonts.outfit(
+                  color: Colors.white30,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: _activityLogs.isEmpty
+                ? Center(
+                    child: Text(
+                      'Waiting for activity...',
+                      style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 10),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _activityScrollController,
+                    itemCount: _activityLogs.length,
+                    itemBuilder: (ctx, i) {
+                      final entry = _activityLogs[i];
+                      final Color entryColor = entry.contains('✗') || entry.contains('⚠')
+                          ? Colors.redAccent
+                          : entry.contains('✓')
+                              ? Colors.greenAccent
+                              : Colors.white54;
+                      return Text(
+                        entry,
+                        style: GoogleFonts.jetBrainsMono(color: entryColor, fontSize: 10),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
