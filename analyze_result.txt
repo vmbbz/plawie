@@ -1,0 +1,8 @@
+Analyzing 2 items...                                            
+
+  error - The method 'debugPrint' isn't defined for the type 'GatewayService' - lib\services\gateway_service.dart:161:7 - undefined_method
+  error - The method 'debugPrint' isn't defined for the type 'GatewayService' - lib\services\gateway_service.dart:177:7 - undefined_method
+  error - The method 'debugPrint' isn't defined for the type 'GatewayService' - lib\services\gateway_service.dart:312:7 - undefined_method
+   info - The 'if' statement could be replaced by a null-aware assignment - lib\services\gateway_service.dart:878:7 - prefer_conditional_assignment
+
+4 issues found. (ran in 0.7s)

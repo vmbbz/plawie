@@ -27,14 +27,6 @@ class LocalLlmModel {
   final String? mmProjUrl;     // HuggingFace URL for the CLIP mmproj file
   final int? mmProjSizeMb;     // Download size hint for the mmproj file
 
-  /// True when the model architecture supports OpenAI-style tool/function calls
-  /// AND the Ollama Modelfile template for this model includes {{ .Tools }}.
-  /// Used to:
-  ///   - Inject the chat template when registering with Ollama (full gateway routing)
-  ///   - Filter the gateway primary model picker (non-tool models show CHAT ONLY)
-  ///   - Route chat via gateway agent loop vs. direct Ollama HTTP
-  final bool supportsToolCalls;
-
   const LocalLlmModel({
     required this.id,
     required this.name,
@@ -48,7 +40,6 @@ class LocalLlmModel {
     this.isMultimodal = false,
     this.mmProjUrl,
     this.mmProjSizeMb,
-    this.supportsToolCalls = false,
   });
 
   String get filename => '$id.gguf';
@@ -81,7 +72,6 @@ const _modelCatalog = [
     recommendedThreads: 4,
     quality: 'Recommended',
     contextWindow: 32768,
-    supportsToolCalls: true,
   ),
   LocalLlmModel(
     id: 'qwen2.5-3b-instruct-q4_k_m',
@@ -93,7 +83,6 @@ const _modelCatalog = [
     recommendedThreads: 6,
     quality: 'Optimal',
     contextWindow: 32768,
-    supportsToolCalls: true,
   ),
   LocalLlmModel(
     id: 'smollm2-1.7b-instruct-q4_k_m',
@@ -166,7 +155,7 @@ class LocalLlmState {
     this.activeModelId,
     this.downloadProgress = 0.0,
     this.errorMessage,
-    this.threads = 1,
+    this.threads = 4,
     this.isEnabled = false,
   });
 
