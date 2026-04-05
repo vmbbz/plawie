@@ -12,30 +12,6 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 
-/// Simple mobile-friendly template for Qwen2.5 models.
-/// Stripped down to avoid template processing overhead on mobile.
-///
-/// CRITICAL: num_ctx MUST match the contextWindow written to openclaw.json
-/// in configureOllama(). If they diverge the Node.js agent sends more tokens
-/// than Ollama can accept, causing OOM crashes on mobile.
-const _kQwen25OllamaTemplate = '''
-TEMPLATE """{{- if .System }}
-{{ .System }}
-{{ end }}
-{{- if .Prompt }}
-{{ .Prompt }}
-{{ end }}
-{{- if .Tools }}
-{{ .Tools }}
-{{ end }}
-"""
-PARAMETER stop " "
-PARAMETER stop " "
-PARAMETER num_ctx 4096
-PARAMETER num_gpu 0
-PARAMETER num_thread 2
-''';
-
 /// Mobile-optimised system prompt for Ollama models.
 /// The full OpenClaw agent instructions.md is ~27,000 chars (~7,000 tokens)
 /// which exceeds the num_ctx=4096 budget for a 1.5B model on mobile.
@@ -488,18 +464,19 @@ class GatewayService {
   }
 
   Future<bool> startInternalOllama() async {
-    final success = await NativeBridge.startOllama();
+    // NDK HTTP Bridge Optimization:
+    // We no longer spawn the heavy PRoot C++ llama-server daemon. 
+    // The Dart LocalHttpBridge running on port 11434 receives OpenClaw 
+    // POST streams and pushes them directly into fllama.
     _updateState(_state.copyWith(
-      isOllamaRunning: success,
-      logs: [..._state.logs, success
-          ? '[INFO] Ollama Hub starting — waiting for ready signal...'
-          : '[WARN] Ollama start returned failure.'],
+      isOllamaRunning: true,
+      logs: [..._state.logs, '[INFO] Local NDK HTTP Bridge active on port 11434...'],
     ));
-    if (success) {
-      // Poll health in the background; auto-sync once Ollama responds.
-      unawaited(_waitForOllamaHealthThenSync());
-    }
-    return success;
+    
+    // Check our Dart-served /api/tags health check then sync available models.
+    unawaited(_waitForOllamaHealthThenSync());
+    
+    return true;
   }
 
   /// Polls :11434 every 3 s for up to 30 s, then triggers model sync.
@@ -635,18 +612,6 @@ class GatewayService {
 
     // Compute canonical names for tool-capable downloaded GGUFs, then clean up
     // any stale registrations (old-format names OR deprecated non-tool models).
-    final canonicalNames = <String>{};
-    for (final m in catalog) {
-      if (m.supportsToolCalls && await LocalLlmService().isModelDownloaded(m)) {
-        canonicalNames.add(_toOllamaModelName(m.id));
-      }
-    }
-    await _cleanupStaleOllamaRegistrations(canonicalNames);
-
-    // Pre-fetch registered models to skip re-hashing on every startup.
-    final registered = await _getRegisteredOllamaModels();
-
-    int synced = 0;
     final syncedModelNames = <String>[]; // collect for gateway config + state emit
 
     for (final model in catalog) {
@@ -655,40 +620,20 @@ class GatewayService {
       if (!model.supportsToolCalls) continue;
       if (await LocalLlmService().isModelDownloaded(model)) {
         final ollamaName = _toOllamaModelName(model.id);
-        // Always re-create: ensures num_ctx params from the current
-        // Modelfile are applied. ollama create reuses the existing GGUF blob
-        // (no re-hashing) so this is fast.
-        if (registered.contains(ollamaName)) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[HUB] Refreshing $ollamaName params...'],
-          ));
-        }
-        try {
-          final success = await _createOllamaModelFromGguf(
-            ollamaName, model.prootModelPath,
-            supportsToolCalls: model.supportsToolCalls,
-          );
-          if (success) {
-            synced++;
-            syncedModelNames.add(ollamaName);
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[INFO] Registered ${model.id} as $ollamaName.'],
-            ));
-          } else {
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'],
-            ));
-          }
-        } catch (e) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[ERROR] Sync error for ${model.id}: $e'],
-          ));
-        }
+        
+        // NDK HTTP Bridge Optimization:
+        // No need to invoke PRoot commands or write Modelfiles anymore. 
+        // We simply declare the model available so the UI and OpenClaw 
+        // Node agent can route to it. `LocalHttpBridge` natively parses the request.
+        syncedModelNames.add(ollamaName);
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[INFO] Local NDK model ${model.id} available as $ollamaName.'],
+        ));
       }
     }
 
     _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] Hub Sync Done. $synced models available.'],
+      logs: [..._state.logs, '[INFO] Hub Sync Done. ${syncedModelNames.length} models available.'],
     ));
 
     // Write synced models into openclaw.json and emit to state.
@@ -809,118 +754,7 @@ class GatewayService {
     return [];
   }
 
-  /// Register a local GGUF file with the integrated Ollama Hub.
-  ///
-  /// APPROACH: Write a minimal Modelfile to the PRoot filesystem from Dart, then run
-  /// `ollama create` CLI inside PRoot pointing at that file. This avoids:
-  ///   - HTTP API path resolution failure (PRoot ptrace doesn't translate HTTP socket paths)
-  ///   - /dev/stdin unreliability in non-interactive PRoot (heredoc stdin gets no data)
-  ///
-  /// The Modelfile is written to $filesDir/rootfs/ubuntu/tmp/ (Android host FS), which
-  /// appears as /tmp/ inside PRoot — accessible by the Ollama CLI process.
-  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath, {bool supportsToolCalls = false}) async {
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[HUB] Registering $name...'],
-    ));
-    File? tempModelfile;
-    try {
-      // Write Modelfile to the rootfs /tmp directory.
-      // Dart writes to the Android host path; PRoot sees it at /tmp/oc_mf.
-      final filesDir = await NativeBridge.getFilesDir();
-      final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
-      tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
-      // For tool-capable models inject the Qwen2.5 chat template so Ollama
-      // registers the {{ .Tools }} marker and allows the gateway agent loop
-      // to pass function schemas without receiving HTTP 400.
-      final modelfileContent = supportsToolCalls
-          ? 'FROM $ggufPath\n$_kQwen25OllamaTemplate'
-          : 'FROM $ggufPath\nPARAMETER num_ctx 4096\nPARAMETER num_gpu 0\nPARAMETER num_thread 2\n';
-      await tempModelfile.writeAsString(modelfileContent);
 
-      final prootModelfilePath = '/tmp/oc_mf_$safeName';
-
-      // Verify the GGUF is visible from inside PRoot before calling ollama.
-      // Helps confirm the bind mount is working; emits a clear log if not.
-      final checkResult = await NativeBridge.runInProot(
-        'test -f "$ggufPath" && echo "GGUF_OK" || echo "GGUF_MISSING: $ggufPath"',
-        timeout: 10,
-      ).catchError((_) => 'CHECK_FAILED');
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] model file check: ${checkResult.trim()}'],
-      ));
-
-      final result = await NativeBridge.runInProot(
-        'OLLAMA_HOST=127.0.0.1:11434 ollama create "$name" -f "$prootModelfilePath"',
-        timeout: 180,
-      );
-
-      final lower = result.toLowerCase();
-      final success = lower.contains('success') && !lower.contains('error:');
-      if (success) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[HUB] $name — success'],
-        ));
-        
-        // Test model loading — log memory before/after, capture exit code + error snippet.
-        try {
-          // grep MemAvailable avoids shell printf quoting issues; parse KB→MB in Dart.
-          final rawBefore = await NativeBridge.runInProot(
-            'grep MemAvailable /proc/meminfo',
-            timeout: 5,
-          ).catchError((_) => '');
-          final beforeMb = _parseMemAvailableMb(rawBefore);
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[MEM] Pre-load available: ${beforeMb}MB'],
-          ));
-
-          // Run with a 180s budget; append EXIT_<code> so we can parse the exit status.
-          final testResult = await NativeBridge.runInProot(
-            'OLLAMA_HOST=127.0.0.1:11434 timeout 180 ollama run "$name" "hi" 2>&1; echo "EXIT_\$?"',
-            timeout: 185,
-          );
-          final exitMatch = RegExp(r'EXIT_(\d+)').firstMatch(testResult);
-          final exitCode = int.tryParse(exitMatch?.group(1) ?? '') ?? 1;
-          if (exitCode != 0) {
-            final lines = testResult.split('\n')
-                .map((l) => l.trim()).where((l) => l.isNotEmpty && !l.startsWith('EXIT_')).toList();
-            final detail = lines.isNotEmpty ? lines.last : 'unknown error';
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] $name failed load test (exit $exitCode): $detail'],
-            ));
-          } else {
-            final rawAfter = await NativeBridge.runInProot(
-              'grep MemAvailable /proc/meminfo',
-              timeout: 5,
-            ).catchError((_) => '');
-            final afterMb = _parseMemAvailableMb(rawAfter);
-            final usedMb = beforeMb - afterMb;
-            _updateState(_state.copyWith(
-              logs: [..._state.logs,
-                '[HUB] $name passed load test — used ~${usedMb}MB (${afterMb}MB left)'],
-            ));
-          }
-        } catch (_) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[WARN] Could not test $name loading'],
-          ));
-        }
-      } else {
-        final trimmed = result.trim().split('\n').take(8).join(' | ');
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[DEBUG] ollama create output: $trimmed'],
-        ));
-      }
-      return success;
-    } catch (e) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] ollama create failed: $e'],
-      ));
-      return false;
-    } finally {
-      // Clean up temp Modelfile regardless of outcome.
-      try { await tempModelfile?.delete(); } catch (_) {}
-    }
-  }
 
   /// Pull a model from the Ollama library into the integrated hub.
   Stream<double> pullOllamaModel(String name) async* {
