@@ -377,19 +377,24 @@ class GatewayService {
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
-    // Ollama Default Provider — always ensure models array is present.
+    // Ollama provider — only inject/maintain if it was already explicitly
+    // configured (e.g. by syncLocalModelsWithOllama or user onboarding).
+    // Unconditionally creating a stale ollama block when the user only has a
+    // cloud provider can confuse gateway model resolution and cause silent
+    // zero-output dispatches.
     config['models'] ??= {};
     config['models']['providers'] ??= {};
-    config['models']['providers']['ollama'] ??= <String, dynamic>{};
-    final ollama = config['models']['providers']['ollama'] as Map<String, dynamic>;
-    ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
-    ollama['apiKey'] ??= 'ollama-local';
-    ollama['api'] ??= 'ollama';
-    // Context window MUST match Modelfile num_ctx to prevent the Node.js
-    // agent from sending 200K-token-sized payloads to a 4096-token model.
-    ollama['contextWindow'] ??= 4096;
-    // Schema requires models to always be an array. Fix any existing entry missing it.
-    ollama['models'] ??= <Map<String, dynamic>>[];
+    if (config['models']['providers'].containsKey('ollama')) {
+      final ollama = config['models']['providers']['ollama'] as Map<String, dynamic>;
+      ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
+      ollama['apiKey'] ??= 'ollama-local';
+      ollama['api'] ??= 'ollama';
+      // Context window MUST match Modelfile num_ctx to prevent the Node.js
+      // agent from sending 200K-token-sized payloads to a 4096-token model.
+      ollama['contextWindow'] ??= 4096;
+      // Schema requires models to always be an array. Fix any existing entry missing it.
+      ollama['models'] ??= <Map<String, dynamic>>[];
+    }
 
     // Remove keys that have never been part of the OpenClaw schema.
     // These were written by earlier builds and must be stripped so the gateway
@@ -1055,8 +1060,12 @@ class GatewayService {
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
     config['agents']['defaults']['model'] ??= {};
+    final previous = config['agents']['defaults']['model']['primary'] as String?;
     config['agents']['defaults']['model']['primary'] = model;
     await _writeConfig(config);
+    _lastSyncedModel = model; // Keep sync cache aligned
+    _addActivity('[MODEL] persistModel: $model (was: ${previous ?? 'unset'})');
+    debugPrint('[GatewayService] persistModel: $model (was: ${previous ?? 'unset'})');
 
     if (reload) {
       invalidateTokenCache();
@@ -1109,9 +1118,14 @@ class GatewayService {
   }
 
   /// Write an API key (Direct I/O — avoids proot / node-e overhead)
+  ///
+  /// Also sets the primary model for this provider so the gateway agent loop
+  /// uses the correct model immediately — prevents the "empty response" bug
+  /// where the agent dispatches to a model that doesn't match the API key.
   Future<void> configureApiKey(String provider, String key) async {
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
+    final primaryModel = getModelForProvider(provider);
 
     final List<Map<String, dynamic>> defaultModels;
     if (openClawProvider == 'google') {
@@ -1126,7 +1140,7 @@ class GatewayService {
       defaultModels = [{'id': 'default', 'name': 'Default Model'}];
     }
 
-    // 1. Update openclaw.json
+    // 1. Update openclaw.json — API key + provider + primary model
     final config = await _readConfig();
     config['env'] ??= {};
     config['env']['vars'] ??= {};
@@ -1143,7 +1157,19 @@ class GatewayService {
     if (openClawProvider == 'google' && config['models']['providers']['google']['baseUrl'] == null) {
       config['models']['providers']['google']['baseUrl'] = "https://generativelanguage.googleapis.com/v1beta";
     }
+
+    // Set the primary model to match this provider's key.
+    // Without this, the gateway may dispatch to a stale/wrong model → empty response.
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['model'] ??= {};
+    final previousModel = config['agents']['defaults']['model']['primary'] as String?;
+    config['agents']['defaults']['model']['primary'] = primaryModel;
+
     await _writeConfig(config);
+    _lastSyncedModel = primaryModel; // Keep sync cache aligned
+    _addActivity('[MODEL] configureApiKey: provider=$openClawProvider, primaryModel=$primaryModel (was: ${previousModel ?? 'unset'})');
+    debugPrint('[GatewayService] configureApiKey: provider=$openClawProvider, primaryModel=$primaryModel (was: ${previousModel ?? 'unset'})');
 
     // 2. Update agent auth-profiles.json
     try {
@@ -1247,6 +1273,79 @@ class GatewayService {
 
   String? _cachedToken;
   DateTime? _lastTokenFetch;
+  String? _lastSyncedModel;
+
+  /// Ensure agents.defaults.model.primary in openclaw.json matches the
+  /// user-selected [model]. Writes only when the value has actually changed
+  /// to avoid redundant I/O on every message.
+  Future<void> _syncModelToConfig(String model) async {
+    if (model == _lastSyncedModel) return;
+    _lastSyncedModel = model;
+    bool needsWrite = false;
+    final config = await _readConfig();
+    
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['model'] ??= {};
+    final current = config['agents']['defaults']['model']['primary'] as String?;
+    
+    if (current != model) {
+      config['agents']['defaults']['model']['primary'] = model;
+      needsWrite = true;
+    }
+
+    // --- MEMORY ROBUSTNESS FIXES ---
+    // Force contextWindow down to 4096 for Ollama to prevent Node.js
+    // from assuming a 200k context window and exploding the C++ KV-Cache.
+    final isOllama = model.startsWith('ollama/');
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
+    if (isOllama) {
+      config['models']['providers']['ollama'] ??= {};
+      if (config['models']['providers']['ollama']['contextWindow'] != 4096) {
+        config['models']['providers']['ollama']['contextWindow'] = 4096;
+        needsWrite = true;
+      }
+    }
+
+    if (needsWrite) {
+      await _writeConfig(config);
+      _addActivity('[MODEL] syncToConfig: $model (was: ${current ?? 'unset'})');
+      debugPrint('[GatewayService] Synced model to config: $model');
+    }
+
+    // --- CONTEXT PROMPT ROBUSTNESS FIXES ---
+    // The default OpenClaw agent prompt is ~27,000 characters. We must slim it
+    // down for mobile models so it fits in the 4096 token window.
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final instructionsPath = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/instructions.md';
+      final instructionsFile = File(instructionsPath);
+      final backupPath = '$instructionsPath.cloud';
+      final backupFile = File(backupPath);
+
+      if (isOllama) {
+        if (await instructionsFile.exists()) {
+          final content = await instructionsFile.readAsString();
+          // If the file is > 1000 characters, it's the cloud prompt. Back it up and replace.
+          if (content.length > 1000) {
+             if (!await backupFile.exists()) {
+               await instructionsFile.copy(backupPath);
+             }
+             await instructionsFile.writeAsString('You are Plawie, a helpful AI assistant running locally on this Android device. Be concise and direct.');
+             _addActivity('[MODEL] Slimmed down system prompt for Ollama memory safety.');
+          }
+        }
+      } else {
+        // Restore the full cloud prompt if coming back from an Ollama session
+        if (await backupFile.exists()) {
+          await backupFile.copy(instructionsPath);
+          await backupFile.delete();
+          _addActivity('[MODEL] Restored full system prompt for cloud model.');
+        }
+      }
+    } catch (_) {}
+  }
 
   /// Direct I/O: Retrieve token from config file (instant, no proot)
   Future<String?> retrieveTokenFromConfig({bool force = false}) async {
@@ -1657,13 +1756,17 @@ class GatewayService {
 
     _addActivity('[CHAT] → Sending to $model');
 
+    // ── Sync model to config BEFORE sending ──────────────────────────────
+    // Belt-and-suspenders: even if the gateway ignores the WS `model` param,
+    // the filesystem config will be correct for the agent loop to read.
+    await _syncModelToConfig(model);
+
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
 
     // Use sessionKey from gateway handshake, or default to 'main'
     final sessionKey = _connection!.mainSessionKey ?? 'main';
 
-    // Give Ollama extra time — mobile inference is slower than cloud.
     // Give Ollama extra time — mobile inference is slower than cloud.
     // 600 s: matches Node JS embedded timeout constraint. Mobile OS will thrash under
     // 1.9GB memory pressure.
@@ -1674,6 +1777,7 @@ class GatewayService {
       'params': {
         'sessionKey': sessionKey,
         'message': message,
+        'model': model,
         'idempotencyKey': const Uuid().v4(),
         'timeoutMs': timeoutMs,
       },
