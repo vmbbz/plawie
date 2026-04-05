@@ -967,6 +967,12 @@ Phase 4 ─── PRoot Gateway Modernization (2–4 months) ──────�
             3–4× faster gateway startup, smaller install
   Option B: Replace Node.js gateway with native Dart routing
             Eliminate PRoot entirely for all model types
+  Option C: Build a Native Dart HTTP Bridge (The "Shelf" Wrapper)
+            - **Goal:** Eliminate the ~200MB memory footprint of the secondary Ollama C++ server inside PRoot.
+            - **How:** Because the OpenClaw Node.js agent inherently requires an OpenAI-compliant HTTP endpoint (`/v1/chat/completions`), and `fllama` does not provide an HTTP server natively, we can wrap fllama using Dart's `shelf` and `shelf_router` packages.
+            - **Implementation:** The Dart `shelf` server bindings run on port 8080 and act as a proxy. Requests originating from the OpenClaw Node gateway are translated from standard OpenAI JSON into the NDK's native `OpenAiRequest` structure.
+            - **Streaming Optimization:** Since fllama's C++ callback explicitly yields a JSON payload string strictly conforming to the OpenAI SSE delta structure (`openaiResponseJsonString`), no post-processing mapping is required. The Dart isolates simply pipe `utf8.encode('data: $responseJson\n\n')` directly into the HTTP chunked stream response.
+            - **Impact:** Removes the PRoot redundancy loop safely without destabilizing the Node.js open-source tooling ecosystems OpenClaw requires.
 
 Phase 5 ─── Multi-model / Hot-swap (3–6 months) ────────────────────────►
   _textModel + _visionModel independent instances
