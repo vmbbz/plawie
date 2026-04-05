@@ -1795,7 +1795,6 @@ General rules: Be concise, think step-by-step before answering, and do not over-
       'params': {
         'sessionKey': sessionKey,
         'message': message,
-        'model': model,
         'idempotencyKey': const Uuid().v4(),
         'timeoutMs': timeoutMs,
       },
