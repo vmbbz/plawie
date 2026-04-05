@@ -1335,12 +1335,22 @@ class GatewayService {
         if (await instructionsFile.exists()) {
           final content = await instructionsFile.readAsString();
           // If the file is > 1000 characters, it's the cloud prompt. Back it up and replace.
-          if (content.length > 1000) {
+          if (content.length > 2000) {
              if (!await backupFile.exists()) {
                await instructionsFile.copy(backupPath);
              }
-             await instructionsFile.writeAsString('You are Plawie, a helpful AI assistant running locally on this Android device. Be concise and direct.');
-             _addActivity('[MODEL] Slimmed down system prompt for Ollama memory safety.');
+             
+             const optimizedPrompt = '''You are Plawie, an advanced AI agent running securely on an Android device via OpenClaw.
+CRITICAL INSTRUCTIONS FOR TOOL USE:
+1. You have access to tools and agent skills defined in the provided JSON schemas.
+2. If the user asks for actions or data outside your local training, you MUST call the correct tool.
+3. Your tool calls MUST be strictly formatted as perfectly valid JSON matching the schema precisely.
+4. Never hallucinate tools that are not provided.
+5. If a tool fails, inform the user concisely.
+General rules: Be concise, think step-by-step before answering, and do not over-apologize.''';
+             
+             await instructionsFile.writeAsString(optimizedPrompt);
+             _addActivity('[MODEL] Injected optimized Tool Scaffolding prompt (fast TTFT).');
           }
         }
       } else {
