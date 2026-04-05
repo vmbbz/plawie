@@ -70,6 +70,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   StreamSubscription? _serviceSub;
   StreamSubscription? _gatewaySub;
   StreamSubscription<String>? _activitySub;
+  
+  // Ollama Diagnostics
+  final _ollamaTestPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
+  String _ollamaTestResponse = '';
+  bool _isOllamaTesting = false;
 
   // Live activity panel state
   final List<String> _activityLogs = [];
@@ -89,7 +94,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
         _fetchOllamaModels();
       }
     });
-    // Live activity panel: subscribe to chat/hub events from GatewayService.
+    // Live activity panel: seed from buffer so past events survive navigation,
+    // then subscribe for future events.
+    _activityLogs.addAll(GatewayService().recentActivity);
     _activitySub = GatewayService().chatActivityStream.listen((event) {
       if (!mounted) return;
       setState(() {
@@ -125,6 +132,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _activityScrollController.dispose();
     _testPromptController.dispose();
     _pullModelController.dispose();
+    _ollamaTestPromptController.dispose();
     super.dispose();
   }
 
@@ -433,11 +441,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       _buildModelInstructions(),
                       const SizedBox(height: 28),
                       _buildDeviceSpecCard(),
+                      const SizedBox(height: 16),
+                      _buildHighRamToggle(),
                       const SizedBox(height: 28),
                       _buildAgentPromptGuide(),
                       const SizedBox(height: 28),
                       _buildOllamaSection(),
                       const SizedBox(height: 28),
+                      if (_isOllamaHealthy) ...[
+                        _buildSectionLabel('Ollama Direct Diagnostics'),
+                        const SizedBox(height: 12),
+                        _buildOllamaDiagnosticsPanel(),
+                        const SizedBox(height: 28),
+                      ],
                       if (_state.status == LocalLlmStatus.ready) ...[
                         _buildSectionLabel('Diagnostics Playground'),
                         const SizedBox(height: 12),
@@ -831,6 +847,34 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     );
   }
 
+  Widget _buildHighRamToggle() {
+    final isEnabled = PreferencesService().enableFullContext;
+    return Container(
+      decoration: BoxDecoration(
+        color: isEnabled ? Colors.redAccent.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isEnabled ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white10),
+      ),
+      child: SwitchListTile(
+        title: Text(
+          'High-RAM Mode (Restore Full Agent Tools)',
+          style: GoogleFonts.outfit(color: isEnabled ? Colors.redAccent : Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        subtitle: const Text(
+          'WARNING: Requires 12GB+ RAM. Suspends memory safety and pushes full 27k tool schemas to the KV-Cache. May cause 10-15s CPU freezes per message. Turn ON only if tool logic is failing.',
+          style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4),
+        ),
+        activeColor: Colors.redAccent,
+        value: isEnabled,
+        onChanged: (val) {
+          setState(() {
+            PreferencesService().enableFullContext = val;
+          });
+        },
+      ),
+    );
+  }
+
   Widget _buildDeviceSpecCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -903,35 +947,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           Row(children: [
             const Icon(Icons.info_outline_rounded, color: Colors.blueAccent, size: 15),
             const SizedBox(width: 8),
-            Text('How to use local models',
+            Text('Architecture & Limits',
                 style: GoogleFonts.outfit(
                     color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12)),
           ]),
           const SizedBox(height: 10),
-          _instructionStep('1  Download', 'Tap Download on the model card above to save it to your device (~1–2 GB).'),
+          _instructionStep('FLLAMA CORE', 'This app binds "llama.cpp" natively into the Dart NDK. Zero Node.js emulation overhead. Fastest direct execution possible on Android.'),
           const SizedBox(height: 6),
-          _instructionStep('2  Start (NDK)', 'Tap Start to load the model via the on-device NDK engine (fllama). Select it in the chat model picker for private, offline chat — no internet needed.'),
+          _instructionStep('AGENT HUB', 'The Gateway manages tool schemas (ClawHub) by piping JSON to the NDK engine. To prevent Out-Of-Memory crashes, Context is strictly clamped to 4096 tokens.'),
           const SizedBox(height: 6),
-          _instructionStep('3  Agent Hub', 'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 13),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'NDK mode = direct private chat only. No tools, skills, or agent features. For the full OpenClaw experience use the Integrated Agent Hub.',
-                  style: const TextStyle(color: Colors.amber, fontSize: 10, height: 1.4),
-                ),
-              ),
-            ]),
-          ),
+          _instructionStep('THE GIMMICK', 'Because we trim the massive 27k cloud system-prompts for speed (TTFT), local models lack strict behavioral scaffolding. They may hallucinate tools.'),
         ],
       ),
     );
@@ -1084,7 +1109,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                   ),
                 ] else ...[
                   Text(
-                    'Enables Plawie to use a powerful local inference engine (Ollama) for reasoning and tools. No external apps required.',
+                    'Routes OpenClaw Gateway skills and tools into your active Local NDK session.',
                     style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
                   ),
                   const SizedBox(height: 16),
@@ -1580,6 +1605,95 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
       if (mounted) setState(() => _isTesting = false);
     }
   }
+
+  Future<void> _runOllamaTestInference() async {
+    setState(() {
+      _isOllamaTesting = true;
+      _ollamaTestResponse = '';
+    });
+    try {
+      if (_selectedOllamaModel == null) throw Exception('No Ollama model selected');
+      final stream = GatewayService().sendMessageHttp(
+          _ollamaTestPromptController.text, 
+          model: _selectedOllamaModel!, 
+          directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+          ollamaOptions: {'num_ctx': 4096}
+      );
+      await for (final token in stream) {
+        if (!mounted) break;
+        setState(() => _ollamaTestResponse += token);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _ollamaTestResponse = 'Error: $e');
+    } finally {
+      if (mounted) setState(() => _isOllamaTesting = false);
+    }
+  }
+
+  Widget _buildOllamaDiagnosticsPanel() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E2E),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.speed_rounded, color: Colors.blueAccent, size: 18),
+              const SizedBox(width: 10),
+              Text(
+                'Direct HTTP Test (No Gateway)',
+                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Endpoint: http://127.0.0.1:11434/v1/chat/completions\nThis tests the background Ollama process directly.',
+            style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ollamaTestPromptController,
+            maxLines: 2,
+            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.black.withValues(alpha: 0.2),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: _isOllamaTesting ? null : _runOllamaTestInference,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent.withValues(alpha: 0.1),
+              foregroundColor: Colors.blueAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              minimumSize: const Size(double.infinity, 45),
+            ),
+            child: _isOllamaTesting
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
+              : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          if (_ollamaTestResponse.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
+              child: SelectableText(_ollamaTestResponse, style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildModelActionRow({
     required IconData icon,
     required String title,

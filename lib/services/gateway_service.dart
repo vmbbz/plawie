@@ -1297,21 +1297,28 @@ class GatewayService {
     // --- MEMORY ROBUSTNESS FIXES ---
     // Force contextWindow down to 4096 for Ollama to prevent Node.js
     // from assuming a 200k context window and exploding the C++ KV-Cache.
+    // If High-RAM mode is enabled, supply enough context for the 27k prompt.
     final isOllama = model.startsWith('ollama/');
+    
+    final prefs = PreferencesService();
+    await prefs.init();
+    final enableFullContext = prefs.enableFullContext;
+    final int targetContext = enableFullContext ? 12000 : 4096;
+
     config['models'] ??= {};
     config['models']['providers'] ??= {};
     if (isOllama) {
       config['models']['providers']['ollama'] ??= {};
-      if (config['models']['providers']['ollama']['contextWindow'] != 4096) {
-        config['models']['providers']['ollama']['contextWindow'] = 4096;
+      if (config['models']['providers']['ollama']['contextWindow'] != targetContext) {
+        config['models']['providers']['ollama']['contextWindow'] = targetContext;
         needsWrite = true;
       }
     }
 
     if (needsWrite) {
       await _writeConfig(config);
-      _addActivity('[MODEL] syncToConfig: $model (was: ${current ?? 'unset'})');
-      debugPrint('[GatewayService] Synced model to config: $model');
+      _addActivity('[MODEL] syncToConfig: $model (ctx: $targetContext)');
+      debugPrint('[GatewayService] Synced model to config: $model (ctx: $targetContext)');
     }
 
     // --- CONTEXT PROMPT ROBUSTNESS FIXES ---
@@ -1324,7 +1331,7 @@ class GatewayService {
       final backupPath = '$instructionsPath.cloud';
       final backupFile = File(backupPath);
 
-      if (isOllama) {
+      if (isOllama && !enableFullContext) {
         if (await instructionsFile.exists()) {
           final content = await instructionsFile.readAsString();
           // If the file is > 1000 characters, it's the cloud prompt. Back it up and replace.
@@ -1337,11 +1344,12 @@ class GatewayService {
           }
         }
       } else {
-        // Restore the full cloud prompt if coming back from an Ollama session
+        // Restore the full cloud prompt if coming back from an Ollama session,
+        // or if High-RAM mode was toggled ON for an existing Ollama session.
         if (await backupFile.exists()) {
           await backupFile.copy(instructionsPath);
           await backupFile.delete();
-          _addActivity('[MODEL] Restored full system prompt for cloud model.');
+          _addActivity('[MODEL] Restored full system prompt for high-context mode.');
         }
       }
     } catch (_) {}
