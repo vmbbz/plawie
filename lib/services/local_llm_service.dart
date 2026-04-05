@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fllama/fllama.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
+import 'local_http_bridge.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -235,6 +236,10 @@ class LocalLlmService {
           orElse: () => _modelCatalog.first,
         );
 
+  /// Expose the active paths to the local HTTP bridge
+  String? get activeModelPath => _activeModelPath;
+  String? get activeMmprojPath => _activeMmprojPath;
+
   /// Context window clamped to a safe range for the active model.
   int get _activeContextSize =>
       (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
@@ -315,6 +320,10 @@ class LocalLlmService {
       fllamaCancelInference(_activeRequestId!);
       _activeRequestId = null;
     }
+    
+    // Stop the NDK HTTP bridge proxy
+    await LocalHttpBridge().stop();
+
     _activeChatController?.close();
     _activeChatController = null;
     _isInferring = false;
@@ -421,9 +430,13 @@ class LocalLlmService {
   /// Keeps the most recent messages — older ones are dropped first.
   List<Map<String, dynamic>> _trimHistory(
       List<Map<String, dynamic>> history, String newMessage) {
-    const avgCharsPerToken = 4;
-    // Reserve 1024 tokens for the response + 100 for system prompt overhead.
-    final budget = (_activeContextSize - 1024 - 100) * avgCharsPerToken;
+    // 3 chars/token is more conservative than the naive 4 — English BPE tokenizers average
+    // ~3.5 chars/token on prose, less for code/numbers/punctuation-heavy text.
+    const avgCharsPerToken = 3;
+    // Reserve 1024 tokens for the response + 600 for chat-template overhead.
+    // Qwen2.5 / LLaVA templates add <|im_start|>, role, <|im_end|> per message —
+    // with 10+ turns that's ~600 tokens of non-content overhead not counted in history chars.
+    final budget = (_activeContextSize - 1024 - 600) * avgCharsPerToken;
     var chars = newMessage.length;
     final result = <Map<String, dynamic>>[];
     for (final msg in history.reversed) {
@@ -487,6 +500,20 @@ class LocalLlmService {
         // Stream text deltas as they arrive.
         final delta = response.substring(lastResponse.length);
         lastResponse = response;
+
+        // fllama surfaces context-overflow as a text response containing "exceeds ... tokens".
+        // Catch it early and replace with a user-friendly message.
+        if (delta.isNotEmpty && delta.contains('exceeds') && delta.contains('context')) {
+          if (!controller.isClosed) {
+            controller.add('[Error] Conversation too long for this model. '
+                'Start a new chat to continue.');
+            _isInferring = false;
+            controller.close();
+          }
+          if (!completer.isCompleted) completer.complete();
+          return;
+        }
+
         if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
 
         // Accumulate tool_calls from each streaming JSON chunk.
@@ -826,6 +853,10 @@ class LocalLlmService {
         activeModelId: model.id,
         downloadProgress: 1.0,
       ));
+
+      // Boot up the NDK mapped HTTP bridge so OpenClaw Agent can communicate
+      await LocalHttpBridge().start();
+
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
