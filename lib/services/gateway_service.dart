@@ -12,68 +12,40 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 
-/// Ollama Modelfile TEMPLATE directive for Qwen2.5 instruct models.
-/// Sourced from the official Ollama Qwen2.5 model card template.
-/// Includes {{ .Tools }} support so the gateway agent loop can send
-/// function schemas and the model returns structured tool_call JSON.
-const _kQwen25OllamaTemplate = r'''
-TEMPLATE """{{- if .Messages }}
-{{- if or .System .Tools }}<|im_start|>system
-{{- if .System }}
+/// Simple mobile-friendly template for Qwen2.5 models.
+/// Stripped down to avoid template processing overhead on mobile.
+///
+/// CRITICAL: num_ctx MUST match the contextWindow written to openclaw.json
+/// in configureOllama(). If they diverge the Node.js agent sends more tokens
+/// than Ollama can accept, causing OOM crashes on mobile.
+const _kQwen25OllamaTemplate = '''
+TEMPLATE """{{- if .System }}
 {{ .System }}
-{{- end }}
+{{ end }}
+{{- if .Prompt }}
+{{ .Prompt }}
+{{ end }}
 {{- if .Tools }}
-
-# Tools
-
-You may call one or more functions to assist with the user query.
-
-You are provided with function signatures within <tools></tools> XML tags:
-
-<tools>
-{{- range .Tools }}
-{"type": "function", "function": {{ .Function }}}
-{{- end }}
-</tools>
-
-For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
-
-<tool_call>
-{"name": <function-name>, "arguments": <args-json-object>}
-</tool_call>
-{{- end }}<|im_end|>
+{{ .Tools }}
 {{ end }}
-{{- range $i, $_ := .Messages }}
-{{- $last := eq (len (slice $.Messages $i)) 1 -}}
-{{- if eq .Role "user" }}<|im_start|>user
-{{ .Content }}<|im_end|>
-{{ else if eq .Role "assistant" }}<|im_start|>assistant
-{{ if .Content }}{{ .Content }}
-{{- else if .ToolCalls }}
-{{- range .ToolCalls }}
-<tool_call>
-{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
-</tool_call>
-{{- end }}
-{{- end }}{{- if not $last }}<|im_end|>
-{{ end }}
-{{- else if eq .Role "tool" }}<|im_start|>user
-<tool_response>
-{{ .Content }}
-</tool_response><|im_end|>
-{{ end }}
-{{- end }}
-{{- else }}
-{{- if .System }}<|im_start|>system
-{{ .System }}<|im_end|>
-{{ end }}{{ if .Prompt }}<|im_start|>user
-{{ .Prompt }}<|im_end|>
-{{ end }}<|im_start|>assistant
-{{ end }}"""
-PARAMETER stop "<|im_start|>"
-PARAMETER stop "<|im_end|>"
+"""
+PARAMETER stop " "
+PARAMETER stop " "
 PARAMETER num_ctx 4096
+PARAMETER num_gpu 0
+PARAMETER num_thread 2
 ''';
+
+/// Mobile-optimised system prompt for Ollama models.
+/// The full OpenClaw agent instructions.md is ~27,000 chars (~7,000 tokens)
+/// which exceeds the num_ctx=4096 budget for a 1.5B model on mobile.
+/// This lightweight prompt gives the model its personality without exhausting
+/// the context window, leaving room for actual conversation history.
+const _kMobileSystemPrompt =
+    'You are Plawie, a helpful and friendly AI assistant running locally on '
+    'an Android device via OpenClaw. Be concise and helpful. '
+    'When asked to use a tool or function, respond with the appropriate tool call. '
+    'Keep answers brief — the user is on a mobile device with limited screen space.';
 
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();
@@ -91,10 +63,21 @@ class GatewayService {
   bool _isStopping = false;
   bool _isSyncing = false; // guard against concurrent syncLocalModelsWithOllama calls
   final _chatActivityController = StreamController<String>.broadcast();
+  final List<String> _activityBuffer = []; // replay buffer for late subscribers
 
   /// Live stream of human-readable chat and hub events for the Agent Hub panel.
   /// Emits: Flutter-side send/receive events + parsed Ollama server signals.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
+
+  /// Last ≤40 activity events — use to seed the panel when the screen opens.
+  List<String> get recentActivity => List.unmodifiable(_activityBuffer);
+
+  /// Buffer + broadcast a single activity event.
+  void _addActivity(String event) {
+    _activityBuffer.add(event);
+    if (_activityBuffer.length > 40) _activityBuffer.removeAt(0);
+    _chatActivityController.add(event);
+  }
 
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
@@ -115,6 +98,17 @@ class GatewayService {
     _state = newState;
     _stateController.add(_state);
   }
+
+  /// Parse any `grep <Key> /proc/meminfo` line into MB.
+  /// Input looks like: "MemAvailable:    1054204 kB"
+  static int _parseMemKbLineToMb(String raw) {
+    final parts = raw.trim().split(RegExp(r'\s+'));
+    final kb = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    return kb ~/ 1024;
+  }
+
+  /// Convenience alias used specifically for MemAvailable lines.
+  static int _parseMemAvailableMb(String raw) => _parseMemKbLineToMb(raw);
 
   /// List of methods supported by the current gateway connection.
   List<String> get supportedMethods => _connection?.supportedMethods ?? [];
@@ -293,17 +287,17 @@ class GatewayService {
       if (log.contains('llama runner started')) {
         final m = RegExp(r'started in ([\d.]+) seconds').firstMatch(log);
         if (m != null) {
-          _chatActivityController.add('[HUB] Model ready in ${m.group(1)}s');
+          _addActivity('[HUB] Model ready in ${m.group(1)}s');
         }
       } else if (log.contains('n_ctx =') && !log.contains('n_ctx_train')) {
         final m = RegExp(r'n_ctx = (\d+)').firstMatch(log);
         if (m != null) {
-          _chatActivityController.add('[HUB] Context: ${m.group(1)} tokens');
+          _addActivity('[HUB] Context: ${m.group(1)} tokens');
         }
       } else if (log.contains('KV buffer size')) {
         final m = RegExp(r'size = ([\d.]+) MiB').firstMatch(log);
         if (m != null) {
-          _chatActivityController.add('[HUB] KV cache: ${m.group(1)} MiB');
+          _addActivity('[HUB] KV cache: ${m.group(1)} MiB');
         }
       } else if (log.contains('[GIN]') && log.contains('chat/completions')) {
         // GIN format: "| 200 | 2.3s |" or "| 500 | 1m30s |"
@@ -311,12 +305,12 @@ class GatewayService {
         if (m != null) {
           final code = m.group(1);
           final dur = m.group(2)?.trim();
-          _chatActivityController.add(
+          _addActivity(
             '[HUB] ${code == '200' ? '✓' : '✗'} HTTP $code ($dur)',
           );
         }
       } else if (log.contains('aborting completion')) {
-        _chatActivityController.add('[HUB] ⚠ Inference aborted (client disconnected)');
+        _addActivity('[HUB] ⚠ Inference aborted (client disconnected)');
       }
       // Intentionally skip: GET /api/tags (health-check noise),
       // print_info:, load:, load_tensors:, llama_model_loader: (verbose startup spam)
@@ -391,6 +385,9 @@ class GatewayService {
     ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
     ollama['apiKey'] ??= 'ollama-local';
     ollama['api'] ??= 'ollama';
+    // Context window MUST match Modelfile num_ctx to prevent the Node.js
+    // agent from sending 200K-token-sized payloads to a 4096-token model.
+    ollama['contextWindow'] ??= 4096;
     // Schema requires models to always be an array. Fix any existing entry missing it.
     ollama['models'] ??= <Map<String, dynamic>>[];
 
@@ -430,6 +427,12 @@ class GatewayService {
       'baseUrl': baseUrl,
       'apiKey': 'ollama-local',
       'api': 'ollama',
+      // ── CRITICAL: contextWindow must match Modelfile num_ctx ──
+      // Without this the Node.js agent assumes 200,000 tokens (the Gemini
+      // default) and sends the full 27K system prompt + entire conversation
+      // history. On a 1.5B mobile model with num_ctx=4096 this causes
+      // immediate OOM death.
+      'contextWindow': 4096,
       // Schema requires models to always be an array (never undefined).
       'models': syncedModels.map((n) => {'id': n, 'name': n}).toList(),
     };
@@ -448,9 +451,17 @@ class GatewayService {
       prefs.configuredModel = fullModel;
     }
 
+    // ── Inject lightweight mobile system prompt for Ollama models ──
+    // The default OpenClaw agent instructions.md is 27,434 chars (~7K tokens).
+    // That alone blows past num_ctx=4096. Override with a compact prompt
+    // that fits in ~60 tokens, leaving 3,500+ tokens for conversation.
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['systemPrompt'] = _kMobileSystemPrompt;
+
     await _writeConfig(config);
     _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] Ollama provider configured at $baseUrl'],
+      logs: [..._state.logs, '[INFO] Ollama provider configured at $baseUrl (contextWindow=4096)'],
     ));
   }
 
@@ -502,6 +513,10 @@ class GatewayService {
           isOllamaRunning: true,
           logs: [..._state.logs, '[INFO] Ollama Hub ready — auto-syncing models...'],
         ));
+        // Clear stale session files before syncing. Aborted runs pile up
+        // assistant/error messages that inflatethe conversation history
+        // (messages=45+) and push total context beyond num_ctx=4096.
+        await _clearStaleSessions();
         await syncLocalModelsWithOllama();
         return;
       }
@@ -509,6 +524,35 @@ class GatewayService {
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[WARN] Ollama Hub did not respond after 30 s — check logs.'],
     ));
+  }
+
+  /// Truncate the gateway agent session JSONL file so aborted / timed-out
+  /// runs don't accumulate and inflate the message count (user:18 + assistant:27
+  /// etc.) that the Node.js engine forwards in every request.
+  Future<void> _clearStaleSessions() async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final sessionsDir = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
+      final dir = Directory(sessionsDir);
+      if (!await dir.exists()) return;
+      await for (final entity in dir.list()) {
+        if (entity is File && entity.path.endsWith('.jsonl')) {
+          final bytes = await entity.length();
+          // Only clear files > 10 KB — small sessions are fine
+          if (bytes > 10240) {
+            await entity.writeAsString('');
+            _updateState(_state.copyWith(
+              logs: [..._state.logs,
+                '[HUB] Cleared stale session (${(bytes / 1024).toStringAsFixed(1)} KB): ${entity.uri.pathSegments.last}'],
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[WARN] Session cleanup error: $e'],
+      ));
+    }
   }
 
   /// Extracts diagnostic logs from the integrated Ollama hub.
@@ -790,7 +834,7 @@ class GatewayService {
       // to pass function schemas without receiving HTTP 400.
       final modelfileContent = supportsToolCalls
           ? 'FROM $ggufPath\n$_kQwen25OllamaTemplate'
-          : 'FROM $ggufPath\nPARAMETER num_ctx 2048\n';
+          : 'FROM $ggufPath\nPARAMETER num_ctx 4096\nPARAMETER num_gpu 0\nPARAMETER num_thread 2\n';
       await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
@@ -816,6 +860,50 @@ class GatewayService {
         _updateState(_state.copyWith(
           logs: [..._state.logs, '[HUB] $name — success'],
         ));
+        
+        // Test model loading — log memory before/after, capture exit code + error snippet.
+        try {
+          // grep MemAvailable avoids shell printf quoting issues; parse KB→MB in Dart.
+          final rawBefore = await NativeBridge.runInProot(
+            'grep MemAvailable /proc/meminfo',
+            timeout: 5,
+          ).catchError((_) => '');
+          final beforeMb = _parseMemAvailableMb(rawBefore);
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[MEM] Pre-load available: ${beforeMb}MB'],
+          ));
+
+          // Run with a 180s budget; append EXIT_<code> so we can parse the exit status.
+          final testResult = await NativeBridge.runInProot(
+            'OLLAMA_HOST=127.0.0.1:11434 timeout 180 ollama run "$name" "hi" 2>&1; echo "EXIT_\$?"',
+            timeout: 185,
+          );
+          final exitMatch = RegExp(r'EXIT_(\d+)').firstMatch(testResult);
+          final exitCode = int.tryParse(exitMatch?.group(1) ?? '') ?? 1;
+          if (exitCode != 0) {
+            final lines = testResult.split('\n')
+                .map((l) => l.trim()).where((l) => l.isNotEmpty && !l.startsWith('EXIT_')).toList();
+            final detail = lines.isNotEmpty ? lines.last : 'unknown error';
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[WARN] $name failed load test (exit $exitCode): $detail'],
+            ));
+          } else {
+            final rawAfter = await NativeBridge.runInProot(
+              'grep MemAvailable /proc/meminfo',
+              timeout: 5,
+            ).catchError((_) => '');
+            final afterMb = _parseMemAvailableMb(rawAfter);
+            final usedMb = beforeMb - afterMb;
+            _updateState(_state.copyWith(
+              logs: [..._state.logs,
+                '[HUB] $name passed load test — used ~${usedMb}MB (${afterMb}MB left)'],
+            ));
+          }
+        } catch (_) {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[WARN] Could not test $name loading'],
+          ));
+        }
       } else {
         final trimmed = result.trim().split('\n').take(8).join(' | ');
         _updateState(_state.copyWith(
@@ -1468,10 +1556,12 @@ class GatewayService {
 
   /// Route a chat message to the correct backend based on model prefix.
   ///
-  /// • local-llm/ → fllama NDK (on-device inference, no network)
-  /// • ollama/    → direct :11434 with num_ctx:4096 to avoid the 26K gateway
-  ///                system-prompt crash on small models (no dashboard logging —
-  ///                fundamental limitation; fixable only at the gateway level)
+  /// • local-llm/ → fllama NDK (on-device inference, no network, no gateway)
+  /// • ollama/    → WS chat.send → gateway → Ollama :11434 (dashboard visible).
+  ///                Modelfile PARAMETER num_ctx 2048 should cap context.
+  ///                Watch hub logs: n_ctx=4096 = stable; n_ctx=32768 = gateway
+  ///                is overriding it (fundamental gateway limitation).
+  ///                WS fallback: direct :11434 with options.num_ctx when WS fails.
   /// • cloud      → WS chat.send → gateway agent loop → visible in dashboard
   Stream<String> sendMessage(String message, {
     String? model,
@@ -1506,29 +1596,66 @@ class GatewayService {
       return;
     }
 
-    // Ollama: bypass gateway agent loop — route direct to :11434.
-    // The gateway agent loop injects a 26K system prompt (~6,700 tokens) into
-    // every Ollama request, which forces n_ctx=32768 (896 MB KV cache) on small
-    // models → crash/overheat. We cap context at 4,096 tokens via the Ollama
-    // options field. Trade-off: these chats are NOT visible in the web dashboard.
-    if (model.startsWith('ollama/')) {
-      final ollamaModel = model.substring('ollama/'.length);
-      yield* sendMessageHttp(message,
-          model: ollamaModel,
-          directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-          conversationHistory: conversationHistory,
-          ollamaOptions: {'num_ctx': 4096});
+    // All other models (ollama/ and cloud) use WS chat.send → gateway.
+    // If WS is unavailable, ollama/ falls back to direct :11434 so inference
+    // still works; cloud falls back to HTTP gateway proxy.
+    final isOllama = model.startsWith('ollama/');
+    
+    // For Ollama, log a full memory snapshot and warn if headroom is tight.
+    if (isOllama) {
+      try {
+        // Read individual /proc/meminfo lines — no shell awk/printf quoting needed.
+        final totalRaw = await NativeBridge.runInProot('grep MemTotal /proc/meminfo', timeout: 5)
+            .catchError((_) => '');
+        final availRaw = await NativeBridge.runInProot('grep MemAvailable /proc/meminfo', timeout: 5)
+            .catchError((_) => '');
+        final swapRaw = await NativeBridge.runInProot('grep SwapFree /proc/meminfo', timeout: 5)
+            .catchError((_) => '');
+        final totalMb = _parseMemKbLineToMb(totalRaw);
+        final availMb = _parseMemAvailableMb(availRaw);
+        final swapMb = _parseMemKbLineToMb(swapRaw);
+        _addActivity('[MEM] Total: ${totalMb}MB | Available: ${availMb}MB | Swap: ${swapMb}MB');
+        if (availMb < 1100) {
+          _addActivity('[MEM] ⚠ Only ${availMb}MB free — need ~1.1GB for Qwen2.5-1.5B. Inference may crash.');
+        } else if (availMb < 1500) {
+          _addActivity('[MEM] △ ${availMb}MB free — tight but may work');
+        }
+        // Check what Ollama has loaded in memory via its HTTP PS endpoint.
+        try {
+          final psResp = await http.get(Uri.parse('http://127.0.0.1:11434/api/ps'))
+              .timeout(const Duration(seconds: 3));
+          if (psResp.statusCode == 200) {
+            final psData = jsonDecode(psResp.body) as Map<String, dynamic>?;
+            final models = psData?['models'] as List?;
+            if (models != null && models.isNotEmpty) {
+              final names = models.map((m) => (m as Map)['name'] ?? '?').join(', ');
+              _addActivity('[MEM] Ollama loaded: $names');
+            } else {
+              _addActivity('[MEM] Ollama: no model cached (cold start — first response will be slow)');
+            }
+          }
+        } catch (_) {}
+      } catch (_) {}
+    }
+    final wsOk = await _ensureWebSocket(token);
+    if (!wsOk) {
+      if (isOllama) {
+        // WS fallback: direct Ollama — no dashboard, but inference still works.
+        final ollamaModel = model.substring('ollama/'.length);
+        _addActivity('[CHAT] ⚠ WS unavailable — direct fallback for $ollamaModel');
+        yield* sendMessageHttp(message,
+            model: ollamaModel,
+            directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+            conversationHistory: conversationHistory,
+            ollamaOptions: {'num_ctx': 4096});
+      } else {
+        yield* sendMessageHttp(message, model: model, token: token,
+            conversationHistory: conversationHistory);
+      }
       return;
     }
 
-    // Cloud models: use the WebSocket chat.send RPC.
-    // WS chat.send creates gateway agent sessions visible in the web dashboard.
-    final wsOk = await _ensureWebSocket(token);
-    if (!wsOk) {
-      yield* sendMessageHttp(message, model: model, token: token,
-          conversationHistory: conversationHistory);
-      return;
-    }
+    _addActivity('[CHAT] → Sending to $model');
 
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
@@ -1536,17 +1663,31 @@ class GatewayService {
     // Use sessionKey from gateway handshake, or default to 'main'
     final sessionKey = _connection!.mainSessionKey ?? 'main';
 
+    // Give Ollama extra time — mobile inference is slower than cloud.
+    // Give Ollama extra time — mobile inference is slower than cloud.
+    // 600 s: matches Node JS embedded timeout constraint. Mobile OS will thrash under
+    // 1.9GB memory pressure.
+    final timeoutMs = isOllama ? 600000 : 90000;
+
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
       'params': {
         'sessionKey': sessionKey,
         'message': message,
         'idempotencyKey': const Uuid().v4(),
-        'timeoutMs': 90000,
+        'timeoutMs': timeoutMs,
       },
       'id': requestId,
     });
 
+    bool firstToken = true;
+    // activeRunId: initially from chat.send ACK, then corrected to the actual
+    // run ID seen in event agent phase=start (queued messages get a different runId).
+    String? activeRunId;
+    // runStarted: gates event chat state=final so a stale final from a prior run
+    // (which may complete after our Flutter timeout) cannot close the next request's
+    // stream before any content arrives.
+    bool runStarted = false;
     late StreamSubscription frameSub;
     frameSub = responseStream.listen(
       (frame) {
@@ -1557,8 +1698,11 @@ class GatewayService {
           if (type == 'error') {
             final payload = frame['payload'] as Map<String, dynamic>?;
             final errMsg = payload?['message'] as String? ?? 'API Error encountered';
-            chunkController.add('[Error] $errMsg');
-            if (!chunkController.isClosed) chunkController.close();
+            _addActivity('[CHAT] ✗ $errMsg');
+            if (!chunkController.isClosed) {
+              chunkController.add('[Error] $errMsg');
+              chunkController.close();
+            }
             return;
           }
 
@@ -1567,8 +1711,11 @@ class GatewayService {
             final errObj = frame['error'];
             final errStr = errObj is Map ? (errObj['message']?.toString() ?? errObj.toString()) : errObj.toString();
             if (errStr.toLowerCase().contains('rate limit') || errStr.toLowerCase().contains('api') || errStr.toLowerCase().contains('invalid')) {
-              chunkController.add('[Error] $errStr');
-              if (!chunkController.isClosed) chunkController.close();
+              _addActivity('[CHAT] ✗ $errStr');
+              if (!chunkController.isClosed) {
+                chunkController.add('[Error] $errStr');
+                chunkController.close();
+              }
               return;
             }
           }
@@ -1579,8 +1726,14 @@ class GatewayService {
             if (!ok) {
               final error = frame['error'] as Map<String, dynamic>?;
               final msg = error?['message'] as String? ?? 'chat.send failed';
-              chunkController.add('[Error] $msg');
-              if (!chunkController.isClosed) chunkController.close();
+              _addActivity('[CHAT] ✗ $msg');
+              if (!chunkController.isClosed) {
+                chunkController.add('[Error] $msg');
+                chunkController.close();
+              }
+            } else {
+              activeRunId = frame['runId'] as String?;
+              _addActivity('[CHAT] ← Gateway accepted (streaming...)');
             }
             return;
           }
@@ -1591,41 +1744,88 @@ class GatewayService {
                 ?? (frame['data'] as Map<String, dynamic>?)
                 ?? frame;
             final state = data['state'] as String?;
-            if (state == 'final' || state == 'aborted' || state == 'error') {
+            // Guard: only close on final/aborted once our agent run has started.
+            // event chat frames don't carry a run ID, so we use runStarted (set from
+            // event agent phase=start) as the signal that this session event is ours.
+            // Without this, a stale chat=final from run N closing after our 240s Flutter
+            // timeout would silently close run N+1's stream before content arrives.
+            if ((state == 'final' || state == 'aborted' || state == 'error') &&
+                (runStarted || !firstToken)) {
               if (!chunkController.isClosed) chunkController.close();
             }
           }
 
-          // Agent events — streaming text deltas and lifecycle errors
+          // Agent events — streaming text deltas and lifecycle
           if (type == 'event' && frame['event'] == 'agent') {
             final payload = frame['payload'] as Map<String, dynamic>?;
-            final innerData = payload?['data'] as Map<String, dynamic>? ?? frame['data'] as Map<String, dynamic>?;
+            final agentRun = frame['run'] as String? ?? payload?['run'] as String?;
+            final innerData = payload?['data'] as Map<String, dynamic>?
+                ?? frame['data'] as Map<String, dynamic>?;
             final stream = (payload?['stream'] ?? frame['stream']) as String?;
 
             if (stream == 'assistant') {
+              // Filter text from runs other than ours (activeRunId updated from phase=start)
+              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
               final text = (innerData?['text'] ?? payload?['text'] ?? frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
+                if (firstToken) {
+                  firstToken = false;
+                  _addActivity('[CHAT] ✓ First token received');
+                }
                 chunkController.add(text);
               }
             } else if (stream == 'lifecycle') {
               final phase = (innerData?['phase'] ?? payload?['phase'] ?? frame['phase']) as String?;
-              if (phase == 'error') {
-                final error = (innerData?['error'] ?? payload?['error'] ?? frame['error'])?.toString() ?? 'Unknown API error';
-                chunkController.add('[Error] $error');
-                if (!chunkController.isClosed) chunkController.close();
+              if (phase == 'start' && !runStarted) {
+                // For queued messages the ACK runId differs from the actual run ID in events.
+                // Capture the real run ID from the first phase=start we see after our ACK.
+                if (agentRun != null) activeRunId = agentRun;
+                runStarted = true;
+              } else if (phase == 'error') {
+                if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
+                final rawError = (innerData?['error'] ?? payload?['error'] ?? frame['error'])
+                    ?.toString() ?? 'Unknown API error';
+                final String error;
+                if (rawError.toLowerCase().contains('does not support tools')) {
+                  error = 'This model does not support tool use. '
+                      'Tap the TOOLS button in the model selector to disable it, then try again.';
+                } else {
+                  error = rawError;
+                }
+                _addActivity('[CHAT] ✗ $error');
+                if (!chunkController.isClosed) {
+                  chunkController.add('[Error] $error');
+                  chunkController.close();
+                }
               }
             } else if (stream == 'error') {
-              final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason'] ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
-              final error = rawErr.isNotEmpty ? rawErr : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
-              chunkController.add('[Error] $error');
-              if (!chunkController.isClosed) chunkController.close();
+              // Internal gateway sequencing noise (e.g. reason=seq gap after a retry).
+              // Real provider errors surface through stream=lifecycle phase=error.
+              final reason = (payload?['reason'] ?? frame['reason']) as String?;
+              if (reason == 'seq gap') return;
+              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
+              final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason']
+                  ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
+              final error = rawErr.isNotEmpty ? rawErr
+                  : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
+              _addActivity('[CHAT] ✗ $error');
+              if (!chunkController.isClosed) {
+                chunkController.add('[Error] $error');
+                chunkController.close();
+              }
             }
           }
         } catch (_) {}
       },
       onError: (e) {
         if (!chunkController.isClosed) {
-          chunkController.addError(e);
+          // Always convert to a string message — never propagate raw stream errors.
+          // StateError('WebSocket disconnected') from _onDisconnect would otherwise
+          // surface as "[Error: Bad state: ...]" via the catch block.
+          final msg = (e is StateError)
+              ? '[Error] Gateway connection lost. Please try again.'
+              : '[Error] WebSocket error: $e';
+          chunkController.add(msg);
           chunkController.close();
         }
       },
@@ -1636,12 +1836,20 @@ class GatewayService {
 
     try {
       await for (final chunk in chunkController.stream
-          .timeout(const Duration(seconds: 90))) {
+          .timeout(Duration(seconds: isOllama ? 600 : 90))) {
         yield chunk;
       }
+      _addActivity('[CHAT] ✓ Complete');
     } on TimeoutException {
-      yield '[Error] Gateway chat timed out after 90 seconds.';
+      if (isOllama) {
+        _addActivity('[CHAT] ✗ Timed out after 600 s');
+        yield '[Error] Ollama timed out (600 s). The model runner may have crashed — '
+              'check hub logs for OOM errors.';
+      } else {
+        yield '[Error] Gateway chat timed out after 90 seconds.';
+      }
     } catch (e) {
+      _addActivity('[CHAT] ✗ $e');
       yield '[Error] WebSocket chat error: $e';
     } finally {
       frameSub.cancel();
@@ -1728,13 +1936,13 @@ class GatewayService {
           if (isDirectLlama) 'keep_alive': -1,
         });
 
-      // Ollama on mobile can be slow; give it 3 minutes before giving up.
+      // Ollama on mobile can be slow; give it 4 minutes before giving up (matches WS path).
       final timeoutDuration = isDirectLlama
-          ? const Duration(seconds: 180)
+          ? const Duration(seconds: 240)
           : const Duration(seconds: 90);
 
       if (isDirectLlama) {
-        _chatActivityController.add('[CHAT] → Sending to $effectiveModel');
+        _addActivity('[CHAT] → Sending to $effectiveModel');
       }
 
       final streamedResponse = await client.send(request).timeout(timeoutDuration);
@@ -1742,14 +1950,14 @@ class GatewayService {
       if (streamedResponse.statusCode != 200) {
         final body = await streamedResponse.stream.bytesToString();
         if (isDirectLlama) {
-          _chatActivityController.add('[CHAT] ✗ HTTP ${streamedResponse.statusCode}');
+          _addActivity('[CHAT] ✗ HTTP ${streamedResponse.statusCode}');
         }
         yield '[Error] HTTP ${streamedResponse.statusCode}: $body';
         return;
       }
 
       if (isDirectLlama) {
-        _chatActivityController.add('[CHAT] ← Ollama accepted (HTTP 200)');
+        _addActivity('[CHAT] ← Ollama accepted (HTTP 200)');
       }
 
       // Process the SSE stream: "data: { ... }"
@@ -1766,7 +1974,7 @@ class GatewayService {
             if (delta != null && delta.isNotEmpty) {
               if (firstChunk && isDirectLlama) {
                 firstChunk = false;
-                _chatActivityController.add('[CHAT] ✓ First token received');
+                _addActivity('[CHAT] ✓ First token received');
               }
               yield delta;
             }
@@ -1775,11 +1983,11 @@ class GatewayService {
           }
         }
       }
-      if (isDirectLlama) _chatActivityController.add('[CHAT] ✓ Stream complete');
+      if (isDirectLlama) _addActivity('[CHAT] ✓ Stream complete');
     } on TimeoutException {
       if (isDirectLlama) {
-        _chatActivityController.add('[CHAT] ✗ Timed out after 180 s');
-        yield '[Error] Ollama timed out (180 s). '
+        _addActivity('[CHAT] ✗ Timed out after 240 s');
+        yield '[Error] Ollama timed out (240 s). '
               'The device may be thermally throttled — try a shorter message or wait for it to cool.';
       } else {
         yield '[Error] Gateway chat timed out.';
