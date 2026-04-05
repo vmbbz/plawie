@@ -6,6 +6,7 @@ import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/openclaw_service.dart';
+import 'package:clawa/services/preferences_service.dart';
 
 /// Curated list of tool-capable Ollama library models, sorted smallest → largest.
 /// These are pulled directly from ollama.com/library (not local GGUFs) and

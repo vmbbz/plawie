@@ -37,8 +37,8 @@ class PlawieForegroundService : Service() {
         
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds
-        private const val HEALTH_TIMEOUT_MS = 10_000        // 10 second timeout for HTTP check
-        private const val MAX_CONSECUTIVE_FAILURES = 2       // Restart after 2 missed checks
+        private const val HEALTH_TIMEOUT_MS = 20_000        // 20s — gateway may respond slowly during Ollama inference
+        private const val MAX_CONSECUTIVE_FAILURES = 3       // 3 failures before restart — avoids false positives during heavy CPU load
         private const val MAX_RESTARTS_PER_HOUR = 3          // Cap restarts to avoid loops
         private const val GATEWAY_PORT = 18789
 
