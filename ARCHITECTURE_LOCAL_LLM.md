@@ -644,6 +644,22 @@ final cmd = 'URL="$theUrl" && curl -L "\$URL" -o /tmp/output';
 
 ---
 
+### Error: `model runner unexpectedly stopped` (HTTP 500 from Ollama Hub)
+
+**When it appears:** During long inference tasks when using the PRoot-based Ollama Hub with a cloud-like agent profile. Devices often crash or timeout.
+
+**Root cause:** A massive context multiplier effect:
+1. The OpenClaw Node.js gateway assigns an unchecked default `contextWindow` of 200,000 tokens (assumed for Gemini/Claude). 
+2. The Node.js gateway sends its full agent system prompt (instructions.md, ~27,000 chars) + tool definitions + the unbroken conversation history on _every_ request.
+3. Ollama dynamically allocates KV-cache memory to handle 200,000 tokens for the `qwen2.5` model, rapidly exhausting Android's 1.9 GB process limit on 8 GB devices. Android's Low Memory Killer (LMK) abruptly terminates the model runner.
+
+**Fix:** 
+1. `GatewayService.configureOllama()` now forces `contextWindow: 4096` in `openclaw.json` to instruct the Node.js agent to aggressively trim conversation history before transmitting.
+2. The heavy 27K agent prompt is overridden with a ~60-token `_kMobileSystemPrompt` specifically when Ollama is selected.
+3. The Modelfile template `PARAMETER num_ctx` is increased to 4096, which comfortably fits local tasks and matches the new gateway guardrail.
+
+---
+
 ### Error: `Error: Cannot find module '@node-llama-cpp/linux-arm64-gnu'`
 
 **When it appears:** node-llama-cpp require() inside PRoot Node.js after bootstrap.
