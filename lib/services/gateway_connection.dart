@@ -70,6 +70,11 @@ class GatewayConnection {
 
     _token = token;
 
+    // Cancel any pending auto-reconnect timer so it doesn't race with this
+    // explicit connect call and fire a second _doConnect() concurrently.
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+
     // Ensure device identity is loaded/generated
     if (!_identityLoaded) {
       await _identity.loadOrCreate();
@@ -297,6 +302,15 @@ class GatewayConnection {
 
   void _onDisconnect() {
     _updateState(GatewayConnectionState.disconnected);
+    // Error all in-flight requests immediately so callers fail fast
+    // instead of waiting for the 240s timeout before showing an error.
+    for (final c in _pendingRequests.values) {
+      if (!c.isClosed) {
+        c.addError(StateError('WebSocket disconnected'));
+        c.close();
+      }
+    }
+    _pendingRequests.clear();
     _cleanup();
     _scheduleReconnect();
   }

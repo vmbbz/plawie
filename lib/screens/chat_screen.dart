@@ -106,6 +106,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   LocalLlmState _localLlmState = const LocalLlmState();
   // Ollama Hub model sync — surfaces 'ollama/*' models in the dropdown
   StreamSubscription<GatewayState>? _gatewaySub;
+  // Skills event bus — tracks executing/executed/error states
+  StreamSubscription? _skillsSub;
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
@@ -209,7 +211,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
 
     // --- OpenClaw Skills Event Bus ---
-    SkillsService().events.listen((event) {
+    _skillsSub = SkillsService().events.listen((event) {
       if (!mounted) return;
       if (event.type == SkillsEventType.executing) {
         _addDiagnosticLog('Skill executing: ${event.skillId}');
@@ -1442,6 +1444,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
+    _skillsSub?.cancel();
     _glowController.dispose();
     _tts.stop();
     _speechToText.stop();

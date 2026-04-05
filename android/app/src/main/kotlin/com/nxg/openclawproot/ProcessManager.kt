@@ -421,10 +421,15 @@ class ProcessManager(
             // Ensure any existing instances are cleared first to avoid port collision
             stopOllama()
             
-            // Start ollama as a separate process inside PRoot. 
+            // Start ollama as a separate process inside PRoot.
             // - OLLAMA_HOST=127.0.0.1:11434 ensures accessibility across PRoot namespaces securely.
             // - OLLAMA_ORIGINS=* ensures the Flutter client can connect across the bridge.
-            val ollamaCmd = "env OLLAMA_HOST=127.0.0.1:11434 OLLAMA_ORIGINS=\"*\" /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1"
+            // - OLLAMA_KEEP_ALIVE=-1 keeps the model in memory indefinitely (no eviction after 5 min idle).
+            //   Without this, every request after the eviction window triggers a 10–30s reload, pushing
+            //   total request time past the 240s chat timeout on thermally throttled devices.
+            // - OLLAMA_NUM_PARALLEL=1 prevents Ollama from loading multiple copies of the model for
+            //   parallel requests — saves ~1.5 GB RAM on mobile (only one request at a time anyway).
+            val ollamaCmd = "env OLLAMA_HOST=127.0.0.1:11434 OLLAMA_ORIGINS=\"*\" OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=1 /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1"
             val fullCmd = buildGatewayCommand(ollamaCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()

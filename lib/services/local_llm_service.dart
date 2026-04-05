@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fllama/fllama.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
-import 'local_http_bridge.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -236,10 +235,6 @@ class LocalLlmService {
           orElse: () => _modelCatalog.first,
         );
 
-  /// Expose the active paths to the local HTTP bridge
-  String? get activeModelPath => _activeModelPath;
-  String? get activeMmprojPath => _activeMmprojPath;
-
   /// Context window clamped to a safe range for the active model.
   int get _activeContextSize =>
       (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
@@ -320,10 +315,6 @@ class LocalLlmService {
       fllamaCancelInference(_activeRequestId!);
       _activeRequestId = null;
     }
-    
-    // Stop the NDK HTTP bridge proxy
-    await LocalHttpBridge().stop();
-
     _activeChatController?.close();
     _activeChatController = null;
     _isInferring = false;
@@ -853,10 +844,6 @@ class LocalLlmService {
         activeModelId: model.id,
         downloadProgress: 1.0,
       ));
-
-      // Boot up the NDK mapped HTTP bridge so OpenClaw Agent can communicate
-      await LocalHttpBridge().start();
-
     } catch (e) {
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
