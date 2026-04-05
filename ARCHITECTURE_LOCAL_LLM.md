@@ -938,6 +938,27 @@ ndkVersion = "28.2.13676358"
 ```
 **Do not change this without testing.** This version is required by `speech_to_text` (the highest NDK requirement across all plugins). fllama's Dart hook auto-selects the highest installed NDK, so both fllama and speech_to_text are satisfied by this single version. NDK versions are backward-compatible for fllama's C++ code — the constraint is `speech_to_text ≥ 28.2`, not an upper bound.
 
+### 10.7 Hardware Scaling Myth & KV-Cache Context Clamping
+
+For a long time, the Android Low Memory Killer (LMK) crashed the `llama-server` process under PRoot. The assumption was that the processor couldn't handle inference. **This was false.** The crash was caused by the OpenClaw Node.js gateway demanding a 200,000 token context window (the default for cloud APIs like Gemini/Claude). A local 1.5B/3B model attempting to dynamically allocate KV-Cache memory for 200,000 tokens instantly asks for 3GB+ of RAM, resulting in immediate termination.
+
+**Fix Applied (gateway_service.dart `_syncModelToConfig`):**
+Whenever a user selects an `ollama/` route, we force `contextWindow: 4096` in the `openclaw.json` provider block. This strictly forces the Node.js agent loop to trim its own context bounds before sending history down to the local hardware, bypassing memory limits safely.
+
+### 10.8 Time-To-First-Token (TTFT) vs. Loss of Tool Scaffolding (The "Gimmick")
+
+The default OpenClaw Node.js agent injects a massive ~27,000 character system prompt to explain its tools and strict XML/JSON routing behavior. 
+- **The Speed Issue:** Passing 27,000 characters (7,700 tokens) to a mobile processor causes "prompt processing" to bottleneck for 10–15 seconds before the first token generation begins.
+- **The Fix:** In `_syncModelToConfig`, we dynamically hot-swap `.openclaw/agents/main/agent/instructions.md` out for a tiny 84-character native mobile prompt when routing to local models. TTFT drops to sub-500ms.
+
+**The Crucial Trade-off:** By stripping this 27K cloud prompt, the local model completely loses its rigid behavioral "Tool Scaffolding" instructions (e.g., thinking step-by-step before search, error recovery logic). As a result, using local LLMs inside the OpenClaw gateway is currently considered somewhat of a **gimmick** — the local LLM will frequently hallucinate tool usage syntax or ignore tools entirely because the overarching instruction manual is missing.
+
+### 10.9 The AnyClaw Ecosystem Tradeoff
+
+Competitors (like AnyClaw) achieve speed by abandoning Node.js and WebSocket daemons for purely direct binary CLI execution. While infinitely faster and memory-efficient, this approach entirely drops the official OpenClaw gateway and the "ClawHub" skills registry. 
+
+**Our Stance:** The official Gateway is essential for agent capabilities. The future "Holy Grail" architecture (Phase 4, Option C) is a Local Dart HTTP Bridge intercepting port 11434 and routing OpenClaw Node.js requests natively to `fllama`. This achieves AnyClaw's C++ native speeds while fully retaining the robust Gateway ecosystem.
+
 ---
 
 ## 11. Future Roadmap
