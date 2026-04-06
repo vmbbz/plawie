@@ -30,9 +30,9 @@ TEMPLATE """{{- if .System }}
 """
 PARAMETER stop ""
 PARAMETER stop ""
-PARAMETER num_ctx 4096
+PARAMETER num_ctx 1024
 PARAMETER num_gpu 0
-PARAMETER num_thread 2
+PARAMETER num_thread 1
 PARAMETER num_batch 512
 ''';
 
@@ -426,10 +426,8 @@ class GatewayService {
       final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
       
-      // CRITICAL: Use mobile-optimized system prompt for local models
-      // This reduces from 27K tokens to ~800 tokens, enabling 0.5B/1.5B models to actually respond
-      config['agents']['defaults']['systemPrompt'] = 
-          'You are a helpful mobile assistant. Keep answers concise. Use tools only when necessary.';
+      // CRITICAL: Do NOT set systemPrompt here - it breaks gateway reload
+      // System prompt should be set in agent defaults or left as default
       
       // Increase timeout for testing local models (30 minutes instead of 10)
       config['agents']['defaults']['timeoutMs'] = 1800000;
@@ -1623,7 +1621,7 @@ class GatewayService {
             model: ollamaModel,
             directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
             conversationHistory: conversationHistory,
-            ollamaOptions: {'num_ctx': 4096});
+            ollamaOptions: {'num_ctx': 1024});
       } else {
         yield* sendMessageHttp(message, model: model, token: token,
             conversationHistory: conversationHistory);
