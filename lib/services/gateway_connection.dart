@@ -370,6 +370,26 @@ class GatewayConnection {
     return controller.stream;
   }
 
+  /// Update session metadata (e.g. primaryModel, contextWindow) in-memory.
+  /// Prevents the need for a 10-minute gateway restart on model switch.
+  Future<void> patchSessionMetadata(Map<String, dynamic> metadata) async {
+    if (_state != GatewayConnectionState.connected) return;
+    
+    final payload = {
+      'method': 'sessions.patch',
+      'params': {
+        'sessionKey': mainSessionKey ?? 'main',
+        'patch': {
+          'metadata': metadata,
+        },
+      },
+    };
+    
+    // We send and forget, as the gateway applies these instantly.
+    // The next chat.send will pick up the updated metadata.
+    sendRequest(payload);
+  }
+
   void _cleanup() {
     _subscription?.cancel();
     _subscription = null;
