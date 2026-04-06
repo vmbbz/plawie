@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
 import '../models/agent_info.dart';
+import 'package:clawa/services/bootstrap_service.dart';
 import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
@@ -108,6 +109,30 @@ class GatewayService {
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
+    
+    // AUTO-REPAIR: Check Node.js version before attempting gateway start
+    // If Node.js version is too old, auto-update in background without user intervention
+    final bootstrap = BootstrapService();
+    if (await bootstrap.checkNodeUpgradeRequired()) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[INFO] Node.js version too old, performing background update...'],
+      ));
+      
+      // SILENT AUTO-REPAIR: Perform background surgical update (Node.js only)
+      try {
+        await bootstrap.runFullSetup(
+          onProgress: (state) {
+             _updateState(_state.copyWith(
+               logs: [..._state.logs, '[UPDATE] ${state.message}'],
+             ));
+          },
+        );
+      } catch (e) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[ERROR] Node.js update failed: $e'],
+        ));
+      }
+    }
     
     // FIXED: Sequential execution to prevent PRoot command race conditions
     // First: Attach/start gateway

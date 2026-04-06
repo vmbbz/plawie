@@ -307,7 +307,7 @@ class BootstrapService {
         // Replace the broken shebang with a proper Node.js ESM invocation
         content = content.replaceAll(
           RegExp(r'^exec node ".*?" "\$@"'),
-          '#!/bin/sh\n":" //# comment; exec /usr/bin/env node --input-type=module "$0" "$@"',
+          '#!/bin/sh\\n":" //# comment; exec /usr/bin/env node --input-type=module "\$0" "\$@"',
         );
         
         await openclawMjs.writeAsString(content);
@@ -316,6 +316,26 @@ class BootstrapService {
     } catch (e) {
       _log('Failed to fix openclaw.mjs shebang: $e');
     }
+  }
+
+  /// Check if Node.js version upgrade is required
+  /// Returns true if current Node.js version is older than required
+  Future<bool> checkNodeUpgradeRequired() async {
+    try {
+      final result = await NativeBridge.runInProot('node --version', timeout: 5);
+      final versionMatch = RegExp(r'v(\d+)\.(\d+)\.(\d+)').firstMatch(result);
+      if (versionMatch != null) {
+        final major = int.tryParse(versionMatch.group(1) ?? '0') ?? 0;
+        final minor = int.tryParse(versionMatch.group(2) ?? '0') ?? 0;
+        final requiredMajor = 22;
+        final requiredMinor = 14;
+        
+        return major < requiredMajor || (major == requiredMajor && minor < requiredMinor);
+      }
+    } catch (e) {
+      _log('Failed to check Node.js version: $e');
+    }
+    return false; // Assume no upgrade needed if check fails
   }
 
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {
