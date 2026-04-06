@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
@@ -1606,7 +1607,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           _ollamaTestPromptController.text, 
           model: _selectedOllamaModel!, 
           directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-          ollamaOptions: {'num_ctx': 4096}
+          ollamaOptions: {'num_ctx': 2048, 'temperature': 0.7}
       );
       await for (final token in stream) {
         if (!mounted) break;
@@ -1675,7 +1676,24 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-              child: SelectableText(_ollamaTestResponse, style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5)),
+              child: Markdown(
+                data: _ollamaTestResponse,
+                selectable: true,
+                styleSheet: MarkdownStyleSheet(
+                  p: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
+                  code: TextStyle(
+                    color: Colors.cyanAccent.shade100,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  ),
+                  codeblockDecoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                ),
+              ),
             ),
           ],
         ],
