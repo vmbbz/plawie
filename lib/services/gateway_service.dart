@@ -15,9 +15,8 @@ import 'local_llm_service.dart';
 /// Simple mobile-friendly template for Qwen2.5 models.
 /// Stripped down to avoid template processing overhead on mobile.
 ///
-/// CRITICAL: num_ctx MUST match the contextWindow written to openclaw.json
-/// in configureOllama(). If they diverge the Node.js agent sends more tokens
-/// than Ollama can accept, causing OOM crashes on mobile.
+/// CRITICAL: num_ctx 4096 is enforced via Modelfile template
+/// No longer writes contextWindow to openclaw.json (causes schema errors)
 const _kQwen25OllamaTemplate = '''
 TEMPLATE """{{- if .System }}
 {{ .System }}
@@ -29,11 +28,12 @@ TEMPLATE """{{- if .System }}
 {{ .Tools }}
 {{ end }}
 """
-PARAMETER stop "<|im_end|>"
-PARAMETER stop "<|endoftext|>"
+PARAMETER stop ""
+PARAMETER stop ""
 PARAMETER num_ctx 4096
 PARAMETER num_gpu 0
 PARAMETER num_thread 2
+PARAMETER num_batch 512
 ''';
 
 class GatewayService {
@@ -430,6 +430,9 @@ class GatewayService {
       // This reduces from 27K tokens to ~800 tokens, enabling 0.5B/1.5B models to actually respond
       config['agents']['defaults']['systemPrompt'] = 
           'You are a helpful mobile assistant. Keep answers concise. Use tools only when necessary.';
+      
+      // Increase timeout for testing local models (30 minutes instead of 10)
+      config['agents']['defaults']['timeoutMs'] = 1800000;
       
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
