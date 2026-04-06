@@ -13,6 +13,30 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 
+/// Simple mobile-friendly template for Qwen2.5 models.
+/// Stripped down to avoid template processing overhead on mobile.
+///
+/// CRITICAL: num_ctx 4096 is enforced via Modelfile template
+/// No longer writes contextWindow to openclaw.json (causes schema errors)
+const _kQwen25OllamaTemplate = '''
+TEMPLATE """{{- if .System }}
+{{ .System }}
+{{ end }}
+{{- if .Prompt }}
+{{ .Prompt }}
+{{ end }}
+{{- if .Tools }}
+{{ .Tools }}
+{{ end }}
+"""
+PARAMETER stop ""
+PARAMETER stop ""
+PARAMETER num_ctx 1024
+PARAMETER num_gpu 0
+PARAMETER num_thread 1
+PARAMETER num_batch 512
+''';
+
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
@@ -511,14 +535,13 @@ PARAMETER num_batch 512
       config['agents']['defaults']['model'] ??= {};
       final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
-
+      
       // CRITICAL: Do NOT set systemPrompt here - it breaks gateway reload
       // System prompt should be set in agent defaults or left as default
-
-      // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
-      // OpenClaw schema keys — writing them breaks the gateway config validation.
-      // Tool dispatch is controlled by the model's own capability declaration.
-
+      
+      // Increase timeout for testing local models (30 minutes instead of 10)
+      config['agents']['defaults']['timeoutMs'] = 1800000;
+      
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
       await prefs.init();
@@ -1719,7 +1742,7 @@ PARAMETER num_batch 512
             model: ollamaModel,
             directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
             conversationHistory: conversationHistory,
-            ollamaOptions: {'num_ctx': _getDynamicContextSize(ollamaModel)});
+            ollamaOptions: {'num_ctx': 1024});
       } else {
         yield* sendMessageHttp(message, model: model, token: token,
             conversationHistory: conversationHistory);
