@@ -1,8 +1,0 @@
-feat(local-llm): production audit, context stabilization, and optimized tool schema routing
-
-* Eliminated LMK (Low Memory Killer) crashes by dynamically clamping the gateway's 200,000 token assumption down to a mobile-safe 4096 context block for local Ollama drivers.
-* Solved the 15+ second CPU prompt-processing (TTFT) bottleneck by intercepting the massive 27,000-character cloud system instructions.
-* Engineered a highly optimized ~600-character Mid-Tier tool scaffolding prompt that secures strict OpenClaw JSON behavioral routing with sub-500ms inference times (permanently eliminating the "gimmick" tool hallucination issue).
-* Injected a new 'High-RAM' context toggle into the Local LLM UI to securely allow 12GB+ devices to bypass memory safety restrictions if full tool logic is demanded.
-* Reconciled WS constraints by mathematically relying on synchronous disk-flush configurations (_syncModelToConfig) to assign models to the chat.send loop, preventing Fastify JSON schema validation crashes.
-* Completely documented hardware architectural myths vs realities (fllama NDK vs generic node-llama-cpp Termux implementations) in ARCHITECTURE_LOCAL_LLM.md.
