@@ -425,6 +425,12 @@ class GatewayService {
       config['agents']['defaults']['model'] ??= {};
       final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
+      
+      // CRITICAL: Use mobile-optimized system prompt for local models
+      // This reduces from 27K tokens to ~800 tokens, enabling 0.5B/1.5B models to actually respond
+      config['agents']['defaults']['systemPrompt'] = 
+          'You are a helpful mobile assistant. Keep answers concise. Use tools only when necessary.';
+      
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
       await prefs.init();
