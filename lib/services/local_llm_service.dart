@@ -64,13 +64,14 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'qwen2.5-0.5b-instruct-q4_k_m',
     name: 'Qwen 2.5 0.5B Instruct (Q4_K_M)',
-    description: 'Ultra-lightweight. Very fast but limited reasoning. Good for quick commands on 6 GB devices.',
+    description: 'Ultra-lightweight. Very fast but limited reasoning. Good for quick commands on 6 GB devices. Supports tool calls for gateway routing.',
     huggingFaceUrl: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 400,
     requiredRamMb: 1500,
     recommendedThreads: 4,
     quality: 'Minimum',
     contextWindow: 8192,
+    supportsToolCalls: true,
   ),
   LocalLlmModel(
     id: 'qwen2.5-1.5b-instruct-q4_k_m',
@@ -99,13 +100,14 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'smollm2-1.7b-instruct-q4_k_m',
     name: 'SmolLM2 1.7B Instruct (Q4_K_M)',
-    description: 'HuggingFace-trained speed-focused model. Good for simple tasks, fast responses.',
+    description: 'HuggingFace-trained speed-focused model. Good for simple tasks, fast responses. Supports tool calls for gateway routing.',
     huggingFaceUrl: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf',
     fileSizeMb: 1100,
     requiredRamMb: 3000,
     recommendedThreads: 4,
     quality: 'Recommended',
     contextWindow: 8192,
+    supportsToolCalls: true,
   ),
 
   // ── Vision / Multimodal Models ─────────────────────────────────────────────

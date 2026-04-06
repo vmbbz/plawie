@@ -12,7 +12,6 @@ import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/preferences_service.dart';
 import '../services/local_llm_service.dart';
-import '../services/gateway_service.dart';
 import '../widgets/glass_card.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
@@ -696,12 +695,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 try {
                   final gw = context.read<GatewayProvider>();
                   await gw.configureApiKey(selectedProvider, key);
-                  final gwService = GatewayService();
-                  final newModel = gwService.getModelForProvider(selectedProvider);
-                  
                   _prefs.apiProvider = selectedProvider;
                   _prefs.apiKeyConfigured = true;
-                  _prefs.configuredModel = newModel; // update the active model UI
                   setState(() {});
                   
                   ScaffoldMessenger.of(context).showSnackBar(
