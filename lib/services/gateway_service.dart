@@ -105,18 +105,16 @@ class GatewayService {
   /// Check if the gateway is already running (e.g. after app restart)
   /// and sync the UI state accordingly.  If not running but auto-start
   /// is enabled, start it automatically.
-  /// Check if the gateway is already running (e.g. after app restart)
-  /// and sync the UI state accordingly.
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
-    // Sequence: _attachOrStart first, THEN _probeOllamaOnInit.
-    // Both issue PRoot commands; running them concurrently jams the PRoot
-    // command queue and causes the auth-token probe to appear hung.
-    // Using .then() keeps init() non-blocking (splash screen stays fast)
-    // while guaranteeing no overlapping PRoot work.
-    unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
-        .then((_) => unawaited(_probeOllamaOnInit())));
+    
+    // FIXED: Sequential execution to prevent PRoot command race conditions
+    // First: Attach/start gateway
+    await _attachOrStart(autoStart: prefs.autoStartGateway);
+    
+    // Second: Probe Ollama ONLY after gateway is stable
+    unawaited(_probeOllamaOnInit());
   }
 
   /// Called once at init. If Ollama is already running (e.g. survived app restart),
@@ -153,20 +151,22 @@ class GatewayService {
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
-      // Fix the config on disk (removes stale keys, ensures required fields),
-      // then run openclaw doctor --fix as a belt-and-suspenders pass in case
-      // any keys survived our manual sanitisation, then reload.
+      // FIXED: Simplified attach path - only configure once
+      // Remove redundant doctor --fix and reload calls
       try {
         await _configureGateway();
-        await NativeBridge.runInProot(
-          'openclaw doctor --fix 2>/dev/null || true',
-          timeout: 10,
-        );
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'openclaw reload 2>/dev/null || true',
+        
+        // Only run doctor if config validation fails
+        final validation = await NativeBridge.runInProot(
+          'openclaw config --validate 2>/dev/null',
           timeout: 5,
         );
+        if (validation.contains('ERROR') || validation.contains('failed')) {
+          await NativeBridge.runInProot(
+            'openclaw doctor --fix 2>/dev/null || true',
+            timeout: 10,
+          );
+        }
       } catch (_) {}
 
       // After openclaw reload the gateway may issue a new token — wipe the
@@ -204,6 +204,16 @@ class GatewayService {
     ));
 
     try {
+      // FIXED: Check battery optimization BEFORE starting gateway
+      final isOptimized = await NativeBridge.isBatteryOptimized();
+      if (isOptimized) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
+        ));
+        // Request optimization but don't wait for it (non-blocking)
+        unawaited(NativeBridge.requestBatteryOptimization().catchError((_) {}));
+      }
+      
       await NativeBridge.acquirePartialWakeLock();
       await _configureGateway();
       await Future.delayed(const Duration(milliseconds: 300));
@@ -214,22 +224,12 @@ class GatewayService {
         throw Exception('Native start failed.');
       }
 
-      // Warn user if battery optimization is active — Android can kill PRoot.
-      // Fire-and-forget: showing the dialog must NOT block _startHealthCheck().
-      // If requestBatteryOptimization() uses startActivityForResult it can wait
-      // indefinitely, stalling the health timer from ever starting.
-      unawaited(() async {
-        try {
-          final isOptimized = await NativeBridge.isBatteryOptimized();
-          if (isOptimized) {
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
-            ));
-            await NativeBridge.requestBatteryOptimization();
-          }
-        } catch (_) {}
-      }());
-
+      // FIXED: Clear token cache on ALL restart paths for consistency
+      _connection?.dispose();
+      _connection = null;
+      _cachedToken = null;
+      _lastTokenFetch = null;
+      
       await Future.delayed(const Duration(milliseconds: 500));
       _subscribeLogs();
       _startHealthCheck();
