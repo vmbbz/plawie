@@ -79,6 +79,62 @@ class BootstrapService {
     }
   }
 
+  /// Update ONLY Node.js without full rootfs reinstall
+  /// Surgical update that preserves existing setup
+  Future<void> updateNodejsOnly({required void Function(SetupState) onProgress}) async {
+    try {
+      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, 'Checking Node.js version...', 2);
+      
+      if (!await checkNodeUpgradeRequired()) {
+        _emitProgress(onProgress, SetupStep.complete, 1.0, 'Node.js is up to date.', 100);
+        return;
+      }
+      
+      _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Updating Node.js only...', 5);
+      
+      final arch = await NativeBridge.getArch();
+      final filesDir = await NativeBridge.getFilesDir();
+      final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
+      final nodeTarPath = '$filesDir/tmp/nodejs.tar.xz';
+      
+      // Download Node.js only
+      await _downloadWithRetry(
+        nodeTarUrl,
+        nodeTarPath,
+        onProgress: (received, total) {
+          if (total > 0) {
+            final progress = received / total;
+            final mb = (received / 1024 / 1024).toStringAsFixed(1);
+            final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
+            final notifProgress = 5 + (progress * 20).round();
+            
+            _updateSetupNotification('Downloading Node.js: $mb / $totalMb MB', progress: notifProgress);
+            onProgress(SetupState(
+              step: SetupStep.installingNode,
+              progress: progress,
+              message: 'Downloading Node.js: $mb MB / $totalMb MB',
+            ));
+          }
+        },
+      );
+      
+      _emitProgress(onProgress, SetupStep.installingNode, 0.5, 'Extracting Node.js...', 70);
+      await NativeBridge.extractNodeTarball(nodeTarPath);
+      
+      // Fix ESM shebang after Node.js update
+      await _fixOpenClawShebang();
+      
+      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Node.js update complete!', 100);
+      
+    } catch (e) {
+      _log('Node.js-only update failed: $e');
+      onProgress(SetupState(
+        step: SetupStep.error,
+        error: 'Node.js update failed: $e',
+      ));
+    }
+  }
+
   Future<void> runFullSetup({required void Function(SetupState) onProgress}) async {
     try {
       // Start foreground service to keep app alive during setup

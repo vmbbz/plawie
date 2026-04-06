@@ -118,9 +118,9 @@ class GatewayService {
         logs: [..._state.logs, '[INFO] Node.js version too old, performing background update...'],
       ));
       
-      // SILENT AUTO-REPAIR: Perform background surgical update (Node.js only)
+      // SILENT AUTO-REPAIR: Perform surgical Node.js update only
       try {
-        await bootstrap.runFullSetup(
+        await bootstrap.updateNodejsOnly(
           onProgress: (state) {
              _updateState(_state.copyWith(
                logs: [..._state.logs, '[UPDATE] ${state.message}'],
