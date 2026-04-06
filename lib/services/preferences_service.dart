@@ -185,10 +185,4 @@ class PreferencesService {
   /// OpenAI TTS model
   String get openAiTtsModel => _p.getString('openai_tts_model') ?? 'gpt-4o-mini-tts';
   set openAiTtsModel(String value) => _p.setString('openai_tts_model', value);
-
-  // ── High-RAM Mode ───────────────────────────────────────────────────────────
-
-  /// Feature toggle for high-end devices to load full tool scaffolding
-  bool get enableFullContext => _p.getBool('enable_full_context') ?? false;
-  set enableFullContext(bool value) => _p.setBool('enable_full_context', value);
 }

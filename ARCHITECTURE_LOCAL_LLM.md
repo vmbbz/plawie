@@ -938,28 +938,6 @@ ndkVersion = "28.2.13676358"
 ```
 **Do not change this without testing.** This version is required by `speech_to_text` (the highest NDK requirement across all plugins). fllama's Dart hook auto-selects the highest installed NDK, so both fllama and speech_to_text are satisfied by this single version. NDK versions are backward-compatible for fllama's C++ code — the constraint is `speech_to_text ≥ 28.2`, not an upper bound.
 
-### 10.7 Hardware Scaling Myth & KV-Cache Context Clamping
-
-For a long time, the Android Low Memory Killer (LMK) crashed the `llama-server` process under PRoot. The assumption was that the processor couldn't handle inference. **This was false.** The crash was caused by the OpenClaw Node.js gateway demanding a 200,000 token context window (the default for cloud APIs like Gemini/Claude). A local 1.5B/3B model attempting to dynamically allocate KV-Cache memory for 200,000 tokens instantly asks for 3GB+ of RAM, resulting in immediate termination.
-
-**Fix Applied (gateway_service.dart `_syncModelToConfig`):**
-Whenever a user selects an `ollama/` route, we force `contextWindow: 4096` in the `openclaw.json` provider block. This strictly forces the Node.js agent loop to trim its own context bounds before sending history down to the local hardware, bypassing memory limits safely.
-
-### 10.8 Time-To-First-Token (TTFT) vs. Loss of Tool Scaffolding (The "Gimmick")
-
-The default OpenClaw Node.js agent injects a massive ~27,000 character system prompt to explain its tools and strict XML/JSON routing behavior. 
-- **The Speed Issue:** Passing 27,000 characters (7,700 tokens) to a mobile processor causes "prompt processing" to bottleneck for 10–15 seconds before the first token generation begins.
-- **The Default Fix (Memory Safety):** In `_syncModelToConfig`, we dynamically hot-swap `.openclaw/agents/main/agent/instructions.md` out for a tiny 84-character native mobile prompt when routing to local models. TTFT drops to sub-500ms.
-- **The High-RAM Toggle (Full Agent Mode):** In `PreferencesService`, users with 12GB+ RAM can toggle `enableFullContext`. This sets `contextWindow: 12000` and retains the full 27k tool instructions. This completely restores all Cloud-parity tool logic, but knowingly subjects the user to the 10-15s CPU TTFT bottleneck per message.
-
-**The Crucial Trade-off:** By stripping this 27K cloud prompt in the default mode, the local model completely loses its rigid behavioral "Tool Scaffolding" instructions (e.g., thinking step-by-step before search, error recovery logic). As a result, default local LLMs inside the OpenClaw gateway are considered somewhat of a **gimmick** — they will frequently hallucinate tool usage syntax or ignore tools entirely unless the user enables the High-RAM Toggle.
-
-### 10.9 The AnyClaw Ecosystem Tradeoff
-
-Competitors (like AnyClaw) achieve speed by abandoning Node.js and WebSocket daemons for purely direct binary CLI execution. While infinitely faster and memory-efficient, this approach entirely drops the official OpenClaw gateway and the "ClawHub" skills registry. 
-
-**Our Stance:** The official Gateway is essential for agent capabilities. The future "Holy Grail" architecture (Phase 4, Option C) is a Local Dart HTTP Bridge intercepting port 11434 and routing OpenClaw Node.js requests natively to `fllama`. This achieves AnyClaw's C++ native speeds while fully retaining the robust Gateway ecosystem.
-
 ---
 
 ## 11. Future Roadmap
@@ -1095,7 +1073,7 @@ Phase 5 ─── Multi-model / Hot-swap (3–6 months) ────────
 
 | Project | Approach | Notes |
 |---------|----------|-------|
-| **AidanPark/openclaw-android** | Termux + glibc shim + node-llama-cpp | **Clarification:** This repo is blazingly fast precisely because it *bypasses PRoot entirely* for the Node.js openclaw gateway by using a lightweight Termux userland. However, AidanPark's documentation actually discourages local inference for production use; his CPU-based `@node-llama-cpp` implementation suffers the exact same 15-second TTFT bottlenecks on a 27k prompt as PRoot because Android Node.js lacks Vulkan GPU compilation. |
+| **AidanPark/openclaw-android** | Termux + glibc shim + node-llama-cpp | Requires Termux installed separately. 3–4× faster gateway startup. Our inspiration for node-llama-cpp approach. |
 | **AnyClaw/openclaw-android-assistant** | Minimal trimmed Termux userland (~5MB vs our ~700MB) | Self-contained APK. Smaller setup. No Ubuntu overhead. |
 | **SmolChat-Android** | llama.cpp via JNI (no fllama) | Open source Android GGUF chat. Reference for JNI patterns. |
 | **MLC Chat** | MLC-LLM (TVM) + OpenCL GPU | NPU-aware. Best GPU performance but complex toolchain. |

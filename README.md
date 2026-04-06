@@ -10,13 +10,10 @@
   
   <br/>
   
-  [![Build Status](https://img.shields.io/github/actions/workflow/status/vmbbz/plawie/analyze.yml?branch=main&style=flat-square)](https://github.com/vmbbz/plawie/actions)
-  [![Flutter](https://img.shields.io/badge/Flutter-3.24+-02569B?style=flat-square&logo=flutter&logoColor=white)](https://flutter.dev)
-  [![Node.js](https://img.shields.io/badge/Node.js-20+-68A063?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-F7DF1E?style=flat-square&logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
-  [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://makeapullrequest.com)
-  
-  *Unleash on-device, uncensored, zero-latency autonomous AI agents. No cloud subscriptions. Total privacy.*
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+  [![Flutter](https://img.shields.io/badge/Flutter-3.24+- blue.svg)](https://flutter.dev)
+  [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org)
+  [![Solana](https://img.shields.io/badge/Solana-Mainnet-9945FF.svg)](https://solana.com)
 </div>
 
 ---
