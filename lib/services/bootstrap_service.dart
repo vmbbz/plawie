@@ -245,6 +245,10 @@ class BootstrapService {
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.7, 'Creating bin wrappers...', 85);
       await NativeBridge.createBinWrappers('openclaw');
+      
+      // FIX: Repair broken openclaw.mjs shebang for ESM compatibility
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.75, 'Fixing OpenClaw ESM shebang...', 87);
+      await _fixOpenClawShebang();
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
       await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
@@ -309,42 +313,34 @@ class BootstrapService {
     }
   }
 
-  /// Programmatically repairs a corrupted OpenClaw installation.
-  /// This deletes the broken library files and triggers a fresh global install.
-  Future<void> repairOpenClaw({required void Function(SetupState) onProgress}) async {
+  /// FIX: Repair broken openclaw.mjs shebang for ESM compatibility
+  /// The exec node line is being parsed as JavaScript instead of shell
+  Future<void> _fixOpenClawShebang() async {
     try {
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Cleaning broken installation...', 82);
+      // Read the current openclaw.mjs file
+      final filesDir = await NativeBridge.getFilesDir();
+      final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
       
-      // 1. Force remove old installation and any stray files
-      await NativeBridge.runInProot('npm uninstall -g openclaw || true');
-      await NativeBridge.runInProot('rm -rf /usr/local/lib/node_modules/openclaw');
-      await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw'); 
-      await NativeBridge.runInProot('npm cache clean --force || true');
+      if (!await openclawMjs.exists()) {
+        _log('openclaw.mjs not found, skipping shebang fix');
+        return;
+      }
       
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3, 'Reinstalling OpenClaw (latest)...', 85);
+      String content = await openclawMjs.readAsString();
       
-      // 2. Fresh install (latest) + peer dep fix for @buape/carbon
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'npm install -g openclaw@latest --no-audit --no-fund && '
-        'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
-        'openclaw doctor --fix 2>/dev/null || true',
-        timeout: 1800,
-      );
-      
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Recreating binary wrappers...', 90);
-      
-      // 3. Re-create wrappers using the hardened native logic
-      await NativeBridge.createBinWrappers('openclaw');
-      
-      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Repair complete! Restarting gateway...', 100);
-      
-    } catch (e, stack) {
-      _log('Repair failed', error: e, stackTrace: stack);
-      onProgress(SetupState(
-        step: SetupStep.error,
-        error: 'Repair failed: $e. Check your internet connection.',
-      ));
+      // Fix the broken shebang by replacing the invalid exec line with proper ESM handling
+      if (content.contains('exec node "')) {
+        // Replace the broken shebang with a proper Node.js ESM invocation
+        content = content.replaceAll(
+          RegExp(r'^exec node ".*?" "\$@"'),
+          '#!/bin/sh\n":" //# comment; exec /usr/bin/env node --input-type=module "$0" "$@"',
+        );
+        
+        await openclawMjs.writeAsString(content);
+        _log('Fixed openclaw.mjs shebang for ESM compatibility');
+      }
+    } catch (e) {
+      _log('Failed to fix openclaw.mjs shebang: $e');
     }
   }
 
