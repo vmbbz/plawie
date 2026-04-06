@@ -219,6 +219,10 @@ class BootstrapService {
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.7, 'Creating bin wrappers...', 85);
       await NativeBridge.createBinWrappers('openclaw');
+      
+      // FIX: Repair broken openclaw.mjs shebang for ESM compatibility
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.75, 'Fixing OpenClaw ESM shebang...', 87);
+      await _fixOpenClawShebang();
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
       await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
@@ -280,6 +284,37 @@ class BootstrapService {
         step: SetupStep.error,
         error: 'Setup failed: $e',
       ));
+    }
+  }
+
+  /// FIX: Repair broken openclaw.mjs shebang for ESM compatibility
+  /// The exec node line is being parsed as JavaScript instead of shell
+  Future<void> _fixOpenClawShebang() async {
+    try {
+      // Read the current openclaw.mjs file
+      final filesDir = await NativeBridge.getFilesDir();
+      final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
+      
+      if (!await openclawMjs.exists()) {
+        _log('openclaw.mjs not found, skipping shebang fix');
+        return;
+      }
+      
+      String content = await openclawMjs.readAsString();
+      
+      // Fix the broken shebang by replacing the invalid exec line with proper ESM handling
+      if (content.contains('exec node "')) {
+        // Replace the broken shebang with a proper Node.js ESM invocation
+        content = content.replaceAll(
+          RegExp(r'^exec node ".*?" "\$@"'),
+          '#!/bin/sh\n":" //# comment; exec /usr/bin/env node --input-type=module "$0" "$@"',
+        );
+        
+        await openclawMjs.writeAsString(content);
+        _log('Fixed openclaw.mjs shebang for ESM compatibility');
+      }
+    } catch (e) {
+      _log('Failed to fix openclaw.mjs shebang: $e');
     }
   }
 
