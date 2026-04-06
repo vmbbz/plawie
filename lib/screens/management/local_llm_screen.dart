@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:clawa/app.dart';
+import 'package:clawa/models/gateway_state.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/openclaw_service.dart';
@@ -34,6 +35,7 @@ class LocalLlmScreen extends StatefulWidget {
 class _LocalLlmScreenState extends State<LocalLlmScreen> {
   final _service = LocalLlmService();
   LocalLlmState _state = const LocalLlmState();
+  GatewayState _gatewayState = const GatewayState();
   LocalLlmModel? _selectedModel;
   final Map<String, bool> _downloadedModels = {};
 
@@ -85,14 +87,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   void initState() {
     super.initState();
     _state = _service.state;
+    _gatewayState = GatewayService().state;
     _serviceSub = _service.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
     });
     // React to gateway hub state so the Ollama model picker updates
     // automatically when sync completes (without needing a manual refresh).
     _gatewaySub = GatewayService().stateStream.listen((gwState) {
-      if (mounted && gwState.ollamaHubModels.isNotEmpty) {
-        _fetchOllamaModels();
+      if (mounted) {
+        setState(() => _gatewayState = gwState);
+        if (gwState.ollamaHubModels.isNotEmpty) {
+          _fetchOllamaModels();
+        }
       }
     });
     // Live activity panel: seed from buffer so past events survive navigation,
@@ -430,7 +436,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildStatusCard(),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
+                      _buildGatewayHealthCard(),
+                      const SizedBox(height: 12),
                       _buildThreadSlider(),
                       const SizedBox(height: 28),
                       _buildSectionLabel('Model Library'),
@@ -603,6 +611,84 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               }),
               icon: const Icon(Icons.refresh, size: 14, color: Colors.white54),
               label: const Text('Reset', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGatewayHealthCard() {
+    final status = _gatewayState.status;
+    final isWebsocketConnected = _gatewayState.isWebsocketConnected;
+    
+    final (Color color, IconData icon, String label) = switch (status) {
+      GatewayStatus.running => (AppColors.statusGreen, Icons.lan_rounded, 'Gateway Active'),
+      GatewayStatus.starting => (Colors.amber, Icons.sync_rounded, 'Reaching Gateway...'),
+      GatewayStatus.error => (Colors.redAccent, Icons.lan_outlined, 'Gateway Error'),
+      GatewayStatus.stopped => (Colors.white24, Icons.lan_outlined, 'Gateway Offline'),
+    };
+
+    final uptime = _gatewayState.startedAt != null 
+        ? DateTime.now().difference(_gatewayState.startedAt!) 
+        : null;
+    final uptimeStr = uptime != null 
+        ? '${uptime.inMinutes}m ${uptime.inSeconds % 60}s' 
+        : 'N/A';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, 
+                      style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 2),
+                    Text(isWebsocketConnected ? 'Protocol v3 • Connected' : 'Waiting for socket...',
+                      style: GoogleFonts.outfit(color: isWebsocketConnected ? color : Colors.white38, fontSize: 10)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                   Text('UPTIME', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                   Text(uptimeStr, style: GoogleFonts.jetBrainsMono(color: Colors.white70, fontSize: 11)),
+                ],
+              ),
+            ],
+          ),
+          if (_gatewayState.errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(_gatewayState.errorMessage!, 
+                style: const TextStyle(color: Colors.redAccent, fontSize: 10)),
             ),
           ],
         ],

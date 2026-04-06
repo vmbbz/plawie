@@ -167,18 +167,20 @@ class GatewayService {
       // Fix the config on disk (removes stale keys, ensures required fields),
       // then run openclaw doctor --fix as a belt-and-suspenders pass in case
       // any keys survived our manual sanitisation, then reload.
-      try {
-        await _configureGateway();
-        await NativeBridge.runInProot(
-          'openclaw doctor --fix 2>/dev/null || true',
-          timeout: 10,
-        );
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'openclaw reload 2>/dev/null || true',
-          timeout: 5,
-        );
-      } catch (_) {}
+      unawaited(() async {
+        try {
+          await _configureGateway();
+          await NativeBridge.runInProot(
+            'openclaw doctor --fix 2>/dev/null || true',
+            timeout: 10,
+          );
+          await NativeBridge.runInProot(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+            'openclaw reload 2>/dev/null || true',
+            timeout: 5,
+          );
+        } catch (_) {}
+      }());
 
       // After openclaw reload the gateway may issue a new token — wipe the
       // cache and existing WS object so _checkHealth() re-probes fresh.
@@ -1276,12 +1278,12 @@ class GatewayService {
   String? _lastSyncedModel;
 
   /// Ensure agents.defaults.model.primary in openclaw.json matches the
-  /// user-selected [model]. Writes only when the value has actually changed
-  /// to avoid redundant I/O on every message.
-  Future<void> _syncModelToConfig(String model) async {
-    if (model == _lastSyncedModel) return;
+  /// user-selected [model]. Returns a map of changed metadata if the 
+  /// config was updated, allowing for hot-sync via sessions.patch.
+  Future<Map<String, dynamic>> _syncModelToConfig(String model) async {
+    if (model == _lastSyncedModel) return {};
     _lastSyncedModel = model;
-    bool needsWrite = false;
+    final Map<String, dynamic> changedMetadata = {};
     final config = await _readConfig();
     
     config['agents'] ??= {};
@@ -1289,9 +1291,10 @@ class GatewayService {
     config['agents']['defaults']['model'] ??= {};
     final current = config['agents']['defaults']['model']['primary'] as String?;
     
+    bool needsSync = false;
     if (current != model) {
       config['agents']['defaults']['model']['primary'] = model;
-      needsWrite = true;
+      needsSync = true;
     }
 
     // --- MEMORY ROBUSTNESS FIXES ---
@@ -1311,14 +1314,17 @@ class GatewayService {
       config['models']['providers']['ollama'] ??= {};
       if (config['models']['providers']['ollama']['contextWindow'] != targetContext) {
         config['models']['providers']['ollama']['contextWindow'] = targetContext;
-        needsWrite = true;
+        needsSync = true;
       }
     }
 
-    if (needsWrite) {
+    if (needsSync) {
       await _writeConfig(config);
       _addActivity('[MODEL] syncToConfig: $model (ctx: $targetContext)');
       debugPrint('[GatewayService] Synced model to config: $model (ctx: $targetContext)');
+      
+      changedMetadata['primaryModel'] = model;
+      changedMetadata['contextWindow'] = targetContext;
     }
 
     // --- CONTEXT PROMPT ROBUSTNESS FIXES ---
@@ -1351,6 +1357,7 @@ General rules: Be concise, think step-by-step before answering, and do not over-
              
              await instructionsFile.writeAsString(optimizedPrompt);
              _addActivity('[MODEL] Injected optimized Tool Scaffolding prompt (fast TTFT).');
+             changedMetadata['optimizedPrompt'] = true;
           }
         }
       } else {
@@ -1360,9 +1367,11 @@ General rules: Be concise, think step-by-step before answering, and do not over-
           await backupFile.copy(instructionsPath);
           await backupFile.delete();
           _addActivity('[MODEL] Restored full system prompt for high-context mode.');
+          changedMetadata['optimizedPrompt'] = false;
         }
       }
     } catch (_) {}
+    return changedMetadata;
   }
 
   /// Direct I/O: Retrieve token from config file (instant, no proot)
@@ -1775,9 +1784,15 @@ General rules: Be concise, think step-by-step before answering, and do not over-
     _addActivity('[CHAT] → Sending to $model');
 
     // ── Sync model to config BEFORE sending ──────────────────────────────
-    // Belt-and-suspenders: even if the gateway ignores the WS `model` param,
-    // the filesystem config will be correct for the agent loop to read.
-    await _syncModelToConfig(model);
+    // To switch models correctly without a 10-minute restart, we use
+    // the sessions.patch RPC to update the gateway's state in-memory.
+    final changedMetadata = await _syncModelToConfig(model);
+    if (changedMetadata.isNotEmpty && _state.status == GatewayStatus.running) {
+      if (_connection != null && _connection!.state == GatewayConnectionState.connected) {
+         _addActivity('[CHAT] ⚡ Model changed — hot-patching gateway via WebSocket...');
+         await _connection!.patchSessionMetadata(changedMetadata);
+      }
+    }
 
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
@@ -1888,7 +1903,13 @@ General rules: Be concise, think step-by-step before answering, and do not over-
             final stream = (payload?['stream'] ?? frame['stream']) as String?;
 
             if (stream == 'assistant') {
-              // Filter text from runs other than ours (activeRunId updated from phase=start)
+              // ASSOCIATIVE SYNC: If we don't have an activeRunId yet (still waiting for ACK or phase=start),
+              // we accept the first chunk's runId as the definitive one for this turn.
+              if (activeRunId == null && agentRun != null) {
+                activeRunId = agentRun;
+                debugPrint('[GatewayService] Associated stream runId: $activeRunId');
+              }
+              // Filter text from runs other than ours
               if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
               final text = (innerData?['text'] ?? payload?['text'] ?? frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
