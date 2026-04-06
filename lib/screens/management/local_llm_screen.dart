@@ -3,11 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:clawa/app.dart';
-import 'package:clawa/models/gateway_state.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/openclaw_service.dart';
-import 'package:clawa/services/preferences_service.dart';
 
 /// Curated list of tool-capable Ollama library models, sorted smallest → largest.
 /// These are pulled directly from ollama.com/library (not local GGUFs) and
@@ -35,7 +33,6 @@ class LocalLlmScreen extends StatefulWidget {
 class _LocalLlmScreenState extends State<LocalLlmScreen> {
   final _service = LocalLlmService();
   LocalLlmState _state = const LocalLlmState();
-  GatewayState _gatewayState = const GatewayState();
   LocalLlmModel? _selectedModel;
   final Map<String, bool> _downloadedModels = {};
 
@@ -87,18 +84,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   void initState() {
     super.initState();
     _state = _service.state;
-    _gatewayState = GatewayService().state;
     _serviceSub = _service.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
     });
     // React to gateway hub state so the Ollama model picker updates
     // automatically when sync completes (without needing a manual refresh).
     _gatewaySub = GatewayService().stateStream.listen((gwState) {
-      if (mounted) {
-        setState(() => _gatewayState = gwState);
-        if (gwState.ollamaHubModels.isNotEmpty) {
-          _fetchOllamaModels();
-        }
+      if (mounted && gwState.ollamaHubModels.isNotEmpty) {
+        _fetchOllamaModels();
       }
     });
     // Live activity panel: seed from buffer so past events survive navigation,
@@ -436,9 +429,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildStatusCard(),
-                      const SizedBox(height: 16),
-                      _buildGatewayHealthCard(),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 20),
                       _buildThreadSlider(),
                       const SizedBox(height: 28),
                       _buildSectionLabel('Model Library'),
@@ -450,8 +441,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       _buildModelInstructions(),
                       const SizedBox(height: 28),
                       _buildDeviceSpecCard(),
-                      const SizedBox(height: 16),
-                      _buildHighRamToggle(),
                       const SizedBox(height: 28),
                       _buildAgentPromptGuide(),
                       const SizedBox(height: 28),
@@ -611,84 +600,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               }),
               icon: const Icon(Icons.refresh, size: 14, color: Colors.white54),
               label: const Text('Reset', style: TextStyle(color: Colors.white54, fontSize: 12)),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGatewayHealthCard() {
-    final status = _gatewayState.status;
-    final isWebsocketConnected = _gatewayState.isWebsocketConnected;
-    
-    final (Color color, IconData icon, String label) = switch (status) {
-      GatewayStatus.running => (AppColors.statusGreen, Icons.lan_rounded, 'Gateway Active'),
-      GatewayStatus.starting => (Colors.amber, Icons.sync_rounded, 'Reaching Gateway...'),
-      GatewayStatus.error => (Colors.redAccent, Icons.lan_outlined, 'Gateway Error'),
-      GatewayStatus.stopped => (Colors.white24, Icons.lan_outlined, 'Gateway Offline'),
-    };
-
-    final uptime = _gatewayState.startedAt != null 
-        ? DateTime.now().difference(_gatewayState.startedAt!) 
-        : null;
-    final uptimeStr = uptime != null 
-        ? '${uptime.inMinutes}m ${uptime.inSeconds % 60}s' 
-        : 'N/A';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 18),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, 
-                      style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 2),
-                    Text(isWebsocketConnected ? 'Protocol v3 • Connected' : 'Waiting for socket...',
-                      style: GoogleFonts.outfit(color: isWebsocketConnected ? color : Colors.white38, fontSize: 10)),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                   Text('UPTIME', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 1)),
-                   Text(uptimeStr, style: GoogleFonts.jetBrainsMono(color: Colors.white70, fontSize: 11)),
-                ],
-              ),
-            ],
-          ),
-          if (_gatewayState.errorMessage != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.redAccent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(_gatewayState.errorMessage!, 
-                style: const TextStyle(color: Colors.redAccent, fontSize: 10)),
             ),
           ],
         ],
@@ -934,34 +845,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     );
   }
 
-  Widget _buildHighRamToggle() {
-    final isEnabled = PreferencesService().enableFullContext;
-    return Container(
-      decoration: BoxDecoration(
-        color: isEnabled ? Colors.redAccent.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.02),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isEnabled ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white10),
-      ),
-      child: SwitchListTile(
-        title: Text(
-          'High-RAM Mode (Restore Full Agent Tools)',
-          style: GoogleFonts.outfit(color: isEnabled ? Colors.redAccent : Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-        subtitle: const Text(
-          'WARNING: Requires 12GB+ RAM. Suspends memory safety and pushes full 27k tool schemas to the KV-Cache. May cause 10-15s CPU freezes per message. Turn ON only if tool logic is failing.',
-          style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4),
-        ),
-        activeColor: Colors.redAccent,
-        value: isEnabled,
-        onChanged: (val) {
-          setState(() {
-            PreferencesService().enableFullContext = val;
-          });
-        },
-      ),
-    );
-  }
-
   Widget _buildDeviceSpecCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1034,16 +917,35 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           Row(children: [
             const Icon(Icons.info_outline_rounded, color: Colors.blueAccent, size: 15),
             const SizedBox(width: 8),
-            Text('Architecture & Limits',
+            Text('How to use local models',
                 style: GoogleFonts.outfit(
                     color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12)),
           ]),
           const SizedBox(height: 10),
-          _instructionStep('FLLAMA CORE', 'This app binds "llama.cpp" natively into the Dart NDK. Zero Node.js emulation overhead. Fastest direct execution possible on Android.'),
+          _instructionStep('1  Download', 'Tap Download on the model card above to save it to your device (~1–2 GB).'),
           const SizedBox(height: 6),
-          _instructionStep('AGENT HUB', 'The Gateway manages tool schemas (ClawHub) by piping JSON to the NDK engine. To prevent Out-Of-Memory crashes, Context is strictly clamped to 4096 tokens.'),
+          _instructionStep('2  Start (NDK)', 'Tap Start to load the model via the on-device NDK engine (fllama). Select it in the chat model picker for private, offline chat — no internet needed.'),
           const SizedBox(height: 6),
-          _instructionStep('THE GIMMICK', 'Because we trim the massive 27k cloud system-prompts for speed (TTFT), local models lack strict behavioral scaffolding. They may hallucinate tools.'),
+          _instructionStep('3  Agent Hub', 'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 13),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NDK mode = direct private chat only. No tools, skills, or agent features. For the full OpenClaw experience use the Integrated Agent Hub.',
+                  style: const TextStyle(color: Colors.amber, fontSize: 10, height: 1.4),
+                ),
+              ),
+            ]),
+          ),
         ],
       ),
     );
@@ -1196,7 +1098,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                   ),
                 ] else ...[
                   Text(
-                    'Routes OpenClaw Gateway skills and tools into your active Local NDK session.',
+                    'Enables Plawie to use a powerful local inference engine (Ollama) for reasoning and tools. No external apps required.',
                     style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
                   ),
                   const SizedBox(height: 16),

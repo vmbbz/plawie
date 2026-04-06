@@ -429,7 +429,7 @@ class ProcessManager(
             //   total request time past the 240s chat timeout on thermally throttled devices.
             // - OLLAMA_NUM_PARALLEL=1 prevents Ollama from loading multiple copies of the model for
             //   parallel requests — saves ~1.5 GB RAM on mobile (only one request at a time anyway).
-            val ollamaCmd = "env OLLAMA_HOST=127.0.0.1:11434 OLLAMA_ORIGINS=\"*\" OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=1 /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1"
+            val ollamaCmd = "env OLLAMA_HOST=127.0.0.1:11434 OLLAMA_ORIGINS=\"*\" OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=1 OLLAMA_MAX_LOADED_MODELS=1 /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1"
             val fullCmd = buildGatewayCommand(ollamaCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
