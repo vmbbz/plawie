@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/gateway_state.dart';
 import '../models/agent_info.dart';
+import '../models/setup_state.dart';
 import '../services/gateway_service.dart' as svc;
 import '../services/gateway_skill_proxy.dart';
+import '../services/bootstrap_service.dart';
 
 class GatewayProvider extends ChangeNotifier {
   final svc.GatewayService _gatewayService = svc.GatewayService();
@@ -140,6 +142,40 @@ class GatewayProvider extends ChangeNotifier {
     _gatewayService.refreshRpcDiscovery();
   }
 
+
+  /// Research and repair any gateway corruption programmatically in the background.
+  void repairAndRestart() {
+    if (_state.isRepairing) return;
+    
+    // Fire and forget background repair
+    unawaited(() async {
+      _gatewayService.setRepairing(true, message: 'Starting repair...', progress: 0.0);
+      try {
+        final bootstrap = BootstrapService();
+        bool hasError = false;
+        
+        await bootstrap.repairOpenClaw(onProgress: (state) {
+          _gatewayService.addLog('[REPAIR] ${state.message}');
+          _gatewayService.setRepairing(true, 
+            message: state.message, 
+            progress: state.progress,
+          );
+          if (state.step == SetupStep.error) {
+            hasError = true;
+          }
+        });
+
+        // Restart only if repair finished without error
+        if (!hasError) {
+           await start();
+        }
+      } catch (e) {
+        _gatewayService.addLog('[ERROR] Background repair failed: $e');
+      } finally {
+        _gatewayService.setRepairing(false, message: '', progress: 0.0);
+      }
+    }());
+  }
 
   @override
   void dispose() {

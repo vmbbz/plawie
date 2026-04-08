@@ -238,9 +238,14 @@ class LocalLlmService {
           orElse: () => _modelCatalog.first,
         );
 
-  /// Context window clamped to a safe range for the active model.
-  int get _activeContextSize =>
-      (activeModel?.contextWindow ?? 4096).clamp(512, 8192);
+  /// Context window clamped to device-appropriate range for active model.
+  /// Base: 1024 for mobile, but allows higher for powerful devices
+  int get _activeContextSize {
+    final baseContext = activeModel?.contextWindow ?? 4096;
+    // For now, allow up to 4096 - users with powerful phones should benefit
+    // TODO: Make this dynamic based on available memory
+    return baseContext.clamp(512, 4096);
+  }
 
   /// Mirrors fllamaChat() but injects numThreads from the user's thread setting.
   /// fllamaChat() hard-codes numThreads=2 and never exposes it via OpenAiRequest.

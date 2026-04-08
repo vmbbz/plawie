@@ -7,6 +7,7 @@ import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/openclaw_service.dart';
+import 'package:clawa/models/gateway_state.dart';
 
 /// Curated list of tool-capable Ollama library models, sorted smallest → largest.
 /// These are pulled directly from ollama.com/library (not local GGUFs) and
@@ -36,6 +37,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   LocalLlmState _state = const LocalLlmState();
   LocalLlmModel? _selectedModel;
   final Map<String, bool> _downloadedModels = {};
+  GatewayState _gatewayState = const GatewayState();
 
   // Diagnostics state
   final _testPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
@@ -91,8 +93,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     // React to gateway hub state so the Ollama model picker updates
     // automatically when sync completes (without needing a manual refresh).
     _gatewaySub = GatewayService().stateStream.listen((gwState) {
-      if (mounted && gwState.ollamaHubModels.isNotEmpty) {
-        _fetchOllamaModels();
+      if (mounted) {
+        setState(() {
+          _gatewayState = gwState;
+        });
+        if (gwState.ollamaHubModels.isNotEmpty) {
+          _fetchOllamaModels();
+        }
       }
     });
     // Live activity panel: seed from buffer so past events survive navigation,
@@ -1126,6 +1133,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                _buildGatewayHealthCard(),
+                const SizedBox(height: 16),
                 _buildActivityPanel(),
                 const SizedBox(height: 16),
 
@@ -1258,6 +1267,85 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     },
                   ),
           ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildGatewayHealthCard() {
+    final isConnected = _gatewayState.isWebsocketConnected;
+    final uptime = _gatewayState.startedAt != null 
+        ? DateTime.now().difference(_gatewayState.startedAt!)
+        : null;
+    
+    final healthData = _gatewayState.detailedHealth;
+    final version = healthData?['version'] ?? '3.1.0';
+    final ok = healthData?['ok'] ?? isConnected;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: (isConnected ? AppColors.statusGreen : Colors.amber).withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isConnected ? Icons.lan_rounded : Icons.lan_outlined,
+              color: isConnected ? AppColors.statusGreen : Colors.amber,
+              size: 16,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Protocol v3',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 4,
+                      height: 4,
+                      decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white24),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isConnected ? 'Connected' : 'Connecting...',
+                      style: TextStyle(
+                        color: isConnected ? AppColors.statusGreen : Colors.amber,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  uptime != null 
+                    ? 'Uptime: ${uptime.inMinutes}m ${uptime.inSeconds % 60}s • Version $version'
+                    : 'Gateway Standby • Version $version',
+                  style: const TextStyle(color: Colors.white30, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+          if (ok == true)
+            const Icon(Icons.verified_user_rounded, color: Colors.blueAccent, size: 14),
         ],
       ),
     );
@@ -1607,7 +1695,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           _ollamaTestPromptController.text, 
           model: _selectedOllamaModel!, 
           directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-          ollamaOptions: {'num_ctx': 2048, 'temperature': 0.7}
+          ollamaOptions: {'num_ctx': 4096, 'temperature': 0.7}
       );
       await for (final token in stream) {
         if (!mounted) break;

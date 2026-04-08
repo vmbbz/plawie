@@ -775,11 +775,15 @@ class BootstrapManager(
 
         for ((name, relPath) in binEntries) {
             val binFile = File(binDir, name)
-            // Only create wrapper if the symlink doesn't already work
-            if (binFile.exists() && binFile.canExecute()) continue
 
             val target = "/usr/local/lib/node_modules/$packageName/$relPath"
             val wrapper = "#!/bin/sh\nexec node \"$target\" \"\$@\"\n"
+            
+            // Unconditionally delete existing file/symlink (including broken links)
+            // before writing to avoid overwriting the actual library file if 
+            // binFile is a symlink.
+            binFile.delete()
+            
             binFile.writeText(wrapper)
             binFile.setExecutable(true, false)
             binFile.setReadable(true, false)

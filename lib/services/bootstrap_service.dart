@@ -18,6 +18,25 @@ class BootstrapService {
     developer.log(message, name: 'BootstrapService', error: error, stackTrace: stackTrace);
   }
 
+  /// Update OpenClaw gateway to the latest version
+  /// This fixes WebSocket handshake issues and other bugs
+  Future<void> updateGateway() async {
+    try {
+      _updateSetupNotification('Updating OpenClaw gateway...', progress: 50);
+      
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'npm update -g openclaw',
+        timeout: 300,
+      );
+      
+      _updateSetupNotification('Gateway updated successfully!', progress: 100);
+    } catch (e, stack) {
+      _log('Gateway update failed', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
   void _updateSetupNotification(String text, {int progress = -1}) {
     try {
       NativeBridge.updateSetupNotification(text, progress: progress);
@@ -211,8 +230,15 @@ class BootstrapService {
       final checkOpenClaw = await NativeBridge.runInProot('command -v openclaw || echo "missing"');
       if (checkOpenClaw.contains('missing')) {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Installing OpenClaw (this may take 10-15 minutes, please wait)...', 82);
-        // --ignore-scripts: skip node-llama-cpp postinstall (cmake build) — fails on phones
-        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && npm install -g openclaw --ignore-scripts', timeout: 1800);
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'npm install -g openclaw --no-audit --no-fund && '
+          // Ensure peer deps like @buape/carbon are installed inside the package dir.
+          // Global npm installs don't auto-install peer deps; this covers the gap.
+          'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
+          'openclaw doctor --fix 2>/dev/null || true',
+          timeout: 1800,
+        );
       } else {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.5, 'OpenClaw already installed, skipping...', 84);
       }
@@ -279,6 +305,45 @@ class BootstrapService {
       onProgress(SetupState(
         step: SetupStep.error,
         error: 'Setup failed: $e',
+      ));
+    }
+  }
+
+  /// Programmatically repairs a corrupted OpenClaw installation.
+  /// This deletes the broken library files and triggers a fresh global install.
+  Future<void> repairOpenClaw({required void Function(SetupState) onProgress}) async {
+    try {
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Cleaning broken installation...', 82);
+      
+      // 1. Force remove old installation and any stray files
+      await NativeBridge.runInProot('npm uninstall -g openclaw || true');
+      await NativeBridge.runInProot('rm -rf /usr/local/lib/node_modules/openclaw');
+      await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw'); 
+      await NativeBridge.runInProot('npm cache clean --force || true');
+      
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3, 'Reinstalling OpenClaw (latest)...', 85);
+      
+      // 2. Fresh install (latest) + peer dep fix for @buape/carbon
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'npm install -g openclaw@latest --no-audit --no-fund && '
+        'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
+        'openclaw doctor --fix 2>/dev/null || true',
+        timeout: 1800,
+      );
+      
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Recreating binary wrappers...', 90);
+      
+      // 3. Re-create wrappers using the hardened native logic
+      await NativeBridge.createBinWrappers('openclaw');
+      
+      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Repair complete! Restarting gateway...', 100);
+      
+    } catch (e, stack) {
+      _log('Repair failed', error: e, stackTrace: stack);
+      onProgress(SetupState(
+        step: SetupStep.error,
+        error: 'Repair failed: $e. Check your internet connection.',
       ));
     }
   }

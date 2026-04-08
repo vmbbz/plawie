@@ -22,7 +22,7 @@ class AppConstants {
 
   // Node.js binary tarball — downloaded directly by Flutter, extracted by Java.
   // Bypasses curl/gpg/NodeSource which fail inside proot.
-  static const String nodeVersion = '22.13.1';
+  static const String nodeVersion = '22.16.0';
   static const String nodeBaseUrl =
       'https://nodejs.org/dist/v$nodeVersion/node-v$nodeVersion-linux-';
 

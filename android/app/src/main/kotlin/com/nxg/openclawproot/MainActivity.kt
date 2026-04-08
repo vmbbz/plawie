@@ -4,6 +4,7 @@ import android.util.Log
 import java.io.File
 
 import android.app.Notification
+import android.app.ActivityManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -303,6 +304,13 @@ class MainActivity : FlutterActivity() {
                 "isBatteryOptimized" -> {
                     val pm = getSystemService(POWER_SERVICE) as PowerManager
                     result.success(!pm.isIgnoringBatteryOptimizations(packageName))
+                }
+                "getTotalMemoryMb" -> {
+                    val actManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    val memInfo = ActivityManager.MemoryInfo()
+                    actManager.getMemoryInfo(memInfo)
+                    val totalMemory = memInfo.totalMem / (1024 * 1024)
+                    result.success(totalMemory.toInt())
                 }
                 "acquirePartialWakeLock" -> {
                     try {
