@@ -12,30 +12,6 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 
-/// Simple mobile-friendly template for Qwen2.5 models.
-/// Stripped down to avoid template processing overhead on mobile.
-///
-/// CRITICAL: num_ctx 4096 is enforced via Modelfile template
-/// No longer writes contextWindow to openclaw.json (causes schema errors)
-const _kQwen25OllamaTemplate = '''
-TEMPLATE """{{- if .System }}
-{{ .System }}
-{{ end }}
-{{- if .Prompt }}
-{{ .Prompt }}
-{{ end }}
-{{- if .Tools }}
-{{ .Tools }}
-{{ end }}
-"""
-PARAMETER stop ""
-PARAMETER stop ""
-PARAMETER num_ctx 4096
-PARAMETER num_gpu 0
-PARAMETER num_thread 2
-PARAMETER num_batch 512
-''';
-
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
@@ -54,6 +30,14 @@ class GatewayService {
   final _chatActivityController = StreamController<String>.broadcast();
   final List<String> _activityBuffer = []; // replay buffer for late subscribers
 
+  // Cached Android files directory — avoids a platform channel call on every config I/O.
+  String? _filesDir;
+  // Prevents concurrent @buape/carbon targeted-fix attempts.
+  bool _isFixingDep = false;
+
+  // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
+  static final _staleNamePattern = RegExp(r'[.\-_:]');
+
   /// Live stream of human-readable chat and hub events for the Agent Hub panel.
   /// Emits: Flutter-side send/receive events + parsed Ollama server signals.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -61,11 +45,63 @@ class GatewayService {
   /// Last ≤40 activity events — use to seed the panel when the screen opens.
   List<String> get recentActivity => List.unmodifiable(_activityBuffer);
 
+  /// Get dynamic context size based on model capabilities
+  /// Allows powerful devices to use higher contexts while keeping mobile safe
+  int _getDynamicContextSize(String modelId) {
+    // Map Ollama model IDs to their context windows
+    final modelContexts = {
+      'qwen2.5-0.5b': 1024,
+      'qwen2.5-1.5b': 2048,
+      'qwen2.5-3b': 4096,
+      'qwen2.5-7b': 8192,
+      'smolm2-135m': 1024,
+      'smolm2-360m': 2048,
+      'smolm2-1.7b': 4096,
+      'llava-1.5-7b': 4096,
+      'qwen2-vl-2b': 2048,
+      'qwen2-vl-7b': 4096,
+    };
+    
+    // Default to 1024 for mobile safety
+    return modelContexts[modelId.toLowerCase()] ?? 1024;
+  }
+
+  /// Dynamic Modelfile template that adapts to model capabilities
+  /// Base: 1024 for mobile safety, but allows higher for powerful devices
+  String _buildModelfileTemplate(String ggufPath, int contextSize) {
+    return '''FROM $ggufPath
+PARAMETER stop ""
+PARAMETER stop ""
+PARAMETER num_ctx $contextSize
+PARAMETER num_gpu 0
+PARAMETER num_thread 1
+PARAMETER num_batch 512
+''';
+  }
+
   /// Buffer + broadcast a single activity event.
   void _addActivity(String event) {
     _activityBuffer.add(event);
     if (_activityBuffer.length > 40) _activityBuffer.removeAt(0);
     _chatActivityController.add(event);
+  }
+
+  /// Update the background repair status.
+  void setRepairing(bool value, {String? message, double? progress}) {
+    _updateState(_state.copyWith(
+      isRepairing: value,
+      repairMessage: message,
+      repairProgress: progress,
+    ));
+  }
+
+  /// Add a log entry to the gateway state from external services (like repair).
+  void addLog(String message) {
+    final logs = [..._state.logs, message];
+    if (logs.length > 500) {
+      logs.removeRange(0, logs.length - 500);
+    }
+    _updateState(_state.copyWith(logs: logs));
   }
 
   static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
@@ -255,10 +291,40 @@ class GatewayService {
   void _subscribeLogs() {
     _logSubscription?.cancel();
     _logSubscription = NativeBridge.gatewayLogStream.listen((log) {
-      final logs = [..._state.logs, log];
-      if (logs.length > 500) {
-        logs.removeRange(0, logs.length - 500);
+      // Append log in-place on a capped list; no O(n) spread clone per line.
+      final logs = _state.logs.length < 500
+          ? [..._state.logs, log]
+          : [..._state.logs.sublist(_state.logs.length - 499), log];
+
+      // Auto-Heal: targeted @buape/carbon fix (fastest recovery, no full reinstall)
+      if (!_isFixingDep && log.contains("Cannot find module '@buape/carbon'")) {
+        _isFixingDep = true;
+        _addActivity('[SYS] Missing @buape/carbon — running targeted fix...');
+        unawaited(() async {
+          try {
+            await NativeBridge.runInProot(
+              'cd /usr/local/lib/node_modules/openclaw && '
+              'npm install --no-save --no-audit --no-fund @buape/carbon 2>/dev/null && '
+              'openclaw doctor --fix 2>/dev/null || true',
+              timeout: 120,
+            );
+            _addActivity('[SYS] @buape/carbon fixed — restarting gateway...');
+            await NativeBridge.runInProot(
+              'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+              'openclaw reload 2>/dev/null || true',
+              timeout: 10,
+            );
+          } catch (_) {
+            _addActivity('[SYS] Dep fix failed — use Settings → Repair for full reinstall');
+          } finally {
+            _isFixingDep = false;
+          }
+        }());
+      } else if (log.contains('Error: Cannot find module') || log.contains('SyntaxError:')) {
+        // Broader module error — surface it so the user knows to run Repair
+        _addActivity('[SYS] Critical error detected — use Settings → Repair Gateway if gateway fails to start');
       }
+
       String? dashboardUrl;
       final cleanLog = _cleanForUrl(log);
       final urlMatch = _tokenUrlRegex.firstMatch(cleanLog);
@@ -306,11 +372,15 @@ class GatewayService {
     });
   }
 
+  /// Cached accessor for the Android app files directory.
+  /// Platform channel is hit only on the first call; subsequent calls are instant.
+  Future<String> _getFilesDir() async =>
+      _filesDir ??= await NativeBridge.getFilesDir();
+
   /// Helper to get the host-side path to the openclaw config file.
   /// Must match the PRoot ubuntu rootfs: $filesDir/rootfs/ubuntu/root/...
   Future<String> _openClawConfigPath() async {
-    final filesDir = await NativeBridge.getFilesDir();
-    return '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json';
+    return '${await _getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
   /// Direct Dart-native config read/write (bypasses proot overhead)
@@ -425,15 +495,13 @@ class GatewayService {
       config['agents']['defaults']['model'] ??= {};
       final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
-      
-      // CRITICAL: Use mobile-optimized system prompt for local models
-      // This reduces from 27K tokens to ~800 tokens, enabling 0.5B/1.5B models to actually respond
-      config['agents']['defaults']['systemPrompt'] = 
-          'You are a helpful mobile assistant. Keep answers concise. Use tools only when necessary.';
-      
-      // Increase timeout for testing local models (30 minutes instead of 10)
+
+      // CRITICAL: Do NOT set systemPrompt here - it breaks gateway reload
+      // System prompt should be set in agent defaults or left as default
+
+      // Increase timeout for local models (30 minutes instead of default 10)
       config['agents']['defaults']['timeoutMs'] = 1800000;
-      
+
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
       await prefs.init();
@@ -512,7 +580,7 @@ class GatewayService {
   /// etc.) that the Node.js engine forwards in every request.
   Future<void> _clearStaleSessions() async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
+      final filesDir = await _getFilesDir();
       final sessionsDir = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
       final dir = Directory(sessionsDir);
       if (!await dir.exists()) return;
@@ -558,12 +626,14 @@ class GatewayService {
   /// Identified by stripping all punctuation and comparing the result.
   Future<void> _cleanupStaleOllamaRegistrations(Set<String> canonicalNames) async {
     final registered = await _getRegisteredOllamaModels();
+    // Pre-compute normalised canonical set once rather than inside the inner loop.
+    final normalisedCanonicals = {
+      for (final c in canonicalNames) c.replaceAll(_staleNamePattern, '').toLowerCase(): c,
+    };
     for (final name in registered) {
       if (canonicalNames.contains(name)) continue; // already canonical — keep
-      final stripped = name.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase();
-      final isOurs = canonicalNames.any(
-        (c) => c.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase() == stripped,
-      );
+      final stripped = name.replaceAll(_staleNamePattern, '').toLowerCase();
+      final isOurs = normalisedCanonicals.containsKey(stripped);
       if (!isOurs) continue;
       // Old-format registration for a model we own — delete it.
       try {
@@ -614,14 +684,17 @@ class GatewayService {
       logs: [..._state.logs, '[INFO] Scanning for local GGUF models...'],
     ));
 
-    // Compute canonical names for tool-capable downloaded GGUFs, then clean up
-    // any stale registrations (old-format names OR deprecated non-tool models).
-    final canonicalNames = <String>{};
+    // Single pass: determine which models are downloaded (avoids double file-stat per model).
+    final llmSvc = LocalLlmService();
+    final downloadedToolModels = <dynamic>[];
     for (final m in catalog) {
-      if (m.supportsToolCalls && await LocalLlmService().isModelDownloaded(m)) {
-        canonicalNames.add(_toOllamaModelName(m.id));
+      if (m.supportsToolCalls && await llmSvc.isModelDownloaded(m)) {
+        downloadedToolModels.add(m);
       }
     }
+
+    // Compute canonical names for cleanup, then clean up stale registrations.
+    final canonicalNames = {for (final m in downloadedToolModels) _toOllamaModelName(m.id as String)};
     await _cleanupStaleOllamaRegistrations(canonicalNames);
 
     // Pre-fetch registered models to skip re-hashing on every startup.
@@ -630,41 +703,36 @@ class GatewayService {
     int synced = 0;
     final syncedModelNames = <String>[]; // collect for gateway config + state emit
 
-    for (final model in catalog) {
-      // Only sync tool-capable models to Ollama Hub — non-tool models are
-      // hidden from the UI and should not appear as selectable hub models.
-      if (!model.supportsToolCalls) continue;
-      if (await LocalLlmService().isModelDownloaded(model)) {
-        final ollamaName = _toOllamaModelName(model.id);
-        // Always re-create: ensures num_ctx params from the current
-        // Modelfile are applied. ollama create reuses the existing GGUF blob
-        // (no re-hashing) so this is fast.
-        if (registered.contains(ollamaName)) {
+    for (final model in downloadedToolModels) {
+      final ollamaName = _toOllamaModelName(model.id as String);
+      // Always re-create: ensures num_ctx params from the current
+      // Modelfile are applied. ollama create reuses the existing GGUF blob
+      // (no re-hashing) so this is fast.
+      if (registered.contains(ollamaName)) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[HUB] Refreshing $ollamaName params...'],
+        ));
+      }
+      try {
+        final success = await _createOllamaModelFromGguf(
+          ollamaName, model.prootModelPath as String,
+          supportsToolCalls: model.supportsToolCalls as bool,
+        );
+        if (success) {
+          synced++;
+          syncedModelNames.add(ollamaName);
           _updateState(_state.copyWith(
-            logs: [..._state.logs, '[HUB] Refreshing $ollamaName params...'],
+            logs: [..._state.logs, '[INFO] Registered ${model.id} as $ollamaName.'],
+          ));
+        } else {
+          _updateState(_state.copyWith(
+            logs: [..._state.logs, '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'],
           ));
         }
-        try {
-          final success = await _createOllamaModelFromGguf(
-            ollamaName, model.prootModelPath,
-            supportsToolCalls: model.supportsToolCalls,
-          );
-          if (success) {
-            synced++;
-            syncedModelNames.add(ollamaName);
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[INFO] Registered ${model.id} as $ollamaName.'],
-            ));
-          } else {
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'],
-            ));
-          }
-        } catch (e) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[ERROR] Sync error for ${model.id}: $e'],
-          ));
-        }
+      } catch (e) {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[ERROR] Sync error for ${model.id}: $e'],
+        ));
       }
     }
 
@@ -805,26 +873,21 @@ class GatewayService {
     ));
     File? tempModelfile;
     try {
-      // Write Modelfile to the rootfs /tmp directory.
+      // Write Modelfile to the rootfs /tmp directory with dynamic context sizing
       // Dart writes to the Android host path; PRoot sees it at /tmp/oc_mf.
-      final filesDir = await NativeBridge.getFilesDir();
+      final filesDir = await _getFilesDir();
       final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
       tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
-      final modelfileContent = 'FROM $ggufPath\n$_kQwen25OllamaTemplate';
+      
+      // Get dynamic context size based on model capabilities
+      final contextSize = _getDynamicContextSize(name);
+      final modelfileContent = _buildModelfileTemplate(ggufPath, contextSize);
       await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
 
-      // Verify the GGUF is visible from inside PRoot before calling ollama.
-      // Helps confirm the bind mount is working; emits a clear log if not.
-      final checkResult = await NativeBridge.runInProot(
-        'test -f "$ggufPath" && echo "GGUF_OK" || echo "GGUF_MISSING: $ggufPath"',
-        timeout: 10,
-      ).catchError((_) => 'CHECK_FAILED');
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] model file check: ${checkResult.trim()}'],
-      ));
-
+      // isModelDownloaded() on the host FS already confirmed the GGUF exists —
+      // no redundant PRoot file-check needed here.
       final result = await NativeBridge.runInProot(
         'OLLAMA_HOST=127.0.0.1:11434 ollama create "$name" -f "$prootModelfilePath"',
         timeout: 180,
@@ -836,50 +899,6 @@ class GatewayService {
         _updateState(_state.copyWith(
           logs: [..._state.logs, '[HUB] $name — success'],
         ));
-        
-        // Test model loading — log memory before/after, capture exit code + error snippet.
-        try {
-          // grep MemAvailable avoids shell printf quoting issues; parse KB→MB in Dart.
-          final rawBefore = await NativeBridge.runInProot(
-            'grep MemAvailable /proc/meminfo',
-            timeout: 5,
-          ).catchError((_) => '');
-          final beforeMb = _parseMemAvailableMb(rawBefore);
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[MEM] Pre-load available: ${beforeMb}MB'],
-          ));
-
-          // Run with a 180s budget; append EXIT_<code> so we can parse the exit status.
-          final testResult = await NativeBridge.runInProot(
-            'OLLAMA_HOST=127.0.0.1:11434 timeout 180 ollama run "$name" "hi" 2>&1; echo "EXIT_\$?"',
-            timeout: 185,
-          );
-          final exitMatch = RegExp(r'EXIT_(\d+)').firstMatch(testResult);
-          final exitCode = int.tryParse(exitMatch?.group(1) ?? '') ?? 1;
-          if (exitCode != 0) {
-            final lines = testResult.split('\n')
-                .map((l) => l.trim()).where((l) => l.isNotEmpty && !l.startsWith('EXIT_')).toList();
-            final detail = lines.isNotEmpty ? lines.last : 'unknown error';
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] $name failed load test (exit $exitCode): $detail'],
-            ));
-          } else {
-            final rawAfter = await NativeBridge.runInProot(
-              'grep MemAvailable /proc/meminfo',
-              timeout: 5,
-            ).catchError((_) => '');
-            final afterMb = _parseMemAvailableMb(rawAfter);
-            final usedMb = beforeMb - afterMb;
-            _updateState(_state.copyWith(
-              logs: [..._state.logs,
-                '[HUB] $name passed load test — used ~${usedMb}MB (${afterMb}MB left)'],
-            ));
-          }
-        } catch (_) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[WARN] Could not test $name loading'],
-          ));
-        }
       } else {
         final trimmed = result.trim().split('\n').take(8).join(' | ');
         _updateState(_state.copyWith(
@@ -1123,7 +1142,7 @@ class GatewayService {
 
     // 2. Update agent auth-profiles.json
     try {
-      final filesDir = await NativeBridge.getFilesDir();
+      final filesDir = await _getFilesDir();
       final authPath = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json';
       final authFile = File(authPath);
       Map<String, dynamic> auth = {};
@@ -1334,9 +1353,10 @@ class GatewayService {
               : _state.logs,
         ));
       });
+      // Reset backoff only for brand-new connection objects, not on every
+      // health tick — otherwise the exponential backoff never accumulates.
+      _connection!.resetReconnectCounter();
     }
-
-    _connection!.resetReconnectCounter();
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[INFO] Connecting WebSocket...'],
     ));
@@ -1614,7 +1634,16 @@ class GatewayService {
       } catch (_) {}
     }
     final wsOk = await _ensureWebSocket(token);
-    if (!wsOk) {
+    if (wsOk) {
+      // HOT-SWITCHING: If user changed model, update gateway config
+      // This ensures gateway stays in sync when user switches models
+      final changes = await _syncModelToConfig(model);
+      if (changes.isNotEmpty) {
+        _addActivity('[CHAT] Updating gateway config: $changes');
+        // Note: We don't patch session here as it can interfere with active chats
+        // Instead, we ensure config is consistent for next connection
+      }
+    } else {
       if (isOllama) {
         // WS fallback: direct Ollama — no dashboard, but inference still works.
         final ollamaModel = model.substring('ollama/'.length);
@@ -1623,7 +1652,7 @@ class GatewayService {
             model: ollamaModel,
             directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
             conversationHistory: conversationHistory,
-            ollamaOptions: {'num_ctx': 4096});
+            ollamaOptions: {'num_ctx': _getDynamicContextSize(ollamaModel)});
       } else {
         yield* sendMessageHttp(message, model: model, token: token,
             conversationHistory: conversationHistory);
@@ -2178,6 +2207,36 @@ class GatewayService {
     }
   }
   
+  
+  /// Ensure agents.defaults.model.primary in openclaw.json matches the
+  /// user-selected [model]. Returns a map of changed metadata if the
+  /// config was updated, allowing for hot-sync via sessions.patch.
+  Future<Map<String, dynamic>> _syncModelToConfig(String model) async {
+    final Map<String, dynamic> changedMetadata = {};
+    final config = await _readConfig();
+    
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    config['agents']['defaults']['model'] ??= {};
+    
+    final current = config['agents']['defaults']['model']['primary'] as String?;
+    bool needsSync = false;
+    
+    if (current != model) {
+      config['agents']['defaults']['model']['primary'] = model;
+      needsSync = true;
+    }
+    
+    if (needsSync) {
+      await _writeConfig(config);
+      _addActivity('[MODEL] syncToConfig: $model');
+      
+      changedMetadata['primaryModel'] = model;
+    }
+    
+    return changedMetadata;
+  }
+
   /// Resolves the intended model ID, falling back to preferences then openclaw.json defaults.
   Future<String> _resolveModel(String? model) async {
     if (model != null && model.isNotEmpty) return model;

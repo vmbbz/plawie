@@ -7,6 +7,7 @@ import '../app.dart';
 import '../constants.dart';
 import '../providers/gateway_provider.dart';
 import '../providers/node_provider.dart';
+import '../services/bootstrap_service.dart';
 import '../widgets/gateway_controls.dart';
 import '../widgets/glass_card.dart';
 import 'node_screen.dart';
@@ -20,6 +21,7 @@ import 'chat_screen.dart';
 import 'solana_screen.dart';
 import 'help_screen.dart';
 import 'management/bot_management_dashboard.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -76,7 +78,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             child: Container(color: Colors.black.withValues(alpha: 0.2)),
           ),
         ),
-        title: _buildAnimatedTitle(),
+        title: Consumer<GatewayProvider>(
+          builder: (context, provider, _) => _buildAnimatedTitle(provider),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
@@ -116,159 +120,219 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   ),
 
-                  // ── Cards ──────────────────────────────────────────────────
+                  // ── Fluid Staggered Grid ─────────────────────────────────────────
                   Consumer<GatewayProvider>(
-                    builder: (context, provider, _) => _DashCard(
-                      title: 'Chat with Plawie',
-                      subtitle: provider.state.isRunning
-                          ? 'Talk to your local AI companion'
-                          : 'Start gateway first',
-                      icon: Icons.chat_bubble_outline_rounded,
-                      iconColor: AppColors.statusGreen,
-                      enabled: provider.state.isRunning,
-                      onTap: provider.state.isRunning
-                          ? () => Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const ChatScreen()),
-                              )
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                    builder: (context, provider, _) {
+                      final gwState = provider.state;
+                      return Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          // 1. Primary Action: Chat (Wide Fluid Pod)
+                          _FluidDashCard(
+                            title: 'Chat with Plawie',
+                            subtitle: gwState.isRunning ? 'Talk to your local AI' : 'Start gateway first',
+                            icon: Icons.chat_bubble_outline_rounded,
+                            iconColor: AppColors.statusGreen,
+                            widthFactor: 1.0, 
+                            enabled: gwState.isRunning,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(32),
+                              topRight: Radius.circular(16),
+                              bottomLeft: Radius.circular(16),
+                              bottomRight: Radius.circular(32),
+                            ),
+                            onTap: gwState.isRunning ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatScreen())) : null,
+                          ),
+                          
+                          // 2. Solana (Square Fluid Pod)
+                          _FluidDashCard(
+                            title: 'Solana',
+                            subtitle: 'Wallet & DeFi',
+                            icon: Icons.account_balance_wallet_rounded,
+                            iconColor: const Color(0xFF9945FF),
+                            widthFactor: 0.48, 
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              topRight: Radius.circular(32),
+                              bottomLeft: Radius.circular(28),
+                              bottomRight: Radius.circular(12),
+                            ),
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SolanaScreen())),
+                          ),
 
-                  _DashCard(
-                    title: 'Solana',
-                    subtitle: 'Manage wallet and DeFi',
-                    icon: Icons.account_balance_wallet_rounded,
-                    iconColor: const Color(0xFF9945FF),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SolanaScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                          // 3. Terminal (Square Fluid Pod)
+                          _FluidDashCard(
+                            title: 'Terminal',
+                            subtitle: 'Ubuntu Shell',
+                            icon: Icons.terminal_rounded,
+                            iconColor: Colors.cyanAccent,
+                            widthFactor: 0.48,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(28),
+                              topRight: Radius.circular(14),
+                              bottomLeft: Radius.circular(14),
+                              bottomRight: Radius.circular(32),
+                            ),
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TerminalScreen())),
+                          ),
 
-                  _DashCard(
-                    title: 'Terminal',
-                    subtitle: 'Open Ubuntu shell inside Plawie',
-                    icon: Icons.terminal_rounded,
-                    iconColor: Colors.cyanAccent,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const TerminalScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Consumer<GatewayProvider>(
-                    builder: (context, provider, _) => _DashCard(
-                      title: 'Web Dashboard',
-                      subtitle: provider.state.isRunning
-                          ? 'Open Plawie dashboard in browser'
-                          : 'Start gateway first',
-                      icon: Icons.dashboard_rounded,
-                      iconColor: Colors.blueAccent,
-                      enabled: provider.state.isRunning,
-                      onTap: provider.state.isRunning
-                          ? () async {
-                              final currentUrl = provider.state.dashboardUrl;
+                          // 4. Web Dashboard (Wide)
+                          _FluidDashCard(
+                            title: 'Web Dashboard',
+                            subtitle: gwState.isRunning ? 'Open in browser' : 'Offline',
+                            icon: Icons.dashboard_rounded,
+                            iconColor: Colors.blueAccent,
+                            widthFactor: 1.0,
+                            enabled: gwState.isRunning,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              topRight: Radius.circular(16),
+                              bottomLeft: Radius.circular(32),
+                              bottomRight: Radius.circular(32),
+                            ),
+                            onTap: gwState.isRunning ? () async {
+                              final currentUrl = gwState.dashboardUrl;
                               if (currentUrl != null && currentUrl.contains('token=')) {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => WebDashboardScreen(url: currentUrl),
-                                  ),
-                                );
+                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: currentUrl)));
                                 return;
                               }
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (context) => const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
+                              showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                               final url = await provider.fetchAuthenticatedDashboardUrl();
                               if (context.mounted) {
                                 Navigator.of(context).pop();
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => WebDashboardScreen(url: url),
-                                  ),
-                                );
+                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)));
                               }
-                            }
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                            } : null,
+                          ),
 
-                  _DashCard(
-                    title: 'Onboarding',
-                    subtitle: 'Configure API keys and binding',
-                    icon: Icons.vpn_key_rounded,
-                    iconColor: Colors.orangeAccent,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const OnboardingScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                          // 5. Bot Management (Square)
+                          _FluidDashCard(
+                            title: 'Bots',
+                            subtitle: 'System RPCs',
+                            icon: Icons.settings_ethernet_rounded,
+                            iconColor: Colors.tealAccent,
+                            widthFactor: 0.48,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(32),
+                              topRight: Radius.circular(12),
+                              bottomLeft: Radius.circular(12),
+                              bottomRight: Radius.circular(24),
+                            ),
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotManagementDashboard())),
+                          ),
 
-                  _DashCard(
-                    title: 'Packages',
-                    subtitle: 'Install optional tools (Go, Homebrew)',
-                    icon: Icons.extension_rounded,
-                    iconColor: Colors.purpleAccent,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PackagesScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                          // 6. Node (Square)
+                          Consumer<NodeProvider>(
+                            builder: (context, nodeProvider, _) => _FluidDashCard(
+                              title: 'Node',
+                              subtitle: nodeProvider.state.isPaired ? 'Linked' : 'Capabilities',
+                              icon: Icons.devices_rounded,
+                              iconColor: Colors.white60,
+                              widthFactor: 0.48,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(12),
+                                topRight: Radius.circular(32),
+                                bottomLeft: Radius.circular(24),
+                                bottomRight: Radius.circular(12),
+                              ),
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NodeScreen())),
+                            ),
+                          ),
 
-                  _DashCard(
-                    title: 'Logs',
-                    subtitle: 'View gateway output and errors',
-                    icon: Icons.article_outlined,
-                    iconColor: Colors.white54,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const LogsScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                          // 7. Gateway Update (Square)
+                          _FluidDashCard(
+                            title: 'Update',
+                            subtitle: 'Fix WebSocket',
+                            icon: Icons.system_update_alt_rounded,
+                            iconColor: Colors.purpleAccent,
+                            widthFactor: 0.48,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                              topRight: Radius.circular(32),
+                              bottomLeft: Radius.circular(24),
+                              bottomRight: Radius.circular(12),
+                            ),
+                            onTap: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Update Gateway'),
+                                  content: const Text('This will update OpenClaw to the latest version to fix WebSocket handshake issues. Continue?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(true),
+                                      child: const Text('Update'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              
+                              if (confirmed == true) {
+                                try {
+                                  await BootstrapService().updateGateway();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Gateway updated successfully!'),
+                                        backgroundColor: AppColors.statusGreen,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Update failed: $e'),
+                                        backgroundColor: AppColors.statusRed,
+                                      ),
+                                    );
+                                  }
+                                }
+                              }
+                            },
+                          ),
 
-                  _DashCard(
-                    title: 'Bot Management',
-                    subtitle: 'Advanced tools & system RPCs',
-                    icon: Icons.settings_ethernet_rounded,
-                    iconColor: Colors.tealAccent,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const BotManagementDashboard()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  _DashCard(
-                    title: 'Help & Docs',
-                    subtitle: 'Usage, commands, and guides',
-                    icon: Icons.help_outline_rounded,
-                    iconColor: Colors.white70,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const HelpScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Consumer<NodeProvider>(
-                    builder: (context, nodeProvider, _) {
-                      final nodeState = nodeProvider.state;
-                      return _DashCard(
-                        title: 'Node',
-                        subtitle: nodeState.isPaired
-                            ? 'Connected to gateway'
-                            : nodeState.isDisabled
-                                ? 'Device capabilities for AI'
-                                : nodeState.statusText,
-                        icon: Icons.devices_rounded,
-                        iconColor: Colors.white60,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const NodeScreen()),
-                        ),
+                          // 8. Onboarding & Help (Small Row)
+                           _FluidDashCard(
+                            title: 'Setup',
+                            subtitle: 'Config keys',
+                            icon: Icons.vpn_key_rounded,
+                            iconColor: Colors.orangeAccent,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OnboardingScreen())),
+                          ),
+                          _FluidDashCard(
+                            title: 'Help',
+                            subtitle: 'Usage guides',
+                            icon: Icons.help_outline_rounded,
+                            iconColor: Colors.white70,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
+                          ),
+                          
+                          // 8. System Tools: Logs & Packages (Bottom Row)
+                          _FluidDashCard(
+                            title: 'Logs',
+                            subtitle: 'Real-time feed',
+                            icon: Icons.article_outlined,
+                            iconColor: Colors.white54,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogsScreen())),
+                          ),
+                          _FluidDashCard(
+                            title: 'Packages',
+                            subtitle: 'Go, Brew, toolkits',
+                            icon: Icons.extension_rounded,
+                            iconColor: Colors.purpleAccent,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PackagesScreen())),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -305,7 +369,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildAnimatedTitle() {
+  Widget _buildAnimatedTitle(GatewayProvider provider) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -314,7 +378,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           'assets/app_icon_official.svg',
           width: 22,
           height: 22,
-          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          colorFilter: ColorFilter.mode(
+            provider.state.isRepairing ? AppColors.statusAmber : Colors.white,
+            BlendMode.srcIn,
+          ),
         ),
         const SizedBox(width: 12),
         // Rotator
@@ -327,19 +394,23 @@ class _DashboardScreenState extends State<DashboardScreen>
               crossFadeState: _showTagline 
                   ? CrossFadeState.showSecond 
                   : CrossFadeState.showFirst,
-              firstChild: const Text(
-                'Plawie',
+              firstChild: Text(
+                provider.state.isRepairing ? 'Repairing System...' : 'Plawie',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: provider.state.isRepairing ? AppColors.statusAmber : Colors.white,
                   fontWeight: FontWeight.w900,
                   fontSize: 18,
                   letterSpacing: 1.0,
                 ),
               ),
               secondChild: Text(
-                AppConstants.appMotto.toUpperCase(),
+                provider.state.isRepairing 
+                    ? 'PLEASE WAIT...' 
+                    : AppConstants.appMotto.toUpperCase(),
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
+                  color: provider.state.isRepairing 
+                      ? AppColors.statusAmber.withValues(alpha: 0.8) 
+                      : Colors.white.withValues(alpha: 0.6),
                   fontWeight: FontWeight.w800,
                   fontSize: 10,
                   letterSpacing: 2.0,
@@ -353,96 +424,132 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-/// Liquid glass dashboard action card.
-class _DashCard extends StatelessWidget {
+/// Liquid glass fluid dashboard pod.
+class _FluidDashCard extends StatefulWidget {
   final String title;
   final String subtitle;
   final IconData icon;
   final Color iconColor;
   final VoidCallback? onTap;
   final bool enabled;
+  final double widthFactor;
+  final BorderRadius? borderRadius;
 
-  const _DashCard({
+  const _FluidDashCard({
     required this.title,
     required this.subtitle,
     required this.icon,
     this.iconColor = Colors.white70,
     this.onTap,
     this.enabled = true,
+    this.widthFactor = 1.0,
+    this.borderRadius,
   });
 
   @override
+  State<_FluidDashCard> createState() => _FluidDashCardState();
+}
+
+class _FluidDashCardState extends State<_FluidDashCard> with SingleTickerProviderStateMixin {
+  late AnimationController _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final opacity = enabled ? 1.0 : 0.45;
+    final opacity = widget.enabled ? 1.0 : 0.45;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 12 : 0)) * widget.widthFactor;
+
+    // Fluid asymmetric shapes if not specified
+    final radius = widget.borderRadius ?? BorderRadius.circular(20);
+
     return Opacity(
       opacity: opacity,
       child: GestureDetector(
-        onTap: onTap,
-        child: GlassCard(
-          padding: EdgeInsets.zero,
-          borderRadius: 20,
-          accentColor: onTap != null ? null : null,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                splashColor: iconColor.withValues(alpha: 0.1),
-                highlightColor: iconColor.withValues(alpha: 0.05),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                  child: Row(
-                    children: [
-                      // Icon pill
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: iconColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: iconColor.withValues(alpha: 0.25),
-                            width: 1,
-                          ),
-                        ),
-                        child: Icon(icon, color: iconColor, size: 22),
-                      ),
-                      const SizedBox(width: 16),
-                      // Text
-                      Expanded(
+        onTapDown: (_) => _anim.forward(),
+        onTapUp: (_) => _anim.reverse(),
+        onTapCancel: () => _anim.reverse(),
+        onTap: widget.onTap,
+        child: ScaleTransition(
+          scale: _anim.drive(Tween(begin: 1.0, end: 0.94).chain(CurveTween(curve: Curves.easeOutCubic))),
+          child: SizedBox(
+            width: cardWidth,
+            child: GlassCard(
+              padding: EdgeInsets.zero,
+              borderRadius: 0, // Handled by outer decoration
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  border: Border.all(
+                    color: widget.iconColor.withValues(alpha: 0.15),
+                    width: 1.2,
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: radius,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: widget.onTap,
+                      splashColor: widget.iconColor.withValues(alpha: 0.1),
+                      highlightColor: widget.iconColor.withValues(alpha: 0.05),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Icon header
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: widget.iconColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: widget.iconColor.withValues(alpha: 0.25),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Icon(widget.icon, color: widget.iconColor, size: 18),
+                            ),
+                            const SizedBox(height: 16),
+                            // Text
                             Text(
-                              title,
-                              style: const TextStyle(
+                              widget.title,
+                              style: GoogleFonts.outfit(
                                 color: Colors.white,
                                 fontSize: 15,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w800,
                                 letterSpacing: 0.3,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              subtitle,
+                              widget.subtitle,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 12,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
                       ),
-                      // Chevron
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: onTap != null
-                            ? Colors.white.withValues(alpha: 0.35)
-                            : Colors.white.withValues(alpha: 0.15),
-                        size: 20,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

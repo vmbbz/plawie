@@ -173,6 +173,10 @@ class NativeBridge {
     return await _channel.invokeMethod('getAppVersion');
   }
 
+  static Future<int> getTotalMemoryMb() async {
+    return await _channel.invokeMethod<int>('getTotalMemoryMb') ?? 4096;
+  }
+
   // ── Integrated Ollama Management ──────────────────────────────────────────
 
   static Future<bool> isOllamaInstalled() async {
