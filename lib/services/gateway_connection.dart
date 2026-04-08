@@ -57,6 +57,17 @@ class GatewayConnection {
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
 
+  // Fires when the gateway closes with 1008 (pairing required).
+  // GatewayService subscribes and clears the stale device record via PRoot.
+  final _pairingRequiredController = StreamController<void>.broadcast();
+  Stream<void> get pairingRequiredStream => _pairingRequiredController.stream;
+
+  /// The device ID loaded by the identity module. Non-null after connect() is called.
+  String? get deviceId => _identity.deviceId;
+
+  /// Shared-prefs key — exposed so callers can purge the token on pairing recovery.
+  static const prefDeviceToken = _prefDeviceToken;
+
   Completer<void>? _handshakeCompleter;
   Completer<String?>? _challengeCompleter;
 
@@ -121,7 +132,11 @@ class GatewayConnection {
     _subscription = _channel!.stream.listen(
       _onFrame,
       onError: (_) => _onDisconnect(),
-      onDone: _onDisconnect,
+      onDone: () {
+        // Capture the close code BEFORE _cleanup() nulls _channel.
+        final closeCode = _channel?.closeCode;
+        _onDisconnect(pairingRequired: closeCode == 1008);
+      },
     );
 
     // For local connections (127.0.0.1), the gateway skips the challenge.
@@ -318,7 +333,7 @@ class GatewayConnection {
     } catch (_) {}
   }
 
-  void _onDisconnect() {
+  void _onDisconnect({bool pairingRequired = false}) {
     _updateState(GatewayConnectionState.disconnected);
     // Error all in-flight requests immediately so callers fail fast
     // instead of waiting for the 240s timeout before showing an error.
@@ -330,6 +345,9 @@ class GatewayConnection {
     }
     _pendingRequests.clear();
     _cleanup();
+    if (pairingRequired && !_pairingRequiredController.isClosed) {
+      _pairingRequiredController.add(null);
+    }
     _scheduleReconnect();
   }
 
@@ -453,6 +471,7 @@ class GatewayConnection {
     disconnect();
     _stateNotifier.close();
     _eventController.close();
+    _pairingRequiredController.close();
     for (final c in _pendingRequests.values) {
       c.close();
     }
