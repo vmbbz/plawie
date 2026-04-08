@@ -19,9 +19,13 @@ class GatewayState {
   /// Each entry is the raw Ollama name (e.g. "qwen2-5-0-5b-instruct-q4-k-m:latest").
   /// The chat screen prefixes these with "ollama/" for the model dropdown.
   final List<String> ollamaHubModels;
-  /// True when the Ollama server is confirmed reachable at :11434.
-  /// Cleared to false when Ollama is stopped or crashes.
   final bool isOllamaRunning;
+  /// True when a background repair or "doctor --fix" is in progress.
+  final bool isRepairing;
+  /// Current progress (0.0 to 1.0) of the background repair.
+  final double repairProgress;
+  /// Current status message for the background repair.
+  final String repairMessage;
 
   const GatewayState({
     this.status = GatewayStatus.stopped,
@@ -35,6 +39,9 @@ class GatewayState {
     this.isWebsocketConnected = false,
     this.ollamaHubModels = const [],
     this.isOllamaRunning = false,
+    this.isRepairing = false,
+    this.repairProgress = 0.0,
+    this.repairMessage = '',
   });
 
   GatewayState copyWith({
@@ -55,6 +62,9 @@ class GatewayState {
     bool? isWebsocketConnected,
     List<String>? ollamaHubModels,
     bool? isOllamaRunning,
+    bool? isRepairing,
+    double? repairProgress,
+    String? repairMessage,
   }) {
     return GatewayState(
       status: status ?? this.status,
@@ -68,6 +78,9 @@ class GatewayState {
       isWebsocketConnected: isWebsocketConnected ?? this.isWebsocketConnected,
       ollamaHubModels: ollamaHubModels ?? this.ollamaHubModels,
       isOllamaRunning: isOllamaRunning ?? this.isOllamaRunning,
+      isRepairing: isRepairing ?? this.isRepairing,
+      repairProgress: repairProgress ?? this.repairProgress,
+      repairMessage: repairMessage ?? this.repairMessage,
     );
   }
 

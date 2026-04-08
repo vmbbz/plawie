@@ -471,6 +471,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+                Consumer<GatewayProvider>(
+                  builder: (context, provider, _) {
+                    final repairing = provider.state.isRepairing;
+                    return ListTile(
+                      title: const Text('Repair Gateway Installation'),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            repairing ? provider.state.repairMessage : 'Fix SyntaxError or corrupted library files',
+                            style: TextStyle(
+                              color: repairing ? AppColors.statusAmber : Colors.white54,
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (repairing) ...[
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: provider.state.repairProgress,
+                                backgroundColor: Colors.white10,
+                                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.statusAmber),
+                                minHeight: 2,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      leading: Icon(
+                        Icons.build_circle,
+                        color: repairing ? AppColors.statusAmber : Colors.white38,
+                      ),
+                      onTap: repairing ? null : () => _showRepairDialog(context),
+                    );
+                  },
+                ),
                 ListTile(
                   title: const Text('Run Gateway Diagnostics'),
                   subtitle: const Text('Check tmux, openclaw, session and logs'),
@@ -543,6 +580,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // Local LLM is accessible via Settings > Local LLM tile (StreamBuilder above).
+
+  void _showRepairDialog(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Background repair started. Check the Dashboard for status.'),
+        backgroundColor: AppColors.statusAmber,
+        duration: Duration(seconds: 5),
+      ),
+    );
+
+    context.read<GatewayProvider>().repairAndRestart();
+  }
 
   void _changeAvatar(BuildContext context) {
     final avatars = ['gemini.vrm', 'boruto.vrm', 'default_avatar.vrm'];

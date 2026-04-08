@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
@@ -31,8 +32,11 @@ class GatewayConnection {
   // 10 was too small for phones that can be dormant for hours.
   static const _maxReconnectAttempts = 50;
 
+  static const _prefDeviceToken = 'openclaw_operator_device_token';
+
   final DeviceIdentity _identity = DeviceIdentity();
   bool _identityLoaded = false;
+  String? _deviceToken;
 
   /// The connect request ID, used to match the hello-ok (type:res) response.
   String? _connectRequestId;
@@ -79,6 +83,11 @@ class GatewayConnection {
     if (!_identityLoaded) {
       await _identity.loadOrCreate();
       _identityLoaded = true;
+      // Also load any persisted device token from a previous successful session.
+      // Including this token in the auth block lets the gateway skip the
+      // scope-upgrade audit on reconnect, preventing pairing-required loops.
+      final prefs = await SharedPreferences.getInstance();
+      _deviceToken = prefs.getString(_prefDeviceToken);
     }
 
     _connectFuture = _doConnect();
@@ -170,7 +179,10 @@ class GatewayConnection {
         },
         'role': 'operator',
         'scopes': ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
-        'auth': {'token': _token},
+        'auth': {
+          'token': _token,
+          if (_deviceToken != null && _deviceToken!.isNotEmpty) 'deviceToken': _deviceToken,
+        },
         'locale': 'en-US',
       },
     };
@@ -208,11 +220,17 @@ class GatewayConnection {
             supportedMethods = List<String>.from(methods);
           }
 
-          // Persist device token if provided
+          // Persist device token so future connects include it in the auth block.
+          // Without this, every reconnect triggers the security scope-upgrade
+          // audit → pairing-required, even for already-approved devices.
           final auth = payload?['auth'] as Map<String, dynamic>?;
-          // ignore: unused_local_variable
-          final deviceToken = auth?['deviceToken'] as String?;
-          // TODO: persist deviceToken for future connections
+          final newDeviceToken = auth?['deviceToken'] as String?;
+          if (newDeviceToken != null && newDeviceToken.isNotEmpty) {
+            _deviceToken = newDeviceToken;
+            unawaited(SharedPreferences.getInstance().then(
+              (prefs) => prefs.setString(_prefDeviceToken, newDeviceToken),
+            ));
+          }
         }
 
         _connectRequestId = null; // Clear so we don't match again
@@ -327,20 +345,23 @@ class GatewayConnection {
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
-      _doConnect();
+      // Guard: skip if connect() already has a _connectFuture in flight.
+      // Without this, the timer and an explicit connect() call race and
+      // _cleanup() in the second _doConnect() tears down the first one's channel.
+      if (_connectFuture == null) _doConnect();
     });
   }
+
+  // Pre-encoded ping frame — allocated once, reused every 30s.
+  // The gateway pong handler doesn't use the id field so we omit it.
+  static const _pingFrame = '{"type":"ping"}';
 
   void _startPing() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_state == GatewayConnectionState.connected && _channel != null) {
         try {
-          // Send a protocol-compliant native ping instead of an RPC request
-          _channel!.sink.add(jsonEncode({
-            'type': 'ping',
-            'id': const Uuid().v4(),
-          }));
+          _channel!.sink.add(_pingFrame);
         } catch (_) {}
       }
     });
@@ -395,10 +416,15 @@ class GatewayConnection {
     _subscription = null;
     _pingTimer?.cancel();
     _connectRequestId = null;
-    try {
-      _channel?.sink.close();
-    } catch (_) {}
+    // Capture the channel ref first, then null it so no other code can use it.
+    // Fire close() as a best-effort fire-and-forget — this sends the WS close
+    // frame to the server, preventing the server from keeping the dead socket
+    // alive for its full 440s timeout.
+    final ch = _channel;
     _channel = null;
+    if (ch != null) {
+      unawaited(ch.sink.close().catchError((_) {}));
+    }
   }
 
   void _updateState(GatewayConnectionState newState) {

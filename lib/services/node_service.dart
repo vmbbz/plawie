@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import '../constants.dart';
 import '../models/node_frame.dart';
 import '../models/node_state.dart';
@@ -148,28 +149,32 @@ class NodeService {
     }
   }
 
-  /// Resolve the gateway auth token from available sources:
-  /// 1. Manually entered token (for remote gateways)
-  /// 2. Dashboard URL fragment (for local gateway)
+  /// Resolve the gateway auth token from available sources.
   Future<String?> _readGatewayToken() async {
+    // 1. Primary: read directly from openclaw.json — same authoritative source
+    //    as GatewayService.retrieveTokenFromConfig(). This is always current,
+    //    even after `openclaw reload` generates a new token.
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final configPath = '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json';
+      final content = await File(configPath).readAsString();
+      final config = jsonDecode(content) as Map<String, dynamic>;
+      final token = config['gateway']?['auth']?['token'] as String? ??
+                    config['gateway']?['token'] as String? ??
+                    config['auth']?['token'] as String?;
+      if (token != null && token.isNotEmpty) {
+        log('[NODE] Gateway token read from openclaw.json');
+        return token;
+      }
+    } catch (_) {}
+
+    // 2. Fallback: manually configured token (for remote gateways)
     final prefs = PreferencesService();
     await prefs.init();
-
-    // 1. Manual token (user-provided for remote gateway)
     final manualToken = prefs.nodeGatewayToken;
     if (manualToken != null && manualToken.isNotEmpty) {
       log('[NODE] Using manually configured gateway token');
       return manualToken;
-    }
-
-    // 2. Extract from local dashboard URL
-    final dashboardUrl = prefs.dashboardUrl;
-    if (dashboardUrl != null) {
-      final tokenMatch = RegExp(r'[#?&]token=([0-9a-fA-F\-]+)').firstMatch(dashboardUrl);
-      if (tokenMatch != null) {
-        log('[NODE] Gateway token extracted from dashboard URL');
-        return tokenMatch.group(1);
-      }
     }
 
     log('[NODE] No gateway token available');
@@ -182,11 +187,7 @@ class NodeService {
     await prefs.init();
     final deviceToken = prefs.nodeDeviceToken;
 
-    // For local connections, read the gateway auth token from dashboard URL
-    // If missing, try a quiet probe (non-forced) via GatewayService
-    if (_gatewayAuthToken == null) {
-      _gatewayAuthToken = await _readGatewayToken();
-    }
+    _gatewayAuthToken ??= await _readGatewayToken();
 
     // Prefer gateway auth token (exact match); fall back to device token
     // (gateway verifies device tokens as fallback if gateway token check fails)
