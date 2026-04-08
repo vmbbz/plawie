@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
@@ -34,6 +35,8 @@ class GatewayService {
   String? _filesDir;
   // Prevents concurrent @buape/carbon targeted-fix attempts.
   bool _isFixingDep = false;
+  // Guards the one-time pairing-required recovery per session.
+  bool _pairingResolveAttempted = false;
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -1346,6 +1349,7 @@ PARAMETER num_batch 512
       _connection = GatewayConnection();
       _connection!.stateStream.listen((wsState) {
         final connected = wsState == GatewayConnectionState.connected;
+        if (connected) _pairingResolveAttempted = false; // Reset on success
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
           logs: connected
@@ -1353,6 +1357,7 @@ PARAMETER num_batch 512
               : _state.logs,
         ));
       });
+      _connection!.pairingRequiredStream.listen((_) => _handleOperatorPairingRequired());
       // Reset backoff only for brand-new connection objects, not on every
       // health tick — otherwise the exponential backoff never accumulates.
       _connection!.resetReconnectCounter();
@@ -1372,6 +1377,32 @@ PARAMETER num_batch 512
       ));
     }
     return ok;
+  }
+
+  /// Called when the gateway closes the operator WS with 1008 (pairing required).
+  /// Deletes the stale device record via PRoot so the next connect is treated
+  /// as a new device and succeeds with the gateway auth token alone.
+  Future<void> _handleOperatorPairingRequired() async {
+    if (_pairingResolveAttempted) return;
+    _pairingResolveAttempted = true;
+    final deviceId = _connection?.deviceId ?? '';
+    _addActivity('[INFO] Pairing required — clearing stale operator device record...');
+    try {
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        '(openclaw nodes delete $deviceId 2>/dev/null || true)',
+        timeout: 5,
+      );
+      // Clear persisted deviceToken — it belongs to the now-deleted record.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(GatewayConnection.prefDeviceToken);
+      _addActivity('[INFO] Operator device record cleared — reconnecting fresh');
+    } catch (e) {
+      _addActivity('[WARN] Could not clear operator device record: $e');
+    }
+    // Dispose connection so _ensureWebSocket creates a fresh one next tick.
+    _connection?.dispose();
+    _connection = null;
   }
 
   Future<void> _checkHealth() async {

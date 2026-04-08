@@ -14,6 +14,8 @@ class NodeService {
   final NodeWsService _ws = NodeWsService();
   final _stateController = StreamController<NodeState>.broadcast();
   StreamSubscription? _frameSubscription;
+  StreamSubscription? _pairingSubscription;
+  bool _pairingResolveAttempted = false;
 
   NodeState _state = const NodeState();
   final Map<String, Future<NodeFrame> Function(String, Map<String, dynamic>)>
@@ -73,6 +75,10 @@ class NodeService {
 
     _frameSubscription?.cancel();
     _frameSubscription = _ws.frameStream.listen(_onFrame);
+    _pairingSubscription?.cancel();
+    _pairingSubscription = _ws.pairingRequiredStream.listen((_) {
+      _handleNodePairingRequired();
+    });
 
     try {
       _challengeCompleter = Completer<String?>();
@@ -431,8 +437,32 @@ class NodeService {
     }
   }
 
+  /// Called when the gateway closes with 1008 (pairing required).
+  /// Deletes the stale device record so the gateway treats the next connect
+  /// as a new device, allowing the normal NOT_PAIRED → auto-approve flow.
+  Future<void> _handleNodePairingRequired() async {
+    if (_pairingResolveAttempted) return;
+    _pairingResolveAttempted = true;
+    log('[NODE] Pairing required (1008) — clearing stale device record...');
+    try {
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        '(openclaw nodes delete ${_identity.deviceId} 2>/dev/null || true)',
+        timeout: 5,
+      );
+      log('[NODE] Device record cleared — will re-pair on next connect');
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.nodeDeviceToken = null;
+      _gatewayAuthToken = null; // Force re-read from openclaw.json
+    } catch (e) {
+      log('[NODE] Could not clear device record: $e');
+    }
+  }
+
   Future<void> disconnect() async {
     _frameSubscription?.cancel();
+    _pairingSubscription?.cancel();
     await _ws.disconnect();
     _updateState(_state.copyWith(
       status: NodeStatus.disconnected,
