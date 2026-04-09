@@ -69,12 +69,22 @@ class GatewayService {
     return modelContexts[modelId.toLowerCase()] ?? 1024;
   }
 
-  /// Dynamic Modelfile template that adapts to model capabilities
-  /// Base: 1024 for mobile safety, but allows higher for powerful devices
+  /// Dynamic Modelfile template. TEMPLATE block is required — without it Ollama
+  /// falls back to a broken default format and generates 0 tokens.
   String _buildModelfileTemplate(String ggufPath, int contextSize) {
     return '''FROM $ggufPath
-PARAMETER stop ""
-PARAMETER stop ""
+TEMPLATE """{{- if .System }}
+{{ .System }}
+{{ end }}
+{{- if .Prompt }}
+{{ .Prompt }}
+{{ end }}
+{{- if .Tools }}
+{{ .Tools }}
+{{ end }}
+"""
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
 PARAMETER num_thread 1
@@ -456,6 +466,8 @@ PARAMETER num_batch 512
     final agentsDefaults = config['agents']?['defaults'];
     if (agentsDefaults is Map) {
       agentsDefaults.remove('provider');          // not in agents.defaults schema
+      agentsDefaults.remove('tools');             // not in agents.defaults schema
+      agentsDefaults.remove('timeoutMs');         // not in agents.defaults schema
     }
     final skills = config['skills'];
     if (skills is Map) {
@@ -503,15 +515,9 @@ PARAMETER num_batch 512
       // CRITICAL: Do NOT set systemPrompt here - it breaks gateway reload
       // System prompt should be set in agent defaults or left as default
 
-      // Cloud models run on ollama.com servers and can handle tool calling.
-      // Local models are small and cannot format tool-call JSON correctly —
-      // they produce the "This model does not support tool use" error.
-      if (!isCloudModel) {
-        config['agents']['defaults']['tools'] = <dynamic>[];
-        config['agents']['defaults']['timeoutMs'] = 1800000; // 30 min for on-device
-      } else {
-        config['agents']['defaults']['timeoutMs'] = 120000; // 2 min for cloud (fast)
-      }
+      // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
+      // OpenClaw schema keys — writing them breaks the gateway config validation.
+      // Tool dispatch is controlled by the model's own capability declaration.
 
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
@@ -2031,10 +2037,14 @@ PARAMETER num_batch 512
       //   SSE (OpenAI-compat):  data: {"choices":[{"delta":{"content":"..."}}]}
       //   NDJSON (Ollama native): {"message":{"role":"assistant","content":"..."}}
       bool firstChunk = true;
+      int rawChunks = 0;
+      final List<String> rawSamples = [];
       await for (final chunk in streamedResponse.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
         if (chunk.isEmpty) continue;
+        rawChunks++;
+        if (isDirectLlama && rawChunks <= 3) rawSamples.add(chunk.length > 120 ? chunk.substring(0, 120) : chunk);
 
         String? rawJson;
         if (chunk.startsWith('data: ')) {
@@ -2051,18 +2061,21 @@ PARAMETER num_batch 512
         try {
           final json = jsonDecode(rawJson) as Map<String, dynamic>;
 
-          // OpenAI-compat format: choices[0].delta.content
+          // OpenAI-compat streaming: choices[0].delta.content
           final delta = (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
-
-          // Ollama native format: message.content + done flag
+          // OpenAI-compat non-streaming (single chunk): choices[0].message.content
+          final messageContent = (json['choices'] as List?)?[0]?['message']?['content'] as String?;
+          // Ollama native NDJSON: message.content + done flag
           final nativeContent = (json['message'] as Map?)?['content'] as String?;
           final done = json['done'] as bool? ?? false;
 
           final token = (delta != null && delta.isNotEmpty)
               ? delta
-              : (nativeContent != null && nativeContent.isNotEmpty)
-                  ? nativeContent
-                  : null;
+              : (messageContent != null && messageContent.isNotEmpty)
+                  ? messageContent
+                  : (nativeContent != null && nativeContent.isNotEmpty)
+                      ? nativeContent
+                      : null;
 
           if (token != null) {
             if (firstChunk && isDirectLlama) {
@@ -2078,7 +2091,14 @@ PARAMETER num_batch 512
           debugPrint('[GatewayService] SSE parse error: $e (raw: $rawJson)');
         }
       }
-      if (isDirectLlama) _addActivity('[CHAT] ✓ Stream complete');
+      if (isDirectLlama) {
+        _addActivity('[CHAT] ✓ Stream complete ($rawChunks chunks)');
+        if (firstChunk) {
+          for (int i = 0; i < rawSamples.length; i++) {
+            _addActivity('[CHAT] raw[$i]: ${rawSamples[i]}');
+          }
+        }
+      }
     } on TimeoutException {
       if (isDirectLlama) {
         _addActivity('[CHAT] ✗ Timed out after 240 s');
