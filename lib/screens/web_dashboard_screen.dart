@@ -63,8 +63,9 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
         await prefs.init();
         url = prefs.dashboardUrl;
       }
-      if (url == null || url.isEmpty) {
-        // Gateway running but token URL not cached yet — probe once
+      // If URL has no token (e.g. set by bootstrap without token, or after fresh install),
+      // always probe for the authenticated URL — never load the dashboard without a token.
+      if (url == null || url.isEmpty || !url.contains('token=')) {
         url = await gatewayProvider.fetchAuthenticatedDashboardUrl();
       }
     }

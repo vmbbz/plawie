@@ -196,6 +196,26 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "command required", null)
                     }
                 }
+                "executeInShell" -> {
+                    val command = call.argument<String>("command")
+                    val timeoutMs = call.argument<Int>("timeoutMs")?.toLong() ?: 30000L
+                    if (command != null) {
+                        Thread {
+                            try {
+                                val output = processManager.executeInShell(command, timeoutMs)
+                                runOnUiThread { result.success(output) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("SHELL_ERROR", e.message, null) }
+                            }
+                        }.start()
+                    } else {
+                        result.error("INVALID_ARGS", "command required", null)
+                    }
+                }
+                "destroyShell" -> {
+                    processManager.destroyShell()
+                    result.success(true)
+                }
                 "startGateway" -> {
                     try {
                         PlawieForegroundService.start(this)

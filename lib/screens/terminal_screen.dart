@@ -51,10 +51,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
     setState(() => _loading = true);
 
     try {
-      final result = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $cmd',
-        timeout: 60000
-      );
+      // executeInShell reuses one persistent PRoot/bash process instead of
+      // spawning a new PRoot per command — prevents OOM crashes on mobile.
+      // NODE_OPTIONS is pre-set in the persistent shell environment.
+      final result = await NativeBridge.executeInShell(cmd, timeoutMs: 60000);
 
       if (!mounted) return;
 
@@ -79,6 +79,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _inputController.dispose();
     _focusNode.dispose();
     NativeBridge.stopTerminalService();
+    NativeBridge.destroyShell();
     super.dispose();
   }
 
