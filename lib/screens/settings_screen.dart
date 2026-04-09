@@ -771,12 +771,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'anthropic/claude-opus-4.6',
       'openai/gpt-4o',
       'groq/llama-3.1-405b',
+      'ollama/qwen3-coder:480b-cloud',
+      'ollama/gpt-oss:120b-cloud',
+      'ollama/deepseek-v3.1:671b-cloud',
+      'ollama/kimi-k2.5:cloud',
+      'ollama/minimax-m2.7:cloud',
+      'ollama/glm-5:cloud',
     ];
     final cloudLabels = [
       'Gemini 3.1 Pro Preview',
       'Claude Opus 4.6',
       'GPT-4o',
       'Llama 3.1 405B',
+      'Qwen3 Coder 480B (Ollama Cloud)',
+      'GPT-OSS 120B (Ollama Cloud)',
+      'DeepSeek V3.1 671B (Ollama Cloud)',
+      'Kimi K2.5 (Ollama Cloud)',
+      'MiniMax M2.7 (Ollama Cloud)',
+      'GLM-5 (Ollama Cloud)',
     ];
 
     final llmService = LocalLlmService();

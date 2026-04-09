@@ -6,23 +6,43 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
+import 'package:clawa/services/native_bridge.dart';
 import 'package:clawa/services/openclaw_service.dart';
 import 'package:clawa/models/gateway_state.dart';
 
-/// Curated list of tool-capable Ollama library models, sorted smallest → largest.
-/// These are pulled directly from ollama.com/library (not local GGUFs) and
-/// already contain proper chat templates for tool/function calling.
+/// Curated on-device Ollama library models, sorted smallest → largest.
+/// Pulled from ollama.com/library; include proper chat templates.
 const _kToolModels = [
-  {'tag': 'qwen2.5:0.5b',    'label': 'Qwen 2.5 0.5B',    'size': '394 MB'},
-  {'tag': 'qwen2.5:1.5b',    'label': 'Qwen 2.5 1.5B',    'size': '986 MB'},
-  {'tag': 'qwen2.5:3b',      'label': 'Qwen 2.5 3B',      'size': '1.9 GB'},
-  {'tag': 'qwen2.5:7b',      'label': 'Qwen 2.5 7B',      'size': '4.7 GB'},
-  {'tag': 'qwen2.5:14b',     'label': 'Qwen 2.5 14B',     'size': '9.0 GB'},
-  {'tag': 'llama3.2:1b',     'label': 'Llama 3.2 1B',     'size': '1.3 GB'},
-  {'tag': 'llama3.2:3b',     'label': 'Llama 3.2 3B',     'size': '2.0 GB'},
-  {'tag': 'llama3.1:8b',     'label': 'Llama 3.1 8B',     'size': '4.7 GB'},
-  {'tag': 'phi4-mini:3.8b',  'label': 'Phi-4 Mini 3.8B',  'size': '2.5 GB'},
-  {'tag': 'mistral:7b',      'label': 'Mistral 7B',       'size': '4.1 GB'},
+  {'tag': 'smollm2:1.7b',          'label': 'SmolLM2 1.7B',          'size': '1.0 GB'},
+  {'tag': 'deepseek-r1:1.5b',      'label': 'DeepSeek R1 1.5B',      'size': '1.1 GB'},
+  {'tag': 'qwen2.5:0.5b',          'label': 'Qwen 2.5 0.5B',         'size': '394 MB'},
+  {'tag': 'qwen2.5:1.5b',          'label': 'Qwen 2.5 1.5B',         'size': '986 MB'},
+  {'tag': 'llama3.2:1b',           'label': 'Llama 3.2 1B',          'size': '1.3 GB'},
+  {'tag': 'llama3.2:3b',           'label': 'Llama 3.2 3B',          'size': '2.0 GB'},
+  {'tag': 'qwen2.5:3b',            'label': 'Qwen 2.5 3B',           'size': '1.9 GB'},
+  {'tag': 'qwen2.5-coder:3b',      'label': 'Qwen 2.5 Coder 3B',     'size': '1.9 GB'},
+  {'tag': 'phi4-mini:3.8b',        'label': 'Phi-4 Mini 3.8B',       'size': '2.5 GB'},
+  {'tag': 'qwen2.5:7b',            'label': 'Qwen 2.5 7B',           'size': '4.7 GB'},
+  {'tag': 'qwen2.5-coder:7b',      'label': 'Qwen 2.5 Coder 7B',     'size': '4.7 GB'},
+  {'tag': 'llama3.1:8b',           'label': 'Llama 3.1 8B',          'size': '4.7 GB'},
+  {'tag': 'deepseek-r1:7b',        'label': 'DeepSeek R1 7B',        'size': '4.7 GB'},
+  {'tag': 'mistral:7b',            'label': 'Mistral 7B',            'size': '4.1 GB'},
+  {'tag': 'qwen2.5:14b',           'label': 'Qwen 2.5 14B',          'size': '9.0 GB'},
+  {'tag': 'phi4:14b',              'label': 'Phi-4 14B',             'size': '9.1 GB'},
+  {'tag': 'llama3.2-vision:11b',   'label': 'Llama 3.2 Vision 11B',  'size': '8.1 GB'},
+];
+
+/// Ollama cloud models — run on ollama.com servers via the local Ollama daemon.
+/// No download needed. Require `ollama signin` authentication.
+/// Sources: ollama.com/blog/cloud-models + docs.ollama.com/integrations/openclaw
+const _kCloudOllamaModels = [
+  {'tag': 'qwen3-coder:480b-cloud',   'label': 'Qwen3 Coder 480B',   'category': 'Code',      'hasTools': 'true'},
+  {'tag': 'gpt-oss:120b-cloud',       'label': 'GPT-OSS 120B',        'category': 'General',   'hasTools': 'true'},
+  {'tag': 'gpt-oss:20b-cloud',        'label': 'GPT-OSS 20B',         'category': 'General',   'hasTools': 'false'},
+  {'tag': 'deepseek-v3.1:671b-cloud', 'label': 'DeepSeek V3.1 671B', 'category': 'Reasoning', 'hasTools': 'false'},
+  {'tag': 'kimi-k2.5:cloud',          'label': 'Kimi K2.5',           'category': 'General',   'hasTools': 'false'},
+  {'tag': 'minimax-m2.7:cloud',       'label': 'MiniMax M2.7',        'category': 'General',   'hasTools': 'false'},
+  {'tag': 'glm-5:cloud',              'label': 'GLM-5',               'category': 'General',   'hasTools': 'false'},
 ];
 
 class LocalLlmScreen extends StatefulWidget {
@@ -41,7 +61,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
   // Diagnostics state
   final _testPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
-  String _testResponse = '';
+  final _testResponseNotifier = ValueNotifier<String>('');
   bool _isTesting = false;
   double _tokensPerSec = 0;
   DateTime? _testStartTime;
@@ -50,12 +70,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   bool _isCheckingHealth = false;
 
   bool _isRegisteringOllama = false;
-  
+
   // Ollama Integration State
   bool _isOllamaHealthy = false;
   bool _isCheckingOllama = false;
   List<Map<String, String>> _ollamaModels = [];
   String? _selectedOllamaModel;
+
+  // Ollama cloud auth state
+  bool _ollamaSignedIn = false;
+  bool _isCheckingSignin = false;
 
   // Integrated Ollama State
   bool _isInternalOllamaInstalled = false;
@@ -73,10 +97,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   StreamSubscription? _serviceSub;
   StreamSubscription? _gatewaySub;
   StreamSubscription<String>? _activitySub;
-  
+  StreamSubscription<String>? _ndkTestSub;
+  StreamSubscription<String>? _ollamaTestSub;
+
   // Ollama Diagnostics
   final _ollamaTestPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
-  String _ollamaTestResponse = '';
+  final _ollamaTestResponseNotifier = ValueNotifier<String>('');
   bool _isOllamaTesting = false;
 
   // Live activity panel state
@@ -124,6 +150,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _checkInternalStatus();
     _checkDownloadedModels();
     _checkOllamaStatus();
+    _checkOllamaSignin();
     // Default selection to the recommended model
     final toolCatalog = _service.catalog.where((m) => m.supportsToolCalls).toList();
     _selectedModel = toolCatalog.firstWhere(
@@ -137,10 +164,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _serviceSub?.cancel();
     _gatewaySub?.cancel();
     _activitySub?.cancel();
+    _ndkTestSub?.cancel();
+    _ollamaTestSub?.cancel();
     _activityScrollController.dispose();
     _testPromptController.dispose();
     _pullModelController.dispose();
     _ollamaTestPromptController.dispose();
+    _testResponseNotifier.dispose();
+    _ollamaTestResponseNotifier.dispose();
     super.dispose();
   }
 
@@ -284,18 +315,80 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     }
   }
 
+  Future<void> _checkOllamaSignin() async {
+    if (_isCheckingSignin) return;
+    if (mounted) setState(() => _isCheckingSignin = true);
+    try {
+      final result = await NativeBridge.runInProot(
+        'test -f ~/.ollama/id_token && echo "ok" || echo "no"',
+        timeout: 5,
+      );
+      if (mounted) setState(() => _ollamaSignedIn = result.trim() == 'ok');
+    } catch (_) {
+      if (mounted) setState(() => _ollamaSignedIn = false);
+    } finally {
+      if (mounted) setState(() => _isCheckingSignin = false);
+    }
+  }
+
+  Future<void> _selectCloudOllamaModel(String tag) async {
+    if (!_ollamaSignedIn) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Sign in first: run 'ollama signin' in the Terminal tab"),
+            backgroundColor: Colors.amber,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) Navigator.pop(context);
+    setState(() => _isRegisteringOllama = true);
+    try {
+      final currentSynced = _ollamaModels.map((m) => m['id']!).toList();
+      await GatewayService().configureOllama(
+        primaryModel: tag,
+        setAsPrimary: true,
+        syncedModels: [...currentSynced, tag],
+        isCloudModel: true,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ollama cloud model activated: $tag'),
+            backgroundColor: const Color(0xFFAB47BC),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRegisteringOllama = false);
+    }
+  }
+
   Future<void> _fetchOllamaModels() async {
     // Prefer the managed list from GatewayService (canonical names from our
     // GGUFs only) to avoid showing old-format stale registrations as duplicates.
     // Fall back to raw Ollama registry when sync hasn't run yet.
+    // Cloud models (`:cloud` suffix) are handled separately — never shown here.
     final managed = GatewayService().state.ollamaHubModels;
     final List<Map<String, String>> models;
     if (managed.isNotEmpty) {
       models = managed
+          .where((n) => !n.endsWith(':cloud'))
           .map((n) => <String, String>{'id': n, 'name': n.toUpperCase()})
           .toList();
     } else {
-      models = await OpenClawCommandService.getOllamaModels();
+      models = (await OpenClawCommandService.getOllamaModels())
+          .where((m) => !(m['id'] ?? '').endsWith(':cloud'))
+          .toList();
     }
     if (mounted) {
       setState(() {
@@ -311,9 +404,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     if (_selectedOllamaModel == null) return;
     setState(() => _isRegisteringOllama = true);
     try {
+      // Pass the current synced models so we don't wipe the models array in
+      // openclaw.json — calling configureOllama without syncedModels writes [].
+      final currentSynced = _ollamaModels.map((m) => m['id']!).toList();
       await GatewayService().configureOllama(
         primaryModel: _selectedOllamaModel,
         setAsPrimary: true,
+        syncedModels: currentSynced,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1626,20 +1723,29 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.statusGreen))
               : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          if (_testResponse.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: SelectableText(
-                _testResponse,
-                style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
-              ),
-            ),
-          ],
+          ValueListenableBuilder<String>(
+            valueListenable: _testResponseNotifier,
+            builder: (context, response, _) {
+              if (response.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      response,
+                      style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1657,55 +1763,57 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   }
 
   Future<void> _runTestInference() async {
+    _ndkTestSub?.cancel();
+    _testResponseNotifier.value = '';
     setState(() {
       _isTesting = true;
-      _testResponse = '';
       _tokensPerSec = 0;
       _tokenCount = 0;
       _testStartTime = DateTime.now();
     });
 
-    try {
-      await for (final token in _service.testInference(_testPromptController.text)) {
-        if (!mounted) break;
-        setState(() {
-          _testResponse += token;
-          _tokenCount++;
-          final duration = DateTime.now().difference(_testStartTime!).inMilliseconds / 1000;
-          if (duration > 0) {
-            _tokensPerSec = _tokenCount / duration;
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _testResponse = 'Error: $e');
-    } finally {
-      if (mounted) setState(() => _isTesting = false);
-    }
+    _ndkTestSub = _service.testInference(_testPromptController.text).listen(
+      (token) {
+        _testResponseNotifier.value += token;
+        _tokenCount++;
+        final duration = DateTime.now().difference(_testStartTime!).inMilliseconds / 1000;
+        if (duration > 0 && mounted) {
+          setState(() => _tokensPerSec = _tokenCount / duration);
+        }
+      },
+      onDone: () {
+        if (mounted) setState(() => _isTesting = false);
+      },
+      onError: (e) {
+        _testResponseNotifier.value = 'Error: $e';
+        if (mounted) setState(() => _isTesting = false);
+      },
+      cancelOnError: true,
+    );
   }
 
   Future<void> _runOllamaTestInference() async {
-    setState(() {
-      _isOllamaTesting = true;
-      _ollamaTestResponse = '';
-    });
-    try {
-      if (_selectedOllamaModel == null) throw Exception('No Ollama model selected');
-      final stream = GatewayService().sendMessageHttp(
-          _ollamaTestPromptController.text, 
-          model: _selectedOllamaModel!, 
-          directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-          ollamaOptions: {'num_ctx': 4096, 'temperature': 0.7}
-      );
-      await for (final token in stream) {
-        if (!mounted) break;
-        setState(() => _ollamaTestResponse += token);
-      }
-    } catch (e) {
-      if (mounted) setState(() => _ollamaTestResponse = 'Error: $e');
-    } finally {
-      if (mounted) setState(() => _isOllamaTesting = false);
-    }
+    _ollamaTestSub?.cancel();
+    _ollamaTestResponseNotifier.value = '';
+    if (_selectedOllamaModel == null) return;
+    setState(() => _isOllamaTesting = true);
+
+    _ollamaTestSub = GatewayService().sendMessageHttp(
+      _ollamaTestPromptController.text,
+      model: _selectedOllamaModel!,
+      directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+      ollamaOptions: {'num_ctx': 4096, 'temperature': 0.7},
+    ).listen(
+      (token) => _ollamaTestResponseNotifier.value += token,
+      onDone: () {
+        if (mounted) setState(() => _isOllamaTesting = false);
+      },
+      onError: (e) {
+        _ollamaTestResponseNotifier.value = 'Error: $e';
+        if (mounted) setState(() => _isOllamaTesting = false);
+      },
+      cancelOnError: true,
+    );
   }
 
   Widget _buildOllamaDiagnosticsPanel() {
@@ -1759,31 +1867,43 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
               : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          if (_ollamaTestResponse.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-              child: Markdown(
-                data: _ollamaTestResponse,
-                selectable: true,
-                styleSheet: MarkdownStyleSheet(
-                  p: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
-                  code: TextStyle(
-                    color: Colors.cyanAccent.shade100,
-                    backgroundColor: Colors.white.withValues(alpha: 0.08),
-                    fontFamily: 'monospace',
-                    fontSize: 11,
+          ValueListenableBuilder<String>(
+            valueListenable: _ollamaTestResponseNotifier,
+            builder: (context, response, _) {
+              if (response.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  codeblockDecoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  child: SingleChildScrollView(
+                    child: MarkdownBody(
+                      data: response,
+                      selectable: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
+                        code: TextStyle(
+                          color: Colors.cyanAccent.shade100,
+                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1828,233 +1948,348 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) {
-          return AlertDialog(
-            backgroundColor: const Color(0xFF1E1E2E),
-            title: Text('Pull from Ollama Hub',
-                style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) => DefaultTabController(
+        length: 2,
+        child: StatefulBuilder(
+          builder: (ctx, setS) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E2E),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              contentPadding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Add Model',
+                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
+                  const SizedBox(height: 12),
+                  TabBar(
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white38,
+                    indicatorColor: AppColors.statusGreen,
+                    labelStyle: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700),
+                    tabs: const [
+                      Tab(icon: Icon(Icons.cloud_queue_rounded, size: 16), text: 'Cloud'),
+                      Tab(icon: Icon(Icons.phone_android, size: 16), text: 'On-Device'),
+                    ],
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 420,
+                child: TabBarView(
                   children: [
-                    // ── Curated tool-use models ──────────────────────────
-                    const Text('TOOL-USE MODELS',
-                        style: TextStyle(
-                            color: Colors.white30,
-                            fontSize: 10,
-                            letterSpacing: 1.2,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: _kToolModels.map((m) {
-                        final isSel = selected == m['tag'];
-                        return GestureDetector(
-                          onTap: () {
-                            setS(() => selected = m['tag']);
-                            _pullModelController.text = m['tag']!;
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
+                    // ── Tab 0: Cloud models ──────────────────────────────
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Auth status row
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              color: isSel
-                                  ? AppColors.statusGreen.withValues(alpha: 0.15)
-                                  : Colors.white.withValues(alpha: 0.05),
+                              color: (_ollamaSignedIn
+                                      ? AppColors.statusGreen
+                                      : Colors.amber)
+                                  .withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: isSel
-                                    ? AppColors.statusGreen
-                                    : Colors.white12,
+                                color: (_ollamaSignedIn
+                                        ? AppColors.statusGreen
+                                        : Colors.amber)
+                                    .withValues(alpha: 0.3),
                               ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
+                            child: Row(
                               children: [
-                                Text(m['label']!,
+                                Icon(
+                                  _ollamaSignedIn ? Icons.check_circle_outline : Icons.lock_outline,
+                                  color: _ollamaSignedIn ? AppColors.statusGreen : Colors.amber,
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _ollamaSignedIn
+                                        ? 'Signed in to ollama.com'
+                                        : "Not signed in — run 'ollama signin' in Terminal",
                                     style: TextStyle(
-                                        color: isSel
-                                            ? AppColors.statusGreen
-                                            : Colors.white70,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600)),
-                                Text(m['size']!,
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 9)),
+                                      color: _ollamaSignedIn ? AppColors.statusGreen : Colors.amber,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                                if (!_ollamaSignedIn)
+                                  GestureDetector(
+                                    onTap: () {
+                                      Clipboard.setData(const ClipboardData(text: 'ollama signin'));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text("Copied: 'ollama signin'")),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text('COPY CMD',
+                                          style: TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.w700)),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
-                        );
-                      }).toList(),
-                    ),
-
-                    const SizedBox(height: 16),
-                    // ── Search divider ───────────────────────────────────
-                    Row(children: [
-                      const Expanded(child: Divider(color: Colors.white12)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text('OR SEARCH',
-                            style: TextStyle(
-                                color: Colors.white24,
-                                fontSize: 10,
-                                letterSpacing: 1)),
-                      ),
-                      const Expanded(child: Divider(color: Colors.white12)),
-                    ]),
-                    const SizedBox(height: 10),
-
-                    // ── Search row ───────────────────────────────────────
-                    Row(children: [
-                      Expanded(
-                        child: TextField(
-                          controller: searchCtrl,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 13),
-                          decoration: const InputDecoration(
-                            hintText: 'Search ollama.com...',
-                            hintStyle: TextStyle(color: Colors.white24),
-                            isDense: true,
-                            enabledBorder: UnderlineInputBorder(
-                                borderSide:
-                                    BorderSide(color: Colors.white12)),
-                            focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                    color: AppColors.statusGreen)),
-                          ),
-                          onSubmitted: (_) async {
-                            final q = searchCtrl.text.trim();
-                            if (q.isEmpty) return;
-                            setS(() => searching = true);
-                            final r = await GatewayService()
-                                .fetchOllamaRegistryModels(q);
-                            setS(() {
-                              searchResults = r;
-                              searching = false;
-                            });
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      searching
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.statusGreen))
-                          : IconButton(
-                              icon: const Icon(Icons.search,
-                                  color: Colors.white38, size: 20),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () async {
-                                final q = searchCtrl.text.trim();
-                                if (q.isEmpty) return;
-                                setS(() => searching = true);
-                                final r = await GatewayService()
-                                    .fetchOllamaRegistryModels(q);
-                                setS(() {
-                                  searchResults = r;
-                                  searching = false;
-                                });
-                              },
-                            ),
-                    ]),
-
-                    // ── Search results ───────────────────────────────────
-                    if (searchResults.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 130,
-                        child: ListView.builder(
-                          padding: EdgeInsets.zero,
-                          itemCount: searchResults.length,
-                          itemBuilder: (_, i) {
-                            final r = searchResults[i];
-                            final tag = r['name'] as String? ?? '';
-                            final isSel = selected == tag;
-                            return InkWell(
-                              onTap: () {
-                                setS(() => selected = tag);
-                                _pullModelController.text = tag;
-                              },
+                          const SizedBox(height: 14),
+                          const Text('AVAILABLE CLOUD MODELS',
+                              style: TextStyle(color: Colors.white30, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          ..._kCloudOllamaModels.map((m) {
+                            final hasTools = m['hasTools'] == 'true';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 6, horizontal: 4),
-                                color: isSel
-                                    ? AppColors.statusGreen
-                                        .withValues(alpha: 0.08)
-                                    : Colors.transparent,
-                                child: Row(children: [
-                                  Expanded(
-                                    child: Text(tag,
-                                        style: TextStyle(
-                                            color: isSel
-                                                ? AppColors.statusGreen
-                                                : Colors.white70,
-                                            fontSize: 12)),
-                                  ),
-                                  if (r['pulls'] != null)
-                                    Text(
-                                        '${(r['pulls'] as num) ~/ 1000}K↓',
-                                        style: const TextStyle(
-                                            color: Colors.white24,
-                                            fontSize: 10)),
-                                ]),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.04),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 18),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(m['label']!,
+                                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                                          Row(children: [
+                                            Text(m['category']!,
+                                                style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: hasTools
+                                                    ? AppColors.statusGreen.withValues(alpha: 0.12)
+                                                    : Colors.white.withValues(alpha: 0.05),
+                                                borderRadius: BorderRadius.circular(3),
+                                              ),
+                                              child: Text(
+                                                hasTools ? 'TOOLS' : 'CHAT',
+                                                style: TextStyle(
+                                                  color: hasTools ? AppColors.statusGreen : Colors.white30,
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ]),
+                                        ],
+                                      ),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: _ollamaSignedIn
+                                          ? () => _selectCloudOllamaModel(m['tag']!)
+                                          : null,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFAB47BC).withValues(alpha: 0.15),
+                                        foregroundColor: const Color(0xFFAB47BC),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      child: const Text('USE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                    ),
+                                  ],
+                                ),
                               ),
                             );
-                          },
-                        ),
+                          }),
+                        ],
                       ),
-                    ],
+                    ),
 
-                    const SizedBox(height: 12),
-                    // ── Final model tag field ────────────────────────────
-                    TextField(
-                      controller: _pullModelController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Model tag to pull',
-                        labelStyle: TextStyle(color: Colors.white38),
-                        hintText: 'e.g. qwen2.5:1.5b',
-                        hintStyle: TextStyle(color: Colors.white24),
-                        enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.white12)),
-                        focusedBorder: UnderlineInputBorder(
-                            borderSide:
-                                BorderSide(color: AppColors.statusGreen)),
+                    // ── Tab 1: On-Device models ──────────────────────────
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Curated models ───────────────────────────
+                          const Text('CURATED MODELS',
+                              style: TextStyle(color: Colors.white30, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: _kToolModels.map((m) {
+                              final isSel = selected == m['tag'];
+                              return GestureDetector(
+                                onTap: () {
+                                  setS(() => selected = m['tag']);
+                                  _pullModelController.text = m['tag']!;
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: isSel
+                                        ? AppColors.statusGreen.withValues(alpha: 0.15)
+                                        : Colors.white.withValues(alpha: 0.05),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isSel ? AppColors.statusGreen : Colors.white12,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(m['label']!,
+                                          style: TextStyle(
+                                              color: isSel ? AppColors.statusGreen : Colors.white70,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600)),
+                                      Text(m['size']!,
+                                          style: const TextStyle(color: Colors.white38, fontSize: 9)),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+
+                          const SizedBox(height: 16),
+                          Row(children: [
+                            const Expanded(child: Divider(color: Colors.white12)),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text('OR SEARCH',
+                                  style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 1)),
+                            ),
+                            const Expanded(child: Divider(color: Colors.white12)),
+                          ]),
+                          const SizedBox(height: 10),
+
+                          // ── Search row ───────────────────────────────
+                          Row(children: [
+                            Expanded(
+                              child: TextField(
+                                controller: searchCtrl,
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                decoration: const InputDecoration(
+                                  hintText: 'Search ollama.com...',
+                                  hintStyle: TextStyle(color: Colors.white24),
+                                  isDense: true,
+                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
+                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+                                ),
+                                onSubmitted: (_) async {
+                                  final q = searchCtrl.text.trim();
+                                  if (q.isEmpty) return;
+                                  setS(() => searching = true);
+                                  final r = await GatewayService().fetchOllamaRegistryModels(q);
+                                  setS(() { searchResults = r; searching = false; });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            searching
+                                ? const SizedBox(width: 18, height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.statusGreen))
+                                : IconButton(
+                                    icon: const Icon(Icons.search, color: Colors.white38, size: 20),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () async {
+                                      final q = searchCtrl.text.trim();
+                                      if (q.isEmpty) return;
+                                      setS(() => searching = true);
+                                      final r = await GatewayService().fetchOllamaRegistryModels(q);
+                                      setS(() { searchResults = r; searching = false; });
+                                    },
+                                  ),
+                          ]),
+
+                          if (searchResults.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 130,
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                itemCount: searchResults.length,
+                                itemBuilder: (_, i) {
+                                  final r = searchResults[i];
+                                  final tag = r['name'] as String? ?? '';
+                                  final isSel = selected == tag;
+                                  return InkWell(
+                                    onTap: () {
+                                      setS(() => selected = tag);
+                                      _pullModelController.text = tag;
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                      color: isSel ? AppColors.statusGreen.withValues(alpha: 0.08) : Colors.transparent,
+                                      child: Row(children: [
+                                        Expanded(
+                                          child: Text(tag,
+                                              style: TextStyle(
+                                                  color: isSel ? AppColors.statusGreen : Colors.white70,
+                                                  fontSize: 12)),
+                                        ),
+                                        if (r['pulls'] != null)
+                                          Text('${(r['pulls'] as num) ~/ 1000}K↓',
+                                              style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                                      ]),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+
+                          const SizedBox(height: 12),
+                          // ── Model tag input ──────────────────────────
+                          TextField(
+                            controller: _pullModelController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              labelText: 'Model tag to pull',
+                              labelStyle: TextStyle(color: Colors.white38),
+                              hintText: 'e.g. qwen2.5:1.5b',
+                              hintStyle: TextStyle(color: Colors.white24),
+                              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
+                              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('CANCEL',
-                    style: TextStyle(color: Colors.white30)),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _handleOllamaPull();
-                },
-                child: const Text('PULL',
-                    style: TextStyle(
-                        color: AppColors.statusGreen,
-                        fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('CANCEL', style: TextStyle(color: Colors.white30)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _handleOllamaPull();
+                  },
+                  child: const Text('PULL', style: TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

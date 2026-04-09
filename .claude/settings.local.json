@@ -18,7 +18,11 @@
       "WebFetch(domain:arxiv.org)",
       "WebFetch(domain:www.stratosphereips.org)",
       "WebFetch(domain:unpkg.com)",
-      "WebFetch(domain:cdn.jsdelivr.net)"
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "Bash(find c:dev-sharedopenclaw-projectsopenclaw_final -name *.json -path */assets/* -o -name *.json -path */config/*)",
+      "Bash(grep -n -A8 \"''method'': ''chat.send''\" lib/services/gateway_service.dart)",
+      "WebFetch(domain:ollama.com)",
+      "Bash(grep -n \"openclaw_command_service\" /c/dev-shared/openclaw-projects/openclaw_final/lib/services/*.dart)"
     ]
   }
 }

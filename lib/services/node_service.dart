@@ -447,7 +447,7 @@ class NodeService {
     try {
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '(openclaw nodes delete ${_identity.deviceId} 2>/dev/null || true)',
+        '(openclaw devices remove ${_identity.deviceId} 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
         timeout: 5,
       );
       log('[NODE] Device record cleared — will re-pair on next connect');
