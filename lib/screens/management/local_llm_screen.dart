@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
@@ -102,7 +101,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
   // Ollama Diagnostics
   final _ollamaTestPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
-  final _ollamaTestResponseNotifier = ValueNotifier<String>('');
+  String _ollamaTestResponse = '';
   bool _isOllamaTesting = false;
 
   // Live activity panel state
@@ -171,7 +170,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _pullModelController.dispose();
     _ollamaTestPromptController.dispose();
     _testResponseNotifier.dispose();
-    _ollamaTestResponseNotifier.dispose();
+    // _ollamaTestResponse is a plain String — no dispose needed
     super.dispose();
   }
 
@@ -1794,26 +1793,27 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
   Future<void> _runOllamaTestInference() async {
     _ollamaTestSub?.cancel();
-    _ollamaTestResponseNotifier.value = '';
     if (_selectedOllamaModel == null) return;
-    setState(() => _isOllamaTesting = true);
-
-    _ollamaTestSub = GatewayService().sendMessageHttp(
-      _ollamaTestPromptController.text,
-      model: _selectedOllamaModel!,
-      directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-      ollamaOptions: {'num_ctx': 4096, 'temperature': 0.7},
-    ).listen(
-      (token) => _ollamaTestResponseNotifier.value += token,
-      onDone: () {
-        if (mounted) setState(() => _isOllamaTesting = false);
-      },
-      onError: (e) {
-        _ollamaTestResponseNotifier.value = 'Error: $e';
-        if (mounted) setState(() => _isOllamaTesting = false);
-      },
-      cancelOnError: true,
-    );
+    setState(() {
+      _isOllamaTesting = true;
+      _ollamaTestResponse = '';
+    });
+    try {
+      final stream = GatewayService().sendMessageHttp(
+        _ollamaTestPromptController.text,
+        model: _selectedOllamaModel!,
+        directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+        ollamaOptions: {'num_ctx': 2048},
+      );
+      await for (final token in stream) {
+        if (!mounted) break;
+        setState(() => _ollamaTestResponse += token);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _ollamaTestResponse = 'Error: $e');
+    } finally {
+      if (mounted) setState(() => _isOllamaTesting = false);
+    }
   }
 
   Widget _buildOllamaDiagnosticsPanel() {
@@ -1867,43 +1867,24 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
               : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          ValueListenableBuilder<String>(
-            valueListenable: _ollamaTestResponseNotifier,
-            builder: (context, response, _) {
-              if (response.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: SingleChildScrollView(
-                    child: MarkdownBody(
-                      data: response,
-                      selectable: true,
-                      styleSheet: MarkdownStyleSheet(
-                        p: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
-                        code: TextStyle(
-                          color: Colors.cyanAccent.shade100,
-                          backgroundColor: Colors.white.withValues(alpha: 0.08),
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                        ),
-                        codeblockDecoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                        ),
-                      ),
-                    ),
+          if (_ollamaTestResponse.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                constraints: const BoxConstraints(maxHeight: 300),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    _ollamaTestResponse,
+                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
         ],
       ),
     );
