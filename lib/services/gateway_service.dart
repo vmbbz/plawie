@@ -478,6 +478,7 @@ PARAMETER num_batch 512
     String? primaryModel,
     bool setAsPrimary = true,
     List<String> syncedModels = const [],
+    bool isCloudModel = false,
   }) async {
     final config = await _readConfig();
     config['models'] ??= {};
@@ -502,8 +503,15 @@ PARAMETER num_batch 512
       // CRITICAL: Do NOT set systemPrompt here - it breaks gateway reload
       // System prompt should be set in agent defaults or left as default
 
-      // Increase timeout for local models (30 minutes instead of default 10)
-      config['agents']['defaults']['timeoutMs'] = 1800000;
+      // Cloud models run on ollama.com servers and can handle tool calling.
+      // Local models are small and cannot format tool-call JSON correctly —
+      // they produce the "This model does not support tool use" error.
+      if (!isCloudModel) {
+        config['agents']['defaults']['tools'] = <dynamic>[];
+        config['agents']['defaults']['timeoutMs'] = 1800000; // 30 min for on-device
+      } else {
+        config['agents']['defaults']['timeoutMs'] = 120000; // 2 min for cloud (fast)
+      }
 
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
@@ -746,6 +754,9 @@ PARAMETER num_batch 512
     // Write synced models into openclaw.json and emit to state.
     // Auto-select the first synced model only if the user isn't already on a
     // local model — avoids silently hijacking an explicit cloud preference.
+    // Exception: if prefs say "already local" but openclaw.json primary is
+    // missing or pointing at cloud (e.g., after a gateway restart wipes config),
+    // we must still write the primary — otherwise the gateway uses a cloud model.
     if (syncedModelNames.isNotEmpty) {
       final prefs = PreferencesService();
       await prefs.init();
@@ -753,10 +764,21 @@ PARAMETER num_batch 512
       final alreadyLocal = currentModel.startsWith('ollama/') ||
           currentModel.startsWith('local-llm/');
 
+      // Check if openclaw.json primary is in sync with the user's preference.
+      final liveConfig = await _readConfig();
+      final jsonPrimary = liveConfig['agents']?['defaults']?['model']?['primary'] as String?;
+      final jsonPrimaryIsLocal = jsonPrimary != null &&
+          (jsonPrimary.startsWith('ollama/') || jsonPrimary.startsWith('local-llm/'));
+
+      // Force-write the primary if the JSON config doesn't reflect it — this
+      // repairs drift after gateway restarts that regenerate openclaw.json.
+      final needsPrimaryWrite = !alreadyLocal || !jsonPrimaryIsLocal;
+      final primaryToWrite = alreadyLocal ? currentModel : syncedModelNames.first;
+
       await configureOllama(
         syncedModels: syncedModelNames,
-        primaryModel: alreadyLocal ? null : syncedModelNames.first,
-        setAsPrimary: !alreadyLocal,
+        primaryModel: needsPrimaryWrite ? primaryToWrite : null,
+        setAsPrimary: needsPrimaryWrite,
       );
 
       _updateState(_state.copyWith(
@@ -1249,7 +1271,7 @@ PARAMETER num_batch 512
   /// Direct I/O: Retrieve token from config file (instant, no proot)
   Future<String?> retrieveTokenFromConfig({bool force = false}) async {
     if (!force && _cachedToken != null && _lastTokenFetch != null &&
-        DateTime.now().difference(_lastTokenFetch!).inMinutes < 5) {
+        DateTime.now().difference(_lastTokenFetch!).inSeconds < 60) {
       return _cachedToken;
     }
 
@@ -1390,7 +1412,7 @@ PARAMETER num_batch 512
     try {
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '(openclaw nodes delete $deviceId 2>/dev/null || true)',
+        '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
         timeout: 5,
       );
       // Clear persisted deviceToken — it belongs to the now-deleted record.
@@ -1628,40 +1650,48 @@ PARAMETER num_batch 512
     // still works; cloud falls back to HTTP gateway proxy.
     final isOllama = model.startsWith('ollama/');
     
-    // For Ollama, log a full memory snapshot and warn if headroom is tight.
+    // For Ollama: proactively clear bloated session files so the gateway doesn't
+    // forward a wall of stale history on every request and blow past num_ctx.
+    // Fire-and-forget — don't block the message on disk I/O.
+    if (isOllama) unawaited(_clearStaleSessions());
+
+    // For Ollama: memory snapshot + cold-start detection.
+    // Fix 4+5: read /proc/meminfo directly (no PRoot spawn) and use the
+    // /api/ps result to extend the WS timeout for cold starts.
+    bool ollamaColdStart = true; // assume cold until /api/ps says otherwise
     if (isOllama) {
       try {
-        // Read individual /proc/meminfo lines — no shell awk/printf quoting needed.
-        final totalRaw = await NativeBridge.runInProot('grep MemTotal /proc/meminfo', timeout: 5)
+        // /proc/meminfo is readable directly from Android — no PRoot needed.
+        final meminfo = await File('/proc/meminfo').readAsString()
             .catchError((_) => '');
-        final availRaw = await NativeBridge.runInProot('grep MemAvailable /proc/meminfo', timeout: 5)
-            .catchError((_) => '');
-        final swapRaw = await NativeBridge.runInProot('grep SwapFree /proc/meminfo', timeout: 5)
-            .catchError((_) => '');
-        final totalMb = _parseMemKbLineToMb(totalRaw);
-        final availMb = _parseMemAvailableMb(availRaw);
-        final swapMb = _parseMemKbLineToMb(swapRaw);
+        final totalMb = _parseMemKbLineToMb(
+            meminfo.split('\n').firstWhere((l) => l.startsWith('MemTotal:'), orElse: () => ''));
+        final availMb = _parseMemAvailableMb(
+            meminfo.split('\n').firstWhere((l) => l.startsWith('MemAvailable:'), orElse: () => ''));
+        final swapMb = _parseMemKbLineToMb(
+            meminfo.split('\n').firstWhere((l) => l.startsWith('SwapFree:'), orElse: () => ''));
         _addActivity('[MEM] Total: ${totalMb}MB | Available: ${availMb}MB | Swap: ${swapMb}MB');
         if (availMb < 1100) {
           _addActivity('[MEM] ⚠ Only ${availMb}MB free — need ~1.1GB for Qwen2.5-1.5B. Inference may crash.');
         } else if (availMb < 1500) {
           _addActivity('[MEM] △ ${availMb}MB free — tight but may work');
         }
-        // Check what Ollama has loaded in memory via its HTTP PS endpoint.
-        try {
-          final psResp = await http.get(Uri.parse('http://127.0.0.1:11434/api/ps'))
-              .timeout(const Duration(seconds: 3));
-          if (psResp.statusCode == 200) {
-            final psData = jsonDecode(psResp.body) as Map<String, dynamic>?;
-            final models = psData?['models'] as List?;
-            if (models != null && models.isNotEmpty) {
-              final names = models.map((m) => (m as Map)['name'] ?? '?').join(', ');
-              _addActivity('[MEM] Ollama loaded: $names');
-            } else {
-              _addActivity('[MEM] Ollama: no model cached (cold start — first response will be slow)');
-            }
+      } catch (_) {}
+      // Check what Ollama has loaded — also determines cold-start timeout.
+      try {
+        final psResp = await http.get(Uri.parse('http://127.0.0.1:11434/api/ps'))
+            .timeout(const Duration(seconds: 3));
+        if (psResp.statusCode == 200) {
+          final psData = jsonDecode(psResp.body) as Map<String, dynamic>?;
+          final loadedModels = psData?['models'] as List?;
+          if (loadedModels != null && loadedModels.isNotEmpty) {
+            final names = loadedModels.map((m) => (m as Map)['name'] ?? '?').join(', ');
+            _addActivity('[MEM] Ollama loaded: $names');
+            ollamaColdStart = false; // model is already in memory
+          } else {
+            _addActivity('[MEM] Ollama: no model cached (cold start — using extended timeout)');
           }
-        } catch (_) {}
+        }
       } catch (_) {}
     }
     final wsOk = await _ensureWebSocket(token);
@@ -1699,15 +1729,14 @@ PARAMETER num_batch 512
     // Use sessionKey from gateway handshake, or default to 'main'
     final sessionKey = _connection!.mainSessionKey ?? 'main';
 
-    // Use reasonable timeout for mobile - 2 minutes for Ollama, 90 seconds for others
-    final timeoutMs = isOllama ? 120000 : 90000;
+    // Cold-start (model not yet in RAM) gets 3 min; warm gets 2 min; cloud 90 s.
+    final timeoutMs = isOllama ? (ollamaColdStart ? 180000 : 120000) : 90000;
 
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
       'params': {
         'sessionKey': sessionKey,
         'message': message,
-        'model': model,
         'idempotencyKey': const Uuid().v4(),
         'timeoutMs': timeoutMs,
       },
@@ -1997,29 +2026,56 @@ PARAMETER num_batch 512
         _addActivity('[CHAT] ← Ollama accepted (HTTP 200)');
       }
 
-      // Process the SSE stream: "data: { ... }"
+      // Process the SSE stream.
+      // Handles two formats:
+      //   SSE (OpenAI-compat):  data: {"choices":[{"delta":{"content":"..."}}]}
+      //   NDJSON (Ollama native): {"message":{"role":"assistant","content":"..."}}
       bool firstChunk = true;
       await for (final chunk in streamedResponse.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
         if (chunk.isEmpty) continue;
+
+        String? rawJson;
         if (chunk.startsWith('data: ')) {
           final data = chunk.substring(6).trim();
           if (data == '[DONE]') break;
-          try {
-            final json = jsonDecode(data);
-            final delta = (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
-            if (delta != null && delta.isNotEmpty) {
-              if (firstChunk && isDirectLlama) {
-                firstChunk = false;
-                _addActivity('[CHAT] ✓ First token received');
-              }
-              yield delta;
+          rawJson = data;
+        } else if (chunk.startsWith('{')) {
+          // Ollama native NDJSON — no SSE envelope
+          rawJson = chunk;
+        }
+
+        if (rawJson == null) continue;
+
+        try {
+          final json = jsonDecode(rawJson) as Map<String, dynamic>;
+
+          // OpenAI-compat format: choices[0].delta.content
+          final delta = (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
+
+          // Ollama native format: message.content + done flag
+          final nativeContent = (json['message'] as Map?)?['content'] as String?;
+          final done = json['done'] as bool? ?? false;
+
+          final token = (delta != null && delta.isNotEmpty)
+              ? delta
+              : (nativeContent != null && nativeContent.isNotEmpty)
+                  ? nativeContent
+                  : null;
+
+          if (token != null) {
+            if (firstChunk && isDirectLlama) {
+              firstChunk = false;
+              _addActivity('[CHAT] ✓ First token received');
             }
-          } catch (e) {
-            // Malformed chunk or heartbeat, skip silently unless debug
-            debugPrint('[GatewayService] SSE parse error: $e (data: $data)');
+            yield token;
           }
+
+          if (done) break; // Ollama native signals end with done:true
+        } catch (e) {
+          // Malformed chunk or heartbeat, skip silently unless debug
+          debugPrint('[GatewayService] SSE parse error: $e (raw: $rawJson)');
         }
       }
       if (isDirectLlama) _addActivity('[CHAT] ✓ Stream complete');

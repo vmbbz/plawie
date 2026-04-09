@@ -45,6 +45,17 @@ class NativeBridge {
     return await _channel.invokeMethod('runInProot', {'command': command, 'timeout': timeout});
   }
 
+  /// Execute a command in the persistent shell (one PRoot process reused across calls).
+  /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
+  static Future<String> executeInShell(String command, {int timeoutMs = 30000}) async {
+    return await _channel.invokeMethod('executeInShell', {'command': command, 'timeoutMs': timeoutMs});
+  }
+
+  /// Destroy the persistent shell process (called when terminal screen closes).
+  static Future<void> destroyShell() async {
+    await _channel.invokeMethod('destroyShell');
+  }
+
   static Future<bool> startGateway() async {
     return await _channel.invokeMethod('startGateway');
   }

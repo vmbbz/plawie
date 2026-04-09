@@ -86,6 +86,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     'groq/llama-3.1-405b',
   ];
 
+  // Ollama cloud models — available whenever Ollama Hub is running.
+  // Route identically to local Ollama models (same `ollama/` prefix); the
+  // Ollama daemon proxies inference to ollama.com when it sees a :cloud tag.
+  static const _kCloudOllamaModels = [
+    'ollama/qwen3-coder:480b-cloud',
+    'ollama/gpt-oss:120b-cloud',
+    'ollama/gpt-oss:20b-cloud',
+    'ollama/deepseek-v3.1:671b-cloud',
+    'ollama/kimi-k2.5:cloud',
+    'ollama/minimax-m2.7:cloud',
+    'ollama/glm-5:cloud',
+  ];
+
   // Dynamic agents fetched from the gateway
   List<AgentInfo> _dynamicAgents = [];
 
@@ -154,7 +167,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       }
 
       if (!gwState.isOllamaRunning) {
-        // Ollama stopped or crashed — remove hub entries and fall back to cloud.
+        // Ollama stopped or crashed — remove all hub entries and fall back to cloud.
         final wasOnOllama = _selectedModel.startsWith('ollama/');
         setState(() {
           _availableModels.removeWhere((m) => m.startsWith('ollama/'));
@@ -166,15 +179,23 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         return;
       }
 
-      // Ollama running — merge hub models into dropdown.
-      if (gwState.ollamaHubModels.isNotEmpty) {
-        setState(() {
-          _availableModels.removeWhere((m) => m.startsWith('ollama/'));
+      // Ollama running — merge local hub models + cloud models into dropdown.
+      setState(() {
+        _availableModels.removeWhere((m) => m.startsWith('ollama/'));
+        if (gwState.ollamaHubModels.isNotEmpty) {
+          // Local on-device models synced from the hub
           _availableModels.addAll(
-            gwState.ollamaHubModels.map((m) => 'ollama/$m'),
+            gwState.ollamaHubModels
+                .where((m) => !m.endsWith(':cloud'))
+                .map((m) => 'ollama/$m'),
           );
-        });
-      }
+        }
+        // Always surface Ollama cloud models while the daemon is running —
+        // they need no download and the daemon handles auth transparently.
+        for (final m in _kCloudOllamaModels) {
+          if (!_availableModels.contains(m)) _availableModels.add(m);
+        }
+      });
     });
     _initVoiceParams();
     _loadChatHistory();
@@ -1219,10 +1240,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
           )),
         ],
-        // ── LOCAL HUB section (Ollama models) ─────────────────────────────
+        // ── LOCAL HUB section (on-device Ollama models) ───────────────────
         ...() {
           final hubModels = _availableModels
-              .where((m) => m.startsWith('ollama/'))
+              .where((m) => m.startsWith('ollama/') && !m.contains(':cloud'))
               .toList();
           if (hubModels.isEmpty) return <PopupMenuEntry<dynamic>>[];
           return <PopupMenuEntry<dynamic>>[
@@ -1269,9 +1290,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           Text(
                             'LOCAL · HUB',
                             style: TextStyle(
-                              color: isSelected
-                                  ? const Color(0xFF00C8FF)
-                                  : Colors.white38,
+                              color: isSelected ? const Color(0xFF00C8FF) : Colors.white38,
                               fontSize: 8,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 0.5,
@@ -1286,7 +1305,72 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             }),
           ];
         }(),
-        // ── CLOUD section ──────────────────────────────────────────────────
+        // ── OLLAMA CLOUD section (ollama.com server-side models) ───────────
+        ...() {
+          final cloudHub = _availableModels
+              .where((m) => m.startsWith('ollama/') && m.contains(':cloud'))
+              .toList();
+          if (cloudHub.isEmpty) return <PopupMenuEntry<dynamic>>[];
+          return <PopupMenuEntry<dynamic>>[
+            const PopupMenuDivider(),
+            PopupMenuItem<dynamic>(
+              enabled: false,
+              height: 20,
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 12),
+                  const SizedBox(width: 6),
+                  const Text('OLLAMA CLOUD', style: TextStyle(color: Color(0xFFAB47BC), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+                ],
+              ),
+            ),
+            ...cloudHub.map((model) {
+              final isSelected = model == _selectedModel;
+              final displayName = model.replaceFirst('ollama/', '');
+              return PopupMenuItem<dynamic>(
+                value: 'model:$model',
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(
+                      isSelected ? Icons.check_circle : Icons.cloud_queue_rounded,
+                      color: isSelected ? const Color(0xFFAB47BC) : Colors.white38,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            displayName,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.white70,
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'OLLAMA · CLOUD',
+                            style: TextStyle(
+                              color: isSelected ? const Color(0xFFAB47BC) : Colors.white38,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ];
+        }(),
+        // ── CLOUD section (gateway cloud providers) ────────────────────────
         const PopupMenuDivider(),
         PopupMenuItem<dynamic>(
           enabled: false,
