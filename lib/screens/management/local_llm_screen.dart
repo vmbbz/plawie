@@ -823,24 +823,35 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                     ),
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: qualityColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    model.quality,
-                    style: TextStyle(
-                        color: qualityColor,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold),
-                  ),
-                ),
                 if (isActive) ...[
-                  const SizedBox(width: 6),
-                  Icon(Icons.check_circle_rounded,
-                      color: AppColors.statusGreen, size: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusGreen.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 5, height: 5, decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.statusGreen)),
+                        const SizedBox(width: 4),
+                        Text('RUNNING', style: TextStyle(color: AppColors.statusGreen, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: qualityColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      model.quality,
+                      style: TextStyle(color: qualityColor, fontSize: 9, fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -891,6 +902,10 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   }
 
   Widget _buildActionButton(LocalLlmModel model, bool isDownloaded, bool isActive) {
+    final anotherModelRunning = _state.activeModelId != null && !isActive;
+    final isStartingThis = _state.status == LocalLlmStatus.starting && _selectedModel?.id == model.id;
+
+    // Active model → Stop
     if (isActive) {
       return TextButton.icon(
         onPressed: _service.stop,
@@ -904,8 +919,23 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
       );
     }
 
+    // Starting spinner
+    if (isStartingThis) {
+      return TextButton.icon(
+        onPressed: null,
+        icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
+        label: const Text('Starting...', style: TextStyle(color: Colors.amber, fontSize: 11)),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          backgroundColor: Colors.amber.withValues(alpha: 0.1),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+
+    // Downloaded → Start or Switch
     if (isDownloaded) {
-      final isStartingThis = _state.status == LocalLlmStatus.starting && _selectedModel?.id == model.id;
+      final isSwitch = anotherModelRunning;
       return TextButton.icon(
         onPressed: _state.status == LocalLlmStatus.starting
             ? null
@@ -913,27 +943,23 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                 setState(() => _selectedModel = model);
                 _service.startWithModel(model);
               },
-        icon: isStartingThis
-            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
-            : const Icon(Icons.play_arrow_rounded, size: 14, color: AppColors.statusGreen),
+        icon: Icon(isSwitch ? Icons.swap_horiz_rounded : Icons.play_arrow_rounded,
+            size: 14, color: isSwitch ? Colors.amber : AppColors.statusGreen),
         label: Text(
-          isStartingThis ? 'Starting...' : 'Start',
-          style: TextStyle(
-            color: isStartingThis ? Colors.amber : AppColors.statusGreen,
-            fontSize: 11,
-          ),
+          isSwitch ? 'Switch' : 'Start',
+          style: TextStyle(color: isSwitch ? Colors.amber : AppColors.statusGreen, fontSize: 11),
         ),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          backgroundColor: (isStartingThis ? Colors.amber : AppColors.statusGreen).withValues(alpha: 0.1),
+          backgroundColor: (isSwitch ? Colors.amber : AppColors.statusGreen).withValues(alpha: 0.1),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
 
+    // Not downloaded → Download
     return TextButton.icon(
-      onPressed: _state.status == LocalLlmStatus.idle ||
-              _state.status == LocalLlmStatus.error
+      onPressed: _state.status == LocalLlmStatus.idle || _state.status == LocalLlmStatus.error
           ? () {
               setState(() => _selectedModel = model);
               _service.downloadAndStart(model);
@@ -1121,7 +1147,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionLabel('Gateway Agent Hub'),
+        _buildSectionLabel('LOCAL LLM HUB'),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(18),
@@ -1150,7 +1176,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isInternalOllamaInstalled ? 'Integrated Agent Hub' : 'Setup Agent Gateway',
+                          _isInternalOllamaInstalled ? 'Local LLM Hub' : 'Local LLM Hub',
                           style: GoogleFonts.outfit(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
@@ -1160,7 +1186,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                         Text(
                           _isInternalOllamaInstalled 
                             ? (_isInternalOllamaRunning ? 'Service Active' : 'Service Standby') 
-                            : 'Recommended for one-tap agent skills',
+                            : 'Enable offline AI — no internet required',
                           style: TextStyle(
                             color: _isInternalOllamaRunning ? AppColors.statusGreen : Colors.white38,
                             fontSize: 11
@@ -1215,7 +1241,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       minimumSize: const Size(double.infinity, 45),
                     ),
-                    child: Text('Initialize Agent Gateway (Internal)', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                    child: Text('Initialize Local LLM Hub', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
                   ),
                 ],
               ] else ...[
@@ -1234,18 +1260,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                 _buildActivityPanel(),
                 const SizedBox(height: 16),
 
-                // --- Model Management Sub-section ---
                 const Divider(color: Colors.white10, height: 1),
-                const SizedBox(height: 12),
-                Text(
-                  'MODEL HUB',
-                  style: GoogleFonts.outfit(
-                      fontSize: 9, 
-                      fontWeight: FontWeight.w800, 
-                      color: Colors.white30, 
-                      letterSpacing: 1.5
-                  ),
-                ),
                 const SizedBox(height: 12),
                 
                 // Sync Action
@@ -1375,7 +1390,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
         : null;
     
     final healthData = _gatewayState.detailedHealth;
-    final version = healthData?['version'] ?? '3.1.0';
     final ok = healthData?['ok'] ?? isConnected;
 
     return Container(
@@ -1404,37 +1418,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      'Protocol v3',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 4,
-                      height: 4,
-                      decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white24),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isConnected ? 'Connected' : 'Connecting...',
-                      style: TextStyle(
-                        color: isConnected ? AppColors.statusGreen : Colors.amber,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                Text(
+                  isConnected ? 'Connected' : 'Connecting...',
+                  style: GoogleFonts.outfit(
+                    color: isConnected ? AppColors.statusGreen : Colors.amber,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
                 ),
                 Text(
-                  uptime != null 
-                    ? 'Uptime: ${uptime.inMinutes}m ${uptime.inSeconds % 60}s • Version $version'
-                    : 'Gateway Standby • Version $version',
+                  uptime != null
+                    ? '${uptime.inMinutes}m ${uptime.inSeconds % 60}s uptime'
+                    : 'Standby',
                   style: const TextStyle(color: Colors.white30, fontSize: 10),
                 ),
               ],

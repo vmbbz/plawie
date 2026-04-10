@@ -56,8 +56,8 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'On-Device Local LLM',
                         description: 'Two local inference modes:\n\n'
-                            '• NDK Direct (fllama) — models run entirely inside the app via llama.cpp. Zero network, maximum privacy. For private offline chat only — no tools, no skills, no agent features.\n\n'
-                            '• Integrated Agent Hub (Ollama) — the same models routed through the OpenClaw gateway agent loop. Full tool-use, skills, and multi-step reasoning. Start Ollama in Local LLM settings and pick an ollama/ model in the chat model picker.',
+                            '• NDK Direct (fllama) — GGUF models run entirely inside the app via llama.cpp NDK. Zero network, maximum privacy. Download models in Local LLM settings, then select a local-llm/ model in the chat picker. No tools or skills — pure private inference.\n\n'
+                            '• Local LLM Hub (Ollama) — the same models routed through the OpenClaw gateway agent loop. Full tool-use, skills, and multi-step reasoning. Start Ollama in Local LLM settings and pick an ollama/ model in the chat model picker.',
                         icon: Icons.memory_rounded,
                         color: AppColors.statusGreen,
                       ),
@@ -483,8 +483,8 @@ class HelpScreen extends StatelessWidget {
           'Inbound & outbound voice via ConversationRelay with real-time AI transcription.', true),
       (Icons.currency_exchange_rounded, 'Finance', 'MoonPay',
           'Verified agent bank account — swap, bridge, DCA, fiat onramps and live market prices.', false),
-      (Icons.memory_rounded, 'Local LLM', 'llama-server',
-          'Compile-from-source Qwen on-device inference. No API key, no cloud, total privacy.', false),
+      (Icons.memory_rounded, 'Local LLM', 'fllama / Ollama',
+          'NDK fllama for private offline chat. Local LLM Hub (Ollama) for full tool-use and skills. No API key — total on-device control.', false),
     ];
 
     return GlassCard(
