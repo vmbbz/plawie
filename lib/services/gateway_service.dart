@@ -51,43 +51,69 @@ class GatewayService {
   /// Get dynamic context size based on model capabilities
   /// Allows powerful devices to use higher contexts while keeping mobile safe
   int _getDynamicContextSize(String modelId) {
-    // Map Ollama model IDs to their context windows
+    // Use substring matching so full model IDs like
+    // 'qwen2.5-0.5b-instruct:q4_k_m' match the short keys below.
+    final id = modelId.toLowerCase();
     final modelContexts = {
-      'qwen2.5-0.5b': 1024,
+      'qwen2.5-0.5b': 2048,
       'qwen2.5-1.5b': 2048,
       'qwen2.5-3b': 4096,
       'qwen2.5-7b': 8192,
-      'smolm2-135m': 1024,
-      'smolm2-360m': 2048,
-      'smolm2-1.7b': 4096,
+      'smollm2-135m': 2048,
+      'smollm2-360m': 2048,
+      'smollm2-1.7b': 4096,
       'llava-1.5-7b': 4096,
       'qwen2-vl-2b': 2048,
       'qwen2-vl-7b': 4096,
     };
-    
-    // Default to 1024 for mobile safety
-    return modelContexts[modelId.toLowerCase()] ?? 1024;
+    for (final entry in modelContexts.entries) {
+      if (id.contains(entry.key)) return entry.value;
+    }
+    // 2048 is safer than 1024 — gives tool schemas enough room
+    return 2048;
   }
 
   /// Dynamic Modelfile template. TEMPLATE block is required — without it Ollama
   /// falls back to a broken default format and generates 0 tokens.
-  String _buildModelfileTemplate(String ggufPath, int contextSize) {
+  /// [modelName] is used to select the correct chat template and stop tokens.
+  String _buildModelfileTemplate(String ggufPath, int contextSize, {String modelName = ''}) {
+    final name = modelName.toLowerCase();
+
+    // Llama 3.x format
+    if (name.contains('llama3') || name.contains('llama-3')) {
+      return '''FROM $ggufPath
+TEMPLATE """{{ if .System }}<|start_header_id|>system<|end_header_id|>
+{{ .System }}<|eot_id|>
+{{ end }}{{ if .Tools }}<|start_header_id|>system<|end_header_id|>
+{{ .Tools }}<|eot_id|>
+{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
+{{ .Prompt }}<|eot_id|>
+<|start_header_id|>assistant<|end_header_id|>
+{{ end }}{{ .Response }}<|eot_id|>"""
+PARAMETER stop "<|eot_id|>"
+PARAMETER stop "<|start_header_id|>"
+PARAMETER num_ctx $contextSize
+PARAMETER num_gpu 0
+PARAMETER num_thread 4
+PARAMETER num_batch 512
+''';
+    }
+
+    // Default: ChatML format (Qwen2.5, SmolLM2, Phi, Gemma, etc.)
     return '''FROM $ggufPath
-TEMPLATE """{{- if .System }}
-{{ .System }}
-{{ end }}
-{{- if .Prompt }}
-{{ .Prompt }}
-{{ end }}
-{{- if .Tools }}
-{{ .Tools }}
-{{ end }}
-"""
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Tools }}<|im_start|>system
+{{ .Tools }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+{{ end }}{{ .Response }}<|im_end|>"""
 PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|endoftext|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 1
+PARAMETER num_thread 4
 PARAMETER num_batch 512
 ''';
   }
@@ -476,6 +502,19 @@ PARAMETER num_batch 512
       skills.remove('sync');                      // not in skills schema
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
+    // Remove invalid Ollama provider keys written by earlier builds (v2026.3.x).
+    // These broke gateway schema validation, causing config reload to be skipped.
+    final ollamaProvider = config['models']?['providers']?['ollama'];
+    if (ollamaProvider is Map) {
+      ollamaProvider.remove('defaultContextWindow'); // not in gateway schema
+      ollamaProvider.remove('contextWindow');        // not in gateway schema
+      final ollamaModels = ollamaProvider['models'];
+      if (ollamaModels is List) {
+        for (final m in ollamaModels) {
+          if (m is Map) m.remove('contextWindow');   // not in model entry schema
+        }
+      }
+    }
 
     await _writeConfig(config);
   }
@@ -495,12 +534,20 @@ PARAMETER num_batch 512
     final config = await _readConfig();
     config['models'] ??= {};
     config['models']['providers'] ??= {};
+    // IMPORTANT: Only write keys that are in the OpenClaw gateway schema.
+    // 'defaultContextWindow' and per-model 'contextWindow' are NOT valid schema
+    // keys — writing them causes "[reload] config reload skipped (invalid config)"
+    // which makes the gateway ignore ALL config changes including context caps.
+    // Context window is enforced via: (1) Modelfile PARAMETER num_ctx at
+    // `ollama create` time, and (2) patchSessionMetadata before each chat.send.
     final ollamaConfig = <String, dynamic>{
       'baseUrl': baseUrl,
       'apiKey': 'ollama-local',
       'api': 'ollama',
-      // Schema requires models to always be an array (never undefined).
-      'models': syncedModels.map((n) => {'id': n, 'name': n}).toList(),
+      'models': syncedModels.map((n) => <String, dynamic>{
+        'id': n,
+        'name': n,
+      }).toList(),
     };
 
     config['models']['providers']['ollama'] = ollamaConfig;
@@ -912,7 +959,7 @@ PARAMETER num_batch 512
       
       // Get dynamic context size based on model capabilities
       final contextSize = _getDynamicContextSize(name);
-      final modelfileContent = _buildModelfileTemplate(ggufPath, contextSize);
+      final modelfileContent = _buildModelfileTemplate(ggufPath, contextSize, modelName: name);
       await tempModelfile.writeAsString(modelfileContent);
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
@@ -1703,12 +1750,24 @@ PARAMETER num_batch 512
     final wsOk = await _ensureWebSocket(token);
     if (wsOk) {
       // HOT-SWITCHING: If user changed model, update gateway config
-      // This ensures gateway stays in sync when user switches models
       final changes = await _syncModelToConfig(model);
       if (changes.isNotEmpty) {
         _addActivity('[CHAT] Updating gateway config: $changes');
-        // Note: We don't patch session here as it can interfere with active chats
-        // Instead, we ensure config is consistent for next connection
+      }
+      // For Ollama models, patch the session context window so the gateway
+      // passes the correct num_ctx to Ollama — preventing full 32768 KV allocation.
+      if (isOllama) {
+        final ollamaModelName = model.replaceFirst('ollama/', '');
+        final ctx = _getDynamicContextSize(ollamaModelName);
+        // Patch both contextWindow and systemPrompt via WS sessions.patch.
+        // This goes through the runtime RPC protocol, not the config file schema
+        // validator, so systemPrompt here is safe even though it's an invalid
+        // config file key. If the gateway doesn't support it, it's silently ignored.
+        unawaited(_connection!.patchSessionMetadata({
+          'contextWindow': ctx,
+          'systemPrompt': 'You are a helpful mobile assistant. Keep answers short and direct. Use tools only when necessary.',
+        }));
+        _addActivity('[CHAT] → Context $ctx + short system prompt for $ollamaModelName');
       }
     } else {
       if (isOllama) {

@@ -119,6 +119,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   LocalLlmState _localLlmState = const LocalLlmState();
   // Ollama Hub model sync — surfaces 'ollama/*' models in the dropdown
   StreamSubscription<GatewayState>? _gatewaySub;
+  // Transitional model-switching states
+  bool _isOllamaAutoStarting = false; // true while hub auto-starts on model selection
+  bool _ollamaStopFlash = false;      // true for 1.8 s after switching away from ollama/
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
 
@@ -167,31 +170,35 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       }
 
       if (!gwState.isOllamaRunning) {
-        // Ollama stopped or crashed — remove all hub entries and fall back to cloud.
-        final wasOnOllama = _selectedModel.startsWith('ollama/');
+        // Ollama stopped/crashed — remove local hub models but keep :cloud models always.
+        final wasOnLocalHub = _selectedModel.startsWith('ollama/') && !_selectedModel.contains(':cloud');
         setState(() {
-          _availableModels.removeWhere((m) => m.startsWith('ollama/'));
-          if (wasOnOllama) {
+          _availableModels.removeWhere((m) => m.startsWith('ollama/') && !m.contains(':cloud'));
+          _isOllamaAutoStarting = false;
+          if (wasOnLocalHub) {
             _selectedModel = _cloudFallbackModel;
             PreferencesService().configuredModel = _cloudFallbackModel;
+          }
+          // Re-ensure cloud models stay present
+          for (final m in _kCloudOllamaModels) {
+            if (!_availableModels.contains(m)) _availableModels.add(m);
           }
         });
         return;
       }
 
-      // Ollama running — merge local hub models + cloud models into dropdown.
+      // Ollama running — clear auto-starting flag, merge local hub + cloud models.
       setState(() {
-        _availableModels.removeWhere((m) => m.startsWith('ollama/'));
+        _isOllamaAutoStarting = false;
+        _availableModels.removeWhere((m) => m.startsWith('ollama/') && !m.contains(':cloud'));
         if (gwState.ollamaHubModels.isNotEmpty) {
-          // Local on-device models synced from the hub
           _availableModels.addAll(
             gwState.ollamaHubModels
                 .where((m) => !m.endsWith(':cloud'))
                 .map((m) => 'ollama/$m'),
           );
         }
-        // Always surface Ollama cloud models while the daemon is running —
-        // they need no download and the daemon handles auth transparently.
+        // Always ensure cloud models are present
         for (final m in _kCloudOllamaModels) {
           if (!_availableModels.contains(m)) _availableModels.add(m);
         }
@@ -396,13 +403,20 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           _cloudFallbackModel = GatewayService().getModelForProvider(provider);
         }
 
+        // OLLAMA CLOUD models are always visible regardless of hub state.
+        for (final m in _kCloudOllamaModels) {
+          if (!_availableModels.contains(m)) _availableModels.add(m);
+        }
+
         // Seed any already-synced Ollama Hub models from current gateway state.
         // The stateStream listener only fires on NEW events; at open time we must
         // read the current snapshot so the dropdown is populated immediately.
         final gwState = GatewayService().state;
         if (gwState.ollamaHubModels.isNotEmpty) {
-          _availableModels.removeWhere((m) => m.startsWith('ollama/'));
-          _availableModels.addAll(gwState.ollamaHubModels.map((m) => 'ollama/$m'));
+          _availableModels.removeWhere((m) => m.startsWith('ollama/') && !m.contains(':cloud'));
+          _availableModels.addAll(
+            gwState.ollamaHubModels.where((m) => !m.endsWith(':cloud')).map((m) => 'ollama/$m'),
+          );
         } else if (gwState.isOllamaRunning) {
           // Ollama is running but ollamaHubModels is empty — this happens when
           // the gateway was restarted (stop() now preserves isOllamaRunning but
@@ -417,11 +431,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           final ollamaOk = gwState.isOllamaRunning;
           final isOllama = configured.startsWith('ollama/');
           final isLocal = configured.startsWith('local-llm/');
+          final isCloudOllama = isOllama && configured.contains(':cloud');
           if (_availableModels.contains(configured) || isLocal ||
-              (isOllama && ollamaOk)) {
+              (isOllama && ollamaOk) || isCloudOllama) {
             _selectedModel = configured;
-          } else if (isOllama && !ollamaOk) {
-            // Ollama not running — don't restore a stale ollama/ model.
+          } else if (isOllama && !ollamaOk && !isCloudOllama) {
+            // Local hub model but Ollama not running — don't restore stale model.
             _selectedModel = _cloudFallbackModel;
           }
         }
@@ -1321,6 +1336,17 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 12),
                   const SizedBox(width: 6),
                   const Text('OLLAMA CLOUD', style: TextStyle(color: Color(0xFFAB47BC), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+                  if (!GatewayService().state.isOllamaRunning) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text('AUTO-START', style: TextStyle(color: Colors.amber, fontSize: 7, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1489,24 +1515,37 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         ));
       } else if (value.toString().startsWith('model:')) {
         final model = value.toString().substring(6);
+        final isNowOllama = model.startsWith('ollama/');
+        final isNowCloud = !model.startsWith('ollama/') && !model.startsWith('local-llm/');
         setState(() {
           _selectedModel = model;
-          // Track cloud models as fallback so local-model stops have somewhere to return.
           if (!model.startsWith('local-llm/') && !model.startsWith('ollama/')) {
             _cloudFallbackModel = model;
           }
         });
         PreferencesService().configuredModel = model;
-        // Persist config instantly. For cloud models a reload is NOT needed —
-        // the gateway reads agents.defaults.model.primary on each chat.send.
+
+        // Auto-start Ollama Hub if switching to any ollama/ model while hub is off
+        if (isNowOllama && !GatewayService().state.isOllamaRunning) {
+          setState(() => _isOllamaAutoStarting = true);
+          unawaited(GatewayService().startInternalOllama());
+        }
+
+        // Auto-stop Ollama Hub when switching to a pure cloud model (saves memory)
+        if (isNowCloud && GatewayService().state.isOllamaRunning) {
+          unawaited(GatewayService().stopInternalOllama());
+          setState(() => _ollamaStopFlash = true);
+          Future.delayed(const Duration(milliseconds: 1800), () {
+            if (mounted) setState(() => _ollamaStopFlash = false);
+          });
+        }
+
         final needsReload = model.startsWith('local-llm');
         if (needsReload) {
           final modelId = model.split('/').last;
           final localModel = LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
           LocalLlmService().activateModel(localModel);
         } else {
-          // For cloud/ollama models: persist to openclaw.json so the gateway
-          // session uses the correct model on next chat.send, then reconnect.
           unawaited(GatewayService().persistModel(model));
           GatewayService().disconnectWebSocket();
         }
@@ -1751,14 +1790,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           _selectedModel.startsWith('local-llm/')
                             ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
                             : _selectedModel.startsWith('ollama/')
-                              ? '${_selectedAvatar.split('.').first.toUpperCase()} · LOCAL HUB'
-                              : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModel.split('/').last.toUpperCase()}',
+                              ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_isOllamaAutoStarting ? 'STARTING HUB...' : _selectedModel.contains(':cloud') ? 'OLLAMA CLOUD' : 'LOCAL HUB'}'
+                              : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_ollamaStopFlash ? 'HUB OFF' : _selectedModel.split('/').last.toUpperCase()}',
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
                               ? (_localLlmState.status == LocalLlmStatus.starting ? Colors.amber : const Color(0xFF00E5AA))
                               : _selectedModel.startsWith('ollama/')
-                                ? const Color(0xFF00C8FF)
-                                : Colors.white.withValues(alpha: 0.5),
+                                ? (_isOllamaAutoStarting ? Colors.amber : _selectedModel.contains(':cloud') ? const Color(0xFFAB47BC) : const Color(0xFF00C8FF))
+                                : (_ollamaStopFlash ? Colors.white38 : Colors.white.withValues(alpha: 0.5)),
                             fontSize: 8,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.8,

@@ -413,19 +413,18 @@ class GatewayConnection {
   /// Prevents the need for a 10-minute gateway restart on model switch.
   Future<void> patchSessionMetadata(Map<String, dynamic> metadata) async {
     if (_state != GatewayConnectionState.connected) return;
-    
+
+    // Gateway schema: params must have 'key' (not 'sessionKey'), no 'patch' wrapper.
+    // Metadata fields go directly alongside 'key' in params.
     final payload = {
       'method': 'sessions.patch',
       'params': {
-        'sessionKey': mainSessionKey ?? 'main',
-        'patch': {
-          'metadata': metadata,
-        },
+        'key': mainSessionKey ?? 'main',
+        ...metadata,
       },
     };
-    
-    // We send and forget, as the gateway applies these instantly.
-    // The next chat.send will pick up the updated metadata.
+
+    // Fire-and-forget — gateway applies these instantly before the next chat.send.
     sendRequest(payload);
   }
 
