@@ -136,7 +136,7 @@ class GatewayProvider extends ChangeNotifier {
     _gatewayService.disconnectWebSocket();
   }
 
-  /// Reset the RPC discovery flag so health, skills.list, and capabilities.list
+  /// Reset the RPC discovery flag so health and skills.status
   /// are re-queried on the next health-check tick (~15 s).
   void refreshRpcDiscovery() {
     _gatewayService.refreshRpcDiscovery();

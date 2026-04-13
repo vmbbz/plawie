@@ -53,7 +53,9 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
       if (mounted) setState(() => _loading = true);
       url = await gatewayProvider.refreshDashboardUrl();
     } else {
-      // Priority: widget arg → in-memory auth URL (has ?token=) → saved prefs → fresh CLI probe
+      // Priority: widget arg → in-memory auth URL (has ?token=) → saved prefs → fresh CLI probe.
+      // Only force-probe on the manual refresh button — probing on every open can
+      // fail silently (PRoot busy, gateway mid-restart) and fall back to a tokenless URL.
       url = widget.url;
       if (url == null || url.isEmpty) {
         url = gatewayProvider.state.dashboardUrl;
@@ -63,9 +65,7 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
         await prefs.init();
         url = prefs.dashboardUrl;
       }
-      // If URL has no token (e.g. set by bootstrap without token, or after fresh install),
-      // always probe for the authenticated URL — never load the dashboard without a token.
-      if (url == null || url.isEmpty || !url.contains('token=')) {
+      if (url == null || url.isEmpty) {
         url = await gatewayProvider.fetchAuthenticatedDashboardUrl();
       }
     }

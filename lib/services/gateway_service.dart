@@ -28,6 +28,9 @@ class GatewayService {
   bool _isStarting = false;
   bool _isStopping = false;
   bool _isSyncing = false; // guard against concurrent syncLocalModelsWithOllama calls
+  // Set to true after _clearStaleSessions() runs, reset on WS disconnect.
+  // Prevents wiping sessions on every sendMessage (was causing "new LLM every few messages").
+  bool _sessionCleanedThisConnection = false;
   final _chatActivityController = StreamController<String>.broadcast();
   final List<String> _activityBuffer = []; // replay buffer for late subscribers
 
@@ -53,21 +56,21 @@ class GatewayService {
   int _getDynamicContextSize(String modelId) {
     // Use substring matching so full model IDs like
     // 'qwen2.5-0.5b-instruct:q4_k_m' match the short keys below.
-    final id = modelId.toLowerCase();
+    // Map Ollama model IDs to their context windows
     final modelContexts = {
-      'qwen2.5-0.5b': 2048,
-      'qwen2.5-1.5b': 2048,
-      'qwen2.5-3b': 4096,
-      'qwen2.5-7b': 8192,
-      'smollm2-135m': 2048,
-      'smollm2-360m': 2048,
-      'smollm2-1.7b': 4096,
-      'llava-1.5-7b': 4096,
-      'qwen2-vl-2b': 2048,
-      'qwen2-vl-7b': 4096,
+      'qwen2.5-0.5b': 1024,
+      'qwen2.5-1.5b': 1024,
+      'qwen2.5-3b': 2048,
+      'qwen2.5-7b': 4096,
+      'smollm2-135m': 1024,
+      'smollm2-360m': 1024,
+      'smollm2-1.7b': 2048,
+      'llava-1.5-7b': 2048,
+      'qwen2-vl-2b': 1024,
+      'qwen2-vl-7b': 2048,
     };
     for (final entry in modelContexts.entries) {
-      if (id.contains(entry.key)) return entry.value;
+      if (modelId.contains(entry.key)) return entry.value;
     }
     // 2048 is safer than 1024 — gives tool schemas enough room
     return 2048;
@@ -94,7 +97,7 @@ PARAMETER stop "<|eot_id|>"
 PARAMETER stop "<|start_header_id|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 4
+PARAMETER num_thread 1
 PARAMETER num_batch 512
 ''';
     }
@@ -113,7 +116,7 @@ PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|endoftext|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 4
+PARAMETER num_thread 1
 PARAMETER num_batch 512
 ''';
   }
@@ -559,8 +562,12 @@ PARAMETER num_batch 512
       final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
 
-      // CRITICAL: Do NOT set systemPrompt here - it breaks gateway reload
-      // System prompt should be set in agent defaults or left as default
+      // CRITICAL: Set mobile-optimized system prompt for local models
+      // This prevents hallucinations and reduces token usage from 27K to ~800
+      if (primaryModel.startsWith('ollama/') || primaryModel.startsWith('local-llm/')) {
+        config['agents']['defaults']['systemPrompt'] = 
+            'You are a helpful mobile assistant. Keep answers concise. Use tools only when necessary.';
+      }
 
       // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
       // OpenClaw schema keys — writing them breaks the gateway config validation.
@@ -643,6 +650,11 @@ PARAMETER num_batch 512
   /// runs don't accumulate and inflate the message count (user:18 + assistant:27
   /// etc.) that the Node.js engine forwards in every request.
   Future<void> _clearStaleSessions() async {
+    // Run at most once per WS session — reset by stateStream listener on disconnect.
+    // Prevents wiping context on every message (was the "new LLM every few messages" bug).
+    if (_sessionCleanedThisConnection) return;
+    _sessionCleanedThisConnection = true;
+
     try {
       final filesDir = await _getFilesDir();
       final sessionsDir = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
@@ -651,8 +663,9 @@ PARAMETER num_batch 512
       await for (final entity in dir.list()) {
         if (entity is File && entity.path.endsWith('.jsonl')) {
           final bytes = await entity.length();
-          // Only clear files > 10 KB — small sessions are fine
-          if (bytes > 10240) {
+          // Only clear files > 512 KB — anything smaller is healthy conversation history.
+          // Old threshold was 10 KB which cleared sessions after just 3-4 messages.
+          if (bytes > 524288) {
             await entity.writeAsString('');
             _updateState(_state.copyWith(
               logs: [..._state.logs,
@@ -1358,7 +1371,7 @@ PARAMETER num_batch 512
 
 
   /// Reset the RPC discovery flag so the next health-check tick re-runs
-  /// `health`, `skills.list`, and `capabilities.list`. Call this after
+  /// `health` and `skills.status`. Call this after
   /// installing/uninstalling a skill or any time the user wants a fresh read.
   void refreshRpcDiscovery() {
     _rpcDiscoveryDone = false;
@@ -1425,6 +1438,7 @@ PARAMETER num_batch 512
       _connection!.stateStream.listen((wsState) {
         final connected = wsState == GatewayConnectionState.connected;
         if (connected) _pairingResolveAttempted = false; // Reset on success
+        if (!connected) _sessionCleanedThisConnection = false; // Allow cleanup on next reconnect
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
           logs: connected
@@ -1562,65 +1576,47 @@ PARAMETER num_batch 512
             // Non-fatal — health RPC may not be supported on all gateways
           }
 
-          try {
-            final skillsResult = await invoke('skills.list')
-                .timeout(const Duration(seconds: 8));
-            final skillsData = skillsResult.containsKey('payload')
-                ? skillsResult['payload']
-                : skillsResult;
-            if (skillsData != null &&
-                (skillsResult['ok'] == true || skillsData is List)) {
-              final rawList = skillsData is List
-                  ? skillsData
-                  : (skillsData['skills'] ?? skillsData['items'] ?? []);
-              final parsedSkills = <Map<String, dynamic>>[];
-              final parsedIds = <String>{};
-              for (final skill in rawList as List) {
-                if (skill is Map) {
-                  final mapped = Map<String, dynamic>.from(skill);
-                  parsedSkills.add(mapped);
-                  final id = (mapped['id'] ?? mapped['name'] ?? mapped['skillId'])?.toString().toLowerCase() ?? '';
-                  if (id.isNotEmpty) parsedIds.add(id);
-                } else if (skill is String) {
-                  parsedSkills.add({'id': skill, 'name': skill});
-                  parsedIds.add(skill.toLowerCase());
-                }
-              }
-              _updateState(_state.copyWith(
-                activeSkills: parsedSkills,
-                logs: [..._state.logs, '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'],
-              ));
-            }
-          } catch (_) {}
+          // Skills discovery via skills.status (the correct RPC — skills.list does not exist).
+          // capabilities.list also does not exist; device capabilities are declared at
+          // connect-time via caps/commands/permissions in the handshake params, not via RPC.
+          // Guard with supportedMethods so unknown-method log noise is avoided on older
+          // gateway versions and the call auto-enables when the gateway declares it.
+          final supported = _connection?.supportedMethods ?? const <String>[];
 
-          try {
-            final capResult = await invoke('capabilities.list')
-                .timeout(const Duration(seconds: 8));
-            final capData = capResult.containsKey('payload')
-                ? capResult['payload']
-                : capResult;
-            if (capData != null &&
-                (capResult['ok'] == true || capData is List)) {
-              final rawList = capData is List
-                  ? capData
-                  : (capData['capabilities'] ??
-                      capData['tools'] ??
-                      capData['items'] ??
-                      []);
-              final caps = <String>[];
-              for (final cap in rawList as List) {
-                final name = (cap is Map
-                        ? (cap['name'] ?? cap['id'])
-                        : cap)
-                    ?.toString() ?? '';
-                if (name.isNotEmpty) caps.add(name);
+          if (supported.contains('skills.status')) {
+            try {
+              final skillsResult = await invoke('skills.status')
+                  .timeout(const Duration(seconds: 8));
+              final skillsData = skillsResult.containsKey('payload')
+                  ? skillsResult['payload']
+                  : skillsResult;
+              if (skillsData != null &&
+                  (skillsResult['ok'] == true || skillsData is Map || skillsData is List)) {
+                // skills.status returns {skills: SkillInfo[]} — each entry has
+                // name, skillKey, description, eligible, disabled, etc.
+                final rawList = skillsData is List
+                    ? skillsData
+                    : (skillsData['skills'] ?? skillsData['items'] ?? []);
+                final parsedSkills = <Map<String, dynamic>>[];
+                final parsedIds = <String>{};
+                for (final skill in rawList as List) {
+                  if (skill is Map) {
+                    final mapped = Map<String, dynamic>.from(skill);
+                    parsedSkills.add(mapped);
+                    final id = (mapped['skillKey'] ?? mapped['name'] ?? mapped['id'])?.toString().toLowerCase() ?? '';
+                    if (id.isNotEmpty) parsedIds.add(id);
+                  } else if (skill is String) {
+                    parsedSkills.add({'id': skill, 'name': skill});
+                    parsedIds.add(skill.toLowerCase());
+                  }
+                }
+                _updateState(_state.copyWith(
+                  activeSkills: parsedSkills,
+                  logs: [..._state.logs, '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'],
+                ));
               }
-              _updateState(_state.copyWith(
-                capabilities: caps,
-                logs: [..._state.logs, '[INFO] Capabilities: ${caps.isEmpty ? 'none' : caps.join(', ')}'],
-              ));
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
         }
       }
     } catch (_) {
@@ -1702,17 +1698,27 @@ PARAMETER num_batch 512
     // If WS is unavailable, ollama/ falls back to direct :11434 so inference
     // still works; cloud falls back to HTTP gateway proxy.
     final isOllama = model.startsWith('ollama/');
-    
-    // For Ollama: proactively clear bloated session files so the gateway doesn't
-    // forward a wall of stale history on every request and blow past num_ctx.
-    // Fire-and-forget — don't block the message on disk I/O.
-    if (isOllama) unawaited(_clearStaleSessions());
+    // Cloud Ollama requires `ollama signin` on the device (or OLLAMA_API_KEY env var).
+    // If auth is missing, Ollama returns 401 "not allowed" — surface this early.
+    if (isOllama && model.contains(':cloud')) {
+      _addActivity('[CHAT] ☁ Cloud Ollama model — requires `ollama signin` on device (or OLLAMA_API_KEY). If you see "not allowed", run: ollama signin');
+    }
+    // Cloud Ollama models (e.g. qwen3-coder:480b-cloud) are proxied by the
+    // local Ollama daemon to ollama.com — they need different handling:
+    // no context cap, no mobile system prompt, no cold-start logic.
+    final isCloudOllama = isOllama && model.contains(':cloud');
+    final isLocalOllama = isOllama && !isCloudOllama;
 
-    // For Ollama: memory snapshot + cold-start detection.
+    // For local Ollama: proactively clear bloated session files so the gateway
+    // doesn't forward a wall of stale history on every request.
+    // Fire-and-forget — don't block the message on disk I/O.
+    if (isLocalOllama) unawaited(_clearStaleSessions());
+
+    // For local Ollama: memory snapshot + cold-start detection.
     // Fix 4+5: read /proc/meminfo directly (no PRoot spawn) and use the
     // /api/ps result to extend the WS timeout for cold starts.
     bool ollamaColdStart = true; // assume cold until /api/ps says otherwise
-    if (isOllama) {
+    if (isLocalOllama) {
       try {
         // /proc/meminfo is readable directly from Android — no PRoot needed.
         final meminfo = await File('/proc/meminfo').readAsString()
@@ -1754,24 +1760,13 @@ PARAMETER num_batch 512
       if (changes.isNotEmpty) {
         _addActivity('[CHAT] Updating gateway config: $changes');
       }
-      // For Ollama models, patch the session context window so the gateway
-      // passes the correct num_ctx to Ollama — preventing full 32768 KV allocation.
-      if (isOllama) {
-        final ollamaModelName = model.replaceFirst('ollama/', '');
-        final ctx = _getDynamicContextSize(ollamaModelName);
-        // Patch both contextWindow and systemPrompt via WS sessions.patch.
-        // This goes through the runtime RPC protocol, not the config file schema
-        // validator, so systemPrompt here is safe even though it's an invalid
-        // config file key. If the gateway doesn't support it, it's silently ignored.
-        unawaited(_connection!.patchSessionMetadata({
-          'contextWindow': ctx,
-          'systemPrompt': 'You are a helpful mobile assistant. Keep answers short and direct. Use tools only when necessary.',
-        }));
-        _addActivity('[CHAT] → Context $ctx + short system prompt for $ollamaModelName');
-      }
+      // Context window for local Ollama is controlled by the Modelfile
+      // PARAMETER num_ctx written at `ollama create` time by _buildModelfileTemplate.
+      // sessions.patch rejects 'contextWindow' and 'systemPrompt' as invalid fields
+      // in this gateway version — removed to eliminate error noise in gateway logs.
     } else {
-      if (isOllama) {
-        // WS fallback: direct Ollama — no dashboard, but inference still works.
+      if (isLocalOllama) {
+        // WS fallback: direct local Ollama — no dashboard, but inference still works.
         final ollamaModel = model.substring('ollama/'.length);
         _addActivity('[CHAT] ⚠ WS unavailable — direct fallback for $ollamaModel');
         yield* sendMessageHttp(message,
@@ -1780,6 +1775,7 @@ PARAMETER num_batch 512
             conversationHistory: conversationHistory,
             ollamaOptions: {'num_ctx': _getDynamicContextSize(ollamaModel)});
       } else {
+        // Cloud Ollama fallback: route via HTTP gateway proxy (same as cloud models).
         yield* sendMessageHttp(message, model: model, token: token,
             conversationHistory: conversationHistory);
       }
@@ -1795,7 +1791,9 @@ PARAMETER num_batch 512
     final sessionKey = _connection!.mainSessionKey ?? 'main';
 
     // Cold-start (model not yet in RAM) gets 3 min; warm gets 2 min; cloud 90 s.
-    final timeoutMs = isOllama ? (ollamaColdStart ? 180000 : 120000) : 90000;
+    // Local Ollama: extended timeout for cold-start model loading.
+    // Cloud Ollama: treat like any cloud model (90s) — no local load delay.
+    final timeoutMs = isLocalOllama ? (ollamaColdStart ? 180000 : 120000) : 90000;
 
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
@@ -1966,13 +1964,14 @@ PARAMETER num_batch 512
     );
 
     try {
+      final streamTimeoutSec = isLocalOllama ? 600 : 90;
       await for (final chunk in chunkController.stream
-          .timeout(Duration(seconds: isOllama ? 600 : 90))) {
+          .timeout(Duration(seconds: streamTimeoutSec))) {
         yield chunk;
       }
       _addActivity('[CHAT] ✓ Complete');
     } on TimeoutException {
-      if (isOllama) {
+      if (isLocalOllama) {
         _addActivity('[CHAT] ✗ Timed out after 600 s');
         yield '[Error] Ollama timed out (600 s). The model runner may have crashed — '
               'check hub logs for OOM errors.';
