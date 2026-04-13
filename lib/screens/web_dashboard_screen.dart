@@ -4,6 +4,7 @@ import '../constants.dart';
 import 'package:provider/provider.dart';
 import '../providers/gateway_provider.dart';
 import '../services/preferences_service.dart';
+import '../services/gateway_service.dart';
 
 class WebDashboardScreen extends StatefulWidget {
   final String? url;
@@ -71,9 +72,11 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     }
 
     if (mounted) {
-      // CRITICAL: Never fall back to AppConstants.gatewayUrl as it lacks token
-      // Always use the authenticated URL from gateway provider
-      final authenticatedUrl = url ?? gatewayProvider.state.dashboardUrl;
+      // CRITICAL: Use tokenized URL from fetchAuthenticatedDashboardUrl
+      // Control-UI expects token in URL query param (?token=...)
+      final gatewayService = Provider.of<GatewayService>(context, listen: false);
+      final tokenizedUrl = await gatewayService.fetchAuthenticatedDashboardUrl(force: false);
+      final authenticatedUrl = url ?? tokenizedUrl;
       _controller.loadRequest(Uri.parse(authenticatedUrl ?? AppConstants.gatewayUrl));
     }
   }
