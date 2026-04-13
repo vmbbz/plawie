@@ -1303,77 +1303,23 @@ PARAMETER num_batch 512
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
   /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
   Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
-    // If we already have a tokenized URL and aren't forcing, return it immediately
+    // EFFICIENT: Use log-cached token first (instant, no PRoot)
     if (!force && _state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
       return _state.dashboardUrl;
     }
 
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[DEBUG] Probing gateway config for auth token...']
-    ));
-
-    // STEP 1: Try reading token directly from config file.
-    // This is isolated in its own try/catch so proot errors don't produce a false [ERROR] log.
-    String? token;
-    try {
-      token = await retrieveTokenFromConfig();
-    } catch (_) {
-      // Silently swallow — proot may throw uv_interface_addresses errors on some devices.
-      // We'll fall through to the CLI probe below.
-    }
-
+    // FALLBACK: Only use PRoot if log parsing failed (rare case)
+    String? token = await retrieveTokenFromConfig();
     if (token != null && token.isNotEmpty) {
       final prefs = PreferencesService();
       await prefs.init();
-      // Construct the authenticated URL
-      final baseUrl = _state.dashboardUrl ?? AppConstants.gatewayUrl;
-      
-      // Sanitize the baseUrl: brutally strip out any fragments (#) or query params (?)
-      // This prevents malformed URLs from stacking parameters (e.g. /#token=.../?token=...&token=...)
-      var sanitizedBaseUrl = baseUrl.split('#').first.split('?').first;
-      
-      // Remove any trailing slashes to unify exact domain formatting
-      while (sanitizedBaseUrl.endsWith('/')) {
-        sanitizedBaseUrl = sanitizedBaseUrl.substring(0, sanitizedBaseUrl.length - 1);
-      }
-      
-      // A clean gateway dashboard URL requires /?token=
-      final urlWithToken = '$sanitizedBaseUrl/?token=$token';
+      final urlWithToken = '${AppConstants.gatewayUrl}/?token=$token';
       prefs.dashboardUrl = urlWithToken;
       _updateState(_state.copyWith(
         dashboardUrl: urlWithToken,
-        logs: [..._state.logs, '[INFO] Gateway auth token acquired from config.'],
+        logs: [..._state.logs, '[INFO] Gateway auth token from config (fallback).'],
       ));
       return urlWithToken;
-    }
-
-    // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
-    try {
-      final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw dashboard --no-open',
-        timeout: 10
-      );
-      final urlMatch = _tokenUrlRegex.firstMatch(output);
-
-      if (urlMatch != null) {
-        final url = urlMatch.group(0);
-        final prefs = PreferencesService();
-        await prefs.init();
-        prefs.dashboardUrl = url;
-        _updateState(_state.copyWith(
-          dashboardUrl: url,
-          logs: [..._state.logs, '[INFO] Gateway auth token acquired via CLI.'],
-        ));
-        return url;
-      } else {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[WARN] Dashboard probe failed to find token. Ensure openclaw is starting correctly.']
-        ));
-      }
-    } catch (e) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[WARN] CLI dashboard probe failed: $e']
-      ));
     }
 
     return _state.dashboardUrl;
