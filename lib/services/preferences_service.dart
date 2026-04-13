@@ -47,7 +47,7 @@ class PreferencesService {
     }
   }
 
-  bool get nodeEnabled => _p.getBool(_keyNodeEnabled) ?? false;
+  bool get nodeEnabled => _p.getBool(_keyNodeEnabled) ?? true;
   set nodeEnabled(bool value) => _p.setBool(_keyNodeEnabled, value);
 
   String? get nodeDeviceToken => _p.getString(_keyNodeDeviceToken);
