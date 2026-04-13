@@ -1867,6 +1867,19 @@ PARAMETER num_batch 512
             return;
           }
 
+          // Agent-initiated messages (continuous streaming)
+          if (type == 'event' && frame['event'] == 'agent.message') {
+            final payload = frame['payload'] as Map<String, dynamic>?;
+            final message = payload?['text'] as String?;
+            if (message != null && message.isNotEmpty) {
+              _addActivity('[CHAT] ← Agent initiated: $message');
+              if (!chunkController.isClosed) {
+                chunkController.add(message);
+              }
+            }
+            return;
+          }
+
           // Chat lifecycle events (final / aborted / error → close stream)
           if (type == 'event' && frame['event'] == 'chat') {
             final Map<String, dynamic> data = (frame['payload'] as Map<String, dynamic>?)
