@@ -574,6 +574,8 @@ PARAMETER num_batch 512
             'You can make calls, send messages, control device settings, read sensors, browse web, and use system apps. '
             'Be concise but thorough. Use tools when they directly help the user. '
             'You are running on Android with limited battery and screen space.';
+        
+        _addActivity('[CONFIG] Mobile system prompt applied (${config['agents']['defaults']['systemPrompt'].length} chars)');
       }
 
       // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
