@@ -180,11 +180,26 @@ PARAMETER num_batch 512
   /// List of methods supported by the current gateway connection.
   List<String> get supportedMethods => _connection?.supportedMethods ?? [];
 
-  /// Check if the gateway is already running (e.g. after app restart)
-  /// and sync the UI state accordingly.  If not running but auto-start
+  /// Validate gateway process health before marking as healthy
+  Future<void> _validateGatewayProcess() async {
+    try {
+      final result = await NativeBridge.runInProot('pgrep -f openclaw || echo "not_running"', timeout: 5);
+      if (result.trim() == 'not_running') {
+        _addActivity('[HEALTH] Gateway process not found - marking as stopped');
+        _updateState(_state.copyWith(status: GatewayStatus.stopped));
+      } else {
+        _addActivity('[HEALTH] Gateway process validated and running');
+      }
+    } catch (_) {
+      _addActivity('[HEALTH] Could not validate gateway process');
+    }
+  }
+
+  /// Check if gateway is already running (e.g. after app restart)
+  /// and sync UI state accordingly.  If not running but auto-start
   /// is enabled, start it automatically.
-  /// Check if the gateway is already running (e.g. after app restart)
-  /// and sync the UI state accordingly.
+  /// Check if gateway is already running (e.g. after app restart)
+  /// and sync UI state accordingly.
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
@@ -1534,6 +1549,9 @@ PARAMETER num_batch 512
     // timer ticks pile up and cause cascading stalls.
     if (_healthCheckInFlight) return;
     _healthCheckInFlight = true;
+    
+    // Add process validation before health checks
+    unawaited(_validateGatewayProcess());
 
     try {
       // ── 1. Fast HTTP probe ─────────────────────────────────────────────
