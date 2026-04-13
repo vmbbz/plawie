@@ -472,6 +472,10 @@ PARAMETER num_batch 512
     ];
     config['gateway']['mode'] = 'local';
     
+    // Disable mDNS to prevent ENODEV eth0 binding errors on some devices
+    config['gateway']['discovery'] ??= {};
+    config['gateway']['discovery']['enabled'] = false;
+    
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
     config['gateway']['http']['endpoints'] ??= {};
