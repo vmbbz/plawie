@@ -4,7 +4,6 @@ import '../constants.dart';
 import 'package:provider/provider.dart';
 import '../providers/gateway_provider.dart';
 import '../services/preferences_service.dart';
-import '../services/gateway_service.dart';
 
 class WebDashboardScreen extends StatefulWidget {
   final String? url;
@@ -72,11 +71,13 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     }
 
     if (mounted) {
-      // CRITICAL: Always get fresh tokenized URL - cached URLs cause loading loops
-      // Control-UI expects token in URL query param (?token=...)
-      final gatewayService = Provider.of<GatewayService>(context, listen: false);
-      final tokenizedUrl = await gatewayService.fetchAuthenticatedDashboardUrl(force: true);
-      final authenticatedUrl = url ?? tokenizedUrl;
+      // EFFICIENT: Use log-cached token first, only fallback if missing
+      // Log parsing captures token instantly without PRoot overhead
+      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+      final cachedUrl = gatewayProvider.state.dashboardUrl;
+      
+      // Use cached URL from logs (fast) - no more PRoot calls
+      final authenticatedUrl = url ?? cachedUrl;
       _controller.loadRequest(Uri.parse(authenticatedUrl ?? AppConstants.gatewayUrl));
     }
   }
