@@ -480,6 +480,17 @@ PARAMETER num_batch 512
     config['gateway']['bonjour'] ??= {};
     config['gateway']['bonjour']['enabled'] = false;
     
+    // Comprehensive network interface disable to prevent eth0 ENODEV errors
+    config['gateway']['network'] ??= {};
+    config['gateway']['network']['bindAddress'] = '127.0.0.1';
+    config['gateway']['network']['autoDetect'] = false;
+    config['gateway']['network']['interfaces'] = [];
+    
+    // Disable all discovery services
+    config['gateway']['discovery']['mdns'] = false;
+    config['gateway']['discovery']['upnp'] = false;
+    config['gateway']['discovery']['ssdp'] = false;
+    
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
     config['gateway']['http']['endpoints'] ??= {};
