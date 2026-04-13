@@ -58,16 +58,16 @@ class GatewayService {
     // 'qwen2.5-0.5b-instruct:q4_k_m' match the short keys below.
     // Map Ollama model IDs to their context windows
     final modelContexts = {
-      'qwen2.5-0.5b': 1024,
-      'qwen2.5-1.5b': 1024,
-      'qwen2.5-3b': 2048,
-      'qwen2.5-7b': 4096,
-      'smollm2-135m': 1024,
-      'smollm2-360m': 1024,
-      'smollm2-1.7b': 2048,
-      'llava-1.5-7b': 2048,
-      'qwen2-vl-2b': 1024,
-      'qwen2-vl-7b': 2048,
+      'qwen2.5-0.5b': 2048,
+      'qwen2.5-1.5b': 2048,
+      'qwen2.5-3b': 4096,
+      'qwen2.5-7b': 8192,
+      'smollm2-135m': 2048,
+      'smollm2-360m': 2048,
+      'smollm2-1.7b': 4096,
+      'llava-1.5-7b': 4096,
+      'qwen2-vl-2b': 2048,
+      'qwen2-vl-7b': 4096,
     };
     for (final entry in modelContexts.entries) {
       if (modelId.contains(entry.key)) return entry.value;
@@ -97,7 +97,7 @@ PARAMETER stop "<|eot_id|>"
 PARAMETER stop "<|start_header_id|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 1
+PARAMETER num_thread 4
 PARAMETER num_batch 512
 ''';
     }
@@ -116,7 +116,7 @@ PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|endoftext|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 1
+PARAMETER num_thread 4
 PARAMETER num_batch 512
 ''';
   }
