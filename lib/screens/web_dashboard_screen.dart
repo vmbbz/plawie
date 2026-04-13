@@ -71,7 +71,10 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     }
 
     if (mounted) {
-      _controller.loadRequest(Uri.parse(url ?? AppConstants.gatewayUrl));
+      // CRITICAL: Never fall back to AppConstants.gatewayUrl as it lacks token
+      // Always use the authenticated URL from gateway provider
+      final authenticatedUrl = url ?? gatewayProvider.state.dashboardUrl;
+      _controller.loadRequest(Uri.parse(authenticatedUrl ?? AppConstants.gatewayUrl));
     }
   }
 
