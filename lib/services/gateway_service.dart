@@ -476,6 +476,10 @@ PARAMETER num_batch 512
     config['gateway']['discovery'] ??= {};
     config['gateway']['discovery']['enabled'] = false;
     
+    // Disable bonjour to prevent network interface binding errors
+    config['gateway']['bonjour'] ??= {};
+    config['gateway']['bonjour']['enabled'] = false;
+    
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
     config['gateway']['http']['endpoints'] ??= {};
@@ -575,7 +579,9 @@ PARAMETER num_batch 512
             'Be concise but thorough. Use tools when they directly help the user. '
             'You are running on Android with limited battery and screen space.';
         
-        _addActivity('[CONFIG] Mobile system prompt applied (${config['agents']['defaults']['systemPrompt'].length} chars)');
+        final promptLength = config['agents']['defaults']['systemPrompt'].length;
+        _addActivity('[CONFIG] Mobile system prompt applied (${promptLength} chars)');
+        _addActivity('[CONFIG] Prompt content preview: "${config['agents']['defaults']['systemPrompt'].substring(0, 50)}..."');
       }
 
       // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
@@ -983,6 +989,13 @@ PARAMETER num_batch 512
       final contextSize = _getDynamicContextSize(name);
       final modelfileContent = _buildModelfileTemplate(ggufPath, contextSize, modelName: name);
       await tempModelfile.writeAsString(modelfileContent);
+      
+      // Verify Modelfile contains correct context size
+      if (modelfileContent.contains('PARAMETER num_ctx $contextSize')) {
+        _addActivity('[HUB] Modelfile created with num_ctx=$contextSize for $name');
+      } else {
+        _addActivity('[HUB] WARNING: Modelfile missing num_ctx=$contextSize for $name');
+      }
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
 
