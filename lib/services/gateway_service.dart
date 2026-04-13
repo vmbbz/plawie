@@ -566,7 +566,10 @@ PARAMETER num_batch 512
       // This prevents hallucinations and reduces token usage from 27K to ~800
       if (primaryModel.startsWith('ollama/') || primaryModel.startsWith('local-llm/')) {
         config['agents']['defaults']['systemPrompt'] = 
-            'You are a helpful mobile assistant. Keep answers concise. Use tools only when necessary.';
+            'You are OpenClaw, an AI assistant with access to Android device controls, sensors, and apps. '
+            'You can make calls, send messages, control device settings, read sensors, browse web, and use system apps. '
+            'Be concise but thorough. Use tools when they directly help the user. '
+            'You are running on Android with limited battery and screen space.';
       }
 
       // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
