@@ -199,6 +199,8 @@ class GatewayConnection {
           if (_deviceToken != null && _deviceToken!.isNotEmpty) 'deviceToken': _deviceToken,
         },
         'locale': 'en-US',
+        // caps/commands belong ONLY on the role=node connection (NodeService/NodeWsService).
+        // Declaring them on the operator role produces gateway warnings and is ignored.
       },
     };
 
