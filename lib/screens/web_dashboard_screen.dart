@@ -72,7 +72,7 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     }
 
     if (mounted) {
-      // CRITICAL: Use fresh tokenized URL from fetchAuthenticatedDashboardUrl
+      // CRITICAL: Always get fresh tokenized URL - cached URLs cause loading loops
       // Control-UI expects token in URL query param (?token=...)
       final gatewayService = Provider.of<GatewayService>(context, listen: false);
       final tokenizedUrl = await gatewayService.fetchAuthenticatedDashboardUrl(force: true);
