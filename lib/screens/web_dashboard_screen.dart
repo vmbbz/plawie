@@ -46,39 +46,56 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
   }
 
   Future<void> _loadUrl({bool forceRefresh = false}) async {
-    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+    if (!mounted) return;
+    setState(() => _loading = true);
 
+    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
     String? url;
+
     if (forceRefresh) {
-      if (mounted) setState(() => _loading = true);
+      // Manual refresh: always do a live CLI probe to get a fresh token.
       url = await gatewayProvider.refreshDashboardUrl();
     } else {
-      // Priority: widget arg → in-memory auth URL (has ?token=) → saved prefs → fresh CLI probe.
-      // Only force-probe on the manual refresh button — probing on every open can
-      // fail silently (PRoot busy, gateway mid-restart) and fall back to a tokenless URL.
+      // 1. Check widget argument first (passed by caller with a known-good URL).
       url = widget.url;
-      if (url == null || url.isEmpty) {
+
+      // 2. Use in-memory state URL — only trust it if it already has a token.
+      if ((url == null || url.isEmpty) &&
+          gatewayProvider.state.dashboardUrl != null &&
+          gatewayProvider.state.dashboardUrl!.contains('token=')) {
         url = gatewayProvider.state.dashboardUrl;
       }
+
+      // 3. Check saved prefs — only if they contain a token, otherwise stale.
       if (url == null || url.isEmpty) {
         final prefs = PreferencesService();
         await prefs.init();
-        url = prefs.dashboardUrl;
+        final saved = prefs.dashboardUrl;
+        if (saved != null && saved.contains('token=')) {
+          url = saved;
+        }
       }
-      if (url == null || url.isEmpty) {
+
+      // 4. Always do a live CLI probe if we still don't have a token URL.
+      //    fetchAuthenticatedDashboardUrl now calls `openclaw dashboard --no-open`
+      //    which is the only reliable source when attaching to a running gateway.
+      if (url == null || url.isEmpty || !url.contains('token=')) {
         url = await gatewayProvider.fetchAuthenticatedDashboardUrl();
       }
     }
 
-    if (mounted) {
-      // EFFICIENT: Use log-cached token first, only fallback if missing
-      // Log parsing captures token instantly without PRoot overhead
-      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-      final cachedUrl = gatewayProvider.state.dashboardUrl;
-      
-      // Use cached URL from logs (fast) - no more PRoot calls
-      final authenticatedUrl = url ?? cachedUrl;
-      _controller.loadRequest(Uri.parse(authenticatedUrl ?? AppConstants.gatewayUrl));
+    if (!mounted) return;
+
+    if (url != null && url.contains('token=')) {
+      // Control UI SPA exclusively expects the token via hash fragment (#token=) 
+      // rather than query string (?token=). Replace it firmly.
+      final safeUrl = url.contains('?token=') 
+          ? url.replaceFirst('?token=', '#token=') 
+          : url;
+      _controller.loadRequest(Uri.parse(safeUrl));
+    } else {
+      // Last resort: load bare gateway URL — will show the token entry UI.
+      _controller.loadRequest(Uri.parse(AppConstants.gatewayUrl));
     }
   }
 
