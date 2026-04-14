@@ -1347,7 +1347,8 @@ PARAMETER num_batch 512
     if (token != null && token.isNotEmpty) {
       final prefs = PreferencesService();
       await prefs.init();
-      final urlWithToken = '${AppConstants.gatewayUrl}/?token=$token';
+      // Use #token= instead of ?token= because OpenClaw's Control UI parses the hash fragment to avoid sending it over HTTP headers
+      final urlWithToken = '${AppConstants.gatewayUrl}/#token=$token';
       prefs.dashboardUrl = urlWithToken;
       _updateState(_state.copyWith(
         dashboardUrl: urlWithToken,
