@@ -487,24 +487,10 @@ PARAMETER num_batch 512
     ];
     config['gateway']['mode'] = 'local';
     
-    // Disable mDNS to prevent ENODEV eth0 binding errors on some devices
-    config['gateway']['discovery'] ??= {};
-    config['gateway']['discovery']['enabled'] = false;
+    // ENODEV FIX: Remove invalid config keys that cause OpenClaw errors
+    // These keys are not recognized by OpenClaw and cause config validation failures
     
-    // Disable bonjour to prevent network interface binding errors
-    config['gateway']['bonjour'] ??= {};
-    config['gateway']['bonjour']['enabled'] = false;
-    
-    // Comprehensive network interface disable to prevent eth0 ENODEV errors
-    config['gateway']['network'] ??= {};
-    config['gateway']['network']['bindAddress'] = '127.0.0.1';
-    config['gateway']['network']['autoDetect'] = false;
-    config['gateway']['network']['interfaces'] = [];
-    
-    // Disable all discovery services
-    config['gateway']['discovery']['mdns'] = false;
-    config['gateway']['discovery']['upnp'] = false;
-    config['gateway']['discovery']['ssdp'] = false;
+    // ENODEV FIX: Don't add invalid discovery config keys
     
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
