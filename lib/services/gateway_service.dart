@@ -1295,14 +1295,54 @@ PARAMETER num_batch 512
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
-  /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
+  /// OpenClaw never writes its runtime token to openclaw.json — it only appears in startup
+  /// logs (captured by _subscribeLogs) or via `openclaw dashboard --no-open`.
+  /// When attaching to an already-running gateway, no fresh startup logs exist, so we
+  /// MUST call the CLI to retrieve the live token.
   Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
-    // EFFICIENT: Use log-cached token first (instant, no PRoot)
+    // Fast path: token already captured from startup logs or a prior CLI call.
     if (!force && _state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
       return _state.dashboardUrl;
     }
 
-    // FALLBACK: Only use PRoot if log parsing failed (rare case)
+    // ── Primary: call `openclaw dashboard --no-open` to get the live token ──
+    // This is the ONLY reliable source when attaching to an already-running gateway
+    // (no startup logs replay) or after the token was not yet emitted to logs.
+    try {
+      final output = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw dashboard --no-open 2>/dev/null || true',
+        timeout: 8,
+      );
+      // Output contains a line like:
+      //   http://127.0.0.1:18789/?token=<uuid>
+      // or with a fragment:
+      //   http://127.0.0.1:18789/#token=<uuid>
+      final cleanOutput = _cleanForUrl(output);
+      final urlMatch = _tokenUrlRegex.firstMatch(cleanOutput);
+      if (urlMatch != null) {
+        final dashboardUrl = urlMatch.group(0)!;
+        // Extract and cache the raw token for WebSocket / HTTP auth.
+        final tokenUri = Uri.parse(dashboardUrl.replaceAll('#', '?'));
+        final liveToken = tokenUri.queryParameters['token'];
+        if (liveToken != null && liveToken.isNotEmpty) {
+          _cachedToken = liveToken;
+          _lastTokenFetch = DateTime.now();
+        }
+        final prefs = PreferencesService();
+        await prefs.init();
+        prefs.dashboardUrl = dashboardUrl;
+        _updateState(_state.copyWith(
+          dashboardUrl: dashboardUrl,
+          logs: [..._state.logs, '[INFO] Gateway auth token retrieved via dashboard CLI.'],
+        ));
+        return dashboardUrl;
+      }
+    } catch (_) {
+      // CLI call failed — fall through to config-file probe
+    }
+
+    // ── Secondary: read token from openclaw.json (rarely present, but try) ──
     String? token = await retrieveTokenFromConfig();
     if (token != null && token.isNotEmpty) {
       final prefs = PreferencesService();
@@ -1507,6 +1547,9 @@ PARAMETER num_batch 512
             startedAt: _state.startedAt ?? DateTime.now(),
             logs: [..._state.logs, '[INFO] Gateway is healthy'],
           ));
+          // Eagerly warm the dashboard auth token in the background so that
+          // opening WebDashboardScreen feels instant (token is already cached).
+          unawaited(fetchAuthenticatedDashboardUrl(force: false).catchError((_) => null));
           // After gateway (re)start, re-probe Ollama in case it was already
           // running when the gateway stopped (stop() no longer clears
           // isOllamaRunning, but after a process restart we must re-confirm).

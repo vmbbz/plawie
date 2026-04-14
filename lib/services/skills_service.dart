@@ -55,20 +55,24 @@ class SkillsService {
     }
   }
 
-  /// Load bundled skills
+  /// Load bundled skills.
+  ///
+  /// ONLY real skills live here:
+  ///   • Custom device-native skills → execute via AgentSkillServer HTTP bridge (127.0.0.1:8765)
+  ///   • Partner integration skills  → execute via GatewaySkillProxy WebSocket RPC
+  ///
+  /// DO NOT add stubs that return fake data — the gateway handles generic tasks (weather,
+  /// calculator, search, etc.) natively via its own skill ecosystem.
   Future<void> _loadBundledSkills() async {
     try {
-      // Define bundled skills (can be expanded)
       final bundledSkills = [
-        _createWeatherSkill(),
-        _createCryptoPriceSkill(),
-        _createWebSearchSkill(),
-        _createFileAnalysisSkill(),
-        _createSystemInfoSkill(),
-        _createReminderSkill(),
-        _createCalculatorSkill(),
-        _createTextAnalysisSkill(),
+        // ── Custom device-native skills (app-specific, not in ClawHub) ──────
+        _createAvatarControlSkill(),   // Switch VRM model, trigger gestures
+        _createTtsVoiceSkill(),         // Switch TTS engine / voice
+        _createDeviceNodeSkill(),       // Vibrate, flashlight, battery, sensors
+        // ── Legacy PiP overlay (retained — unique MethodChannel trick) ──────
         _createAvatarOverlaySkill(),
+        // ── Partner integrations (real GatewaySkillProxy calls) ─────────────
         _createTwilioSkill(),
         _createAgentCardSkill(),
         _createMoltLaunchSkill(),
@@ -268,32 +272,24 @@ class SkillsService {
     }
   }
 
-  /// Execute skill logic based on category
+  /// Execute skill logic based on category.
   Future<SkillResult> _executeSkillLogic(
     Skill skill,
     Map<String, dynamic> parameters,
     Map<String, dynamic> context,
   ) async {
     switch (skill.category) {
-      case 'weather':
-        return await _executeWeatherSkill(skill, parameters, context);
-      case 'crypto':
-        return await _executeCryptoSkill(skill, parameters, context);
-      case 'search':
-        return await _executeSearchSkill(skill, parameters, context);
-      case 'file':
-        return await _executeFileSkill(skill, parameters, context);
+      // ── Custom device-native ──────────────────────────────────────────────
+      case 'avatar':
+        return await _executeAvatarControlSkill(skill, parameters, context);
+      case 'tts':
+        return await _executeTtsVoiceSkill(skill, parameters, context);
+      case 'device':
+        return await _executeDeviceNodeSkill(skill, parameters, context);
+      // ── Legacy PiP (system category, specific id) ─────────────────────────
       case 'system':
-        if (skill.id == 'avatar_pip') {
-          return await _executeAvatarPipSkill(skill, parameters, context);
-        }
-        return await _executeSystemSkill(skill, parameters, context);
-      case 'reminder':
-        return await _executeReminderSkill(skill, parameters, context);
-      case 'calculator':
-        return await _executeCalculatorSkill(skill, parameters, context);
-      case 'text':
-        return await _executeTextSkill(skill, parameters, context);
+        return await _executeAvatarPipSkill(skill, parameters, context);
+      // ── Partner integrations ──────────────────────────────────────────────
       case 'twilio':
         return await _executeTwilioSkill(skill, parameters, context);
       case 'agentcard':
@@ -305,7 +301,7 @@ class SkillsService {
       case 'moonpay':
         return await _executeMoonPaySkill(skill, parameters, context);
       default:
-        return await _executeGenericSkill(skill, parameters, context);
+        return SkillResult.error('No executor for category: ${skill.category}');
     }
   }
 
@@ -422,32 +418,83 @@ class SkillsService {
     }).toList();
   }
 
-  // Skill execution methods (simplified implementations)
-  Future<SkillResult> _executeWeatherSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Weather skill implementation
-    return SkillResult.success({'weather': 'Sunny, 75°F', 'location': parameters['location'] ?? 'Current'});
+  // ── Custom device-native skill executors ─────────────────────────────────
+  // These call 127.0.0.1:8765 (AgentSkillServer) which is the HTTP bridge
+  // between the gateway agent and the Flutter app's live UI state.
+
+  /// Avatar Control — change VRM model, trigger gestures, set emotions.
+  /// POST /api/avatar/control with {action, value} JSON.
+  Future<SkillResult> _executeAvatarControlSkill(
+    Skill skill,
+    Map<String, dynamic> parameters,
+    Map<String, dynamic> context,
+  ) async {
+    final action = parameters['action'] as String? ?? 'get_status';
+    try {
+      final response = await http
+          .post(
+            Uri.parse('http://127.0.0.1:8765/api/avatar/control'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'action': action, ...parameters..remove('action')}),
+          )
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return SkillResult.success(jsonDecode(response.body) as Map<String, dynamic>);
+      }
+      return SkillResult.error('Avatar control failed: HTTP ${response.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Avatar skill unreachable: $e');
+    }
   }
 
-  Future<SkillResult> _executeCryptoSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Crypto skill implementation
-    final symbol = parameters['symbol'] ?? 'BTC';
-    return SkillResult.success({'symbol': symbol, 'price': '\$45,000', 'change': '+2.5%'});
+  /// TTS Voice Control — switch engine, change voice, speak text.
+  /// POST /api/tts/control with {action, engine?, voice?, text?} JSON.
+  Future<SkillResult> _executeTtsVoiceSkill(
+    Skill skill,
+    Map<String, dynamic> parameters,
+    Map<String, dynamic> context,
+  ) async {
+    final action = parameters['action'] as String? ?? 'get_status';
+    try {
+      final response = await http
+          .post(
+            Uri.parse('http://127.0.0.1:8765/api/tts/control'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'action': action, ...parameters..remove('action')}),
+          )
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return SkillResult.success(jsonDecode(response.body) as Map<String, dynamic>);
+      }
+      return SkillResult.error('TTS control failed: HTTP ${response.statusCode}');
+    } catch (e) {
+      return SkillResult.error('TTS skill unreachable: $e');
+    }
   }
 
-  Future<SkillResult> _executeSearchSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Search skill implementation
-    final query = parameters['query'] ?? '';
-    return SkillResult.success({'query': query, 'results': ['Result 1', 'Result 2']});
-  }
-
-  Future<SkillResult> _executeFileSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // File skill implementation
-    return SkillResult.success({'files': ['file1.txt', 'file2.jpg']});
-  }
-
-  Future<SkillResult> _executeSystemSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // System skill implementation
-    return SkillResult.success({'battery': '85%', 'memory': '4GB used', 'storage': '32GB free'});
+  /// Device Node Control — vibrate, flashlight, battery, sensors.
+  /// POST /api/device/control with {action, ...params} JSON.
+  Future<SkillResult> _executeDeviceNodeSkill(
+    Skill skill,
+    Map<String, dynamic> parameters,
+    Map<String, dynamic> context,
+  ) async {
+    final action = parameters['action'] as String? ?? 'get_battery';
+    try {
+      final response = await http
+          .post(
+            Uri.parse('http://127.0.0.1:8765/api/device/control'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'action': action, ...parameters..remove('action')}),
+          )
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return SkillResult.success(jsonDecode(response.body) as Map<String, dynamic>);
+      }
+      return SkillResult.error('Device control failed: HTTP ${response.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Device skill unreachable: $e');
+    }
   }
 
   Future<SkillResult> _executeAvatarPipSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
@@ -459,23 +506,7 @@ class SkillsService {
     }
   }
 
-  Future<SkillResult> _executeReminderSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Reminder skill implementation
-    final message = parameters['message'] ?? 'Reminder set';
-    return SkillResult.success({'reminder': message, 'time': DateTime.now().add(Duration(hours: 1))});
-  }
 
-  Future<SkillResult> _executeCalculatorSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Calculator skill implementation
-    final expression = parameters['expression'] ?? '2+2';
-    return SkillResult.success({'expression': expression, 'result': '4'});
-  }
-
-  Future<SkillResult> _executeTextSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Text analysis skill implementation
-    final text = parameters['text'] ?? '';
-    return SkillResult.success({'text': text, 'length': text.length, 'words': text.split(' ').length});
-  }
 
   /// Execute Twilio Voice skill via Gateway.
   /// Response fields per Twilio REST API: phone_number (E.164), status, concurrent_sessions,
@@ -620,10 +651,7 @@ class SkillsService {
     }
   }
 
-  Future<SkillResult> _executeGenericSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Generic skill execution
-    return SkillResult.success({'message': 'Executed \${skill.name}', 'parameters': parameters});
-  }
+
 
   /// Execute MoonPay Agents skill via Gateway MCP server.
   /// MoonPay runs as an MCP server (mp mcp) inside OpenClaw.
@@ -671,281 +699,133 @@ class SkillsService {
     }
   }
 
-  // Bundled skill creators
-  Skill _createWeatherSkill() {
+  // ── Custom device-native skill creators ──────────────────────────────────
+
+  Skill _createAvatarControlSkill() {
     return Skill(
-      id: 'weather',
-      name: 'Weather Information',
-      description: 'Get current weather information for any location',
+      id: 'avatar-control',
+      name: 'Avatar Control',
+      description: 'Control the 3D live avatar: switch VRM models, trigger gestures and emotions.',
       version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'weather',
-      tags: ['weather', 'forecast', 'temperature'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: '''# Weather Skill
-
-## Description
-Provides current weather information for any location worldwide.
-
-## Usage
-- Ask "What's the weather in New York?"
-- Request "Weather forecast for London"
-- Get "Temperature in Tokyo"
-
-## Requirements
-- Internet connection
-- Location access (optional)
-
-## Returns
-- Current temperature
-- Weather conditions
-- Location information
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: true,
-    );
-  }
-
-  Skill _createCryptoPriceSkill() {
-    return Skill(
-      id: 'crypto_price',
-      name: 'Cryptocurrency Prices',
-      description: 'Get real-time cryptocurrency price information',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'crypto',
-      tags: ['crypto', 'bitcoin', 'ethereum', 'prices'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: '''# Crypto Price Skill
-
-## Description
-Provides real-time price information for cryptocurrencies.
-
-## Usage
-- Ask "What's the price of Bitcoin?"
-- Request "ETH price"
-- Get "Dogecoin value"
-
-## Requirements
-- Internet connection
-
-## Returns
-- Current price
-- 24h change
-- Market data
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: true,
-    );
-  }
-
-  Skill _createWebSearchSkill() {
-    return Skill(
-      id: 'web_search',
-      name: 'Web Search',
-      description: 'Search the web for information',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'search',
-      tags: ['search', 'web', 'google', 'information'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: '''# Web Search Skill
-
-## Description
-Search the web for information using various search engines.
-
-## Usage
-- "Search for Flutter tutorials"
-- "Find information about AI"
-- "Look up weather patterns"
-
-## Requirements
-- Internet connection
-
-## Returns
-- Search results
-- Relevant links
-- Summarized information
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: true,
-    );
-  }
-
-  Skill _createFileAnalysisSkill() {
-    return Skill(
-      id: 'file_analysis',
-      name: 'File Analysis',
-      description: 'Analyze and manage files',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'file',
-      tags: ['file', 'analysis', 'storage'],
-      requirements: [SkillRequirement(type: 'permission', value: 'storage')],
-      body: '''# File Analysis Skill
-
-## Description
-Analyze files and storage information.
-
-## Usage
-- "Show my files"
-- "Analyze this document"
-- "Storage information"
-
-## Requirements
-- Storage permission
-
-## Returns
-- File list
-- Storage usage
-- File analysis
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: true,
-    );
-  }
-
-  Skill _createSystemInfoSkill() {
-    return Skill(
-      id: 'system_info',
-      name: 'System Information',
-      description: 'Get device and system information',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'system',
-      tags: ['system', 'device', 'information'],
+      author: 'Custom',
+      category: 'avatar',
+      tags: ['avatar', 'vrm', 'gesture', '3d', 'emotion', 'animation'],
       requirements: [],
-      body: '''# System Info Skill
-
-## Description
-Provides device and system information.
-
-## Usage
-- "System information"
-- "Battery status"
-- "Device details"
-
-## Requirements
-- None
-
-## Returns
-- Device info
-- Battery status
-- Memory usage
-- Storage information
-''',
-      source: 'bundled',
+      body: '3D avatar control skill. Calls AgentSkillServer on 127.0.0.1:8765/api/avatar/control.',
+      source: 'custom',
       createdAt: DateTime.now(),
-      enabled: true,
+      enabled: _prefs.isSkillEnabled('avatar-control'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'action': {
+            'type': 'string',
+            'enum': ['change_model', 'play_gesture', 'set_emotion', 'get_status'],
+            'description': 'Avatar action to perform.',
+          },
+          'model': {
+            'type': 'string',
+            'description': 'VRM filename to load (e.g. "clawbot_v2.vrm"). Required for change_model.',
+          },
+          'gesture': {
+            'type': 'string',
+            'enum': ['wave', 'nod', 'shake', 'bow', 'idle', 'thinking', 'excited'],
+            'description': 'Gesture to play. Required for play_gesture.',
+          },
+          'emotion': {
+            'type': 'string',
+            'enum': ['happy', 'sad', 'neutral', 'surprised', 'angry'],
+            'description': 'Facial expression to set. Required for set_emotion.',
+          },
+        },
+        'required': ['action'],
+      },
     );
   }
 
-  Skill _createReminderSkill() {
+  Skill _createTtsVoiceSkill() {
     return Skill(
-      id: 'reminder',
-      name: 'Reminder System',
-      description: 'Set and manage reminders',
+      id: 'tts-voice',
+      name: 'TTS Voice Control',
+      description: 'Switch the TTS engine (Piper / ElevenLabs / OpenAI / Native) or change the active voice.',
       version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'reminder',
-      tags: ['reminder', 'alarm', 'notification'],
-      requirements: [SkillRequirement(type: 'permission', value: 'notifications')],
-      body: '''# Reminder Skill
-
-## Description
-Set and manage reminders for tasks and events.
-
-## Usage
-- "Remind me to call mom in 1 hour"
-- "Set reminder for meeting tomorrow"
-- "Alert me when battery is low"
-
-## Requirements
-- Notification permission
-
-## Returns
-- Confirmation
-- Reminder details
-- Management options
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: true,
-    );
-  }
-
-  Skill _createCalculatorSkill() {
-    return Skill(
-      id: 'calculator',
-      name: 'Calculator',
-      description: 'Perform mathematical calculations',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'calculator',
-      tags: ['math', 'calculator', 'calculation'],
+      author: 'Custom',
+      category: 'tts',
+      tags: ['tts', 'voice', 'speech', 'piper', 'elevenlabs', 'openai'],
       requirements: [],
-      body: '''# Calculator Skill
-
-## Description
-Perform mathematical calculations and expressions.
-
-## Usage
-- "Calculate 2+2"
-- "What is 15% of 200?"
-- "Square root of 144"
-
-## Requirements
-- None
-
-## Returns
-- Calculation result
-- Steps shown
-- Mathematical format
-''',
-      source: 'bundled',
+      body: 'TTS voice control skill. Calls AgentSkillServer on 127.0.0.1:8765/api/tts/control.',
+      source: 'custom',
       createdAt: DateTime.now(),
-      enabled: true,
+      enabled: _prefs.isSkillEnabled('tts-voice'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'action': {
+            'type': 'string',
+            'enum': ['set_engine', 'set_voice', 'speak', 'stop', 'get_status'],
+            'description': 'TTS action to perform.',
+          },
+          'engine': {
+            'type': 'string',
+            'enum': ['piper', 'native', 'elevenlabs', 'openai'],
+            'description': 'TTS engine to switch to. Required for set_engine.',
+          },
+          'voice': {
+            'type': 'string',
+            'description': 'Voice ID or name. For ElevenLabs: voice_id. For OpenAI: alloy/echo/fable/onyx/nova/shimmer.',
+          },
+          'text': {
+            'type': 'string',
+            'description': 'Text to speak aloud. Required for speak.',
+          },
+        },
+        'required': ['action'],
+      },
     );
   }
 
-  Skill _createTextAnalysisSkill() {
+  Skill _createDeviceNodeSkill() {
     return Skill(
-      id: 'text_analysis',
-      name: 'Text Analysis',
-      description: 'Analyze text for various metrics',
+      id: 'device-node',
+      name: 'Device Control',
+      description: 'Control device hardware: vibrate, flashlight, read sensors, get battery. Powered by the Node capabilities layer.',
       version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'text',
-      tags: ['text', 'analysis', 'writing'],
+      author: 'Custom',
+      category: 'device',
+      tags: ['device', 'vibrate', 'haptic', 'flashlight', 'battery', 'sensor', 'location', 'camera'],
       requirements: [],
-      body: '''# Text Analysis Skill
-
-## Description
-Analyze text for word count, readability, and other metrics.
-
-## Usage
-- "Analyze this text"
-- "Word count of document"
-- "Readability score"
-
-## Requirements
-- None
-
-## Returns
-- Word count
-- Character count
-- Readability metrics
-- Language detection
-''',
-      source: 'bundled',
+      body: 'Device node skill. Calls AgentSkillServer on 127.0.0.1:8765/api/device/control.',
+      source: 'custom',
       createdAt: DateTime.now(),
-      enabled: true,
+      enabled: _prefs.isSkillEnabled('device-node'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'action': {
+            'type': 'string',
+            'enum': [
+              'vibrate', 'flashlight_on', 'flashlight_off',
+              'get_battery', 'get_location', 'read_sensor', 'take_photo',
+            ],
+            'description': 'Device action. vibrate triggers haptic, get_battery returns level/charging status.',
+          },
+          'pattern': {
+            'type': 'array',
+            'items': {'type': 'integer'},
+            'description': 'Vibration pattern in ms [delay, on, off, on…]. Used with vibrate.',
+          },
+          'sensor_type': {
+            'type': 'string',
+            'enum': ['accelerometer', 'gyroscope', 'magnetometer', 'barometer'],
+            'description': 'Sensor to read. Required for read_sensor.',
+          },
+        },
+        'required': ['action'],
+      },
     );
   }
+
+  // ── Bundled skill creators ─────────────────────────────────────────────────
 
   Skill _createAvatarOverlaySkill() {
     return Skill(
