@@ -11,17 +11,12 @@ import 'status_dashboard.dart';
 import 'agent_manager.dart';
 import 'config_editor.dart';
 import 'skills_manager.dart';
-
-import 'package:clawa/widgets/glass_card.dart'; // Ensure GlassCard and NebulaBg are imported
-
+import '../../widgets/glass_card.dart';
 class BotManagementDashboard extends StatelessWidget {
   const BotManagementDashboard({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: Colors.black, // Dark base for NebulaBg
       body: Stack(
@@ -158,7 +153,7 @@ class BotManagementDashboard extends StatelessWidget {
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
         fontWeight: FontWeight.w800,
         letterSpacing: 1.2,
-        color: AppColors.statusGrey.withOpacity(0.8),
+        color: AppColors.statusGrey.withValues(alpha: 0.8),
       ),
     );
   }
@@ -202,22 +197,29 @@ class StatusSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return Consumer<GatewayProvider>(
       builder: (context, provider, _) {
-        final health = provider.detailedHealth;
-        // OpenClaw 2.x health object is flat: { ok, durationMs, agents: [], ts, ... }
+        final health    = provider.detailedHealth;
         final isHealthy = provider.state.status == GatewayStatus.running;
         final agentsCount = (health?['agents'] as List?)?.length ?? 0;
         final latency = health?['durationMs'] ?? health?['latency_ms'];
-        
-        // Calculate uptime from locally tracked startedAt if remote uptimeMs is missing
+
+        // Uptime: prefer remote field, fall back to local startedAt delta.
         int? uptimeMs = health?['uptimeMs'] as int?;
         if (uptimeMs == null && provider.state.startedAt != null && isHealthy) {
           uptimeMs = DateTime.now().difference(provider.state.startedAt!).inMilliseconds;
         }
+
+        // Skills count — gateway-confirmed active skills list.
+        final skillsCount = (provider.state.activeSkills ?? []).length;
+
+        // Tools count — number of entries in tools.allow[] parsed from config.
+        // We read from the last known config snapshot stored in detailedHealth
+        // or fall back to the _toolCatalog size (always accurate offline).
+        final toolsConfig = health?['config']?['tools']?['allow'];
+        final toolsCount  = toolsConfig is List
+            ? toolsConfig.length
+            : _ToolCountHelper.catalogSize;
 
         return GlassCard(
           padding: const EdgeInsets.all(24),
@@ -226,16 +228,16 @@ class StatusSummaryCard extends StatelessWidget {
               Row(
                 children: [
                    _buildMetric(
-                    context, 
-                    'UPTIME', 
+                    context,
+                    'UPTIME',
                     _formatUptime(uptimeMs),
                     Icons.timer_outlined,
                     AppColors.statusGreen,
                   ),
                   const Spacer(),
                   _buildMetric(
-                    context, 
-                    'HEALTH', 
+                    context,
+                    'HEALTH',
                     isHealthy ? 'Live' : 'Offline',
                     Icons.health_and_safety_outlined,
                     isHealthy ? AppColors.statusGreen : AppColors.statusRed,
@@ -246,16 +248,16 @@ class StatusSummaryCard extends StatelessWidget {
               Row(
                 children: [
                    _buildMetric(
-                    context, 
-                    'AGENTS', 
+                    context,
+                    'AGENTS',
                     agentsCount.toString(),
                     Icons.smart_toy_outlined,
                      AppColors.statusGreen,
                   ),
                   const Spacer(),
                   _buildMetric(
-                    context, 
-                    'LATENCY', 
+                    context,
+                    'LATENCY',
                     latency != null ? '${latency}ms' : '--',
                     Icons.speed_rounded,
                     AppColors.statusAmber,
@@ -265,19 +267,21 @@ class StatusSummaryCard extends StatelessWidget {
               const Divider(height: 32),
               Row(
                 children: [
+                  // SKILLS — live count of gateway-active skills
                    _buildMetric(
-                    context, 
-                    'TOOL CALLS', 
-                    health?['toolCalls']?.toString() ?? '0',
-                    Icons.bolt_rounded,
-                     Colors.purpleAccent,
+                    context,
+                    'SKILLS',
+                    isHealthy ? skillsCount.toString() : '--',
+                    Icons.extension_rounded,
+                    Colors.purpleAccent,
                   ),
                   const Spacer(),
+                  // TOOLS — tools.allow[] count from openclaw.json
                   _buildMetric(
-                    context, 
-                    'TOP SKILL', 
-                    health?['topSkill']?.toString() ?? 'None',
-                    Icons.star_outline_rounded,
+                    context,
+                    'TOOLS',
+                    isHealthy ? toolsCount.toString() : '--',
+                    Icons.build_rounded,
                     Colors.blueAccent,
                   ),
                 ],
@@ -295,7 +299,7 @@ class StatusSummaryCard extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, size: 16, color: color),
@@ -358,7 +362,7 @@ class _CategoryCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
+                  color: color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(icon, color: color, size: 28),
@@ -388,4 +392,13 @@ class _CategoryCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Provides the catalog size of gateway primitive tools so the TOOLS metric
+/// has a sensible offline value before config.get returns.
+/// Must stay in sync with the _toolCatalog list in skills_manager.dart.
+class _ToolCountHelper {
+  /// Number of entries in the _toolCatalog map in skills_manager.
+  /// Update this if you add/remove tools from that map.
+  static const int catalogSize = 19;
 }
