@@ -1347,8 +1347,8 @@ PARAMETER num_batch 512
     if (token != null && token.isNotEmpty) {
       final prefs = PreferencesService();
       await prefs.init();
-      // Use #token= instead of ?token= because OpenClaw's Control UI parses the hash fragment to avoid sending it over HTTP headers
-      final urlWithToken = '${AppConstants.gatewayUrl}/#token=$token';
+      // Use ?token= as expected by Control UI v2026.3.11
+      final urlWithToken = '${AppConstants.gatewayUrl}/?token=$token';
       prefs.dashboardUrl = urlWithToken;
       _updateState(_state.copyWith(
         dashboardUrl: urlWithToken,
@@ -1634,7 +1634,16 @@ PARAMETER num_batch 512
                     : (skillsData['skills'] ?? skillsData['items'] ?? []);
                 final parsedSkills = <Map<String, dynamic>>[];
                 final parsedIds = <String>{};
-                for (final skill in rawList as List) {
+                Iterable iterableList;
+                if (rawList is List) {
+                  iterableList = rawList;
+                } else if (rawList is Map) {
+                  iterableList = rawList.values;
+                } else {
+                  iterableList = [];
+                }
+
+                for (final skill in iterableList) {
                   if (skill is Map) {
                     final mapped = Map<String, dynamic>.from(skill);
                     parsedSkills.add(mapped);

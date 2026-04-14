@@ -76,23 +76,21 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
         }
       }
 
-      // 4. Always do a live CLI probe if we still don't have a token URL.
-      //    fetchAuthenticatedDashboardUrl now calls `openclaw dashboard --no-open`
-      //    which is the only reliable source when attaching to a running gateway.
+      // 4. Instantly grab the token directly from local OpenClaw config files.
+      // This is blazing fast (no PRoot overhead) and avoids the 1008 timeout loops.
       if (url == null || url.isEmpty || !url.contains('token=')) {
-        url = await gatewayProvider.fetchAuthenticatedDashboardUrl();
+        final gatewayService = Provider.of<GatewayService>(context, listen: false);
+        final token = await gatewayService.retrieveTokenFromConfig();
+        if (token != null && token.isNotEmpty) {
+          url = '${AppConstants.gatewayUrl}/?token=$token';
+        }
       }
     }
 
     if (!mounted) return;
 
     if (url != null && url.contains('token=')) {
-      // Control UI SPA exclusively expects the token via hash fragment (#token=) 
-      // rather than query string (?token=). Replace it firmly.
-      final safeUrl = url.contains('?token=') 
-          ? url.replaceFirst('?token=', '#token=') 
-          : url;
-      _controller.loadRequest(Uri.parse(safeUrl));
+      _controller.loadRequest(Uri.parse(url));
     } else {
       // Last resort: load bare gateway URL — will show the token entry UI.
       _controller.loadRequest(Uri.parse(AppConstants.gatewayUrl));
