@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/gateway_provider.dart';
+import '../../services/preferences_service.dart';
 import '../../app.dart';
 import '../../widgets/glass_card.dart';
 
@@ -223,13 +224,15 @@ class _AgentManagerState extends State<AgentManager> {
 
   Widget _buildAgentCard(BuildContext context, dynamic agent) {
     final identity = agent['identity'] as Map<String, dynamic>?;
-    final displayName = identity?['name'] as String?
-        ?? agent['name'] as String?
-        ?? agent['id'] as String?
-        ?? 'Unknown Agent';
-
     final agentId = (agent['id'] ?? '').toString();
     final isDefault = agentId == _defaultId || agent['isDefault'] == true;
+    
+    // Fallbacks: 1. identity name, 2. native name, 3. custom preferences name if default, 4. non-empty ID
+    final displayName = identity?['name'] as String?
+        ?? agent['name'] as String?
+        ?? (isDefault || agentId == 'main' ? PreferencesService().agentName : null)
+        ?? (agentId.isNotEmpty ? agentId : 'Unknown Agent');
+
     final emoji = identity?['emoji'] as String? ?? '🤖';
 
     return Padding(
