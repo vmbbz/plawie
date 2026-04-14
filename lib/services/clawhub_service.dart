@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/clawhub_skill.dart';
 import 'native_bridge.dart';
 
@@ -70,9 +71,41 @@ class ClawHubService {
     }
   }
 
-  /// Fetch detailed info for a single [slug].
+  /// Fetch detailed info for a single [slug] via the ClawHub REST API.
   ///
-  /// Returns null on error or if the slug is not found.
+  /// Calls `https://clawhub.ai/api/v1/skills/{slug}` directly — no PRoot,
+  /// no rate-limit window, instant (network only). Cache TTL is 30 minutes.
+  /// Returns null on any network or parse error.
+  Future<ClawHubSkill?> infoFromApi(
+    String slug, {
+    bool isInstalled = false,
+  }) async {
+    final cacheKey = 'api:$slug';
+    final cached = _cache[cacheKey];
+    if (cached != null && !cached.isExpired && cached.results.isNotEmpty) {
+      return cached.results.first.copyWith(isInstalled: isInstalled);
+    }
+    try {
+      final uri = Uri.parse('https://clawhub.ai/api/v1/skills/$slug');
+      final response = await http.get(
+        uri,
+        headers: {'Accept': 'application/json', 'User-Agent': 'plawie-app/1.0'},
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final skill = ClawHubSkill.fromApiJson(slug, decoded)
+            .copyWith(isInstalled: isInstalled);
+        _cache[cacheKey] = _CacheEntry([skill], ttl: const Duration(minutes: 30));
+        return skill;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Fetch detailed info for a single [slug] via the CLI (PRoot).
+  ///
+  /// Prefer [infoFromApi] for speed; this is a fallback when the network is
+  /// unavailable or the slug is not in the REST API.
   Future<ClawHubSkill?> info(
     String slug, {
     bool isInstalled = false,
@@ -100,17 +133,25 @@ class ClawHubService {
     }
   }
 
-  /// Fetch a set of featured/well-known slugs to pre-populate the Discover tab.
+  /// Fetch a set of featured/well-known slugs.
   ///
-  /// [slugs] should be a curated list confirmed to exist in the registry.
+  /// Strategy: try REST API first (fast, rich stats), fall back to CLI per slug.
   Future<List<ClawHubSkill>> fetchFeatured(
     List<String> slugs, {
     Set<String> installedSlugs = const {},
   }) async {
     final results = <ClawHubSkill>[];
     for (final slug in slugs) {
-      final skill = await info(slug, isInstalled: installedSlugs.contains(slug));
-      if (skill != null) results.add(skill);
+      final installed = installedSlugs.contains(slug);
+      // REST API first — fast, gives stars/downloads
+      final fromApi = await infoFromApi(slug, isInstalled: installed);
+      if (fromApi != null) {
+        results.add(fromApi);
+        continue;
+      }
+      // CLI fallback
+      final fromCli = await info(slug, isInstalled: installed);
+      if (fromCli != null) results.add(fromCli);
     }
     return results;
   }
@@ -226,7 +267,9 @@ class ClawHubService {
 class _CacheEntry {
   final List<ClawHubSkill> results;
   final DateTime _at;
-  _CacheEntry(this.results) : _at = DateTime.now();
-  bool get isExpired =>
-      DateTime.now().difference(_at) > ClawHubService._cacheTtl;
+  final Duration _ttl;
+  _CacheEntry(this.results, {Duration? ttl})
+      : _at = DateTime.now(),
+        _ttl = ttl ?? ClawHubService._cacheTtl;
+  bool get isExpired => DateTime.now().difference(_at) > _ttl;
 }

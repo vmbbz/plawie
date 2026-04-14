@@ -22,6 +22,7 @@ import 'local_llm_screen.dart';
 import '../solana_screen.dart';
 import 'bot_method_explorer.dart';
 import 'skills/skill_config_editor.dart';
+import 'skills/skill_detail_sheet.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Premium skill metadata catalogue — always rendered as cards in My Skills.
@@ -572,15 +573,26 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                             id.contains(skill.id) ||
                                             id.contains(skill.id
                                                 .replaceAll('-', '_')));
-                                if (installed) {
-                                  widget.onNavigate(skill.id);
-                                } else {
-                                  widget.onShowPrompt(skill);
-                                }
+                                // Always open detail sheet first — shows live
+                                // stats. Sheet has Open / Install CTA inside.
+                                showSkillDetailSheet(
+                                  context,
+                                  slug: skill.id,
+                                  initialName: skill.title,
+                                  initialDescription: skill.description,
+                                  isInstalled: installed,
+                                  accentColor: skill.color,
+                                  icon: skill.icon,
+                                  onInstall: installed
+                                      ? null
+                                      : (slug, name) async =>
+                                          widget.onShowPrompt(skill),
+                                );
                               },
                             ),
                           ),
                       ],
+
                     );
                   },
                 ),
@@ -670,61 +682,108 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1)),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
               child: ListTile(
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                leading: Icon(
-                  isPremium
-                      ? Icons.verified_rounded
-                      : Icons.extension_rounded,
-                  color: isPremium
-                      ? AppColors.statusGreen
-                      : AppColors.statusGrey,
-                  size: 20,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: (isPremium ? AppColors.statusGreen : Colors.blueGrey)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isPremium
+                        ? Icons.verified_rounded
+                        : Icons.extension_rounded,
+                    color: isPremium
+                        ? AppColors.statusGreen
+                        : AppColors.statusGrey,
+                    size: 18,
+                  ),
                 ),
                 title: Text(
                   skillTitle,
-                  style: GoogleFonts.firaCode(
+                  style: GoogleFonts.outfit(
                       fontSize: 13, fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(
                   skillDesc,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontSize: 10,
                       color: Colors.white.withValues(alpha: 0.4)),
                 ),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.edit_document,
-                          size: 14, color: Colors.white70),
-                      SizedBox(width: 6),
-                      Text('EDIT',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white70)),
-                    ],
+                // Tap → detail sheet with edit shortcut
+                onTap: () => showSkillDetailSheet(
+                  context,
+                  slug: skillId,
+                  initialName: skillTitle,
+                  initialDescription: skillDesc,
+                  isInstalled: true,
+                  accentColor: isPremium
+                      ? AppColors.statusGreen
+                      : Colors.blueGrey,
+                  icon: isPremium
+                      ? Icons.verified_rounded
+                      : Icons.extension_rounded,
+                  onEdit: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            SkillConfigEditor(skillId: skillId)),
                   ),
                 ),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          SkillConfigEditor(skillId: skillId)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Info chip
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.info_outline_rounded,
+                          size: 14, color: Colors.white54),
+                    ),
+                    const SizedBox(width: 6),
+                    // Edit chip
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                SkillConfigEditor(skillId: skillId)),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_document,
+                                size: 13, color: Colors.white70),
+                            SizedBox(width: 5),
+                            Text('EDIT',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white70)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1553,116 +1612,216 @@ class _DiscoverCard extends StatelessWidget {
 
   const _DiscoverCard({required this.skill, required this.onInstall});
 
+  // Icon heuristics for known slug patterns
+  IconData _iconFor(String slug) {
+    final s = slug.toLowerCase();
+    if (s.contains('weather')) return Icons.cloud_rounded;
+    if (s.contains('github') || s.contains('git')) return Icons.code_rounded;
+    if (s.contains('notion')) return Icons.article_rounded;
+    if (s.contains('tmux') || s.contains('shell')) return Icons.terminal_rounded;
+    if (s.contains('voice') || s.contains('call')) return Icons.phone_rounded;
+    if (s.contains('search') || s.contains('web')) return Icons.search_rounded;
+    if (s.contains('coding') || s.contains('code')) return Icons.developer_mode_rounded;
+    if (s.contains('summar') || s.contains('text')) return Icons.summarize_rounded;
+    if (s.contains('session') || s.contains('log')) return Icons.history_rounded;
+    if (s.contains('calendar')) return Icons.calendar_today_rounded;
+    if (s.contains('email') || s.contains('mail')) return Icons.mail_rounded;
+    if (s.contains('file') || s.contains('folder')) return Icons.folder_rounded;
+    if (s.contains('crypto') || s.contains('solana')) return Icons.currency_bitcoin_rounded;
+    if (s.contains('image') || s.contains('photo')) return Icons.image_rounded;
+    return Icons.extension_rounded;
+  }
+
+  Color _colorFor(String slug) {
+    final s = slug.toLowerCase();
+    if (s.contains('weather')) return const Color(0xFF2196F3);
+    if (s.contains('github') || s.contains('git')) return const Color(0xFF6E40C9);
+    if (s.contains('notion')) return Colors.white;
+    if (s.contains('tmux') || s.contains('shell')) return const Color(0xFF4CAF50);
+    if (s.contains('voice') || s.contains('call')) return const Color(0xFFF44336);
+    if (s.contains('coding')) return const Color(0xFF00BCD4);
+    if (s.contains('summar')) return const Color(0xFFFF9800);
+    return AppColors.statusGreen;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
+    final color = _colorFor(skill.slug);
+    final icon  = _iconFor(skill.slug);
+
+    return GestureDetector(
+      onTap: () => showSkillDetailSheet(
+        context,
+        slug: skill.slug,
+        initialName: skill.name.isNotEmpty ? skill.name : skill.slug,
+        initialDescription: skill.description,
+        isInstalled: skill.isInstalled,
+        accentColor: color,
+        icon: icon,
+        onInstall: onInstall != null
+            ? (slug, name) async => onInstall!()
+            : null,
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        decoration: BoxDecoration(
           color: skill.isInstalled
-              ? AppColors.statusGreen.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.08),
+              ? color.withValues(alpha: 0.04)
+              : Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: skill.isInstalled
+                ? color.withValues(alpha: 0.28)
+                : Colors.white.withValues(alpha: 0.07),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            // Name + meta + stats
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          skill.name.isNotEmpty ? skill.name : skill.slug,
+                          style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: Colors.white),
+                        ),
+                      ),
+                      if (skill.isInstalled)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: Text('ACTIVE',
+                              style: TextStyle(
+                                  color: color,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w900)),
+                        ),
+                    ],
+                  ),
+                  if (skill.version.isNotEmpty || skill.author.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (skill.version.isNotEmpty) 'v${skill.version}',
+                        if (skill.author.isNotEmpty) skill.author,
+                      ].join(' · '),
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.32),
+                          fontSize: 10),
+                    ),
+                  ],
+                  if (skill.description.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      skill.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                          height: 1.4),
+                    ),
+                  ],
+                  // Live stats mini-row
+                  if (skill.hasStats) ...[
+                    const SizedBox(height: 7),
+                    Row(
+                      children: [
+                        if (skill.stars != null)
+                          _miniStat(Icons.star_rounded,
+                              _fmt(skill.stars!), const Color(0xFFFFC107)),
+                        if (skill.currentInstalls != null) ...[
+                          const SizedBox(width: 10),
+                          _miniStat(Icons.devices_rounded,
+                              _fmt(skill.currentInstalls!), AppColors.statusGreen),
+                        ],
+                        if (skill.downloadCount != null) ...[
+                          const SizedBox(width: 10),
+                          _miniStat(Icons.download_rounded,
+                              _fmt(skill.downloadCount!), const Color(0xFF2196F3)),
+                        ],
+                        const Spacer(),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 16, color: Colors.white.withValues(alpha: 0.18)),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // GET button (quick install, no sheet)
+            if (!skill.isInstalled && onInstall != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onInstall,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: color.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    'GET',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.extension_rounded,
-                color: Colors.white54, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        skill.name.isNotEmpty ? skill.name : skill.slug,
-                        style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                            color: Colors.white),
-                      ),
-                    ),
-                    if (skill.isInstalled)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.statusGreen.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text('ACTIVE',
-                            style: TextStyle(
-                                color: AppColors.statusGreen,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900)),
-                      ),
-                  ],
-                ),
-                if (skill.version.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '${skill.slug}  ·  v${skill.version}'
-                    '${skill.author.isNotEmpty ? "  ·  ${skill.author}" : ""}',
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.35),
-                        fontSize: 10),
-                  ),
-                ],
-                if (skill.description.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    skill.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 12,
-                        height: 1.4),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          if (!skill.isInstalled)
-            TextButton(
-              onPressed: onInstall,
-              style: TextButton.styleFrom(
-                backgroundColor:
-                    AppColors.statusGreen.withValues(alpha: 0.12),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text(
-                'INSTALL',
-                style: TextStyle(
-                    color: AppColors.statusGreen,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8),
-              ),
-            ),
-        ],
-      ),
     );
+  }
+
+  Widget _miniStat(IconData icon, String val, Color color) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color.withValues(alpha: 0.7)),
+          const SizedBox(width: 3),
+          Text(val,
+              style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontWeight: FontWeight.w600)),
+        ],
+      );
+
+  String _fmt(int n) {
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(n >= 10000 ? 0 : 1)}k';
+    return n.toString();
   }
 }
 
 // ── Tool row (Tools tab) ──────────────────────────────────────────────────────
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool card — gateway primitive tool with category badge + description
@@ -1673,82 +1832,241 @@ class _ToolCard extends StatelessWidget {
   final _ToolMeta meta;
   const _ToolCard({required this.toolId, required this.meta});
 
-  @override
-  Widget build(BuildContext context) {
+  void _showToolDetail(BuildContext context) {
     final catColor = _categoryColors[meta.category] ?? AppColors.statusGreen;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: catColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(meta.icon, size: 16, color: catColor),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      meta.label,
-                      style: GoogleFonts.outfit(
-                          fontSize: 13, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: catColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        meta.category.toUpperCase(),
-                        style: TextStyle(
-                            color: catColor,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8),
-                      ),
-                    ),
-                  ],
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F1117),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  meta.description,
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: catColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: catColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Icon(meta.icon, color: catColor, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(meta.label,
+                          style: GoogleFonts.outfit(
+                              fontSize: 20, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: catColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${meta.category.toUpperCase()} TOOL  ·  ALWAYS ON',
+                          style: TextStyle(
+                              color: catColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppColors.statusGreen.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              'ACTIVE',
+            const SizedBox(height: 18),
+            // What is this?
+            Text('What this tool does',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                    color: Colors.white.withValues(alpha: 0.4))),
+            const SizedBox(height: 8),
+            Text(
+              meta.description,
               style: TextStyle(
-                  color: AppColors.statusGreen,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5),
+                  fontSize: 14,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  height: 1.6),
             ),
-          ),
-        ],
+            const SizedBox(height: 18),
+            // Explanation card
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.info_outline_rounded,
+                        size: 14, color: Colors.white38),
+                    const SizedBox(width: 6),
+                    Text('Skills vs Tools',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withValues(alpha: 0.55))),
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tools are OS-level permissions that the agent is '
+                    'allowed to use. Skills USE these tools to perform '
+                    'tasks. Configure which tools are active by editing '
+                    'tools.allow[] in openclaw.json.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.4),
+                        height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Config snippet
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.terminal_rounded,
+                    size: 13, color: Colors.white38),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'tools.allow[] → "$toolId"',
+                    style: GoogleFonts.firaCode(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.45)),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.check_rounded, size: 16),
+                label: const Text('Got it'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white60,
+                  side: const BorderSide(color: Colors.white12),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final catColor = _categoryColors[meta.category] ?? AppColors.statusGreen;
+    return GestureDetector(
+      onTap: () => _showToolDetail(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: catColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(meta.icon, size: 16, color: catColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        meta.label,
+                        style: GoogleFonts.outfit(
+                            fontSize: 13, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: catColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          meta.category.toUpperCase(),
+                          style: TextStyle(
+                              color: catColor,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    meta.description,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.4)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Info chevron
+            Icon(Icons.chevron_right_rounded,
+                size: 18, color: Colors.white.withValues(alpha: 0.18)),
+          ],
+        ),
       ),
     );
   }
