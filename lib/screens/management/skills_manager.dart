@@ -764,12 +764,17 @@ class _DiscoverTabState extends State<_DiscoverTab>
   Set<String> _installedSlugs = {};
 
   // Curated featured slugs shown before the user searches.
-  // These should be confirmed valid registry slugs (update as Grok verifies more).
+  // These are confirmed to exist in the ClawHub NPM registry
+  // (all appear in the user's active gateway skills list).
   static const _featuredSlugs = <String>[
-    'local-llm',
-    'solana-agent',
-    'browser-use',
-    'code-sandbox',
+    'weather',
+    'github',
+    'coding-agent',
+    'summarize',
+    'session-logs',
+    'voice-call',
+    'tmux',
+    'notion',
   ];
 
   @override
@@ -978,9 +983,105 @@ class _DiscoverTabState extends State<_DiscoverTab>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab 3 — Tools
-// Live view of the gateway's openclaw.json tools.allow list.
-// Zero hardcoding.
+//
+// SKILLS vs TOOLS — the distinction that matters:
+//
+//   SKILLS   = npm packages that give the agent NEW CAPABILITIES
+//              (weather, github, voice-call, coding-agent, ...)
+//              Installed via: openclaw skills install <name>
+//              Live in:       node_modules/@openclaw/<name>/
+//
+//   TOOLS    = PRIMITIVES the agent is PERMITTED to invoke
+//              (browser, computer, files, search, shell, ...)
+//              Configured in: openclaw.json → tools.allow[]
+//              Think of them as the agent's OS-level permissions.
+//              Skills USE tools. They're different layers.
+//
+// This tab shows both:
+//   • Gateway tools   — from openclaw.json → live gateway capabilities
+//   • Custom skills   — your device-native skills (avatar, TTS, hardware)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Full catalog of known OpenClaw primitive tools with descriptions.
+const _toolCatalog = <String, _ToolMeta>{
+  'browser':       _ToolMeta('Web Browser',       'Navigate URLs, extract content, fill forms', Icons.language_rounded,        'core'),
+  'computer':      _ToolMeta('Computer Use',       'Execute shell commands and scripts',          Icons.code_rounded,             'core'),
+  'files':         _ToolMeta('File System',         'Read, write and list local files',            Icons.folder_open_rounded,      'core'),
+  'memory':        _ToolMeta('Memory Store',        'Persist facts and recall context across sessions', Icons.psychology_rounded,  'core'),
+  'search':        _ToolMeta('Web Search',          'Search the web and fetch results',            Icons.search_rounded,           'network'),
+  'image':         _ToolMeta('Image Generation',    'Generate images via local or cloud model',    Icons.palette_rounded,          'ai'),
+  'canvas':        _ToolMeta('Canvas / Web UI',     'Render interactive web UIs in the canvas',   Icons.draw_rounded,             'ui'),
+  'solana':        _ToolMeta('Solana Web3',         'Sign transactions and query on-chain data',   Icons.currency_bitcoin_rounded, 'web3'),
+  'calculator':    _ToolMeta('Calculator',          'Evaluate mathematical expressions',           Icons.calculate_rounded,        'core'),
+  'calendar':      _ToolMeta('Calendar',            'Read and create calendar events',             Icons.calendar_today_rounded,   'device'),
+  'weather':       _ToolMeta('Weather',             'Fetch current conditions and forecasts',      Icons.cloud_rounded,            'network'),
+  'shell':         _ToolMeta('Terminal Shell',      'Run arbitrary shell commands in PRoot',       Icons.terminal_rounded,         'core'),
+  'twilio':        _ToolMeta('Twilio Voice',        'Make/receive calls via ConversationRelay',    Icons.phone_rounded,            'network'),
+  'crypto':        _ToolMeta('Crypto Prices',       'Fetch live token prices and market data',     Icons.currency_exchange_rounded,'network'),
+  'camera':        _ToolMeta('Camera',              'Capture photos and video via device camera',  Icons.camera_alt_rounded,       'device'),
+  'location':      _ToolMeta('Location',            'Read device GPS coordinates',                 Icons.location_on_rounded,      'device'),
+  'screen':        _ToolMeta('Screen Recording',    'Record or share the device screen',           Icons.screen_share_rounded,     'device'),
+  'haptic':        _ToolMeta('Haptics',             'Trigger vibration and haptic patterns',       Icons.vibration_rounded,        'device'),
+  'sensor':        _ToolMeta('Sensors',             'Read accelerometer, gyroscope, barometer',    Icons.sensors_rounded,          'device'),
+};
+
+const _categoryColors = <String, Color>{
+  'core':    Color(0xFF4CAF50),
+  'network': Color(0xFF2196F3),
+  'ai':      Color(0xFF9C27B0),
+  'web3':    Color(0xFF9945FF),
+  'device':  Color(0xFFFF9800),
+  'ui':      Color(0xFF00BCD4),
+};
+
+/// Metadata entry for the tool catalog.
+class _ToolMeta {
+  final String label;
+  final String description;
+  final IconData icon;
+  final String category;
+  const _ToolMeta(this.label, this.description, this.icon, this.category);
+}
+
+// Custom device-native skills (source: 'custom' in SkillsService)
+const _customSkills = <_CustomSkillInfo>[
+  _CustomSkillInfo(
+    id: 'avatar-control',
+    label: 'Avatar Control',
+    description: 'Switch 3D VRM model, trigger gestures (wave, nod, bow…), set facial emotions. Wired to the live VrmAvatarWidget via AgentSkillServer.',
+    icon: Icons.face_retouching_natural_rounded,
+    actions: ['change_model', 'play_gesture', 'set_emotion', 'get_status'],
+  ),
+  _CustomSkillInfo(
+    id: 'tts-voice',
+    label: 'TTS Voice Control',
+    description: 'Switch TTS engine (Piper / ElevenLabs / OpenAI / Native), change voice, or speak text from the agent. Wired to TtsService.',
+    icon: Icons.record_voice_over_rounded,
+    actions: ['set_engine', 'set_voice', 'speak', 'stop', 'get_status'],
+  ),
+  _CustomSkillInfo(
+    id: 'device-node',
+    label: 'Device Control',
+    description: 'Vibrate, toggle flashlight, read battery level, get GPS, read sensors. Powered by the NodeProvider hardware capability layer.',
+    icon: Icons.phonelink_setup_rounded,
+    actions: ['vibrate', 'flashlight_on', 'flashlight_off', 'get_battery', 'get_location', 'read_sensor'],
+  ),
+];
+
+class _CustomSkillInfo {
+  final String id;
+  final String label;
+  final String description;
+  final IconData icon;
+  final List<String> actions;
+  const _CustomSkillInfo({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.actions,
+  });
+}
 
 class _ToolsTab extends StatefulWidget {
   const _ToolsTab();
@@ -990,25 +1091,7 @@ class _ToolsTab extends StatefulWidget {
 }
 
 class _ToolsTabState extends State<_ToolsTab> {
-  // Stored once in initState so FutureBuilder never re-fires on gateway rebuilds.
   late final Future<List<String>> _toolsFuture;
-
-  static const _iconMap = {
-    'browser': Icons.language_rounded,
-    'computer': Icons.code_rounded,
-    'files': Icons.folder_open_rounded,
-    'memory': Icons.memory_rounded,
-    'image': Icons.palette_rounded,
-    'solana': Icons.currency_bitcoin_rounded,
-    'canvas': Icons.draw_rounded,
-    'search': Icons.search_rounded,
-    'calculator': Icons.calculate_rounded,
-    'calendar': Icons.calendar_today_rounded,
-    'weather': Icons.cloud_rounded,
-    'crypto': Icons.currency_exchange_rounded,
-    'twilio': Icons.phone_rounded,
-    'shell': Icons.terminal_rounded,
-  };
 
   @override
   void initState() {
@@ -1016,12 +1099,12 @@ class _ToolsTabState extends State<_ToolsTab> {
     _toolsFuture = OpenClawCommandService.getCoreTools();
   }
 
-  IconData _iconFor(String toolId) {
+  _ToolMeta _metaFor(String toolId) {
     final lower = toolId.toLowerCase();
-    for (final entry in _iconMap.entries) {
+    for (final entry in _toolCatalog.entries) {
       if (lower.contains(entry.key)) return entry.value;
     }
-    return Icons.extension_rounded;
+    return _ToolMeta(toolId, 'OpenClaw gateway tool', Icons.extension_rounded, 'core');
   }
 
   @override
@@ -1036,7 +1119,7 @@ class _ToolsTabState extends State<_ToolsTab> {
           return const Center(child: CircularProgressIndicator(strokeWidth: 2));
         }
 
-        // Prefer live gateway capabilities if available, fall back to config file
+        // Prefer live capabilities; fall back to openclaw.json config
         final liveCapabilities = gatewayState.capabilities;
         final tools = liveCapabilities?.isNotEmpty == true
             ? liveCapabilities!
@@ -1044,103 +1127,198 @@ class _ToolsTabState extends State<_ToolsTab> {
 
         return CustomScrollView(
           slivers: [
+            // ── Skills–Tools explainer ────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _sectionLabel('ACTIVE GATEWAY TOOLS'),
-                        if (!isOffline)
-                          GestureDetector(
-                            onTap: () {
-                              context.read<GatewayProvider>().refreshRpcDiscovery();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Refreshing gateway tools…'),
-                                  duration: Duration(seconds: 2),
+                    _sectionLabel('CAPABILITY LAYER'),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              _pill('SKILLS', const Color(0xFF4CAF50)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'npm packages that give the agent new capabilities',
+                                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.55)),
                                 ),
-                              );
-                            },
-                            child: Row(
-                              children: [
-                                const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
-                                const SizedBox(width: 4),
-                                Text('REFRESH', style: TextStyle(fontSize: 10, letterSpacing: 1.2, color: AppColors.statusGreen.withValues(alpha: 0.85))),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Tools enabled in your running OpenClaw instance',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 12,
-                      ),
-                    ),
-                    if (isOffline) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: AppColors.statusAmber.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: AppColors.statusAmber
-                                  .withValues(alpha: 0.25)),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.power_off_rounded,
-                                size: 14, color: AppColors.statusAmber),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Gateway offline — showing last known config',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.statusAmber),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _pill('TOOLS', const Color(0xFF2196F3)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'OS-level primitives the agent is permitted to invoke\n(configured in openclaw.json → tools.allow)',
+                                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.55), height: 1.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _pill('CUSTOM', const Color(0xFFFF9800)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'App-native skills bridged via AgentSkillServer (127.0.0.1:8765)',
+                                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.55)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 20),
+                    ),
                   ],
                 ),
               ),
             ),
+
+            // ── Custom device-native skills ───────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                child: _sectionLabel('CUSTOM APP SKILLS'),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                child: Text(
+                  'Device-native skills wired directly into the Flutter app — executed via AgentSkillServer on loopback port 8765.',
+                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.38), height: 1.5),
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _CustomSkillCard(info: _customSkills[i]),
+                  ),
+                  childCount: _customSkills.length,
+                ),
+              ),
+            ),
+
+            // ── Gateway tools header ──────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _sectionLabel('GATEWAY TOOLS (openclaw.json)'),
+                    if (!isOffline)
+                      GestureDetector(
+                        onTap: () {
+                          context.read<GatewayProvider>().refreshRpcDiscovery();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Refreshing gateway tools…'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
+                            const SizedBox(width: 4),
+                            Text('REFRESH',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    letterSpacing: 1.2,
+                                    color: AppColors.statusGreen.withValues(alpha: 0.85))),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                child: Text(
+                  'Primitive capabilities the agent can invoke. Edit tools.allow in openclaw.json to add or remove.',
+                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.38), height: 1.5),
+                ),
+              ),
+            ),
+
+            // ── Gateway offline notice ───────────────────────────────────
+            if (isOffline)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusAmber.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.statusAmber.withValues(alpha: 0.25)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.power_off_rounded, size: 14, color: AppColors.statusAmber),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Gateway offline — showing last known config',
+                            style: TextStyle(fontSize: 12, color: AppColors.statusAmber),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Tool cards ───────────────────────────────────────────────
             if (tools.isEmpty)
               SliverToBoxAdapter(
                 child: _EmptyState(
                   icon: Icons.build_circle_outlined,
                   message: isOffline
                       ? 'Start your gateway to view active tools'
-                      : 'No tools listed in openclaw.json',
+                      : 'No tools listed in openclaw.json → tools.allow',
                 ),
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, i) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: _ToolRow(
-                          toolId: tools[i], icon: _iconFor(tools[i])),
+                      child: _ToolCard(toolId: tools[i], meta: _metaFor(tools[i])),
                     ),
                     childCount: tools.length,
                   ),
                 ),
               ),
-            // ── RPC explorer quick-jump ────────────────────────────────────
+
+            // ── RPC explorer quick-jump ───────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
@@ -1148,11 +1326,9 @@ class _ToolsTabState extends State<_ToolsTab> {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const BotMethodExplorer(
-                            initialFilter: 'skills')),
+                        builder: (_) => const BotMethodExplorer(initialFilter: 'skills')),
                   ),
-                  icon: const Icon(Icons.terminal_rounded,
-                      size: 18, color: Colors.purpleAccent),
+                  icon: const Icon(Icons.terminal_rounded, size: 18, color: Colors.purpleAccent),
                   label: Text(
                     'EXPLORE RPC METHODS',
                     style: GoogleFonts.outfit(
@@ -1163,10 +1339,8 @@ class _ToolsTabState extends State<_ToolsTab> {
                   ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.all(18),
-                    side: BorderSide(
-                        color: Colors.purpleAccent.withValues(alpha: 0.3)),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20)),
+                    side: BorderSide(color: Colors.purpleAccent.withValues(alpha: 0.3)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),
                 ),
               ),
@@ -1176,7 +1350,26 @@ class _ToolsTabState extends State<_ToolsTab> {
       },
     );
   }
+
+  Widget _pill(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
+        ),
+      );
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared small widgets
@@ -1471,22 +1664,75 @@ class _DiscoverCard extends StatelessWidget {
 
 // ── Tool row (Tools tab) ──────────────────────────────────────────────────────
 
-class _ToolRow extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool card — gateway primitive tool with category badge + description
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ToolCard extends StatelessWidget {
   final String toolId;
-  final IconData icon;
-  const _ToolRow({required this.toolId, required this.icon});
+  final _ToolMeta meta;
+  const _ToolCard({required this.toolId, required this.meta});
 
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) {
+    final catColor = _categoryColors[meta.category] ?? AppColors.statusGreen;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+      ),
+      child: Row(
         children: [
-          Icon(icon, size: 14, color: AppColors.statusGrey),
-          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: catColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(meta.icon, size: 16, color: catColor),
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              toolId,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      meta.label,
+                      style: GoogleFonts.outfit(
+                          fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: catColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        meta.category.toUpperCase(),
+                        style: TextStyle(
+                            color: catColor,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  meta.description,
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+                ),
+              ],
             ),
           ),
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
@@ -1503,7 +1749,113 @@ class _ToolRow extends StatelessWidget {
             ),
           ),
         ],
-      );
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom skill card — app-native skill with action chips
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CustomSkillCard extends StatelessWidget {
+  final _CustomSkillInfo info;
+  const _CustomSkillCard({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xFFFF9800);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(info.icon, size: 16, color: color),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(info.label,
+                        style: GoogleFonts.outfit(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text(
+                      'AgentSkillServer · 127.0.0.1:8765',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'CUSTOM',
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            info.description,
+            style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.45),
+                height: 1.5),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: info.actions
+                .map((a) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1)),
+                      ),
+                      child: Text(
+                        a,
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                            color: Colors.white.withValues(alpha: 0.6)),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Local LLM pinned card ─────────────────────────────────────────────────────
