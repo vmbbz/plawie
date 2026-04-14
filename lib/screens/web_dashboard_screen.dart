@@ -4,6 +4,7 @@ import '../constants.dart';
 import 'package:provider/provider.dart';
 import '../providers/gateway_provider.dart';
 import '../services/preferences_service.dart';
+import '../services/gateway_service.dart';
 
 class WebDashboardScreen extends StatefulWidget {
   final String? url;
