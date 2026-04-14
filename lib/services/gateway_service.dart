@@ -487,10 +487,18 @@ PARAMETER num_batch 512
     ];
     config['gateway']['mode'] = 'local';
     
-    // ENODEV FIX: Remove invalid config keys that cause OpenClaw errors
-    // These keys are not recognized by OpenClaw and cause config validation failures
+    // ENODEV FIX: Use official OpenClaw config schema
+    // Prevent eth0 ENODEV errors with valid network binding
+    config['gateway']['bind'] = 'loopback';  // localhost-only binding
     
-    // ENODEV FIX: Don't add invalid discovery config keys
+    // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
+    config['discovery'] ??= {};
+    config['discovery']['mdns'] ??= {};
+    config['discovery']['mdns']['mode'] = 'off';  // disable mDNS/Bonjour
+    
+    // WIDE-AREA FIX: Disable DNS-SD discovery
+    config['discovery']['wideArea'] ??= {};
+    config['discovery']['wideArea']['enabled'] = false;
     
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
