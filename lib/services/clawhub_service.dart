@@ -57,13 +57,30 @@ class ClawHubService {
     }
 
     try {
+      // Bug 4 fix: npx clawhub search often times out or fails in PRoot.
+      // Use the native openclaw gateway CLI. It already wraps the registry.
       final raw = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'npx --yes clawhub search "${_sanitize(query)}" 2>&1',
-        timeout: 30,
+        'openclaw skills search "${_sanitize(query)}" --json 2>/dev/null || '
+        'openclaw skill search "${_sanitize(query)}" --json 2>/dev/null',
+        timeout: 20,
       );
-      _parseRateLimit(raw);
-      final skills = _parseOutput(raw);
+      
+      List<ClawHubSkill> skills = [];
+      if (raw.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw.trim());
+          if (decoded is List) {
+             skills = decoded
+                 .whereType<Map<String, dynamic>>()
+                 .map(ClawHubSkill.fromJson)
+                 .toList();
+          }
+        } catch (_) {
+           // Fallback to old text parsing
+           skills = _parseOutput(raw);
+        }
+      }
+      
       _cache[cacheKey] = _CacheEntry(skills);
       return _markInstalled(skills, installedSlugs);
     } catch (_) {
