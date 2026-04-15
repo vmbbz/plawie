@@ -201,7 +201,7 @@ The Web Dashboard opens OpenClaw's built-in admin UI inside a secure WebView. Au
 
 ```
 Flow: Gateway running → [Background] openclaw dashboard --no-open
-      → Token cached → WebView loads with ?token=<live-token>
+      → Token cached → WebView loads with #token=<live-token>
 ```
 
 ---

@@ -77,14 +77,11 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
         }
       }
 
-      // 4. Instantly grab the token directly from local OpenClaw config files.
-      // This is blazing fast (no PRoot overhead) and avoids the 1008 timeout loops.
+      // 4. Always do a live CLI probe if we still don't have a token URL.
+      //    This is required because OpenClaw generates dynamic WebSocket session
+      //    tokens in memory — they are NOT saved in openclaw.json.
       if (url == null || url.isEmpty || !url.contains('token=')) {
-        final gatewayService = Provider.of<GatewayService>(context, listen: false);
-        final token = await gatewayService.retrieveTokenFromConfig();
-        if (token != null && token.isNotEmpty) {
-          url = '${AppConstants.gatewayUrl}/?token=$token';
-        }
+        url = await gatewayProvider.fetchAuthenticatedDashboardUrl();
       }
     }
 

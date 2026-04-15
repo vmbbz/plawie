@@ -476,15 +476,24 @@ class _MySkillsTabState extends State<_MySkillsTab> {
       return widget.premiumSkills.firstWhere(
         (p) =>
             p.id == id || id.contains(p.id.replaceAll('-', '_')),
-        orElse: () => _SkillEntry(
-          id: id,
-          title: (s['title'] ?? s['name'] ?? id).toString(),
-          subtitle: (s['author'] ?? 'Plugin').toString(),
-          description:
-              (s['description'] ?? 'An installed OpenClaw skill.').toString(),
-          icon: Icons.extension_rounded,
-          color: Colors.blueGrey,
-        ),
+        orElse: () {
+          final title = (s['title'] ?? s['name'] ?? id).toString();
+          final author = (s['author'] ?? 'Plugin').toString();
+          final String desc;
+          if (s['description'] != null && s['description'].toString().isNotEmpty) {
+             desc = s['description'].toString();
+          } else {
+             desc = 'An installed OpenClaw skill.';
+          }
+          return _SkillEntry(
+            id: id,
+            title: title,
+            subtitle: author,
+            description: desc,
+            icon: Icons.extension_rounded,
+            color: Colors.blueGrey,
+          );
+        },
       );
     }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
 
@@ -891,7 +900,12 @@ class _DiscoverTabState extends State<_DiscoverTab>
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !_searched) {
+        setState(() {
+          _results = [];
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -931,7 +945,10 @@ class _DiscoverTabState extends State<_DiscoverTab>
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() {
+         _results = [];
+         _loading = false;
+      });
     }
   }
 
@@ -1168,21 +1185,21 @@ class _ToolsTabState extends State<_ToolsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final gatewayState = context.watch<GatewayProvider>().state;
+    final isOffline = gatewayState.status == GatewayStatus.stopped;
+    
+    // Prefer live capabilities from gateway RPC, fall back to Future snapshot if offline
+    final liveCapabilities = gatewayState.capabilities;
+    final hasLiveCaps = liveCapabilities != null && liveCapabilities.isNotEmpty;
+
     return FutureBuilder<List<String>>(
       future: _toolsFuture,
       builder: (context, snap) {
-        final gatewayState = context.watch<GatewayProvider>().state;
-        final isOffline = gatewayState.status == GatewayStatus.stopped;
-
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (!hasLiveCaps && snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(strokeWidth: 2));
         }
 
-        // Prefer live capabilities; fall back to openclaw.json config
-        final liveCapabilities = gatewayState.capabilities;
-        final tools = liveCapabilities?.isNotEmpty == true
-            ? liveCapabilities!
-            : snap.data ?? [];
+        final tools = hasLiveCaps ? liveCapabilities : snap.data ?? [];
 
         return CustomScrollView(
           slivers: [
@@ -1566,6 +1583,19 @@ class _ServiceCard extends StatelessWidget {
                           fontSize: 10,
                           fontWeight: FontWeight.w500),
                     ),
+                    if (skill.description.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        skill.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w400,
+                            height: 1.2),
+                      ),
+                    ],
                   ],
                 ),
               ),

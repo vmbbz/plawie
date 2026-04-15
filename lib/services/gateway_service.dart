@@ -146,7 +146,8 @@ PARAMETER num_batch 512
     _updateState(_state.copyWith(logs: logs));
   }
 
-  static final _tokenUrlRegex = RegExp(r'https?://(?:localhost|127\.0\.0\.1):\d+/[^\s]*[#?]token=[0-9a-fA-F\-]+');
+  // Matches terminal Dashboard URL: supports localhost, 127.0.0.1, 0.0.0.0, and arbitrary IP addresses.
+  static final _tokenUrlRegex = RegExp(r'https?://[a-zA-Z0-9\.\-]+:\d+/[^\s]*[#?]token=[^\s&]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
 
   /// Strip ANSI, box-drawing chars, and whitespace to reconstruct URLs
@@ -1299,62 +1300,80 @@ PARAMETER num_batch 512
   /// logs (captured by _subscribeLogs) or via `openclaw dashboard --no-open`.
   /// When attaching to an already-running gateway, no fresh startup logs exist, so we
   /// MUST call the CLI to retrieve the live token.
+  /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
+  /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
   Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
-    // Fast path: token already captured from startup logs or a prior CLI call.
+    // If we already have a tokenized URL and aren't forcing, return it immediately
     if (!force && _state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
       return _state.dashboardUrl;
     }
 
-    // ── Primary: call `openclaw dashboard --no-open` to get the live token ──
-    // This is the ONLY reliable source when attaching to an already-running gateway
-    // (no startup logs replay) or after the token was not yet emitted to logs.
+    _updateState(_state.copyWith(
+      logs: [..._state.logs, '[DEBUG] Probing gateway config for auth token...']
+    ));
+
+    // STEP 1: Try reading token directly from config file.
+    // This is isolated in its own try/catch so proot errors don't produce a false [ERROR] log.
+    String? token;
     try {
-      final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw dashboard --no-open 2>/dev/null || true',
-        timeout: 8,
-      );
-      // Output contains a line like:
-      //   http://127.0.0.1:18789/?token=<uuid>
-      // or with a fragment:
-      //   http://127.0.0.1:18789/#token=<uuid>
-      final cleanOutput = _cleanForUrl(output);
-      final urlMatch = _tokenUrlRegex.firstMatch(cleanOutput);
-      if (urlMatch != null) {
-        final dashboardUrl = urlMatch.group(0)!;
-        // Extract and cache the raw token for WebSocket / HTTP auth.
-        final tokenUri = Uri.parse(dashboardUrl.replaceAll('#', '?'));
-        final liveToken = tokenUri.queryParameters['token'];
-        if (liveToken != null && liveToken.isNotEmpty) {
-          _cachedToken = liveToken;
-          _lastTokenFetch = DateTime.now();
-        }
-        final prefs = PreferencesService();
-        await prefs.init();
-        prefs.dashboardUrl = dashboardUrl;
-        _updateState(_state.copyWith(
-          dashboardUrl: dashboardUrl,
-          logs: [..._state.logs, '[INFO] Gateway auth token retrieved via dashboard CLI.'],
-        ));
-        return dashboardUrl;
-      }
+      token = await retrieveTokenFromConfig();
     } catch (_) {
-      // CLI call failed — fall through to config-file probe
+      // Silently swallow — proot may throw uv_interface_addresses errors on some devices.
+      // We'll fall through to the CLI probe below.
     }
 
-    // ── Secondary: read token from openclaw.json (rarely present, but try) ──
-    String? token = await retrieveTokenFromConfig();
     if (token != null && token.isNotEmpty) {
       final prefs = PreferencesService();
       await prefs.init();
-      // Use ?token= as expected by Control UI v2026.3.11
-      final urlWithToken = '${AppConstants.gatewayUrl}/?token=$token';
+      // Construct the authenticated URL
+      final baseUrl = _state.dashboardUrl ?? AppConstants.gatewayUrl;
+      
+      // Sanitize the baseUrl: brutally strip out any fragments (#) or query params (?)
+      // This prevents malformed URLs from stacking parameters (e.g. /#token=.../?token=...&token=...)
+      var sanitizedBaseUrl = baseUrl.split('#').first.split('?').first;
+      
+      // Remove any trailing slashes to unify exact domain formatting
+      while (sanitizedBaseUrl.endsWith('/')) {
+        sanitizedBaseUrl = sanitizedBaseUrl.substring(0, sanitizedBaseUrl.length - 1);
+      }
+      
+      // A clean gateway dashboard URL requires /#token= for the SPA frontend
+      final urlWithToken = '$sanitizedBaseUrl/#token=$token';
       prefs.dashboardUrl = urlWithToken;
       _updateState(_state.copyWith(
         dashboardUrl: urlWithToken,
-        logs: [..._state.logs, '[INFO] Gateway auth token from config (fallback).'],
+        logs: [..._state.logs, '[INFO] Gateway auth token acquired from config.'],
       ));
       return urlWithToken;
+    }
+
+    // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
+    try {
+      final output = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw dashboard --no-open',
+        timeout: 10
+      );
+      final urlMatch = _tokenUrlRegex.firstMatch(output);
+
+      if (urlMatch != null) {
+        final url = urlMatch.group(0);
+        final prefs = PreferencesService();
+        await prefs.init();
+        prefs.dashboardUrl = url;
+        _updateState(_state.copyWith(
+          dashboardUrl: url,
+          logs: [..._state.logs, '[INFO] Gateway auth token acquired via CLI.'],
+        ));
+        return url;
+      } else {
+        _updateState(_state.copyWith(
+          logs: [..._state.logs, '[WARN] Dashboard probe failed to find token. Ensure openclaw is starting correctly.']
+        ));
+      }
+    } catch (e) {
+      _updateState(_state.copyWith(
+        logs: [..._state.logs, '[WARN] CLI dashboard probe failed: $e']
+      ));
     }
 
     return _state.dashboardUrl;
@@ -1366,7 +1385,7 @@ PARAMETER num_batch 512
   /// Direct I/O: Retrieve token from config file (instant, no proot)
   Future<String?> retrieveTokenFromConfig({bool force = false}) async {
     if (!force && _cachedToken != null && _lastTokenFetch != null &&
-        DateTime.now().difference(_lastTokenFetch!).inSeconds < 60) {
+        DateTime.now().difference(_lastTokenFetch!).inMinutes < 5) {
       return _cachedToken;
     }
 
@@ -1396,7 +1415,6 @@ PARAMETER num_batch 512
 
     return null;
   }
-
 
 
   /// Reset the RPC discovery flag so the next health-check tick re-runs
@@ -1467,12 +1485,15 @@ PARAMETER num_batch 512
       _connection!.stateStream.listen((wsState) {
         final connected = wsState == GatewayConnectionState.connected;
         if (connected) _pairingResolveAttempted = false; // Reset on success
-        if (!connected) _sessionCleanedThisConnection = false; // Allow cleanup on next reconnect
+        if (!connected) {
+          _sessionCleanedThisConnection = false; // Allow cleanup on next reconnect
+          _rpcDiscoveryDone = false; // Bug 1 fix: Reset RPC discovery flag on WS disconnect
+        }
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
           logs: connected
               ? [..._state.logs, '[INFO] WebSocket connected (session: ${_connection?.mainSessionKey ?? 'pending'})']
-              : _state.logs,
+              : [..._state.logs, '[WARN] WebSocket disconnected'],
         ));
       });
       _connection!.pairingRequiredStream.listen((_) => _handleOperatorPairingRequired());
@@ -1634,16 +1655,7 @@ PARAMETER num_batch 512
                     : (skillsData['skills'] ?? skillsData['items'] ?? []);
                 final parsedSkills = <Map<String, dynamic>>[];
                 final parsedIds = <String>{};
-                Iterable iterableList;
-                if (rawList is List) {
-                  iterableList = rawList;
-                } else if (rawList is Map) {
-                  iterableList = rawList.values;
-                } else {
-                  iterableList = [];
-                }
-
-                for (final skill in iterableList) {
+                for (final skill in rawList as List) {
                   if (skill is Map) {
                     final mapped = Map<String, dynamic>.from(skill);
                     parsedSkills.add(mapped);
@@ -1660,6 +1672,19 @@ PARAMETER num_batch 512
                 ));
               }
             } catch (_) {}
+          }
+
+          // Bug 2 fix: Capabilities (tools.allow) discovery from config since capabilities.list RPC doesn't exist
+          try {
+            final cfg = await _readConfig();
+            if (cfg != null && cfg['tools'] is Map && cfg['tools']['allow'] is List) {
+              final toolsList = (cfg['tools']['allow'] as List).map((e) => e.toString()).toList();
+              _updateState(_state.copyWith(capabilities: toolsList));
+            } else {
+               _updateState(_state.copyWith(capabilities: []));
+            }
+          } catch (_) {
+             _updateState(_state.copyWith(capabilities: []));
           }
         }
       }
@@ -2068,7 +2093,9 @@ PARAMETER num_batch 512
       'id': requestId,
     });
 
-    final frame = await responseStream.first.timeout(const Duration(seconds: 30));
+    final frame = await responseStream.firstWhere(
+      (f) => f['type'] == 'res' || f['type'] == 'error',
+    ).timeout(const Duration(seconds: 30));
     return frame;
   }
 
