@@ -293,9 +293,10 @@ class GatewayConnection {
         }
 
         _eventController.add(frame);
-        // Also broadcast to any pending request handlers
-        for (final controller in _pendingRequests.values) {
-          controller.add(frame);
+        // Only route targeted events (like stream chunks) to the specific request ID
+        final id = frame['id'] as String?;
+        if (id != null && _pendingRequests.containsKey(id)) {
+          _pendingRequests[id]!.add(frame);
         }
         return;
       }
