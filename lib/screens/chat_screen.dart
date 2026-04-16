@@ -28,6 +28,7 @@ import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/gateway_service.dart';
+import '../services/agent_skill_server.dart';
 import 'management/local_llm_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -133,6 +134,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
+    // Wire AgentSkillServer callbacks so agent-controlled avatar changes
+    // reflect immediately in the live chat UI (singleton shares state with main()).
+    AgentSkillServer.instance.onAvatarChanged = (file) {
+      if (mounted) setState(() => _selectedAvatar = file);
+    };
+    AgentSkillServer.instance.onGesturePlayed = (gesture) {
+      if (mounted) setState(() => _currentGesture = gesture);
+    };
+    AgentSkillServer.instance.onEmotionSet = (_) {}; // handled by avatar_scene.html
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -652,6 +662,38 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
 
     String fullResponse = '';
+    // <think> block parser state — strips Qwen/DeepSeek reasoning tokens from the
+    // main response and accumulates them separately for the collapsible Reasoning UI.
+    // Uses a raw-buffer approach so tags split across chunks are handled correctly.
+    String rawBuffer = '';      // all tokens accumulated, including <think> tags
+    String thinkBuffer = '';    // text inside <think>…</think>
+
+    /// Process one new chunk: appends to [rawBuffer], re-parses the full raw text,
+    /// and returns only the visible (non-think) portion. Updates [thinkBuffer].
+    String parseThinkChunk(String chunk) {
+      rawBuffer += chunk;
+      final out = StringBuffer();
+      final think = StringBuffer();
+      bool inThink = false;
+      int i = 0;
+      while (i < rawBuffer.length) {
+        if (!inThink && rawBuffer.startsWith('<think>', i)) {
+          inThink = true;
+          i += 7;
+        } else if (inThink && rawBuffer.startsWith('</think>', i)) {
+          inThink = false;
+          i += 8;
+        } else if (inThink) {
+          think.write(rawBuffer[i]);
+          i++;
+        } else {
+          out.write(rawBuffer[i]);
+          i++;
+        }
+      }
+      thinkBuffer = think.toString();
+      return out.toString();
+    }
 
     try {
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
@@ -754,10 +796,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           break; // Stop listening to this stream
         }
         
+        // Strip <think> blocks from visible text; thinkBuffer gets the reasoning.
+        // parseThinkChunk re-parses rawBuffer each call so split-tag chunks work.
+        fullResponse = parseThinkChunk(chunk);
+
         setState(() {
           _isThinking = false; // Stopped thinking, started talking
           _speechIntensity = chunk.length > 2 ? 0.8 : 0.3; // Simulate mouth movement
-          
+
           // Check for (gesture: name) in bot response
           if (chunk.contains('(gesture:')) {
             final match = RegExp(r'\(gesture:\s*(\w+)\)').firstMatch(chunk);
@@ -765,9 +811,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               _currentGesture = match.group(1);
             }
           }
-          
-          fullResponse += chunk;
-          _messages.last = ChatMessage(text: fullResponse, isUser: false);
+
+          _messages.last = ChatMessage(
+            text: fullResponse,
+            isUser: false,
+            thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
+          );
         });
         _syncOverlayState();
         _scrollToBottom();
@@ -1564,6 +1613,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    AgentSkillServer.instance.onAvatarChanged = null;
+    AgentSkillServer.instance.onGesturePlayed = null;
+    AgentSkillServer.instance.onEmotionSet = null;
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();

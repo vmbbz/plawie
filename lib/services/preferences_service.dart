@@ -185,4 +185,12 @@ class PreferencesService {
   /// OpenAI TTS model
   String get openAiTtsModel => _p.getString('openai_tts_model') ?? 'gpt-4o-mini-tts';
   set openAiTtsModel(String value) => _p.setString('openai_tts_model', value);
+
+  // ── Local LLM ───────────────────────────────────────────────────────────────
+
+  /// CPU thread count for local inference (fllama + Ollama Modelfile).
+  /// Default 6: safe for 8-core Snapdragon phones (leaves 2 cores for OS/UI).
+  static const _keyLlmThreads = 'llm_thread_count';
+  int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 6;
+  set llmThreadCount(int v) => _p.setInt(_keyLlmThreads, v);
 }
