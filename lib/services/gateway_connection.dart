@@ -293,10 +293,16 @@ class GatewayConnection {
         }
 
         _eventController.add(frame);
-        // Only route targeted events (like stream chunks) to the specific request ID
+        // Streaming chunks (agent, chat lifecycle) carry NO id field — broadcast to
+        // ALL pending requests so chat.send receives its content frames.
+        // Events with an explicit id are also forwarded to the matching request.
         final id = frame['id'] as String?;
-        if (id != null && _pendingRequests.containsKey(id)) {
-          _pendingRequests[id]!.add(frame);
+        for (final entry in _pendingRequests.entries) {
+          if (!entry.value.isClosed) {
+            if (id == null || id == entry.key) {
+              entry.value.add(frame);
+            }
+          }
         }
         return;
       }
@@ -420,15 +426,19 @@ class GatewayConnection {
     // Gateway schema: params must have 'key' (not 'sessionKey'), no 'patch' wrapper.
     // Metadata fields go directly alongside 'key' in params.
     final payload = {
+      'type': 'req',
       'method': 'sessions.patch',
+      'id': const Uuid().v4(),
       'params': {
         'key': mainSessionKey ?? 'main',
         ...metadata,
       },
     };
 
-    // Fire-and-forget — gateway applies these instantly before the next chat.send.
-    sendRequest(payload);
+    // Fire-and-forget via direct sink — avoids registering a pending request controller
+    // that would never be cleaned up (no listener → onCancel never fires), which would
+    // otherwise receive and buffer every streaming chunk from subsequent chat.send calls.
+    _channel!.sink.add(jsonEncode(payload));
   }
 
   void _cleanup() {

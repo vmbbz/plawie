@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
@@ -51,7 +52,7 @@ class LocalLlmScreen extends StatefulWidget {
   State<LocalLlmScreen> createState() => _LocalLlmScreenState();
 }
 
-class _LocalLlmScreenState extends State<LocalLlmScreen> {
+class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObserver {
   final _service = LocalLlmService();
   LocalLlmState _state = const LocalLlmState();
   LocalLlmModel? _selectedModel;
@@ -79,6 +80,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   // Ollama cloud auth state
   bool _ollamaSignedIn = false;
   bool _isCheckingSignin = false;
+  bool _isSigningIn = false; // true while _launchOllamaSignin() is running
+
+  // Thread slider state
+  int _cpuCoreCount = 8; // default; refined at initState from /proc/cpuinfo
+  bool _threadsPendingApply = false; // true when slider moved but Ollama not recreated
 
   // Integrated Ollama State
   bool _isInternalOllamaInstalled = false;
@@ -111,6 +117,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _state = _service.state;
     _serviceSub = _service.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
@@ -150,6 +157,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _checkDownloadedModels();
     _checkOllamaStatus();
     _checkOllamaSignin();
+    _readCpuCoreCount();
     // Default selection to the recommended model
     final toolCatalog = _service.catalog.where((m) => m.supportsToolCalls).toList();
     _selectedModel = toolCatalog.firstWhere(
@@ -160,6 +168,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _serviceSub?.cancel();
     _gatewaySub?.cancel();
     _activitySub?.cancel();
@@ -172,6 +181,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     _testResponseNotifier.dispose();
     // _ollamaTestResponse is a plain String — no dispose needed
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-check signin status when user returns from the browser OAuth flow
+    if (state == AppLifecycleState.resumed) {
+      _checkOllamaSignin();
+    }
   }
 
   Future<void> _checkInternalStatus() async {
@@ -330,17 +347,135 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
     }
   }
 
+  Future<void> _readCpuCoreCount() async {
+    try {
+      final result = await NativeBridge.runInProot(
+        'grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo "8"',
+        timeout: 5,
+      );
+      final count = int.tryParse(result.trim()) ?? 8;
+      if (mounted) setState(() => _cpuCoreCount = count.clamp(2, 12));
+    } catch (_) {
+      // Default 8 already set — no crash
+    }
+  }
+
+  Future<void> _launchOllamaSignin() async {
+    if (_isSigningIn) return;
+    if (mounted) setState(() => _isSigningIn = true);
+    try {
+      // `ollama signin` prints a browser URL for OAuth, then blocks.
+      // We run it with a short timeout to capture just the URL line, then open it.
+      final result = await NativeBridge.runInProot(
+        'timeout 8 ollama signin 2>&1 | head -10',
+        timeout: 12,
+      );
+      final urlMatch = RegExp(r'https://[^\s]+').firstMatch(result);
+      if (urlMatch != null) {
+        final uri = Uri.tryParse(urlMatch.group(0)!);
+        if (uri != null && await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          // didChangeAppLifecycleState(resumed) will re-check signin status
+          // when user returns from the browser.
+        } else {
+          // url_launcher unavailable — copy to clipboard as fallback
+          await Clipboard.setData(ClipboardData(text: urlMatch.group(0)!));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Sign-in URL copied — paste it in your browser'),
+              backgroundColor: Colors.amber,
+            ));
+          }
+        }
+      } else {
+        // Couldn't extract URL — show raw output so user can act on it
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              backgroundColor: const Color(0xFF1A1A2E),
+              title: const Text('Ollama Sign-in Output',
+                  style: TextStyle(color: Colors.white, fontSize: 14)),
+              content: SelectableText(
+                result.isNotEmpty ? result : 'No output received. Is Ollama Hub running?',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Sign-in failed: $e'),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isSigningIn = false);
+    }
+  }
+
   Future<void> _selectCloudOllamaModel(String tag) async {
     if (!_ollamaSignedIn) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Sign in first: run 'ollama signin' in the Terminal tab"),
-            backgroundColor: Colors.amber,
-            duration: Duration(seconds: 4),
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: const Color(0xFF1A1A2E),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, color: Colors.amber, size: 32),
+              const SizedBox(height: 12),
+              const Text(
+                'Sign in to Ollama',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Cloud models run on ollama.com servers — no download needed, but a free account is required.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white60, fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _launchOllamaSignin();
+                  },
+                  icon: const Icon(Icons.open_in_browser_rounded, size: 16),
+                  label: const Text('Sign in to Ollama'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber.withValues(alpha: 0.15),
+                    foregroundColor: Colors.amber,
+                    side: BorderSide(color: Colors.amber.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+              ),
+            ],
           ),
-        );
-      }
+        ),
+      );
       return;
     }
     if (mounted) Navigator.pop(context);
@@ -712,9 +847,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
   }
 
   Widget _buildThreadSlider() {
+    final int threads = _state.threads;
+    final bool isInferring = _service.isInferring;
+    final bool hasOllamaModels = _ollamaModels.isNotEmpty;
+    final bool aboveCoreCount = threads > _cpuCoreCount;
+    final int sliderMax = _cpuCoreCount;
+    // Clamp display value to slider max to avoid assertion error
+    final double sliderValue = threads.toDouble().clamp(1.0, sliderMax.toDouble());
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Header row
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -723,40 +867,194 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
               style: GoogleFonts.outfit(
                   color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${_state.threads}',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
+            Row(
+              children: [
+                if (isInferring)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: Icon(Icons.lock_outline, color: Colors.white38, size: 13),
+                  ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: aboveCoreCount
+                        ? Colors.amber.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: aboveCoreCount
+                        ? Border.all(color: Colors.amber.withValues(alpha: 0.4))
+                        : null,
+                  ),
+                  child: Text(
+                    '$threads / $_cpuCoreCount cores',
+                    style: TextStyle(
+                      color: aboveCoreCount ? Colors.amber : Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+        const SizedBox(height: 4),
+        // Slider — disabled during inference
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            activeTrackColor: AppColors.statusGreen,
+            activeTrackColor: isInferring
+                ? Colors.white24
+                : (aboveCoreCount ? Colors.amber : AppColors.statusGreen),
             inactiveTrackColor: Colors.white12,
-            thumbColor: AppColors.statusGreen,
-            overlayColor: AppColors.statusGreen.withValues(alpha: 0.15),
+            thumbColor: isInferring
+                ? Colors.white24
+                : (aboveCoreCount ? Colors.amber : AppColors.statusGreen),
+            overlayColor: isInferring
+                ? Colors.transparent
+                : AppColors.statusGreen.withValues(alpha: 0.15),
+            disabledActiveTrackColor: Colors.white24,
+            disabledThumbColor: Colors.white24,
           ),
           child: Slider(
             min: 1,
-            max: 8,
-            divisions: 7,
-            value: _state.threads.toDouble(),
-            onChanged: (v) => _service.setThreads(
-              v.toInt(),
-              currentModel: _selectedModel,
-            ),
+            max: sliderMax.toDouble(),
+            divisions: sliderMax - 1,
+            value: sliderValue,
+            onChanged: isInferring
+                ? null
+                : (v) {
+                    final newThreads = v.toInt();
+                    _service.setThreads(newThreads, currentModel: _selectedModel);
+                    if (hasOllamaModels) {
+                      setState(() => _threadsPendingApply = true);
+                    }
+                  },
           ),
         ),
-        const Text(
-          '1 thread is fastest on most phones (single big-core focus). Increase only if responses feel slow.',
-          style: TextStyle(color: Colors.white30, fontSize: 10),
+        // Inference lock notice
+        if (isInferring)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Slider locked — model is generating. Changes take effect after the current response.',
+              style: TextStyle(color: Colors.white38, fontSize: 10),
+            ),
+          ),
+        // Above-core-count warning
+        if (aboveCoreCount && !isInferring)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 12),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Thread count exceeds detected core count ($_cpuCoreCount). '
+                    'This can slow inference — the OS must context-switch across fewer real cores.',
+                    style: const TextStyle(color: Colors.amber, fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Ollama recreate banner
+        if (_threadsPendingApply && hasOllamaModels && !isInferring)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.refresh_rounded, color: Colors.amber, size: 14),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Thread count is baked into the Ollama Modelfile. '
+                    'Tap Recreate to apply to Ollama models.',
+                    style: TextStyle(color: Colors.amber, fontSize: 10),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _isSyncingOllama
+                      ? null
+                      : () async {
+                          await _handleOllamaSync();
+                          if (mounted) setState(() => _threadsPendingApply = false);
+                        },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                    ),
+                    child: _isSyncingOllama
+                        ? const SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Colors.amber,
+                            ),
+                          )
+                        : const Text(
+                            'Recreate',
+                            style: TextStyle(
+                                color: Colors.amber,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Guidance text — split by inference path
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.bolt, color: Colors.white30, size: 11),
+                const SizedBox(width: 3),
+                const Expanded(
+                  child: Text(
+                    'fllama: Takes effect immediately on the next message.',
+                    style: TextStyle(color: Colors.white30, fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.memory, color: Colors.white30, size: 11),
+                const SizedBox(width: 3),
+                const Expanded(
+                  child: Text(
+                    'Ollama: Baked into the Modelfile at create time — use Recreate to apply.',
+                    style: TextStyle(color: Colors.white30, fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+            if (threads == 1)
+              const Padding(
+                padding: EdgeInsets.only(top: 3),
+                child: Text(
+                  'Tip: 1 thread focuses on the highest-frequency performance core — fastest on many phones.',
+                  style: TextStyle(color: Colors.white24, fontSize: 10),
+                ),
+              ),
+          ],
         ),
       ],
     );
@@ -1003,10 +1301,37 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
           _specRow('Optimal', '16 GB RAM · 8 Gen 3 / Elite · ~20–30 tok/s'),
           const SizedBox(height: 8),
           const Text(
-            'Inference uses CPU only (GPU acceleration inside PRoot is not stable). '
+            'Inference uses CPU only — GPU acceleration inside PRoot is not stable. '
             'Expect 30–50% battery drain during active inference. '
             'Models are stored inside the PRoot filesystem and survive app updates.',
             style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.5),
+          ),
+          const SizedBox(height: 10),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text(
+              'About VRAM vs RAM on phones',
+              style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+            iconColor: Colors.amber,
+            collapsedIconColor: Colors.white38,
+            children: const [
+              Text(
+                'Android phones have NO discrete VRAM. '
+                'The Adreno (Qualcomm), Mali, and Immortalis GPUs all share the same LPDDR5X '
+                'system RAM pool with the CPU — there is no separate GPU memory.\n\n'
+                'Desktop model cards that list "8 GB VRAM" refer to high-bandwidth GDDR6 VRAM '
+                'on a discrete GPU. On mobile, the same model uses system RAM instead, '
+                'which is slower — that\'s why 7B models run at 4–8 tok/s here vs 50+ tok/s '
+                'on a desktop GPU.\n\n'
+                'The "Required RAM" figures in each model card below already account for this: '
+                'they are the total system RAM (model weights + KV cache + Android OS overhead) '
+                'needed for stable inference on CPU. No VRAM is needed or used.',
+                style: TextStyle(color: Colors.white54, fontSize: 10, height: 1.6),
+              ),
+            ],
           ),
         ],
       ),
@@ -1962,60 +2287,123 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Auth status row
+                          // Info banner — always shown
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              color: (_ollamaSignedIn
-                                      ? AppColors.statusGreen
-                                      : Colors.amber)
-                                  .withValues(alpha: 0.08),
+                              color: Colors.white.withValues(alpha: 0.04),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, color: Colors.white38, size: 13),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Free · No download needed · Powered by Ollama · Requires a free ollama.com account',
+                                    style: TextStyle(color: Colors.white38, fontSize: 10),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          // Auth status card — tappable when not signed in
+                          GestureDetector(
+                            onTap: _ollamaSignedIn ? null : _launchOllamaSignin,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
                                 color: (_ollamaSignedIn
                                         ? AppColors.statusGreen
                                         : Colors.amber)
-                                    .withValues(alpha: 0.3),
+                                    .withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: (_ollamaSignedIn
+                                          ? AppColors.statusGreen
+                                          : Colors.amber)
+                                      .withValues(alpha: 0.35),
+                                ),
                               ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _ollamaSignedIn ? Icons.check_circle_outline : Icons.lock_outline,
-                                  color: _ollamaSignedIn ? AppColors.statusGreen : Colors.amber,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _ollamaSignedIn
-                                        ? 'Signed in to ollama.com'
-                                        : "Not signed in — run 'ollama signin' in Terminal",
-                                    style: TextStyle(
-                                      color: _ollamaSignedIn ? AppColors.statusGreen : Colors.amber,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                                if (!_ollamaSignedIn)
-                                  GestureDetector(
-                                    onTap: () {
-                                      Clipboard.setData(const ClipboardData(text: 'ollama signin'));
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text("Copied: 'ollama signin'")),
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: Colors.amber.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(4),
+                              child: Row(
+                                children: [
+                                  _isCheckingSignin
+                                      ? SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                            color: _ollamaSignedIn
+                                                ? AppColors.statusGreen
+                                                : Colors.amber,
+                                          ),
+                                        )
+                                      : Icon(
+                                          _ollamaSignedIn
+                                              ? Icons.verified_rounded
+                                              : Icons.lock_outline,
+                                          color: _ollamaSignedIn
+                                              ? AppColors.statusGreen
+                                              : Colors.amber,
+                                          size: 15,
+                                        ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _ollamaSignedIn
+                                          ? 'Signed in to ollama.com — cloud models available'
+                                          : 'Not signed in — tap to connect',
+                                      style: TextStyle(
+                                        color: _ollamaSignedIn
+                                            ? AppColors.statusGreen
+                                            : Colors.amber,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
                                       ),
-                                      child: const Text('COPY CMD',
-                                          style: TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.w700)),
                                     ),
                                   ),
-                              ],
+                                  // Signin button (not signed in)
+                                  if (!_ollamaSignedIn)
+                                    _isSigningIn
+                                        ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 1.5,
+                                              color: Colors.amber,
+                                            ),
+                                          )
+                                        : Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.amber.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(
+                                                  color: Colors.amber.withValues(alpha: 0.5)),
+                                            ),
+                                            child: const Text('SIGN IN',
+                                                style: TextStyle(
+                                                    color: Colors.amber,
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w800)),
+                                          ),
+                                  // Refresh button (always shown)
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    onTap: _isCheckingSignin ? null : _checkOllamaSignin,
+                                    child: Icon(
+                                      Icons.refresh_rounded,
+                                      size: 16,
+                                      color: _ollamaSignedIn
+                                          ? AppColors.statusGreen.withValues(alpha: 0.7)
+                                          : Colors.white38,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                           const SizedBox(height: 14),

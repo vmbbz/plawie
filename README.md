@@ -5,8 +5,8 @@
   
   <br/>
   
-  **🤖 The $2,000 Mac Experience in Your Pocket**  
-  **🔗 Local PRoot OpenClaw Engine • Native Web3 • 🎭 Airi-Style Immersive VRM**
+  **🤖 The OpenClaw Agentic Experience in Your Pocket**  
+  **🔗 Local PRoot Gateway • Native Web3 • 🎭 Airi-Style Immersive VRM**
   
   <br/>
   
@@ -18,9 +18,9 @@
 
 ---
 
-**"Run OpenClaw fully local on your phone. Always-on, totally private, and under your absolute control."**
+**"Run OpenClaw fully local on your personal Android phone, private, always-on, and under your absolute control."**
 
-While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a $2,000 MacBook to run local AI agents—we took a different path.
+While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs & OpenClaw Gateway—we took a different path.
 
 **Plawie** represents a top 1% engineering achievement: we successfully embedded a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
 
@@ -75,6 +75,7 @@ Beyond the NDK-based fllama engine, Plawie includes a full, native **Ollama Hub*
 - **Zero-Config Setup**: One-tap installation of the official Ollama Linux ARM64 binary.
 - **GGUF Bridging**: Instantly register existing GGUF models as Ollama models using our "Zero-Copy" sync bridge.
 - **Library Discovery**: Pull any model from the [Ollama Library](https://ollama.com/library) directly onto your device.
+- **☁️ Ollama Cloud Models**: Run massive frontier models (Kimi K2.5, DeepSeek V3.1 671B, GPT-OSS 120B, Qwen3-Coder 480B) for free on ollama.com servers — no GPU, no download. The local Ollama daemon inside PRoot handles all authentication transparently once you sign in. **Plawie auto-provisions your personal Ollama account inside the PRoot sandbox** — tap "Sign in to Ollama" in Local LLM → Cloud Models and complete the browser OAuth once. Cloud models then work like any other model with no further configuration.
 
 ---
 
@@ -332,6 +333,48 @@ flutter install
 ```
 
 > **First build note:** `flutter pub get` triggers fllama's Dart native-asset hook which compiles llama.cpp for ARM64 via the Android NDK. This takes 3–5 minutes on first run and is fully cached for subsequent builds.
+
+### 🚀 Post-Installation: First Run
+
+After installing the APK, here's what to set up for each chat mode:
+
+#### Mode A — OpenClaw Gateway Chat (Full Tools + Skills)
+The gateway is the primary AI engine. It runs the full agent loop with 35+ Android skills, ClawHub community skills, and multi-step reasoning.
+
+1. **Start Gateway** — tap **Start** on the home screen (or enable Auto-Start in Settings). A Linux Ubuntu PRoot environment boots inside the app.
+2. **Set Your API Key** — go to **Settings → API Provider** and enter a key for Claude, Gemini, OpenAI, or Groq. The gateway injects it for all cloud model requests.
+3. **Start Chatting** — select any cloud model in the chat selector. Full tool-use, skills, and dashboard access are available immediately.
+
+> This is the recommended mode. All 35+ device skills, ClawHub, and the web dashboard are available only through the gateway.
+
+#### Mode B — Local NDK Chat (fllama, No Internet Required)
+Direct on-device inference via llama.cpp ARM64. No PRoot, no internet, no API key.
+
+1. **Go to Local LLM** → tap a model → tap **Download** (one-time, 400 MB–4 GB depending on model).
+2. **Select** a downloaded model as active.
+3. **In Chat**, select the `local-llm/` prefixed model from the model picker.
+4. Responses stream directly from the NDK — instant activation, zero cloud cost.
+
+> Note: NDK chat bypasses the gateway. Tools and skills (weather, calendar, calls, etc.) are not available in this mode. For tool use, route through the gateway (Mode A) using an Ollama or cloud model.
+
+#### Mode C — Ollama Hub Chat (Local Models via Gateway)
+Combines the best of both: offline models running through the gateway with full tool support.
+
+1. **Local LLM → Install Hub** — one-tap install of the Ollama binary inside PRoot.
+2. **Start Hub**, then download a model (e.g. `qwen2.5:3b`) from the Pull tab.
+3. **Sync to Gateway** — tap Sync to register the model.
+4. **In Chat**, select the `ollama/` prefixed model. Full gateway tool-use applies.
+
+#### ☁️ Mode D — Ollama Cloud Models (Free Frontier Models, No Download)
+Run 100B–671B models for free on ollama.com infrastructure — your Ollama daemon inside PRoot acts as a transparent proxy.
+
+1. **Local LLM → Cloud Models tab**.
+2. Tap **Sign in to Ollama** — the app launches a browser OAuth flow and provisions your free ollama.com account **inside the PRoot sandbox automatically**.
+3. After sign-in, tap **Refresh** to confirm auth status turns green.
+4. Tap **USE** on any cloud model (Kimi K2.5, DeepSeek V3.1 671B, GPT-OSS 120B, etc.).
+5. In Chat, select the `ollama/<model>:cloud` prefixed model.
+
+> Cloud models require internet but no GPU, no download, and no paid API key — just a free ollama.com account.
 
 ---
 

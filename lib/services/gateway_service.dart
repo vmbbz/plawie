@@ -54,32 +54,78 @@ class GatewayService {
   /// Get dynamic context size based on model capabilities
   /// Allows powerful devices to use higher contexts while keeping mobile safe
   int _getDynamicContextSize(String modelId) {
-    // Use substring matching so full model IDs like
-    // 'qwen2.5-0.5b-instruct:q4_k_m' match the short keys below.
-    // Map Ollama model IDs to their context windows
+    // Substring matching — handles full IDs like 'qwen2.5-0.5b-instruct:q4_k_m'
+    // as well as short Ollama tags like 'qwen2.5:0.5b'.
+    //
+    // Context values are capped to what a phone can safely allocate in KV cache.
+    // The KV cache is allocated at `ollama create` time (baked into the Modelfile).
+    // Setting too high a value (e.g. 32768 for 1.5B) requires ~895 MB for KV cache
+    // alone — causing OOM on 4–6 GB phones. Values below are per-model safe maxes.
+    //
+    // Rule of thumb for mobile:
+    //   <3B model  → 4096 (KV cache 100–500 MB, safe on 4 GB+ phones)
+    //   3–8B model → 2048 (model already fills most RAM; KV must be small)
+    //   Vision     → 2048 (vision encoder adds extra RAM overhead)
     final modelContexts = {
-      'qwen2.5-0.5b': 2048,
-      'qwen2.5-1.5b': 2048,
-      'qwen2.5-3b': 4096,
-      'qwen2.5-7b': 8192,
-      'smollm2-135m': 2048,
-      'smollm2-360m': 2048,
-      'smollm2-1.7b': 4096,
-      'llava-1.5-7b': 4096,
-      'qwen2-vl-2b': 2048,
-      'qwen2-vl-7b': 4096,
+      // ── Qwen2.5 text ──
+      'qwen2.5:0.5b':  4096,
+      'qwen2.5-0.5b':  4096,
+      'qwen2.5:1.5b':  4096,
+      'qwen2.5-1.5b':  4096,
+      'qwen2.5:3b':    4096,
+      'qwen2.5-3b':    4096,
+      'qwen2.5:7b':    2048,
+      'qwen2.5-7b':    2048,
+      'qwen2.5:14b':   2048,
+      'qwen2.5-14b':   2048,
+      // ── Qwen2.5 Coder ──
+      'qwen2.5-coder:3b':  4096,
+      'qwen2.5-coder:7b':  2048,
+      // ── SmolLM2 ──
+      'smollm2:135m':  2048,
+      'smollm2-135m':  2048,
+      'smollm2:360m':  2048,
+      'smollm2-360m':  2048,
+      'smollm2:1.7b':  4096,
+      'smollm2-1.7b':  4096,
+      // ── Llama 3.x ──
+      'llama3.2:1b':   4096,
+      'llama3.2-1b':   4096,
+      'llama3.2:3b':   4096,
+      'llama3.2-3b':   4096,
+      'llama3.1:8b':   2048,
+      'llama3.1-8b':   2048,
+      'llama3.2-vision': 2048,
+      // ── DeepSeek R1 ──
+      'deepseek-r1:1.5b': 4096,
+      'deepseek-r1-1.5b': 4096,
+      'deepseek-r1:7b':   2048,
+      'deepseek-r1-7b':   2048,
+      // ── Phi ──
+      'phi4-mini':   4096,
+      'phi4:14b':    2048,
+      'phi4-14b':    2048,
+      // ── Mistral ──
+      'mistral:7b':  2048,
+      'mistral-7b':  2048,
+      // ── Vision ──
+      'llava-1.5-7b': 2048,
+      'llava':        2048,
+      'qwen2-vl-2b':  2048,
+      'qwen2-vl-7b':  2048,
+      'qwen2-vl':     2048,
     };
     for (final entry in modelContexts.entries) {
       if (modelId.contains(entry.key)) return entry.value;
     }
-    // 2048 is safer than 1024 — gives tool schemas enough room
+    // Safe default — enough room for system prompt + tool schemas + short conversation.
     return 2048;
   }
 
   /// Dynamic Modelfile template. TEMPLATE block is required — without it Ollama
   /// falls back to a broken default format and generates 0 tokens.
   /// [modelName] is used to select the correct chat template and stop tokens.
-  String _buildModelfileTemplate(String ggufPath, int contextSize, {String modelName = ''}) {
+  String _buildModelfileTemplate(String ggufPath, int contextSize, {String modelName = '', int numThreads = 6}) {
     final name = modelName.toLowerCase();
 
     // Llama 3.x format
@@ -97,7 +143,7 @@ PARAMETER stop "<|eot_id|>"
 PARAMETER stop "<|start_header_id|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 4
+PARAMETER num_thread $numThreads
 PARAMETER num_batch 512
 ''';
     }
@@ -116,7 +162,7 @@ PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|endoftext|>"
 PARAMETER num_ctx $contextSize
 PARAMETER num_gpu 0
-PARAMETER num_thread 4
+PARAMETER num_thread $numThreads
 PARAMETER num_batch 512
 ''';
   }
@@ -699,9 +745,10 @@ PARAMETER num_batch 512
       await for (final entity in dir.list()) {
         if (entity is File && entity.path.endsWith('.jsonl')) {
           final bytes = await entity.length();
-          // Only clear files > 512 KB — anything smaller is healthy conversation history.
-          // Old threshold was 10 KB which cleared sessions after just 3-4 messages.
-          if (bytes > 524288) {
+          // Only clear files > 50 KB — balances keeping short context vs preventing
+          // 50–100 message bloat that pushes over num_ctx=2048 and causes timeouts.
+          // 512 KB was too lenient (accumulated thousands of tokens per request).
+          if (bytes > 51200) {
             await entity.writeAsString('');
             _updateState(_state.copyWith(
               logs: [..._state.logs,
@@ -1006,9 +1053,15 @@ PARAMETER num_batch 512
       final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
       tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
       
-      // Get dynamic context size based on model capabilities
+      // Get dynamic context size and user-configured thread count
       final contextSize = _getDynamicContextSize(name);
-      final modelfileContent = _buildModelfileTemplate(ggufPath, contextSize, modelName: name);
+      final prefs = PreferencesService();
+      await prefs.init();
+      final modelfileContent = _buildModelfileTemplate(
+        ggufPath, contextSize,
+        modelName: name,
+        numThreads: prefs.llmThreadCount,
+      );
       await tempModelfile.writeAsString(modelfileContent);
       
       // Verify Modelfile contains correct context size
@@ -1787,6 +1840,7 @@ PARAMETER num_batch 512
     // Fix 4+5: read /proc/meminfo directly (no PRoot spawn) and use the
     // /api/ps result to extend the WS timeout for cold starts.
     bool ollamaColdStart = true; // assume cold until /api/ps says otherwise
+    bool ollamaReachable = false; // tracks if Ollama HTTP is up at all
     if (isLocalOllama) {
       try {
         // /proc/meminfo is readable directly from Android — no PRoot needed.
@@ -1806,10 +1860,12 @@ PARAMETER num_batch 512
         }
       } catch (_) {}
       // Check what Ollama has loaded — also determines cold-start timeout.
+      // A failed /api/ps means Ollama isn't running yet (ollamaReachable stays false).
       try {
         final psResp = await http.get(Uri.parse('http://127.0.0.1:11434/api/ps'))
             .timeout(const Duration(seconds: 3));
         if (psResp.statusCode == 200) {
+          ollamaReachable = true;
           final psData = jsonDecode(psResp.body) as Map<String, dynamic>?;
           final loadedModels = psData?['models'] as List?;
           if (loadedModels != null && loadedModels.isNotEmpty) {
@@ -1820,7 +1876,18 @@ PARAMETER num_batch 512
             _addActivity('[MEM] Ollama: no model cached (cold start — using extended timeout)');
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        // /api/ps timeout or connection refused → Ollama not running
+        _addActivity('[MEM] ✗ Ollama not reachable at :11434 — start it from Local LLM Hub');
+      }
+
+      // Pre-send health gate: if Ollama is completely down, fail fast instead of
+      // waiting 3 min for the gateway to timeout. The gateway would just return an
+      // empty stream with no diagnostic — this surfaces the real cause immediately.
+      if (!ollamaReachable) {
+        yield '[Error] Ollama server is not responding. Open Local LLM → Start Ollama Hub, then retry.';
+        return;
+      }
     }
     final wsOk = await _ensureWebSocket(token);
     if (wsOk) {
@@ -1831,8 +1898,25 @@ PARAMETER num_batch 512
       }
       // Context window for local Ollama is controlled by the Modelfile
       // PARAMETER num_ctx written at `ollama create` time by _buildModelfileTemplate.
-      // sessions.patch rejects 'contextWindow' and 'systemPrompt' as invalid fields
-      // in this gateway version — removed to eliminate error noise in gateway logs.
+      // Do NOT pass contextWindow via sessions.patch — it's schema-invalid and causes
+      // "[reload] config reload skipped" which breaks all subsequent config changes.
+      //
+      // SYSTEM PROMPT via sessions.patch: even though systemPrompt is also technically
+      // schema-invalid, this call ensures the in-memory session immediately uses the
+      // mobile-optimized short prompt (set in config at startup). Without this, a
+      // long stale system prompt from a previous gateway launch can push the total
+      // prompt tokens over num_ctx=2048 → Ollama produces 0 tokens → timeout.
+      // The gateway validator logs an error but still processes the session correctly.
+      // This was confirmed working in commit 10ff306. Fire-and-forget — don't await.
+      if (isLocalOllama) {
+        unawaited(_connection!.patchSessionMetadata({
+          'systemPrompt':
+              'You are OpenClaw, a helpful AI assistant running on Android. '
+              'Be concise and direct. Use tools only when they directly help the user. '
+              'Avoid long explanations unless asked.',
+        }));
+        _addActivity('[CHAT] sessions.patch systemPrompt sent (mobile-optimized)');
+      }
     } else {
       if (isLocalOllama) {
         // WS fallback: direct local Ollama — no dashboard, but inference still works.
@@ -1933,7 +2017,14 @@ PARAMETER num_batch 512
             return;
           }
 
-          // Agent-initiated messages (continuous streaming)
+          // AGENT-INITIATED MESSAGES — added in commit 6fa6200.
+          // The OpenClaw gateway can push {type:'event', event:'agent.message',
+          // payload:{text:'…'}} frames when an agent proactively sends a message
+          // (e.g. reminders, follow-up questions, alerts triggered by a skill).
+          // We route these through the same chunkController as user-initiated replies
+          // so the chat UI handles them identically — no special path needed.
+          // NOTE: This requires gateway support for 'agent.message' events.
+          // If your gateway version doesn't emit them, this block is a no-op.
           if (type == 'event' && frame['event'] == 'agent.message') {
             final payload = frame['payload'] as Map<String, dynamic>?;
             final message = payload?['text'] as String?;
@@ -2017,6 +2108,22 @@ PARAMETER num_batch 512
               if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
               final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason']
                   ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
+              // Auth errors from cloud Ollama models — surface as actionable guidance.
+              final isAuthError = reason == 'auth'
+                  || rawErr.toLowerCase().contains('auth')
+                  || rawErr.toLowerCase().contains('surface_error');
+              if (isAuthError) {
+                const authMsg = 'Cloud model sign-in required.\n\n'
+                    'Go to Local LLM → Cloud Models and tap "Sign in to Ollama", '
+                    'or run `ollama signin` in the Terminal tab.\n\n'
+                    'Once signed in, tap Refresh on the auth status card and try again.';
+                _addActivity('[CHAT] ✗ Cloud auth required (ollama signin needed)');
+                if (!chunkController.isClosed) {
+                  chunkController.add('[Error] $authMsg');
+                  chunkController.close();
+                }
+                return;
+              }
               final error = rawErr.isNotEmpty ? rawErr
                   : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
               _addActivity('[CHAT] ✗ $error');
