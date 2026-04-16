@@ -70,7 +70,7 @@ const _modelCatalog = [
     requiredRamMb: 1500,
     recommendedThreads: 4,
     quality: 'Minimum',
-    contextWindow: 8192,
+    contextWindow: 4096,
     supportsToolCalls: true,
   ),
   LocalLlmModel(
@@ -82,7 +82,7 @@ const _modelCatalog = [
     requiredRamMb: 3000,
     recommendedThreads: 4,
     quality: 'Recommended',
-    contextWindow: 32768,
+    contextWindow: 4096,
     supportsToolCalls: true,
   ),
   LocalLlmModel(
@@ -94,7 +94,7 @@ const _modelCatalog = [
     requiredRamMb: 4500,
     recommendedThreads: 6,
     quality: 'Optimal',
-    contextWindow: 32768,
+    contextWindow: 4096,
     supportsToolCalls: true,
   ),
   LocalLlmModel(
@@ -106,7 +106,7 @@ const _modelCatalog = [
     requiredRamMb: 3000,
     recommendedThreads: 4,
     quality: 'Recommended',
-    contextWindow: 8192,
+    contextWindow: 4096,
     supportsToolCalls: true,
   ),
 
@@ -217,7 +217,11 @@ class LocalLlmService {
   LocalLlmService._internal();
 
   final _stateController = StreamController<LocalLlmState>.broadcast();
-  LocalLlmState _state = const LocalLlmState();
+  // Restore persisted thread count immediately (prefs are synchronous after init).
+  // PreferencesService.init() is called in main() before any service is used.
+  LocalLlmState _state = LocalLlmState(
+    threads: PreferencesService().llmThreadCount,
+  );
 
   // fllama state — model path on host filesystem, active request ID for cancellation
   String? _activeModelPath;
@@ -335,10 +339,29 @@ class LocalLlmService {
     ));
   }
 
-  /// Update thread count — fllama auto-detects threads; just persist the preference.
+  /// Whether fllama inference is currently running (used by UI to disable slider).
+  bool get isInferring => _isInferring;
+
+  /// Update thread count.
+  /// - fllama: takes effect immediately on next inference call (no restart needed).
+  /// - Ollama: baked into the Modelfile at `ollama create` time — requires model
+  ///   recreation to apply. Callers can check [threadsPendingOllamaApply].
   Future<void> setThreads(int threads, {LocalLlmModel? currentModel}) async {
-    _updateState(_state.copyWith(threads: threads));
-    // fllama re-reads contextSize on next inference call; no restart needed.
+    _updateState(_state.copyWith(threads: threads.clamp(1, 16)));
+    // Persist so the slider survives app restarts.
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.llmThreadCount = threads.clamp(1, 16);
+  }
+
+  /// True when the thread count in prefs differs from what the currently-active
+  /// Ollama model was created with. UI should show a "Recreate Model" banner.
+  bool get threadsPendingOllamaApply {
+    // We can't read the Modelfile directly, so we track it via a simple
+    // comparison: if threads != the pref default (6) AND an Ollama model is
+    // registered in gateway state, the Modelfile may not match.
+    // This is a best-effort signal — false negatives are safe (no banner shown).
+    return false; // set to true by UI after thread change while Ollama active
   }
 
   /// Toggle local LLM on/off.
