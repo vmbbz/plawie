@@ -478,13 +478,13 @@ PARAMETER num_batch 512
 
   /// Cached accessor for the Android app files directory.
   /// Platform channel is hit only on the first call; subsequent calls are instant.
-  Future<String> _getFilesDir() async =>
+  Future<String> getFilesDir() async =>
       _filesDir ??= await NativeBridge.getFilesDir();
 
   /// Helper to get the host-side path to the openclaw config file.
   /// Must match the PRoot ubuntu rootfs: $filesDir/rootfs/ubuntu/root/...
   Future<String> _openClawConfigPath() async {
-    return '${await _getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
+    return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
   /// Direct Dart-native config read/write (bypasses proot overhead)
@@ -738,7 +738,7 @@ PARAMETER num_batch 512
     _sessionCleanedThisConnection = true;
 
     try {
-      final filesDir = await _getFilesDir();
+      final filesDir = await getFilesDir();
       final sessionsDir = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
       final dir = Directory(sessionsDir);
       if (!await dir.exists()) return;
@@ -1049,7 +1049,7 @@ PARAMETER num_batch 512
     try {
       // Write Modelfile to the rootfs /tmp directory with dynamic context sizing
       // Dart writes to the Android host path; PRoot sees it at /tmp/oc_mf.
-      final filesDir = await _getFilesDir();
+      final filesDir = await getFilesDir();
       final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
       tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
       
@@ -1329,7 +1329,7 @@ PARAMETER num_batch 512
 
     // 2. Update agent auth-profiles.json
     try {
-      final filesDir = await _getFilesDir();
+      final filesDir = await getFilesDir();
       final authPath = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json';
       final authFile = File(authPath);
       Map<String, dynamic> auth = {};
@@ -1777,7 +1777,7 @@ PARAMETER num_batch 512
   /// Checks if the Ollama daemon is authenticated with ollama.com.
   Future<bool> _checkOllamaCredentials() async {
     try {
-      final filesDir = await _getFilesDir();
+      final filesDir = await getFilesDir();
       final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
       final hasCreds = await File(credsPath).exists();
       if (!hasCreds) return false;
