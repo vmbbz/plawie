@@ -1777,11 +1777,19 @@ PARAMETER num_batch 512
   /// Checks if the Ollama daemon is authenticated with ollama.com.
   Future<bool> _checkOllamaCredentials() async {
     try {
-      final prootPath = await NativeBridge.getProotPath();
-      final hasCreds = File('$prootPath/root/.ollama/credentials').existsSync();
+      final filesDir = await _getFilesDir();
+      final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
+      final hasCreds = await File(credsPath).exists();
       if (!hasCreds) return false;
-      final result = await NativeBridge.runInProot('ollama list');
-      return !result.contains('not authorized');
+
+      final result = await NativeBridge.runInProot('ollama list 2>&1');
+      final lower = result.toLowerCase();
+      // If we get "unauthorized" or "not allowed", or if the command fails,
+      // treat as not signed in.
+      if (lower.contains('unauthorized') || lower.contains('not allowed') || lower.contains('connection refused')) {
+        return false;
+      }
+      return true;
     } catch (_) {
       return false;
     }
