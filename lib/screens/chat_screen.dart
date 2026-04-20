@@ -112,6 +112,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isTtsDownloaded = false;
   double _downloadProgress = 0.0;
   bool _isDownloadingTts = false;
+  bool _hasShownTtsFallbackPrompt = false; // Track if we've alerted about the fallback
 
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
@@ -491,13 +492,25 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
     _tts.onStart = () {
       if (mounted) {
-        setState(() => _speechIntensity = 0.8);
+        setState(() {
+          _speechIntensity = 0.8;
+          _currentGesture = 'talk'; // Trigger hands gesture
+        });
+        
+        // If falling back to Native TTS, gently prompt for download
+        if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt) {
+          _hasShownTtsFallbackPrompt = true;
+          _showTtsDownloadDialog();
+        }
       }
     };
-
+    
     _tts.onComplete = () {
       if (mounted) {
-        setState(() => _speechIntensity = 0.0);
+        setState(() {
+          _speechIntensity = 0.0;
+          _currentGesture = 'ready'; // Reset to idle pose
+        });
         _syncOverlayState();
         // Continuous mode: wait 500ms then restart listening automatically
         if (PreferencesService().continuousMode && !_isGenerating) {
@@ -821,12 +834,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         _syncOverlayState();
         _scrollToBottom();
       }
-      _saveChatHistory(); // Save full assistant response
-
-      // Strip markdown symbols before speaking so it doesn't pronounce asterisks
-      final cleanTextForSpeech = fullResponse.replaceAll(RegExp(r'[\*\`\#]'), '');
-      _tts.speak(cleanTextForSpeech);
-      
+      // Speak the final clean response (including error messages)
+      if (fullResponse.isNotEmpty) {
+        await _tts.stop();
+        // Clean emojis, markdown, and (gesture:...) tags for natural speech
+        final cleanTextForSpeech = fullResponse
+          .replaceAll('⚠️', 'Attention, ')
+          .replaceAll(RegExp(r'[\*\`\#\>\_]'), '') // Strip markdown
+          .replaceAll(RegExp(r'\(gesture:.*?\)\s*'), '') // Strip gesture tags
+          .trim();
+        if (cleanTextForSpeech.isNotEmpty) {
+          await _tts.speak(cleanTextForSpeech);
+        }
+      }
     } catch (e) {
       _addDiagnosticLog('Exception during Chat: $e');
       if (mounted) {
@@ -852,17 +872,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         }
       });
       _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
-    }
-    
-    // Speak the final response (including errors now!)
-    if (fullResponse.isNotEmpty) {
-       await _tts.stop();
-       // Clean emojis and markdown for TTS
-       final cleanTextForSpeech = fullResponse
-         .replaceAll('⚠️', 'Attention, ')
-         .replaceAll(RegExp(r'[\*\`\#]'), '')
-         .replaceAll(RegExp(r'\(gesture:.*?\)\s*'), ''); // Don't speak the tag
-       await _tts.speak(cleanTextForSpeech);
     }
   }
 
@@ -1112,15 +1121,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         Text(
                           _selectedModel.startsWith('local-llm/')
                             ? 'LOCAL · ON-DEVICE'
-                            : _selectedModel.startsWith('ollama/')
-                              ? 'LOCAL · HUB'
-                              : _selectedModel.split('/').last.toUpperCase(),
+                            : (_selectedModel.startsWith('ollama/') && _selectedModel.contains(':cloud'))
+                              ? 'CLOUD · OLLAMA'
+                              : _selectedModel.startsWith('ollama/')
+                                ? 'LOCAL · HUB'
+                                : _selectedModel.split('/').last.toUpperCase(),
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
                               ? const Color(0xFF00E5AA)
-                              : _selectedModel.startsWith('ollama/')
-                                ? const Color(0xFF00C8FF)
-                                : Colors.white.withValues(alpha: 0.4),
+                              : (_selectedModel.startsWith('ollama/') && _selectedModel.contains(':cloud'))
+                                ? const Color(0xFFAB47BC)
+                                : _selectedModel.startsWith('ollama/')
+                                  ? const Color(0xFF00C8FF)
+                                  : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.0,
@@ -1401,7 +1414,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
             ...cloudHub.map((model) {
               final isSelected = model == _selectedModel;
-              final displayName = model.replaceFirst('ollama/', '');
+              final displayName = '☁ ' + model.split('/').last.replaceAll(':cloud', '').toUpperCase();
               return PopupMenuItem<dynamic>(
                 value: 'model:$model',
                 height: 44,
@@ -1428,7 +1441,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            'OLLAMA · CLOUD',
+                            'FREE · NO DOWNLOAD',
                             style: TextStyle(
                               color: isSelected ? const Color(0xFFAB47BC) : Colors.white38,
                               fontSize: 8,

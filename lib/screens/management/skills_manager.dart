@@ -1167,12 +1167,37 @@ class _ToolsTab extends StatefulWidget {
 }
 
 class _ToolsTabState extends State<_ToolsTab> {
-  late final Future<List<String>> _toolsFuture;
+  // All 19 known tools always shown. _enabledTools reflects tools.allow in config.
+  // Loaded once at init; updated immediately on toggle (optimistic UI).
+  Set<String> _enabledTools = {};
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _toolsFuture = OpenClawCommandService.getCoreTools();
+    _loadEnabled();
+  }
+
+  Future<void> _loadEnabled() async {
+    final tools = await OpenClawCommandService.getCoreTools();
+    if (mounted) {
+      setState(() {
+        _enabledTools = tools.toSet();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _toggle(String toolId) async {
+    // Optimistic update — flip immediately, persist in background
+    final newSet = Set<String>.from(_enabledTools);
+    if (newSet.contains(toolId)) {
+      newSet.remove(toolId);
+    } else {
+      newSet.add(toolId);
+    }
+    setState(() => _enabledTools = newSet);
+    await OpenClawCommandService.saveToolsAllow(newSet.toList()..sort());
   }
 
   _ToolMeta _metaFor(String toolId) {
@@ -1187,19 +1212,30 @@ class _ToolsTabState extends State<_ToolsTab> {
   Widget build(BuildContext context) {
     final gatewayState = context.watch<GatewayProvider>().state;
     final isOffline = gatewayState.status == GatewayStatus.stopped;
-    
-    // Prefer live capabilities from gateway RPC, fall back to Future snapshot if offline
+
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+
+    // Always show all 19 known tools from the catalog so the user can
+    // enable/disable them even when openclaw.json tools.allow is empty.
+    // Live gateway capabilities are used ONLY to update _enabledTools on connect.
     final liveCapabilities = gatewayState.capabilities;
-    final hasLiveCaps = liveCapabilities != null && liveCapabilities.isNotEmpty;
+    if (liveCapabilities != null && liveCapabilities.isNotEmpty) {
+      // Sync enabled set with what the running gateway actually exposes
+      final liveSet = liveCapabilities.toSet();
+      if (liveSet != _enabledTools) {
+        // Schedule after build to avoid setState-during-build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && liveSet != _enabledTools) {
+            setState(() => _enabledTools = liveSet);
+          }
+        });
+      }
+    }
 
-    return FutureBuilder<List<String>>(
-      future: _toolsFuture,
-      builder: (context, snap) {
-        if (!hasLiveCaps && snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-        }
-
-        final tools = hasLiveCaps ? liveCapabilities : snap.data ?? [];
+    // Always use full catalog — never show empty state
+    final allToolIds = _toolCatalog.keys.toList();
 
         return CustomScrollView(
           slivers: [
@@ -1370,29 +1406,30 @@ class _ToolsTabState extends State<_ToolsTab> {
                 ),
               ),
 
-            // ── Tool cards ───────────────────────────────────────────────
-            if (tools.isEmpty)
-              SliverToBoxAdapter(
-                child: _EmptyState(
-                  icon: Icons.build_circle_outlined,
-                  message: isOffline
-                      ? 'Start your gateway to view active tools'
-                      : 'No tools listed in openclaw.json → tools.allow',
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => Padding(
+            // ── Tool cards — all 19 always shown with enable/disable toggles ──
+            // Each tool maps to a _ToolCard with an inline Switch that writes to
+            // openclaw.json → tools.allow via OpenClawCommandService.saveToolsAllow.
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final toolId = allToolIds[i];
+                    final enabled = _enabledTools.contains(toolId);
+                    return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: _ToolCard(toolId: tools[i], meta: _metaFor(tools[i])),
-                    ),
-                    childCount: tools.length,
-                  ),
+                      child: _ToolCard(
+                        toolId: toolId,
+                        meta: _metaFor(toolId),
+                        isEnabled: enabled,
+                        onToggle: () => _toggle(toolId),
+                      ),
+                    );
+                  },
+                  childCount: allToolIds.length,
                 ),
               ),
+            ),
 
             // ── RPC explorer quick-jump ───────────────────────────────────
             SliverToBoxAdapter(
@@ -1423,8 +1460,6 @@ class _ToolsTabState extends State<_ToolsTab> {
             ),
           ],
         );
-      },
-    );
   }
 
   Widget _pill(String label, Color color) => Container(
@@ -1860,7 +1895,16 @@ class _DiscoverCard extends StatelessWidget {
 class _ToolCard extends StatelessWidget {
   final String toolId;
   final _ToolMeta meta;
-  const _ToolCard({required this.toolId, required this.meta});
+  // When provided, shows a toggle Switch instead of the info chevron.
+  // isEnabled reflects current tools.allow state; onToggle writes the change.
+  final bool? isEnabled;
+  final VoidCallback? onToggle;
+  const _ToolCard({
+    required this.toolId,
+    required this.meta,
+    this.isEnabled,
+    this.onToggle,
+  });
 
   void _showToolDetail(BuildContext context) {
     final catColor = _categoryColors[meta.category] ?? AppColors.statusGreen;
@@ -2092,9 +2136,22 @@ class _ToolCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Info chevron
-            Icon(Icons.chevron_right_rounded,
-                size: 18, color: Colors.white.withValues(alpha: 0.18)),
+            // Toggle switch when onToggle provided, otherwise info chevron
+            if (onToggle != null)
+              Transform.scale(
+                scale: 0.78,
+                child: Switch(
+                  value: isEnabled ?? false,
+                  onChanged: (_) => onToggle!(),
+                  activeThumbColor: catColor,
+                  activeTrackColor: catColor.withValues(alpha: 0.25),
+                  inactiveThumbColor: Colors.white24,
+                  inactiveTrackColor: Colors.white.withValues(alpha: 0.06),
+                ),
+              )
+            else
+              Icon(Icons.chevron_right_rounded,
+                  size: 18, color: Colors.white.withValues(alpha: 0.18)),
           ],
         ),
       ),

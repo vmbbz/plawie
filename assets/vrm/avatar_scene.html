@@ -163,6 +163,20 @@
                         headY: head ? headPos.y : 1.45 
                     };
                     
+                    // Diagnostic: log which mouth expressions this VRM supports.
+                    // If neither visemes (aa/ih/ee/oh/ou) nor mouthOpen exist,
+                    // mouth animation will silently do nothing — this log helps debug.
+                    if (vrm.expressionManager) {
+                        const exprNames = Object.keys(vrm.expressionManager.expressionMap);
+                        const hasVisemes = ['aa','ih','ee','oh','ou'].some(v => exprNames.includes(v));
+                        const hasMouthOpen = exprNames.includes('mouthOpen');
+                        const mouthLog = hasVisemes
+                            ? 'VRM mouth: visemes available (' + ['aa','ih','ee','oh','ou'].filter(v => exprNames.includes(v)).join(',') + ')'
+                            : hasMouthOpen ? 'VRM mouth: mouthOpen only (no visemes)'
+                            : 'VRM mouth: WARN — no visemes or mouthOpen, mouth animation disabled';
+                        if (window.PlawieBridge) window.PlawieBridge.postMessage('LOG: [JS] ' + mouthLog);
+                    }
+
                     updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
                     currentCameraZ = targetCameraZ;
                     camera.position.z = currentCameraZ;
@@ -205,7 +219,17 @@
             );
         };
 
-        if (window.PlawieBridge) window.PlawieBridge.postMessage('READY');
+        // Poll for PlawieBridge before sending READY — matches the probe pattern above.
+        // A one-shot check can miss the bridge if Android WebView injects it after
+        // this module runs, causing _isReady to never become true in Dart and
+        // leaving setSpeechIntensity uncalled (mouth never moves).
+        (function sendReady() {
+            if (window.PlawieBridge) {
+                window.PlawieBridge.postMessage('READY');
+            } else {
+                setTimeout(sendReady, 50);
+            }
+        })();
         
         // --- NEW: Sparkle Manager (Fireworks Effect) ---
         class SparkleManager {
@@ -312,7 +336,23 @@
 
         window.setSpeechIntensity = (intensity) => {
             speechIntensity = intensity;
+            const wasSpeaking = isSpeaking;
             isSpeaking = intensity > 0.1;
+            
+            // Handle talking gesture lifecycle
+            if (isSpeaking && !wasSpeaking) {
+                // Started speaking: trigger talk gesture
+                if (gestures['talk'] && currentAction !== gestures['talk']) {
+                    window.playGesture('talk');
+                }
+            } else if (!isSpeaking && wasSpeaking) {
+                // Stopped speaking: fade out talk gesture if it was looping
+                if (currentAction === gestures['talk'] && idleAction) {
+                    idleAction.reset().fadeIn(0.5).play();
+                    currentAction.fadeOut(0.5);
+                    currentAction = idleAction;
+                }
+            }
         };
 
         window.setThinking = (thinking) => {
@@ -346,23 +386,32 @@
 
             const action = gestures[name];
             if (!action || !currentVrm || !idleAction) return;
-            if (currentAction === action) return;
+            if (currentAction === action && action.isRunning()) return;
 
             if (currentAction && currentAction !== idleAction) {
-                currentAction.fadeOut(0.5);
+                currentAction.fadeOut(0.3);
             }
 
-            action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.5).play();
+            // For the 'talk' gesture, we might want it to loop if we're still speaking
+            if (name === 'talk') {
+                action.setLoop(THREE.LoopRepeat);
+            } else {
+                action.setLoop(THREE.LoopOnce);
+            }
+
+            action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.3).play();
             currentAction = action;
 
-            const duration = action.getClip().duration;
-            setTimeout(() => {
-                if (currentAction === action) {
-                    idleAction.reset().fadeIn(0.5).play();
-                    action.fadeOut(0.5);
-                    currentAction = idleAction;
-                }
-            }, (duration * 1000) - 500);
+            if (action.loop === THREE.LoopOnce) {
+                const duration = action.getClip().duration;
+                setTimeout(() => {
+                    if (currentAction === action) {
+                        idleAction.reset().fadeIn(0.5).play();
+                        action.fadeOut(0.5);
+                        currentAction = idleAction;
+                    }
+                }, (duration * 1000) - 300);
+            }
         };
 
         window.processKeywords = (text) => {

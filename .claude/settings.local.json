@@ -29,7 +29,8 @@
       "Bash(gh repo:*)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''full_name''''\\), d.get\\(''''description''''\\), d.get\\(''''default_branch''''\\)\\)\")",
       "Bash(python3 -c \"import sys,json; [print\\(f[''''name''''], f[''''type'''']\\) for f in json.load\\(sys.stdin\\)]\")",
-      "WebFetch(domain:openclawskills.best)"
+      "WebFetch(domain:openclawskills.best)",
+      "Bash(grep -E \"\\\\.\\(html|js\\)$\")"
     ]
   }
 }

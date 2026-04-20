@@ -17,6 +17,10 @@ class ChatBubble extends StatelessWidget {
     this.isThinking = false,
   });
 
+  /// Approximate word count for display in the Reasoning chip header.
+  static int _wordCount(String text) =>
+      text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -69,6 +73,13 @@ class ChatBubble extends StatelessWidget {
                           : CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // ── Collapsible Reasoning section (Qwen/DeepSeek <think> blocks) ──
+                        // Shown only for assistant messages that emitted <think>…</think>
+                        // reasoning tokens. Collapsed by default to keep chat clean.
+                        if (!isUser && message.hasThinkContent) ...[
+                          _ReasoningTile(thinkContent: message.thinkContent!),
+                          const SizedBox(height: 8),
+                        ],
                         // Image thumbnail shown above text when message carries an image
                         if (message.hasImage) ...[
                           ClipRRect(
@@ -132,6 +143,81 @@ class ChatBubble extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Collapsible "Reasoning" section shown above assistant replies when the model
+/// emitted `<think>…</think>` blocks (e.g. Qwen, DeepSeek reasoning models).
+/// Collapsed by default so it doesn't clutter the chat; tap to expand.
+class _ReasoningTile extends StatefulWidget {
+  final String thinkContent;
+  const _ReasoningTile({required this.thinkContent});
+
+  @override
+  State<_ReasoningTile> createState() => _ReasoningTileState();
+}
+
+class _ReasoningTileState extends State<_ReasoningTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final wordCount = ChatBubble._wordCount(widget.thinkContent);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row — always visible, tap to toggle
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.psychology_outlined, size: 14, color: Colors.white38),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Reasoning  ·  $wordCount words',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white38,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 16,
+                    color: Colors.white30,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Expandable body with the raw thinking text
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Text(
+                widget.thinkContent.trim(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.white38,
+                  fontStyle: FontStyle.italic,
+                  height: 1.5,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

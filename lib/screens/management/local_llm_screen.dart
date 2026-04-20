@@ -40,9 +40,9 @@ const _kCloudOllamaModels = [
   {'tag': 'gpt-oss:120b-cloud',       'label': 'GPT-OSS 120B',        'category': 'General',   'hasTools': 'true'},
   {'tag': 'gpt-oss:20b-cloud',        'label': 'GPT-OSS 20B',         'category': 'General',   'hasTools': 'false'},
   {'tag': 'deepseek-v3.1:671b-cloud', 'label': 'DeepSeek V3.1 671B', 'category': 'Reasoning', 'hasTools': 'false'},
-  {'tag': 'kimi-k2.5:cloud',          'label': 'Kimi K2.5',           'category': 'General',   'hasTools': 'false'},
-  {'tag': 'minimax-m2.7:cloud',       'label': 'MiniMax M2.7',        'category': 'General',   'hasTools': 'false'},
-  {'tag': 'glm-5:cloud',              'label': 'GLM-5',               'category': 'General',   'hasTools': 'false'},
+  {'tag': 'kimi-k2.5:cloud',          'label': 'Kimi K2.5',          'category': 'General',   'hasTools': 'true'},
+  {'tag': 'minimax-m2.7:cloud',       'label': 'MiniMax M2.7',       'category': 'General',   'hasTools': 'false'},
+  {'tag': 'glm-5:cloud',              'label': 'GLM-5',              'category': 'General',   'hasTools': 'false'},
 ];
 
 class LocalLlmScreen extends StatefulWidget {
@@ -335,11 +335,27 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (_isCheckingSignin) return;
     if (mounted) setState(() => _isCheckingSignin = true);
     try {
-      final result = await NativeBridge.runInProot(
-        'test -f ~/.ollama/id_token && echo "ok" || echo "no"',
+      // Primary: check for Ollama credentials file (set by `ollama signin`)
+      final credsResult = await NativeBridge.runInProot(
+        'test -f ~/.ollama/credentials && echo "ok" || echo "no"',
         timeout: 5,
       );
-      if (mounted) setState(() => _ollamaSignedIn = result.trim() == 'ok');
+      bool signedIn = credsResult.trim() == 'ok';
+      
+      // Secondary: if creds file exists, verify it's valid by checking ollama status
+      if (signedIn) {
+        final statusResult = await NativeBridge.runInProot(
+          'OLLAMA_HOST=127.0.0.1:11434 ollama list 2>&1 | head -5',
+          timeout: 8,
+        );
+        // If ollama is not running or returns auth error, treat as not signed in
+        final lower = statusResult.toLowerCase();
+        if (lower.contains('unauthorized') || lower.contains('not allowed') || lower.contains('connection refused')) {
+          signedIn = false;
+        }
+      }
+      
+      if (mounted) setState(() => _ollamaSignedIn = signedIn);
     } catch (_) {
       if (mounted) setState(() => _ollamaSignedIn = false);
     } finally {
@@ -364,21 +380,27 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (_isSigningIn) return;
     if (mounted) setState(() => _isSigningIn = true);
     try {
-      // `ollama signin` prints a browser URL for OAuth, then blocks.
-      // We run it with a short timeout to capture just the URL line, then open it.
+      // Step 1: Start ollama signin in background and capture the URL quickly.
+      // Do NOT kill the process — it must stay alive to receive the OAuth callback
+      // from the browser. We use a short read of the first output lines.
       final result = await NativeBridge.runInProot(
-        'timeout 8 ollama signin 2>&1 | head -10',
-        timeout: 12,
+        // Redirect output to a temp file, then read first 10 lines
+        // The process continues running in the background for OAuth callback
+        'ollama signin > /tmp/oc_signin_out.txt 2>&1 & '
+        'disown \$!; '
+        'sleep 3; '
+        'head -10 /tmp/oc_signin_out.txt',
+        timeout: 15,
       );
+      
       final urlMatch = RegExp(r'https://[^\s]+').firstMatch(result);
       if (urlMatch != null) {
         final uri = Uri.tryParse(urlMatch.group(0)!);
         if (uri != null && await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-          // didChangeAppLifecycleState(resumed) will re-check signin status
-          // when user returns from the browser.
+          // NOTE: didChangeAppLifecycleState(resumed) will re-check signin
+          // when user returns from browser. The BG process handles the callback.
         } else {
-          // url_launcher unavailable — copy to clipboard as fallback
           await Clipboard.setData(ClipboardData(text: urlMatch.group(0)!));
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -388,23 +410,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           }
         }
       } else {
-        // Couldn't extract URL — show raw output so user can act on it
+        // Didn't get URL — show raw output
         if (mounted) {
           showDialog(
             context: context,
             builder: (_) => AlertDialog(
               backgroundColor: const Color(0xFF1A1A2E),
-              title: const Text('Ollama Sign-in Output',
-                  style: TextStyle(color: Colors.white, fontSize: 14)),
+              title: const Text('Ollama Sign-in', style: TextStyle(color: Colors.white, fontSize: 14)),
               content: SelectableText(
                 result.isNotEmpty ? result : 'No output received. Is Ollama Hub running?',
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
-                ),
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
               ],
             ),
           );
@@ -423,6 +441,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   }
 
   Future<void> _selectCloudOllamaModel(String tag) async {
+    if (!_isInternalOllamaInstalled || !_isOllamaHealthy) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Start the Local LLM Hub first to use cloud models.'),
+          backgroundColor: Colors.amber,
+        ),
+      );
+      return;
+    }
+
     if (!_ollamaSignedIn) {
       if (!mounted) return;
       showModalBottomSheet(
@@ -2287,23 +2316,51 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Info banner — always shown
+                          // What is Ollama Cloud? (Premium Card)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.04),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFFAB47BC).withValues(alpha: 0.15),
+                                  const Color(0xFFAB47BC).withValues(alpha: 0.05),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFAB47BC).withValues(alpha: 0.2)),
                             ),
-                            child: const Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.info_outline_rounded, color: Colors.white38, size: 13),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Free · No download needed · Powered by Ollama · Requires a free ollama.com account',
-                                    style: TextStyle(color: Colors.white38, fontSize: 10),
-                                  ),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 18),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      'Ollama Cloud',
+                                      style: GoogleFonts.outfit(
+                                        color: const Color(0xFFAB47BC),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFAB47BC).withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text('FREE', style: TextStyle(color: Color(0xFFAB47BC), fontSize: 8, fontWeight: FontWeight.w900)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                const Text(
+                                  'Run massive models like Qwen 480B or Llama 405B without downloading anything. All you need is a free ollama.com account.',
+                                  style: TextStyle(color: Colors.white60, fontSize: 11, height: 1.4),
                                 ),
                               ],
                             ),
