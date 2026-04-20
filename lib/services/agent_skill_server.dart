@@ -22,6 +22,13 @@ import 'tts_service.dart';
 ///   POST /marketplace/*              — molt-launch skill proxy
 ///   POST /sentinel/*                 — valeo-sentinel skill proxy
 class AgentSkillServer {
+  // Singleton — main() starts the server; ChatScreen accesses the same instance
+  // to wire up onAvatarChanged/onGesturePlayed/onEmotionSet callbacks so that
+  // agent-triggered avatar changes reflect immediately in the live UI.
+  static final AgentSkillServer instance = AgentSkillServer._internal();
+  factory AgentSkillServer() => instance;
+  AgentSkillServer._internal();
+
   HttpServer? _server;
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI

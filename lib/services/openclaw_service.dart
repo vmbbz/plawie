@@ -193,4 +193,26 @@ class OpenClawCommandService {
     _cachedVersion = null;
     _cacheTime = null;
   }
+
+  /// Writes [tools] as the new `tools.allow` list in openclaw.json.
+  /// Reads the full config first, patches only the tools.allow key, and
+  /// writes it back via `tee` so the gateway can hot-reload permissions
+  /// without a full restart. Returns true on success.
+  static Future<bool> saveToolsAllow(List<String> tools) async {
+    try {
+      final config = await getOpenClawConfig() ?? <String, dynamic>{};
+      config['tools'] ??= <String, dynamic>{};
+      config['tools']['allow'] = tools;
+      final encoded = jsonEncode(config);
+      // Escape single quotes in the JSON so the shell argument is safe
+      final escaped = encoded.replaceAll("'", "'\\''");
+      await NativeBridge.runInProot(
+        "echo '$escaped' | tee /root/.openclaw/openclaw.json > /dev/null",
+        timeout: 10,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 }

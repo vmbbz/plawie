@@ -1774,6 +1774,19 @@ PARAMETER num_batch 512
   }
 
 
+  /// Checks if the Ollama daemon is authenticated with ollama.com.
+  Future<bool> _checkOllamaCredentials() async {
+    try {
+      final prootPath = await NativeBridge.getProotPath();
+      final hasCreds = File('$prootPath/root/.ollama/credentials').existsSync();
+      if (!hasCreds) return false;
+      final result = await NativeBridge.runInProot('ollama list');
+      return !result.contains('not authorized');
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local-llm/ → fllama NDK (on-device inference, no network, no gateway)
@@ -1820,17 +1833,20 @@ PARAMETER num_batch 512
     // If WS is unavailable, ollama/ falls back to direct :11434 so inference
     // still works; cloud falls back to HTTP gateway proxy.
     final isOllama = model.startsWith('ollama/');
-    // Cloud Ollama requires `ollama signin` on the device (or OLLAMA_API_KEY env var).
-    // If auth is missing, Ollama returns 401 "not allowed" — surface this early.
-    if (isOllama && model.contains(':cloud')) {
-      _addActivity('[CHAT] ☁ Cloud Ollama model — requires `ollama signin` on device (or OLLAMA_API_KEY). If you see "not allowed", run: ollama signin');
-    }
-    // Cloud Ollama models (e.g. qwen3-coder:480b-cloud) are proxied by the
-    // local Ollama daemon to ollama.com — they need different handling:
-    // no context cap, no mobile system prompt, no cold-start logic.
     final isCloudOllama = isOllama && model.contains(':cloud');
     final isLocalOllama = isOllama && !isCloudOllama;
 
+    if (isCloudOllama) {
+      final signedIn = await _checkOllamaCredentials();
+      if (!signedIn) {
+        yield '[Error] Cloud model sign-in required.\n\n'
+              'Go to Local LLM → Cloud Models and tap "Sign in to Ollama", '
+              'or run `ollama signin` in the Terminal tab.\n\n'
+              'Once signed in, tap Refresh on the auth status card and try again.';
+        return;
+      }
+      _addActivity('[CHAT] ☁ Cloud Ollama model — auth verified.');
+    }
     // For local Ollama: proactively clear bloated session files so the gateway
     // doesn't forward a wall of stale history on every request.
     // Fire-and-forget — don't block the message on disk I/O.

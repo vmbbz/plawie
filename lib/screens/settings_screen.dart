@@ -783,12 +783,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Claude Opus 4.6',
       'GPT-4o',
       'Llama 3.1 405B',
-      'Qwen3 Coder 480B (Ollama Cloud)',
-      'GPT-OSS 120B (Ollama Cloud)',
-      'DeepSeek V3.1 671B (Ollama Cloud)',
-      'Kimi K2.5 (Ollama Cloud)',
-      'MiniMax M2.7 (Ollama Cloud)',
-      'GLM-5 (Ollama Cloud)',
+      '☁ QWEN3 CODER 480B',
+      '☁ GPT-OSS 120B',
+      '☁ DEEPSEEK V3.1 671B',
+      '☁ KIMI K2.5',
+      '☁ MINIMAX M2.7',
+      '☁ GLM-5',
     ];
 
     final llmService = LocalLlmService();

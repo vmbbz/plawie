@@ -82,6 +82,16 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       prefix: 'gsk_',
       defaultModel: 'groq/llama-3.1-405b',
     ),
+    _ProviderInfo(
+      id: 'OLLAMA_CLOUD',
+      name: 'Ollama Cloud',
+      subtitle: 'Free · zero-config',
+      icon: Icons.cloud_queue_rounded,
+      color: Color(0xFFAB47BC),
+      hint: '',
+      prefix: '',
+      defaultModel: 'qwen3-coder:480b-cloud',
+    ),
   ];
 
   @override
@@ -129,6 +139,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       case 0:
         return _selectedProvider != null;
       case 1:
+        if (_selectedProvider == 'OLLAMA_CLOUD') return true;
         return _apiKeyController.text.trim().length >= 8;
       case 2:
         return _agentNameController.text.trim().isNotEmpty;
@@ -647,154 +658,215 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
         ),
         const SizedBox(height: 24),
-        Text(
-          'Enter your ${provider.name} API key',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Your key is stored locally on your device and never shared.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 24),
-        // Glass text field
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: isDark 
-              ? Colors.white.withOpacity(0.08)
-              : Colors.black.withOpacity(0.05),
-            border: Border.all(
-              color: isDark 
-                ? Colors.white.withOpacity(0.15)
-                : Colors.black.withOpacity(0.1),
-              width: 1,
+        if (provider.id == 'OLLAMA_CLOUD') ...[
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: provider.color.withAlpha(isDark ? 20 : 15),
+              border: Border.all(
+                color: provider.color.withAlpha(50),
+                width: 1,
+              ),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark 
-                  ? Colors.black.withOpacity(0.2)
-                  : Colors.black.withOpacity(0.08),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-                spreadRadius: 0,
-              ),
-              BoxShadow(
-                color: isDark 
-                  ? Colors.white.withOpacity(0.1)
-                  : Colors.white.withOpacity(0.3),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-                spreadRadius: -3,
-              ),
-            ],
-          ),
-          child: TextField(
-            controller: _apiKeyController,
-            obscureText: _apiKeyObscured,
-            autocorrect: false,
-            enableSuggestions: false,
-            onChanged: (_) => setState(() {}),
-            style: TextStyle(
-              fontFamily: 'monospace', 
-              fontSize: 14,
-              color: isDark ? Colors.white : Colors.black,
-            ),
-            decoration: InputDecoration(
-              hintText: provider.hint,
-              hintStyle: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 14,
-                color: theme.colorScheme.onSurfaceVariant.withAlpha(80),
-              ),
-              prefixIcon: Container(
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: provider.color.withAlpha(isDark ? 40 : 25),
-                ),
-                child: Icon(Icons.key, color: provider.color, size: 20),
-              ),
-              suffixIcon: Container(
-                margin: const EdgeInsets.only(left: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: isDark 
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.05),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    _apiKeyObscured ? Icons.visibility_off : Icons.visibility,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+            child: Column(
+              children: [
+                Icon(provider.icon, color: provider.color, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'No API key needed',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  onPressed: () =>
-                      setState(() => _apiKeyObscured = !_apiKeyObscured),
                 ),
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        // Glass key format hint
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: isDark 
-              ? Colors.white.withOpacity(0.06)
-              : Colors.black.withOpacity(0.03),
-            border: Border.all(
-              color: isDark 
-                ? Colors.white.withOpacity(0.12)
-                : Colors.black.withOpacity(0.08),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark 
-                  ? Colors.black.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.05),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-                spreadRadius: 0,
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: isDark 
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.05),
-                ),
-                child: Icon(Icons.info_outline,
-                    size: 16, color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Keys typically start with "${provider.prefix}"',
+                const SizedBox(height: 8),
+                Text(
+                  'Plawie will seamlessly use your free ollama.com account once you sign in from the Local LLM settings. You can proceed without extra configuration.',
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
-                    fontFamily: 'monospace',
+                    height: 1.5,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ] else ...[
+          Text(
+            'Enter your ${provider.name} API key',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your key is stored locally on your device and never shared.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Glass text field
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: isDark 
+                ? Colors.white.withOpacity(0.08)
+                : Colors.black.withOpacity(0.05),
+              border: Border.all(
+                color: isDark 
+                  ? Colors.white.withOpacity(0.15)
+                  : Colors.black.withOpacity(0.1),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark 
+                    ? Colors.black.withOpacity(0.2)
+                    : Colors.black.withOpacity(0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                  spreadRadius: 0,
+                ),
+                BoxShadow(
+                  color: isDark 
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.white.withOpacity(0.3),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                  spreadRadius: -3,
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _apiKeyController,
+              obscureText: _apiKeyObscured,
+              autocorrect: false,
+              enableSuggestions: false,
+              onChanged: (_) => setState(() {}),
+              style: TextStyle(
+                fontFamily: 'monospace', 
+                fontSize: 14,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+              decoration: InputDecoration(
+                hintText: provider.hint,
+                hintStyle: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(80),
+                ),
+                prefixIcon: Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: provider.color.withAlpha(isDark ? 40 : 25),
+                  ),
+                  child: Icon(Icons.key, color: provider.color, size: 20),
+                ),
+                suffixIcon: Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: isDark 
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.05),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      _apiKeyObscured ? Icons.visibility_off : Icons.visibility,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    onPressed: () =>
+                        setState(() => _apiKeyObscured = !_apiKeyObscured),
+                  ),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Glass key format hint
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: isDark 
+                ? Colors.white.withOpacity(0.06)
+                : Colors.black.withOpacity(0.03),
+              border: Border.all(
+                color: isDark 
+                  ? Colors.white.withOpacity(0.12)
+                  : Colors.black.withOpacity(0.08),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark 
+                    ? Colors.black.withOpacity(0.15)
+                    : Colors.black.withOpacity(0.05),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: isDark 
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.05),
+                  ),
+                  child: Icon(Icons.info_outline,
+                      size: 16, color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Keys typically start with "${provider.prefix}"',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Help text for where to find key
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Where to find your key',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '1. Sign in to your ${provider.name} console\n'
+                  '2. Navigate to API Keys section\n'
+                  '3. Create a new key and paste it here',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
