@@ -81,6 +81,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   bool _ollamaSignedIn = false;
   bool _isCheckingSignin = false;
   bool _isSigningIn = false; // true while _launchOllamaSignin() is running
+  String? _pendingCloudModel; // tracks the model user tapped before sign-in
 
   // Thread slider state
   int _cpuCoreCount = 8; // default; refined at initState from /proc/cpuinfo
@@ -185,9 +186,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Re-check signin status when user returns from the browser OAuth flow
+    // Re-check signin status when user returns from the browser OAuth flow.
+    // We add a 1s delay because the ollama background process may take a 
+    // moment to finish writing the ~/.ollama/credentials file.
     if (state == AppLifecycleState.resumed) {
-      _checkOllamaSignin();
+      Future.delayed(const Duration(seconds: 1), () => _checkOllamaSignin());
     }
   }
 
@@ -336,11 +339,10 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (mounted) setState(() => _isCheckingSignin = true);
     try {
       // Primary: check for Ollama credentials file (set by `ollama signin`)
-      final credsResult = await NativeBridge.runInProot(
-        'test -f ~/.ollama/credentials && echo "ok" || echo "no"',
-        timeout: 5,
-      );
-      bool signedIn = credsResult.trim() == 'ok';
+      final filesDir = await GatewayService().getFilesDir();
+      final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
+      final hasCreds = await File(credsPath).exists();
+      bool signedIn = hasCreds;
       
       // Secondary: if creds file exists, verify it's valid by checking ollama status
       if (signedIn) {
@@ -348,14 +350,22 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           'OLLAMA_HOST=127.0.0.1:11434 ollama list 2>&1 | head -5',
           timeout: 8,
         );
-        // If ollama is not running or returns auth error, treat as not signed in
+        // If ollama returns auth error, treat as not signed in
         final lower = statusResult.toLowerCase();
-        if (lower.contains('unauthorized') || lower.contains('not allowed') || lower.contains('connection refused')) {
+        if (lower.contains('unauthorized') || lower.contains('not allowed')) {
           signedIn = false;
         }
       }
       
-      if (mounted) setState(() => _ollamaSignedIn = signedIn);
+      if (mounted) {
+        setState(() => _ollamaSignedIn = signedIn);
+        // If we just successfully signed in and had a model pending, activate it now.
+        if (signedIn && _pendingCloudModel != null) {
+          final modelToActivate = _pendingCloudModel!;
+          _pendingCloudModel = null; // Clear first to avoid loops
+          _selectCloudOllamaModel(modelToActivate);
+        }
+      }
     } catch (_) {
       if (mounted) setState(() => _ollamaSignedIn = false);
     } finally {
@@ -398,8 +408,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         final uri = Uri.tryParse(urlMatch.group(0)!);
         if (uri != null && await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-          // NOTE: didChangeAppLifecycleState(resumed) will re-check signin
-          // when user returns from browser. The BG process handles the callback.
         } else {
           await Clipboard.setData(ClipboardData(text: urlMatch.group(0)!));
           if (mounted) {
@@ -410,22 +418,33 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           }
         }
       } else {
-        // Didn't get URL — show raw output
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              backgroundColor: const Color(0xFF1A1A2E),
-              title: const Text('Ollama Sign-in', style: TextStyle(color: Colors.white, fontSize: 14)),
-              content: SelectableText(
-                result.isNotEmpty ? result : 'No output received. Is Ollama Hub running?',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
+        // Didn't get URL — check if it's because we're already logged in
+        if (result.contains('already logged in') || result.contains('Logged in as')) {
+          _checkOllamaSignin(); // Re-probe to update UI state immediately
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Already logged in to Ollama Cloud!'),
+              backgroundColor: Color(0xFF00C853),
+            ));
+          }
+        } else {
+          // Show raw output for debug
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                backgroundColor: const Color(0xFF1A1A2E),
+                title: const Text('Ollama Sign-in', style: TextStyle(color: Colors.white, fontSize: 14)),
+                content: SelectableText(
+                  result.isNotEmpty ? result : 'No output received. Is Ollama Hub running?',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                ],
               ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-              ],
-            ),
-          );
+            );
+          }
         }
       }
     } catch (e) {
@@ -453,6 +472,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     }
 
     if (!_ollamaSignedIn) {
+      _pendingCloudModel = tag; // Store so we can auto-activate after sign-in
       if (!mounted) return;
       showModalBottomSheet(
         context: context,
