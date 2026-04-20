@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -43,6 +44,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
   late final WebViewController _controller;
   final VrmAssetServer _server = VrmAssetServer();
   bool _isReady = false;
+  // Fallback timer: re-nudges the JS to send READY if the first attempt was
+  // missed due to a PlawieBridge injection race on some Android WebView versions.
+  Timer? _readyFallbackTimer;
 
   @override
   void initState() {
@@ -63,6 +67,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
         onMessageReceived: (JavaScriptMessage message) {
           if (message.message == 'READY') {
             if (mounted) {
+              // Cancel fallback timer — JS bridge is confirmed working
+              _readyFallbackTimer?.cancel();
               setState(() => _isReady = true);
               _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
               _syncState();
@@ -91,6 +97,28 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
 
     // Start the local HTTP server, then load the HTML from it
     _startServerAndLoad();
+
+    // Fallback: if READY isn't received within 5 s, nudge the JS to retry.
+    // Handles edge cases where the PlawieBridge polling in HTML misses the window.
+    _readyFallbackTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (!mounted || _isReady) {
+        timer.cancel();
+        return;
+      }
+      // Ask JS to re-send READY if the bridge is now available
+      _controller.runJavaScript('''
+        if (window.PlawieBridge && !window._readySent) {
+          window._readySent = true;
+          window.PlawieBridge.postMessage('READY');
+        }
+      ''');
+    });
+  }
+
+  @override
+  void dispose() {
+    _readyFallbackTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _startServerAndLoad() async {
@@ -156,12 +184,6 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       if (window.setGlowIntensity) window.setGlowIntensity(${widget.glowIntensity});
       if (window.setPipMode) window.setPipMode(${widget.isPip});
     ''');
-  }
-
-  @override
-  void dispose() {
-    // Shared singleton server persists across widget instances
-    super.dispose();
   }
 
   @override
