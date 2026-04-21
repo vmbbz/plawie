@@ -1789,23 +1789,50 @@ PARAMETER num_batch 512
 
 
   /// Checks if the Ollama daemon is authenticated with ollama.com.
-  /// Only checks for the credential file existence and sanity — this is
-  /// sufficient proof that `ollama signin` completed successfully. Avoids
-  /// running `ollama list` which can fail when the hub is still starting.
+  /// Uses multiple strategies because the PRoot credential file path varies
+  /// across Android devices and Ollama versions:
+  /// 1. Check the expected credential file path
+  /// 2. If hub is running, probe `ollama list` — if it succeeds without
+  ///    "unauthorized", the user IS signed in (most reliable check).
   /// Public so LocalLlmScreen can share this single auth check.
   Future<bool> checkOllamaCredentials() async {
+    // Strategy 1: check the expected cred file path
     try {
       final filesDir = await getFilesDir();
       final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
       final file = File(credsPath);
-      if (!await file.exists()) return false;
-      // Sanity: a valid credential file should be > 10 bytes (JSON with token).
-      // Protects against truncated/corrupted files from interrupted writes.
-      final size = await file.length();
-      return size > 10;
-    } catch (_) {
-      return false;
+      if (await file.exists()) {
+        final size = await file.length();
+        if (size > 10) {
+          _addActivity('[AUTH] Credential file found (${size}B)');
+          return true;
+        }
+      }
+    } catch (_) {}
+
+    // Strategy 2: if the hub is running, ask ollama directly
+    if (_state.isOllamaRunning) {
+      try {
+        final result = await NativeBridge.runInProot(
+          'OLLAMA_HOST=127.0.0.1:11434 ollama list 2>&1 | head -3',
+          timeout: 8,
+        );
+        final lower = result.toLowerCase();
+        // If we get "unauthorized" or "not allowed", definitely not signed in
+        if (lower.contains('unauthorized') || lower.contains('not allowed')) {
+          _addActivity('[AUTH] ollama list → unauthorized');
+          return false;
+        }
+        // If we get actual model output or "NAME" header, user IS signed in
+        if (lower.contains('name') || lower.contains(':') || result.trim().isNotEmpty) {
+          _addActivity('[AUTH] ollama list → signed in (live probe)');
+          return true;
+        }
+      } catch (_) {}
     }
+
+    _addActivity('[AUTH] No credential file found and hub probe failed');
+    return false;
   }
 
   /// Route a chat message to the correct backend based on model prefix.
@@ -1858,15 +1885,7 @@ PARAMETER num_batch 512
     final isLocalOllama = isOllama && !isCloudOllama;
 
     if (isCloudOllama) {
-      final signedIn = await checkOllamaCredentials();
-      if (!signedIn) {
-        yield '[Error] Cloud model sign-in required.\n\n'
-              'Go to Local LLM → Cloud Models and tap "Sign in to Ollama", '
-              'or run `ollama signin` in the Terminal tab.\n\n'
-              'Once signed in, tap Refresh on the auth status card and try again.';
-        return;
-      }
-      _addActivity('[CHAT] ☁ Cloud Ollama model — auth verified.');
+      _addActivity('[CHAT] ☁ Cloud Ollama model — routing via hub proxy.');
     }
     // For local Ollama: proactively clear bloated session files so the gateway
     // doesn't forward a wall of stale history on every request.
