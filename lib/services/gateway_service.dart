@@ -1775,21 +1775,15 @@ PARAMETER num_batch 512
 
 
   /// Checks if the Ollama daemon is authenticated with ollama.com.
-  Future<bool> _checkOllamaCredentials() async {
+  /// Only checks for the credential file existence — this is sufficient proof
+  /// that `ollama signin` completed successfully. Avoids running `ollama list`
+  /// which can fail with "connection refused" if the hub is still starting.
+  /// Public so LocalLlmScreen can share this single auth check.
+  Future<bool> checkOllamaCredentials() async {
     try {
       final filesDir = await getFilesDir();
       final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
-      final hasCreds = await File(credsPath).exists();
-      if (!hasCreds) return false;
-
-      final result = await NativeBridge.runInProot('ollama list 2>&1');
-      final lower = result.toLowerCase();
-      // If we get "unauthorized" or "not allowed", or if the command fails,
-      // treat as not signed in.
-      if (lower.contains('unauthorized') || lower.contains('not allowed') || lower.contains('connection refused')) {
-        return false;
-      }
-      return true;
+      return await File(credsPath).exists();
     } catch (_) {
       return false;
     }
@@ -1845,7 +1839,7 @@ PARAMETER num_batch 512
     final isLocalOllama = isOllama && !isCloudOllama;
 
     if (isCloudOllama) {
-      final signedIn = await _checkOllamaCredentials();
+      final signedIn = await checkOllamaCredentials();
       if (!signedIn) {
         yield '[Error] Cloud model sign-in required.\n\n'
               'Go to Local LLM → Cloud Models and tap "Sign in to Ollama", '
