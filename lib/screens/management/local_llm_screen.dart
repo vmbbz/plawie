@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,6 +8,7 @@ import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/native_bridge.dart';
 import 'package:clawa/services/openclaw_service.dart';
+import 'package:clawa/services/preferences_service.dart';
 import 'package:clawa/models/gateway_state.dart';
 
 /// Curated on-device Ollama library models, sorted smallest → largest.
@@ -83,6 +83,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   bool _isCheckingSignin = false;
   bool _isSigningIn = false; // true while _launchOllamaSignin() is running
   String? _pendingCloudModel; // tracks the model user tapped before sign-in
+  String? _activeCloudModel; // tracks the currently-activated cloud model
 
   // Thread slider state
   int _cpuCoreCount = 8; // default; refined at initState from /proc/cpuinfo
@@ -328,6 +329,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         });
         if (healthy) {
           _fetchOllamaModels();
+          // If we had a cloud model waiting for the hub to start, activate it now.
+          if (_pendingCloudModel != null) {
+            final tag = _pendingCloudModel!;
+            _pendingCloudModel = null;
+            _selectCloudOllamaModel(tag);
+          }
         }
       }
     } catch (_) {
@@ -339,24 +346,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (_isCheckingSignin) return;
     if (mounted) setState(() => _isCheckingSignin = true);
     try {
-      // Primary: check for Ollama credentials file (set by `ollama signin`)
-      final filesDir = await GatewayService().getFilesDir();
-      final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
-      final hasCreds = await File(credsPath).exists();
-      bool signedIn = hasCreds;
-      
-      // Secondary: if creds file exists, verify it's valid by checking ollama status
-      if (signedIn) {
-        final statusResult = await NativeBridge.runInProot(
-          'OLLAMA_HOST=127.0.0.1:11434 ollama list 2>&1 | head -5',
-          timeout: 8,
-        );
-        // If ollama returns auth error, treat as not signed in
-        final lower = statusResult.toLowerCase();
-        if (lower.contains('unauthorized') || lower.contains('not allowed')) {
-          signedIn = false;
-        }
-      }
+      // Use the consolidated auth check from GatewayService (credential file only).
+      // This avoids running `ollama list` which fails when the hub is still starting.
+      final signedIn = await GatewayService().checkOllamaCredentials();
       
       if (mounted) {
         setState(() => _ollamaSignedIn = signedIn);
@@ -365,6 +357,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           final modelToActivate = _pendingCloudModel!;
           _pendingCloudModel = null; // Clear first to avoid loops
           _selectCloudOllamaModel(modelToActivate);
+        }
+        // Also load the active cloud model from prefs if we're signed in.
+        if (signedIn && _activeCloudModel == null) {
+          final configured = PreferencesService().configuredModel;
+          if (configured != null && configured.contains(':cloud')) {
+            setState(() => _activeCloudModel = configured.replaceFirst('ollama/', ''));
+          }
         }
       }
     } catch (_) {
@@ -461,14 +460,15 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   }
 
   Future<void> _selectCloudOllamaModel(String tag) async {
-    if (!_isInternalOllamaInstalled || !_isOllamaHealthy) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Start the Local LLM Hub first to use cloud models.'),
-          backgroundColor: Colors.amber,
-        ),
-      );
+    if (!_isInternalOllamaInstalled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please install the Agent Hub first.'),
+            backgroundColor: Colors.amber,
+          ),
+        );
+      }
       return;
     }
 
@@ -528,9 +528,36 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       );
       return;
     }
-    if (mounted) Navigator.pop(context);
+
+    // AUTO-START: If the hub is not running, start it for the user before activating.
+    if (!_isOllamaHealthy) {
+      _pendingCloudModel = tag;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Starting Agent Hub to activate $tag...'),
+            backgroundColor: Colors.blueAccent,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      if (!_isInternalOllamaRunning) {
+        _toggleInternalOllama(); // This sets _isTogglingOllama and calls startInternalOllama()
+      } else {
+        // Hub is "running" (process exists) but not "healthy" (API down).
+        // Trigger a fresh status probe which will then chain-activate the model.
+        _checkOllamaStatus();
+      }
+      return;
+    }
+
     setState(() => _isRegisteringOllama = true);
     try {
+      // 1. Persist the full model path (ollama/tag) to gateway config AND prefs.
+      final fullModel = tag.startsWith('ollama/') ? tag : 'ollama/$tag';
+      await GatewayService().persistModel(fullModel);
+
+      // 2. Also update the Ollama provider config block for gateway routing.
       final currentSynced = _ollamaModels.map((m) => m['id']!).toList();
       await GatewayService().configureOllama(
         primaryModel: tag,
@@ -538,13 +565,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         syncedModels: [...currentSynced, tag],
         isCloudModel: true,
       );
+
+      // 3. Force the gateway WebSocket to reconnect with the new model.
+      GatewayService().disconnectWebSocket();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ollama cloud model activated: $tag'),
+            content: Text('☁ Cloud model activated: $tag'),
             backgroundColor: const Color(0xFFAB47BC),
           ),
         );
+        setState(() => _activeCloudModel = tag);
       }
     } catch (e) {
       if (mounted) {
@@ -556,6 +588,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       if (mounted) setState(() => _isRegisteringOllama = false);
     }
   }
+
 
   Future<void> _fetchOllamaModels() async {
     // Prefer the managed list from GatewayService (canonical names from our
@@ -1522,7 +1555,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionLabel('LOCAL LLM HUB'),
+        _buildSectionLabel('AGENT HUB'),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(18),
@@ -1530,9 +1563,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             color: const Color(0xFF1E1E2E),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(
-              color: _isOllamaHealthy
-                  ? AppColors.statusGreen.withValues(alpha: 0.3)
-                  : Colors.white.withValues(alpha: 0.1),
+              color: _activeCloudModel != null
+                  ? const Color(0xFFAB47BC).withValues(alpha: 0.3)
+                  : _isOllamaHealthy
+                      ? AppColors.statusGreen.withValues(alpha: 0.3)
+                      : Colors.white.withValues(alpha: 0.1),
             ),
           ),
           child: Column(
@@ -1541,8 +1576,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               Row(
                 children: [
                   Icon(
-                    _isInternalOllamaInstalled ? Icons.settings_input_component : Icons.auto_awesome,
-                    color: _isInternalOllamaInstalled ? AppColors.statusGreen : Colors.amber,
+                    _activeCloudModel != null
+                        ? Icons.cloud_queue_rounded
+                        : _isInternalOllamaInstalled ? Icons.settings_input_component : Icons.auto_awesome,
+                    color: _activeCloudModel != null
+                        ? const Color(0xFFAB47BC)
+                        : _isInternalOllamaInstalled ? AppColors.statusGreen : Colors.amber,
                     size: 20
                   ),
                   const SizedBox(width: 12),
@@ -1551,7 +1590,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isInternalOllamaInstalled ? 'Local LLM Hub' : 'Local LLM Hub',
+                          _activeCloudModel != null
+                              ? '☁ ${_activeCloudModel!.replaceAll(':cloud', '').toUpperCase()}'
+                              : 'Agent Hub',
                           style: GoogleFonts.outfit(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
@@ -1559,11 +1600,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                           ),
                         ),
                         Text(
-                          _isInternalOllamaInstalled 
-                            ? (_isInternalOllamaRunning ? 'Service Active' : 'Service Standby') 
-                            : 'Enable offline AI — no internet required',
+                          _activeCloudModel != null
+                            ? 'Cloud Model Active — via Ollama Hub'
+                            : _isInternalOllamaInstalled 
+                              ? (_isInternalOllamaRunning
+                                  ? (_selectedOllamaModel != null
+                                      ? 'Active · $_selectedOllamaModel'
+                                      : 'Service Active')
+                                  : 'Service Standby')
+                              : 'Enable offline AI — no internet required',
                           style: TextStyle(
-                            color: _isInternalOllamaRunning ? AppColors.statusGreen : Colors.white38,
+                            color: _activeCloudModel != null
+                                ? const Color(0xFFAB47BC)
+                                : _isInternalOllamaRunning ? AppColors.statusGreen : Colors.white38,
                             fontSize: 11
                           ),
                         ),

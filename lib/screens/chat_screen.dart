@@ -1388,6 +1388,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               .where((m) => m.startsWith('ollama/') && m.contains(':cloud'))
               .toList();
           if (cloudHub.isEmpty) return <PopupMenuEntry<dynamic>>[];
+          final hubInstalled = GatewayService().state.isOllamaRunning ||
+              _isOllamaAutoStarting;
           return <PopupMenuEntry<dynamic>>[
             const PopupMenuDivider(),
             PopupMenuItem<dynamic>(
@@ -1398,7 +1400,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 12),
                   const SizedBox(width: 6),
                   const Text('OLLAMA CLOUD', style: TextStyle(color: Color(0xFFAB47BC), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
-                  if (!GatewayService().state.isOllamaRunning) ...[
+                  if (!hubInstalled) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
