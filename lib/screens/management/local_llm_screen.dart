@@ -359,9 +359,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (_isCheckingSignin) return;
     if (mounted) setState(() => _isCheckingSignin = true);
     try {
-      // Use the consolidated auth check from GatewayService (credential file only).
-      // This avoids running `ollama list` which fails when the hub is still starting.
-      final signedIn = await GatewayService().checkOllamaCredentials();
+      // Quick path: if a cloud model is already active or configured in prefs,
+      // the user IS signed in — the daemon wouldn't accept the model without auth.
+      final configured = PreferencesService().configuredModel;
+      final hasActiveCloud = _activeCloudModel != null ||
+          (configured != null && configured.contains(':cloud'));
+
+      bool signedIn = hasActiveCloud;
+
+      // If no quick proof, run the multi-strategy credential check.
+      if (!signedIn) {
+        signedIn = await GatewayService().checkOllamaCredentials();
+      }
       
       if (mounted) {
         setState(() => _ollamaSignedIn = signedIn);
@@ -373,7 +382,6 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         }
         // Also load the active cloud model from prefs if we're signed in.
         if (signedIn && _activeCloudModel == null) {
-          final configured = PreferencesService().configuredModel;
           if (configured != null && configured.contains(':cloud')) {
             setState(() => _activeCloudModel = configured.replaceFirst('ollama/', ''));
           }
@@ -485,62 +493,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       return;
     }
 
-    if (!_ollamaSignedIn) {
-      _pendingCloudModel = tag; // Store so we can auto-activate after sign-in
-      if (!mounted) return;
-      showModalBottomSheet(
-        context: context,
-        backgroundColor: const Color(0xFF1A1A2E),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (_) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.lock_outline, color: Colors.amber, size: 32),
-              const SizedBox(height: 12),
-              const Text(
-                'Sign in to Ollama',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Cloud models run on ollama.com servers — no download needed, but a free account is required.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white60, fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _launchOllamaSignin();
-                  },
-                  icon: const Icon(Icons.open_in_browser_rounded, size: 16),
-                  label: const Text('Sign in to Ollama'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.withValues(alpha: 0.15),
-                    foregroundColor: Colors.amber,
-                    side: BorderSide(color: Colors.amber.withValues(alpha: 0.5)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
-              ),
-            ],
-          ),
-        ),
-      );
-      return;
-    }
+    // No client-side sign-in gate — the Ollama daemon handles auth.
+    // If the user isn't signed in, the daemon returns an auth error which
+    // surfaces naturally in the chat stream. The USE button always works.
 
     // AUTO-START: If the hub is not running, start it for the user before activating.
     if (!_isOllamaHealthy) {
@@ -2615,9 +2570,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                       ),
                                     ),
                                     ElevatedButton(
-                                      onPressed: _ollamaSignedIn
-                                          ? () => _selectCloudOllamaModel(m['tag']!)
-                                          : null,
+                                      onPressed: () => _selectCloudOllamaModel(m['tag']!),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(0xFFAB47BC).withValues(alpha: 0.15),
                                         foregroundColor: const Color(0xFFAB47BC),

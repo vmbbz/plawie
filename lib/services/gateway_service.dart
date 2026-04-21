@@ -1866,8 +1866,21 @@ PARAMETER num_batch 512
     }
 
     if (token == null || token.isEmpty) {
-      yield '[Error] No gateway auth token available.\n'
-            'Please ensure the gateway has started and the token is saved in openclaw.json.';
+      // Auto-start: try starting the gateway if it's not running.
+      _addActivity('[CHAT] No gateway token — attempting auto-start...');
+      try {
+        await start();
+        // Wait for gateway to stabilize
+        await Future.delayed(const Duration(seconds: 5));
+        token = await retrieveTokenFromConfig();
+      } catch (_) {}
+    }
+
+    if (token == null || token.isEmpty) {
+      yield '[Error] Gateway is not running.\n\n'
+            'The Agent Hub (gateway) needs to be started before you can chat.\n\n'
+            '**Go to Local LLM page and tap the Start button on the Agent Hub**, '
+            'then try again.';
       return;
     }
 
