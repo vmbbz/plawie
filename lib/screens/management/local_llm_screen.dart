@@ -167,6 +167,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       (m) => m.quality == 'Recommended',
       orElse: () => toolCatalog.first,
     );
+
+    // Restore the user's Ollama model choice from prefs so it survives navigation.
+    // Without this, _selectedOllamaModel starts as null and _fetchOllamaModels()
+    // would always pick the first model in the list (the model-reset bug).
+    final configured = PreferencesService().configuredModel;
+    if (configured != null && configured.startsWith('ollama/')) {
+      final modelTag = configured.replaceFirst('ollama/', '');
+      if (modelTag.contains(':cloud')) {
+        _activeCloudModel = modelTag;
+      } else {
+        _selectedOllamaModel = modelTag;
+      }
+    }
   }
 
   @override
@@ -611,6 +624,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       setState(() {
         _ollamaModels = models;
         if (_ollamaModels.isNotEmpty && _selectedOllamaModel == null) {
+          // Try to restore the user's last-used model from prefs.
+          final configured = PreferencesService().configuredModel;
+          if (configured != null && configured.startsWith('ollama/')) {
+            final modelTag = configured.replaceFirst('ollama/', '');
+            final match = _ollamaModels.any((m) => m['id'] == modelTag);
+            if (match && !modelTag.contains(':cloud')) {
+              _selectedOllamaModel = modelTag;
+              return;
+            }
+          }
+          // Fallback: pick the first available model.
           _selectedOllamaModel = _ollamaModels.first['id'];
         }
       });
@@ -624,12 +648,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       // Pass the current synced models so we don't wipe the models array in
       // openclaw.json — calling configureOllama without syncedModels writes [].
       final currentSynced = _ollamaModels.map((m) => m['id']!).toList();
+      final fullModel = 'ollama/$_selectedOllamaModel';
+
       await GatewayService().configureOllama(
         primaryModel: _selectedOllamaModel,
         setAsPrimary: true,
         syncedModels: currentSynced,
       );
+      // Persist and force WebSocket reconnect so the gateway picks up the change.
+      await GatewayService().persistModel(fullModel);
+      GatewayService().disconnectWebSocket();
+
       if (mounted) {
+        setState(() => _activeCloudModel = null); // Clear cloud model — now using local
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Ollama registered as Gateway Driver: $_selectedOllamaModel'),

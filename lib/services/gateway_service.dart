@@ -910,25 +910,39 @@ PARAMETER num_batch 512
       final prefs = PreferencesService();
       await prefs.init();
       final currentModel = prefs.configuredModel ?? '';
+      final isCloudModel = currentModel.contains(':cloud');
       final alreadyLocal = currentModel.startsWith('ollama/') ||
           currentModel.startsWith('local-llm/');
 
-      // Check if openclaw.json primary is in sync with the user's preference.
-      final liveConfig = await _readConfig();
-      final jsonPrimary = liveConfig['agents']?['defaults']?['model']?['primary'] as String?;
-      final jsonPrimaryIsLocal = jsonPrimary != null &&
-          (jsonPrimary.startsWith('ollama/') || jsonPrimary.startsWith('local-llm/'));
+      // GUARD: Never overwrite an explicit cloud model preference during sync.
+      // The user chose a cloud model — sync should only update the local model
+      // registry, not hijack their primary model choice.
+      if (isCloudModel) {
+        _addActivity('[SYNC] Cloud model active ($currentModel) — preserving primary.');
+        await configureOllama(
+          syncedModels: syncedModelNames,
+          setAsPrimary: false,
+        );
+      } else {
+        // Check if openclaw.json primary is in sync with the user's preference.
+        final liveConfig = await _readConfig();
+        final jsonPrimary = liveConfig['agents']?['defaults']?['model']?['primary'] as String?;
+        final jsonPrimaryIsLocal = jsonPrimary != null &&
+            (jsonPrimary.startsWith('ollama/') || jsonPrimary.startsWith('local-llm/'));
 
-      // Force-write the primary if the JSON config doesn't reflect it — this
-      // repairs drift after gateway restarts that regenerate openclaw.json.
-      final needsPrimaryWrite = !alreadyLocal || !jsonPrimaryIsLocal;
-      final primaryToWrite = alreadyLocal ? currentModel : syncedModelNames.first;
+        // Force-write the primary if the JSON config doesn't reflect it — this
+        // repairs drift after gateway restarts that regenerate openclaw.json.
+        // BUT: if the user already has a specific local model selected, preserve
+        // their choice instead of picking syncedModelNames.first.
+        final needsPrimaryWrite = !alreadyLocal || !jsonPrimaryIsLocal;
+        final primaryToWrite = alreadyLocal ? currentModel : syncedModelNames.first;
 
-      await configureOllama(
-        syncedModels: syncedModelNames,
-        primaryModel: needsPrimaryWrite ? primaryToWrite : null,
-        setAsPrimary: needsPrimaryWrite,
-      );
+        await configureOllama(
+          syncedModels: syncedModelNames,
+          primaryModel: needsPrimaryWrite ? primaryToWrite : null,
+          setAsPrimary: needsPrimaryWrite,
+        );
+      }
 
       _updateState(_state.copyWith(
         isOllamaRunning: true,
@@ -1775,15 +1789,20 @@ PARAMETER num_batch 512
 
 
   /// Checks if the Ollama daemon is authenticated with ollama.com.
-  /// Only checks for the credential file existence — this is sufficient proof
-  /// that `ollama signin` completed successfully. Avoids running `ollama list`
-  /// which can fail with "connection refused" if the hub is still starting.
+  /// Only checks for the credential file existence and sanity — this is
+  /// sufficient proof that `ollama signin` completed successfully. Avoids
+  /// running `ollama list` which can fail when the hub is still starting.
   /// Public so LocalLlmScreen can share this single auth check.
   Future<bool> checkOllamaCredentials() async {
     try {
       final filesDir = await getFilesDir();
       final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
-      return await File(credsPath).exists();
+      final file = File(credsPath);
+      if (!await file.exists()) return false;
+      // Sanity: a valid credential file should be > 10 bytes (JSON with token).
+      // Protects against truncated/corrupted files from interrupted writes.
+      final size = await file.length();
+      return size > 10;
     } catch (_) {
       return false;
     }
