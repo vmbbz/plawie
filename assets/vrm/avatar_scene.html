@@ -336,23 +336,9 @@
 
         window.setSpeechIntensity = (intensity) => {
             speechIntensity = intensity;
-            const wasSpeaking = isSpeaking;
             isSpeaking = intensity > 0.1;
-            
-            // Handle talking gesture lifecycle
-            if (isSpeaking && !wasSpeaking) {
-                // Started speaking: trigger talk gesture
-                if (gestures['talk'] && currentAction !== gestures['talk']) {
-                    window.playGesture('talk');
-                }
-            } else if (!isSpeaking && wasSpeaking) {
-                // Stopped speaking: fade out talk gesture if it was looping
-                if (currentAction === gestures['talk'] && idleAction) {
-                    idleAction.reset().fadeIn(0.5).play();
-                    currentAction.fadeOut(0.5);
-                    currentAction = idleAction;
-                }
-            }
+            // Gesture lifecycle removed — viseme blend shapes drive mouth movement
+            // independently; body stays in its current idle/ready pose during TTS.
         };
 
         window.setThinking = (thinking) => {
@@ -685,19 +671,17 @@
                     const effectiveIntensity = Math.min(1.0, speechIntensity * volumeJitter * 1.5);
                     
                     if (availableVisemes.length > 0) {
-                        let targetViseme = '';
-                        if (effectiveIntensity > 0.6) {
-                            targetViseme = Math.sin(mouthTime * 15) > 0 ? 'aa' : 'oh';
-                        } else if (effectiveIntensity > 0.2) {
-                            targetViseme = Math.sin(mouthTime * 10) > 0 ? 'ih' : 'ee';
-                        } else {
-                            targetViseme = 'ou';
-                        }
+                        // Round-robin through ALL available visemes (~8/s) so every
+                        // blend shape gets used. effectiveIntensity controls weight
+                        // (how open/wide), not which viseme is active.
+                        const cycleSpeed = 8.0;
+                        const visemeIdx = Math.floor(mouthTime * cycleSpeed) % availableVisemes.length;
+                        const targetViseme = availableVisemes[visemeIdx];
                         for (const v of availableVisemes) {
                             const target = (v === targetViseme) ? effectiveIntensity : 0;
                             const currentVal = currentVrm.expressionManager.getValue(v) || 0;
-                            const lerpFactor = target > currentVal ? 0.6 : 0.4;
-                            currentVrm.expressionManager.setValue(v, THREE.MathUtils.lerp(currentVal, target, lerpFactor));
+                            currentVrm.expressionManager.setValue(v,
+                                THREE.MathUtils.lerp(currentVal, target, target > currentVal ? 0.6 : 0.4));
                         }
                     } else if (names.includes('mouthOpen')) {
                         const currentVal = currentVrm.expressionManager.getValue('mouthOpen') || 0;

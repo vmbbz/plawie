@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:fllama/fllama.dart';
 import 'native_bridge.dart';
@@ -444,7 +445,7 @@ class LocalLlmService {
         ),
       Message(Role.user, userMessage),
     ];
-    _runChatTurn(messages, controller);
+    _fetchAgentTools().then((tools) => _runChatTurn(messages, controller, tools: tools));
     return controller.stream;
   }
 
@@ -481,12 +482,77 @@ class LocalLlmService {
     ),
   ];
 
-  String _dispatchLocalTool(String name, String argumentsJson) {
+  // AgentSkillServer route map — device-native skills only (no gateway needed)
+  static const _skillRoutes = {
+    'avatar-control': '/api/avatar/control',
+    'tts-voice':      '/api/tts/control',
+    'device-node':    '/api/device/control',
+  };
+
+  // Tool cache — refreshed at most once per 30 s to avoid HTTP on every message
+  List<Tool>? _cachedTools;
+  DateTime? _toolCacheTime;
+
+  /// Fetches the AgentSkillServer tool catalog and merges with built-in tools.
+  /// Falls back to [_localTools] only if the server is unreachable.
+  Future<List<Tool>> _fetchAgentTools() async {
+    if (_cachedTools != null && _toolCacheTime != null &&
+        DateTime.now().difference(_toolCacheTime!).inSeconds < 30) {
+      return _cachedTools!;
+    }
+    final tools = List<Tool>.from(_localTools);
+    try {
+      final response = await http
+          .get(Uri.parse('http://127.0.0.1:8765/api/tools'))
+          .timeout(const Duration(seconds: 2));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final catalog = data['tools'] as List<dynamic>? ?? [];
+        for (final t in catalog) {
+          final schema = t['input_schema'] as Map<String, dynamic>?
+              ?? {'type': 'object', 'properties': {}};
+          tools.add(Tool(
+            name: t['name'] as String,
+            description: t['description'] as String? ?? '',
+            jsonSchema: jsonEncode(schema),
+          ));
+        }
+      }
+    } catch (_) {
+      // AgentSkillServer not running — local tools only, no crash
+    }
+    _cachedTools = tools;
+    _toolCacheTime = DateTime.now();
+    return tools;
+  }
+
+  /// Dispatches a tool call — built-in tools are handled inline; device-native
+  /// skills are forwarded to AgentSkillServer via HTTP POST. Partner skills
+  /// (Twilio, MoonPay, etc.) that require the gateway return a clear message.
+  Future<String> _dispatchTool(String name, String argumentsJson) async {
     switch (name) {
       case 'get_current_datetime':
         return jsonEncode({'datetime': DateTime.now().toIso8601String()});
-      default:
-        return jsonEncode({'error': 'Unknown tool: $name'});
+    }
+    final route = _skillRoutes[name];
+    if (route == null) {
+      return jsonEncode({
+        'error': 'Skill "$name" requires the OpenClaw gateway. '
+                 'Switch to an Ollama or cloud model for full skill access.',
+      });
+    }
+    try {
+      final body = jsonDecode(argumentsJson) as Map<String, dynamic>;
+      final res = await http
+          .post(
+            Uri.parse('http://127.0.0.1:8765$route'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
+      return res.body;
+    } catch (e) {
+      return jsonEncode({'error': 'Tool execution failed: $e'});
     }
   }
 
@@ -496,7 +562,7 @@ class LocalLlmService {
   Future<void> _runChatTurn(
       List<Message> messages,
       StreamController<String> controller,
-      {int depth = 0}) async {
+      {int depth = 0, List<Tool>? tools}) async {
     if (depth > 3 || controller.isClosed) return;
     _isInferring = true;
 
@@ -515,7 +581,7 @@ class LocalLlmService {
         numGpuLayers: 99,
         contextSize: _activeContextSize,
         temperature: 0.7,
-        tools: _localTools,
+        tools: tools ?? _localTools,
         toolChoice: ToolChoice.auto,
       )),
       (response, jsonString, done) {
@@ -600,18 +666,18 @@ class LocalLlmService {
         'arguments': e.value['arguments'],
       },
     }).toList();
-    final toolResultMessages = sorted.map((e) => Message(
+    final toolResultMessages = await Future.wait(sorted.map((e) async => Message(
       Role.tool,
-      _dispatchLocalTool(e.value['name']!, e.value['arguments']!),
+      await _dispatchTool(e.value['name']!, e.value['arguments']!),
       toolResponseName: e.value['name'],
-    )).toList();
+    )));
 
     final updated = [
       ...messages,
       Message(Role.assistant, '', toolCalls: toolCallsList),
       ...toolResultMessages,
     ];
-    await _runChatTurn(updated, controller, depth: depth + 1);
+    await _runChatTurn(updated, controller, depth: depth + 1, tools: tools);
   }
 
   /// Returns fllama engine status (replaces HTTP health probe).
