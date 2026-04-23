@@ -494,7 +494,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       if (mounted) {
         setState(() {
           _speechIntensity = 0.8;
-          _currentGesture = 'talk'; // Trigger hands gesture
+          // No gesture change — visemes drive mouth movement; body stays idle
         });
         
         // If falling back to Native TTS, gently prompt for download
@@ -522,6 +522,72 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         }
       }
     };
+  }
+
+  /// Strips markdown, symbols, URLs, emojis, and other non-speech content so
+  /// the TTS engine reads clean natural prose without pronouncing formatting.
+  String _sanitizeForTts(String text) {
+    var t = text;
+    // Think blocks (internal reasoning — never read aloud)
+    t = t.replaceAll(RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
+    // Gesture/action tags
+    t = t.replaceAll(RegExp(r'\(gesture:\s*\w+\)\s*'), '');
+    // Code blocks → label only (don't read source code verbatim)
+    t = t.replaceAll(RegExp(r'```[\s\S]*?```'), 'code block. ');
+    // Inline code → content only (strip backticks)
+    t = t.replaceAll(RegExp(r'`([^`]+)`'), r'$1');
+    // Images → strip entirely
+    t = t.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
+    // Links → anchor text only
+    t = t.replaceAll(RegExp(r'\[([^\]]+)\]\([^)]*\)'), r'$1');
+    // Headings → text only (strip leading # symbols)
+    t = t.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
+    // Bold/italic — triple then double then single (order matters)
+    t = t.replaceAll(RegExp(r'\*{3}([^*\n]+)\*{3}'), r'$1');
+    t = t.replaceAll(RegExp(r'\*{2}([^*\n]+)\*{2}'), r'$1');
+    t = t.replaceAll(RegExp(r'\*([^*\n]+)\*'), r'$1');
+    t = t.replaceAll(RegExp(r'_{2}([^_\n]+)_{2}'), r'$1');
+    t = t.replaceAll(RegExp(r'_([^_\n]+)_'), r'$1');
+    // Strikethrough
+    t = t.replaceAll(RegExp(r'~~([^~]+)~~'), r'$1');
+    // Horizontal rules
+    t = t.replaceAll(RegExp(r'^[-*_]{3,}\s*$', multiLine: true), '');
+    // Table rows (lines bounded by |) and stray pipes
+    t = t.replaceAll(RegExp(r'^\|.*\|$', multiLine: true), '');
+    t = t.replaceAll('|', ' ');
+    // URLs — unreadable when spoken
+    t = t.replaceAll(RegExp(r'https?://\S+'), 'link');
+    // Bracket labels used in error messages
+    t = t.replaceAll('[Error]', 'Error:');
+    t = t.replaceAll('[Warning]', 'Warning:');
+    // HTML tags
+    t = t.replaceAll(RegExp(r'<[^>]+>'), '');
+    // Common emoji → spoken equivalent or strip
+    t = t.replaceAll('⚠️', 'Warning:');
+    t = t.replaceAll('✅', '');
+    t = t.replaceAll('❌', '');
+    t = t.replaceAll('💡', '');
+    t = t.replaceAll('🔑', '');
+    t = t.replaceAll('📝', '');
+    // Strip remaining emoji (Miscellaneous + Supplemental)
+    t = t.replaceAll(RegExp(r'[\u{1F300}-\u{1FAFF}]', unicode: true), '');
+    t = t.replaceAll(RegExp(r'[\u{2600}-\u{27BF}]', unicode: true), '');
+    // Symbol → spoken equivalent
+    t = t.replaceAll('→', ' to ');
+    t = t.replaceAll('←', '');
+    t = t.replaceAll('↑', '');
+    t = t.replaceAll('↓', '');
+    t = t.replaceAll('—', ', ');
+    t = t.replaceAll('–', ', ');
+    t = t.replaceAll('•', '');
+    t = t.replaceAll('·', '');
+    t = t.replaceAll('©', '');
+    t = t.replaceAll('®', '');
+    t = t.replaceAll('™', '');
+    // Normalise whitespace
+    t = t.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    t = t.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
+    return t.trim();
   }
 
   void _scrollToBottom({bool instant = false}) {
@@ -837,12 +903,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       // Speak the final clean response (including error messages)
       if (fullResponse.isNotEmpty) {
         await _tts.stop();
-        // Clean emojis, markdown, and (gesture:...) tags for natural speech
-        final cleanTextForSpeech = fullResponse
-          .replaceAll('⚠️', 'Attention, ')
-          .replaceAll(RegExp(r'[\*\`\#\>\_]'), '') // Strip markdown
-          .replaceAll(RegExp(r'\(gesture:.*?\)\s*'), '') // Strip gesture tags
-          .trim();
+        final cleanTextForSpeech = _sanitizeForTts(fullResponse);
         if (cleanTextForSpeech.isNotEmpty) {
           await _tts.speak(cleanTextForSpeech);
         }
@@ -873,6 +934,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       });
       _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
     }
+    // Persist the completed assistant turn (including error fallback messages).
+    // The earlier _saveChatHistory() at send-time only captures the user message;
+    // the assistant placeholder is added after that point and never gets saved
+    // without this call — causing the last assistant turn to vanish on navigation.
+    _saveChatHistory();
   }
 
   void _toggleListening() async {
