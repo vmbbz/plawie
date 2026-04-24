@@ -177,7 +177,10 @@ class PiperTtsService {
   }
 
   Future<void> speak(String text) async {
-    if (!isReady || text.trim().isEmpty) return;
+    if (!isReady || text.trim().isEmpty) {
+      onComplete?.call(); // Unblock the TTS queue even when skipping
+      return;
+    }
 
     try {
       // 1. Generate PCM — pass current speed so UI slider takes immediate effect

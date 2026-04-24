@@ -389,8 +389,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // Persist download flag — won't re-prompt on next navigation
         final prefs = PreferencesService();
         prefs.ttsPiperDownloaded = true;
-        // Switch engine to piper — _activeEngine reads this pref on every speak()
-        // so the natural voice is live immediately without any further init call.
         prefs.ttsEngine = 'piper';
 
         setState(() {
@@ -398,6 +396,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           _isTtsDownloaded = true;
           _downloadProgress = 1.0;
         });
+
+        // Verify piper actually loaded (sherpa-onnx may fail silently)
+        if (!_tts.isReady) {
+          final ok = await _tts.reinitializePiper();
+          if (!ok && mounted) {
+            messenger.showSnackBar(const SnackBar(
+              content: Text('Voice model downloaded but could not start — using device voice.'),
+              backgroundColor: Colors.orange,
+            ));
+            return;
+          }
+        }
 
         messenger.showSnackBar(
           const SnackBar(
@@ -563,33 +573,52 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           // No gesture change — visemes drive mouth movement; body stays idle
         });
         
-        // If falling back to Native TTS, gently prompt for download
-        if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt && !PreferencesService().ttsPiperDownloaded) {
+        // If falling back to Native TTS (Piper preferred but not loaded), prompt user
+        if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt) {
           _hasShownTtsFallbackPrompt = true;
-          _showTtsDownloadDialog();
+          if (PreferencesService().ttsPiperDownloaded) {
+            // Model was downloaded but sherpa failed to init — offer re-init
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Using device voice — natural voice engine failed to start.'),
+              backgroundColor: Colors.orange,
+              action: SnackBarAction(label: 'Retry', onPressed: () async {
+                final ok = await _tts.reinitializePiper();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(ok ? 'Natural voice ready!' : 'Could not start — using device voice.'),
+                    backgroundColor: ok ? AppColors.statusGreen : Colors.orange,
+                  ));
+                }
+              }),
+            ));
+          } else {
+            _showTtsDownloadDialog();
+          }
         }
       }
     };
     
     _tts.onComplete = () {
       if (mounted) {
-        setState(() {
-          _speechIntensity = 0.0;
-          _currentGesture = 'ready'; // Reset to idle pose
-        });
-        _syncOverlayState();
-        
-        // Process next sentence in queue
         _isTtsSpeaking = false;
         _processNextTtsInQueue();
 
-        // Continuous mode: wait 500ms then restart listening automatically
-        if (_ttsQueue.isEmpty && PreferencesService().continuousMode && !_isGenerating) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isGenerating && !_isListening) {
-              _startListening();
-            }
+        // Only close mouth and reset gesture when the entire queue is drained
+        if (_ttsQueue.isEmpty && _ttsSentenceBuffer.isEmpty) {
+          setState(() {
+            _speechIntensity = 0.0;
+            _currentGesture = 'ready'; // Reset to idle pose
           });
+          _syncOverlayState();
+
+          // Continuous mode: wait 500ms then restart listening automatically
+          if (PreferencesService().continuousMode && !_isGenerating) {
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted && !_isGenerating && !_isListening) {
+                _startListening();
+              }
+            });
+          }
         }
       }
     };
@@ -664,8 +693,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   void _enqueueTtsFromStream(String chunk) {
     _ttsSentenceBuffer += chunk;
     
-    // Split on sentence boundaries
-    final sentenceEnd = RegExp(r'[.!?]\s+|[\n]');
+    // Split on sentence boundaries — including end-of-buffer punctuation with no trailing space
+    final sentenceEnd = RegExp(r'[.!?]+\s+|[.!?]+$|[\n]+');
     while (sentenceEnd.hasMatch(_ttsSentenceBuffer)) {
       final match = sentenceEnd.firstMatch(_ttsSentenceBuffer)!;
       final sentence = _ttsSentenceBuffer.substring(0, match.end);
@@ -682,9 +711,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   Future<void> _processNextTtsInQueue() async {
     if (_isTtsSpeaking || _ttsQueue.isEmpty) return;
     _isTtsSpeaking = true;
-    
     final sentence = _ttsQueue.removeAt(0);
-    await _tts.speak(sentence);
+    try {
+      await _tts.speak(sentence);
+    } catch (_) {
+      // Guarantee _isTtsSpeaking is cleared on error so queue isn't permanently jammed
+      _isTtsSpeaking = false;
+      _processNextTtsInQueue();
+    }
   }
 
   Future<void> _flushTtsQueue() async {
@@ -819,6 +853,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   Future<void> _handleSubmit(String text) async {
     if ((text.trim().isEmpty && _pendingImageBase64 == null && _pendingVideoBase64 == null) || _isGenerating) return;
 
+    // Stop any in-progress TTS and clear the queue so the previous response
+    // doesn't keep playing while the user has already sent a new message.
+    _tts.stop();
+    _ttsQueue.clear();
+    _ttsSentenceBuffer = '';
+    _isTtsSpeaking = false;
+    setState(() => _speechIntensity = 0.0);
+
     // Capture and clear pending attachments before any async gaps
     final imageBase64 = _pendingImageBase64;
     final videoBase64 = _pendingVideoBase64;
@@ -847,6 +889,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
 
     String fullResponse = '';
+    final List<ChatToolEvent> toolEvents = [];
     // <think> block parser state — strips Qwen/DeepSeek reasoning tokens from the
     // main response and accumulates them separately for the collapsible Reasoning UI.
     // Uses a raw-buffer approach so tags split across chunks are handled correctly.
@@ -961,9 +1004,52 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       }
       await for (final chunk in stream) {
         if (!mounted) break;
-        
+
         _addDiagnosticLog('Chunk received: "$chunk"');
-        
+
+        // Tool call/result markers injected by gateway_service as \x00TOOL_USE:name:json\x00
+        if (chunk.startsWith('\x00TOOL_USE:') && chunk.endsWith('\x00')) {
+          final inner = chunk.substring(10, chunk.length - 1);
+          final colonIdx = inner.indexOf(':');
+          if (colonIdx != -1) {
+            final name = inner.substring(0, colonIdx);
+            final inputJson = inner.substring(colonIdx + 1);
+            try {
+              final input = jsonDecode(inputJson) as Map<String, dynamic>?;
+              toolEvents.add(ChatToolEvent(type: 'tool_use', name: name, input: input));
+            } catch (_) {
+              toolEvents.add(ChatToolEvent(type: 'tool_use', name: name));
+            }
+            setState(() {
+              _messages.last = ChatMessage(
+                text: fullResponse,
+                isUser: false,
+                thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
+                toolEvents: List.unmodifiable(toolEvents),
+              );
+            });
+          }
+          continue;
+        }
+        if (chunk.startsWith('\x00TOOL_RESULT:') && chunk.endsWith('\x00')) {
+          final inner = chunk.substring(13, chunk.length - 1);
+          final colonIdx = inner.indexOf(':');
+          if (colonIdx != -1) {
+            final name = inner.substring(0, colonIdx);
+            final resultJson = inner.substring(colonIdx + 1);
+            toolEvents.add(ChatToolEvent(type: 'tool_result', name: name, result: resultJson));
+            setState(() {
+              _messages.last = ChatMessage(
+                text: fullResponse,
+                isUser: false,
+                thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
+                toolEvents: List.unmodifiable(toolEvents),
+              );
+            });
+          }
+          continue;
+        }
+
         // Handle common API error patterns and OpenClaw error frames
         if (chunk.contains('[Error]') || chunk.contains('rate limit reached') || chunk.contains('API error')) {
           _addDiagnosticLog('Caught API Error in stream: $chunk');
@@ -992,7 +1078,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
         setState(() {
           _isThinking = false; // Stopped thinking, started talking
-          _speechIntensity = chunk.length > 2 ? 0.8 : 0.3; // Simulate mouth movement
+          // _speechIntensity is driven ONLY by _tts.onStart/onComplete — not chunk arrival
 
           // Check for (gesture: name) in bot response
           if (chunk.contains('(gesture:')) {
@@ -1006,6 +1092,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             text: fullResponse,
             isUser: false,
             thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
+            toolEvents: toolEvents.isNotEmpty ? List.unmodifiable(toolEvents) : null,
           );
         });
         _syncOverlayState();
@@ -1028,7 +1115,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       setState(() {
         _isThinking = false;
         _isGenerating = false;
-        _speechIntensity = 0.0; // Stop mouth
+        // Do NOT reset _speechIntensity here — TTS queue may still be draining.
+        // onComplete fires when the last sentence finishes and will close the mouth.
         _syncOverlayState();
 
         // Empty stream: model may still be loading, gateway unavailable, or provider error.
@@ -1044,6 +1132,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             text: _messages.last.text,
             isUser: false,
             thinkContent: _messages.last.thinkContent,
+            toolEvents: _messages.last.toolEvents,
             imageBase64: snapImage,
             imageMimeType: 'image/jpeg',
           );

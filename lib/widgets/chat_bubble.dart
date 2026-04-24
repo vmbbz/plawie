@@ -82,6 +82,14 @@ class ChatBubble extends StatelessWidget {
                           _ReasoningTile(thinkContent: message.thinkContent!),
                           const SizedBox(height: 8),
                         ],
+                        // ── Tool call / result chips ──
+                        if (!isUser && message.hasToolEvents) ...[
+                          ...message.toolEvents!.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: _ToolEventChip(event: e),
+                          )),
+                          const SizedBox(height: 4),
+                        ],
                         // Image thumbnail shown above text when message carries an image
                         if (message.hasImage) ...[
                           _ImageThumbnail(
@@ -360,6 +368,75 @@ class _ReasoningTileState extends State<_ReasoningTile> {
                   fontStyle: FontStyle.italic,
                   height: 1.5,
                 ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Collapsible chip showing a tool call (amber) or tool result (green).
+class _ToolEventChip extends StatefulWidget {
+  final ChatToolEvent event;
+  const _ToolEventChip({required this.event});
+
+  @override
+  State<_ToolEventChip> createState() => _ToolEventChipState();
+}
+
+class _ToolEventChipState extends State<_ToolEventChip> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCall = widget.event.type == 'tool_use';
+    final color = isCall ? Colors.amber : Colors.greenAccent;
+    final icon = isCall ? Icons.build_outlined : Icons.check_circle_outline;
+    final label = isCall ? 'Tool  ${widget.event.name}' : 'Result  ${widget.event.name}';
+
+    final detail = isCall
+        ? (widget.event.input?.isNotEmpty == true
+            ? const JsonEncoder.withIndent('  ').convert(widget.event.input)
+            : null)
+        : widget.event.result;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: detail != null ? () => setState(() => _expanded = !_expanded) : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(icon, size: 13, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                    ),
+                  ),
+                  if (detail != null)
+                    Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 14, color: color.withValues(alpha: 0.6)),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded && detail != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              child: Text(
+                detail,
+                style: TextStyle(fontSize: 11, color: color.withValues(alpha: 0.7), fontFamily: 'monospace', height: 1.4),
               ),
             ),
         ],

@@ -66,6 +66,13 @@ class TtsService {
     return _piper.init(forceDownload: forceDownload);
   }
 
+  /// Re-runs Piper init without re-downloading. Returns true if Piper is now ready.
+  /// Call after a successful download to verify the sherpa-onnx engine loaded.
+  Future<bool> reinitializePiper() async {
+    await _piper.init();
+    return _piper.isReady;
+  }
+
   // ── Engine resolution ────────────────────────────────────────────────────────
 
   TtsEngine get _activeEngine {

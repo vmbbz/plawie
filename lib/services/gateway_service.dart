@@ -595,6 +595,29 @@ PARAMETER num_batch 512
       }
     }
 
+    // Write gesture + canvas instructions into agents.defaults.systemPrompt.
+    // This is the only schema-valid way to set the system prompt for ALL models
+    // (cloud + local). sessions.patch does NOT accept systemPrompt — the gateway
+    // rejects it with INVALID_REQUEST. Writing to config here (at startup) means
+    // the gateway reads it before the first chat.send — no race condition.
+    // We APPEND to any existing prompt so the dashboard-configured base is preserved.
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    const gestureAppendix =
+        '\n\nAVATAR GESTURES — Embed (gesture:NAME) anywhere in your reply to animate the avatar. '
+        'Names: greeting · dance · cute · elegant · fight · peacesign · pose · powerful · ready · shoot · spin · squat · talk · idle. '
+        'Example: (gesture:greeting) Hi there! '
+        'Use "pose" while thinking through a hard problem and "ready" when done.\n\n'
+        'CANVAS (Web Browser): canvas.navigate(url:) opens a URL, '
+        'canvas.eval(js:) runs JavaScript (parameter key is "js"), '
+        'canvas.snapshot() captures a screenshot.';
+    final existing = config['agents']['defaults']['systemPrompt'] as String? ?? '';
+    if (!existing.contains('AVATAR GESTURES')) {
+      config['agents']['defaults']['systemPrompt'] = existing.isEmpty
+          ? 'You are OpenClaw, a helpful AI assistant on Android. Be concise and direct.$gestureAppendix'
+          : '$existing$gestureAppendix';
+    }
+
     await _writeConfig(config);
   }
 
@@ -1994,24 +2017,9 @@ PARAMETER num_batch 512
       // prompt tokens over num_ctx=2048 → Ollama produces 0 tokens → timeout.
       // The gateway validator logs an error but still processes the session correctly.
       // This was confirmed working in commit 10ff306. Fire-and-forget — don't await.
-      if (isLocalOllama) {
-        final skillsDocs = SkillsService()
-            .getSkillsList()
-            .where((s) =>
-                s.enabled &&
-                ['avatar', 'tts', 'device', 'system', 'base'].contains(s.category))
-            .map((s) => '- ${s.name} (id: ${s.id}): ${s.description}')
-            .join('\n');
-        final basePrompt =
-            'You are OpenClaw, a helpful AI assistant running on Android. '
-            'Be concise and direct. Use tools only when they directly help the user. '
-            'Avoid long explanations unless asked.';
-        final enrichedPrompt = skillsDocs.isEmpty
-            ? basePrompt
-            : '$basePrompt\n\nDevice skills available (call via skills.execute):\n$skillsDocs';
-        unawaited(_connection!.patchSessionMetadata({'systemPrompt': enrichedPrompt}));
-        _addActivity('[CHAT] sessions.patch systemPrompt sent (mobile-optimized + ${SkillsService().getSkillsList().where((s) => s.enabled).length} skills)');
-      }
+      // System prompt (with gesture + canvas instructions) is written to openclaw.json
+      // in _configureGateway() at startup — the only schema-valid way to set it.
+      // sessions.patch rejects 'systemPrompt' with INVALID_REQUEST on all gateway versions.
     } else {
       if (isLocalOllama) {
         // WS fallback: direct local Ollama — no dashboard, but inference still works.
@@ -2170,6 +2178,20 @@ PARAMETER num_batch 512
                   _addActivity('[CHAT] ✓ First token received');
                 }
                 chunkController.add(text);
+              }
+            } else if (stream == 'tool_use') {
+              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
+              final name = (innerData?['name'] ?? payload?['name'] ?? frame['name']) as String? ?? '';
+              final input = innerData?['input'] ?? payload?['input'];
+              if (name.isNotEmpty && !chunkController.isClosed) {
+                chunkController.add('\x00TOOL_USE:$name:${jsonEncode(input ?? {})}\x00');
+              }
+            } else if (stream == 'tool_result') {
+              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
+              final name = (innerData?['name'] ?? payload?['name'] ?? frame['name']) as String? ?? 'tool';
+              final result = innerData?['result'] ?? payload?['result'] ?? innerData?['output'] ?? payload?['output'];
+              if (!chunkController.isClosed) {
+                chunkController.add('\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
               }
             } else if (stream == 'lifecycle') {
               final phase = (innerData?['phase'] ?? payload?['phase'] ?? frame['phase']) as String?;
