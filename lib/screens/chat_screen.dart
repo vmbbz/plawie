@@ -29,6 +29,9 @@ import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import '../services/capabilities/camera_capability.dart';
+import '../services/capabilities/canvas_capability.dart';
 import 'management/local_llm_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -63,6 +66,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isListening = false;
   String? _currentGesture;
   String? _lastUserMessage;
+  
+  // Streaming TTS state
+  String _ttsSentenceBuffer = '';
+  bool _isTtsSpeaking = false;
+  final List<String> _ttsQueue = [];
   
   String _selectedAvatar = 'default_avatar.vrm';
   String _agentName = 'Plawie';
@@ -127,6 +135,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
 
+  // Latest camera.snap base64 captured by AI tool call — attached to bot message after stream ends
+  String? _pendingAiSnapBase64;
+
+  // Canvas overlay state
+  WebViewController? _canvasController;
+  bool _canvasVisible = false;
+
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
   bool _isChatCollapsed = false; // Expanded by default
@@ -144,6 +159,22 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       if (mounted) setState(() => _currentGesture = gesture);
     };
     AgentSkillServer.instance.onEmotionSet = (_) {}; // handled by avatar_scene.html
+    // When the AI calls camera.snap, store the result so we can show it inline in chat
+    CameraCapability.onSnapTaken = (b64, mime) {
+      _pendingAiSnapBase64 = b64;
+    };
+
+    // Set up canvas WebView controller and wire it to CanvasCapability
+    _canvasController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse('about:blank'));
+    CanvasCapability().setController(_canvasController!);
+    CanvasCapability.onVisibilityChanged = (visible) {
+      if (mounted) setState(() => _canvasVisible = visible);
+    };
+    CanvasCapability.onSnapshotTaken = (b64, mime) {
+      _pendingAiSnapBase64 = b64;
+    };
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -275,6 +306,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           if (p >= 1.0) {
             _isDownloadingTts = false;
             _isTtsDownloaded = true;
+            // Persist so future visits skip the download prompt
+            final prefs = PreferencesService();
+            prefs.ttsPiperDownloaded = true;
+            prefs.ttsEngine = 'piper';
           } else if (p > 0) {
             _isDownloadingTts = true;
           }
@@ -284,10 +319,32 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _checkTtsModel() async {
-    final downloaded = await _tts.isModelDownloaded();
-    if (mounted) {
-      setState(() => _isTtsDownloaded = downloaded);
+    final prefs = PreferencesService();
+    // Fast path: trust persisted flag so navigation doesn't re-prompt every visit
+    if (prefs.ttsPiperDownloaded) {
+      if (mounted) setState(() => _isTtsDownloaded = true);
+      _initPiperModelInBackground();
+      return;
     }
+    // Slow path: verify filesystem (first run or after reinstall)
+    final downloaded = await _tts.isModelDownloaded();
+    if (downloaded) {
+      // Persist so we skip filesystem check next time
+      prefs.ttsPiperDownloaded = true;
+      _initPiperModelInBackground();
+    }
+    if (mounted) setState(() => _isTtsDownloaded = downloaded);
+  }
+
+  void _initPiperModelInBackground() {
+    _tts.init(forceDownload: false).then((_) {
+      _addDiagnosticLog('Piper TTS model loaded into memory');
+      if (mounted && !_tts.isReady) {
+        _addDiagnosticLog('WARNING: Piper model files exist but failed to init');
+      }
+    }).catchError((e) {
+      _addDiagnosticLog('Piper model init error: $e');
+    });
   }
 
   void _showTtsDownloadDialog() {
@@ -316,26 +373,35 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   Future<void> _startPiperDownload() async {
     if (_isDownloadingTts) return;
-    
+
     setState(() {
       _isDownloadingTts = true;
       _downloadProgress = 0.0;
     });
 
+    final messenger = ScaffoldMessenger.of(context);
+
     try {
       _addDiagnosticLog('Starting Piper TTS background download...');
       await _tts.init(forceDownload: true);
-      
+
       if (mounted) {
+        // Persist download flag — won't re-prompt on next navigation
+        final prefs = PreferencesService();
+        prefs.ttsPiperDownloaded = true;
+        // Switch engine to piper — _activeEngine reads this pref on every speak()
+        // so the natural voice is live immediately without any further init call.
+        prefs.ttsEngine = 'piper';
+
         setState(() {
           _isDownloadingTts = false;
           _isTtsDownloaded = true;
           _downloadProgress = 1.0;
         });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
+
+        messenger.showSnackBar(
           const SnackBar(
-            content: Text('Voice engine ready! Tap the mic to start talking.'),
+            content: Text('Natural voice ready! Piper TTS is now active.'),
             backgroundColor: AppColors.statusGreen,
           ),
         );
@@ -344,7 +410,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       _addDiagnosticLog('Download Error: $e');
       if (mounted) {
         setState(() => _isDownloadingTts = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
             content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
             backgroundColor: Colors.redAccent,
@@ -498,7 +564,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         });
         
         // If falling back to Native TTS, gently prompt for download
-        if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt) {
+        if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt && !PreferencesService().ttsPiperDownloaded) {
           _hasShownTtsFallbackPrompt = true;
           _showTtsDownloadDialog();
         }
@@ -512,8 +578,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           _currentGesture = 'ready'; // Reset to idle pose
         });
         _syncOverlayState();
+        
+        // Process next sentence in queue
+        _isTtsSpeaking = false;
+        _processNextTtsInQueue();
+
         // Continuous mode: wait 500ms then restart listening automatically
-        if (PreferencesService().continuousMode && !_isGenerating) {
+        if (_ttsQueue.isEmpty && PreferencesService().continuousMode && !_isGenerating) {
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted && !_isGenerating && !_isListening) {
               _startListening();
@@ -588,6 +659,41 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     t = t.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     t = t.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
     return t.trim();
+  }
+
+  void _enqueueTtsFromStream(String chunk) {
+    _ttsSentenceBuffer += chunk;
+    
+    // Split on sentence boundaries
+    final sentenceEnd = RegExp(r'[.!?]\s+|[\n]');
+    while (sentenceEnd.hasMatch(_ttsSentenceBuffer)) {
+      final match = sentenceEnd.firstMatch(_ttsSentenceBuffer)!;
+      final sentence = _ttsSentenceBuffer.substring(0, match.end);
+      _ttsSentenceBuffer = _ttsSentenceBuffer.substring(match.end);
+      
+      final clean = _sanitizeForTts(sentence);
+      if (clean.isNotEmpty) {
+        _ttsQueue.add(clean);
+        _processNextTtsInQueue();
+      }
+    }
+  }
+
+  Future<void> _processNextTtsInQueue() async {
+    if (_isTtsSpeaking || _ttsQueue.isEmpty) return;
+    _isTtsSpeaking = true;
+    
+    final sentence = _ttsQueue.removeAt(0);
+    await _tts.speak(sentence);
+  }
+
+  Future<void> _flushTtsQueue() async {
+    final clean = _sanitizeForTts(_ttsSentenceBuffer);
+    if (clean.isNotEmpty) {
+      _ttsQueue.add(clean);
+      _processNextTtsInQueue();
+    }
+    _ttsSentenceBuffer = '';
   }
 
   void _scrollToBottom({bool instant = false}) {
@@ -877,7 +983,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         
         // Strip <think> blocks from visible text; thinkBuffer gets the reasoning.
         // parseThinkChunk re-parses rawBuffer each call so split-tag chunks work.
+        final oldLen = fullResponse.length;
         fullResponse = parseThinkChunk(chunk);
+        
+        if (fullResponse.length > oldLen) {
+          _enqueueTtsFromStream(fullResponse.substring(oldLen));
+        }
 
         setState(() {
           _isThinking = false; // Stopped thinking, started talking
@@ -900,14 +1011,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         _syncOverlayState();
         _scrollToBottom();
       }
-      // Speak the final clean response (including error messages)
-      if (fullResponse.isNotEmpty) {
-        await _tts.stop();
-        final cleanTextForSpeech = _sanitizeForTts(fullResponse);
-        if (cleanTextForSpeech.isNotEmpty) {
-          await _tts.speak(cleanTextForSpeech);
-        }
-      }
+      // Speak any remaining buffered text
+      await _flushTtsQueue();
     } catch (e) {
       _addDiagnosticLog('Exception during Chat: $e');
       if (mounted) {
@@ -925,11 +1030,24 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         _isGenerating = false;
         _speechIntensity = 0.0; // Stop mouth
         _syncOverlayState();
-        
+
         // Empty stream: model may still be loading, gateway unavailable, or provider error.
         if (fullResponse.trim().isEmpty) {
           fullResponse = '⚠️ No response received. The model may still be loading — please try again in a moment.';
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
+        }
+
+        // If the AI called camera.snap during this turn, attach the image to the bot reply
+        final snapImage = _pendingAiSnapBase64;
+        if (snapImage != null && _messages.isNotEmpty) {
+          _messages.last = ChatMessage(
+            text: _messages.last.text,
+            isUser: false,
+            thinkContent: _messages.last.thinkContent,
+            imageBase64: snapImage,
+            imageMimeType: 'image/jpeg',
+          );
+          _pendingAiSnapBase64 = null;
         }
       });
       _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
@@ -1697,6 +1815,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     AgentSkillServer.instance.onAvatarChanged = null;
     AgentSkillServer.instance.onGesturePlayed = null;
     AgentSkillServer.instance.onEmotionSet = null;
+    // Clear static callbacks set during initState so they don't reference this
+    // widget after it's been disposed — prevents stale closure crashes.
+    CameraCapability.onSnapTaken = null;
+    CanvasCapability.onVisibilityChanged = null;
+    CanvasCapability.onSnapshotTaken = null;
+    CanvasCapability().clearController();
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
@@ -2533,6 +2657,54 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               ),
             ),
           ),
+          // 5. Canvas Overlay (WebView AI Browser)
+          if (_canvasVisible && _canvasController != null && !_isPipMode)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: barHeight + (_isChatCollapsed ? 40 : 0) + 16,
+              height: size.height * 0.45,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 20, spreadRadius: 5),
+                  ],
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Stack(
+                    children: [
+                      WebViewWidget(controller: _canvasController!),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => _canvasVisible = false);
+                            CanvasCapability().clearController();
+                            _canvasController = WebViewController()
+                              ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                              ..loadRequest(Uri.parse('about:blank'));
+                            CanvasCapability().setController(_canvasController!);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close, color: Colors.white, size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
           // 6. Diagnostics (slide-up panel)
           if (_showDiagnostics && !_isPipMode)
             Positioned(
@@ -2676,8 +2848,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               },
             ),
           ),
+
+
         ],
       ),
     );
   }
 }
+

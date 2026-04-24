@@ -9,6 +9,10 @@ import 'capability_handler.dart';
 class CameraCapability extends CapabilityHandler {
   List<CameraDescription>? _cameras;
 
+  /// Fired after every successful camera.snap. Listeners (e.g. chat_screen)
+  /// can attach the image to the current bot message for inline display.
+  static Function(String base64, String mimeType)? onSnapTaken;
+
   @override
   String get name => 'camera';
 
@@ -105,6 +109,10 @@ class CameraCapability extends CapabilityHandler {
 
       // Clean up temp file
       await File(file.path).delete().catchError((_) => File(file.path));
+
+      // Notify listeners (e.g. chat_screen) so the image can be shown inline
+      onSnapTaken?.call(b64, 'image/jpeg');
+
       return NodeFrame.response('', payload: {
         'base64': b64,
         'format': 'jpg',

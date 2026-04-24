@@ -125,6 +125,13 @@ class PreferencesService {
 
   /// Skill Enablement Persistence
   bool isSkillEnabled(String skillId) => _p.getBool('skill_enabled_$skillId') ?? false;
+
+  /// Like [isSkillEnabled] but with a caller-specified default.
+  /// Core device skills (avatar-control, tts-voice, device-node) pass
+  /// `defaultValue: true` so they're discoverable by the AI out-of-the-box.
+  bool isSkillEnabledOrDefault(String skillId, {bool defaultValue = false}) =>
+      _p.getBool('skill_enabled_$skillId') ?? defaultValue;
+
   Future<void> setSkillEnabled(String skillId, bool enabled) => _p.setBool('skill_enabled_$skillId', enabled);
 
   // ── Voice & Speech ──────────────────────────────────────────────────────────
@@ -185,6 +192,11 @@ class PreferencesService {
   /// OpenAI TTS model
   String get openAiTtsModel => _p.getString('openai_tts_model') ?? 'gpt-4o-mini-tts';
   set openAiTtsModel(String value) => _p.setString('openai_tts_model', value);
+
+  /// Whether the Piper TTS model has been fully downloaded to disk.
+  /// Persists across navigation so the chat page doesn't re-prompt every visit.
+  bool get ttsPiperDownloaded => _p.getBool('tts_piper_downloaded') ?? false;
+  set ttsPiperDownloaded(bool value) => _p.setBool('tts_piper_downloaded', value);
 
   // ── Local LLM ───────────────────────────────────────────────────────────────
 

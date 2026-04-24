@@ -12,6 +12,7 @@ import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
+import 'skills_service.dart';
 
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();
@@ -1753,6 +1754,22 @@ PARAMETER num_batch 512
           } catch (_) {
              _updateState(_state.copyWith(capabilities: []));
           }
+
+          // Attempt skills.register — silently ignored on gateway versions that
+          // don't support it. When supported, device-native skills become first-class
+          // tool-use entries rather than relying solely on system-prompt awareness.
+          try {
+            final catalog = SkillsService().getToolsCatalog();
+            if (catalog.isNotEmpty && supported.contains('skills.register')) {
+              await invoke('skills.register', {
+                'skills': catalog,
+                'callbackUrl': 'http://127.0.0.1:8765',
+              }).timeout(const Duration(seconds: 5));
+              _addActivity('[SKILLS] Registered ${catalog.length} device skills with gateway');
+            }
+          } catch (_) {
+            // skills.register not supported on this gateway version — system prompt covers it
+          }
         }
       }
     } catch (_) {
@@ -1978,13 +1995,22 @@ PARAMETER num_batch 512
       // The gateway validator logs an error but still processes the session correctly.
       // This was confirmed working in commit 10ff306. Fire-and-forget — don't await.
       if (isLocalOllama) {
-        unawaited(_connection!.patchSessionMetadata({
-          'systemPrompt':
-              'You are OpenClaw, a helpful AI assistant running on Android. '
-              'Be concise and direct. Use tools only when they directly help the user. '
-              'Avoid long explanations unless asked.',
-        }));
-        _addActivity('[CHAT] sessions.patch systemPrompt sent (mobile-optimized)');
+        final skillsDocs = SkillsService()
+            .getSkillsList()
+            .where((s) =>
+                s.enabled &&
+                ['avatar', 'tts', 'device', 'system', 'base'].contains(s.category))
+            .map((s) => '- ${s.name} (id: ${s.id}): ${s.description}')
+            .join('\n');
+        final basePrompt =
+            'You are OpenClaw, a helpful AI assistant running on Android. '
+            'Be concise and direct. Use tools only when they directly help the user. '
+            'Avoid long explanations unless asked.';
+        final enrichedPrompt = skillsDocs.isEmpty
+            ? basePrompt
+            : '$basePrompt\n\nDevice skills available (call via skills.execute):\n$skillsDocs';
+        unawaited(_connection!.patchSessionMetadata({'systemPrompt': enrichedPrompt}));
+        _addActivity('[CHAT] sessions.patch systemPrompt sent (mobile-optimized + ${SkillsService().getSkillsList().where((s) => s.enabled).length} skills)');
       }
     } else {
       if (isLocalOllama) {

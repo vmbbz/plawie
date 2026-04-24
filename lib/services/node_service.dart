@@ -289,13 +289,6 @@ class NodeService {
       clearPairingCode: true,
     ));
     log('[NODE] Paired and connected');
-
-    // Send capabilities advertisement
-    final capabilities = _capabilityHandlers.keys.toList();
-    _ws.send(NodeFrame.event('node.capabilities', {
-      'deviceId': _identity.deviceId,
-      'capabilities': capabilities,
-    }));
   }
 
   Future<void> _requestPairing() async {

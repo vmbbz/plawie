@@ -1,9 +1,11 @@
 // ignore_for_file: unused_import, unused_local_variable
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/chat_message.dart';
 import '../app.dart';
 
@@ -82,15 +84,9 @@ class ChatBubble extends StatelessWidget {
                         ],
                         // Image thumbnail shown above text when message carries an image
                         if (message.hasImage) ...[
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.memory(
-                              base64Decode(message.imageBase64!),
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: 180,
-                              gaplessPlayback: true,
-                            ),
+                          _ImageThumbnail(
+                            base64Data: message.imageBase64!,
+                            mimeType: message.imageMimeType ?? 'image/jpeg',
                           ),
                           if (message.text.isNotEmpty) const SizedBox(height: 8),
                         ],
@@ -143,6 +139,155 @@ class ChatBubble extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Tappable image thumbnail. Tap → fullscreen InteractiveViewer with download button.
+class _ImageThumbnail extends StatelessWidget {
+  final String base64Data;
+  final String mimeType;
+
+  const _ImageThumbnail({required this.base64Data, required this.mimeType});
+
+  Future<void> _download(BuildContext context) async {
+    try {
+      final bytes = base64Decode(base64Data);
+      final ext = mimeType.contains('png') ? 'png' : 'jpg';
+      final ts = DateTime.now().millisecondsSinceEpoch;
+
+      // Try external Pictures first, fall back to app documents
+      Directory? dir;
+      try {
+        dir = await getExternalStorageDirectory();
+        if (dir != null) {
+          final pics = Directory('${dir.parent.parent.parent.parent.path}/Pictures/OpenClaw');
+          await pics.create(recursive: true);
+          dir = pics;
+        }
+      } catch (_) {
+        dir = await getApplicationDocumentsDirectory();
+      }
+
+      final file = File('${dir!.path}/openclaw_$ts.$ext');
+      await file.writeAsBytes(bytes);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Saved to ${file.path.split('/').last}'),
+            backgroundColor: Colors.green.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Save failed: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showFullscreen(BuildContext context) {
+    final bytes = base64Decode(base64Data);
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          children: [
+            // Full-screen pinch-to-zoom image
+            Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5.0,
+                child: Image.memory(bytes, fit: BoxFit.contain),
+              ),
+            ),
+            // Close button
+            Positioned(
+              top: 40,
+              right: 16,
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    // Download button
+                    Material(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () => _download(ctx),
+                        child: const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Icon(Icons.download_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Close button
+                    Material(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () => Navigator.of(ctx).pop(),
+                        child: const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = base64Decode(base64Data);
+    return GestureDetector(
+      onTap: () => _showFullscreen(context),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: 180,
+              gaplessPlayback: true,
+            ),
+          ),
+          // Small expand hint icon
+          Positioned(
+            bottom: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.open_in_full_rounded, color: Colors.white, size: 16),
+            ),
+          ),
+        ],
       ),
     );
   }

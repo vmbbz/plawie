@@ -81,22 +81,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.3.0"
-  base_x:
-    dependency: transitive
-    description:
-      name: base_x
-      sha256: "519abcdafd637d4b6bd7e72fabd8f9264935f804b9b9f6c5d8411c7d52cbf8fd"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.1"
-  bip39:
-    dependency: transitive
-    description:
-      name: bip39
-      sha256: de1ee27ebe7d96b84bb3a04a4132a0a3007dcdd5ad27dd14aa87a29d97c45edc
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.6"
   boolean_selector:
     dependency: transitive
     description:
@@ -105,22 +89,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
-  borsh_annotation:
-    dependency: transitive
-    description:
-      name: borsh_annotation
-      sha256: dc73a7fdc6fe4505535657daf8ab3cebe382311fae63a0faaf9315ea1bc30bff
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.2"
-  bs58:
-    dependency: "direct main"
-    description:
-      name: bs58
-      sha256: "3ed24dadf386ca749ff50af678be1131ef569a3583a6f37b87b90c032270c767"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.2"
   camera:
     dependency: "direct main"
     description:
@@ -281,14 +249,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
-  ed25519_hd_key:
+  eip1559:
     dependency: transitive
     description:
-      name: ed25519_hd_key
-      sha256: "31e191ec97492873067e46dc9cc0c7d55170559c83a478400feffa0627acaccf"
+      name: eip1559
+      sha256: c2b81ac85f3e0e71aaf558201dd9a4600f051ece7ebacd0c5d70065c9b458004
       url: "https://pub.dev"
     source: hosted
-    version: "2.3.0"
+    version: "0.6.2"
+  eip55:
+    dependency: transitive
+    description:
+      name: eip55
+      sha256: "213a9b86add87a5216328e8494b0ab836e401210c4d55eb5e521bd39e39169e1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.2"
   equatable:
     dependency: "direct main"
     description:
@@ -447,14 +423,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  freezed_annotation:
-    dependency: transitive
-    description:
-      name: freezed_annotation
-      sha256: c2e2d632dd9b8a2b7751117abcfc2b4888ecfe181bd9fca7170d9ef02e595fe2
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.4"
   geolocator:
     dependency: "direct main"
     description:
@@ -519,14 +487,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.3.3"
-  hex:
-    dependency: transitive
-    description:
-      name: hex
-      sha256: "4e7cd54e4b59ba026432a6be2dd9d96e4c5205725194997193bf871703b82c4a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0"
   hooks:
     dependency: transitive
     description:
@@ -592,13 +552,21 @@ packages:
     source: hosted
     version: "0.6.7"
   json_annotation:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: json_annotation
       sha256: cb09e7dac6210041fad964ed7fbee004f14258b4eca4040f72d1234062ace4c8
       url: "https://pub.dev"
     source: hosted
     version: "4.11.0"
+  json_rpc_2:
+    dependency: transitive
+    description:
+      name: json_rpc_2
+      sha256: "246b321532f0e8e2ba474b4d757eaa558ae4fdd0688fdbc1e1ca9705f9b8ca0e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.3"
   leak_tracker:
     dependency: transitive
     description:
@@ -847,14 +815,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.2"
-  pinenacl:
-    dependency: transitive
-    description:
-      name: pinenacl
-      sha256: "57e907beaacbc3c024a098910b6240758e899674de07d6949a67b52fd984cbdf"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.0"
   platform:
     dependency: transitive
     description:
@@ -911,14 +871,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.3"
-  retrofit:
-    dependency: "direct main"
+  sec:
+    dependency: transitive
     description:
-      name: retrofit
-      sha256: "0f629ed26b2c48c66fe54bd548313c6fdf7955be18bff37e08a46dd3f97f8eaf"
+      name: sec
+      sha256: "8bbd56df884502192a441b5f5d667265498f2f8728a282beccd9db79e215f379"
       url: "https://pub.dev"
     source: hosted
-    version: "4.9.2"
+    version: "1.1.0"
   shared_preferences:
     dependency: "direct main"
     description:
@@ -1044,22 +1004,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  solana:
-    dependency: "direct main"
-    description:
-      name: solana
-      sha256: "98d8780dbd9af7e90ff14a6e762a45d77466450304773610317d1fffdea09701"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.31.2+1"
-  solana_mobile_client:
-    dependency: "direct main"
-    description:
-      name: solana_mobile_client
-      sha256: "6d72b9788c20d267b3b91d81aca3248dda31a7b7ce63f0d59c4045825f2b7779"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.2"
   source_span:
     dependency: transitive
     description:
@@ -1316,6 +1260,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "15.0.2"
+  wallet:
+    dependency: transitive
+    description:
+      name: wallet
+      sha256: "687fd89a16557649b26189e597792962f405797fc64113e8758eabc2c2605c32"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.13"
   web:
     dependency: transitive
     description:
@@ -1324,6 +1276,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  web3dart:
+    dependency: "direct main"
+    description:
+      name: web3dart
+      sha256: "885e5e8f0cc3c87c09f160a7fce6279226ca41316806f7ece2001959c62ecced"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.7.3"
   web_socket:
     dependency: transitive
     description:

@@ -18,7 +18,7 @@ import 'logs_screen.dart';
 import 'packages_screen.dart';
 import 'settings_screen.dart';
 import 'chat_screen.dart';
-import 'solana_screen.dart';
+import 'base_screen.dart';
 import 'help_screen.dart';
 import 'management/bot_management_dashboard.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -145,12 +145,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                             onTap: gwState.isRunning ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatScreen())) : null,
                           ),
                           
-                          // 2. Solana (Square Fluid Pod)
+                          // 2. Base Chain (Square Fluid Pod)
                           _FluidDashCard(
-                            title: 'Solana',
-                            subtitle: 'Wallet & DeFi',
+                            title: 'Base',
+                            subtitle: 'ETH & USDC',
                             icon: Icons.account_balance_wallet_rounded,
-                            iconColor: const Color(0xFF9945FF),
+                            iconColor: const Color(0xFF0052FF),
                             widthFactor: 0.48, 
                             borderRadius: const BorderRadius.only(
                               topLeft: Radius.circular(16),
@@ -158,7 +158,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               bottomLeft: Radius.circular(28),
                               bottomRight: Radius.circular(12),
                             ),
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SolanaScreen())),
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BaseScreen())),
                           ),
 
                           // 3. Terminal (Square Fluid Pod)
