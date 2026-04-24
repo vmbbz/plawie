@@ -9,8 +9,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
+import 'package:decimal/decimal.dart';
 import 'preferences_service.dart';
 import 'gateway_skill_proxy.dart';
+import 'base_service.dart';
 
 /// Skills System with YAML frontmatter and dynamic loading
 /// Inspired by SeekerClaw's skills architecture
@@ -78,6 +80,8 @@ class SkillsService {
         _createMoltLaunchSkill(),
         _createValeoSkill(),
         _createMoonPaySkill(),
+        // ── Base Chain wallet (device-native, executes via BaseService) ───────
+        _createBaseChainSkill(),
       ];
 
       for (final skill in bundledSkills) {
@@ -300,6 +304,8 @@ class SkillsService {
         return await _executeValeoSkill(skill, parameters, context);
       case 'moonpay':
         return await _executeMoonPaySkill(skill, parameters, context);
+      case 'base':
+        return await _executeBaseChainSkill(skill, parameters, context);
       default:
         return SkillResult.error('No executor for category: ${skill.category}');
     }
@@ -578,11 +584,11 @@ class SkillsService {
   }
 
   /// Execute MoltLaunch skill via Gateway.
-  /// MoltLaunch / Molt.ID: Solana-based AI agent job marketplace (moltdotid/AutoPilot-Molt-CLI).
-  /// Identity = NFT public key on Solana. Jobs are on-chain transactions via Multiclaw tx-queue API.
-  /// get_identity fields: wallet_pubkey, display_name, verified, jobs_count, reputation_score (0.0-1.0)
-  /// get_rep fields: reputation_score, total_jobs_completed, pending_payouts (lamports), active_gig_list[]
-  ///   gig: { title, status (in_progress|pending_review|bidding|completed), price (lamports), currency }
+  /// MoltLaunch / Molt.ID: EVM/Base-compatible AI agent job marketplace (moltdotid/AutoPilot-Molt-CLI).
+  /// Identity = ERC-8004 NFT on Base. Jobs are on-chain transactions via Multiclaw tx-queue API.
+  /// get_identity fields: wallet_address, display_name, verified, jobs_count, reputation_score (0.0-1.0)
+  /// get_rep fields: reputation_score, total_jobs_completed, pending_payouts, active_gig_list[]
+  ///   gig: { title, status (in_progress|pending_review|bidding|completed), price, currency }
   Future<SkillResult> _executeMoltLaunchSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
     final method = parameters['method'] ?? 'get_rep';
     final proxy = GatewaySkillProxy();
@@ -711,10 +717,46 @@ class SkillsService {
       category: 'avatar',
       tags: ['avatar', 'vrm', 'gesture', '3d', 'emotion', 'animation'],
       requirements: [],
-      body: '3D avatar control skill. Calls AgentSkillServer on 127.0.0.1:8765/api/avatar/control.',
+      body: '''# Avatar Control Skill
+
+Calls AgentSkillServer on 127.0.0.1:8765/api/avatar/control.
+
+## Actions
+- **change_model** — Load a different VRM model by filename (e.g. "clawbot_v2.vrm")
+- **play_gesture** — Trigger a body animation on the live 3D avatar
+- **set_emotion** — Set the avatar's facial expression
+- **get_status** — Return current model name and active gesture
+
+## Available Gestures (use exactly these names)
+| Name | Description |
+|------|-------------|
+| greeting | Wave hello — great for introductions |
+| dance | Full dance animation |
+| cute | Cute/kawaii pose |
+| elegant | Elegant flowing pose |
+| fight | Fighting stance |
+| peacesign | Peace sign / V-sign |
+| pose | Cool standing pose (also used while thinking) |
+| powerful | Power/strength pose |
+| ready | Ready stance (also used when task complete) |
+| shoot | Finger-gun shooting pose |
+| spin | Spin / twirl animation |
+| squat | Squat down pose |
+| talk | Talking/gesturing animation |
+| idle | Return to default idle stance |
+
+## Emotions
+happy, sad, neutral, surprised, angry
+
+## Examples
+- User asks you to wave → play_gesture with gesture: "greeting"
+- User asks you to dance → play_gesture with gesture: "dance"
+- User asks you to do something cool → play_gesture with gesture: "powerful" or "pose"
+- Task finished → play_gesture with gesture: "ready"
+''',
       source: 'custom',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('avatar-control'),
+      enabled: _prefs.isSkillEnabledOrDefault('avatar-control', defaultValue: true),
       parametersSchema: {
         'type': 'object',
         'properties': {
@@ -729,8 +771,11 @@ class SkillsService {
           },
           'gesture': {
             'type': 'string',
-            'enum': ['wave', 'nod', 'shake', 'bow', 'idle', 'thinking', 'excited'],
-            'description': 'Gesture to play. Required for play_gesture.',
+            'enum': [
+              'greeting', 'dance', 'cute', 'elegant', 'fight', 'peacesign',
+              'pose', 'powerful', 'ready', 'shoot', 'spin', 'squat', 'talk', 'idle',
+            ],
+            'description': 'Animation to play on the avatar. Use "greeting" to wave, "dance" to dance, "idle" to return to default. Required for play_gesture.',
           },
           'emotion': {
             'type': 'string',
@@ -756,7 +801,7 @@ class SkillsService {
       body: 'TTS voice control skill. Calls AgentSkillServer on 127.0.0.1:8765/api/tts/control.',
       source: 'custom',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('tts-voice'),
+      enabled: _prefs.isSkillEnabledOrDefault('tts-voice', defaultValue: true),
       parametersSchema: {
         'type': 'object',
         'properties': {
@@ -797,7 +842,7 @@ class SkillsService {
       body: 'Device node skill. Calls AgentSkillServer on 127.0.0.1:8765/api/device/control.',
       source: 'custom',
       createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('device-node'),
+      enabled: _prefs.isSkillEnabledOrDefault('device-node', defaultValue: true),
       parametersSchema: {
         'type': 'object',
         'properties': {
@@ -1039,6 +1084,176 @@ Agent instruction: "You have the MoonPay MCP toolkit. Always confirm with user b
       },
     );
   }
+
+  // ── Base Chain skill ──────────────────────────────────────────────────────
+
+  Skill _createBaseChainSkill() {
+    return Skill(
+      id: 'base-chain',
+      name: 'Base Chain Wallet',
+      description: 'Coinbase Base L2 wallet — send ETH/USDC, check balances, resolve Basenames.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'base',
+      tags: ['base', 'blockchain', 'eth', 'usdc', 'wallet', 'coinbase', 'l2', 'evm', 'basenames'],
+      requirements: [SkillRequirement(type: 'network', value: 'internet')],
+      body: '''# Base Chain Skill
+
+## Network Info
+- Chain: Base (Coinbase L2, OP Stack) — EVM-compatible
+- Chain ID: 8453 (mainnet), 84532 (sepolia testnet)
+- RPC: https://mainnet.base.org | https://sepolia.base.org
+- Explorer: https://basescan.org
+
+## Tokens
+- **ETH** — native gas token (18 decimals)
+- **USDC** — native Circle stablecoin on Base (6 decimals)
+  - Contract (mainnet): 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+
+## Basenames
+- Human-readable `.base.eth` addresses (ENS-compatible, 750 000+ registered)
+- Use `resolve_basename` action to convert a name → 0x address before sending
+
+## Coinbase AgentKit (Official AI Skills — Gateway)
+Install **cdp-agentkit** in Skills Manager to unlock 50+ AI-driven Base actions:
+- Core: transfer, trade (gasless swap on Base), deploy_token, deploy_nft, mint_nft
+- DeFi: wrap_eth, morpho_deposit, morpho_withdraw, superfluid_create_flow
+- Identity: register_basename, resolve_basename
+- Social: post_to_farcaster, create_attestation
+- Requires: CDP_API_KEY + CDP_API_SECRET from https://portal.cdp.coinbase.com
+
+## Actions (this skill)
+| action | params | description |
+|--------|--------|-------------|
+| get_balance | — | Returns ETH + USDC balance |
+| get_address | — | Returns wallet 0x address |
+| send_eth | to, amount | Send ETH (supports .base.eth names) |
+| send_usdc | to, amount | Send USDC stablecoin |
+| resolve_basename | name | Resolve .base.eth → 0x address |
+| get_history | limit? | Last N transactions from Basescan |
+| switch_network | network (mainnet/sepolia) | Toggle network |
+''',
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: _prefs.isSkillEnabled('base-chain'),
+      parametersSchema: {
+        'type': 'object',
+        'properties': {
+          'action': {
+            'type': 'string',
+            'enum': [
+              'get_balance',
+              'get_address',
+              'send_eth',
+              'send_usdc',
+              'resolve_basename',
+              'get_history',
+              'switch_network',
+            ],
+            'description': 'Base Chain operation to perform.',
+          },
+          'to': {
+            'type': 'string',
+            'description': 'Recipient 0x address or .base.eth Basename. Required for send_eth / send_usdc.',
+          },
+          'amount': {
+            'type': 'string',
+            'description': 'Amount as decimal string (e.g. "0.01"). Required for send_eth / send_usdc.',
+          },
+          'name': {
+            'type': 'string',
+            'description': 'Basename to resolve (e.g. "alice.base.eth"). Required for resolve_basename.',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': 'Number of transactions to return (default 10). For get_history.',
+          },
+          'network': {
+            'type': 'string',
+            'enum': ['mainnet', 'sepolia'],
+            'description': 'Network to switch to. Required for switch_network.',
+          },
+        },
+        'required': ['action'],
+      },
+    );
+  }
+
+  /// Execute Base Chain skill — routes to BaseService (device-native, no gateway needed).
+  Future<SkillResult> _executeBaseChainSkill(
+      Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+    // Import is via the AgentSkillServer HTTP bridge on 127.0.0.1:8765
+    // For now, route direct to BaseService singleton (same process — no HTTP hop needed).
+    final action = parameters['action'] as String? ?? 'get_balance';
+    try {
+      switch (action) {
+        case 'get_address':
+          final svc = _baseServiceInstance;
+          if (!svc.isConnected) return SkillResult.error('No wallet connected. Create one in the Base screen.');
+          return SkillResult.success({'address': svc.address});
+        case 'get_balance':
+          final svc = _baseServiceInstance;
+          if (!svc.isConnected) return SkillResult.error('No wallet connected. Create one in the Base screen.');
+          await svc.refreshBalance();
+          return SkillResult.success({
+            'eth': svc.ethBalance.toStringAsFixed(6),
+            'usdc': svc.usdcBalance.toStringAsFixed(2),
+            'network': svc.networkName,
+            'address': svc.address,
+          });
+        case 'send_eth':
+          final svc = _baseServiceInstance;
+          final to = parameters['to'] as String?;
+          final amount = parameters['amount'] as String?;
+          if (to == null || amount == null) return SkillResult.error('to and amount are required');
+          final dec = Decimal.tryParse(amount);
+          if (dec == null) return SkillResult.error('Invalid amount: $amount');
+          final txHash = await svc.sendEth(to, dec);
+          return SkillResult.success({'txHash': txHash, 'status': 'sent'});
+        case 'send_usdc':
+          final svc = _baseServiceInstance;
+          final to = parameters['to'] as String?;
+          final amount = parameters['amount'] as String?;
+          if (to == null || amount == null) return SkillResult.error('to and amount are required');
+          final dec = Decimal.tryParse(amount);
+          if (dec == null) return SkillResult.error('Invalid amount: $amount');
+          final txHash = await svc.sendUsdc(to, dec);
+          return SkillResult.success({'txHash': txHash, 'status': 'sent'});
+        case 'resolve_basename':
+          final svc = _baseServiceInstance;
+          final name = parameters['name'] as String? ?? parameters['to'] as String?;
+          if (name == null) return SkillResult.error('name is required');
+          final addr = await svc.resolveBasename(name);
+          return SkillResult.success({'name': name, 'address': addr});
+        case 'get_history':
+          final svc = _baseServiceInstance;
+          if (!svc.isConnected) return SkillResult.error('No wallet connected.');
+          final limit = (parameters['limit'] as num?)?.toInt() ?? 10;
+          final txs = await svc.fetchHistory(limit: limit);
+          return SkillResult.success({
+            'transactions': txs.map((t) => {
+              'hash': t.hash,
+              'from': t.from,
+              'to': t.to,
+              'value_eth': t.value.toStringAsFixed(6),
+              'timestamp': t.timestamp.toIso8601String(),
+              'error': t.isError,
+            }).toList(),
+          });
+        case 'switch_network':
+          final network = parameters['network'] as String? ?? 'mainnet';
+          final svc = _baseServiceInstance;
+          await svc.setNetwork(sepolia: network == 'sepolia');
+          return SkillResult.success({'network': svc.networkName, 'chainId': svc.chainId});
+        default:
+          return SkillResult.error('Unknown action: $action');
+      }
+    } catch (e) {
+      return SkillResult.error('Base Chain error: $e');
+    }
+  }
+
+  BaseService get _baseServiceInstance => BaseService();
 
   Skill? getSkill(String id) => _skills[id];
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
@@ -18,6 +19,10 @@ class PiperTtsService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInit = false;
   bool get isReady => _isInit && _tts != null;
+
+  /// Safety timer: forces onComplete if AudioPlayer doesn't fire onPlayerComplete
+  /// (e.g. Android audio focus loss, silent playback errors).
+  Timer? _safetyTimer;
 
   /// Speech rate passed to sherpa-onnx generate(). 1.0 = normal, 0.8 = slower, 1.4 = faster.
   /// Exposed so future TTS settings UI can call `piperTts.speed = value`.
@@ -159,6 +164,7 @@ class PiperTtsService {
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
 
       _audioPlayer.onPlayerComplete.listen((_) {
+        _safetyTimer?.cancel();
         onComplete?.call();
       });
 
@@ -194,7 +200,17 @@ class PiperTtsService {
       //    if the previous session wasn't fully released.
       await _audioPlayer.stop();
 
-      // 4. Play — returns when playback STARTS (not finishes).
+      // 4. Safety timeout: if onPlayerComplete doesn't fire within the expected
+      //    duration + 2 s headroom, force-complete to prevent the entire TTS
+      //    pipeline from getting stuck (which causes the "goes silent" bug).
+      final estimatedMs = (audioConfig.samples.length / audioConfig.sampleRate * 1000).toInt() + 2000;
+      _safetyTimer?.cancel();
+      _safetyTimer = Timer(Duration(milliseconds: estimatedMs), () {
+        print('PiperTTS: Safety timeout fired — forcing onComplete');
+        onComplete?.call();
+      });
+
+      // 5. Play — returns when playback STARTS (not finishes).
       //    onComplete fires via onPlayerComplete listener set in init().
       await _audioPlayer.play(DeviceFileSource(wavFile.path));
 
