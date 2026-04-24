@@ -29,9 +29,7 @@ dependencies:
 
   # Crypto Payment Integration
   flutter_secure_storage: ^9.0.0
-  solana: ^0.31.2
-  solana_mobile_client: ^0.1.2
-  bs58: ^1.0.2
+  web3dart: ^2.7.3
   logger: ^2.0.2+1
   
   # Phase 2: Advanced Features
@@ -50,12 +48,7 @@ dependencies:
   flutter_tts: ^4.2.5
   speech_to_text: ^7.3.0
   
-  # Phase 3: Native Solana Integration
-  # Jupiter API Integration
-  retrofit: ^4.0.3
-  json_annotation: ^4.8.1
-  
-  # Additional Solana utilities
+  # Base Chain (EVM) utilities
   decimal: ^2.3.3
   equatable: ^2.0.5
   sherpa_onnx: ^1.12.28

@@ -145,6 +145,7 @@ class NodeWsService {
   }
 
   void _handleDisconnect() {
+    if (_channel == null) return;
     _connected = false;
     _pingTimer?.cancel();
     _subscription?.cancel();
@@ -174,7 +175,12 @@ class NodeWsService {
     _reconnectAttempt++;
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () async {
       if (_shouldReconnect) {
-        await _doConnect();
+        try {
+          await _doConnect();
+        } catch (_) {
+          // Exceptions are handled inside _doConnect, but if it throws synchronously
+          // we don't want it to crash the timer.
+        }
       }
     });
   }

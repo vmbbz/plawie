@@ -64,10 +64,10 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Web3 & Solana Identity',
-                        description: 'Real Ed25519 keypairs are generated and protected in secure on-device storage. Transactions are constructed and signed locally without cloud intermediaries.',
+                        title: 'Base Chain Wallet',
+                        description: 'A full EVM wallet on Coinbase\'s Base L2 is built into the app. secp256k1 keypairs are generated and stored securely on-device. Check ETH and USDC balances, send to any 0x address or .base.eth Basename, and view your transaction history — all without a cloud intermediary.\n\nInstall Coinbase AgentKit from the Skills Manager to give the AI 50+ autonomous actions: gasless token swaps, NFT deployment, DCA, bridge, Farcaster posts, and more.',
                         icon: Icons.account_balance_wallet_rounded,
-                        color: const Color(0xFF9945FF),
+                        color: const Color(0xFF0052FF),
                       ),
                       const SizedBox(height: 12),
                       _buildHelpCard(
@@ -77,7 +77,31 @@ class HelpScreen extends StatelessWidget {
                         icon: Icons.architecture_rounded,
                         color: Colors.cyanAccent,
                       ),
-                      
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
+                        title: 'Gestures & Avatar Animations',
+                        description: 'The AI agent can trigger full-body animations on the 3D avatar via the Avatar Control skill. Ask it to wave, dance, or strike a pose — it picks the right animation automatically.\n\nAvailable gestures: greeting · dance · cute · elegant · fight · peacesign · pose · powerful · ready · shoot · spin · squat · talk · idle\n\nYou can also embed animations inline in any message using the syntax (gesture:name). The avatar uses the "pose" gesture while thinking and "ready" when a task completes.',
+                        icon: Icons.emoji_people_rounded,
+                        color: Colors.purpleAccent,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
+                        title: 'Natural Voice (Piper TTS)',
+                        description: 'The app ships with native Android TTS by default (fast, robotic). To unlock a natural-sounding AI voice, download the Piper TTS model from the chat page banner — tap "Enable Voice" and wait for the one-time download (~45 MB).\n\nOnce downloaded, the natural voice activates immediately and the setting persists — you will never be prompted to download again. Switch back to native TTS anytime in Settings.',
+                        icon: Icons.record_voice_over_rounded,
+                        color: Colors.tealAccent,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
+                        title: 'Canvas (AI Web Browser)',
+                        description: 'The AI agent can open a live web browser overlay directly in the chat page using canvas commands: navigate to a URL, run JavaScript on the page, and take a screenshot that appears inline in the conversation.\n\nCanvas is active whenever you are on the Chat page. Ask the AI to "open example.com in canvas" or "take a screenshot of the current canvas" — the WebView panel appears at the bottom of chat and can be closed at any time.',
+                        icon: Icons.web_rounded,
+                        color: Colors.orangeAccent,
+                      ),
+
                       const SizedBox(height: 32),
                       _buildSectionHeader('Advanced Extensibility'),
                       const SizedBox(height: 16),
@@ -371,7 +395,7 @@ class HelpScreen extends StatelessWidget {
           const SizedBox(height: 16),
           ...[
             (Icons.check_circle_rounded, Colors.greenAccent, 'My Skills',
-                'Your installed skills, Local LLM status, Solana identity, and workspace config — all in one place.'),
+                'Your installed skills, Local LLM status, Base Chain wallet, and workspace config — all in one place.'),
             (Icons.explore_rounded, Colors.cyanAccent, 'Discover',
                 'Live search against the ClawHub community registry. Browse, preview, and install skills with one tap.'),
             (Icons.build_rounded, Colors.amberAccent, 'Tools',
@@ -471,16 +495,19 @@ class HelpScreen extends StatelessWidget {
   }
 
   Widget _buildPremiumSkillsTable(BuildContext context) {
-    // (icon, name, subtitle, description, comingSoon)
+    // (icon, name, subtitle, description, requiresInstall)
+    // requiresInstall=true → shows "INSTALL" badge; false → shows active/built-in
     final skills = [
       (Icons.account_balance_wallet_rounded, 'Wallet', 'AgentCard.ai',
-          'Issue virtual Visa cards and make autonomous on-chain payments via Base.', true),
+          'Issue virtual Visa cards and make autonomous on-chain payments via Base. Install via Skills Manager → Partner Skills.', true),
       (Icons.work_rounded, 'Work', 'MoltLaunch',
-          'On-chain AI job marketplace with ERC-8004 identity and ETH escrow.', true),
+          'EVM/Base-compatible AI job marketplace with Molt.ID identity and ETH escrow. Install via Skills Manager → Partner Skills.', true),
       (Icons.credit_score_rounded, 'Credit', 'Valeo Sentinel',
-          'x402 spending policy: per-call, hourly & daily budget caps with on-chain audit log.', true),
+          'x402 spending policy: per-call, hourly & daily budget caps with on-chain audit log. Install via Skills Manager → Partner Skills.', true),
       (Icons.phone_android_rounded, 'Calls', 'Twilio AI',
-          'Inbound & outbound voice via ConversationRelay with real-time AI transcription.', true),
+          'Inbound & outbound voice via ConversationRelay with real-time AI transcription. Requires Twilio Account SID + Auth Token. Install via Skills Manager → Partner Skills.', true),
+      (Icons.rocket_launch_rounded, 'AI Wallet', 'Coinbase AgentKit',
+          '50+ AI-callable actions on Base: gasless token swaps, NFT deploy, DCA, bridge, Farcaster, and Basenames. Requires CDP API Key from portal.cdp.coinbase.com. Install via Skills Manager → Partner Skills.', true),
       (Icons.currency_exchange_rounded, 'Finance', 'MoonPay',
           'Verified agent bank account — swap, bridge, DCA, fiat onramps and live market prices.', false),
       (Icons.memory_rounded, 'Local LLM', 'fllama / Ollama',
@@ -526,13 +553,13 @@ class HelpScreen extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.06),
+                                color: const Color(0xFF0052FF).withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                border: Border.all(color: const Color(0xFF0052FF).withValues(alpha: 0.4)),
                               ),
-                              child: const Text('SOON',
+                              child: const Text('INSTALL',
                                   style: TextStyle(
-                                      color: Colors.white38,
+                                      color: Color(0xFF6699FF),
                                       fontSize: 8,
                                       fontWeight: FontWeight.w900,
                                       letterSpacing: 0.8)),

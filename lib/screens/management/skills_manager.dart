@@ -19,7 +19,7 @@ import 'skills/agent_credit_page.dart';
 import 'skills/agent_calls_page.dart';
 import 'skills/agent_moonpay_page.dart';
 import 'local_llm_screen.dart';
-import '../solana_screen.dart';
+import 'skills/agent_base_page.dart';
 import 'bot_method_explorer.dart';
 import 'skills/skill_config_editor.dart';
 import 'skills/skill_detail_sheet.dart';
@@ -97,6 +97,17 @@ const _premiumSkills = [
     color: Color(0xFF0097A7),
     tooltip:
         'Downloads a GGUF model (Qwen2.5-1.5B recommended) and runs llama-server as a sibling process inside PRoot. OpenClaw routes via the gateway when enabled. CPU-only for stability.',
+  ),
+  _SkillEntry(
+    id: 'cdp-agentkit',
+    title: 'AgentKit',
+    subtitle: 'Coinbase CDP',
+    description:
+        '50+ AI-driven Base actions: gasless swaps, NFT deploy, bridge, DCA, Farcaster. Requires CDP API key.',
+    icon: Icons.rocket_launch_rounded,
+    color: Color(0xFF0052FF),
+    tooltip:
+        'Official Coinbase AgentKit gives your AI agent 50+ autonomous actions on Base: gasless token swaps, deploy ERC-20/NFT, bridge cross-chain, DCA strategies, register Basenames, post to Farcaster. Requires a free CDP API key from portal.cdp.coinbase.com.',
   ),
 ];
 
@@ -623,7 +634,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-            child: _SolanaBuiltInCard(),
+            child: _BaseBuiltInCard(),
           ),
         ),
         // ── Workspace config (raw editor) ─────────────────────────────────
@@ -2455,21 +2466,21 @@ class _MoltLaunchBanner extends StatelessWidget {
   }
 }
 
-// ── Solana built-in card ──────────────────────────────────────────────────────
+// ── Base Chain built-in card ──────────────────────────────────────────────────
 
-class _SolanaBuiltInCard extends StatelessWidget {
+class _BaseBuiltInCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.push(
-          context, MaterialPageRoute(builder: (_) => const SolanaScreen())),
+          context, MaterialPageRoute(builder: (_) => const AgentBasePage())),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: const Color(0xFF9945FF).withValues(alpha: 0.25)),
+              color: const Color(0xFF0052FF).withValues(alpha: 0.35)),
         ),
         child: Row(
           children: [
@@ -2477,10 +2488,10 @@ class _SolanaBuiltInCard extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                    colors: [Color(0xFF9945FF), Color(0xFF14F195)]),
+                    colors: [Color(0xFF0052FF), Color(0xFF7B2FBE)]),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.currency_bitcoin_rounded,
+              child: const Icon(Icons.account_balance_wallet_rounded,
                   color: Colors.white, size: 22),
             ),
             const SizedBox(width: 16),
@@ -2490,7 +2501,7 @@ class _SolanaBuiltInCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Text('Solana Wallet',
+                      const Text('Base Wallet',
                           style: TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(width: 8),
@@ -2511,7 +2522,7 @@ class _SolanaBuiltInCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    'Send SOL, swap via Jupiter DEX, view balances. No install needed.',
+                    'ETH + USDC on Coinbase Base L2. Basenames, AgentKit, Basescan history. No install needed.',
                     style: TextStyle(
                         color: AppColors.statusGrey.withValues(alpha: 0.9),
                         fontSize: 11,
