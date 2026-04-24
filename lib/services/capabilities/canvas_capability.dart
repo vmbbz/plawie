@@ -111,7 +111,11 @@ class CanvasCapability extends CapabilityHandler {
   }
 
   Future<NodeFrame> _eval(Map<String, dynamic> params) async {
-    final js = params['js'] as String? ?? params['code'] as String?;
+    final js = params['js'] as String?
+        ?? params['code'] as String?
+        ?? params['script'] as String?
+        ?? params['javascript'] as String?
+        ?? params['expression'] as String?;
     if (js == null || js.isEmpty) {
       return NodeFrame.response('', error: {
         'code': 'MISSING_PARAM',
