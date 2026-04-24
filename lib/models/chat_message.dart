@@ -1,3 +1,19 @@
+/// A single tool call or tool result event emitted by the AI agent during a turn.
+/// Shown as collapsible chips in the chat bubble (amber = call, green = result).
+class ChatToolEvent {
+  final String type;   // 'tool_use' | 'tool_result'
+  final String name;   // e.g. 'camera.snap'
+  final Map<String, dynamic>? input;
+  final String? result;
+
+  const ChatToolEvent({
+    required this.type,
+    required this.name,
+    this.input,
+    this.result,
+  });
+}
+
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -7,6 +23,8 @@ class ChatMessage {
   // Non-null and non-empty only on assistant messages where the model emitted
   // reasoning tokens. Shown as a collapsible "Reasoning" section in ChatBubble.
   final String? thinkContent;
+  // Tool call / result events captured from the gateway stream for this turn.
+  final List<ChatToolEvent>? toolEvents;
 
   ChatMessage({
     required this.text,
@@ -14,6 +32,7 @@ class ChatMessage {
     this.imageBase64,
     this.imageMimeType,
     this.thinkContent,
+    this.toolEvents,
   });
 
   bool get hasImage => imageBase64 != null && imageBase64!.isNotEmpty;
@@ -21,6 +40,8 @@ class ChatMessage {
   /// True when the model emitted visible reasoning before its answer.
   bool get hasThinkContent =>
       thinkContent != null && thinkContent!.trim().isNotEmpty;
+
+  bool get hasToolEvents => toolEvents != null && toolEvents!.isNotEmpty;
 
   Map<String, dynamic> toJson() => {
         'text': text,
