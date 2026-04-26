@@ -573,6 +573,7 @@ PARAMETER num_batch 512
       agentsDefaults.remove('provider');          // not in agents.defaults schema
       agentsDefaults.remove('tools');             // not in agents.defaults schema
       agentsDefaults.remove('timeoutMs');         // not in agents.defaults schema
+      agentsDefaults.remove('systemPrompt');      // not in agents.defaults schema (gateway rejects it)
     }
     final skills = config['skills'];
     if (skills is Map) {
@@ -581,6 +582,9 @@ PARAMETER num_batch 512
       skills.remove('sync');                      // not in skills schema
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
+    
+    // Remove top-level tools block (if any leftover from older configs) to avoid gateway tools.allow warnings
+    config.remove('tools');
     // Remove invalid Ollama provider keys written by earlier builds (v2026.3.x).
     // These broke gateway schema validation, causing config reload to be skipped.
     final ollamaProvider = config['models']?['providers']?['ollama'];
@@ -595,28 +599,9 @@ PARAMETER num_batch 512
       }
     }
 
-    // Write gesture + canvas instructions into agents.defaults.systemPrompt.
-    // This is the only schema-valid way to set the system prompt for ALL models
-    // (cloud + local). sessions.patch does NOT accept systemPrompt — the gateway
-    // rejects it with INVALID_REQUEST. Writing to config here (at startup) means
-    // the gateway reads it before the first chat.send — no race condition.
-    // We APPEND to any existing prompt so the dashboard-configured base is preserved.
-    config['agents'] ??= {};
-    config['agents']['defaults'] ??= {};
-    const gestureAppendix =
-        '\n\nAVATAR GESTURES — Embed (gesture:NAME) anywhere in your reply to animate the avatar. '
-        'Names: greeting · dance · cute · elegant · fight · peacesign · pose · powerful · ready · shoot · spin · squat · talk · idle. '
-        'Example: (gesture:greeting) Hi there! '
-        'Use "pose" while thinking through a hard problem and "ready" when done.\n\n'
-        'CANVAS (Web Browser): canvas.navigate(url:) opens a URL, '
-        'canvas.eval(js:) runs JavaScript (parameter key is "js"), '
-        'canvas.snapshot() captures a screenshot.';
-    final existing = config['agents']['defaults']['systemPrompt'] as String? ?? '';
-    if (!existing.contains('AVATAR GESTURES')) {
-      config['agents']['defaults']['systemPrompt'] = existing.isEmpty
-          ? 'You are OpenClaw, a helpful AI assistant on Android. Be concise and direct.$gestureAppendix'
-          : '$existing$gestureAppendix';
-    }
+    // NOTE: agents.defaults.systemPrompt is NOT a valid gateway schema field.
+    // The gateway rejects it with "Unrecognized key" and skips the entire config reload.
+    // Gesture + canvas instructions are injected per-message via _buildSystemContext().
 
     await _writeConfig(config);
   }

@@ -18,6 +18,8 @@ class PiperTtsService {
   sherpa.OfflineTts? _tts;
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInit = false;
+  bool _audioContextReady = false;
+  StreamSubscription? _completeSubscription;
   bool get isReady => _isInit && _tts != null;
 
   /// Safety timer: forces onComplete if AudioPlayer doesn't fire onPlayerComplete
@@ -142,37 +144,27 @@ class PiperTtsService {
 
       _tts = sherpa.OfflineTts(config);
 
-      // Configure AudioPlayer for speech output on Android.
-      // Without AudioContext, Android may route to the wrong stream (e.g., MUSIC)
-      // or be blocked by audio focus held by the speech recogniser.
-      await _audioPlayer.setAudioContext(
-        AudioContext(
-          android: AudioContextAndroid(
-            isSpeakerphoneOn: false,
-            stayAwake: false,
-            contentType: AndroidContentType.speech,
-            usageType: AndroidUsageType.assistanceSonification,
-            audioFocus: AndroidAudioFocus.gainTransientMayDuck,
-          ),
-          iOS: AudioContextIOS(
-            category: AVAudioSessionCategory.playback,
-            options: {AVAudioSessionOptions.duckOthers},
-          ),
-        ),
-      );
-      // Stop releases resources after each utterance so the next play() starts clean
-      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
-
-      _audioPlayer.onPlayerComplete.listen((_) {
+      // Wire the completion callback exactly once — cancel any prior subscription
+      // so repeated init() calls don't accumulate listeners and fire onComplete
+      // multiple times per utterance (which jams the TTS queue).
+      await _completeSubscription?.cancel();
+      _completeSubscription = _audioPlayer.onPlayerComplete.listen((_) {
         _safetyTimer?.cancel();
         onComplete?.call();
       });
+
+      // AudioPlayer stream type and release mode — set once here so speak() is
+      // idempotent. We do NOT request audio focus during init: requesting
+      // gainTransientMayDuck while another app holds focus can throw and leave
+      // _isInit = false even though the model loaded fine.
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
 
       _isInit = true;
       print('PiperTTS: Initialization successful.');
     } catch (e) {
       print('PiperTTS Error: $e');
       _isInit = false;
+      rethrow;
     }
   }
 
@@ -183,7 +175,28 @@ class PiperTtsService {
     }
 
     try {
-      // 1. Generate PCM — pass current speed so UI slider takes immediate effect
+      // 1. Configure AudioPlayer on first speak — not in init() so audio focus
+      //    conflicts don't prevent the model from loading at all.
+      if (!_audioContextReady) {
+        await _audioPlayer.setAudioContext(
+          AudioContext(
+            android: AudioContextAndroid(
+              isSpeakerphoneOn: false,
+              stayAwake: false,
+              contentType: AndroidContentType.speech,
+              usageType: AndroidUsageType.assistanceSonification,
+              audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+            ),
+            iOS: AudioContextIOS(
+              category: AVAudioSessionCategory.playback,
+              options: {AVAudioSessionOptions.duckOthers},
+            ),
+          ),
+        );
+        _audioContextReady = true;
+      }
+
+      // 2. Generate PCM — pass current speed so UI slider takes immediate effect
       final audioConfig = _tts!.generate(text: text, sid: 0, speed: speed);
       if (audioConfig.samples.isEmpty) {
         // Nothing to play — still fire onComplete so VRM lip-sync resets
@@ -193,10 +206,10 @@ class PiperTtsService {
 
       onStart?.call();
 
-      // 2. Write WAV to temp file
-      final tempDir = await getTemporaryDirectory();
-      final wavFile = File('${tempDir.path}/piper_speech.wav');
-      await _writeWav(audioConfig.samples, audioConfig.sampleRate, wavFile);
+      // 2. Format WAV in background isolate to avoid Dart loop jank
+      final samples = audioConfig.samples;
+      final sampleRate = audioConfig.sampleRate;
+      final wavBytes = await Isolate.run(() => _createWavBytes(samples, sampleRate));
 
       // 3. Stop any previous playback so the AudioPlayer is in a clean state.
       //    Without this, audioplayers v6 on Android can silently skip play()
@@ -206,7 +219,7 @@ class PiperTtsService {
       // 4. Safety timeout: if onPlayerComplete doesn't fire within the expected
       //    duration + 2 s headroom, force-complete to prevent the entire TTS
       //    pipeline from getting stuck (which causes the "goes silent" bug).
-      final estimatedMs = (audioConfig.samples.length / audioConfig.sampleRate * 1000).toInt() + 2000;
+      final estimatedMs = (samples.length / sampleRate * 1000).toInt() + 2000;
       _safetyTimer?.cancel();
       _safetyTimer = Timer(Duration(milliseconds: estimatedMs), () {
         print('PiperTTS: Safety timeout fired — forcing onComplete');
@@ -215,7 +228,7 @@ class PiperTtsService {
 
       // 5. Play — returns when playback STARTS (not finishes).
       //    onComplete fires via onPlayerComplete listener set in init().
-      await _audioPlayer.play(DeviceFileSource(wavFile.path));
+      await _audioPlayer.play(BytesSource(wavBytes));
 
     } catch (e) {
       print('PiperTTS Speak Error: $e');
@@ -229,7 +242,7 @@ class PiperTtsService {
   }
 
   // Quick helper to package Float32 PCM samples into a playable WAV file
-  Future<void> _writeWav(List<double> samples, int sampleRate, File file) async {
+  static Uint8List _createWavBytes(List<double> samples, int sampleRate) {
     // Convert Float32 [-1.0, 1.0] to Int16
     final int16Samples = Int16List(samples.length);
     for (int i = 0; i < samples.length; i++) {
@@ -265,6 +278,6 @@ class PiperTtsService {
       offset += 2;
     }
 
-    await file.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
+    return byteData.buffer.asUint8List();
   }
 }

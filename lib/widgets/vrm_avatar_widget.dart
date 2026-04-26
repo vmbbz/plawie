@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -169,7 +170,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
           _controller.runJavaScript("window.playGesture('${widget.gesture}');");
         }
         if (widget.userMessage != null && widget.userMessage != oldWidget.userMessage) {
-          _controller.runJavaScript("window.processKeywords('''${widget.userMessage}''');");
+          final safeMsg = jsonEncode(widget.userMessage);
+          _controller.runJavaScript("window.processKeywords($safeMsg);");
         }
         _syncState();
       }
