@@ -166,7 +166,7 @@ class AgentSkillServer {
         case 'set_engine':
           final engine = data['engine'] as String?;
           if (engine == null) return _sendError(request, 'Missing engine parameter');
-          final validEngines = ['piper', 'native', 'elevenlabs', 'openai'];
+          final validEngines = ['kokoro', 'native', 'elevenlabs', 'openai'];
           if (!validEngines.contains(engine)) {
             return _sendError(request, 'Invalid engine. Valid: ${validEngines.join(", ")}');
           }
@@ -182,9 +182,12 @@ class AgentSkillServer {
               prefs.elevenLabsVoiceId = voice;
             case 'openai':
               prefs.openAiTtsVoice = voice;
+            case 'kokoro':
+              // Kokoro voice is a speaker ID integer — parse if numeric string, else ignore
+              final sid = int.tryParse(voice);
+              if (sid != null) TtsService().updateKokoroVoice(sid);
             default:
-              // piper / native voice selection is model-level, stored as generic voice pref
-              prefs.ttsEngine = prefs.ttsEngine; // no-op — piper uses file, not voice id
+              break; // native has no voice selection
           }
           _sendJson(request, {'success': true, 'voice': voice, 'engine': prefs.ttsEngine});
 
