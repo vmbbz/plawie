@@ -11,6 +11,7 @@ import '../providers/node_provider.dart';
 import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/preferences_service.dart';
+import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
 import '../widgets/glass_card.dart';
 import 'node_screen.dart';
@@ -38,9 +39,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _selectedAvatar = 'gemini.vrm';
 
   // Voice & Speech
-  String _ttsEngine = 'piper';
+  String _ttsEngine = 'kokoro';
   double _ttsSpeed = 1.2;
   bool _continuousMode = false;
+  int _kokoroVoiceSid = 1;
 
   // Wake Word
   String _wakeWordMode = 'off'; // off | foreground | always
@@ -60,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsEngine = _prefs.ttsEngine;
     _ttsSpeed = _prefs.ttsSpeed;
     _continuousMode = _prefs.continuousMode;
+    _kokoroVoiceSid = _prefs.kokoroVoiceSid;
     _wakeWordMode = _prefs.wakeWordMode;
     _hotwordRunning = await NativeBridge.isHotwordRunning();
 
@@ -278,6 +281,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.swap_horiz, size: 18),
                   onTap: () => _showTtsEnginePicker(context),
                 ),
+                // Kokoro voice picker — only shown when Kokoro is the active engine
+                if (_ttsEngine == 'kokoro')
+                  ListTile(
+                    title: const Text('Kokoro Voice'),
+                    subtitle: Text(_kokoroVoiceLabel(_kokoroVoiceSid)),
+                    leading: const Icon(Icons.mic_none),
+                    trailing: const Icon(Icons.swap_horiz, size: 18),
+                    onTap: () => _showKokoroVoicePicker(context),
+                  ),
                 // Speed slider
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -619,10 +631,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   static const _ttsEngines = [
-    ('piper',      'Piper (Offline)'),
+    ('kokoro',     'Kokoro (Offline)'),
     ('native',     'Device TTS'),
     ('elevenlabs', 'ElevenLabs'),
     ('openai',     'OpenAI TTS'),
+  ];
+
+  static const _kokoroVoices = [
+    (0,  'af — American Female'),
+    (1,  'af_bella — American Female (Best)'),
+    (2,  'af_nicole — American Female'),
+    (3,  'af_sarah — American Female'),
+    (4,  'af_sky — American Female'),
+    (5,  'am_adam — American Male'),
+    (6,  'am_michael — American Male'),
+    (7,  'bf_emma — British Female'),
+    (8,  'bf_isabella — British Female'),
+    (9,  'bm_george — British Male'),
+    (10, 'bm_lewis — British Male'),
   ];
 
   String _ttsEngineLabel(String id) =>
@@ -654,6 +680,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (picked != null && picked != _ttsEngine) {
       setState(() => _ttsEngine = picked);
       _prefs.ttsEngine = picked;
+    }
+  }
+
+  String _kokoroVoiceLabel(int sid) =>
+      _kokoroVoices.firstWhere((v) => v.$1 == sid, orElse: () => (sid, 'Voice $sid')).$2;
+
+  Future<void> _showKokoroVoicePicker(BuildContext context) async {
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Kokoro Voice'),
+        children: _kokoroVoices.map((v) {
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, v.$1),
+            child: Row(
+              children: [
+                Icon(
+                  _kokoroVoiceSid == v.$1 ? Icons.radio_button_checked : Icons.radio_button_off,
+                  size: 20,
+                  color: _kokoroVoiceSid == v.$1 ? Theme.of(ctx).colorScheme.primary : Colors.white38,
+                ),
+                const SizedBox(width: 12),
+                Text(v.$2),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+    if (picked != null && picked != _kokoroVoiceSid) {
+      setState(() => _kokoroVoiceSid = picked);
+      TtsService().updateKokoroVoice(picked);
     }
   }
 

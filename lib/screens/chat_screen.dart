@@ -60,7 +60,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   final List<String> _diagnosticLogs = [];
   bool _showDiagnostics = false;
   
-  // Voice Pipeline (Piper TTS / Local VITS)
+  // Voice Pipeline (Kokoro TTS / Local VITS)
   final TtsService _tts = TtsService();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
@@ -308,8 +308,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             _isTtsDownloaded = true;
             // Persist so future visits skip the download prompt
             final prefs = PreferencesService();
-            prefs.ttsPiperDownloaded = true;
-            prefs.ttsEngine = 'piper';
+            prefs.ttsModelDownloaded = true;
+            prefs.ttsEngine = 'kokoro';
           } else if (p > 0) {
             _isDownloadingTts = true;
           }
@@ -321,33 +321,33 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   Future<void> _checkTtsModel() async {
     final prefs = PreferencesService();
     // Fast path: trust persisted flag so navigation doesn't re-prompt every visit
-    if (prefs.ttsPiperDownloaded) {
+    if (prefs.ttsModelDownloaded) {
       if (mounted) setState(() => _isTtsDownloaded = true);
-      _initPiperModelInBackground();
+      _initKokoroModelInBackground();
       return;
     }
     // Slow path: verify filesystem (first run or after reinstall)
     final downloaded = await _tts.isModelDownloaded();
     if (downloaded) {
       // Persist so we skip filesystem check next time
-      prefs.ttsPiperDownloaded = true;
-      _initPiperModelInBackground();
+      prefs.ttsModelDownloaded = true;
+      _initKokoroModelInBackground();
     }
     if (mounted) setState(() => _isTtsDownloaded = downloaded);
   }
 
-  void _initPiperModelInBackground() {
+  void _initKokoroModelInBackground() {
     _tts.init(forceDownload: false).then((_) {
-      // isUsingFallback correctly checks _piper.isReady directly.
+      // isUsingFallback correctly checks _kokoro.isReady directly.
       // _tts.isReady cannot be used here — it returns true via the native
-      // fallback engine even when Piper itself failed to initialize.
+      // fallback engine even when Kokoro itself failed to initialize.
       if (_tts.isUsingFallback) {
-        _addDiagnosticLog('WARNING: Piper model files exist but sherpa-onnx failed to init — using device TTS');
+        _addDiagnosticLog('WARNING: Kokoro model files exist but sherpa-onnx failed to init — using device TTS');
       } else {
-        _addDiagnosticLog('Piper TTS model loaded into memory');
+        _addDiagnosticLog('Kokoro TTS model loaded into memory');
       }
     }).catchError((e) {
-      _addDiagnosticLog('Piper model init error: $e');
+      _addDiagnosticLog('Kokoro model init error: $e');
     });
   }
 
@@ -357,7 +357,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Download Voice Data'),
-        content: const Text('To enable voice, a one-time 67MB high-quality voice model (Piper Amy) needs to be downloaded.'),
+        content: const Text('To enable voice, a one-time ~320MB high-quality voice model (Kokoro) needs to be downloaded.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -366,7 +366,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _startPiperDownload();
+              _startKokoroDownload();
             },
             child: const Text('Download Now'),
           ),
@@ -375,7 +375,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     );
   }
 
-  Future<void> _startPiperDownload() async {
+  Future<void> _startKokoroDownload() async {
     if (_isDownloadingTts) return;
 
     setState(() {
@@ -386,14 +386,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      _addDiagnosticLog('Starting Piper TTS background download...');
+      _addDiagnosticLog('Starting Kokoro TTS background download...');
       await _tts.init(forceDownload: true);
 
       if (mounted) {
         // Persist download flag — won't re-prompt on next navigation
         final prefs = PreferencesService();
-        prefs.ttsPiperDownloaded = true;
-        prefs.ttsEngine = 'piper';
+        prefs.ttsModelDownloaded = true;
+        prefs.ttsEngine = 'kokoro';
 
         setState(() {
           _isDownloadingTts = false;
@@ -401,9 +401,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           _downloadProgress = 1.0;
         });
 
-        // Verify piper actually loaded (sherpa-onnx may fail silently)
+        // Verify Kokoro actually loaded (sherpa-onnx may fail silently)
         if (!_tts.isReady) {
-          final ok = await _tts.reinitializePiper();
+          final ok = await _tts.reinitializeKokoro();
           if (!ok && mounted) {
             messenger.showSnackBar(const SnackBar(
               content: Text('Voice model downloaded but could not start — using device voice.'),
@@ -415,7 +415,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Natural voice ready! Piper TTS is now active.'),
+            content: Text('Natural voice ready! Kokoro TTS is now active.'),
             backgroundColor: AppColors.statusGreen,
           ),
         );
@@ -431,7 +431,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             action: SnackBarAction(
               label: 'Retry',
               textColor: Colors.white,
-              onPressed: () => _startPiperDownload(),
+              onPressed: () => _startKokoroDownload(),
             ),
           ),
         );
@@ -559,7 +559,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _initVoiceParams() async {
-    // Only initialize the shell STT, don't pre-emptively init Piper (it hangs)
+    // Only initialize the shell STT, don't pre-emptively init Kokoro (it hangs)
     await _speechToText.initialize();
 
     // Subscribe to wake word events from HotwordService (no-op if service not running)
@@ -577,16 +577,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           // No gesture change — visemes drive mouth movement; body stays idle
         });
         
-        // If falling back to Native TTS (Piper preferred but not loaded), prompt user
+        // If falling back to Native TTS (Kokoro preferred but not loaded), prompt user
         if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt) {
           _hasShownTtsFallbackPrompt = true;
-          if (PreferencesService().ttsPiperDownloaded) {
+          if (PreferencesService().ttsModelDownloaded) {
             // Model was downloaded but sherpa failed to init — offer re-init
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: const Text('Using device voice — natural voice engine failed to start.'),
               backgroundColor: Colors.orange,
               action: SnackBarAction(label: 'Retry', onPressed: () async {
-                final ok = await _tts.reinitializePiper();
+                final ok = await _tts.reinitializeKokoro();
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text(ok ? 'Natural voice ready!' : 'Could not start — using device voice.'),
@@ -1817,7 +1817,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _isTtsDownloaded ? 'Piper Voice Engine' : (_isDownloadingTts ? 'Downloading...' : 'Voice Engine'),
+                        _isTtsDownloaded ? 'Kokoro Voice Engine' : (_isDownloadingTts ? 'Downloading...' : 'Voice Engine'),
                         style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                       ),
                       Text(
@@ -2349,7 +2349,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // --- PIPER TTS GLOBAL PROGRESS OVERLAY ---
+                  // --- KOKORO TTS GLOBAL PROGRESS OVERLAY ---
                   if (_isDownloadingTts)
                     Container(
                       margin: const EdgeInsets.fromLTRB(20, 100, 20, 0),
@@ -2367,7 +2367,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                               const Icon(Icons.downloading, color: Colors.blue, size: 16),
                               const SizedBox(width: 10),
                               Text(
-                                _downloadProgress > 0.82 ? 'Extracting Voice...' : 'Downloading Voice Engine',
+                                _downloadProgress > 0.82 ? 'Extracting Kokoro...' : 'Downloading Kokoro (~320MB)',
                                 style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                               ),
                               const Spacer(),

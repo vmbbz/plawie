@@ -10,10 +10,10 @@ import 'package:audioplayers/audioplayers.dart';
 
 // ignore_for_file: unused_import
 
-class PiperTtsService {
-  static final PiperTtsService _instance = PiperTtsService._internal();
-  factory PiperTtsService() => _instance;
-  PiperTtsService._internal();
+class KokoroTtsService {
+  static final KokoroTtsService _instance = KokoroTtsService._internal();
+  factory KokoroTtsService() => _instance;
+  KokoroTtsService._internal();
 
   sherpa.OfflineTts? _tts;
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -27,8 +27,12 @@ class PiperTtsService {
   Timer? _safetyTimer;
 
   /// Speech rate passed to sherpa-onnx generate(). 1.0 = normal, 0.8 = slower, 1.4 = faster.
-  /// Exposed so future TTS settings UI can call `piperTts.speed = value`.
   double speed = 1.0;
+
+  /// Kokoro speaker ID (0–10 for kokoro-en-v0_19).
+  /// 0=af, 1=af_bella, 2=af_nicole, 3=af_sarah, 4=af_sky,
+  /// 5=am_adam, 6=am_michael, 7=bf_emma, 8=bf_isabella, 9=bm_george, 10=bm_lewis
+  int sid = 1; // af_bella default
 
   double _downloadProgress = 0.0;
   double get downloadProgress => _downloadProgress;
@@ -40,34 +44,34 @@ class PiperTtsService {
 
   Future<bool> isModelDownloaded() async {
     final docDir = await getApplicationDocumentsDirectory();
-    final modelExtractedDir = Directory('${docDir.path}/voices/vits-piper-en_US-amy-low');
-    return await modelExtractedDir.exists();
+    final modelFile = File('${docDir.path}/voices/kokoro-en-v0_19/model.onnx');
+    return await modelFile.exists();
   }
 
   Future<void> init({bool forceDownload = false}) async {
     if (_isInit && !forceDownload) return;
-    
+
     try {
       final docDir = await getApplicationDocumentsDirectory();
       final voicesDir = Directory('${docDir.path}/voices');
-      final modelExtractedDir = Directory('${voicesDir.path}/vits-piper-en_US-amy-low');
+      final modelExtractedDir = Directory('${voicesDir.path}/kokoro-en-v0_19');
 
       if (!await modelExtractedDir.exists() || forceDownload) {
         if (!forceDownload && !await modelExtractedDir.exists()) {
-          print('PiperTTS: Model missing and forceDownload is false. Aborting silent init.');
+          print('KokoroTTS: Model missing and forceDownload is false. Aborting silent init.');
           _isInit = false;
           return;
         }
 
-        print('PiperTTS: Preparing to download ONNX model...');
+        print('KokoroTTS: Preparing to download Kokoro ONNX model (~320MB)...');
         await voicesDir.create(recursive: true);
-        
-        final url = Uri.parse('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2');
+
+        final url = Uri.parse('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2');
         final httpClient = HttpClient();
         httpClient.connectionTimeout = const Duration(seconds: 15);
         final request = await httpClient.getUrl(url).timeout(const Duration(seconds: 20));
         final response = await request.close().timeout(const Duration(seconds: 20));
-        
+
         if (response.statusCode != 200) {
           throw HttpException('Server returned status code ${response.statusCode}');
         }
@@ -76,11 +80,11 @@ class PiperTtsService {
         int receivedLength = 0;
 
         final tempDir = await getTemporaryDirectory();
-        final tempFile = File('${tempDir.path}/piper_model_download.tar.bz2');
+        final tempFile = File('${tempDir.path}/kokoro_model_download.tar.bz2');
         final sink = tempFile.openWrite();
 
         try {
-          await for (var chunk in response.timeout(const Duration(seconds: 30))) {
+          await for (var chunk in response.timeout(const Duration(seconds: 60))) {
             sink.add(chunk);
             receivedLength += chunk.length;
             if (totalLength != -1) {
@@ -91,18 +95,18 @@ class PiperTtsService {
         } finally {
           await sink.close();
         }
-        
-        print('PiperTTS: Download complete. Extracting via background isolate...');
+
+        print('KokoroTTS: Download complete. Extracting via background isolate...');
         onDownloadProgress?.call(0.85);
-        
+
         final voicesDirPath = voicesDir.path;
         final tempFilePath = tempFile.path;
-        
+
         await Isolate.run(() {
           final bytes = File(tempFilePath).readAsBytesSync();
           final tarBytes = BZip2Decoder().decodeBytes(bytes);
           final archive = TarDecoder().decodeBytes(tarBytes);
-          
+
           for (final file in archive) {
             final filename = file.name;
             if (file.isFile) {
@@ -113,32 +117,33 @@ class PiperTtsService {
             }
           }
         });
-        
+
         // Clean up temp file
         if (await tempFile.exists()) {
           await tempFile.delete();
         }
-        
+
         onDownloadProgress?.call(1.0);
-        print('PiperTTS: Extraction complete.');
+        print('KokoroTTS: Extraction complete.');
       }
+
+      // Free previous instance before reassigning to avoid memory leak
+      _tts?.free();
 
       final base = modelExtractedDir.path;
       final config = sherpa.OfflineTtsConfig(
         model: sherpa.OfflineTtsModelConfig(
-          vits: sherpa.OfflineTtsVitsModelConfig(
-            model: '$base/en_US-amy-low.onnx',
-            lexicon: '',
+          kokoro: sherpa.OfflineTtsKokoroModelConfig(
+            model: '$base/model.onnx',
+            voices: '$base/voices.bin',
             tokens: '$base/tokens.txt',
             dataDir: '$base/espeak-ng-data',
-            noiseScale: 0.667,
-            noiseScaleW: 0.8,
-            lengthScale: 1.0,
           ),
           numThreads: 2,
           debug: false,
           provider: "cpu",
         ),
+        maxNumSenetences: 1, // intentional API typo — prevents long-text crashes
         ruleFsts: '',
       );
 
@@ -160,9 +165,12 @@ class PiperTtsService {
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
 
       _isInit = true;
-      print('PiperTTS: Initialization successful.');
+      print('KokoroTTS: Initialization successful.');
+
+      // Silently clean up old Piper model directory if it exists (frees ~67MB)
+      _cleanupOldPiperModel(docDir.path);
     } catch (e) {
-      print('PiperTTS Error: $e');
+      print('KokoroTTS Error: $e');
       _isInit = false;
       rethrow;
     }
@@ -196,8 +204,8 @@ class PiperTtsService {
         _audioContextReady = true;
       }
 
-      // 2. Generate PCM — pass current speed so UI slider takes immediate effect
-      final audioConfig = _tts!.generate(text: text, sid: 0, speed: speed);
+      // 2. Generate PCM — pass current speed and sid
+      final audioConfig = _tts!.generate(text: text, sid: sid, speed: speed);
       if (audioConfig.samples.isEmpty) {
         // Nothing to play — still fire onComplete so VRM lip-sync resets
         onComplete?.call();
@@ -206,49 +214,49 @@ class PiperTtsService {
 
       onStart?.call();
 
-      // 2. Format WAV in background isolate to avoid Dart loop jank
+      // 3. Format WAV in background isolate to avoid Dart loop jank
       final samples = audioConfig.samples;
-      final sampleRate = audioConfig.sampleRate;
+      final sampleRate = audioConfig.sampleRate; // 24000 Hz for Kokoro
       final wavBytes = await Isolate.run(() => _createWavBytes(samples, sampleRate));
 
-      // 3. Stop any previous playback so the AudioPlayer is in a clean state.
+      // 4. Stop any previous playback so the AudioPlayer is in a clean state.
       //    Without this, audioplayers v6 on Android can silently skip play()
       //    if the previous session wasn't fully released.
       await _audioPlayer.stop();
 
-      // 4. Safety timeout: if onPlayerComplete doesn't fire within the expected
+      // 5. Safety timeout: if onPlayerComplete doesn't fire within the expected
       //    duration + 2 s headroom, force-complete to prevent the entire TTS
       //    pipeline from getting stuck (which causes the "goes silent" bug).
       final estimatedMs = (samples.length / sampleRate * 1000).toInt() + 2000;
       _safetyTimer?.cancel();
       _safetyTimer = Timer(Duration(milliseconds: estimatedMs), () {
-        print('PiperTTS: Safety timeout fired — forcing onComplete');
+        print('KokoroTTS: Safety timeout fired — forcing onComplete');
         onComplete?.call();
       });
 
-      // 5. Play — returns when playback STARTS (not finishes).
+      // 6. Play — returns when playback STARTS (not finishes).
       //    onComplete fires via onPlayerComplete listener set in init().
       await _audioPlayer.play(BytesSource(wavBytes));
-
     } catch (e) {
-      print('PiperTTS Speak Error: $e');
+      print('KokoroTTS Speak Error: $e');
       onComplete?.call();
     }
   }
-  
+
   Future<void> stop() async {
     await _audioPlayer.stop();
     onComplete?.call();
   }
 
-  // Quick helper to package Float32 PCM samples into a playable WAV file
+  // Quick helper to package Float32 PCM samples into a playable WAV file.
+  // Reads sampleRate dynamically — Kokoro outputs 24000 Hz (vs Piper's 22050 Hz).
   static Uint8List _createWavBytes(List<double> samples, int sampleRate) {
     // Convert Float32 [-1.0, 1.0] to Int16
     final int16Samples = Int16List(samples.length);
     for (int i = 0; i < samples.length; i++) {
-        double s = samples[i];
-        s = s.clamp(-1.0, 1.0);
-        int16Samples[i] = (s * 32767).toInt();
+      double s = samples[i];
+      s = s.clamp(-1.0, 1.0);
+      int16Samples[i] = (s * 32767).toInt();
     }
 
     final byteData = ByteData(44 + int16Samples.length * 2);
@@ -279,5 +287,19 @@ class PiperTtsService {
     }
 
     return byteData.buffer.asUint8List();
+  }
+
+  // Fire-and-forget: delete old Piper model directory to free ~67MB after Kokoro is ready.
+  void _cleanupOldPiperModel(String docDirPath) {
+    final oldDir = Directory('$docDirPath/voices/vits-piper-en_US-amy-low');
+    oldDir.exists().then((exists) {
+      if (exists) {
+        oldDir.delete(recursive: true).then((_) {
+          print('KokoroTTS: Removed old Piper model (freed ~67MB).');
+        }).catchError((e) {
+          print('KokoroTTS: Could not remove old Piper model: $e');
+        });
+      }
+    });
   }
 }
