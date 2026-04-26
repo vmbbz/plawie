@@ -338,9 +338,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   void _initPiperModelInBackground() {
     _tts.init(forceDownload: false).then((_) {
-      _addDiagnosticLog('Piper TTS model loaded into memory');
-      if (mounted && !_tts.isReady) {
-        _addDiagnosticLog('WARNING: Piper model files exist but failed to init');
+      // isUsingFallback correctly checks _piper.isReady directly.
+      // _tts.isReady cannot be used here — it returns true via the native
+      // fallback engine even when Piper itself failed to initialize.
+      if (_tts.isUsingFallback) {
+        _addDiagnosticLog('WARNING: Piper model files exist but sherpa-onnx failed to init — using device TTS');
+      } else {
+        _addDiagnosticLog('Piper TTS model loaded into memory');
       }
     }).catchError((e) {
       _addDiagnosticLog('Piper model init error: $e');
