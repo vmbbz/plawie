@@ -136,8 +136,8 @@ class PreferencesService {
 
   // ── Voice & Speech ──────────────────────────────────────────────────────────
 
-  /// TTS engine: 'piper' | 'native' | 'elevenlabs' | 'openai'
-  String get ttsEngine => _p.getString('tts_engine') ?? 'piper';
+  /// TTS engine: 'kokoro' | 'native' | 'elevenlabs' | 'openai'
+  String get ttsEngine => _p.getString('tts_engine') ?? 'kokoro';
   set ttsEngine(String value) => _p.setString('tts_engine', value);
 
   /// Speech speed multiplier (0.5–2.0). Default 1.2 to match competitor default.
@@ -193,10 +193,17 @@ class PreferencesService {
   String get openAiTtsModel => _p.getString('openai_tts_model') ?? 'gpt-4o-mini-tts';
   set openAiTtsModel(String value) => _p.setString('openai_tts_model', value);
 
-  /// Whether the Piper TTS model has been fully downloaded to disk.
+  /// Whether the Kokoro TTS model has been fully downloaded to disk.
   /// Persists across navigation so the chat page doesn't re-prompt every visit.
-  bool get ttsPiperDownloaded => _p.getBool('tts_piper_downloaded') ?? false;
-  set ttsPiperDownloaded(bool value) => _p.setBool('tts_piper_downloaded', value);
+  /// Key renamed from 'tts_piper_downloaded' → 'tts_model_downloaded' so existing
+  /// Piper users get a fresh filesystem check on first launch after upgrade.
+  bool get ttsModelDownloaded => _p.getBool('tts_model_downloaded') ?? false;
+  set ttsModelDownloaded(bool value) => _p.setBool('tts_model_downloaded', value);
+
+  /// Kokoro voice speaker ID (0–10 for kokoro-en-v0_19).
+  /// Default: 1 = af_bella (American Female, highest quality).
+  int get kokoroVoiceSid => _p.getInt('kokoro_voice_sid') ?? 1;
+  set kokoroVoiceSid(int value) => _p.setInt('kokoro_voice_sid', value);
 
   // ── Local LLM ───────────────────────────────────────────────────────────────
 
