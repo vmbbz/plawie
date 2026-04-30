@@ -573,7 +573,7 @@ PARAMETER num_batch 512
       agentsDefaults.remove('provider');          // not in agents.defaults schema
       agentsDefaults.remove('tools');             // not in agents.defaults schema
       agentsDefaults.remove('timeoutMs');         // not in agents.defaults schema
-      agentsDefaults.remove('systemPrompt');      // not in agents.defaults schema (gateway rejects it)
+      agentsDefaults.remove('systemPrompt');      // not in agents.defaults schema — causes "Unrecognized keys" reload failure
     }
     final skills = config['skills'];
     if (skills is Map) {
@@ -600,8 +600,8 @@ PARAMETER num_batch 512
     }
 
     // NOTE: agents.defaults.systemPrompt is NOT a valid gateway schema field.
-    // The gateway rejects it with "Unrecognized key" and skips the entire config reload.
-    // Gesture + canvas instructions are injected per-message via _buildSystemContext().
+    // The gateway rejects it with "Unrecognized keys" and breaks config hot-reload.
+    // Device skills are registered via skills.register RPC at connect time instead.
 
     await _writeConfig(config);
   }
@@ -646,23 +646,10 @@ PARAMETER num_batch 512
       final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
 
-      // CRITICAL: Set mobile-optimized system prompt for local models
-      // This prevents hallucinations and reduces token usage from 27K to ~800
-      if (primaryModel.startsWith('ollama/') || primaryModel.startsWith('local-llm/')) {
-        config['agents']['defaults']['systemPrompt'] = 
-            'You are OpenClaw, an AI assistant with access to Android device controls, sensors, and apps. '
-            'You can make calls, send messages, control device settings, read sensors, browse web, and use system apps. '
-            'Be concise but thorough. Use tools when they directly help the user. '
-            'You are running on Android with limited battery and screen space.';
-        
-        final promptLength = config['agents']['defaults']['systemPrompt'].length;
-        _addActivity('[CONFIG] Mobile system prompt applied (${promptLength} chars)');
-        _addActivity('[CONFIG] Prompt content preview: "${config['agents']['defaults']['systemPrompt'].substring(0, 50)}..."');
-      }
-
-      // NOTE: agents.defaults.tools and agents.defaults.timeoutMs are NOT valid
-      // OpenClaw schema keys — writing them breaks the gateway config validation.
-      // Tool dispatch is controlled by the model's own capability declaration.
+      // NOTE: agents.defaults.systemPrompt, agents.defaults.tools, and agents.defaults.timeoutMs
+      // are NOT valid OpenClaw schema keys — writing them causes "Unrecognized keys" and breaks
+      // gateway config hot-reload. Context and system prompt are handled via Modelfile PARAMETER
+      // num_ctx and skills.register at connect time.
 
       // Persist to Flutter prefs so the chat screen restores it on next open.
       final prefs = PreferencesService();
@@ -1763,20 +1750,21 @@ PARAMETER num_batch 512
              _updateState(_state.copyWith(capabilities: []));
           }
 
-          // Attempt skills.register — silently ignored on gateway versions that
-          // don't support it. When supported, device-native skills become first-class
-          // tool-use entries rather than relying solely on system-prompt awareness.
+          // Attempt skills.register — always try; catch swallows failure on older
+          // gateway versions that don't support it. When it succeeds, device-native
+          // skills (avatar gestures, TTS, etc.) become first-class tool-use entries
+          // dispatched to POST http://127.0.0.1:8765/api/tools/execute.
           try {
             final catalog = SkillsService().getToolsCatalog();
-            if (catalog.isNotEmpty && supported.contains('skills.register')) {
+            if (catalog.isNotEmpty) {
               await invoke('skills.register', {
                 'skills': catalog,
                 'callbackUrl': 'http://127.0.0.1:8765',
               }).timeout(const Duration(seconds: 5));
               _addActivity('[SKILLS] Registered ${catalog.length} device skills with gateway');
             }
-          } catch (_) {
-            // skills.register not supported on this gateway version — system prompt covers it
+          } catch (e) {
+            _addActivity('[SKILLS] skills.register not supported on this gateway version ($e)');
           }
         }
       }

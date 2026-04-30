@@ -13,8 +13,9 @@ import 'tts_service.dart';
 ///   GET  /battery                    — legacy battery stub
 ///   GET  /api/tools                  — full tools catalog from SkillsService
 ///   GET  /api/skills/list            — all skills list
+///   POST /api/tools/execute          — generic tool executor: {name, input} → routes to correct handler
 ///   POST /api/avatar/control         — change VRM, gestures, emotions (avatar-control skill)
-///   POST /api/avatar/equip           — legacy equip alias  
+///   POST /api/avatar/equip           — legacy equip alias
 ///   POST /api/tts/control            — switch TTS engine/voice, speak text (tts-voice skill)
 ///   POST /api/device/control         — vibrate, flashlight, battery, sensors (device-node skill)
 ///   POST /twilio/*                   — twilio-voice skill proxy
@@ -56,6 +57,8 @@ class AgentSkillServer {
       _handleToolsCatalog(request);
     } else if (request.method == 'GET' && path == '/api/skills/list') {
       _handleSkillsList(request);
+    } else if (request.method == 'POST' && path == '/api/tools/execute') {
+      await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
       await _handleAvatarControl(request);
     } else if (request.method == 'POST' && path == '/api/avatar/equip') {
@@ -92,47 +95,78 @@ class AgentSkillServer {
     _sendJson(request, {'skills': skills.map((s) => s.toJson()).toList()});
   }
 
-  // ── Avatar Control ─────────────────────────────────────────────────────────
-  // Called by the AI agent via the 'avatar-control' skill.
-  // Fires callbacks so ChatScreen's setState() updates the live VrmAvatarWidget.
-  Future<void> _handleAvatarControl(HttpRequest request) async {
+  // ── Generic tool executor ─────────────────────────────────────────────────
+  // Called by the gateway when it dispatches a tool-use event to 127.0.0.1:8765.
+  // Body: { "name": "<tool-id>", "input": { ...tool parameters... } }
+  // Routes to the appropriate _process* method for device-native skills, or
+  // falls through to SkillsService for custom YAML/partner skills.
+  Future<void> _handleToolsExecute(HttpRequest request) async {
     try {
-      final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
-      final action = data['action'] as String? ?? 'get_status';
+      final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      final name = body['name'] as String?;
+      final input = (body['input'] as Map<String, dynamic>?) ?? {};
 
-      switch (action) {
-        case 'change_model':
-          final model = data['model'] as String?;
-          if (model == null) return _sendError(request, 'Missing model parameter');
-          final filename = model.endsWith('.vrm') ? model : '$model.vrm';
-          final prefs = PreferencesService();
-          await prefs.init();
-          prefs.selectedAvatar = filename;
-          onAvatarChanged?.call(filename);
-          _sendJson(request, {'success': true, 'model': filename});
+      if (name == null) return _sendError(request, 'Missing name parameter');
 
-        case 'play_gesture':
-          final gesture = data['gesture'] as String?;
-          if (gesture == null) return _sendError(request, 'Missing gesture parameter');
-          onGesturePlayed?.call(gesture);
-          _sendJson(request, {'success': true, 'gesture': gesture});
-
-        case 'set_emotion':
-          final emotion = data['emotion'] as String?;
-          if (emotion == null) return _sendError(request, 'Missing emotion parameter');
-          onEmotionSet?.call(emotion);
-          _sendJson(request, {'success': true, 'emotion': emotion});
-
-        case 'get_status':
-          final prefs = PreferencesService();
-          await prefs.init();
-          _sendJson(request, {'avatar': prefs.selectedAvatar});
-
+      switch (name) {
+        case 'avatar-control':
+          await _processAvatarControl(input, request);
+        case 'tts-voice':
+          await _processTtsControl(input, request);
+        case 'device-node':
+          await _processDeviceControl(input, request);
         default:
-          _sendError(request, 'Unknown avatar action: $action');
+          final result = await SkillsService().executeSkill(name, parameters: input);
+          _sendSkillResult(request, result);
       }
     } catch (e) {
       _sendError(request, e.toString());
+    }
+  }
+
+  // ── Avatar Control ─────────────────────────────────────────────────────────
+  Future<void> _handleAvatarControl(HttpRequest request) async {
+    try {
+      final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      await _processAvatarControl(data, request);
+    } catch (e) {
+      _sendError(request, e.toString());
+    }
+  }
+
+  Future<void> _processAvatarControl(Map<String, dynamic> data, HttpRequest request) async {
+    final action = data['action'] as String? ?? 'get_status';
+
+    switch (action) {
+      case 'change_model':
+        final model = data['model'] as String?;
+        if (model == null) return _sendError(request, 'Missing model parameter');
+        final filename = model.endsWith('.vrm') ? model : '$model.vrm';
+        final prefs = PreferencesService();
+        await prefs.init();
+        prefs.selectedAvatar = filename;
+        onAvatarChanged?.call(filename);
+        _sendJson(request, {'success': true, 'model': filename});
+
+      case 'play_gesture':
+        final gesture = data['gesture'] as String?;
+        if (gesture == null) return _sendError(request, 'Missing gesture parameter');
+        onGesturePlayed?.call(gesture);
+        _sendJson(request, {'success': true, 'gesture': gesture});
+
+      case 'set_emotion':
+        final emotion = data['emotion'] as String?;
+        if (emotion == null) return _sendError(request, 'Missing emotion parameter');
+        onEmotionSet?.call(emotion);
+        _sendJson(request, {'success': true, 'emotion': emotion});
+
+      case 'get_status':
+        final prefs = PreferencesService();
+        await prefs.init();
+        _sendJson(request, {'avatar': prefs.selectedAvatar});
+
+      default:
+        _sendError(request, 'Unknown avatar action: $action');
     }
   }
 
@@ -154,140 +188,139 @@ class AgentSkillServer {
   }
 
   // ── TTS Voice Control ──────────────────────────────────────────────────────
-  // Called by the AI agent via the 'tts-voice' skill.
   Future<void> _handleTtsControl(HttpRequest request) async {
     try {
       final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
-      final action = data['action'] as String? ?? 'get_status';
-      final prefs = PreferencesService();
-      await prefs.init();
-
-      switch (action) {
-        case 'set_engine':
-          final engine = data['engine'] as String?;
-          if (engine == null) return _sendError(request, 'Missing engine parameter');
-          final validEngines = ['kokoro', 'native', 'elevenlabs', 'openai'];
-          if (!validEngines.contains(engine)) {
-            return _sendError(request, 'Invalid engine. Valid: ${validEngines.join(", ")}');
-          }
-          prefs.ttsEngine = engine;
-          _sendJson(request, {'success': true, 'engine': engine});
-
-        case 'set_voice':
-          final voice = data['voice'] as String?;
-          if (voice == null) return _sendError(request, 'Missing voice parameter');
-          // Route to the correct prefs field based on current engine
-          switch (prefs.ttsEngine) {
-            case 'elevenlabs':
-              prefs.elevenLabsVoiceId = voice;
-            case 'openai':
-              prefs.openAiTtsVoice = voice;
-            case 'kokoro':
-              // Kokoro voice is a speaker ID integer — parse if numeric string, else ignore
-              final sid = int.tryParse(voice);
-              if (sid != null) TtsService().updateKokoroVoice(sid);
-            default:
-              break; // native has no voice selection
-          }
-          _sendJson(request, {'success': true, 'voice': voice, 'engine': prefs.ttsEngine});
-
-        case 'speak':
-          final text = data['text'] as String?;
-          if (text == null || text.isEmpty) return _sendError(request, 'Missing text');
-          // Fire and forget — don't await or the HTTP response will block
-          final tts = TtsService();
-          unawaited(tts.speak(text));
-          _sendJson(request, {'success': true, 'speaking': text});
-
-        case 'stop':
-          final tts = TtsService();
-          await tts.stop();
-          _sendJson(request, {'success': true});
-
-        case 'get_status':
-          _sendJson(request, {
-            'engine': prefs.ttsEngine,
-            'voice': prefs.elevenLabsVoiceId.isNotEmpty ? prefs.elevenLabsVoiceId
-                : prefs.openAiTtsVoice.isNotEmpty ? prefs.openAiTtsVoice
-                : 'default',
-          });
-
-        default:
-          _sendError(request, 'Unknown TTS action: $action');
-      }
+      await _processTtsControl(data, request);
     } catch (e) {
       _sendError(request, e.toString());
     }
   }
 
+  Future<void> _processTtsControl(Map<String, dynamic> data, HttpRequest request) async {
+    final action = data['action'] as String? ?? 'get_status';
+    final prefs = PreferencesService();
+    await prefs.init();
+
+    switch (action) {
+      case 'set_engine':
+        final engine = data['engine'] as String?;
+        if (engine == null) return _sendError(request, 'Missing engine parameter');
+        final validEngines = ['kokoro', 'native', 'elevenlabs', 'openai'];
+        if (!validEngines.contains(engine)) {
+          return _sendError(request, 'Invalid engine. Valid: ${validEngines.join(", ")}');
+        }
+        prefs.ttsEngine = engine;
+        _sendJson(request, {'success': true, 'engine': engine});
+
+      case 'set_voice':
+        final voice = data['voice'] as String?;
+        if (voice == null) return _sendError(request, 'Missing voice parameter');
+        switch (prefs.ttsEngine) {
+          case 'elevenlabs':
+            prefs.elevenLabsVoiceId = voice;
+          case 'openai':
+            prefs.openAiTtsVoice = voice;
+          case 'kokoro':
+            final sid = int.tryParse(voice);
+            if (sid != null) TtsService().updateKokoroVoice(sid);
+          default:
+            break;
+        }
+        _sendJson(request, {'success': true, 'voice': voice, 'engine': prefs.ttsEngine});
+
+      case 'speak':
+        final text = data['text'] as String?;
+        if (text == null || text.isEmpty) return _sendError(request, 'Missing text');
+        final tts = TtsService();
+        unawaited(tts.speak(text));
+        _sendJson(request, {'success': true, 'speaking': text});
+
+      case 'stop':
+        final tts = TtsService();
+        await tts.stop();
+        _sendJson(request, {'success': true});
+
+      case 'get_status':
+        _sendJson(request, {
+          'engine': prefs.ttsEngine,
+          'voice': prefs.elevenLabsVoiceId.isNotEmpty ? prefs.elevenLabsVoiceId
+              : prefs.openAiTtsVoice.isNotEmpty ? prefs.openAiTtsVoice
+              : 'default',
+        });
+
+      default:
+        _sendError(request, 'Unknown TTS action: $action');
+    }
+  }
+
   // ── Device Node Control ─────────────────────────────────────────────────────
-  // Called by the AI agent via the 'device-node' skill.
-  // Delegates to the NodeProvider capability handlers via MethodChannel / platform.
   Future<void> _handleDeviceControl(HttpRequest request) async {
     try {
       final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
-      final action = data['action'] as String? ?? 'get_battery';
-
-      switch (action) {
-        case 'vibrate':
-          final pattern = (data['pattern'] as List?)
-              ?.map((e) => (e as num).toInt())
-              .toList() ?? [0, 300];
-          await const MethodChannel('plawie/haptics').invokeMethod(
-            'vibrate',
-            {'pattern': pattern},
-          );
-          _sendJson(request, {'success': true, 'pattern': pattern});
-
-        case 'flashlight_on':
-          await const MethodChannel('plawie/flash').invokeMethod('on');
-          _sendJson(request, {'success': true, 'flashlight': 'on'});
-
-        case 'flashlight_off':
-          await const MethodChannel('plawie/flash').invokeMethod('off');
-          _sendJson(request, {'success': true, 'flashlight': 'off'});
-
-        case 'get_battery':
-          // Use the real battery method channel (Android BatteryManager)
-          final level = await const MethodChannel('plawie/device')
-              .invokeMethod<int>('getBatteryLevel') ?? -1;
-          final charging = await const MethodChannel('plawie/device')
-              .invokeMethod<bool>('isCharging') ?? false;
-          _sendJson(request, {'level': level, 'isCharging': charging});
-
-        case 'get_location':
-          // Delegates to LocationCapability via NodeService — pull from prefs or trigger
-          _sendJson(request, {
-            'note': 'Use the gateway node capability: location.get for live GPS data',
-            'command': 'location.get',
-          });
-
-        case 'read_sensor':
-          final sensorType = data['sensor_type'] as String? ?? 'accelerometer';
-          _sendJson(request, {
-            'note': 'Use the gateway node capability: sensor.read for live sensor data',
-            'command': 'sensor.read',
-            'sensor_type': sensorType,
-          });
-
-        case 'take_photo':
-          _sendJson(request, {
-            'note': 'Use the gateway node capability: camera.snap',
-            'command': 'camera.snap',
-          });
-
-        default:
-          _sendError(request, 'Unknown device action: $action');
-      }
+      await _processDeviceControl(data, request);
     } catch (e) {
       _sendError(request, e.toString());
+    }
+  }
+
+  Future<void> _processDeviceControl(Map<String, dynamic> data, HttpRequest request) async {
+    final action = data['action'] as String? ?? 'get_battery';
+
+    switch (action) {
+      case 'vibrate':
+        final pattern = (data['pattern'] as List?)
+            ?.map((e) => (e as num).toInt())
+            .toList() ?? [0, 300];
+        await const MethodChannel('plawie/haptics').invokeMethod(
+          'vibrate',
+          {'pattern': pattern},
+        );
+        _sendJson(request, {'success': true, 'pattern': pattern});
+
+      case 'flashlight_on':
+        await const MethodChannel('plawie/flash').invokeMethod('on');
+        _sendJson(request, {'success': true, 'flashlight': 'on'});
+
+      case 'flashlight_off':
+        await const MethodChannel('plawie/flash').invokeMethod('off');
+        _sendJson(request, {'success': true, 'flashlight': 'off'});
+
+      case 'get_battery':
+        final level = await const MethodChannel('plawie/device')
+            .invokeMethod<int>('getBatteryLevel') ?? -1;
+        final charging = await const MethodChannel('plawie/device')
+            .invokeMethod<bool>('isCharging') ?? false;
+        _sendJson(request, {'level': level, 'isCharging': charging});
+
+      case 'get_location':
+        _sendJson(request, {
+          'note': 'Use the gateway node capability: location.get for live GPS data',
+          'command': 'location.get',
+        });
+
+      case 'read_sensor':
+        final sensorType = data['sensor_type'] as String? ?? 'accelerometer';
+        _sendJson(request, {
+          'note': 'Use the gateway node capability: sensor.read for live sensor data',
+          'command': 'sensor.read',
+          'sensor_type': sensorType,
+        });
+
+      case 'take_photo':
+        _sendJson(request, {
+          'note': 'Use the gateway node capability: camera.snap',
+          'command': 'camera.snap',
+        });
+
+      default:
+        _sendError(request, 'Unknown device action: $action');
     }
   }
 
   // ── Partner skill proxies (delegate to SkillsService → GatewaySkillProxy) ──
 
   Future<void> _handleTwilio(HttpRequest request) async {
-    // Use correct hyphenated ID to match the skill registry
     final method = request.uri.path.contains('webhook') ? 'get_status' : 'get_status';
     final result = await SkillsService().executeSkill('twilio-voice', parameters: {'method': method});
     _sendSkillResult(request, result);
