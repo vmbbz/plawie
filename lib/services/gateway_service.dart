@@ -37,6 +37,10 @@ class GatewayService {
 
   // Cached Android files directory — avoids a platform channel call on every config I/O.
   String? _filesDir;
+
+  /// Fires when the gateway tts tool produces audio ready to play on the device.
+  /// Passes the HTTP URL to the MP3 (served by the gateway's HTTP server).
+  Function(String audioUrl)? onGatewayTtsAudio;
   // Prevents concurrent @buape/carbon targeted-fix attempts.
   bool _isFixingDep = false;
   // Guards the one-time pairing-required recovery per session.
