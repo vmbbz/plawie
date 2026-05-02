@@ -30,7 +30,15 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''full_name''''\\), d.get\\(''''description''''\\), d.get\\(''''default_branch''''\\)\\)\")",
       "Bash(python3 -c \"import sys,json; [print\\(f[''''name''''], f[''''type'''']\\) for f in json.load\\(sys.stdin\\)]\")",
       "WebFetch(domain:openclawskills.best)",
-      "Bash(grep -E \"\\\\.\\(html|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(html|js\\)$\")",
+      "WebFetch(domain:k2-fsa.github.io)",
+      "Bash(python3 -c \"import sys,json; [print\\(json.loads\\(l\\).get\\('content',''\\)[:300] if isinstance\\(json.loads\\(l\\).get\\('content',''\\),str\\) else ''\\) for l in sys.stdin]\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -)",
+      "Bash(node -e ' *)",
+      "Bash(grep -o '\"text\":\"[^\"\\\\\\\\]*\\\\\\\\n[^\"]*\"')",
+      "Bash(grep -o '\"text\":\"[^\"\\\\\\\\]*\"')"
     ]
   }
 }
