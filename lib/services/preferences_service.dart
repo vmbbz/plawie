@@ -137,7 +137,7 @@ class PreferencesService {
   // ── Voice & Speech ──────────────────────────────────────────────────────────
 
   /// TTS engine: 'kokoro' | 'native' | 'elevenlabs' | 'openai'
-  String get ttsEngine => _p.getString('tts_engine') ?? 'kokoro';
+  String get ttsEngine => _p.getString('tts_engine') ?? 'native';
   set ttsEngine(String value) => _p.setString('tts_engine', value);
 
   /// Speech speed multiplier (0.5–2.0). Default 1.2 to match competitor default.

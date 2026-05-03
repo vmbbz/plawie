@@ -811,6 +811,24 @@ PARAMETER num_batch 512
     }
   }
 
+  /// Pushes the current enabled-skills catalog to the gateway immediately.
+  /// Called both from the periodic health check and whenever a skill is toggled.
+  Future<void> reregisterSkills() async {
+    if (!_state.isRunning) return;
+    try {
+      final catalog = SkillsService().getToolsCatalog();
+      if (catalog.isNotEmpty) {
+        await invoke('skills.register', {
+          'skills': catalog,
+          'callbackUrl': 'http://127.0.0.1:8765',
+        }).timeout(const Duration(seconds: 5));
+        _addActivity('[SKILLS] Registered ${catalog.length} device skills with gateway');
+      }
+    } catch (e) {
+      _addActivity('[SKILLS] skills.register not supported on this gateway version ($e)');
+    }
+  }
+
   Future<void> syncLocalModelsWithOllama() async {
     if (_isSyncing) return;
     _isSyncing = true;
@@ -918,11 +936,9 @@ PARAMETER num_batch 512
       // The user chose a cloud model — sync should only update the local model
       // registry, not hijack their primary model choice.
       if (isCloudModel) {
-        _addActivity('[SYNC] Cloud model active ($currentModel) — preserving primary.');
-        await configureOllama(
-          syncedModels: syncedModelNames,
-          setAsPrimary: false,
-        );
+        _addActivity('[SYNC] Cloud model active ($currentModel) — skipping local model sync to save RAM.');
+        await configureOllama(syncedModels: [], setAsPrimary: false);
+        return;
       } else {
         // Check if openclaw.json primary is in sync with the user's preference.
         final liveConfig = await _readConfig();
@@ -1754,22 +1770,8 @@ PARAMETER num_batch 512
              _updateState(_state.copyWith(capabilities: []));
           }
 
-          // Attempt skills.register — always try; catch swallows failure on older
-          // gateway versions that don't support it. When it succeeds, device-native
-          // skills (avatar gestures, TTS, etc.) become first-class tool-use entries
-          // dispatched to POST http://127.0.0.1:8765/api/tools/execute.
-          try {
-            final catalog = SkillsService().getToolsCatalog();
-            if (catalog.isNotEmpty) {
-              await invoke('skills.register', {
-                'skills': catalog,
-                'callbackUrl': 'http://127.0.0.1:8765',
-              }).timeout(const Duration(seconds: 5));
-              _addActivity('[SKILLS] Registered ${catalog.length} device skills with gateway');
-            }
-          } catch (e) {
-            _addActivity('[SKILLS] skills.register not supported on this gateway version ($e)');
-          }
+          // Re-register device skills so the AI always has the current enabled set.
+          await reregisterSkills();
         }
       }
     } catch (_) {
@@ -2167,6 +2169,24 @@ PARAMETER num_batch 512
               if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
               final name = (innerData?['name'] ?? payload?['name'] ?? frame['name']) as String? ?? 'tool';
               final result = innerData?['result'] ?? payload?['result'] ?? innerData?['output'] ?? payload?['output'];
+
+              // Gateway TTS: intercept tts tool results that contain a MEDIA: path.
+              // The gateway sherpa-onnx-tts skill returns a plain string like:
+              //   "MEDIA:/tmp/openclaw/tts-xxxxx/voice-xxxxxxxxxx.mp3"
+              // Convert to an HTTP URL served by the gateway's media endpoint.
+              if (name == 'tts') {
+                final mediaStr = result is String ? result : result?.toString() ?? '';
+                _addActivity('[TTS] gateway audio result: $mediaStr');
+                if (mediaStr.startsWith('MEDIA:')) {
+                  final relativePath = mediaStr.substring('MEDIA:/tmp/openclaw/'.length);
+                  final audioUrl = 'http://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}/__openclaw__/media/$relativePath';
+                  _addActivity('[TTS] serving audio at $audioUrl');
+                  onGatewayTtsAudio?.call(audioUrl);
+                  // Don't forward tts tool result to the chat stream — it's audio, not display text.
+                  return;
+                }
+              }
+
               if (!chunkController.isClosed) {
                 chunkController.add('\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
               }

@@ -56,36 +56,67 @@ class ClawHubService {
       return _markInstalled(cached.results, installedSlugs);
     }
 
+    // Try REST API first — works without PRoot/gateway.
+    final apiResults = await _searchFromApi(query);
+    if (apiResults.isNotEmpty) {
+      _cache[cacheKey] = _CacheEntry(apiResults);
+      return _markInstalled(apiResults, installedSlugs);
+    }
+
+    // Fallback: PRoot CLI (requires gateway to be running).
     try {
-      // Bug 4 fix: npx clawhub search often times out or fails in PRoot.
-      // Use the native openclaw gateway CLI. It already wraps the registry.
       final raw = await NativeBridge.runInProot(
         'openclaw skills search "${_sanitize(query)}" --json 2>/dev/null || '
         'openclaw skill search "${_sanitize(query)}" --json 2>/dev/null',
         timeout: 20,
       );
-      
+
       List<ClawHubSkill> skills = [];
       if (raw.trim().isNotEmpty) {
         try {
           final decoded = jsonDecode(raw.trim());
           if (decoded is List) {
-             skills = decoded
-                 .whereType<Map<String, dynamic>>()
-                 .map(ClawHubSkill.fromJson)
-                 .toList();
+            skills = decoded
+                .whereType<Map<String, dynamic>>()
+                .map(ClawHubSkill.fromJson)
+                .toList();
           }
         } catch (_) {
-           // Fallback to old text parsing
-           skills = _parseOutput(raw);
+          skills = _parseOutput(raw);
         }
       }
-      
+
       _cache[cacheKey] = _CacheEntry(skills);
       return _markInstalled(skills, installedSlugs);
     } catch (_) {
       return [];
     }
+  }
+
+  /// Direct REST API search — no PRoot required, just internet.
+  Future<List<ClawHubSkill>> _searchFromApi(String query) async {
+    try {
+      final uri = Uri.parse('https://clawhub.ai/api/v1/skills')
+          .replace(queryParameters: {'q': query.trim()});
+      final response = await http.get(
+        uri,
+        headers: {'Accept': 'application/json', 'User-Agent': 'plawie-app/1.0'},
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final list = decoded is List
+            ? decoded
+            : (decoded is Map ? decoded['results'] ?? decoded['skills'] ?? decoded['data'] : null);
+        if (list is List) {
+          return list
+              .whereType<Map<String, dynamic>>()
+              .map(ClawHubSkill.fromJson)
+              .where((s) => s.slug.isNotEmpty)
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return [];
   }
 
   /// Fetch detailed info for a single [slug] via the ClawHub REST API.
@@ -99,7 +130,8 @@ class ClawHubService {
   }) async {
     final cacheKey = 'api:$slug';
     final cached = _cache[cacheKey];
-    if (cached != null && !cached.isExpired && cached.results.isNotEmpty) {
+    if (cached != null && !cached.isExpired && cached.results.isNotEmpty &&
+        cached.results.first.description.isNotEmpty) {
       return cached.results.first.copyWith(isInstalled: isInstalled);
     }
     try {
@@ -110,10 +142,15 @@ class ClawHubService {
       ).timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-        final skill = ClawHubSkill.fromApiJson(slug, decoded)
-            .copyWith(isInstalled: isInstalled);
-        _cache[cacheKey] = _CacheEntry([skill], ttl: const Duration(minutes: 30));
-        return skill;
+        // Try the nested API shape first; fall back to flat JSON if it yields no description.
+        ClawHubSkill skill = ClawHubSkill.fromApiJson(slug, decoded);
+        if (skill.description.isEmpty && skill.name == slug) {
+          // API shape didn't match — try flat parse.
+          skill = ClawHubSkill.fromJson({...decoded, 'slug': slug});
+        }
+        final result = skill.copyWith(isInstalled: isInstalled);
+        _cache[cacheKey] = _CacheEntry([result], ttl: const Duration(minutes: 30));
+        return result;
       }
     } catch (_) {}
     return null;
@@ -162,16 +199,35 @@ class ClawHubService {
       final installed = installedSlugs.contains(slug);
       // REST API first — fast, gives stars/downloads
       final fromApi = await infoFromApi(slug, isInstalled: installed);
-      if (fromApi != null) {
+      if (fromApi != null && fromApi.description.isNotEmpty) {
         results.add(fromApi);
         continue;
       }
       // CLI fallback
       final fromCli = await info(slug, isInstalled: installed);
-      if (fromCli != null) results.add(fromCli);
+      if (fromCli != null && fromCli.description.isNotEmpty) {
+        results.add(fromCli);
+        continue;
+      }
+      // Last resort: minimal card from the API result (even if description empty)
+      // or a stub — so the slot is never silently dropped from the featured list.
+      if (fromApi != null) {
+        results.add(fromApi);
+      } else {
+        results.add(ClawHubSkill(
+          slug: slug,
+          name: _slugToDisplayName(slug),
+          description: 'View on clawhub.ai',
+          isInstalled: installed,
+        ));
+      }
     }
     return results;
   }
+
+  /// Converts a slug like "coding-agent" → "Coding Agent".
+  static String _slugToDisplayName(String slug) =>
+      slug.split('-').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
   /// Drop all cached results (e.g. after install/uninstall).
   void invalidateCache() => _cache.clear();
