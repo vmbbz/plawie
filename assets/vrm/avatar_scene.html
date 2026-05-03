@@ -400,16 +400,6 @@
             }
         };
 
-        window.processKeywords = (text) => {
-            const lower = text.toLowerCase();
-            if (lower.includes('dance')) window.playGesture('dance');
-            else if (lower.includes('hello') || lower.includes('hi ')) window.playGesture('greeting');
-            else if (lower.includes('fight')) window.playGesture('fight');
-            else if (lower.includes('cute')) window.playGesture('cute');
-            else if (lower.includes('spin')) window.playGesture('spin');
-            else if (lower.includes('ready')) window.playGesture('ready');
-        };
-
         // --- RESTORED: Optimized Dynamic Framing Engine (Commit b85d7370) ---
         let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15, headY: 1.45 };
         let userZoomOffset = 0; // Pinch-to-zoom offset

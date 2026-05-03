@@ -949,9 +949,24 @@ class _DiscoverTabState extends State<_DiscoverTab>
       if (ClawHubService.instance.isRateLimited) {
         _startCountdown(ClawHubService.instance.secondsUntilReset);
       }
+      // Also surface matching premium partner skills (not in ClawHub registry).
+      final q = query.toLowerCase();
+      final partnerMatches = _premiumSkills
+          .where((s) =>
+              s.title.toLowerCase().contains(q) ||
+              s.subtitle.toLowerCase().contains(q) ||
+              s.id.toLowerCase().contains(q))
+          .map((s) => ClawHubSkill(
+                slug: s.id,
+                name: '${s.title} (${s.subtitle})',
+                description: s.description,
+                author: s.subtitle,
+              ))
+          .where((s) => !results.any((r) => r.slug == s.slug))
+          .toList();
       if (mounted) {
         setState(() {
-          _results = results;
+          _results = [...results, ...partnerMatches];
           _loading = false;
         });
       }
@@ -1023,6 +1038,26 @@ class _DiscoverTabState extends State<_DiscoverTab>
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: _RateLimitBanner(secondsLeft: _rateLimitCountdown),
+          ),
+        // ── Partner integrations cross-link (shown on featured view only) ──
+        if (!_searched)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
+              children: [
+                const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFFB74D)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'AgentKit, MoltLaunch, Valeo & more → MY SKILLS tab → Premium Services',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         // ── Section label ───────────────────────────────────────────────────
         Padding(
@@ -1098,7 +1133,7 @@ const _toolCatalog = <String, _ToolMeta>{
   'search':        _ToolMeta('Web Search',          'Search the web and fetch results',            Icons.search_rounded,           'network'),
   'image':         _ToolMeta('Image Generation',    'Generate images via local or cloud model',    Icons.palette_rounded,          'ai'),
   'canvas':        _ToolMeta('Canvas / Web UI',     'Render interactive web UIs in the canvas',   Icons.draw_rounded,             'ui'),
-  'solana':        _ToolMeta('Solana Web3',         'Sign transactions and query on-chain data',   Icons.currency_bitcoin_rounded, 'web3'),
+  'base':          _ToolMeta('Base Chain',           'Sign transactions and interact with Base L2', Icons.currency_bitcoin_rounded, 'web3'),
   'calculator':    _ToolMeta('Calculator',          'Evaluate mathematical expressions',           Icons.calculate_rounded,        'core'),
   'calendar':      _ToolMeta('Calendar',            'Read and create calendar events',             Icons.calendar_today_rounded,   'device'),
   'weather':       _ToolMeta('Weather',             'Fetch current conditions and forecasts',      Icons.cloud_rounded,            'network'),

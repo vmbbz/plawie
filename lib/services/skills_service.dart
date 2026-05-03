@@ -711,7 +711,13 @@ class SkillsService {
     return Skill(
       id: 'avatar-control',
       name: 'Avatar Control',
-      description: 'Control the 3D live avatar: switch VRM models, trigger gestures and emotions.',
+      description: 'Control the 3D live avatar on the connected Android device. '
+          'To play a gesture INLINE within your response text, embed (gesture: NAME) anywhere — '
+          'it is stripped from speech but plays the animation immediately. '
+          'Example: "Here you go! (gesture: dance)" or "Let me think... (gesture: pose)". '
+          'Available gestures: greeting, dance, cute, elegant, fight, peacesign, pose, powerful, ready, shoot, spin, squat, talk. '
+          'Use (gesture: NAME) naturally and often to be expressive. '
+          'For explicit model/emotion control use the tool action parameters.',
       version: '1.0.0',
       author: 'Custom',
       category: 'avatar',

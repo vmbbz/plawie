@@ -33,6 +33,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
 import 'management/local_llm_screen.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -65,8 +66,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
   String? _currentGesture;
-  String? _lastUserMessage;
-  
+
   // Streaming TTS state
   String _ttsSentenceBuffer = '';
   bool _isTtsSpeaking = false;
@@ -120,8 +120,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isTtsDownloaded = false;
   double _downloadProgress = 0.0;
   bool _isDownloadingTts = false;
-  bool _hasShownTtsFallbackPrompt = false; // Track if we've alerted about the fallback
-
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
   // Auto-sync model when local LLM starts/stops
@@ -137,6 +135,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   // Latest camera.snap base64 captured by AI tool call — attached to bot message after stream ends
   String? _pendingAiSnapBase64;
+
+  // Gateway TTS audio playback
+  AudioPlayer? _gatewayAudioPlayer;
+  bool _gatewayTtsActive = false;
+  StreamSubscription? _gwAudioStateSub;
+  StreamSubscription? _gwAudioCompleteSub;
 
   // Canvas overlay state
   WebViewController? _canvasController;
@@ -295,9 +299,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           _isThinking = false;
           _currentGesture = 'ready'; // Drop back to ready
         });
+      } else if (event.type == SkillsEventType.toggled) {
+        _addDiagnosticLog('Skill toggled: ${event.skillId} — pushing updated catalog to gateway');
+        GatewayService().reregisterSkills();
       }
     });
     
+    // Gateway TTS audio — intercept MP3 served by gateway HTTP server
+    GatewayService().onGatewayTtsAudio = (url) => _playGatewayAudio(url);
+
     // Listen for background download progress
     _tts.onDownloadProgress = (p) {
       if (mounted) {
@@ -320,38 +330,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   Future<void> _checkTtsModel() async {
     final prefs = PreferencesService();
-    // Fast path: trust persisted flag so navigation doesn't re-prompt every visit
     if (prefs.ttsModelDownloaded) {
       if (mounted) setState(() => _isTtsDownloaded = true);
-      _initKokoroModelInBackground();
       return;
     }
-    // Slow path: verify filesystem (first run or after reinstall)
     final downloaded = await _tts.isModelDownloaded();
-    if (downloaded) {
-      // Persist so we skip filesystem check next time
-      prefs.ttsModelDownloaded = true;
-      _initKokoroModelInBackground();
-    }
+    if (downloaded) prefs.ttsModelDownloaded = true;
     if (mounted) setState(() => _isTtsDownloaded = downloaded);
   }
 
-  void _initKokoroModelInBackground() {
-    _tts.init(forceDownload: false).then((_) {
-      // isUsingFallback correctly checks _kokoro.isReady directly.
-      // _tts.isReady cannot be used here — it returns true via the native
-      // fallback engine even when Kokoro itself failed to initialize.
-      if (_tts.isUsingFallback) {
-        _addDiagnosticLog('WARNING: Kokoro model files exist but sherpa-onnx failed to init — using device TTS');
-      } else {
-        _addDiagnosticLog('Kokoro TTS model loaded into memory');
-      }
-    }).catchError((e) {
-      _addDiagnosticLog('Kokoro model init error: $e');
-    });
-  }
-
-  void _showTtsDownloadDialog() {
+void _showTtsDownloadDialog() {
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -572,33 +560,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
     _tts.onStart = () {
       if (mounted) {
-        setState(() {
-          _speechIntensity = 0.8;
-          // No gesture change — visemes drive mouth movement; body stays idle
-        });
-        
-        // If falling back to Native TTS (Kokoro preferred but not loaded), prompt user
-        if (_tts.isUsingFallback && !_hasShownTtsFallbackPrompt) {
-          _hasShownTtsFallbackPrompt = true;
-          if (PreferencesService().ttsModelDownloaded) {
-            // Model was downloaded but sherpa failed to init — offer re-init
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text('Using device voice — natural voice engine failed to start.'),
-              backgroundColor: Colors.orange,
-              action: SnackBarAction(label: 'Retry', onPressed: () async {
-                final ok = await _tts.reinitializeKokoro();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(ok ? 'Natural voice ready!' : 'Could not start — using device voice.'),
-                    backgroundColor: ok ? AppColors.statusGreen : Colors.orange,
-                  ));
-                }
-              }),
-            ));
-          } else {
-            _showTtsDownloadDialog();
-          }
-        }
+        setState(() => _speechIntensity = 0.8);
       }
     };
     
@@ -713,7 +675,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _processNextTtsInQueue() async {
-    if (_isTtsSpeaking || _ttsQueue.isEmpty) return;
+    if (_isTtsSpeaking || _ttsQueue.isEmpty || _gatewayTtsActive) return;
     _isTtsSpeaking = true;
     final sentence = _ttsQueue.removeAt(0);
     try {
@@ -732,6 +694,41 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       _processNextTtsInQueue();
     }
     _ttsSentenceBuffer = '';
+  }
+
+  Future<void> _playGatewayAudio(String url) async {
+    await _gwAudioStateSub?.cancel();
+    await _gwAudioCompleteSub?.cancel();
+    await _gatewayAudioPlayer?.stop();
+    _gatewayAudioPlayer?.dispose();
+    _gatewayAudioPlayer = AudioPlayer();
+    _gatewayTtsActive = true;
+
+    _gwAudioStateSub = _gatewayAudioPlayer!.onPlayerStateChanged.listen((state) {
+      if (state == PlayerState.playing && mounted) {
+        setState(() => _speechIntensity = 0.8);
+      }
+    });
+    _gwAudioCompleteSub = _gatewayAudioPlayer!.onPlayerComplete.listen((_) {
+      _gatewayTtsActive = false;
+      _gwAudioStateSub?.cancel();
+      _gwAudioCompleteSub?.cancel();
+      _gatewayAudioPlayer?.dispose();
+      _gatewayAudioPlayer = null;
+      if (mounted) {
+        setState(() {
+          _speechIntensity = 0.0;
+          _currentGesture = 'ready';
+        });
+        if (PreferencesService().continuousMode && !_isGenerating) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isGenerating && !_isListening) _startListening();
+          });
+        }
+      }
+    });
+
+    await _gatewayAudioPlayer!.play(UrlSource(url));
   }
 
   void _scrollToBottom({bool instant = false}) {
@@ -863,6 +860,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _ttsQueue.clear();
     _ttsSentenceBuffer = '';
     _isTtsSpeaking = false;
+    // Also stop gateway audio — user interrupted, don't keep playing old response.
+    await _gwAudioStateSub?.cancel();
+    await _gwAudioCompleteSub?.cancel();
+    await _gatewayAudioPlayer?.stop();
+    _gatewayAudioPlayer?.dispose();
+    _gatewayAudioPlayer = null;
+    _gatewayTtsActive = false;
     setState(() => _speechIntensity = 0.0);
 
     // Capture and clear pending attachments before any async gaps
@@ -885,7 +889,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _scrollToBottom();
     _saveChatHistory(); // Save user message
     _addDiagnosticLog('Sending message: $text');
-    setState(() => _lastUserMessage = text); // Trigger JS keyword listener
 
     // Add empty placeholder for the assistant reply
     setState(() {
@@ -1918,6 +1921,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
     _skillsSub?.cancel();
+    _gwAudioStateSub?.cancel();
+    _gwAudioCompleteSub?.cancel();
+    _gatewayAudioPlayer?.stop();
+    _gatewayAudioPlayer?.dispose();
     _glowController.dispose();
     _tts.stop();
     _speechToText.stop();
@@ -2328,7 +2335,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     isCinematic: _isCinematic,
                     isPip: _isPipMode,
                     gesture: _currentGesture,
-                    userMessage: _lastUserMessage,
                     onLog: (log) {
                       if (log == 'READY') {
                         setState(() => _isReady = true);
