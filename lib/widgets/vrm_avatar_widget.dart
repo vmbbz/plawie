@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -18,7 +17,6 @@ class VrmAvatarWidget extends StatefulWidget {
   final bool isCinematic;
   final double glowIntensity;
   final String? gesture;
-  final String? userMessage;
   final Function(String)? onLog;
   final bool isOverlay;
   final bool isPip;
@@ -31,7 +29,6 @@ class VrmAvatarWidget extends StatefulWidget {
     this.isCinematic = false,
     this.glowIntensity = 0.0,
     this.gesture,
-    this.userMessage,
     this.onLog,
     this.isOverlay = false,
     this.isPip = false,
@@ -169,11 +166,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
         if (widget.gesture != null && widget.gesture != oldWidget.gesture) {
           _controller.runJavaScript("window.playGesture('${widget.gesture}');");
         }
-        if (widget.userMessage != null && widget.userMessage != oldWidget.userMessage) {
-          final safeMsg = jsonEncode(widget.userMessage);
-          _controller.runJavaScript("window.processKeywords($safeMsg);");
-        }
-        _syncState();
+_syncState();
       }
     }
   }
