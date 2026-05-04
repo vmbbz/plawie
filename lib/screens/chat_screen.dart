@@ -42,7 +42,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateMixin {
+class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ScrollController _logScrollController = ScrollController();
@@ -154,6 +154,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Wire AgentSkillServer callbacks so agent-controlled avatar changes
     // reflect immediately in the live chat UI (singleton shares state with main()).
     AgentSkillServer.instance.onAvatarChanged = (file) {
@@ -558,6 +559,12 @@ void _showTtsDownloadDialog() {
       }
     }, onError: (_) {/* service not running — ignore */});
 
+    final wakeMode = PreferencesService().wakeWordMode;
+    if (wakeMode != 'off') {
+      NativeBridge.startHotword();
+      _addDiagnosticLog('Wake word service started (mode: $wakeMode)');
+    }
+
     _tts.onStart = () {
       if (mounted) {
         setState(() => _speechIntensity = 0.8);
@@ -703,6 +710,9 @@ void _showTtsDownloadDialog() {
     _gatewayAudioPlayer?.dispose();
     _gatewayAudioPlayer = AudioPlayer();
     _gatewayTtsActive = true;
+
+    final speed = PreferencesService().ttsSpeed.clamp(0.5, 2.0);
+    await _gatewayAudioPlayer!.setPlaybackRate(speed);
 
     _gwAudioStateSub = _gatewayAudioPlayer!.onPlayerStateChanged.listen((state) {
       if (state == PlayerState.playing && mounted) {
@@ -1907,7 +1917,22 @@ void _showTtsDownloadDialog() {
   }
 
   @override
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final mode = PreferencesService().wakeWordMode;
+    if (mode == 'off') return;
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (mode == 'foreground') NativeBridge.stopHotword();
+    } else if (state == AppLifecycleState.resumed) {
+      NativeBridge.startHotword();
+    }
+  }
+
+  @override
   void dispose() {
+    final wakeMode = PreferencesService().wakeWordMode;
+    if (wakeMode != 'off') NativeBridge.stopHotword();
+    WidgetsBinding.instance.removeObserver(this);
     AgentSkillServer.instance.onAvatarChanged = null;
     AgentSkillServer.instance.onGesturePlayed = null;
     AgentSkillServer.instance.onEmotionSet = null;
