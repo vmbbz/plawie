@@ -94,7 +94,9 @@ class ClawHubService {
   }
 
   /// Direct REST API search — no PRoot required, just internet.
+  /// Tries ClawHub REST first, then npm registry as fallback.
   Future<List<ClawHubSkill>> _searchFromApi(String query) async {
+    // 1. ClawHub REST API
     try {
       final uri = Uri.parse('https://clawhub.ai/api/v1/skills')
           .replace(queryParameters: {'q': query.trim()});
@@ -108,9 +110,50 @@ class ClawHubService {
             ? decoded
             : (decoded is Map ? decoded['results'] ?? decoded['skills'] ?? decoded['data'] : null);
         if (list is List) {
-          return list
+          final results = list
               .whereType<Map<String, dynamic>>()
               .map(ClawHubSkill.fromJson)
+              .where((s) => s.slug.isNotEmpty)
+              .toList();
+          if (results.isNotEmpty) return results;
+        }
+      }
+    } catch (_) {}
+
+    // 2. npm registry fallback — searches @openclaw/* packages directly.
+    return _searchFromNpm(query);
+  }
+
+  /// npm registry search for @openclaw/* packages matching [query].
+  Future<List<ClawHubSkill>> _searchFromNpm(String query) async {
+    try {
+      final uri = Uri.parse('https://registry.npmjs.org/-/v1/search').replace(
+        queryParameters: {'text': '@openclaw $query', 'size': '20'},
+      );
+      final response = await http.get(
+        uri,
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final objects = decoded['objects'];
+        if (objects is List) {
+          return objects
+              .whereType<Map<String, dynamic>>()
+              .map((o) {
+                final pkg = o['package'] as Map<String, dynamic>? ?? {};
+                final fullName = pkg['name']?.toString() ?? '';
+                final slug = fullName.replaceFirst('@openclaw/', '');
+                if (slug.isEmpty || slug == fullName) return null;
+                return ClawHubSkill(
+                  slug: slug,
+                  name: _slugToDisplayName(slug),
+                  description: pkg['description']?.toString() ?? '',
+                  version: pkg['version']?.toString() ?? '',
+                  author: (pkg['publisher'] as Map?)?['username']?.toString() ?? 'openclaw',
+                );
+              })
+              .whereType<ClawHubSkill>()
               .where((s) => s.slug.isNotEmpty)
               .toList();
         }

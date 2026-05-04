@@ -88,7 +88,19 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
     );
     if (mounted) {
       setState(() {
-        _skill = result;
+        if (result != null) {
+          _skill = result;
+        } else if (widget.initialName != null || widget.initialDescription != null) {
+          // API didn't find this slug (partner/custom skill not on ClawHub registry).
+          // Synthesize a skill object from the hardcoded card data so the sheet
+          // shows the correct name and description rather than an empty card.
+          _skill = ClawHubSkill(
+            slug: widget.slug,
+            name: widget.initialName ?? widget.slug,
+            description: widget.initialDescription ?? '',
+            isInstalled: widget.isInstalled,
+          );
+        }
         _fetchingStats = false;
       });
     }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -143,6 +144,51 @@ class _SkillsManagerState extends State<SkillsManager>
     _tabController.dispose();
     _llmSubscription?.cancel();
     super.dispose();
+  }
+
+  // ── Cache clearing ─────────────────────────────────────────────────────────
+
+  Future<void> _clearAllCaches(BuildContext context) async {
+    // Capture context-dependent objects before any await.
+    final messenger = ScaffoldMessenger.of(context);
+    final gateway = Provider.of<GatewayProvider>(context, listen: false);
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Clearing caches…'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    // 1. ClawHub in-memory cache (instant)
+    ClawHubService.instance.invalidateCache();
+
+    // 2. Flutter app temp dir (HTTP response caches, download partials)
+    try {
+      final tmp = Directory.systemTemp;
+      await for (final f in tmp.list()) {
+        try { await f.delete(recursive: true); } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 3. npm cache inside PRoot — largest offender for stale package metadata
+    try {
+      await NativeBridge.runInProot(
+        'npm cache clean --force 2>/dev/null; rm -rf /root/.npm/_cacache 2>/dev/null; '
+        'rm -rf /tmp/npm-* /tmp/.npm 2>/dev/null || true',
+        timeout: 30,
+      );
+    } catch (_) {}
+
+    // 4. Refresh gateway state
+    if (!mounted) return;
+    gateway.checkHealth();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('All caches cleared.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   // ── Shared install logic (called from My Skills + Discover) ────────────────
@@ -394,6 +440,11 @@ class _SkillsManagerState extends State<SkillsManager>
         ],
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.cleaning_services_rounded, color: Colors.white38, size: 20),
+          tooltip: 'Clear all caches (npm, ClawHub, temp)',
+          onPressed: () => _clearAllCaches(context),
+        ),
         IconButton(
           icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
           tooltip: 'Refresh',
@@ -971,10 +1022,12 @@ class _DiscoverTabState extends State<_DiscoverTab>
         });
       }
     } catch (_) {
-      if (mounted) setState(() {
-         _results = [];
-         _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _results = [];
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -1073,12 +1126,18 @@ class _DiscoverTabState extends State<_DiscoverTab>
               ? const Center(
                   child: CircularProgressIndicator(strokeWidth: 2))
               : _results.isEmpty
-                  ? _EmptyState(
-                      icon: Icons.travel_explore_rounded,
-                      message: _searched
-                          ? 'No skills found for "${_searchCtrl.text}"'
-                          : 'Type to search the ClawHub registry',
-                    )
+                  ? (_searched
+                      ? _NoResultsWithSuggestions(
+                          query: _searchCtrl.text,
+                          onSuggestion: (q) {
+                            _searchCtrl.text = q;
+                            _onQueryChanged(q);
+                          },
+                        )
+                      : const _EmptyState(
+                          icon: Icons.travel_explore_rounded,
+                          message: 'Type to search the ClawHub registry',
+                        ))
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
                       itemCount: _results.length,
@@ -1388,27 +1447,58 @@ class _ToolsTabState extends State<_ToolsTab> {
                   children: [
                     _sectionLabel('GATEWAY TOOLS (openclaw.json)'),
                     if (!isOffline)
-                      GestureDetector(
-                        onTap: () {
-                          context.read<GatewayProvider>().refreshRpcDiscovery();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Refreshing gateway tools…'),
-                              duration: Duration(seconds: 2),
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              setState(() => _enabledTools = {'*'});
+                              await OpenClawCommandService.saveToolsAllow(['*']);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Reset to all tools allowed (["*"])'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.restore_rounded, size: 13,
+                                    color: Colors.white.withValues(alpha: 0.4)),
+                                const SizedBox(width: 4),
+                                Text('RESET',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        letterSpacing: 1.2,
+                                        color: Colors.white.withValues(alpha: 0.4))),
+                              ],
                             ),
-                          );
-                        },
-                        child: Row(
-                          children: [
-                            const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
-                            const SizedBox(width: 4),
-                            Text('REFRESH',
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    letterSpacing: 1.2,
-                                    color: AppColors.statusGreen.withValues(alpha: 0.85))),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 16),
+                          GestureDetector(
+                            onTap: () {
+                              context.read<GatewayProvider>().refreshRpcDiscovery();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Refreshing gateway tools…'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
+                                const SizedBox(width: 4),
+                                Text('REFRESH',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        letterSpacing: 1.2,
+                                        color: AppColors.statusGreen.withValues(alpha: 0.85))),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                   ],
                 ),
@@ -1560,6 +1650,55 @@ class _EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                   color: AppColors.statusGrey, fontSize: 13, height: 1.6),
+            ),
+          ],
+        ),
+      );
+}
+
+class _NoResultsWithSuggestions extends StatelessWidget {
+  final String query;
+  final void Function(String) onSuggestion;
+  const _NoResultsWithSuggestions({required this.query, required this.onSuggestion});
+
+  static const _suggestions = ['weather', 'github', 'moonpay', 'coding-agent', 'notion', 'tmux'];
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded, size: 40, color: Colors.white12),
+            const SizedBox(height: 16),
+            Text(
+              'No skills found for "$query"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.statusGrey, fontSize: 13, height: 1.6),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'TRY',
+              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5, color: Colors.white24),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: _suggestions.map((s) => GestureDetector(
+                onTap: () => onSuggestion(s),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  child: Text(s, style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                ),
+              )).toList(),
             ),
           ],
         ),
