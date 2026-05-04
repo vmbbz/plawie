@@ -638,9 +638,26 @@ PARAMETER num_batch 512
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
     
-    // Do NOT remove config['tools'] — tools.allow is intentionally written by
-    // saveToolsAllow() and must survive this config rewrite so user tool
-    // preferences persist across health-check cycles.
+    // Sanitize tools.allow: remove any entries that aren't valid gateway primitives.
+    // npm-skill slugs and device names cause the gateway to warn "unknown entries"
+    // and give the AI zero tools. ["*"] wildcard is preserved — it means all-allowed.
+    const validPrimitives = {
+      '*', 'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
+    };
+    final existingAllow = config['tools']?['allow'];
+    if (existingAllow is List) {
+      final sanitized = existingAllow
+          .map((e) => e.toString())
+          .where(validPrimitives.contains)
+          .toList();
+      if (sanitized.isEmpty) {
+        // Nothing valid — write explicit wildcard so AI keeps all tools.
+        config['tools'] ??= <String, dynamic>{};
+        config['tools']['allow'] = ['*'];
+      } else {
+        config['tools']['allow'] = sanitized;
+      }
+    }
     // Remove invalid Ollama provider keys written by earlier builds (v2026.3.x).
     // These broke gateway schema validation, causing config reload to be skipped.
     final ollamaProvider = config['models']?['providers']?['ollama'];

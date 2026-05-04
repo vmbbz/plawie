@@ -194,17 +194,31 @@ class OpenClawCommandService {
     _cacheTime = null;
   }
 
+  // Only valid gateway primitive IDs. The wildcard '*' is also accepted —
+  // it explicitly allows all tools and is more reliable than an absent block
+  // on gateway versions that changed the absent-block default behaviour.
+  static const _kGatewayPrimitives = {
+    '*', 'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
+  };
+
   /// Writes [tools] as the new `tools.allow` list in openclaw.json.
-  /// Reads the full config first, patches only the tools.allow key, and
-  /// writes it back via `tee` so the gateway can hot-reload permissions
-  /// without a full restart. Returns true on success.
+  /// npm-skill slugs and device names are silently dropped — only valid
+  /// gateway primitive IDs are written. When no primitives are selected the
+  /// block is set to ["*"] (explicit wildcard = all tools allowed). This is
+  /// more robust than an absent block on gateway v2026.5+. Returns true on success.
   static Future<bool> saveToolsAllow(List<String> tools) async {
     try {
       final config = await getOpenClawConfig() ?? <String, dynamic>{};
+      final valid = tools.where(_kGatewayPrimitives.contains).toList()..sort();
       config['tools'] ??= <String, dynamic>{};
-      config['tools']['allow'] = tools;
+      if (valid.isEmpty || (valid.length == 1 && valid.first == '*')) {
+        // ["*"] = explicit all-allowed wildcard. More reliable than absent block.
+        config['tools']['allow'] = ['*'];
+      } else {
+        // Remove '*' if mixed with specific primitives — gateway prefers explicit list.
+        config['tools']['allow'] = valid.where((e) => e != '*').toList();
+      }
       final encoded = jsonEncode(config);
-      // Escape single quotes in the JSON so the shell argument is safe
       final escaped = encoded.replaceAll("'", "'\\''");
       await NativeBridge.runInProot(
         "echo '$escaped' | tee /root/.openclaw/openclaw.json > /dev/null",
