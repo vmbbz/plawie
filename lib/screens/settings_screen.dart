@@ -44,6 +44,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _continuousMode = false;
   int _kokoroVoiceSid = 1;
 
+  int _silenceTimeout = 5;
+
   // Wake Word
   String _wakeWordMode = 'off'; // off | foreground | always
   bool _hotwordRunning = false;
@@ -63,6 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsSpeed = _prefs.ttsSpeed;
     _continuousMode = _prefs.continuousMode;
     _kokoroVoiceSid = _prefs.kokoroVoiceSid;
+    _silenceTimeout = _prefs.silenceTimeoutSeconds;
     _wakeWordMode = _prefs.wakeWordMode;
     _hotwordRunning = await NativeBridge.isHotwordRunning();
 
@@ -326,6 +329,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _prefs.continuousMode = v;
                   },
                 ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Silence Timeout', style: TextStyle(fontSize: 14)),
+                          Text('${_silenceTimeout}s',
+                              style: const TextStyle(fontSize: 14, color: Colors.white54)),
+                        ],
+                      ),
+                      Slider(
+                        value: _silenceTimeout.toDouble(),
+                        min: 1,
+                        max: 15,
+                        divisions: 14,
+                        onChanged: (v) {
+                          setState(() => _silenceTimeout = v.round());
+                          _prefs.silenceTimeoutSeconds = v.round();
+                        },
+                      ),
+                      Text('How long to wait after you stop speaking before submitting',
+                          style: TextStyle(fontSize: 11, color: Colors.white38)),
+                    ],
+                  ),
+                ),
                 const Divider(),
                 _sectionHeader(theme, 'WAKE WORD'),
                 // Status tile — shows running/idle
@@ -373,6 +404,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           setState(() => _wakeWordMode = v);
                           _prefs.wakeWordMode = v;
                           await NativeBridge.setHotwordMode(v);
+                          if (v == 'off') {
+                            await NativeBridge.stopHotword();
+                          } else {
+                            await NativeBridge.startHotword();
+                          }
                           final running = await NativeBridge.isHotwordRunning();
                           if (mounted) setState(() => _hotwordRunning = running);
                         },
