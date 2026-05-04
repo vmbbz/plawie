@@ -587,8 +587,9 @@ PARAMETER num_batch 512
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
     
-    // Remove top-level tools block (if any leftover from older configs) to avoid gateway tools.allow warnings
-    config.remove('tools');
+    // Do NOT remove config['tools'] — tools.allow is intentionally written by
+    // saveToolsAllow() and must survive this config rewrite so user tool
+    // preferences persist across health-check cycles.
     // Remove invalid Ollama provider keys written by earlier builds (v2026.3.x).
     // These broke gateway schema validation, causing config reload to be skipped.
     final ollamaProvider = config['models']?['providers']?['ollama'];
@@ -815,6 +816,11 @@ PARAMETER num_batch 512
   /// Called both from the periodic health check and whenever a skill is toggled.
   Future<void> reregisterSkills() async {
     if (!_state.isRunning) return;
+    // Only attempt skills.register when the gateway explicitly declares support.
+    // Calling it unconditionally overwrites the session's npm-skill tool context
+    // with only our 3-4 device skills, making weather/github/etc. invisible to the AI.
+    final supported = _connection?.supportedMethods ?? const <String>[];
+    if (!supported.contains('skills.register')) return;
     try {
       final catalog = SkillsService().getToolsCatalog();
       if (catalog.isNotEmpty) {
@@ -825,7 +831,7 @@ PARAMETER num_batch 512
         _addActivity('[SKILLS] Registered ${catalog.length} device skills with gateway');
       }
     } catch (e) {
-      _addActivity('[SKILLS] skills.register not supported on this gateway version ($e)');
+      _addActivity('[SKILLS] skills.register failed: $e');
     }
   }
 
