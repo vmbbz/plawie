@@ -8,6 +8,12 @@ import java.io.File
 import android.util.Log
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CompletableFuture
+import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.Manifest
 
 /**
  * Manages proot process execution, matching Termux proot-distro as closely
@@ -16,6 +22,7 @@ import java.util.concurrent.CompletableFuture
  *   - Gateway mode (buildGatewayCommand): matches proot-distro's command_login()
  */
 class ProcessManager(
+    private val context: Context,
     private val filesDir: String,
     private val nativeLibDir: String
 ) {
@@ -122,8 +129,23 @@ class ProcessManager(
         }
         if (java.io.File("/vendor").exists()) flags.add("--bind=/vendor:/vendor")
         if (java.io.File("/system/lib64").exists()) flags.add("--bind=/system/lib64:/system/lib64")
+        
+        // Conditional /sdcard bind based on permission status
+        if (hasStoragePermission()) {
+            val sdcard = Environment.getExternalStorageDirectory().absolutePath
+            flags.add("--bind=$sdcard:/root/sdcard")
+            flags.add("--bind=$sdcard:/sdcard")
+        }
 
         return flags
+    }
+
+    private fun hasStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
     }
 
     // ================================================================

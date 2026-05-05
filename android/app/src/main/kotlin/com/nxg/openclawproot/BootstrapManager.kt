@@ -1325,7 +1325,7 @@ os.networkInterfaces = () => ({});
 
     private fun checkNodeInProot(): Boolean {
         return try {
-            val pm = ProcessManager(filesDir, nativeLibDir)
+            val pm = ProcessManager(context, filesDir, nativeLibDir)
             val output = pm.runInProotSync("node --version")
             output.trim().startsWith("v")
         } catch (e: Exception) {

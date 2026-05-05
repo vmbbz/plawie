@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../constants.dart';
 import '../models/setup_state.dart';
@@ -285,6 +286,11 @@ class BootstrapService {
       }
 
       // ---------------------------------------------------------
+      // Step 3.5: Repair Config (Fix stale tools.allow, etc.)
+      // ---------------------------------------------------------
+      await _repairConfig();
+
+      // ---------------------------------------------------------
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
       if (!openclawInstalled) {
@@ -549,5 +555,42 @@ class BootstrapService {
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {
     _updateSetupNotification(message, progress: notifProgress);
     onProgress(SetupState(step: step, progress: progress, message: message));
+  }
+
+  /// Robust config repair. Auto-fixes stale openclaw.json, tools.allow, gateway mode, etc.
+  /// Prevents stale configurations from blocking tool access.
+  Future<void> _repairConfig() async {
+    final rootfsDir = await getRootfsDirectory();
+    final configFile = File('$rootfsDir/root/.openclaw/openclaw.json');
+
+    if (!await configFile.exists()) {
+      _log('No openclaw.json found — skipping repair');
+      return;
+    }
+
+    _log('🔧 Running config repair (auto-patching stale tools.allow, etc.)');
+
+    try {
+      String content = await configFile.readAsString();
+      Map<String, dynamic> config = json.decode(content);
+
+      // Force correct tools.allow (this fixes a major pain point)
+      if (config['tools'] == null || config['tools'] is! Map) {
+        config['tools'] = {'allow': ['*']};
+      } else {
+        (config['tools'] as Map)['allow'] = ['*'];
+      }
+
+      // Ensure gateway is in correct mode
+      config['gateway'] ??= {};
+      if (config['gateway'] is Map) {
+        (config['gateway'] as Map)['mode'] = 'full';
+      }
+
+      await configFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
+      _log('✅ Config repaired successfully');
+    } catch (e) {
+      _log('Config repair failed (non-critical)', error: e);
+    }
   }
 }

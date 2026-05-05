@@ -101,7 +101,7 @@ class PlawieForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         val nativeLibDir = applicationInfo.nativeLibraryDir
-        processManager = ProcessManager(filesDir.absolutePath, nativeLibDir)
+        processManager = ProcessManager(applicationContext, filesDir.absolutePath, nativeLibDir)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
