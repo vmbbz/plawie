@@ -86,6 +86,16 @@ flutter:
     - assets/openclaw/skills/sensors.md
     - assets/openclaw/skills/avatar_forge.md
     - assets/openclaw-node-modules.tar.gz
+    - assets/images/chat_main.jpg
+    - assets/images/agent_tools.jpg
+    - assets/images/local_llm.jpg
+    - assets/images/chat_settings.jpg
+    - assets/images/agent_fleet.jpg
+    - assets/images/avatar_gemini.jpg
+    - assets/images/webchat.jpg
+    - assets/images/help_page.jpg
+    - assets/images/dashboard.jpg
+    - assets/images/gateway_logs.jpg
   fonts:
     - family: DejaVuSansMono
       fonts:
