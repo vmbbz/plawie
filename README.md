@@ -102,9 +102,9 @@ Plawie is your ultimate Web3 co-pilot. We built a robust, fully native **Base (E
 Plawie ships a complete, multi-engine voice stack that puts you in full control — no cloud dependency required:
 - **4 TTS Engines** — Switch between Piper (fully offline), Android Native TTS, ElevenLabs, or OpenAI TTS.
 - **Speech Speed Control** — Smooth 0.5×–2.0× speed slider, persisted across sessions.
-- **Continuous Mode** — After TTS finishes speaking, the mic automatically restarts.
+- **Continuous Mode** — After TTS finishes speaking, the mic automatically restarts. Enables truly hands-free, back-and-forth conversations with your agent.
 - **Configurable Silence Timeout** — 1s–15s slider controls how long Plawie waits before auto-submitting.
-- **Wake Word "Plawie"** — say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine.
+- **Wake Word "Plawie"** — say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine (Grammar-constrained to near-zero false positives).
 
 ### 5. Video Vision AI
 Your agent can see the world around you:
@@ -117,7 +117,7 @@ Plawie includes a full, native **Ollama Hub** running inside the PRoot sandbox:
 - **Zero-Config Setup**: One-tap installation of the official Ollama Linux ARM64 binary.
 - **GGUF Bridging**: Instantly register existing GGUF models as Ollama models using our "Zero-Copy" sync bridge.
 - **Library Discovery**: Pull any model from the Ollama Library directly onto your device.
-- **☁️ Ollama Cloud Models**: Run massive frontier models (Kimi K2.5, DeepSeek V3.1 671B) for free on ollama.com servers.
+- **☁️ Ollama Cloud Models**: Run massive frontier models (Kimi K2.5, DeepSeek V3.1 671B) for free on ollama.com servers. Plawie auto-provisions your personal account inside the PRoot sandbox.
 
 ---
 
@@ -126,14 +126,14 @@ Plawie includes a full, native **Ollama Hub** running inside the PRoot sandbox:
 Once we perfected the foundation, we created an interface worthy of the technology.
 
 ### 🌌 Transparent Glassmorphic Overlay
-Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay.
+Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay. Talk to your agent while scrolling X/Twitter or reading emails.
 
 ### 👁️ Procedural Realism & Ambience
 Our WebGL-based VRM avatars are driven by a custom mathematical engine, not pre-baked animations:
-- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically.
+- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically and constantly.
 - **Saccadic Gaze & Breath:** Independent neck and eye-tracking using sum-of-sines algorithms to give a hyper-realistic, "alive" look.
-- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer.
-- **Behavioral Reactions:** As the gateway thinks or executes tools, the avatar physically poses and reacts.
+- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer ensures mathematically perfect lip-sync.
+- **Behavioral Reactions:** As the OpenClaw gateway calculates or executes tools, the avatar physically poses and reacts through the Skill-to-Gesture bus.
 
 ---
 
@@ -147,24 +147,39 @@ Plawie implements a clean architecture that separates *what* the agent can do fr
 | **Tools** | OS-level primitives (browser, files, search...). | `openclaw.json → tools.allow[]` |
 | **Custom App Skills** | Flutter-native skills wired directly into Android | `AgentSkillServer` on `127.0.0.1:8765` |
 
-### Custom App Skills (Device-Native)
-- **🎭 `avatar-control`** — Control the live VRM companion (gestures, emotions, models).
-- **🔊 `tts-voice`** — Switch the speech engine or voice mid-conversation.
-- **📱 `device-node`** — Hardware access: camera, vibration, flashlight, sensors.
-
-#### Adding Your Own Custom Skill
-```dart
-// 1. Add creator to SkillsService._loadBundledSkills():
-_createMyCustomSkill(),
-
-// 2. Create the skill definition:
-Skill _createMyCustomSkill() => Skill(
-  id: 'my-skill',
-  name: 'My Skill',
-  category: 'custom', 
-  ...
-);
+### Layer 1 — Gateway Skills (ClawHub)
+Install any community skill from the ClawHub registry directly from the **Discover** tab:
+```bash
+# Via terminal (OpenClaw terminal screen):
+openclaw skills install weather
+openclaw skills install github
+openclaw skills install coding-agent
 ```
+
+### Layer 2 — Premium Partner Skills
+Pre-wired high-value skills executed via `GatewaySkillProxy` WebSocket RPC:
+
+| Skill | Provider | What Your Agent Can Do |
+|-------|----------|------------------------|
+| 💳 **Wallet** | AgentCard.ai | Issue virtual Visa cards, top up & spend autonomously on Base |
+| 🔨 **Work** | MoltLaunch | Browse & bid on on-chain AI jobs, receive ETH escrow payments |
+| 🛡️ **Credit** | Valeo Sentinel | x402 budget caps (per-call / hourly / daily), full audit log |
+| 📞 **Calls** | Twilio AI | Inbound & outbound voice via ConversationRelay, real-time transcription |
+| 💸 **Finance** | MoonPay Agents | Buy, sell, swap, bridge crypto • portfolio check • DCA strategies |
+
+### Layer 3 — Custom App Skills (Device-Native)
+- **🎭 `avatar-control`** — Control the live VRM companion: `change_model | play_gesture (wave, nod, shake) | set_emotion (happy, sad)`.
+- **🔊 `tts-voice`** — Switch the speech engine or voice mid-conversation.
+- **📱 `device-node`** — Hardware access: `vibrate | flashlight | battery | location | read_sensor | take_photo`.
+
+---
+
+## 🔐 Web Dashboard — Authenticated Access
+
+The Web Dashboard opens OpenClaw's built-in admin UI inside a secure WebView. Authentication is fully automatic:
+1. When the gateway starts, Plawie eagerly calls `openclaw dashboard --no-open` to retrieve a live auth token.
+2. The token is cached in SharedPreferences so subsequent opens are **instant**.
+3. If the cached token is stale, `WebDashboardScreen` forces a fresh CLI probe.
 
 ---
 
@@ -221,11 +236,20 @@ Plawie runs a **completely free, offline LLM** directly on your device via the *
 MoonPay gives your AI a **verified bank account and 30+ financial skills** via the `@moonpay/cli` MCP server.
 
 ```bash
-# Setup (one-time, run on your device via OpenClaw terminal)
+# Setup (run on device via terminal)
 npm install -g @moonpay/cli
 mp login
 mp wallet create MyWallet
 mp skill install
+```
+
+```yaml
+# openclaw.yaml — add MoonPay as MCP server
+mcp:
+  servers:
+    - name: moonpay
+      command: mp
+      args: [mcp]
 ```
 
 ---
@@ -246,6 +270,34 @@ flutter pub get
 # 2. Build for production (ARM64)
 flutter build apk --release --target-platform android-arm64
 ```
+
+---
+
+## 🚀 Post-Installation: First Run
+
+#### Mode A — OpenClaw Gateway Chat (Full Tools + Skills)
+1. **Start Gateway** — tap **Start** on the home screen.
+2. **Set Your API Key** — go to **Settings → API Provider**.
+3. **Start Chatting** — select any cloud model. Full tool-use is available immediately.
+
+#### Mode B — Local NDK Chat (fllama, No Internet)
+1. **Local LLM** → Download a model (e.g. Qwen2.5-1.5B).
+2. **Select** the model as active.
+3. **In Chat**, select the `local-llm/` model. Direct NDK streaming.
+
+#### ☁️ Mode D — Ollama Cloud Models (Free Frontier Models)
+1. **Local LLM → Cloud Models tab**.
+2. Tap **Sign in to Ollama** — the app launches a browser OAuth flow and provisions your free account inside the PRoot sandbox.
+3. Tap **USE** on any cloud model.
+
+---
+
+## 🤝 Contributing to Plawie
+We are building the **"Linux for AI Companions"**. We welcome contributions in:
+- On-device local LLM stability and GPU acceleration.
+- Optimized WebGL/GLSL shaders for better battery life.
+- Expanding the native **Base** DeFi toolings.
+- New custom app skills bridged via `AgentSkillServer`.
 
 ---
 
