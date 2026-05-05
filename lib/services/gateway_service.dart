@@ -14,6 +14,7 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'skills_service.dart';
+import 'diagnostic_service.dart';
 
 /// Simple mobile-friendly template for Qwen2.5 models.
 /// Stripped down to avoid template processing overhead on mobile.
