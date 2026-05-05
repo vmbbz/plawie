@@ -1163,6 +1163,19 @@ void _showTtsDownloadDialog() {
     // the assistant placeholder is added after that point and never gets saved
     // without this call — causing the last assistant turn to vanish on navigation.
     _saveChatHistory();
+
+    // Continuous mode: if there is no TTS audio queued or playing, restart
+    // listening now. When TTS IS active the onComplete / onPlayerComplete
+    // callbacks handle the restart once the last audio chunk finishes.
+    if (mounted &&
+        PreferencesService().continuousMode &&
+        !_isTtsSpeaking &&
+        !_gatewayTtsActive &&
+        _ttsQueue.isEmpty) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !_isGenerating && !_isListening) _startListening();
+      });
+    }
   }
 
   void _toggleListening() async {
