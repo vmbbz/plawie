@@ -15,6 +15,7 @@ import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 /// Simple mobile-friendly template for Qwen2.5 models.
 /// Stripped down to avoid template processing overhead on mobile.
@@ -498,12 +499,25 @@ PARAMETER num_batch 512
         throw Exception('Native start failed.');
       }
 
-      // FIXED: Clear token cache on ALL restart paths for consistency
-      _connection?.dispose();
-      _connection = null;
-      _cachedToken = null;
-      _lastTokenFetch = null;
-      
+      // Start foreground service to keep AI agent alive in background
+      unawaited(startForegroundService());
+
+      // Warn user if battery optimization is active — Android can kill PRoot.
+      // Fire-and-forget: showing the dialog must NOT block _startHealthCheck().
+      // If requestBatteryOptimization() uses startActivityForResult it can wait
+      // indefinitely, stalling the health timer from ever starting.
+      unawaited(() async {
+        try {
+          final isOptimized = await NativeBridge.isBatteryOptimized();
+          if (isOptimized) {
+            _updateState(_state.copyWith(
+              logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
+            ));
+            await NativeBridge.requestBatteryOptimization();
+          }
+        } catch (_) {}
+      }());
+
       await Future.delayed(const Duration(milliseconds: 500));
       _subscribeLogs();
       _startHealthCheck();
@@ -820,6 +834,7 @@ PARAMETER num_batch 512
     if (success) {
       // Poll health in the background; auto-sync once Ollama responds.
       unawaited(_waitForOllamaHealthThenSync());
+      await startForegroundService();
     }
     return success;
   }
@@ -2871,6 +2886,21 @@ PARAMETER num_batch 512
     _cachedToken = null;
     _lastTokenFetch = null;
     _updateState(_state.copyWith(clearDashboardUrl: true));
+  }
+
+  /// Polished background keep-alive using flutter_foreground_task.
+  /// Ensures the OpenClaw gateway survives Android memory management.
+  Future<void> startForegroundService() async {
+    try {
+      await FlutterForegroundTask.startService(
+        notificationTitle: "OpenClaw Gateway Running",
+        notificationText: "Keeping AI agent alive in background",
+        callback: () async {},
+      );
+      _addActivity('[SYS] Foreground service started (better battery + stability)');
+    } catch (e) {
+      _addActivity('[SYS] Foreground service not available: $e');
+    }
   }
 
   void dispose() {

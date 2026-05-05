@@ -13,6 +13,7 @@ import '../services/diagnostic_service.dart';
 import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
+import '../services/storage_service.dart';
 import '../widgets/glass_card.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
@@ -37,6 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _goInstalled = false;
   bool _brewInstalled = false;
   String _selectedAvatar = 'gemini.vrm';
+  bool _hasFullStorageAccess = false;
+  final _storageService = StorageService();
 
   // Voice & Speech
   String _ttsEngine = 'kokoro';
@@ -68,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _silenceTimeout = _prefs.silenceTimeoutSeconds;
     _wakeWordMode = _prefs.wakeWordMode;
     _hotwordRunning = await NativeBridge.isHotwordRunning();
+    _hasFullStorageAccess = await _storageService.updateStatus();
 
     try {
       final arch = await NativeBridge.getArch();
@@ -171,6 +175,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     // Refresh status after returning from settings
                     final optimized = await NativeBridge.isBatteryOptimized();
                     setState(() => _batteryOptimized = optimized);
+                  },
+                ),
+                const Divider(),
+                _sectionHeader(theme, 'STORAGE & FILES'),
+                ListTile(
+                  title: const Text('All Files Access (Pro)'),
+                  subtitle: Text(_hasFullStorageAccess
+                      ? 'Granted — /sdcard mounted to PRoot'
+                      : 'Disabled — PRoot is sandboxed'),
+                  leading: Icon(
+                    Icons.folder_shared,
+                    color: _hasFullStorageAccess ? AppColors.statusGreen : Colors.white38,
+                  ),
+                  trailing: _hasFullStorageAccess
+                      ? const Icon(Icons.check_circle, color: AppColors.statusGreen)
+                      : const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    if (!_hasFullStorageAccess) {
+                      _showStoragePermissionDialog(context);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Phone storage is mounted at /root/sdcard inside PRoot')),
+                      );
+                    }
                   },
                 ),
                 const Divider(),
@@ -982,6 +1010,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
           fontWeight: FontWeight.w600,
           letterSpacing: 1.2,
         ),
+      ),
+    );
+  }
+
+  void _showStoragePermissionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: Text('All Files Access', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.folder_shared, size: 48, color: AppColors.statusAmber),
+            const SizedBox(height: 16),
+            Text(
+              _storageService.permissionReason,
+              style: const TextStyle(fontSize: 14, color: Colors.white70),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final success = await _storageService.requestAccess();
+              if (success) {
+                setState(() => _hasFullStorageAccess = true);
+              }
+              // Even if success is false, they might have granted it and returned.
+              // Let's re-check status.
+              final status = await _storageService.updateStatus();
+              setState(() => _hasFullStorageAccess = status);
+            },
+            child: const Text('ENABLE'),
+          ),
+        ],
       ),
     );
   }

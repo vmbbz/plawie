@@ -232,47 +232,38 @@ graph TD
 > **Priority Refactors:** Adding a battery optimization exemption prompt and a WorkManager heartbeat would provide two additional layers of defense against Android killing the service. These are the two most impactful gaps.
 
 ---
-
-## 6. Proposed Hybrid Architecture (Future Vision)
-
-The ideal 2026-era architecture combines Clawa's on-device sovereignty with OpenClaw's emerging device API capabilities:
-
-```mermaid
-graph TB
-    subgraph "Clawa Pocket v2 (Hybrid)"
-        direction TB
-        H1["Flutter UI Layer"]
-        H2["OpenClaw Android SDK<br/>(Notifications, DroidClaw)"]
-        H3["PRoot Gateway<br/>(On-Device AI)"]
-        H4["Remote Gateway<br/>(Cloud Compute - Optional)"]
-        
-        H1 --> H2
-        H1 -->|"localhost"| H3
-        H1 -->|"WAN"| H4
-        H2 -->|"Device APIs"| H3
-        H3 <-->|"Federation"| H4
-    end
-
-    style H3 fill:#2d6a4f,color:#fff
-    style H4 fill:#457b9d,color:#fff
-    style H2 fill:#e76f51,color:#fff
-```
-
-### Benefits of Hybrid
-
-1. **On-device gateway** for privacy-first, low-latency chat (current strength)
-2. **Remote gateway** for heavy compute (large models, code execution)
-3. **OpenClaw Android SDK** for native notification reading, DroidClaw UI automation
-4. **Federation** between local and remote gateways for seamless failover
-
-> [!CAUTION]
-> The OpenClaw Android SDK is still under active development. Integration should wait until their API surface stabilizes. For now, Clawa's self-contained approach is the more robust choice.
+ 
+ ## 6. Project Aegis (v2.1.0) Roadmap — Active Development
+ 
+ We are currently transitioning from the PRoot container model to a high-performance **Hybrid glibc Migration**. This architecture retains the Flutter UI and Skills Hub but replaces the Linux userland with a lightweight glibc-runner.
+ 
+ ```mermaid
+ graph TB
+     subgraph "Aegis Architecture (v2.1.0)"
+         direction TB
+         H1["Flutter UI Layer"]
+         H2["Native Bridge (Dart)"]
+         H3["glibc-runner (ld.so)"]
+         H4["Node.js + OpenClaw Gateway"]
+         
+         H1 --> H2
+         H2 -->|"spawn()"| H3
+         H3 -->|"exec"| H4
+     end
+ 
+     style H3 fill:#2d6a4f,color:#fff
+     style H4 fill:#457b9d,color:#fff
+ ```
+ 
+ ### Key Refactor Milestones
+ 1. **Aegis Engine (Kotlin)**: Implement direct glibc execution to eliminate PRoot ptrace overhead.
+ 2. **Surgical Migration**: Reclaim 1.5GB of disk space by purging the legacy Ubuntu rootfs.
+ 3. **Instant-On**: Reduce Cold Boot latency from ~3min to <10s.
 
 ---
 
 ## 7. Recommendations Summary
 
-### Immediate (Next Sprint)
 
 | # | Action | Impact | Effort |
 |---|---|---|---|

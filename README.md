@@ -14,10 +14,15 @@
   <br/>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-00C853.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+  [![Release](https://img.shields.io/github/v/release/vmbbz/plawie?style=for-the-badge&color=7C4DFF)](https://github.com/vmbbz/plawie/releases/latest)
   [![Flutter](https://img.shields.io/badge/Flutter-3.24+-02569B.svg?style=for-the-badge&logo=flutter)](https://flutter.dev)
   [![Node.js](https://img.shields.io/badge/Node.js-22+-339933.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
   [![Base](https://img.shields.io/badge/Base-Mainnet-0052FF.svg?style=for-the-badge&logo=base)](https://base.org)
 </div>
+
+<p align="center">
+  <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
+</p>
 
 ---
 
@@ -80,16 +85,20 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 Plawie isn't just a UI wrapper; it is built on an untouchable technical foundation:
 
 ### 1. The Autonomous PRoot Gateway
-We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your Snapdragon processor. It handles 35+ local Android skills to bridge the gap between intelligence and device-level actions.
+We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your device.
 
-### 2. Industrial-Grade Background Stability
-Plawie is built for 24/7 autonomous operation. Unlike standard apps that die when you swipe them away:
-- **Sticky Foreground Services**: The OpenClaw engine runs as a high-priority Android service, surviving app closures and background pruning.
-- **Actionable Notifications**: Control your bot directly from the notification shade with **STOP** and **RESTART** buttons—no need to open the app.
-- **Boot Persistence**: If enabled, Plawie automatically revives your gateway and node processes the moment your phone restarts and unlocks.
+**Specifications:**
+- **OS Layer**: Hardened Ubuntu 24.04 (PRoot Sandbox)
+- **Runtime**: Node.js v22.16.0 LTS (High-Performance AI Gateway)
+- **Bootstrap**: Parallel Multi-Threaded Engine (<40s Setup)
+- **Footprint**: Ephemeral Build Lifecycle (Saves 800MB+ storage)
+
+### 2. Precision Background Stability
+Plawie is built for 24/7 autonomous operation. Unlike standard apps that die when backgrounded:
+- **Sticky Foreground Services**: The OpenClaw engine runs as a high-priority Android service, surviving app closures and "Doze" mode.
+- **Actionable Notifications**: Control your agent (STOP/RESTART) directly from the notification shade.
 - **Proactive Self-Healing**: An intelligent watchdog monitor triggers a surgical "Auto-Repair" sequence in under 3 seconds if dependencies are missing.
-- **Hardened Bootstrap (Instant-Install)**: Setup reduced from 15 minutes to **under 40 seconds** using pre-bundled assets and parallel multi-threaded downloading.
-- **Ephemeral Build Tools**: Heavy compilers (`g++`, `python3`) are installed only when needed and purged immediately, saving over **800 MB** of disk space.
+- **Pro Storage Opt-in**: Granular security model allowing users to opt-in to **"All Files Access"** for direct `/sdcard` mounting.
 
 ### 3. Native Base Web3 Logic
 Plawie is your ultimate Web3 co-pilot. We built a robust, fully native **Base (Ethereum L2)** integration directly into the app:
