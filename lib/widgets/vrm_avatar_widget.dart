@@ -17,6 +17,8 @@ class VrmAvatarWidget extends StatefulWidget {
   final bool isCinematic;
   final double glowIntensity;
   final String? gesture;
+  /// Agent-controlled gesture mode: 'normal' | 'expressive' | 'dance' | 'subtle'
+  final String? gestureMode;
   final Function(String)? onLog;
   final bool isOverlay;
   final bool isPip;
@@ -29,6 +31,7 @@ class VrmAvatarWidget extends StatefulWidget {
     this.isCinematic = false,
     this.glowIntensity = 0.0,
     this.gesture,
+    this.gestureMode,
     this.onLog,
     this.isOverlay = false,
     this.isPip = false,
@@ -153,31 +156,42 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
   @override
   void didUpdateWidget(VrmAvatarWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_isReady) {
-      if (oldWidget.isThinking != widget.isThinking ||
-          oldWidget.speechIntensity != widget.speechIntensity ||
-          oldWidget.isCinematic != widget.isCinematic ||
-          oldWidget.glowIntensity != widget.glowIntensity ||
-          oldWidget.isPip != widget.isPip ||
-          oldWidget.avatarFileName != widget.avatarFileName) {
-        if (oldWidget.avatarFileName != widget.avatarFileName) {
-          _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
-        }
-        if (widget.gesture != null && widget.gesture != oldWidget.gesture) {
-          _controller.runJavaScript("window.playGesture('${widget.gesture}');");
-        }
-_syncState();
-      }
+    if (!_isReady) return;
+
+    // Gesture and gestureMode are checked independently so they always fire
+    // even when no other widget property changed — the old code gated these
+    // inside an unrelated if-block which silently dropped most gesture calls.
+    if (widget.gesture != null && widget.gesture != oldWidget.gesture) {
+      _controller.runJavaScript("window.playGesture('${widget.gesture}');");
+    }
+    if (widget.gestureMode != null && widget.gestureMode != oldWidget.gestureMode) {
+      _controller.runJavaScript("window.setGestureMode('${widget.gestureMode}');");
+    }
+
+    if (oldWidget.avatarFileName != widget.avatarFileName) {
+      _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
+    }
+
+    if (oldWidget.isThinking != widget.isThinking ||
+        oldWidget.speechIntensity != widget.speechIntensity ||
+        oldWidget.isCinematic != widget.isCinematic ||
+        oldWidget.glowIntensity != widget.glowIntensity ||
+        oldWidget.isPip != widget.isPip) {
+      _syncState();
     }
   }
 
   void _syncState() {
+    final modeJs = widget.gestureMode != null
+        ? "if (window.setGestureMode) window.setGestureMode('${widget.gestureMode}');"
+        : '';
     _controller.runJavaScript('''
       if (window.setThinking) window.setThinking(${widget.isThinking});
       if (window.setSpeechIntensity) window.setSpeechIntensity(${widget.speechIntensity});
       if (window.setCinematicMode) window.setCinematicMode(${widget.isCinematic});
       if (window.setGlowIntensity) window.setGlowIntensity(${widget.glowIntensity});
       if (window.setPipMode) window.setPipMode(${widget.isPip});
+      $modeJs
     ''');
   }
 

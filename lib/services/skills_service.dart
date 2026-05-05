@@ -712,12 +712,14 @@ class SkillsService {
       id: 'avatar-control',
       name: 'Avatar Control',
       description: 'Control the 3D live avatar on the connected Android device. '
-          'To play a gesture INLINE within your response text, embed (gesture: NAME) anywhere — '
-          'it is stripped from speech but plays the animation immediately. '
-          'Example: "Here you go! (gesture: dance)" or "Let me think... (gesture: pose)". '
+          'Embed (gesture: NAME) anywhere in your response text to play animations inline — '
+          'stripped from speech but plays immediately. '
+          'Example: "Sure thing! (gesture: greeting)" or "Watch this (gesture: spin)". '
           'Available gestures: greeting, dance, cute, elegant, fight, peacesign, pose, powerful, ready, shoot, spin, squat, talk. '
-          'Use (gesture: NAME) naturally and often to be expressive. '
-          'For explicit model/emotion control use the tool action parameters.',
+          'Use (gesture: NAME) freely and often to be expressive and lively. '
+          'For sustained expression styles call set_mode with mode "expressive" (random gesture interjections while speaking), '
+          '"dance" (dance loop while speaking), or "subtle" (minimal gestures). '
+          'Reset to "normal" when done.',
       version: '1.0.0',
       author: 'Custom',
       category: 'avatar',
@@ -731,6 +733,7 @@ Calls AgentSkillServer on 127.0.0.1:8765/api/avatar/control.
 - **change_model** — Load a different VRM model by filename (e.g. "clawbot_v2.vrm")
 - **play_gesture** — Trigger a body animation on the live 3D avatar
 - **set_emotion** — Set the avatar's facial expression
+- **set_mode** — Set sustained gesture style: "expressive" (random gestures interspersed while speaking), "dance" (dance loop), "subtle" (minimal), "normal" (default auto-talk)
 - **get_status** — Return current model name and active gesture
 
 ## Available Gestures (use exactly these names)
@@ -768,7 +771,7 @@ happy, sad, neutral, surprised, angry
         'properties': {
           'action': {
             'type': 'string',
-            'enum': ['change_model', 'play_gesture', 'set_emotion', 'get_status'],
+            'enum': ['change_model', 'play_gesture', 'set_emotion', 'set_mode', 'get_status'],
             'description': 'Avatar action to perform.',
           },
           'model': {
@@ -787,6 +790,11 @@ happy, sad, neutral, surprised, angry
             'type': 'string',
             'enum': ['happy', 'sad', 'neutral', 'surprised', 'angry'],
             'description': 'Facial expression to set. Required for set_emotion.',
+          },
+          'mode': {
+            'type': 'string',
+            'enum': ['normal', 'expressive', 'dance', 'subtle'],
+            'description': 'Gesture style mode. Required for set_mode. "expressive" auto-interjects random gestures during speech. "dance" loops a dance animation. "subtle" disables auto-gestures. "normal" restores default.',
           },
         },
         'required': ['action'],
