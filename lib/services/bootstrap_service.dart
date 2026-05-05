@@ -294,7 +294,7 @@ class BootstrapService {
         await _installMinimalBuildTools();
         
         // Phase 2.5: Try to extract pre-bundled node_modules from assets (NEW)
-        await _extractPrebundledNodeModules();
+        await _extractPrebundledOpenClaw(onProgress);
         
         await _ensureOpenClawPackageExists();
         
@@ -467,17 +467,17 @@ class BootstrapService {
 
   /// Extracts a pre-bundled openclaw-node-modules.tar.gz from app assets to the rootfs.
   /// This bypasses the need for a 10-minute 'npm install' on the user's device.
-  Future<void> _extractPrebundledNodeModules() async {
+  Future<void> _extractPrebundledOpenClaw(Function(SetupState) onProgress) async {
     _log('📦 Checking for pre-bundled OpenClaw assets...');
     try {
       final rootfsDir = await getRootfsDirectory();
-      final target = '$rootfsDir/usr/local/lib/node_modules';
       
       // Check if the asset exists in the bundle
       // Note: We use a try/catch because rootBundle.load throws if the asset is missing
       final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
       
       _log('🚚 Pre-bundled OpenClaw found! Extracting...');
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3, 'Using pre-bundled OpenClaw (fast setup)...', 85);
       
       // 1. Create target directory
       await NativeBridge.runInProot('mkdir -p /usr/local/lib/node_modules');
@@ -494,8 +494,10 @@ class BootstrapService {
       );
       
       _log('✅ Pre-bundled OpenClaw extracted successfully');
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Pre-bundled OpenClaw ready', 90);
     } catch (e) {
       _log('ℹ️ No pre-bundled OpenClaw found in assets, falling back to npm install. ($e)');
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Installing OpenClaw (slower path)...', 82);
     }
   }
 
