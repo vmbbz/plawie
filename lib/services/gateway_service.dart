@@ -70,6 +70,10 @@ class GatewayService {
   bool _isFixingDep = false;
   // Guards the one-time pairing-required recovery per session.
   bool _pairingResolveAttempted = false;
+  
+  // Failure tracking for proactive auto-healing
+  int _consecutiveFailures = 0;
+  bool _isAutoHealingInProgress = false;
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -273,44 +277,117 @@ PARAMETER num_batch 512
   }
 
   /// Check if gateway is already running (e.g. after app restart)
-  /// and sync UI state accordingly.  If not running but auto-start
-  /// is enabled, start it automatically.
-  /// Check if gateway is already running (e.g. after app restart)
   /// and sync UI state accordingly.
   Future<void> init() async {
     final prefs = PreferencesService();
     await prefs.init();
     
-    // AUTO-REPAIR: Check Node.js version before attempting gateway start
-    // If Node.js version is too old, auto-update in background without user intervention
-    final bootstrap = BootstrapService();
-    if (await bootstrap.checkNodeUpgradeRequired()) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[INFO] Node.js version too old, performing background update...'],
-      ));
-      
-      // SILENT AUTO-REPAIR: Perform surgical Node.js update only
-      try {
-        await bootstrap.updateNodejsOnly(
-          onProgress: (state) {
-             _updateState(_state.copyWith(
-               logs: [..._state.logs, '[UPDATE] ${state.message}'],
-             ));
-          },
-        );
-      } catch (e) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[ERROR] Node.js update failed: $e'],
-        ));
-      }
+    // Initialize file directory early
+    await getFilesDir();
+
+    unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
+        .then((_) => unawaited(_probeOllamaOnInit())));
+  }
+
+  /// New Auto-Healing Logic: Detects critical failures in logs and attempts recovery.
+  void _handleGatewayAutoHeal(String log) {
+    if (_isFixingDep) return;
+
+    // 1. Missing specific dependencies
+    if (log.contains("Cannot find module '@buape/carbon'")) {
+       _runTargetedFix('@buape/carbon');
+    } else if (log.contains("Cannot find module 'openclaw'")) {
+       // This implies the package is missing from node_modules but binary was called
+       _runTargetedFix('openclaw', isGlobal: true);
+    } else if (log.contains("Error: Cannot find module") && !log.contains("node_modules")) {
+       // Generic module error that doesn't specify a path - likely a broken install
+       _addActivity('[SYS] Detected missing module. If gateway fails, please run Repair in Settings.');
     }
     
-    // FIXED: Sequential execution to prevent PRoot command race conditions
-    // First: Attach/start gateway
-    await _attachOrStart(autoStart: prefs.autoStartGateway);
+    // 2. Syntax Errors (corrupted downloads)
+    if (log.contains('SyntaxError:')) {
+       _addActivity('[SYS] Gateway syntax error detected (possible corruption).');
+    }
+  }
+
+  Future<void> _runTargetedFix(String packageName, {bool isGlobal = false}) async {
+    if (_isFixingDep) return;
+    _isFixingDep = true;
+    _addActivity('[SYS] Auto-Healing: Fixing missing $packageName...');
     
-    // Second: Probe Ollama ONLY after gateway is stable
-    unawaited(_probeOllamaOnInit());
+    try {
+      if (isGlobal) {
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'npm install -g $packageName --no-audit --no-fund && '
+          'openclaw doctor --fix 2>/dev/null || true',
+          timeout: 300,
+        );
+      } else {
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'cd /usr/local/lib/node_modules/openclaw && '
+          'npm install --no-save --no-audit --no-fund $packageName 2>/dev/null && '
+          'openclaw doctor --fix 2>/dev/null || true',
+          timeout: 120,
+        );
+      }
+      _addActivity('[SYS] $packageName fixed — restarting gateway...');
+      await NativeBridge.runInProot('openclaw reload 2>/dev/null || true', timeout: 10);
+    } catch (e) {
+      _addActivity('[SYS] Auto-heal failed: $e. Manual repair required.');
+    } finally {
+      _isFixingDep = false;
+    }
+  }
+
+  /// Proactive Auto-Heal: Runs diagnostics and attempts targeted fixes without a full setup.
+  Future<void> _triggerPassiveAutoHeal() async {
+    if (_isAutoHealingInProgress) return;
+    _isAutoHealingInProgress = true;
+    _addActivity('[SYS] Proactive Auto-Healing: Identifying the issue...');
+
+    try {
+      final diag = await DiagnosticService.runGatewayDiagnostics();
+      
+      // Case 1: Missing OpenClaw package
+      if (diag['openclaw_package'] == 'MISSING') {
+        _addActivity('[SYS] OpenClaw package missing — attempting targeted install...');
+        await _runTargetedFix('openclaw', isGlobal: true);
+        _consecutiveFailures = 0; // Allow a fresh chance
+        return;
+      }
+
+      // Case 2: Missing Node.js
+      if (diag['node_binary'] == 'MISSING') {
+        _addActivity('[SYS] Node.js binary missing. Please run "Setup" from the Home screen.');
+        _updateState(_state.copyWith(status: GatewayStatus.error, errorMessage: 'Node.js missing'));
+        return;
+      }
+
+      // Case 3: Invalid Config
+      if (diag['config_health'] == 'INVALID_OR_MISSING') {
+        _addActivity('[SYS] Configuration corrupted — rewriting defaults...');
+        await _configureGateway();
+        await NativeBridge.runInProot('openclaw doctor --fix 2>/dev/null || true', timeout: 10);
+        _consecutiveFailures = 0;
+        return;
+      }
+
+      // Case 4: Process not running but port closed
+      if (diag['gateway_process'] == 'NOT_RUNNING' && _state.status == GatewayStatus.running) {
+        _addActivity('[SYS] Gateway process died — attempting restart...');
+        unawaited(start());
+        _consecutiveFailures = 0;
+        return;
+      }
+
+      _addActivity('[SYS] Could not identify a fixable issue. Please use Settings -> Repair.');
+    } catch (e) {
+      _addActivity('[SYS] Passive heal error: $e');
+    } finally {
+      _isAutoHealingInProgress = false;
+    }
   }
 
   /// Called once at init. If Ollama is already running (e.g. survived app restart),
@@ -456,34 +533,7 @@ PARAMETER num_batch 512
           ? [..._state.logs, log]
           : [..._state.logs.sublist(_state.logs.length - 499), log];
 
-      // Auto-Heal: targeted @buape/carbon fix (fastest recovery, no full reinstall)
-      if (!_isFixingDep && log.contains("Cannot find module '@buape/carbon'")) {
-        _isFixingDep = true;
-        _addActivity('[SYS] Missing @buape/carbon — running targeted fix...');
-        unawaited(() async {
-          try {
-            await NativeBridge.runInProot(
-              'cd /usr/local/lib/node_modules/openclaw && '
-              'npm install --no-save --no-audit --no-fund @buape/carbon 2>/dev/null && '
-              'openclaw doctor --fix 2>/dev/null || true',
-              timeout: 120,
-            );
-            _addActivity('[SYS] @buape/carbon fixed — restarting gateway...');
-            await NativeBridge.runInProot(
-              'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-              'openclaw reload 2>/dev/null || true',
-              timeout: 10,
-            );
-          } catch (_) {
-            _addActivity('[SYS] Dep fix failed — use Settings → Repair for full reinstall');
-          } finally {
-            _isFixingDep = false;
-          }
-        }());
-      } else if (log.contains('Error: Cannot find module') || log.contains('SyntaxError:')) {
-        // Broader module error — surface it so the user knows to run Repair
-        _addActivity('[SYS] Critical error detected — use Settings → Repair Gateway if gateway fails to start');
-      }
+      _handleGatewayAutoHeal(log);
 
       String? dashboardUrl;
       final cleanLog = _cleanForUrl(log);
@@ -1719,6 +1769,7 @@ PARAMETER num_batch 512
           .timeout(const Duration(seconds: 3));
 
       if (response.statusCode < 500) {
+        _consecutiveFailures = 0; // Success — reset failure counter
         // Mark gateway as running on first successful probe
         if (_state.status != GatewayStatus.running) {
           _updateState(_state.copyWith(
@@ -1848,7 +1899,16 @@ PARAMETER num_batch 512
           await reregisterSkills();
         }
       }
-    } catch (_) {
+    } catch (e) {
+      _consecutiveFailures++;
+      if (_state.status == GatewayStatus.starting || _state.status == GatewayStatus.running) {
+        _addActivity('[HEALTH] Probe failed ($_consecutiveFailures/3): ${e.toString().split('\n').first}');
+        
+        if (_consecutiveFailures >= 3 && !_isAutoHealingInProgress) {
+          _triggerPassiveAutoHeal();
+        }
+      }
+
       // HTTP HEAD failed — check if gateway process is still alive
       final isRunning = await NativeBridge.isGatewayRunning();
       if (!isRunning && _state.status != GatewayStatus.stopped) {

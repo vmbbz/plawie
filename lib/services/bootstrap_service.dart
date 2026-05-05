@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 import '../constants.dart';
 import '../models/setup_state.dart';
 import 'native_bridge.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import 'dart:io';
 
@@ -164,61 +164,74 @@ class BootstrapService {
       }
 
       // ---------------------------------------------------------
-      // Step 0: Setup directories
+      // Step 0: Setup directories & Check status
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, 'Setting up directories...', 2);
+      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, 'Checking system status...', 2);
       await NativeBridge.setupDirs();
       await NativeBridge.writeResolv();
 
-      // ---------------------------------------------------------
-      // Step 1: Download rootfs
-      // ---------------------------------------------------------
+      final status = await NativeBridge.getBootstrapStatus();
+      final bool rootfsInstalled = status['binBashExists'] ?? false;
+      final bool nodeInstalled = status['nodeInstalled'] ?? false;
+      final bool bypassInstalled = status['bypassInstalled'] ?? false;
+      final bool openclawInstalled = status['openclawInstalled'] ?? false;
+
       final arch = await NativeBridge.getArch();
-      final rootfsUrl = AppConstants.getRootfsUrl(arch);
       final filesDir = await NativeBridge.getFilesDir();
-      final tarPath = '$filesDir/tmp/ubuntu-rootfs.tar.gz';
 
-      _emitProgress(onProgress, SetupStep.downloadingRootfs, 0.0, 'Downloading Ubuntu rootfs...', 5);
+      if (!rootfsInstalled) {
+        _emitProgress(onProgress, SetupStep.downloadingRootfs, 0.0, 'Downloading Ubuntu rootfs...', 5);
+        final rootfsUrl = AppConstants.getRootfsUrl(arch);
+        final tarPath = '$filesDir/tmp/ubuntu-rootfs.tar.gz';
 
-      await _downloadWithRetry(
-        rootfsUrl,
-        tarPath,
-        onProgress: (received, total) {
-          if (total > 0) {
-            final progress = received / total;
-            final mb = (received / 1024 / 1024).toStringAsFixed(1);
-            final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-            final notifProgress = 5 + (progress * 25).round();
-            
-            _updateSetupNotification('Downloading rootfs: $mb / $totalMb MB', progress: notifProgress);
-            onProgress(SetupState(
-              step: SetupStep.downloadingRootfs,
-              progress: progress,
-              message: 'Downloading: $mb MB / $totalMb MB',
-            ));
-          }
-        },
-      );
+        await _downloadWithRetry(
+          rootfsUrl,
+          tarPath,
+          onProgress: (received, total) {
+            if (total > 0) {
+              final progress = received / total;
+              final mb = (received / 1024 / 1024).toStringAsFixed(1);
+              final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
+              final notifProgress = 5 + (progress * 25).round();
+              
+              _updateSetupNotification('Downloading rootfs: $mb / $totalMb MB', progress: notifProgress);
+              onProgress(SetupState(
+                step: SetupStep.downloadingRootfs,
+                progress: progress,
+                message: 'Downloading: $mb MB / $totalMb MB',
+              ));
+            }
+          },
+        );
 
-      // ---------------------------------------------------------
-      // Step 2: Extract rootfs
-      // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
-      await NativeBridge.extractRootfs(tarPath);
-      
-      _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs extracted', 40);
-      await NativeBridge.installBionicBypass();
+        // ---------------------------------------------------------
+        // Step 2: Extract rootfs
+        // ---------------------------------------------------------
+        _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
+        await NativeBridge.extractRootfs(tarPath);
+        
+        // Ensure openclaw package exists immediately after extraction
+        await _ensureOpenClawPackageExists();
+        
+        _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs extracted', 40);
+      } else {
+        _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs already present, skipping...', 40);
+      }
+
+      if (!bypassInstalled) {
+        await NativeBridge.installBionicBypass();
+      }
 
       // ---------------------------------------------------------
       // Step 3: Install Node.js & Fix Permissions
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
+      if (!nodeInstalled) {
+        _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
 
-      await NativeBridge.runInProot('''
-        mkdir -p /root/.openclaw
-      ''');
+        await NativeBridge.runInProot('''
+          mkdir -p /root/.openclaw
+        ''');
 
-      try {
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'chmod -R 755 /usr/bin /usr/sbin /bin /sbin /usr/local/bin /usr/local/sbin 2>/dev/null; '
@@ -227,76 +240,70 @@ class BootstrapService {
           'mkdir -p /var/lib/dpkg/updates /var/lib/dpkg/triggers; '
           'echo permissions_fixed',
         );
-      } catch (e) {
-        rethrow;
+
+        _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Updating package lists...', 48);
+        
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'export DEBIAN_FRONTEND=noninteractive && '
+          'apt-get update -y && '
+          'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
+          'echo "Etc/UTC" > /etc/timezone && '
+          'apt-get install -y --no-install-recommends ca-certificates git python3 make g++ curl zstd tmux jq'
+        );
+
+        final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
+        final nodeTarPath = '$filesDir/tmp/nodejs.tar.xz';
+
+        _emitProgress(onProgress, SetupStep.installingNode, 0.3, 'Downloading Node.js...', 55);
+
+        await _downloadWithRetry(
+          nodeTarUrl,
+          nodeTarPath,
+          onProgress: (received, total) {
+            if (total > 0) {
+              final progress = 0.3 + (received / total) * 0.4;
+              final mb = (received / 1024 / 1024).toStringAsFixed(1);
+              final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
+              final notifProgress = 55 + ((received / total) * 15).round();
+              
+              _updateSetupNotification('Downloading Node.js: $mb / $totalMb MB', progress: notifProgress);
+              onProgress(SetupState(
+                step: SetupStep.installingNode,
+                progress: progress,
+                message: 'Downloading Node.js: $mb MB / $totalMb MB',
+              ));
+            }
+          },
+        );
+
+        _emitProgress(onProgress, SetupStep.installingNode, 0.75, 'Extracting Node.js...', 72);
+        await NativeBridge.extractNodeTarball(nodeTarPath);
+
+        _emitProgress(onProgress, SetupStep.installingNode, 0.9, 'Verifying Node.js...', 78);
+        
+        const wrapper = '/root/.openclaw/node-wrapper.js';
+        const nodeRun = 'node $wrapper';
+        const npmCli = '/usr/local/lib/node_modules/npm/bin/npm-cli.js';
+        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && $nodeRun $npmCli --version');
+      } else {
+        _emitProgress(onProgress, SetupStep.installingNode, 1.0, 'Node.js already installed, skipping...', 78);
       }
-
-      _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Updating package lists...', 48);
-      
-      // Use robust apt-get commands to avoid interactive prompts breaking the process
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'export DEBIAN_FRONTEND=noninteractive && '
-        'apt-get update -y && '
-        'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
-        'echo "Etc/UTC" > /etc/timezone && '
-        'apt-get install -y --no-install-recommends ca-certificates git python3 make g++ curl zstd tmux'
-      );
-
-      final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
-      final nodeTarPath = '$filesDir/tmp/nodejs.tar.xz';
-
-      _emitProgress(onProgress, SetupStep.installingNode, 0.3, 'Downloading Node.js...', 55);
-
-      await _downloadWithRetry(
-        nodeTarUrl,
-        nodeTarPath,
-        onProgress: (received, total) {
-          if (total > 0) {
-            final progress = 0.3 + (received / total) * 0.4;
-            final mb = (received / 1024 / 1024).toStringAsFixed(1);
-            final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-            final notifProgress = 55 + ((received / total) * 15).round();
-            
-            _updateSetupNotification('Downloading Node.js: $mb / $totalMb MB', progress: notifProgress);
-            onProgress(SetupState(
-              step: SetupStep.installingNode,
-              progress: progress,
-              message: 'Downloading Node.js: $mb MB / $totalMb MB',
-            ));
-          }
-        },
-      );
-
-      _emitProgress(onProgress, SetupStep.installingNode, 0.75, 'Extracting Node.js...', 72);
-      await NativeBridge.extractNodeTarball(nodeTarPath);
-
-      _emitProgress(onProgress, SetupStep.installingNode, 0.9, 'Verifying Node.js...', 78);
-      
-      const wrapper = '/root/.openclaw/node-wrapper.js';
-      const nodeRun = 'node $wrapper';
-      const npmCli = '/usr/local/lib/node_modules/npm/bin/npm-cli.js';
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && $nodeRun $npmCli --version');
 
       // ---------------------------------------------------------
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Verifying OpenClaw installation...', 80);
-      
-      final checkOpenClaw = await NativeBridge.runInProot('command -v openclaw || echo "missing"');
-      if (checkOpenClaw.contains('missing')) {
+      if (!openclawInstalled) {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Installing OpenClaw (this may take 10-15 minutes, please wait)...', 82);
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'npm install -g openclaw --no-audit --no-fund && '
-          // Ensure peer deps like @buape/carbon are installed inside the package dir.
-          // Global npm installs don't auto-install peer deps; this covers the gap.
           'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 1800,
         );
       } else {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.5, 'OpenClaw already installed, skipping...', 84);
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.5, 'OpenClaw package already present, skipping...', 84);
       }
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.7, 'Creating bin wrappers...', 85);
@@ -400,24 +407,37 @@ class BootstrapService {
     }
   }
 
-  /// Check if Node.js version upgrade is required
-  /// Returns true if current Node.js version is older than required
-  Future<bool> checkNodeUpgradeRequired() async {
-    try {
-      final result = await NativeBridge.runInProot('node --version', timeout: 5);
-      final versionMatch = RegExp(r'v(\d+)\.(\d+)\.(\d+)').firstMatch(result);
-      if (versionMatch != null) {
-        final major = int.tryParse(versionMatch.group(1) ?? '0') ?? 0;
-        final minor = int.tryParse(versionMatch.group(2) ?? '0') ?? 0;
-        final requiredMajor = 22;
-        final requiredMinor = 14;
-        
-        return major < requiredMajor || (major == requiredMajor && minor < requiredMinor);
-      }
-    } catch (e) {
-      _log('Failed to check Node.js version: $e');
+
+  Future<String> getRootfsDirectory() async {
+    final filesDir = await NativeBridge.getFilesDir();
+    return '$filesDir/rootfs/ubuntu';
+  }
+
+  Future<void> _ensureOpenClawPackageExists() async {
+    final rootfsDir = await getRootfsDirectory();
+    final openclawDir = Directory('$rootfsDir/usr/local/lib/node_modules/openclaw');
+
+    if (await openclawDir.exists()) {
+      _log('✅ openclaw package already present in rootfs');
+      return;
     }
-    return false; // Assume no upgrade needed if check fails
+
+    _log('🚨 openclaw package MISSING in rootfs — installing now...');
+
+    try {
+      // Note: We use runInProot which handles the command string
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'npm install -g openclaw --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
+        timeout: 600,
+      );
+      _log('✅ openclaw successfully installed in rootfs');
+    } catch (e) {
+      throw PlatformException(
+        code: 'BIN_WRAPPER_ERROR',
+        message: 'Failed to install openclaw: $e',
+      );
+    }
   }
 
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {

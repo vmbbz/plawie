@@ -53,8 +53,6 @@ class SetupState {
         return 'Installing OpenClaw';
       case SetupStep.configuringBypass:
         return 'Configuring Bionic Bypass';
-      case SetupStep.configuringBypass:
-        return 'Configuring Bionic Bypass';
       case SetupStep.complete:
         return 'Setup complete';
       case SetupStep.error:
