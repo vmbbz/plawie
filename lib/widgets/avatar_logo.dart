@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class AvatarLogo extends StatefulWidget {
   final double size;
@@ -155,9 +156,17 @@ class _AvatarLogoState extends State<AvatarLogo>
               painter: CircuitPainter(isDark: isDark),
             ),
           ),
-          // Avatar face
+          // Avatar logo
           Center(
-            child: _buildAvatarFace(isDark),
+            child: SvgPicture.asset(
+              'assets/app_icon_official.svg',
+              width: widget.size * 0.7,
+              height: widget.size * 0.7,
+              colorFilter: const ColorFilter.mode(
+                Color(0xFF00C853), // Plawie Green
+                BlendMode.srcIn,
+              ),
+            ),
           ),
         ],
       ),
@@ -185,153 +194,8 @@ class _AvatarLogoState extends State<AvatarLogo>
     return avatar;
   }
 
-  Widget _buildAvatarFace(bool isDark) {
-    return Stack(
-      children: [
-        // Head (make it bigger and more centered)
-        Positioned(
-          top: widget.size * 0.1,
-          left: widget.size * 0.2,
-          right: widget.size * 0.2,
-          height: widget.size * 0.4,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        AppColors.inverseText.withOpacity(0.95),
-                        AppColors.inverseText.withOpacity(0.8),
-                      ]
-                    : [
-                        AppColors.darkBg.withOpacity(0.95),
-                        AppColors.darkBg.withOpacity(0.8),
-                      ],
-              ),
-              borderRadius: BorderRadius.circular(widget.size * 0.15),
-              boxShadow: [
-                BoxShadow(
-                  color: isDark 
-                      ? Colors.black.withOpacity(0.4)
-                      : Colors.black.withOpacity(0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-          ),
-        ),
-        // Blinking Eyes (make them bigger and cuter)
-        AnimatedBuilder(
-          animation: _blinkAnimation,
-          builder: (context, child) {
-            return Stack(
-              children: [
-                // Left Eye
-                Positioned(
-                  top: widget.size * 0.22,
-                  left: widget.size * 0.3,
-                  width: widget.size * 0.1,
-                  height: widget.size * 0.1 * _blinkAnimation.value,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.statusGreen,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.statusGreen.withOpacity(0.6),
-                          blurRadius: 6,
-                          offset: const Offset(0, 0),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Right Eye
-                Positioned(
-                  top: widget.size * 0.22,
-                  right: widget.size * 0.3,
-                  width: widget.size * 0.1,
-                  height: widget.size * 0.1 * _blinkAnimation.value,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.statusGreen,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.statusGreen.withOpacity(0.6),
-                          blurRadius: 6,
-                          offset: const Offset(0, 0),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        // Cute mouth (smaller and higher)
-        Positioned(
-          bottom: widget.size * 0.4,
-          left: widget.size * 0.4,
-          right: widget.size * 0.4,
-          height: widget.size * 0.04,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.transparent,
-                  AppColors.statusGreen.withOpacity(0.6),
-                  Colors.transparent,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(widget.size * 0.02),
-            ),
-          ),
-        ),
-        // Left Lightning Bolt Foot
-        Positioned(
-          top: widget.size * 0.5,
-          left: widget.size * 0.25,
-          width: widget.size * 0.15,
-          height: widget.size * 0.25,
-          child: AnimatedBuilder(
-            animation: _lightningAnimation,
-            builder: (context, child) {
-              return Transform.rotate(
-                angle: -0.2 + (_lightningAnimation.value * 0.1),
-                child: CustomPaint(
-                  painter: LightningBoltPainter(isDark: isDark, isLeft: true),
-                ),
-              );
-            },
-          ),
-        ),
-        // Right Lightning Bolt Foot
-        Positioned(
-          top: widget.size * 0.5,
-          right: widget.size * 0.25,
-          width: widget.size * 0.15,
-          height: widget.size * 0.25,
-          child: AnimatedBuilder(
-            animation: _lightningAnimation,
-            builder: (context, child) {
-              return Transform.rotate(
-                angle: 0.2 - (_lightningAnimation.value * 0.1),
-                child: CustomPaint(
-                  painter: LightningBoltPainter(isDark: isDark, isLeft: false),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class CircuitPainter extends CustomPainter {
@@ -342,7 +206,7 @@ class CircuitPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = (isDark ? AppColors.inverseText : AppColors.darkBg).withOpacity(0.1)
+      ..color = (isDark ? const Color(0xFFFFFFFF) : const Color(0xFF000000)).withOpacity(0.1)
       ..strokeWidth = 1.0;
 
     // Draw circuit-like patterns
@@ -386,91 +250,9 @@ class LightningBoltPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.statusGreen.withOpacity(0.9)
-      ..strokeWidth = 3.0
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final fillPaint = Paint()
-      ..color = AppColors.statusGreen.withOpacity(0.3)
-      ..style = PaintingStyle.fill;
-
-    // Draw lightning bolt shape
-    final path = Path();
-    
-    final centerX = size.width * 0.5;
-    final centerY = size.height * 0.5;
-    
-    // Lightning bolt shape - zigzag pattern
-    path.moveTo(centerX, centerY - size.height * 0.3);
-    
-    // Main bolt - top to middle
-    path.lineTo(centerX - size.width * 0.15, centerY);
-    path.lineTo(centerX + size.width * 0.1, centerY + size.height * 0.1);
-    path.lineTo(centerX - size.width * 0.1, centerY + size.height * 0.3);
-    
-    // Bottom point
-    path.lineTo(centerX, centerY + size.height * 0.4);
-    
-    // Close the path for fill
-    path.lineTo(centerX + size.width * 0.05, centerY + size.height * 0.3);
-    path.lineTo(centerX - size.width * 0.05, centerY + size.height * 0.1);
-    path.lineTo(centerX + size.width * 0.15, centerY);
-    path.close();
-    
-    // Draw the lightning bolt
-    canvas.drawPath(path, paint);
-    canvas.drawPath(path, fillPaint);
-    
-    // Add glow effect
-    final glowPaint = Paint()
-      ..color = AppColors.statusGreen.withOpacity(0.4)
-      ..strokeWidth = 6.0
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0);
-    
-    canvas.drawPath(path, glowPaint);
-    
-    // Add inner detail lines for more detail
-    final detailPaint = Paint()
-      ..color = Colors.white.withOpacity(0.6)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    
-    // Inner lightning detail
-    final detailPath = Path();
-    detailPath.moveTo(centerX, centerY - size.height * 0.2);
-    detailPath.lineTo(centerX - size.width * 0.08, centerY + size.height * 0.05);
-    detailPath.lineTo(centerX + size.width * 0.05, centerY + size.height * 0.15);
-    detailPath.lineTo(centerX, centerY + size.height * 0.25);
-    
-    canvas.drawPath(detailPath, detailPaint);
-    
-    // Add small electric sparks
-    final sparkPaint = Paint()
-      ..color = Colors.white.withOpacity(0.8)
-      ..style = PaintingStyle.fill;
-    
-    // Small sparks around the bolt
-    canvas.drawCircle(
-      Offset(centerX - size.width * 0.2, centerY - size.height * 0.1),
-      size.width * 0.03,
-      sparkPaint,
-    );
-    canvas.drawCircle(
-      Offset(centerX + size.width * 0.2, centerY + size.height * 0.1),
-      size.width * 0.03,
-      sparkPaint,
-    );
-    canvas.drawCircle(
-      Offset(centerX - size.width * 0.15, centerY + size.height * 0.35),
-      size.width * 0.02,
-      sparkPaint,
-    );
+    // Legacy - not used
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
