@@ -36,15 +36,15 @@ class HelpScreen extends StatelessWidget {
                       _buildHelpCard(
                         context,
                         title: 'Ubuntu PRoot Sandbox',
-                        description: 'We bundle a complete Linux userland inside the APK. The OpenClaw Node.js execution environment runs securely within PRoot on your processor — no root access required.',
+                        description: 'We bundle a hardened Linux userland inside the APK. The OpenClaw Node.js execution environment runs securely within a PRoot sandbox on your processor — providing server-grade execution without root access.',
                         icon: Icons.terminal_rounded,
                         color: AppColors.statusAmber,
                       ),
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Industrial Background Stability',
-                        description: 'The PlawieForegroundService runs as a sticky Android service with partial CPU WakeLocks. A watchdog monitors the OpenClaw gateway every 30 seconds and self-heals across background pruning.',
+                        title: 'Precision Background Stability',
+                        description: 'The PlawieForegroundService runs as a high-priority Android service with partial CPU WakeLocks. A watchdog monitors the OpenClaw gateway and triggers a surgical auto-repair if dependencies are missing.',
                         icon: Icons.security_rounded,
                         color: AppColors.statusGreen,
                       ),
@@ -180,7 +180,7 @@ class HelpScreen extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          'A top 1% engineering achievement embedding a strict Ubuntu + Node.js OpenClaw execution environment running entirely within a sandboxed layer directly on your phone.',
+          'A top 1% engineering achievement embedding a hardened Ubuntu + Node.js OpenClaw execution environment running entirely within a sandboxed layer directly on your phone.',
           style: GoogleFonts.outfit(
             fontSize: 15,
             color: Colors.white.withValues(alpha: 0.7),

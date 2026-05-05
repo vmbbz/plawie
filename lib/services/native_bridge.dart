@@ -235,4 +235,14 @@ class NativeBridge {
       .receiveBroadcastStream()
       .where((e) => e != null)
       .cast<String>();
+
+  // ── Storage Permission (MANAGE_EXTERNAL_STORAGE) ──────────────────────────
+
+  static Future<bool> checkStoragePermission() async {
+    return await _channel.invokeMethod<bool>('checkStoragePermission') ?? false;
+  }
+
+  static Future<bool> requestStoragePermission() async {
+    return await _channel.invokeMethod<bool>('requestStoragePermission') ?? false;
+  }
 }

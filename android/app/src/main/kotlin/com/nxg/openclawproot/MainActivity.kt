@@ -2,6 +2,7 @@ package com.nxg.openclawproot
 
 import android.util.Log
 import java.io.File
+import android.os.Environment
 
 import android.app.Notification
 import android.app.ActivityManager
@@ -85,7 +86,7 @@ class MainActivity : FlutterActivity() {
         val nativeLibDir = applicationContext.applicationInfo.nativeLibraryDir
 
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir)
-        processManager = ProcessManager(filesDir, nativeLibDir)
+        processManager = ProcessManager(applicationContext, filesDir, nativeLibDir)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
 
@@ -324,6 +325,39 @@ class MainActivity : FlutterActivity() {
                 "isBatteryOptimized" -> {
                     val pm = getSystemService(POWER_SERVICE) as PowerManager
                     result.success(!pm.isIgnoringBatteryOptimizations(packageName))
+                }
+                "checkStoragePermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        result.success(Environment.isExternalStorageManager())
+                    } else {
+                        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                        result.success(granted)
+                    }
+                }
+                "requestStoragePermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = Uri.parse("package:${packageName}")
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                startActivity(intent)
+                                result.success(true)
+                            } catch (e2: Exception) {
+                                result.error("STORAGE_ERROR", e2.message, null)
+                            }
+                        }
+                    } else {
+                        ActivityCompat.requestPermissions(this, arrayOf(
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ), 1003)
+                        result.success(true)
+                    }
                 }
                 "getTotalMemoryMb" -> {
                     val actManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
