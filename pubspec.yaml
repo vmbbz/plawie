@@ -85,6 +85,8 @@ flutter:
     - assets/openclaw/skills/vibrate.md
     - assets/openclaw/skills/sensors.md
     - assets/openclaw/skills/avatar_forge.md
+    - assets/openclaw-node-modules.tar.gz
+    - assets/rootfs.tar.gz
   fonts:
     - family: DejaVuSansMono
       fonts:

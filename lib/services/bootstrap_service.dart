@@ -124,35 +124,40 @@ class BootstrapService {
       final filesDir = await NativeBridge.getFilesDir();
 
       if (!rootfsInstalled) {
-        _emitProgress(onProgress, SetupStep.downloadingRootfs, 0.0, 'Downloading Ubuntu rootfs...', 5);
-        final rootfsUrl = AppConstants.getRootfsUrl(arch);
-        final tarPath = '$filesDir/tmp/ubuntu-rootfs.tar.gz';
-
-        await _downloadWithRetry(
-          rootfsUrl,
-          tarPath,
-          onProgress: (received, total) {
-            if (total > 0) {
-              final progress = received / total;
-              final mb = (received / 1024 / 1024).toStringAsFixed(1);
-              final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-              final notifProgress = 5 + (progress * 25).round();
-              
-              _updateSetupNotification('Downloading rootfs: $mb / $totalMb MB', progress: notifProgress);
-              onProgress(SetupState(
-                step: SetupStep.downloadingRootfs,
-                progress: progress,
-                message: 'Downloading: $mb MB / $totalMb MB',
-              ));
-            }
-          },
-        );
-
+        // Step 1: Get rootfs (Bundled Asset -> then Download)
         // ---------------------------------------------------------
-        // Step 2: Extract rootfs
-        // ---------------------------------------------------------
-        _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
-        await NativeBridge.extractRootfs(tarPath);
+        bool rootfsReady = await _extractBundledRootfs();
+        
+        if (!rootfsReady) {
+          _log('ℹ️ No bundled rootfs found, falling back to download...');
+          
+          final String rootfsUrl = AppConstants.getRootfsUrl(arch);
+          final String tarPath = '$filesDir/tmp/rootfs.tar.gz';
+
+          await _downloadWithRetry(
+            rootfsUrl,
+            tarPath,
+            onProgress: (received, total) {
+              if (total > 0) {
+                final progress = (received / total) * 0.3;
+                final mb = (received / 1024 / 1024).toStringAsFixed(1);
+                final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
+                final notifProgress = ((received / total) * 30).round();
+                
+                _updateSetupNotification('Downloading rootfs: $mb / $totalMb MB', progress: notifProgress);
+                onProgress(SetupState(
+                  step: SetupStep.downloadingRootfs,
+                  progress: progress,
+                  message: 'Downloading: $mb MB / $totalMb MB',
+                ));
+              }
+            },
+          );
+
+          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
+          await NativeBridge.extractRootfs(tarPath);
+          rootfsReady = true;
+        }
         
         _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs extracted', 40);
       } else {
@@ -240,6 +245,9 @@ class BootstrapService {
         
         // Phase 2: Install temporary build tools for native module compilation
         await _installMinimalBuildTools();
+        
+        // Phase 2.5: Try to extract pre-bundled node_modules from assets (NEW)
+        await _extractPrebundledNodeModules();
         
         await _ensureOpenClawPackageExists();
         
@@ -368,7 +376,7 @@ class BootstrapService {
     final openclawDir = Directory('$rootfsDir/usr/local/lib/node_modules/openclaw');
 
     if (await openclawDir.exists()) {
-      _log('✅ openclaw package already present in rootfs');
+      _log('✅ OpenClaw already present (pre-bundled or previously installed)');
       return;
     }
 
@@ -408,6 +416,64 @@ class BootstrapService {
       'apt-get clean && rm -rf /var/lib/apt/lists/*',
       timeout: 300,
     );
+  }
+
+  /// Extracts a pre-bundled openclaw-node-modules.tar.gz from app assets to the rootfs.
+  /// This bypasses the need for a 10-minute 'npm install' on the user's device.
+  Future<void> _extractPrebundledNodeModules() async {
+    _log('📦 Checking for pre-bundled OpenClaw assets...');
+    try {
+      final rootfsDir = await getRootfsDirectory();
+      final target = '$rootfsDir/usr/local/lib/node_modules';
+      
+      // Check if the asset exists in the bundle
+      // Note: We use a try/catch because rootBundle.load throws if the asset is missing
+      final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
+      
+      _log('🚚 Pre-bundled OpenClaw found! Extracting...');
+      
+      // 1. Create target directory
+      await NativeBridge.runInProot('mkdir -p /usr/local/lib/node_modules');
+      
+      // 2. Write asset to a temporary file in the rootfs
+      final tempTarPath = '$rootfsDir/tmp/openclaw-modules.tar.gz';
+      final buffer = data.buffer.asUint8List();
+      await File(tempTarPath).writeAsBytes(buffer);
+      
+      // 3. Extract using tar inside proot (native and fast)
+      await NativeBridge.runInProot(
+        'tar -xzf /tmp/openclaw-modules.tar.gz -C /usr/local/lib/node_modules && rm /tmp/openclaw-modules.tar.gz',
+        timeout: 120,
+      );
+      
+      _log('✅ Pre-bundled OpenClaw extracted successfully');
+    } catch (e) {
+      _log('ℹ️ No pre-bundled OpenClaw found in assets, falling back to npm install. ($e)');
+    }
+  }
+
+  /// Extracts a bundled rootfs.tar.gz from assets if present.
+  /// Returns true if the extraction was successful.
+  Future<bool> _extractBundledRootfs() async {
+    _log('📦 Checking for bundled rootfs asset...');
+    try {
+      final ByteData data = await rootBundle.load('assets/rootfs.tar.gz');
+      _log('🚚 Bundled rootfs found! Extracting...');
+      
+      final filesDir = await NativeBridge.getFilesDir();
+      final tarPath = '$filesDir/tmp/rootfs_bundled.tar.gz';
+      
+      final buffer = data.buffer.asUint8List();
+      await File(tarPath).writeAsBytes(buffer);
+      
+      await NativeBridge.extractRootfs(tarPath);
+      await File(tarPath).delete();
+      
+      _log('✅ Bundled rootfs extracted successfully');
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<void> _purgeBuildTools() async {
