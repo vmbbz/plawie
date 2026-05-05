@@ -11,6 +11,7 @@ import '../../models/clawhub_skill.dart';
 import '../../app.dart';
 import '../../widgets/glass_card.dart';
 import '../../services/clawhub_service.dart';
+import '../../services/gateway_service.dart';
 import '../../services/local_llm_service.dart';
 import '../../services/native_bridge.dart';
 import '../../services/openclaw_service.dart';
@@ -1307,43 +1308,6 @@ class _ToolsTabState extends State<_ToolsTab> {
     }
   }
 
-  Future<void> _hardResetConfig() async {
-    setState(() => _isResetting = true);
-
-    try {
-      // ← THIS IS THE FIX: delete the stale config + force clean regeneration
-      await NativeBridge.runInProot(
-        'rm -f ~/.openclaw/openclaw.json && openclaw config reset --force',
-        timeout: 30,
-      );
-
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      // Re-register everything fresh
-      final gateway = Provider.of<GatewayProvider>(context, listen: false);
-      await gateway.reregisterSkills();
-      await _loadEnabled();           // reload the Tools tab
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Full config reset — all tools now available and togglable'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      print('Hard reset error: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reset failed — try again or clear app data')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isResetting = false);
-    }
-  }
-
   Future<void> _toggle(String toolId) async {
     // Optimistic update — flip immediately, persist in background
     final newSet = Set<String>.from(_enabledTools);
@@ -1354,6 +1318,45 @@ class _ToolsTabState extends State<_ToolsTab> {
     }
     setState(() => _enabledTools = newSet);
     await OpenClawCommandService.saveToolsAllow(newSet.toList()..sort());
+  }
+
+  Future<void> _hardResetConfig() async {
+    setState(() => _isResetting = true);
+
+    try {
+      // ← THIS IS THE FIX: delete the stale config + force clean regeneration
+      await GatewayService().invoke('exec', {
+        'command': 'rm -f ~/.openclaw/openclaw.json && openclaw config reset --force'
+      });
+
+      await Future.delayed(const Duration(milliseconds: 1200)); // give gateway time to settle
+
+      // Re-register everything fresh
+      await GatewayService().reregisterSkills();
+      
+      setState(() => _enabledTools.clear()); // clear old state
+      await _loadEnabled(); // force reload
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Full config reset — all tools now available and togglable'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Hard reset error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reset failed — try again or clear app data')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isResetting = false);
+      }
+    }
   }
 
   _ToolMeta _metaFor(String toolId) {
@@ -1510,8 +1513,7 @@ class _ToolsTabState extends State<_ToolsTab> {
                                         height: 13,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 1.5,
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                              Colors.white.withValues(alpha: 0.4)),
+                                          color: Colors.white.withValues(alpha: 0.6),
                                         ),
                                       )
                                     : Icon(Icons.auto_delete_rounded, size: 13,
@@ -1521,7 +1523,9 @@ class _ToolsTabState extends State<_ToolsTab> {
                                     style: TextStyle(
                                         fontSize: 10,
                                         letterSpacing: 1.2,
-                                        color: Colors.white.withValues(alpha: 0.4))),
+                                        color: _isResetting 
+                                            ? Colors.white.withValues(alpha: 0.6)
+                                            : Colors.white.withValues(alpha: 0.4))),
                               ],
                             ),
                           ),
