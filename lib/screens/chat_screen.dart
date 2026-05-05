@@ -32,6 +32,8 @@ import '../services/agent_skill_server.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
+import '../services/hologram_service.dart';
+import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
 import 'package:audioplayers/audioplayers.dart';
 
@@ -183,6 +185,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     };
     CanvasCapability.onSnapshotTaken = (b64, mime) {
       _pendingAiSnapBase64 = b64;
+      HologramService.instance.show(HologramPayload.image(b64, label: 'Canvas Snapshot'));
     };
     _glowController = AnimationController(
       vsync: this,
@@ -1155,6 +1158,7 @@ void _showTtsDownloadDialog() {
             imageMimeType: 'image/jpeg',
           );
           _pendingAiSnapBase64 = null;
+          HologramService.instance.show(HologramPayload.image(snapImage, label: 'Camera Snap'));
         }
       });
       _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
@@ -1955,6 +1959,7 @@ void _showTtsDownloadDialog() {
     CameraCapability.onSnapTaken = null;
     CanvasCapability.onVisibilityChanged = null;
     CanvasCapability.onSnapshotTaken = null;
+    HologramService.instance.dismiss();
     CanvasCapability().clearController();
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
@@ -2844,7 +2849,11 @@ void _showTtsDownloadDialog() {
               ),
             ),
 
-          // 6. Diagnostics (slide-up panel)
+          // 6. Hologram Overlay (image / canvas snapshot presenter)
+          if (!_isPipMode)
+            const HologramOverlay(),
+
+          // 7. Diagnostics (slide-up panel)
           if (_showDiagnostics && !_isPipMode)
             Positioned(
               bottom: 0,
