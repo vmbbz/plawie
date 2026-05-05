@@ -41,6 +41,7 @@ const _premiumSkills = [
         'Issue virtual Visa cards, manage balances, and make autonomous payments for your AI agent.',
     icon: Icons.account_balance_wallet_rounded,
     color: Color(0xFF3D52D5),
+    hasPage: true,
     tooltip:
         'AgentCard.ai gives your agent a virtual Visa card with real spending power. Your agent can create cards, top them up, check balances, and make autonomous payments — all on-chain on Base.',
   ),
@@ -52,6 +53,7 @@ const _premiumSkills = [
         'Get hired for AI agent work. Escrow payments on Base chain. ERC-8004 identity + reputation.',
     icon: Icons.work_rounded,
     color: Colors.orangeAccent,
+    hasPage: true,
     tooltip:
         'MoltLaunch is an on-chain job marketplace for AI agents. Your agent gets an ERC-8004 identity NFT on Base, can browse posted jobs, bid, and receive ETH escrow payments on completion.',
   ),
@@ -63,6 +65,7 @@ const _premiumSkills = [
         'x402 spending policy for autonomous agents — per-call, hourly & daily budget caps.',
     icon: Icons.credit_score_rounded,
     color: AppColors.statusGreen,
+    hasPage: true,
     tooltip:
         'Valeo Sentinel enforces x402 protocol spending rules on your agent. Set per-call, hourly, daily, and lifetime USD budget caps. Every payment is audit-logged on-chain so you can review exactly what your agent spent.',
   ),
@@ -74,6 +77,7 @@ const _premiumSkills = [
         'ConversationRelay voice orchestration — inbound/outbound with real-time AI transcription.',
     icon: Icons.phone_android_rounded,
     color: Colors.redAccent,
+    hasPage: true,
     tooltip:
         'Your agent can make and receive phone calls, transcribe conversations in real-time using Deepgram, and orchestrate AI-driven call flows via Twilio ConversationRelay.',
   ),
@@ -85,6 +89,7 @@ const _premiumSkills = [
         'Verified agent bank account + 30 financial skills: swap, bridge, buy/sell, DCA, live prices.',
     icon: Icons.currency_exchange_rounded,
     color: Color(0xFF7B2FBE),
+    hasPage: true,
     tooltip:
         'Give your agent a verified bank account. It can swap tokens, bridge cross-chain, buy/sell crypto via fiat, check portfolio, and run DCA strategies — all from natural language commands in chat.',
   ),
@@ -96,6 +101,7 @@ const _premiumSkills = [
         'Run a free, offline LLM on-device via llama-server inside PRoot. No API key. No internet. Total privacy.',
     icon: Icons.memory_rounded,
     color: Color(0xFF0097A7),
+    hasPage: true,
     tooltip:
         'Downloads a GGUF model (Qwen2.5-1.5B recommended) and runs llama-server as a sibling process inside PRoot. OpenClaw routes via the gateway when enabled. CPU-only for stability.',
   ),
@@ -645,7 +651,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                             id.contains(skill.id
                                                 .replaceAll('-', '_')));
                                 // Always open detail sheet first — shows live
-                                // stats. Sheet has Open / Install CTA inside.
+                                // stats. Sheet has Open / Connect / Install CTA.
                                 showSkillDetailSheet(
                                   context,
                                   slug: skill.id,
@@ -654,6 +660,13 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                   isInstalled: installed,
                                   accentColor: skill.color,
                                   icon: skill.icon,
+                                  // Partner skills with a dedicated page use
+                                  // "Connect" (not "Install") and show "Open"
+                                  // once active so the user can go straight in.
+                                  installLabel: skill.hasPage ? 'Connect' : 'Install',
+                                  onOpen: (skill.hasPage && installed)
+                                      ? () => widget.onNavigate(skill.id)
+                                      : null,
                                   onInstall: installed
                                       ? null
                                       : (slug, name) async =>
@@ -1542,30 +1555,63 @@ class _ToolsTabState extends State<_ToolsTab> {
                 ),
               ),
 
-            // ── Tool cards — all 19 always shown with enable/disable toggles ──
-            // Each tool maps to a _ToolCard with an inline Switch that writes to
-            // openclaw.json → tools.allow via OpenClawCommandService.saveToolsAllow.
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final toolId = allToolIds[i];
-                    final enabled = _enabledTools.contains(toolId);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _ToolCard(
-                        toolId: toolId,
-                        meta: _metaFor(toolId),
-                        isEnabled: enabled,
-                        onToggle: () => _toggle(toolId),
+            // ── Tool cards grouped by category ────────────────────────────
+            // Categories rendered in display order; each group gets a coloured
+            // header so the user can scan core / network / ai / web3 / device / ui.
+            for (final category in _categoryColors.keys) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 3,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: _categoryColors[category],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
-                    );
-                  },
-                  childCount: allToolIds.length,
+                      const SizedBox(width: 8),
+                      Text(
+                        category.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.8,
+                          color: _categoryColors[category],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      final toolId = allToolIds
+                          .where((id) => _toolCatalog[id]?.category == category)
+                          .toList()[i];
+                      final enabled = _enabledTools.contains(toolId);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _ToolCard(
+                          toolId: toolId,
+                          meta: _metaFor(toolId),
+                          isEnabled: enabled,
+                          onToggle: () => _toggle(toolId),
+                        ),
+                      );
+                    },
+                    childCount: allToolIds
+                        .where((id) => _toolCatalog[id]?.category == category)
+                        .length,
+                  ),
+                ),
+              ),
+            ],
 
             // ── RPC explorer quick-jump ───────────────────────────────────
             SliverToBoxAdapter(
@@ -2727,6 +2773,11 @@ class _SkillEntry {
   final IconData icon;
   final Color color;
   final String? tooltip;
+  /// True when there is a dedicated Flutter page for this skill
+  /// (agent-card, molt-launch, valeo-sentinel, twilio-voice, moonpay, local-llm).
+  /// Affects the CTA labels in the detail sheet: "Connect" instead of "Install",
+  /// and "Open" (not Install) when already active.
+  final bool hasPage;
 
   const _SkillEntry({
     required this.id,
@@ -2736,6 +2787,7 @@ class _SkillEntry {
     required this.icon,
     required this.color,
     this.tooltip,
+    this.hasPage = false,
   });
 }
 
