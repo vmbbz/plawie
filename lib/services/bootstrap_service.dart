@@ -246,7 +246,8 @@ class BootstrapService {
           'apt-get update -y && '
           'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
           'echo "Etc/UTC" > /etc/timezone && '
-          'apt-get install -y --no-install-recommends ca-certificates git python3 make g++ curl zstd tmux jq'
+          'apt-get install -y --no-install-recommends ca-certificates git curl zstd tmux jq && '
+          'apt-get clean && rm -rf /var/lib/apt/lists/*'
         );
 
         final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
@@ -292,7 +293,15 @@ class BootstrapService {
       // ---------------------------------------------------------
       if (!openclawInstalled) {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Installing OpenClaw Gateway...', 80);
+        
+        // Phase 2: Install temporary build tools for native module compilation
+        await _installMinimalBuildTools();
+        
         await _ensureOpenClawPackageExists();
+        
+        // Phase 3: Purge build tools immediately after success to save ~500MB
+        await _purgeBuildTools();
+        
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw Gateway installed', 95);
       } else {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw already present, verifying...', 95);
@@ -376,10 +385,12 @@ class BootstrapService {
       final filesDir = await NativeBridge.getFilesDir();
       final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
       
-      if (!await openclawMjs.exists()) {
-        _log('openclaw.mjs not found, skipping shebang fix');
-        return;
-      }
+      // 1. Force remove old installation and any stray files
+      await NativeBridge.runInProot('npm uninstall -g openclaw || true');
+      await NativeBridge.runInProot('rm -rf /usr/local/lib/node_modules/openclaw');
+      await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw'); 
+      await NativeBridge.runInProot('npm cache clean --force || true');
+      await NativeBridge.runInProot('apt-get clean || true');
       
       String content = await openclawMjs.readAsString();
       
@@ -414,22 +425,52 @@ class BootstrapService {
       return;
     }
 
-    _log('🚨 openclaw package MISSING in rootfs — installing now...');
+    _log('🚨 Installing OpenClaw (this may take 30-60s)...');
 
     try {
-      // Note: We use runInProot which handles the command string
+      // 1. Install with minimal flags
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'npm install -g openclaw --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
+        'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
         timeout: 600,
       );
-      _log('✅ openclaw successfully installed in rootfs');
+
+      // 2. AGGRESSIVE CLEANUP (Save ~300-400 MB)
+      await NativeBridge.runInProot('''
+        apt-get clean && 
+        rm -rf /var/lib/apt/lists/* /var/cache/apt/* &&
+        npm cache clean --force &&
+        rm -rf /root/.npm/_cacache /root/.npm/_logs
+      ''');
+
+      _log('✅ OpenClaw installed + heavy caches cleaned');
     } catch (e) {
       throw PlatformException(
         code: 'BIN_WRAPPER_ERROR',
         message: 'Failed to install openclaw: $e',
       );
     }
+  }
+
+  Future<void> _installMinimalBuildTools() async {
+    _log('🛠 Installing temporary build tools (python3, g++)...');
+    await NativeBridge.runInProot(
+      'export DEBIAN_FRONTEND=noninteractive && '
+      'apt-get update -qq && '
+      'apt-get install -y --no-install-recommends build-essential python3 make g++ && '
+      'apt-get clean && rm -rf /var/lib/apt/lists/*',
+      timeout: 300,
+    );
+  }
+
+  Future<void> _purgeBuildTools() async {
+    _log('🧹 Purging build tools to save space...');
+    await NativeBridge.runInProot(
+      'apt-get purge -y build-essential python3 make g++ && '
+      'apt-get autoremove -y && '
+      'apt-get clean && rm -rf /var/lib/apt/lists/*',
+      timeout: 120,
+    );
   }
 
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {
