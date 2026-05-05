@@ -13,6 +13,7 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'skills_service.dart';
+import 'diagnostic_service.dart';
 
 class GatewayService {
   static final GatewayService _instance = GatewayService._internal();

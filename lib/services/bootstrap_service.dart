@@ -154,9 +154,6 @@ class BootstrapService {
         _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
         await NativeBridge.extractRootfs(tarPath);
         
-        // Ensure openclaw package exists immediately after extraction
-        await _ensureOpenClawPackageExists();
-        
         _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs extracted', 40);
       } else {
         _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs already present, skipping...', 40);
@@ -238,19 +235,14 @@ class BootstrapService {
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
       if (!openclawInstalled) {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Installing OpenClaw (this may take 10-15 minutes, please wait)...', 82);
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'npm install -g openclaw --no-audit --no-fund && '
-          'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
-          'openclaw doctor --fix 2>/dev/null || true',
-          timeout: 1800,
-        );
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Installing OpenClaw Gateway...', 80);
+        await _ensureOpenClawPackageExists();
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw Gateway installed', 95);
       } else {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.5, 'OpenClaw package already present, skipping...', 84);
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw already present, verifying...', 95);
+        // Force verification even if status says installed (redundant but robust)
+        await _ensureOpenClawPackageExists();
       }
-
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.7, 'Creating bin wrappers...', 85);
       await NativeBridge.createBinWrappers('openclaw');
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
