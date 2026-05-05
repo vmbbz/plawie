@@ -1289,6 +1289,7 @@ class _ToolsTabState extends State<_ToolsTab> {
   // Loaded once at init; updated immediately on toggle (optimistic UI).
   Set<String> _enabledTools = {};
   bool _loading = true;
+  bool _isResetting = false;
 
   @override
   void initState() {
@@ -1303,6 +1304,43 @@ class _ToolsTabState extends State<_ToolsTab> {
         _enabledTools = tools.toSet();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _hardResetConfig() async {
+    setState(() => _isResetting = true);
+
+    try {
+      // ← THIS IS THE FIX: delete the stale config + force clean regeneration
+      await NativeBridge.runInProot(
+        'rm -f ~/.openclaw/openclaw.json && openclaw config reset --force',
+        timeout: 30,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      // Re-register everything fresh
+      final gateway = Provider.of<GatewayProvider>(context, listen: false);
+      await gateway.reregisterSkills();
+      await _loadEnabled();           // reload the Tools tab
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Full config reset — all tools now available and togglable'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Hard reset error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reset failed — try again or clear app data')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isResetting = false);
     }
   }
 
@@ -1463,24 +1501,23 @@ class _ToolsTabState extends State<_ToolsTab> {
                       Row(
                         children: [
                           GestureDetector(
-                            onTap: () async {
-                              setState(() => _enabledTools = {'*'});
-                              await OpenClawCommandService.saveToolsAllow(['*']);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Reset to all tools allowed (["*"])'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            },
+                            onTap: _isResetting ? null : _hardResetConfig,
                             child: Row(
                               children: [
-                                Icon(Icons.restore_rounded, size: 13,
-                                    color: Colors.white.withValues(alpha: 0.4)),
+                                _isResetting
+                                    ? SizedBox(
+                                        width: 13,
+                                        height: 13,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                              Colors.white.withValues(alpha: 0.4)),
+                                        ),
+                                      )
+                                    : Icon(Icons.auto_delete_rounded, size: 13,
+                                        color: Colors.white.withValues(alpha: 0.4)),
                                 const SizedBox(width: 4),
-                                Text('RESET',
+                                Text(_isResetting ? 'RESETTING...' : 'RESET',
                                     style: TextStyle(
                                         fontSize: 10,
                                         letterSpacing: 1.2,
