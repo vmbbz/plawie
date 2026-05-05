@@ -108,13 +108,57 @@ Your agent can see the world around you:
 Plawie isn't just text; it's a living digital entity on your home screen.
 
 ### 🌌 Transparent Glassmorphic Overlay
-Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay.
+Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay. Talk to your agent while scrolling X/Twitter, reading emails, or watching YouTube.
 
 ### 👁️ Procedural Realism & Ambience
 Our WebGL-based VRM avatars are driven by a custom mathematical engine:
-- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones.
-- **Saccadic Gaze & Breath:** Independent neck and eye-tracking using sum-of-sines algorithms.
+- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically and constantly.
+- **Saccadic Gaze & Breath:** Independent neck and eye-tracking using sum-of-sines algorithms to give a hyper-realistic, "alive" look.
 - **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer.
+
+---
+
+## 🏗️ Technical Architecture
+
+Plawie is surgically optimized for mobile efficiency using a 4-tier architecture:
+
+```mermaid
+graph TD
+    subgraph "Layer 1: The Shell (Flutter Isolate)"
+        A[Native Chat & Audio UI] --> B[SkillsService]
+        A --> C[Solana SDK — Native Keypairs]
+        A --> D[TtsService — Piper/Native/11Labs]
+        A --> W[Wake Word — Vosk Offline ASR]
+        Z[<b>Bootstrap Engine</b><br/>Parallel Downloader + Pre-bundle] --> E
+    end
+
+    subgraph "Layer 2: The Core (PRoot + Ubuntu)"
+        E[Ubuntu PRoot Sandbox] --> F[OpenClaw Gateway v22+]
+        F --> G[35+ Device Skills Executor]
+        F -- "GET /api/tools" --> K
+        L[fllama NDK — llama.cpp ARM64]
+        M[<b>Watchdog Monitor</b><br/>Diagnostics + Auto-Heal] --> F
+    end
+
+    subgraph "Layer 3: The Presence (Three.js)"
+        H[Transparent Overlay] --> I[VRM Renderer]
+        I --> J[Procedural Animation Math]
+    end
+
+    A -- "flutter_overlay_window" --> H
+    D -- "Viseme Synectics" --> I
+    A -- "agents.list RPC" --> F
+    K[AgentSkillServer :8765] -- "Avatar Control" --> I
+    K -- "TTS Control" --> D
+```
+
+### ⚡ Technology Stack Summary
+- **The Gateway:** PRoot + Ubuntu ARM64 + Node.js v22+ — OpenClaw AI gateway, 35+ device skills.
+- **The Local LLM:** [fllama](https://github.com/Telosnex/fllama) — Native llama.cpp compiled as ARM64 `.so` via NDK.
+- **The Voice:** TtsService facade (Piper offline · Android TTS · ElevenLabs · OpenAI TTS).
+- **The Hub:** AgentSkillServer (127.0.0.1:8765 — Custom Skill Bridge).
+- **The Web3 Layer:** Native `solana` Dart SDK + Jupiter Ultra API.
+- **The Expression:** Three.js + VRM bone-tracking renderer (WebGL).
 
 ---
 
@@ -130,55 +174,6 @@ Our WebGL-based VRM avatars are driven by a custom mathematical engine:
 - **🎭 `avatar-control`** — Control the live VRM companion (gestures, emotions, models).
 - **🔊 `tts-voice`** — Switch the speech engine or voice mid-conversation.
 - **📱 `device-node`** — Direct hardware access: camera, vibration, flashlight, sensors.
-
----
-
-## 🏗️ Technical Architecture
-
-```mermaid
-graph TD
-    subgraph "Layer 1: The Shell (Flutter)"
-        A[Native Chat & UI] --> B[SkillsService]
-        A --> D[TtsService]
-        A --> W[Wake Word ASR]
-        B --> K[AgentSkillServer :8765]
-    end
-
-    subgraph "Layer 2: The Brain (PRoot + Node.js)"
-        E[Ubuntu Sandbox] --> F[OpenClaw Gateway v22+]
-        F --> G[35+ Device Skills]
-        L[fllama NDK — Offline Inference]
-    end
-
-    subgraph "Layer 3: The UI Layer (Three.js)"
-        H[Transparent Overlay] --> I[VRM Renderer]
-        I --> J[Procedural Math]
-    end
-
-    A -- "RPC" --> F
-    D -- "Visemes" --> I
-    K -- "Avatar callbacks" --> I
-```
-
-### ⚡ Technology Stack Summary
-- **The Gateway:** PRoot + Ubuntu ARM64 + Node.js v22+.
-- **The Local LLM:** [fllama](https://github.com/Telosnex/fllama) — llama.cpp native ARM64 `.so`.
-- **The Voice:** Piper (offline) · Android TTS · ElevenLabs · OpenAI TTS.
-- **The Web3 Layer:** Native `solana` Dart SDK + Jupiter Ultra API.
-
----
-
-## 📦 Post-Installation: First Run
-
-#### Mode A — OpenClaw Gateway Chat (Full Tools + Skills)
-1. **Start Gateway** — tap **Start** on the home screen.
-2. **Set Your API Key** — go to **Settings → API Provider**.
-3. **Start Chatting** — full tool-use and skills are available immediately.
-
-#### Mode B — Local NDK Chat (fllama, No Internet)
-1. **Local LLM** → Download a model (e.g. Qwen2.5-1.5B).
-2. **Select** the model as active.
-3. **In Chat**, select the `local-llm/` model. Direct NDK streaming.
 
 ---
 
