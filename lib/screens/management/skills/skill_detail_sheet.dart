@@ -20,8 +20,10 @@ Future<bool> showSkillDetailSheet(
   bool isInstalled = false,
   Color accentColor = AppColors.statusGreen,
   IconData icon = Icons.extension_rounded,
+  String installLabel = 'Install',
   Future<void> Function(String slug, String name)? onInstall,
   VoidCallback? onEdit,
+  VoidCallback? onOpen,
 }) async {
   final result = await showModalBottomSheet<bool>(
     context: context,
@@ -34,8 +36,10 @@ Future<bool> showSkillDetailSheet(
       isInstalled: isInstalled,
       accentColor: accentColor,
       icon: icon,
+      installLabel: installLabel,
       onInstall: onInstall,
       onEdit: onEdit,
+      onOpen: onOpen,
     ),
   );
   return result ?? false;
@@ -52,8 +56,10 @@ class _SkillDetailSheet extends StatefulWidget {
   final bool isInstalled;
   final Color accentColor;
   final IconData icon;
+  final String installLabel;
   final Future<void> Function(String slug, String name)? onInstall;
   final VoidCallback? onEdit;
+  final VoidCallback? onOpen;
 
   const _SkillDetailSheet({
     required this.slug,
@@ -62,8 +68,10 @@ class _SkillDetailSheet extends StatefulWidget {
     required this.isInstalled,
     required this.accentColor,
     required this.icon,
+    this.installLabel = 'Install',
     this.onInstall,
     this.onEdit,
+    this.onOpen,
   });
 
   @override
@@ -405,6 +413,30 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                     ),
                   ),
                 ],
+                // "Open" — shown when installed and a dedicated page exists.
+                if (widget.isInstalled && widget.onOpen != null) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        widget.onOpen!();
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: const Text('Open'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: color,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
+                // "Connect" / "Install" — shown when not yet installed.
                 if (!widget.isInstalled && widget.onInstall != null) ...[
                   const SizedBox(width: 10),
                   Expanded(
@@ -420,7 +452,7 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                                 color: Colors.white,
                               ))
                           : const Icon(Icons.download_rounded, size: 16),
-                      label: Text(_installing ? 'Installing…' : 'Install'),
+                      label: Text(_installing ? 'Installing…' : widget.installLabel),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: color,
                         foregroundColor: Colors.white,
