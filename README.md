@@ -16,8 +16,14 @@
   [![License: MIT](https://img.shields.io/badge/License-MIT-00C853.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
   [![Flutter](https://img.shields.io/badge/Flutter-3.24+-02569B.svg?style=for-the-badge&logo=flutter)](https://flutter.dev)
   [![Node.js](https://img.shields.io/badge/Node.js-22+-339933.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
-  [![Solana](https://img.shields.io/badge/Solana-Mainnet-9945FF.svg?style=for-the-badge&logo=solana)](https://solana.com)
+  [![Base](https://img.shields.io/badge/Base-Mainnet-0052FF.svg?style=for-the-badge&logo=base)](https://base.org)
 </div>
+
+---
+
+**"Run OpenClaw fully local on your personal Android phone, private, always-on, and under your absolute control."**
+
+While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs — we took a different path. **Plawie** represents a top 1% engineering achievement: a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
 
 ---
 
@@ -28,7 +34,7 @@
 - **🖼️ Hologram Presenter** — Beautiful floating overlays for canvas, images, web previews, and media.
 - **🎙️ Voice-First Intelligence** — Continuous listening, wake word, and multiple offline TTS engines.
 - **📱 Native Device Skills** — 35+ tools including Camera, Location, Haptics, Sensors, and Terminal Shell.
-- **🔗 Web3 Ready** — On-chain actions, MoonPay integration, and native Solana wallet support.
+- **🔗 Web3 Ready** — On-chain actions, MoonPay integration, and native **Base** L2 support.
 - **🖥️ Professional Web Dashboard** — Full gateway control from any desktop browser on your network.
 
 ---
@@ -65,9 +71,7 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 
 ---
 
-## 🧠 Industrial-Grade Mobile Architecture
-
-Plawie represents a top 1% engineering achievement: we successfully embedded a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
+## 🧠 The Core Foundation: Industrial-Grade Mobile Architecture
 
 ### 1. The Autonomous PRoot Gateway
 We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your Snapdragon processor. It handles 35+ local Android skills to bridge the gap between intelligence and device-level actions.
@@ -80,41 +84,53 @@ Plawie is built for 24/7 autonomous operation. Unlike standard apps that die whe
 - **Ephemeral Build Tools**: Heavy compilers (`g++`, `python3`) are installed only when needed and purged immediately, saving over **800 MB** of disk space.
 - **Boot Persistence**: If enabled, Plawie automatically revives your gateway and node processes the moment your phone restarts and unlocks.
 
-### 3. Native Solana Web3 Logic
-Plawie is your ultimate Web3 co-pilot. We built a robust, fully native Solana integration directly into the app:
-- **Real Ed25519 Keypairs:** Generated and secured in on-device storage.
-- **DeFi Ready:** Swap tokens, set limit orders, and DCA via direct Jupiter API integration.
+### 3. Native Base Web3 Logic
+Plawie is your ultimate Web3 co-pilot. We built a robust, fully native **Base (Ethereum L2)** integration directly into the app:
+- **Real Keypairs:** Generated and secured in on-device storage.
+- **DeFi Ready:** Swap tokens, set limit orders, and DCA via direct integration.
+- **On-Chain Queries:** Real-time RPC balance checks and historical transaction fetching.
 - **Zero Cloud Intermediaries:** Your private keys never touch a server; transactions are constructed and signed locally.
 
----
-
-## 🎙️ Voice & Vision Intelligence
-
-### Voice-First Intelligence Pipeline
+### 4. Voice-First Intelligence Pipeline
 Plawie ships a complete, multi-engine voice stack that puts you in full control — no cloud dependency required:
-- **4 TTS Engines** — Piper (offline), Android Native TTS, ElevenLabs, or OpenAI TTS.
+- **4 TTS Engines** — Switch between Piper (fully offline), Android Native TTS, ElevenLabs, or OpenAI TTS.
 - **Continuous Mode** — After TTS finishes speaking, the mic automatically restarts.
-- **Wake Word "Plawie"** — say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine.
+- **Wake Word "Plawie"** — Say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine.
 
-### Video Vision AI
+### 5. Video Vision AI
 Your agent can see the world around you:
-- **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM or cloud Gemini.
+- **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM (LLaVA / Qwen2-VL).
 - **📹 Video Clips** — Record 2–30s clips, extract key frames via PRoot `ffmpeg`, analyse each frame with the local vision model, then produce a coherent summary — 100% offline.
 
 ---
 
 ## 🎭 The UI Layer: An Airi-Style Experience
 
-Plawie isn't just text; it's a living digital entity on your home screen.
+Once we perfected the untouchable local OpenClaw foundation, we layered on an incredibly immersive, **Airi-style procedural companion experience**.
 
 ### 🌌 Transparent Glassmorphic Overlay
-Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay. Talk to your agent while scrolling X/Twitter, reading emails, or watching YouTube.
+Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay. Talk to your agent while scrolling X/Twitter or reading emails.
 
 ### 👁️ Procedural Realism & Ambience
-Our WebGL-based VRM avatars are driven by a custom mathematical engine:
-- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically and constantly.
+Our WebGL-based VRM avatars are driven by a custom mathematical engine, not pre-baked animations:
+- **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically.
 - **Saccadic Gaze & Breath:** Independent neck and eye-tracking using sum-of-sines algorithms to give a hyper-realistic, "alive" look.
-- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer.
+- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer ensures mathematically perfect lip-sync.
+
+---
+
+## 🛠️ Agent Skills System: Three-Layer Architecture
+
+| Concept | What it is | Where it lives |
+|---------|-----------|----------------|
+| **Skills** | npm packages for new *capabilities* (weather, GitHub, coding-agent…) | `~/.openclaw/node_modules/@openclaw/` |
+| **Tools** | OS-level primitives the agent is *permitted to invoke* (browser, files, search…). | `openclaw.json → tools.allow[]` |
+| **Custom App Skills** | Flutter-native skills wired directly into Android (avatar, device hardware) | `AgentSkillServer` on `127.0.0.1:8765` |
+
+### Custom App Skills (Device-Native)
+- **🎭 `avatar-control`** — Control the live VRM companion from the agent (gestures, emotions, models).
+- **🔊 `tts-voice`** — Switch the speech engine or voice mid-conversation.
+- **📱 `device-node`** — Direct hardware access: camera, vibration, flashlight, sensors.
 
 ---
 
@@ -125,8 +141,8 @@ Plawie is surgically optimized for mobile efficiency using a 4-tier architecture
 ```mermaid
 graph TD
     subgraph "Layer 1: The Shell (Flutter Isolate)"
-        A[Native Chat & Audio UI] --> B[SkillsService]
-        A --> C[Solana SDK — Native Keypairs]
+        A[Native Chat & UI] --> B[SkillsService]
+        A --> C[Base SDK — Native Keypairs]
         A --> D[TtsService — Piper/Native/11Labs]
         A --> W[Wake Word — Vosk Offline ASR]
         Z[<b>Bootstrap Engine</b><br/>Parallel Downloader + Pre-bundle] --> E
@@ -152,28 +168,17 @@ graph TD
     K -- "TTS Control" --> D
 ```
 
-### ⚡ Technology Stack Summary
-- **The Gateway:** PRoot + Ubuntu ARM64 + Node.js v22+ — OpenClaw AI gateway, 35+ device skills.
-- **The Local LLM:** [fllama](https://github.com/Telosnex/fllama) — Native llama.cpp compiled as ARM64 `.so` via NDK.
-- **The Voice:** TtsService facade (Piper offline · Android TTS · ElevenLabs · OpenAI TTS).
-- **The Hub:** AgentSkillServer (127.0.0.1:8765 — Custom Skill Bridge).
-- **The Web3 Layer:** Native `solana` Dart SDK + Jupiter Ultra API.
-- **The Expression:** Three.js + VRM bone-tracking renderer (WebGL).
-
 ---
 
-## 🛠️ Agent Skills System: Three-Layer Architecture
+## 🧠 Local LLM — Free On-Device Inference
 
-| Concept | What it is | Where it lives |
-|---------|-----------|----------------|
-| **Skills** | npm packages for new *capabilities* (weather, GitHub, coding-agent…) | `~/.openclaw/node_modules/@openclaw/` |
-| **Tools** | OS-level primitives the agent is *permitted to invoke* (browser, files, search…). | `openclaw.json → tools.allow[]` |
-| **Custom App Skills** | Flutter-native skills wired directly into Android (avatar, device hardware) | `AgentSkillServer` on `127.0.0.1:8765` |
+Plawie runs a **completely free, offline LLM** directly on your device via the **fllama NDK plugin**.
 
-### Custom App Skills (Device-Native)
-- **🎭 `avatar-control`** — Control the live VRM companion (gestures, emotions, models).
-- **🔊 `tts-voice`** — Switch the speech engine or voice mid-conversation.
-- **📱 `device-node`** — Direct hardware access: camera, vibration, flashlight, sensors.
+| Device Tier | RAM | SoC | Speed (1.5B Q4_K_M) |
+|-------------|-----|-----|----------------------|
+| Minimum | 6 GB | SD 7 Gen 1 | ~4–8 tok/s |
+| Recommended | 12 GB | SD 8 Gen 2 | ~15–22 tok/s |
+| Optimal | 16 GB | SD 8 Elite | ~22–35 tok/s |
 
 ---
 
