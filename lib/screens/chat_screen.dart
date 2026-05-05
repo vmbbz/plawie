@@ -66,6 +66,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
   String? _currentGesture;
+  String? _currentGestureMode;
 
   // Streaming TTS state
   String _ttsSentenceBuffer = '';
@@ -162,6 +163,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     };
     AgentSkillServer.instance.onGesturePlayed = (gesture) {
       if (mounted) setState(() => _currentGesture = gesture);
+    };
+    AgentSkillServer.instance.onGestureModeChanged = (mode) {
+      if (mounted) setState(() => _currentGestureMode = mode);
     };
     AgentSkillServer.instance.onEmotionSet = (_) {}; // handled by avatar_scene.html
     // When the AI calls camera.snap, store the result so we can show it inline in chat
@@ -290,16 +294,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       if (!mounted) return;
       if (event.type == SkillsEventType.executing) {
         _addDiagnosticLog('Skill executing: ${event.skillId}');
-        setState(() {
-          _isThinking = true;
-          _currentGesture = 'pose'; // Elegant pose while calculating
-        });
+        // Only set thinking state — gesture is handled by avatar_scene.html's
+        // auto-gesture system. Forcing 'pose'/'ready' here conflicts with VRMA
+        // clips already playing and causes the avatar to jump.
+        setState(() { _isThinking = true; });
       } else if (event.type == SkillsEventType.executed || event.type == SkillsEventType.error) {
         _addDiagnosticLog('Skill finished: ${event.skillId}');
-        setState(() {
-          _isThinking = false;
-          _currentGesture = 'ready'; // Drop back to ready
-        });
+        setState(() { _isThinking = false; });
       } else if (event.type == SkillsEventType.toggled) {
         _addDiagnosticLog('Skill toggled: ${event.skillId} — pushing updated catalog to gateway');
         GatewayService().reregisterSkills();
@@ -2373,6 +2374,7 @@ void _showTtsDownloadDialog() {
                     isCinematic: _isCinematic,
                     isPip: _isPipMode,
                     gesture: _currentGesture,
+                    gestureMode: _currentGestureMode,
                     onLog: (log) {
                       if (log == 'READY') {
                         setState(() => _isReady = true);

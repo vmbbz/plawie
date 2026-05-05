@@ -36,6 +36,7 @@ class AgentSkillServer {
   void Function(String avatarFile)? onAvatarChanged;
   void Function(String gesture)? onGesturePlayed;
   void Function(String emotion)? onEmotionSet;
+  void Function(String mode)? onGestureModeChanged;
 
   Future<void> start() async {
     if (_server != null) return;
@@ -159,6 +160,16 @@ class AgentSkillServer {
         if (emotion == null) return _sendError(request, 'Missing emotion parameter');
         onEmotionSet?.call(emotion);
         _sendJson(request, {'success': true, 'emotion': emotion});
+
+      case 'set_mode':
+        final mode = data['mode'] as String?;
+        if (mode == null) return _sendError(request, 'Missing mode parameter');
+        final validModes = ['normal', 'expressive', 'dance', 'subtle'];
+        if (!validModes.contains(mode)) {
+          return _sendError(request, 'Invalid mode. Valid: ${validModes.join(", ")}');
+        }
+        onGestureModeChanged?.call(mode);
+        _sendJson(request, {'success': true, 'mode': mode});
 
       case 'get_status':
         final prefs = PreferencesService();
