@@ -496,12 +496,7 @@ class BootstrapService {
       );
 
       // 2. AGGRESSIVE CLEANUP (Save ~300-400 MB)
-      await NativeBridge.runInProot('''
-        apt-get clean && 
-        rm -rf /var/lib/apt/lists/* /var/cache/apt/* &&
-        npm cache clean --force &&
-        rm -rf /root/.npm/_cacache /root/.npm/_logs
-      ''');
+      await _performFinalCleanup();
 
       _log('✅ OpenClaw installed + heavy caches cleaned');
     } catch (e) {
