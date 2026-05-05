@@ -23,7 +23,11 @@
 
 **"Run OpenClaw fully local on your personal Android phone, private, always-on, and under your absolute control."**
 
-While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs — we took a different path. **Plawie** represents a top 1% engineering achievement: a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
+While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs & OpenClaw Gateway—we took a different path.
+
+**Plawie** represents a top 1% engineering achievement: we successfully embedded a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
+
+You simply install the app, and you immediately possess a world-class, autonomous AI agent capable of multi-step reasoning, tool execution, and native Web3 transactions, right from your pocket. Your data stays on your device. Always.
 
 ---
 
@@ -73,16 +77,19 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 
 ## 🧠 The Core Foundation: Industrial-Grade Mobile Architecture
 
+Plawie isn't just a UI wrapper; it is built on an untouchable technical foundation:
+
 ### 1. The Autonomous PRoot Gateway
 We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your Snapdragon processor. It handles 35+ local Android skills to bridge the gap between intelligence and device-level actions.
 
 ### 2. Industrial-Grade Background Stability
 Plawie is built for 24/7 autonomous operation. Unlike standard apps that die when you swipe them away:
 - **Sticky Foreground Services**: The OpenClaw engine runs as a high-priority Android service, surviving app closures and background pruning.
+- **Actionable Notifications**: Control your bot directly from the notification shade with **STOP** and **RESTART** buttons—no need to open the app.
+- **Boot Persistence**: If enabled, Plawie automatically revives your gateway and node processes the moment your phone restarts and unlocks.
 - **Proactive Self-Healing**: An intelligent watchdog monitor triggers a surgical "Auto-Repair" sequence in under 3 seconds if dependencies are missing.
 - **Hardened Bootstrap (Instant-Install)**: Setup reduced from 15 minutes to **under 40 seconds** using pre-bundled assets and parallel multi-threaded downloading.
 - **Ephemeral Build Tools**: Heavy compilers (`g++`, `python3`) are installed only when needed and purged immediately, saving over **800 MB** of disk space.
-- **Boot Persistence**: If enabled, Plawie automatically revives your gateway and node processes the moment your phone restarts and unlocks.
 
 ### 3. Native Base Web3 Logic
 Plawie is your ultimate Web3 co-pilot. We built a robust, fully native **Base (Ethereum L2)** integration directly into the app:
@@ -94,43 +101,70 @@ Plawie is your ultimate Web3 co-pilot. We built a robust, fully native **Base (E
 ### 4. Voice-First Intelligence Pipeline
 Plawie ships a complete, multi-engine voice stack that puts you in full control — no cloud dependency required:
 - **4 TTS Engines** — Switch between Piper (fully offline), Android Native TTS, ElevenLabs, or OpenAI TTS.
+- **Speech Speed Control** — Smooth 0.5×–2.0× speed slider, persisted across sessions.
 - **Continuous Mode** — After TTS finishes speaking, the mic automatically restarts.
-- **Wake Word "Plawie"** — Say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine.
+- **Configurable Silence Timeout** — 1s–15s slider controls how long Plawie waits before auto-submitting.
+- **Wake Word "Plawie"** — say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine.
 
 ### 5. Video Vision AI
 Your agent can see the world around you:
-- **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM (LLaVA / Qwen2-VL).
+- **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM or cloud Gemini.
 - **📹 Video Clips** — Record 2–30s clips, extract key frames via PRoot `ffmpeg`, analyse each frame with the local vision model, then produce a coherent summary — 100% offline.
+- **Cloud Fallback** — When no local vision model is active, video is sent inline to Gemini 1.5 / 2.0 Pro.
+
+### 6. Integrated Agent Hub (Ollama)
+Plawie includes a full, native **Ollama Hub** running inside the PRoot sandbox:
+- **Zero-Config Setup**: One-tap installation of the official Ollama Linux ARM64 binary.
+- **GGUF Bridging**: Instantly register existing GGUF models as Ollama models using our "Zero-Copy" sync bridge.
+- **Library Discovery**: Pull any model from the Ollama Library directly onto your device.
+- **☁️ Ollama Cloud Models**: Run massive frontier models (Kimi K2.5, DeepSeek V3.1 671B) for free on ollama.com servers.
 
 ---
 
-## 🎭 The UI Layer: An Airi-Style Experience
+## 🎭 The UI Layer: An Airi-Style Immersive Experience
 
-Once we perfected the untouchable local OpenClaw foundation, we layered on an incredibly immersive, **Airi-style procedural companion experience**.
+Once we perfected the foundation, we created an interface worthy of the technology.
 
 ### 🌌 Transparent Glassmorphic Overlay
-Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay. Talk to your agent while scrolling X/Twitter or reading emails.
+Break free from the confines of the app. Plawie utilizes a custom system alert window to project your 3D companion as a transparent, floating overlay.
 
 ### 👁️ Procedural Realism & Ambience
 Our WebGL-based VRM avatars are driven by a custom mathematical engine, not pre-baked animations:
 - **Ambient World Engine:** Procedural wind physics injected into VRM spring bones. Hair and clothing ripple dynamically.
 - **Saccadic Gaze & Breath:** Independent neck and eye-tracking using sum-of-sines algorithms to give a hyper-realistic, "alive" look.
-- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer ensures mathematically perfect lip-sync.
+- **Seamless Lip-Sync:** A highly optimized bidirectional bridge between the Flutter TTS isolate and the Three.js WebGL renderer.
+- **Behavioral Reactions:** As the gateway thinks or executes tools, the avatar physically poses and reacts.
 
 ---
 
 ## 🛠️ Agent Skills System: Three-Layer Architecture
 
+Plawie implements a clean architecture that separates *what* the agent can do from *how*:
+
 | Concept | What it is | Where it lives |
 |---------|-----------|----------------|
-| **Skills** | npm packages for new *capabilities* (weather, GitHub, coding-agent…) | `~/.openclaw/node_modules/@openclaw/` |
-| **Tools** | OS-level primitives the agent is *permitted to invoke* (browser, files, search…). | `openclaw.json → tools.allow[]` |
-| **Custom App Skills** | Flutter-native skills wired directly into Android (avatar, device hardware) | `AgentSkillServer` on `127.0.0.1:8765` |
+| **Skills** | npm packages for capabilities (weather, GitHub...) | `~/.openclaw/node_modules/@openclaw/` |
+| **Tools** | OS-level primitives (browser, files, search...). | `openclaw.json → tools.allow[]` |
+| **Custom App Skills** | Flutter-native skills wired directly into Android | `AgentSkillServer` on `127.0.0.1:8765` |
 
 ### Custom App Skills (Device-Native)
-- **🎭 `avatar-control`** — Control the live VRM companion from the agent (gestures, emotions, models).
+- **🎭 `avatar-control`** — Control the live VRM companion (gestures, emotions, models).
 - **🔊 `tts-voice`** — Switch the speech engine or voice mid-conversation.
-- **📱 `device-node`** — Direct hardware access: camera, vibration, flashlight, sensors.
+- **📱 `device-node`** — Hardware access: camera, vibration, flashlight, sensors.
+
+#### Adding Your Own Custom Skill
+```dart
+// 1. Add creator to SkillsService._loadBundledSkills():
+_createMyCustomSkill(),
+
+// 2. Create the skill definition:
+Skill _createMyCustomSkill() => Skill(
+  id: 'my-skill',
+  name: 'My Skill',
+  category: 'custom', 
+  ...
+);
+```
 
 ---
 
@@ -141,7 +175,7 @@ Plawie is surgically optimized for mobile efficiency using a 4-tier architecture
 ```mermaid
 graph TD
     subgraph "Layer 1: The Shell (Flutter Isolate)"
-        A[Native Chat & UI] --> B[SkillsService]
+        A[Native Chat & Audio UI] --> B[SkillsService]
         A --> C[Base SDK — Native Keypairs]
         A --> D[TtsService — Piper/Native/11Labs]
         A --> W[Wake Word — Vosk Offline ASR]
@@ -172,13 +206,46 @@ graph TD
 
 ## 🧠 Local LLM — Free On-Device Inference
 
-Plawie runs a **completely free, offline LLM** directly on your device via the **fllama NDK plugin**.
+Plawie runs a **completely free, offline LLM** directly on your device via the **fllama NDK plugin**. No PRoot, no HTTP server, no internet required after model download.
 
 | Device Tier | RAM | SoC | Speed (1.5B Q4_K_M) |
 |-------------|-----|-----|----------------------|
 | Minimum | 6 GB | SD 7 Gen 1 | ~4–8 tok/s |
 | Recommended | 12 GB | SD 8 Gen 2 | ~15–22 tok/s |
 | Optimal | 16 GB | SD 8 Elite | ~22–35 tok/s |
+
+---
+
+## 🌙 MoonPay Agents — Agent Banking
+
+MoonPay gives your AI a **verified bank account and 30+ financial skills** via the `@moonpay/cli` MCP server.
+
+```bash
+# Setup (one-time, run on your device via OpenClaw terminal)
+npm install -g @moonpay/cli
+mp login
+mp wallet create MyWallet
+mp skill install
+```
+
+---
+
+## 📦 Deployment & Setup
+
+### Prerequisites
+- **Android Device**: API 29+ (Android 10+). Snapdragon 8 Gen 1+ with 8 GB+ RAM recommended.
+- **Flutter SDK**: 3.24+
+- **Android NDK**: 28.2.13676358
+
+### Build Instructions
+```bash
+# 1. Clone & install Flutter dependencies
+git clone https://github.com/vmbbz/plawie.git
+flutter pub get
+
+# 2. Build for production (ARM64)
+flutter build apk --release --target-platform android-arm64
+```
 
 ---
 
