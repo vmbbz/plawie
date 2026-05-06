@@ -60,14 +60,14 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 <div align="center">
   <table>
     <tr>
-      <td width="33%"><img src="assets/images/chat_main.jpg" alt="Chat Interface"/><br/><sub><b>Immersive Chat</b></sub></td>
-      <td width="33%"><img src="assets/images/dashboard.jpg" alt="Main Dashboard"/><br/><sub><b>Real-time Dashboard</b></sub></td>
-      <td width="33%"><img src="assets/images/avatar_gemini.jpg" alt="3D Avatar"/><br/><sub><b>VRM Companion</b></sub></td>
+      <td width="33%"><img src="https://raw.githubusercontent.com/vmbbz/plawie/main/assets/images/chat_main.jpg" alt="Chat Interface" style="max-width: 100%;"/><br/><sub><b>Immersive Chat</b></sub></td>
+      <td width="33%"><img src="https://raw.githubusercontent.com/vmbbz/plawie/main/assets/images/dashboard.jpg" alt="Main Dashboard" style="max-width: 100%;"/><br/><sub><b>Real-time Dashboard</b></sub></td>
+      <td width="33%"><img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/gateway_logs.jpg" alt="Gateway Logs" style="max-width: 100%;"/><br/><sub><b>Real-time Logs</b></sub></td>
     </tr>
     <tr>
-      <td width="33%"><img src="assets/images/agent_tools.jpg" alt="Agent Tools"/><br/><sub><b>35+ Native Skills</b></sub></td>
-      <td width="33%"><img src="assets/images/local_llm.jpg" alt="Local LLM"/><br/><sub><b>Offline Inference</b></sub></td>
-      <td width="33%"><img src="assets/images/agent_fleet.jpg" alt="Agent Fleet"/><br/><sub><b>Multi-Agent Fleet</b></sub></td>
+      <td width="33%"><img src="https://raw.githubusercontent.com/vmbbz/plawie/main/assets/images/agent_tools.jpg" alt="Agent Tools" style="max-width: 100%;"/><br/><sub><b>35+ Native Skills</b></sub></td>
+      <td width="33%"><img src="https://raw.githubusercontent.com/vmbbz/plawie/main/assets/images/local_llm.jpg" alt="Local LLM" style="max-width: 100%;"/><br/><sub><b>Offline Inference</b></sub></td>
+      <td width="33%"><img src="https://raw.githubusercontent.com/vmbbz/plawie/main/assets/images/agent_fleet.jpg" alt="Agent Fleet" style="max-width: 100%;"/><br/><sub><b>Multi-Agent Fleet</b></sub></td>
     </tr>
   </table>
 </div>
