@@ -212,7 +212,7 @@ graph TD
         A --> C[Base SDK — Native Keypairs]
         A --> D[TtsService — Piper/Native/11Labs]
         A --> W[Wake Word — Vosk Offline ASR]
-        Z["Bootstrap Engine\nParallel Downloader + Pre-bundle"] --> E
+        Z[Bootstrap Engine Parallel Downloader + Pre-bundle] --> E
     end
 
     subgraph "Layer 2: The Core (Aegis Native Engine)"
@@ -220,7 +220,7 @@ graph TD
         F --> G[35+ Device Skills Executor]
         F -- "GET /api/tools" --> K
         L[fllama NDK — llama.cpp ARM64]
-        M["Watchdog Monitor\nDiagnostics + Auto-Heal"] --> F
+        M[Watchdog Monitor Diagnostics + Auto-Heal] --> F
     end
 
     subgraph "Layer 3: The Presence (Three.js)"
