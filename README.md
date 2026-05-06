@@ -2,7 +2,7 @@
 
 <div align="center">
   <p align="center">
-    <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
+    <img src="assets/images/aegis_preview.jpg" alt="Aegis Preview" width="100%"/>
   </p>
   
   <br/>
