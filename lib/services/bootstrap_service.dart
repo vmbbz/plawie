@@ -12,8 +12,10 @@ import 'dart:io';
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(minutes: 10), // Rootfs can be large
+    receiveTimeout: const Duration(minutes: 10),
   ));
+
+  void Function(SetupState)? onProgress;
 
   void _log(String message, {Object? error, StackTrace? stackTrace}) {
     developer.log(message, name: 'BootstrapService', error: error, stackTrace: stackTrace);
@@ -160,7 +162,7 @@ class BootstrapService {
     // 3. Extract pre-bundled OpenClaw
     _emit(SetupStep.installingOpenClaw, 0.6, 'Extracting atomic OpenClaw bundle...');
     final filesDir = await NativeBridge.getFilesDir();
-    await _extractPrebundledOpenClawAegis(filesDir);
+    await _extractPrebundledOpenClawAegis(onProgress, filesDir);
 
     // 4. Repair config
     _emit(SetupStep.cleanup, 0.9, 'Hardening Aegis configuration...');
@@ -382,6 +384,10 @@ class BootstrapService {
 
   void _updateSetupNotification(String message, {int progress = -1}) {
     NativeBridge.updateSetupNotification(message, progress: progress);
+  }
+
+  void _emit(SetupStep step, double progress, String message) {
+    onProgress?.call(SetupState(step: step, progress: progress, message: message));
   }
 
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {

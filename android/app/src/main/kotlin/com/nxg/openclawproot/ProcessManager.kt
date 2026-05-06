@@ -645,6 +645,62 @@ class ProcessManager(
 
     fun getGlibcDir(): String = "$filesDir/glibc"
     fun getGlibcLoader(): String = "${getGlibcDir()}/ld-linux-aarch64.so.1"
+
+    fun installGlibcAndNodeWrapper(onProgress: (String) -> Unit): Boolean {
+        return try {
+            onProgress("Extracting glibc-runner...")
+            extractAsset("glibc-runner.tar.gz", "glibc")
+
+            onProgress("Extracting Node.js...")
+            extractAsset("node-v22.14.0-linux-arm64.tar.xz", "node")
+
+            Runtime.getRuntime().exec("chmod -R 755 ${context.filesDir}/glibc")
+            Runtime.getRuntime().exec("chmod -R 755 ${context.filesDir}/node")
+
+            Log.i("ProcessManager", "✅ glibc + Node.js wrapper installed")
+            true
+        } catch (e: Exception) {
+            Log.e("ProcessManager", "Failed to install glibc/Node wrapper", e)
+            false
+        }
+    }
+
+    private fun extractAsset(assetName: String, targetDirName: String) {
+        val targetDir = File(context.filesDir, targetDirName)
+        if (targetDir.exists()) return
+
+        targetDir.mkdirs()
+
+        context.assets.open(assetName).use { input ->
+            java.io.FileOutputStream(File(context.filesDir, assetName)).use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        Runtime.getRuntime().exec("tar -xf ${context.filesDir}/$assetName -C ${context.filesDir}")
+    }
+
+    fun extractGlibcBridge(tarPath: String): Boolean {
+        return try {
+            Runtime.getRuntime().exec("tar -xzf $tarPath -C ${getGlibcDir()}")
+            true
+        } catch (e: Exception) {
+            Log.e("ProcessManager", "extractGlibcBridge failed", e)
+            false
+        }
+    }
+
+    fun purgeLegacyRootfs(): Int {
+        return try {
+            val legacy = File("$filesDir/rootfs/ubuntu")
+            if (legacy.exists()) {
+                legacy.deleteRecursively()
+                1500 // approximate MB reclaimed
+            } else 0
+        } catch (e: Exception) {
+            0
+        }
+    }
     
     fun buildNativeCommand(command: String, isGateway: Boolean = false): List<String> {
         val glibcDir = getGlibcDir()
@@ -766,6 +822,17 @@ class ProcessManager(
         } catch (e: Exception) {
             Log.e("ProcessManager", "❌ Failed to start Aegis native gateway", e)
             false
+        }
+    }
+
+    fun runInTermux(command: String): String {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            output
+        } catch (e: Exception) {
+            ""
         }
     }
 }

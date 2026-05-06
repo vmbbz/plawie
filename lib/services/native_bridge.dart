@@ -295,4 +295,12 @@ class NativeBridge {
       await _channel.invokeMethod('applyGlibcCompatPatch');
     } catch (_) {}
   }
+
+  static Future<String> runInTermux(String command) async {
+    try {
+      return await _channel.invokeMethod<String>('runInTermux', {'command': command}) ?? '';
+    } catch (e) {
+      return '';
+    }
+  }
 }

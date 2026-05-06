@@ -703,6 +703,17 @@ class MainActivity : FlutterActivity() {
                     // Logic to ensure the shim is in the correct place
                     result.success(true)
                 }
+                "runInTermux" -> {
+                    val command = call.argument<String>("command") ?: ""
+                    Thread {
+                        try {
+                            val output = processManager.runNativeSync(command)
+                            runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("TERMUX_ERROR", e.message, null) }
+                        }
+                    }.start()
+                }
                 else -> {
                     result.notImplemented()
                 }
