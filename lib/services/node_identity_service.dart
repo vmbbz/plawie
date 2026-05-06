@@ -12,7 +12,7 @@ class NodeIdentityService {
   late String _deviceId;
   late String _publicKeyBase64Url;
 
-  String get deviceId => _deviceId;
+  String get deviceId => '$_deviceId:node';
 
   /// Raw 32-byte public key encoded as base64url (no padding).
   String get publicKeyBase64Url => _publicKeyBase64Url;
@@ -80,7 +80,7 @@ class NodeIdentityService {
   }) {
     final parts = [
       nonce != null ? 'v2' : 'v1',
-      _deviceId,
+      deviceId,
       clientId,
       clientMode,
       role,
