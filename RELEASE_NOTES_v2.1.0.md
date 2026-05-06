@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/aegis_release_header.jpg" alt="Project Aegis" width="800"/>
+  <img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/aegis_release_header.jpg" alt="Project Aegis" style="max-width: 100%;" width="800"/>
 </p>
 
 # 🛡️ Project Aegis: Phase 1 (v2.1.0-beta.1)

@@ -2,7 +2,7 @@
 
 <div align="center">
   <p align="center">
-    <img src="assets/images/aegis_preview.jpg" alt="Aegis Preview" width="100%"/>
+    <img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/aegis_preview.jpg" alt="Aegis Preview" style="max-width: 100%;" width="100%"/>
   </p>
   
   <br/>
