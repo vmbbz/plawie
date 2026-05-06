@@ -133,64 +133,54 @@ class BootstrapService {
 
   /// HYBRID PHASE 1 — glibc + Node.js wrapper (AidanPark style)
   Future<void> runFullSetup({required void Function(SetupState) onProgress}) async {
+  this.onProgress = onProgress;
+
+  try {
+    // Start foreground service
     try {
-      // Start foreground service to keep app alive during setup
-      try {
-        await NativeBridge.startSetupService();
-      } catch (e) {
-        _log('Non-fatal: Setup service failed to start', error: e);
-      }
-
-      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, '🚀 Project Aegis: Initializing Hybrid Engine...', 5);
-
-      // 1. Install glibc-runner + Node.js wrapper via Kotlin
-      _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Deploying glibc + Node.js wrapper...', 20);
-      final wrapperSuccess = await NativeBridge.installGlibcAndNodeWrapper();
-      if (!wrapperSuccess) {
-        throw Exception('Failed to deploy native glibc + Node.js infrastructure.');
-      }
-      _emitProgress(onProgress, SetupStep.installingNode, 0.4, 'Native Infrastructure ready', 40);
-
-      // 2. The Great Purge (Legacy PRoot Cleanup)
-      final bool hasLegacy = await NativeBridge.isBootstrapComplete();
-      if (hasLegacy) {
-        _emitProgress(onProgress, SetupStep.cleanup, 0.5, 'Reclaiming 1.5GB of storage (Purging Legacy)...', 50);
-        final reclaimed = await NativeBridge.purgeLegacyRootfs();
-        _log('🔥 Reclaimed storage from legacy rootfs');
-      }
-
-      // 3. Extract pre-bundled OpenClaw (Atomic Extraction)
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.6, 'Extracting Atomic OpenClaw bundle...', 70);
-      final filesDir = await NativeBridge.getFilesDir();
-      final String glibcLibPath = '$filesDir/glibc/lib/node_modules';
-      
-      await _extractPrebundledOpenClawAegis(onProgress, glibcLibPath);
-
-      // 4. Repair config & Finalize
-      _emitProgress(onProgress, SetupStep.cleanup, 0.9, 'Hardening Aegis configuration...', 90);
-      await _repairConfigAegis(filesDir);
-      
-      // Mark as complete
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.setupComplete = true;
-
-      if (prefs.dashboardUrl == null || prefs.dashboardUrl!.isEmpty) {
-        prefs.dashboardUrl = 'http://127.0.0.1:18789';
-      }
-
-      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Aegis Migration Complete! Ready to launch.', 100);
-      NativeBridge.stopSetupService();
-
-    } catch (e, stack) {
-      NativeBridge.stopSetupService();
-      _log('Aegis Setup failed', error: e, stackTrace: stack);
-      onProgress(SetupState(
-        step: SetupStep.error,
-        error: 'Aegis Setup failed: $e',
-      ));
+      await NativeBridge.startSetupService();
+    } catch (e) {
+      _log('Non-fatal: Setup service failed to start', error: e);
     }
+
+    _emit(SetupStep.checkingStatus, 0.0, '🚀 Project Aegis: Initializing Hybrid Engine...');
+
+    // 1. Install glibc-runner + Node.js wrapper (Phase 1 hybrid)
+    _emit(SetupStep.installingInfra, 0.1, 'Deploying glibc + Node.js wrapper...');
+    final wrapperSuccess = await NativeBridge.installGlibcAndNodeWrapper();
+    if (!wrapperSuccess) {
+      throw Exception('Failed to deploy native glibc + Node.js infrastructure');
+    }
+    _emit(SetupStep.installingInfra, 0.4, 'Native infrastructure ready');
+
+    // 2. Purge legacy Proot rootfs (1.5GB+ savings)
+    _emit(SetupStep.cleanup, 0.5, 'Reclaiming legacy storage (1.5GB purge)...');
+    await NativeBridge.purgeLegacyRootfs();
+
+    // 3. Extract pre-bundled OpenClaw
+    _emit(SetupStep.installingOpenClaw, 0.6, 'Extracting atomic OpenClaw bundle...');
+    final filesDir = await NativeBridge.getFilesDir();
+    await _extractPrebundledOpenClawAegis(filesDir);
+
+    // 4. Repair config
+    _emit(SetupStep.cleanup, 0.9, 'Hardening Aegis configuration...');
+    await _repairConfigAegis(filesDir);
+
+    // Finalize
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.setupComplete = true;
+    prefs.dashboardUrl = prefs.dashboardUrl ?? 'http://127.0.0.1:18789';
+
+    _emit(SetupStep.complete, 1.0, 'Aegis Migration Complete! Ready to launch.');
+    NativeBridge.stopSetupService();
+
+  } catch (e, stack) {
+    NativeBridge.stopSetupService();
+    _log('Aegis Setup failed', error: e, stackTrace: stack);
+    onProgress(SetupState(step: SetupStep.error, error: 'Aegis Setup failed: $e'));
   }
+}
 
   /// Programmatically repairs a corrupted OpenClaw installation.
   /// This deletes the broken library files and triggers a fresh global install.
