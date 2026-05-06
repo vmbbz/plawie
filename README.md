@@ -16,9 +16,13 @@
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-00C853.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
   [![Release](https://img.shields.io/github/v/release/vmbbz/plawie?style=for-the-badge&color=7C4DFF)](https://github.com/vmbbz/plawie/releases/latest)
+  [![Project Aegis](https://img.shields.io/badge/Preview-Project_Aegis-FF3D00.svg?style=for-the-badge&logo=shield-halved)](https://github.com/vmbbz/plawie/tree/feat/project-aegis)
+  [![Local LLM](https://img.shields.io/badge/LLM-Local_Inference-00E5FF.svg?style=for-the-badge&logo=openai)](https://github.com/vmbbz/plawie)
+  [![Sovereign AI](https://img.shields.io/badge/Sovereign-AI-FDD835.svg?style=for-the-badge&logo=target)](https://github.com/vmbbz/plawie)
   [![Flutter](https://img.shields.io/badge/Flutter-3.24+-02569B.svg?style=for-the-badge&logo=flutter)](https://flutter.dev)
   [![Node.js](https://img.shields.io/badge/Node.js-22+-339933.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
   [![Base](https://img.shields.io/badge/Base-Mainnet-0052FF.svg?style=for-the-badge&logo=base)](https://base.org)
+  [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge)](https://github.com/vmbbz/plawie/graphs/commit-activity)
 </div>
 
 ---
@@ -218,7 +222,7 @@ graph TD
         A --> C[Base SDK — Native Keypairs]
         A --> D[TtsService — Piper/Native/11Labs]
         A --> W[Wake Word — Vosk Offline ASR]
-        Z[<b>Bootstrap Engine</b><br/>Parallel Downloader + Pre-bundle] --> E
+        Z["Bootstrap Engine\nParallel Downloader + Pre-bundle"] --> E
     end
 
     subgraph "Layer 2: The Core (PRoot + Ubuntu)"
@@ -226,7 +230,7 @@ graph TD
         F --> G[35+ Device Skills Executor]
         F -- "GET /api/tools" --> K
         L[fllama NDK — llama.cpp ARM64]
-        M[<b>Watchdog Monitor</b><br/>Diagnostics + Auto-Heal] --> F
+        M["Watchdog Monitor\nDiagnostics + Auto-Heal"] --> F
     end
 
     subgraph "Layer 3: The Presence (Three.js)"
