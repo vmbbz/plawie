@@ -643,6 +643,7 @@ PARAMETER num_batch 512
     
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
+    config['gateway']['nodes']['autoApprove'] = true;
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [
       'camera.snap', 'camera.clip', 'camera.list',

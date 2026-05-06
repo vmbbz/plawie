@@ -4,9 +4,9 @@ import 'package:cryptography/cryptography.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NodeIdentityService {
-  static const _keyPrivate = 'node_ed25519_private';
-  static const _keyPublic = 'node_ed25519_public';
-  static const _keyDeviceId = 'node_device_id';
+  static const _keyPrivate = 'openclaw_device_ed25519_private';
+  static const _keyPublic = 'openclaw_device_ed25519_public';
+  static const _keyDeviceId = 'openclaw_device_id';
 
   late SimpleKeyPair _keyPair;
   late String _deviceId;
@@ -24,18 +24,25 @@ class NodeIdentityService {
     final storedDeviceId = prefs.getString(_keyDeviceId);
 
     if (storedPrivate != null && storedPublic != null && storedDeviceId != null) {
-      final privateBytes = base64Decode(storedPrivate);
-      final publicBytes = base64Decode(storedPublic);
-      _keyPair = SimpleKeyPairData(
-        privateBytes,
-        publicKey: SimplePublicKey(publicBytes, type: KeyPairType.ed25519),
-        type: KeyPairType.ed25519,
-      );
-      _deviceId = storedDeviceId;
-      _publicKeyBase64Url = _toBase64Url(publicBytes);
-    } else {
-      await _generateAndStore(prefs);
+      // Restore existing keys (pad safely to prevent FormatException: Invalid length)
+      String padBase64(String s) => s.padRight(s.length + (4 - s.length % 4) % 4, '=');
+      
+      try {
+        _deviceId = storedDeviceId;
+        final privateBytes = base64Url.decode(padBase64(storedPrivate));
+        final publicBytes = base64Url.decode(padBase64(storedPublic));
+        _publicKeyBase64Url = _toBase64Url(publicBytes);
+        _keyPair = SimpleKeyPairData(
+          privateBytes,
+          publicKey: SimplePublicKey(publicBytes, type: KeyPairType.ed25519),
+          type: KeyPairType.ed25519,
+        );
+        return;
+      } catch (e) {
+        // Fall through to generate new keys if corrupted
+      }
     }
+    await _generateAndStore(prefs);
   }
 
   Future<void> _generateAndStore(SharedPreferences prefs) async {
@@ -55,8 +62,8 @@ class NodeIdentityService {
     _publicKeyBase64Url = _toBase64Url(publicBytes);
 
     final privateBytes = await _keyPair.extractPrivateKeyBytes();
-    await prefs.setString(_keyPrivate, base64Encode(privateBytes));
-    await prefs.setString(_keyPublic, base64Encode(publicBytes));
+    await prefs.setString(_keyPrivate, _toBase64Url(privateBytes));
+    await prefs.setString(_keyPublic, _publicKeyBase64Url);
     await prefs.setString(_keyDeviceId, _deviceId);
   }
 
