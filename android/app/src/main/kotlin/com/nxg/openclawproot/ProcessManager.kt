@@ -458,7 +458,7 @@ class ProcessManager(
         // so we don't need to export it again in the shell command.
         // Redirect stdout/stderr to gateway.log so the log streaming thread
         // can pick up output (including the dashboard token URL).
-        val gatewayCmd = "mkdir -p /root/.openclaw && openclaw gateway --verbose > /root/.openclaw/gateway.log 2>&1"
+        val gatewayCmd = "mkdir -p /root/.openclaw && openclaw gateway --verbose --mode local --allow-unconfigured > /root/.openclaw/gateway.log 2>&1"
         
         return try {
             android.util.Log.i("ProcessManager", "Starting gateway (output → gateway.log)")
