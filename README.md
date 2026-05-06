@@ -26,7 +26,10 @@
 ## 🚀 PREVIEW: Project Aegis (v2.1.0-beta)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/aegis_preview.jpg" alt="Aegis Preview" style="max-width: 100%;" width="100%"/>
+  <img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/aegis_preview.jpg" 
+       alt="Aegis Preview" 
+       style="max-width: 500px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 4px 16px rgba(0,0,0,0.5);" 
+       width="500"/>
 </p>
 
 We are currently stabilizing a massive architectural shift called **Project Aegis**, which will soon replace the PRoot layer with a native glibc engine:
