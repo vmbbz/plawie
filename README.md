@@ -1,11 +1,12 @@
 # Plawie — Your Pocket OpenClaw
 
 <div align="center">
-  <img src="assets/app_icon_official.svg" alt="Plawie Logo" width="180"/>
+  <p align="center">
+    <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
+  </p>
   
   <br/>
   
-  <h1>🌌 Plawie</h1>
   <h3>The World's Most Powerful Autonomous Agent Experience for Android</h3>
   
   **The full OpenClaw Agentic Experience — fully local, in your pocket.**  
@@ -20,9 +21,15 @@
   [![Base](https://img.shields.io/badge/Base-Mainnet-0052FF.svg?style=for-the-badge&logo=base)](https://base.org)
 </div>
 
-<p align="center">
-  <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
-</p>
+---
+
+## 🚀 PREVIEW: Project Aegis (v2.1.0-beta)
+We are currently stabilizing a massive architectural shift called **Project Aegis**, which will soon replace the PRoot layer with a native glibc engine:
+- **⚡ Sub-10s Cold Boot** — Native glibc execution bypasses all container overhead.
+- **💾 Reclaim 1.5GB Storage** — Total removal of the legacy Ubuntu rootfs.
+- **🔋 Battery Optimized** — No more background PRoot processes draining power.
+
+*The Aegis Beta is currently available as a pre-release for developers and early testers.*
 
 ---
 
