@@ -24,6 +24,11 @@
 ---
 
 ## 🚀 PREVIEW: Project Aegis (v2.1.0-beta)
+
+<p align="center">
+  <img src="assets/images/aegis_preview.jpg" alt="Aegis Preview" width="100%"/>
+</p>
+
 We are currently stabilizing a massive architectural shift called **Project Aegis**, which will soon replace the PRoot layer with a native glibc engine:
 - **⚡ Sub-10s Cold Boot** — Native glibc execution bypasses all container overhead.
 - **💾 Reclaim 1.5GB Storage** — Total removal of the legacy Ubuntu rootfs.
