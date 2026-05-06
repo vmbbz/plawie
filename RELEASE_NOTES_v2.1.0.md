@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/aegis_release_header.jpg" alt="Project Aegis" width="800"/>
+</p>
+
 # 🛡️ Project Aegis: Phase 1 (v2.1.0-beta.1)
 
 Welcome to the future of Plawie. The v2.1.0 update marks the most significant architectural evolution since the project's inception. We have successfully migrated from a legacy PRoot-based Ubuntu rootfs to a high-performance **Aegis Native glibc Engine**.
