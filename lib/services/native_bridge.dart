@@ -245,4 +245,54 @@ class NativeBridge {
   static Future<bool> requestStoragePermission() async {
     return await _channel.invokeMethod<bool>('requestStoragePermission') ?? false;
   }
+
+  // ── Aegis Native Runner (Phase 1) ──────────────────────────────────────────
+
+  static Future<String> runNative(String command) async {
+    return await _channel.invokeMethod('runNative', {'command': command});
+  }
+
+  static Future<bool> startGatewayNative() async {
+    return await _channel.invokeMethod<bool>('startGatewayNative') ?? false;
+  }
+
+  static Future<bool> isGatewayRunningNative() async {
+    return await _channel.invokeMethod<bool>('isGatewayRunningNative') ?? false;
+  }
+
+  static Future<bool> extractGlibcBridge(String tarPath) async {
+    return await _channel.invokeMethod<bool>('extractGlibcBridge', {'tarPath': tarPath}) ?? false;
+  }
+
+  static Future<int> purgeLegacyRootfs() async {
+    return await _channel.invokeMethod<int>('purgeLegacyRootfs') ?? 0;
+  }
+
+  static Future<bool> isAegisBootstrapComplete() async {
+    return await _channel.invokeMethod<bool>('isAegisBootstrapComplete') ?? false;
+  }
+
+  // ── Grok Unified Aegis Interface ──
+
+  static Future<bool> installGlibcAndNodeWrapper() async {
+    try {
+      return await _channel.invokeMethod<bool>('installGlibcAndNodeWrapper') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> startGatewayWithGlibc({required List<String> nodeArgs}) async {
+    try {
+      return await _channel.invokeMethod<bool>('startGatewayWithGlibc', {'nodeArgs': nodeArgs}) ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<void> applyGlibcCompatPatch() async {
+    try {
+      await _channel.invokeMethod('applyGlibcCompatPatch');
+    } catch (_) {}
+  }
 }

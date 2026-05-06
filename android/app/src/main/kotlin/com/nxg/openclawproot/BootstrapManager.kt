@@ -1416,4 +1416,123 @@ os.networkInterfaces = () => ({});
     fun isOllamaInstalled(): Boolean {
         return File("$rootfsDir/usr/local/bin/ollama").exists()
     }
+
+    // ================================================================
+    // AEGIS NATIVE BOOTSTRAP — Phase 1
+    // Handles the lightweight glibc-bridge extraction and legacy cleanup.
+    // ================================================================
+
+    fun getGlibcDir(): String = "$filesDir/glibc"
+
+    fun isAegisBootstrapComplete(): Boolean {
+        val glibcDir = File(getGlibcDir())
+        val ldLoader = File(glibcDir, "ld-linux-aarch64.so.1")
+        val nodeBin = File(glibcDir, "bin/node")
+        return glibcDir.exists() && ldLoader.exists() && nodeBin.exists()
+    }
+
+    /**
+     * The Great Purge: Reclaims 1.5GB by deleting the legacy PRoot rootfs.
+     */
+    fun purgeLegacyRootfs(): Long {
+        val rootfs = File(rootfsDir)
+        if (!rootfs.exists()) return 0
+        
+        val size = getFolderSize(rootfs)
+        deleteRecursively(rootfs)
+        return size
+    }
+
+    private fun getFolderSize(file: File): Long {
+        var size: Long = 0
+        if (file.isDirectory) {
+            file.listFiles()?.forEach { size += getFolderSize(it) }
+        } else {
+            size = file.length()
+        }
+        return size
+    }
+
+    /**
+     * Extracts the Atomic Glibc Bridge package.
+     */
+    fun extractGlibcBridge(tarPath: String) {
+        val destDir = File(getGlibcDir())
+        destDir.mkdirs()
+
+        FileInputStream(tarPath).use { fis ->
+            BufferedInputStream(fis).use { bis ->
+                GZIPInputStream(bis).use { gis ->
+                    TarArchiveInputStream(gis).use { tis ->
+                        var entry = tis.nextEntry
+                        while (entry != null) {
+                            val outFile = File(destDir, entry.name)
+                            if (entry.isDirectory) {
+                                outFile.mkdirs()
+                            } else if (entry.isSymbolicLink) {
+                                try {
+                                    if (outFile.exists()) outFile.delete()
+                                    outFile.parentFile?.mkdirs()
+                                    Os.symlink(entry.linkName, outFile.absolutePath)
+                                } catch (_: Exception) {}
+                            } else {
+                                outFile.parentFile?.mkdirs()
+                                FileOutputStream(outFile).use { fos ->
+                                    tis.copyTo(fos)
+                                }
+                                outFile.setReadable(true, false)
+                                outFile.setExecutable(true, false)
+                            }
+                            entry = tis.nextEntry
+                        }
+                    }
+                }
+            }
+        }
+    /**
+     * AEGIS: Install glibc-runner + Node.js wrapper (AidanPark style)
+     */
+    fun installGlibcAndNodeWrapper(): Boolean {
+        return try {
+            Log.i("BootstrapManager", "Installing Aegis Native Infrastructure...")
+            
+            // 1. Extract glibc-runner bridge
+            extractAsset("glibc-runner.tar.gz", "glibc")
+
+            // 2. Extract Node.js linux-arm64
+            extractAsset("node-v22.14.0-linux-arm64.tar.xz", "node")
+
+            // 3. Set permissions
+            val glibcDir = getGlibcDir()
+            val nodeDir = "$filesDir/node"
+            
+            Runtime.getRuntime().exec(arrayOf("sh", "-c", "chmod -R 755 $glibcDir && chmod -R 755 $nodeDir")).waitFor()
+
+            Log.i("BootstrapManager", "✅ Aegis Native Infrastructure ready")
+            true
+        } catch (e: Exception) {
+            Log.e("BootstrapManager", "❌ Failed to install Aegis bridge", e)
+            false
+        }
+    }
+
+    private fun extractAsset(assetName: String, targetDirName: String) {
+        val targetDir = File(filesDir, targetDirName)
+        if (targetDir.exists()) return
+
+        targetDir.mkdirs()
+        
+        val tempAssetFile = File(filesDir, "tmp/$assetName")
+        tempAssetFile.parentFile?.mkdirs()
+
+        context.assets.open(assetName).use { input ->
+            FileOutputStream(tempAssetFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        // Use native tar for high-speed extraction
+        val cmd = "tar -xf ${tempAssetFile.absolutePath} -C $filesDir && rm ${tempAssetFile.absolutePath}"
+        Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd)).waitFor()
+    }
 }

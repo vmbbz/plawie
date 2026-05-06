@@ -636,5 +636,132 @@ class ProcessManager(
         } catch (e: Exception) {
             false
         }
+    // ================================================================
+    // AEGIS NATIVE MODE — Phase 1 Migration
+    // Bypasses PRoot and executes commands directly using glibc-runner.
+    // ================================================================
+
+    fun getGlibcDir(): String = "$filesDir/glibc"
+    fun getGlibcLoader(): String = "${getGlibcDir()}/ld-linux-aarch64.so.1"
+    
+    fun buildNativeCommand(command: String, isGateway: Boolean = false): List<String> {
+        val glibcDir = getGlibcDir()
+        val ldLoader = getGlibcLoader()
+        val nodePath = "$glibcDir/bin/node"
+        
+        // Basic environment for glibc execution
+        val ldLibraryPath = "$glibcDir/lib:$glibcDir/usr/lib:$nativeLibDir"
+        
+        // We use the glibc loader to run node directly
+        // Format: ld-linux.so --library-path <path> <binary> <args>
+        val cmd = mutableListOf(
+            ldLoader,
+            "--library-path", ldLibraryPath,
+            nodePath
+        )
+
+        if (isGateway) {
+            cmd.addAll(listOf(
+                "--require", "$glibcDir/glibc-compat.js",
+                "$glibcDir/lib/node_modules/openclaw/bin/openclaw.js",
+                "gateway", "--verbose"
+            ))
+        } else {
+            // For general commands, we wrap them in bash if needed, 
+            // but ideally we run them via node/npm
+            cmd.addAll(command.split(" "))
+        }
+
+        return cmd
+    }
+
+    fun runNativeSync(command: String, timeoutSeconds: Long = 60): String {
+        val cmd = buildNativeCommand(command)
+        val pb = ProcessBuilder(cmd)
+        pb.environment().clear()
+        
+        // Inject critical glibc environment
+        val glibcDir = getGlibcDir()
+        pb.environment().put("HOME", "/data/data/${context.packageName}/files/home")
+        pb.environment().put("TMPDIR", "$filesDir/tmp")
+        pb.environment().put("LD_LIBRARY_PATH", "$glibcDir/lib:$glibcDir/usr/lib:$nativeLibDir")
+        
+        pb.redirectErrorStream(true)
+        val process = pb.start()
+        val output = process.inputStream.bufferedReader().readText()
+        process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+        
+        if (process.exitValue() != 0) {
+            throw RuntimeException("Native command failed: $output")
+        }
+        return output
+    }
+
+    fun startGatewayNative(): Boolean {
+        return try {
+            Log.i("ProcessManager", "Starting Aegis Native Gateway...")
+            val cmd = buildNativeCommand("", isGateway = true)
+            val pb = ProcessBuilder(cmd)
+            pb.environment().clear()
+            
+            val glibcDir = getGlibcDir()
+            pb.environment().put("HOME", homeDir)
+            pb.environment().put("TMPDIR", tmpDir)
+            pb.environment().put("LD_LIBRARY_PATH", "$glibcDir/lib:$glibcDir/usr/lib:$nativeLibDir")
+            pb.environment().put("NODE_OPTIONS", "--require $glibcDir/glibc-compat.js")
+            
+            // Redirect to log for streaming
+            val logFile = File(glibcDir, "gateway.log")
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+            pb.redirectError(ProcessBuilder.Redirect.appendTo(logFile))
+            
+            pb.start()
+            startLogStreaming(null)
+            true
+        } catch (e: Exception) {
+            Log.e("ProcessManager", "Failed to start native gateway", e)
+            false
+        }
+    }
+
+    fun isGatewayRunningNative(): Boolean {
+        return try {
+            // Check for node processes running the gateway script
+            val pb = ProcessBuilder("pgrep", "-f", "openclaw.js")
+            val process = pb.start()
+            process.waitFor()
+            process.exitValue() == 0
+        } catch (e: Exception) {
+            false
+        }
+    fun startGatewayWithGlibc(nodeArgs: List<String>): Boolean {
+        return try {
+            Log.i("ProcessManager", "🚀 Starting Aegis Native Gateway with args: $nodeArgs")
+            val cmd = buildNativeCommand("", isGateway = true)
+            // Add any extra args from Flutter
+            val fullCmd = cmd.toMutableList()
+            fullCmd.addAll(nodeArgs)
+            
+            val pb = ProcessBuilder(fullCmd)
+            pb.environment().clear()
+            
+            val glibcDir = getGlibcDir()
+            pb.environment().put("HOME", homeDir)
+            pb.environment().put("TMPDIR", tmpDir)
+            pb.environment().put("LD_LIBRARY_PATH", "$glibcDir/lib:$glibcDir/usr/lib:$nativeLibDir")
+            pb.environment().put("NODE_OPTIONS", "--require $glibcDir/glibc-compat.js")
+            
+            // Redirect to log for streaming
+            val logFile = File(glibcDir, "gateway.log")
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+            pb.redirectError(ProcessBuilder.Redirect.appendTo(logFile))
+            
+            pb.start()
+            startLogStreaming(null)
+            true
+        } catch (e: Exception) {
+            Log.e("ProcessManager", "❌ Failed to start Aegis native gateway", e)
+            false
+        }
     }
 }

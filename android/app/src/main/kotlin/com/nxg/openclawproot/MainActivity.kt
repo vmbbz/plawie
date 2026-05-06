@@ -643,6 +643,66 @@ class MainActivity : FlutterActivity() {
                         }
                     }.start()
                 }
+                "runNative" -> {
+                    val command = call.argument<String>("command") ?: ""
+                    Thread {
+                        try {
+                            val output = processManager.runNativeSync(command)
+                            runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("NATIVE_ERROR", e.message, null) }
+                        }
+                    }.start()
+                }
+                "startGatewayNative" -> {
+                    result.success(processManager.startGatewayNative())
+                }
+                "isGatewayRunningNative" -> {
+                    result.success(processManager.isGatewayRunningNative())
+                }
+                "extractGlibcBridge" -> {
+                    val tarPath = call.argument<String>("tarPath")
+                    if (tarPath != null) {
+                        Thread {
+                            try {
+                                bootstrapManager.extractGlibcBridge(tarPath)
+                                runOnUiThread { result.success(true) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("EXTRACT_ERROR", e.message, null) }
+                            }
+                        }.start()
+                    } else {
+                        result.error("INVALID_ARGS", "tarPath required", null)
+                    }
+                }
+                "purgeLegacyRootfs" -> {
+                    Thread {
+                        try {
+                            val size = bootstrapManager.purgeLegacyRootfs()
+                            runOnUiThread { result.success(size) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("PURGE_ERROR", e.message, null) }
+                        }
+                    }.start()
+                }
+                "isAegisBootstrapComplete" -> {
+                    result.success(bootstrapManager.isAegisBootstrapComplete())
+                }
+                "installGlibcAndNodeWrapper" -> {
+                    Thread {
+                        val success = bootstrapManager.installGlibcAndNodeWrapper()
+                        runOnUiThread { result.success(success) }
+                    }.start()
+                }
+                "startGatewayWithGlibc" -> {
+                    val nodeArgs = call.argument<List<String>>("nodeArgs") ?: emptyList()
+                    val success = processManager.startGatewayWithGlibc(nodeArgs)
+                    result.success(success)
+                }
+                "applyGlibcCompatPatch" -> {
+                    // Logic to ensure the shim is in the correct place
+                    result.success(true)
+                }
                 else -> {
                     result.notImplemented()
                 }

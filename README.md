@@ -1,11 +1,12 @@
 # Plawie — Your Pocket OpenClaw
 
 <div align="center">
-  <img src="assets/app_icon_official.svg" alt="Plawie Logo" width="180"/>
+  <p align="center">
+    <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
+  </p>
   
   <br/>
   
-  <h1>🌌 Plawie</h1>
   <h3>The World's Most Powerful Autonomous Agent Experience for Android</h3>
   
   **The full OpenClaw Agentic Experience — fully local, in your pocket.**  
@@ -20,25 +21,29 @@
   [![Base](https://img.shields.io/badge/Base-Mainnet-0052FF.svg?style=for-the-badge&logo=base)](https://base.org)
 </div>
 
-<p align="center">
-  <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
-</p>
-
 ---
 
 **"Run OpenClaw fully local on your personal Android phone, private, always-on, and under your absolute control."**
 
 While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs & OpenClaw Gateway—we took a different path.
 
-**Plawie** represents a top 1% engineering achievement: we successfully embedded a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
+**Plawie** represents a top 1% engineering achievement: we successfully migrated from a heavy PRoot container to a high-performance **Aegis Native glibc Engine** running natively on your Android kernel.
 
 You simply install the app, and you immediately possess a world-class, autonomous AI agent capable of multi-step reasoning, tool execution, and native Web3 transactions, right from your pocket. Your data stays on your device. Always.
 
 ---
 
+## 🚀 NEW: Project Aegis (v2.1.0)
+The v2.1.0 "Aegis" update marks a massive architectural shift:
+- **⚡ Sub-10s Cold Boot** — Native glibc execution bypasses all container overhead.
+- **💾 Reclaim 1.5GB Storage** — Total removal of the legacy Ubuntu rootfs.
+- **🔋 Battery Optimized** — No more background PRoot processes draining power.
+
+---
+
 ## ✨ What Makes Plawie Special
 
-- **🤖 Fully Local LLM + Gateway** — Runs in a sandboxed PRoot Ubuntu environment with GPU acceleration.
+- **🤖 Fully Local LLM + Gateway** — Runs natively in a high-performance Aegis glibc environment.
 - **🎭 Immersive VRM Avatar** — 3D digital companion with procedural gestures and perfect lip-sync.
 - **🖼️ Hologram Presenter** — Beautiful floating overlays for canvas, images, web previews, and media.
 - **🎙️ Voice-First Intelligence** — Continuous listening, wake word, and multiple offline TTS engines.

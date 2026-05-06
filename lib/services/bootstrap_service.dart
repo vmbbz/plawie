@@ -146,6 +146,7 @@ class BootstrapService {
     }
   }
 
+  /// HYBRID PHASE 1 — glibc + Node.js wrapper (AidanPark style)
   Future<void> runFullSetup({required void Function(SetupState) onProgress}) async {
     try {
       // Start foreground service to keep app alive during setup
@@ -155,231 +156,102 @@ class BootstrapService {
         _log('Non-fatal: Setup service failed to start', error: e);
       }
 
-      // ---------------------------------------------------------
-      // Step 0: Setup directories & Check status
-      // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, 'Checking system status...', 2);
-      await NativeBridge.setupDirs();
-      await NativeBridge.writeResolv();
+      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, '🚀 Project Aegis: Initializing Hybrid Engine...', 5);
 
-      final status = await NativeBridge.getBootstrapStatus();
-      final bool rootfsInstalled = status['binBashExists'] ?? false;
-      final bool nodeInstalled = status['nodeInstalled'] ?? false;
-      final bool bypassInstalled = status['bypassInstalled'] ?? false;
-      final bool openclawInstalled = status['openclawInstalled'] ?? false;
+      // 1. Install glibc-runner + Node.js wrapper via Kotlin
+      _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Deploying glibc + Node.js wrapper...');
+      final wrapperSuccess = await NativeBridge.installGlibcAndNodeWrapper();
+      if (!wrapperSuccess) {
+        throw Exception('Failed to deploy native glibc + Node.js infrastructure.');
+      }
+      _emitProgress(onProgress, SetupStep.installingNode, 0.4, 'Native Infrastructure ready', 40);
 
-      final arch = await NativeBridge.getArch();
+      // 2. The Great Purge (Legacy PRoot Cleanup)
+      final bool hasLegacy = await NativeBridge.isBootstrapComplete();
+      if (hasLegacy) {
+        _emitProgress(onProgress, SetupStep.cleanup, 0.5, 'Reclaiming 1.5GB of storage (Purging Legacy)...', 50);
+        final reclaimed = await NativeBridge.purgeLegacyRootfs();
+        _log('🔥 Reclaimed storage from legacy rootfs');
+      }
+
+      // 3. Extract pre-bundled OpenClaw (Atomic Extraction)
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.6, 'Extracting Atomic OpenClaw bundle...', 70);
       final filesDir = await NativeBridge.getFilesDir();
-
-      if (!rootfsInstalled) {
-        // Step 1: Get rootfs (Bundled Asset -> then Download)
-        // ---------------------------------------------------------
-        bool rootfsReady = await _extractBundledRootfs();
-        
-        if (!rootfsReady) {
-          _log('ℹ️ No bundled rootfs found, falling back to download...');
-          
-          final String rootfsUrl = AppConstants.getRootfsUrl(arch);
-          final String tarPath = '$filesDir/tmp/rootfs.tar.gz';
-
-          await _downloadParallel(
-            rootfsUrl,
-            tarPath,
-            onProgress: (received, total) {
-              if (total > 0) {
-                final progress = (received / total) * 0.3;
-                final mb = (received / 1024 / 1024).toStringAsFixed(1);
-                final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-                final notifProgress = ((received / total) * 30).round();
-                
-                _updateSetupNotification('Downloading rootfs: $mb / $totalMb MB', progress: notifProgress);
-                onProgress(SetupState(
-                  step: SetupStep.downloadingRootfs,
-                  progress: progress,
-                  message: 'Downloading: $mb MB / $totalMb MB',
-                ));
-              }
-            },
-          );
-
-          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
-          await NativeBridge.extractRootfs(tarPath);
-          rootfsReady = true;
-        }
-        
-        _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs extracted', 40);
-      } else {
-        _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs already present, skipping...', 40);
-      }
-
-      if (!bypassInstalled) {
-        await NativeBridge.installBionicBypass();
-      }
-
-      // ---------------------------------------------------------
-      // Step 3: Install Node.js & Fix Permissions
-      // ---------------------------------------------------------
-      if (!nodeInstalled) {
-        _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
-
-        await NativeBridge.runInProot('''
-          mkdir -p /root/.openclaw
-        ''');
-
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'chmod -R 755 /usr/bin /usr/sbin /bin /sbin /usr/local/bin /usr/local/sbin 2>/dev/null; '
-          'chmod -R +x /usr/lib/apt/ /usr/lib/dpkg/ /usr/libexec/ /var/lib/dpkg/info/ /usr/share/debconf/ 2>/dev/null; '
-          'chmod 755 /lib/*/ld-linux-*.so* /usr/lib/*/ld-linux-*.so* 2>/dev/null; '
-          'mkdir -p /var/lib/dpkg/updates /var/lib/dpkg/triggers; '
-          'echo permissions_fixed',
-        );
-
-        _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Updating package lists...', 48);
-        
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'export DEBIAN_FRONTEND=noninteractive && '
-          'apt-get update -y && '
-          'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
-          'echo "Etc/UTC" > /etc/timezone && '
-          'apt-get install -y --no-install-recommends ca-certificates git curl zstd tmux jq && '
-          'apt-get clean && rm -rf /var/lib/apt/lists/*'
-        );
-
-        final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
-        final nodeTarPath = '$filesDir/tmp/nodejs.tar.xz';
-
-        _emitProgress(onProgress, SetupStep.installingNode, 0.3, 'Downloading Node.js (fast link)...', 55);
-
-        await _downloadParallel(
-          nodeTarUrl,
-          nodeTarPath,
-          onProgress: (received, total) {
-            if (total > 0) {
-              final progress = 0.3 + (received / total) * 0.4;
-              final mb = (received / 1024 / 1024).toStringAsFixed(1);
-              final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-              final notifProgress = 55 + ((received / total) * 15).round();
-              
-              _updateSetupNotification('Downloading Node.js: $mb / $totalMb MB', progress: notifProgress);
-              onProgress(SetupState(
-                step: SetupStep.installingNode,
-                progress: progress,
-                message: 'Downloading Node.js: $mb MB / $totalMb MB',
-              ));
-            }
-          },
-        );
-
-        _emitProgress(onProgress, SetupStep.installingNode, 0.75, 'Extracting Node.js...', 72);
-        await NativeBridge.extractNodeTarball(nodeTarPath);
-
-        _emitProgress(onProgress, SetupStep.installingNode, 0.9, 'Verifying Node.js...', 78);
-        
-        const wrapper = '/root/.openclaw/node-wrapper.js';
-        const nodeRun = 'node $wrapper';
-        const npmCli = '/usr/local/lib/node_modules/npm/bin/npm-cli.js';
-        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && $nodeRun $npmCli --version');
-      } else {
-        _emitProgress(onProgress, SetupStep.installingNode, 1.0, 'Node.js already installed, skipping...', 78);
-      }
-
-      // ---------------------------------------------------------
-      // Step 3.5: Repair Config (Fix stale tools.allow, etc.)
-      // ---------------------------------------------------------
-      await _repairConfig();
-
-      // ---------------------------------------------------------
-      // Step 4: Install OpenClaw
-      // ---------------------------------------------------------
-      if (!openclawInstalled) {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Installing OpenClaw Gateway...', 80);
-        
-        // Phase 2: Install temporary build tools for native module compilation
-        await _installMinimalBuildTools();
-        
-        // Phase 2.5: Try to extract pre-bundled node_modules from assets (NEW)
-        await _extractPrebundledOpenClaw(onProgress);
-        
-        await _ensureOpenClawPackageExists();
-        
-        // Phase 3: Purge build tools immediately after success to save ~500MB
-        _emitProgress(onProgress, SetupStep.cleanup, 0.5, 'Slimming system (purging tools)...', 96);
-        await _purgeBuildTools();
-        
-        // Final heavy cleanup
-        _emitProgress(onProgress, SetupStep.cleanup, 0.9, 'Final cache optimization...', 98);
-        await _performFinalCleanup();
-        
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw Gateway installed', 95);
-      } else {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw already present, verifying...', 95);
-        // Force verification even if status says installed (redundant but robust)
-        await _ensureOpenClawPackageExists();
-      }
-      await NativeBridge.createBinWrappers('openclaw');
-
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
-
-      // ---------------------------------------------------------
-      // Step 5: Install Native Android Skills
-      // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Installing Android native skills...', 95);
+      final String glibcLibPath = '$filesDir/glibc/lib/node_modules';
       
-      try {
-        final prootRoot = '$filesDir/rootfs/ubuntu/root';
-        final openclawSkillsDir = Directory('$prootRoot/.openclaw/skills');
-        final openclawExtDir = Directory('$prootRoot/.openclaw/extensions');
-        
-        if (!openclawSkillsDir.existsSync()) openclawSkillsDir.createSync(recursive: true);
-        if (!openclawExtDir.existsSync()) openclawExtDir.createSync(recursive: true);
+      await _extractPrebundledOpenClawAegis(onProgress, glibcLibPath);
 
-        // Copy android bridge tools JS script to extensions so skills can require it or OpenClaw can load it
-        final bridgeJs = await rootBundle.loadString('assets/openclaw/android_bridge_tools.js');
-        File('${openclawExtDir.path}/android_bridge_tools.js').writeAsStringSync(bridgeJs);
-
-        // Copy the SKILL markdown files
-        final skills = ['battery.md', 'vibrate.md', 'sensors.md', 'avatar_forge.md'];
-        for (final skill in skills) {
-          final content = await rootBundle.loadString('assets/openclaw/skills/$skill');
-          File('${openclawSkillsDir.path}/$skill').writeAsStringSync(content);
-        }
-      } catch (e) {
-        _log('Non-fatal: Failed to copy native skills', error: e);
-      }
-
-      // ---------------------------------------------------------
-      // Step 6: Finalize
-      // ---------------------------------------------------------
-      await NativeBridge.markBootstrapComplete();
+      // 4. Repair config & Finalize
+      _emitProgress(onProgress, SetupStep.cleanup, 0.9, 'Hardening Aegis configuration...', 90);
+      await _repairConfigAegis(filesDir);
+      
+      // Mark as complete
       final prefs = PreferencesService();
       await prefs.init();
       prefs.setupComplete = true;
 
-      // Ensure a default dashboard URL exists so SplashScreen can transition to Dashboard
       if (prefs.dashboardUrl == null || prefs.dashboardUrl!.isEmpty) {
         prefs.dashboardUrl = 'http://127.0.0.1:18789';
       }
 
-      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete! Ready to start the gateway.', 100);
+      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Aegis Migration Complete! Ready to launch.', 100);
       _stopSetupService();
 
-    } on DioException catch (e) {
-      _stopSetupService();
-      _log('Network error', error: e);
-      onProgress(SetupState(
-        step: SetupStep.error,
-        error: 'Network error: ${e.message}. Check your internet connection.',
-      ));
     } catch (e, stack) {
       _stopSetupService();
-      _log('Setup failed globally', error: e, stackTrace: stack);
+      _log('Aegis Setup failed', error: e, stackTrace: stack);
       onProgress(SetupState(
         step: SetupStep.error,
-        error: 'Setup failed: $e',
+        error: 'Aegis Setup failed: $e',
       ));
+    }
+  }
+
+  Future<void> _extractPrebundledOpenClawAegis(Function(SetupState) onProgress, String targetPath) async {
+    _log('📦 Deploying pre-bundled OpenClaw to $targetPath');
+    try {
+      final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
+      final filesDir = await NativeBridge.getFilesDir();
+      final tempPath = '$filesDir/tmp/openclaw-aegis.tar.gz';
+      
+      final buffer = data.buffer.asUint8List();
+      await File(tempPath).writeAsBytes(buffer);
+      
+      // Use the native bridge to extract to the glibc library path
+      // We need a way to specify destination for extractGlibcBridge or add a new method.
+      // For Phase 1, we'll reuse runNative with a tar command.
+      await NativeBridge.runNative('mkdir -p $targetPath');
+      await NativeBridge.runNative('tar -xzf $tempPath -C $targetPath');
+      await File(tempPath).delete();
+      
+      _log('✅ OpenClaw extracted to Aegis lib path');
+    } catch (e) {
+      _log('❌ Failed to extract pre-bundled asset: $e');
+      throw Exception('OpenClaw asset deployment failed.');
+    }
+  }
+
+  Future<void> _repairConfigAegis(String filesDir) async {
+    final configFile = File('$filesDir/glibc/lib/node_modules/openclaw/config/openclaw.json');
+    // Also check standard location
+    final standardConfig = File('$filesDir/home/.openclaw/openclaw.json');
+    
+    final targetFile = await standardConfig.exists() ? standardConfig : configFile;
+
+    if (!await targetFile.exists()) {
+      _log('No config found to repair at ${targetFile.path}');
+      return;
+    }
+
+    try {
+      String content = await targetFile.readAsString();
+      Map<String, dynamic> config = json.decode(content);
+      config['tools'] ??= {'allow': ['*']};
+      (config['tools'] as Map)['allow'] = ['*'];
+      await targetFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
+      _log('✅ Aegis config hardened');
+    } catch (e) {
+      _log('Aegis config repair failed: $e');
     }
   }
 
