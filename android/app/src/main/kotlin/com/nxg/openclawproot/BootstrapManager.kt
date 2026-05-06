@@ -1,6 +1,7 @@
 package com.nxg.openclawproot
 
 import android.content.Context
+import android.util.Log
 import android.system.Os
 import java.io.BufferedInputStream
 import java.io.File
@@ -1489,6 +1490,7 @@ os.networkInterfaces = () => ({});
                 }
             }
         }
+    }
     /**
      * AEGIS: Install glibc-runner + Node.js wrapper (AidanPark style)
      */

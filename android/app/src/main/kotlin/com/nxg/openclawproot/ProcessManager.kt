@@ -636,6 +636,8 @@ class ProcessManager(
         } catch (e: Exception) {
             false
         }
+    }
+
     // ================================================================
     // AEGIS NATIVE MODE — Phase 1 Migration
     // Bypasses PRoot and executes commands directly using glibc-runner.
@@ -734,6 +736,8 @@ class ProcessManager(
         } catch (e: Exception) {
             false
         }
+    }
+
     fun startGatewayWithGlibc(nodeArgs: List<String>): Boolean {
         return try {
             Log.i("ProcessManager", "🚀 Starting Aegis Native Gateway with args: $nodeArgs")

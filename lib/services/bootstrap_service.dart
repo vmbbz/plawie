@@ -38,21 +38,6 @@ class BootstrapService {
     }
   }
 
-  void _updateSetupNotification(String text, {int progress = -1}) {
-    try {
-      NativeBridge.updateSetupNotification(text, progress: progress);
-    } catch (e) {
-      _log('Failed to update notification', error: e);
-    }
-  }
-
-  void _stopSetupService() {
-    try {
-      NativeBridge.stopSetupService();
-    } catch (e) {
-      _log('Failed to stop setup service', error: e);
-    }
-  }
 
   Future<SetupState> checkStatus() async {
     try {
@@ -159,7 +144,7 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, '🚀 Project Aegis: Initializing Hybrid Engine...', 5);
 
       // 1. Install glibc-runner + Node.js wrapper via Kotlin
-      _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Deploying glibc + Node.js wrapper...');
+      _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Deploying glibc + Node.js wrapper...', 20);
       final wrapperSuccess = await NativeBridge.installGlibcAndNodeWrapper();
       if (!wrapperSuccess) {
         throw Exception('Failed to deploy native glibc + Node.js infrastructure.');
@@ -195,63 +180,15 @@ class BootstrapService {
       }
 
       _emitProgress(onProgress, SetupStep.complete, 1.0, 'Aegis Migration Complete! Ready to launch.', 100);
-      _stopSetupService();
+      NativeBridge.stopSetupService();
 
     } catch (e, stack) {
-      _stopSetupService();
+      NativeBridge.stopSetupService();
       _log('Aegis Setup failed', error: e, stackTrace: stack);
       onProgress(SetupState(
         step: SetupStep.error,
         error: 'Aegis Setup failed: $e',
       ));
-    }
-  }
-
-  Future<void> _extractPrebundledOpenClawAegis(Function(SetupState) onProgress, String targetPath) async {
-    _log('📦 Deploying pre-bundled OpenClaw to $targetPath');
-    try {
-      final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
-      final filesDir = await NativeBridge.getFilesDir();
-      final tempPath = '$filesDir/tmp/openclaw-aegis.tar.gz';
-      
-      final buffer = data.buffer.asUint8List();
-      await File(tempPath).writeAsBytes(buffer);
-      
-      // Use the native bridge to extract to the glibc library path
-      // We need a way to specify destination for extractGlibcBridge or add a new method.
-      // For Phase 1, we'll reuse runNative with a tar command.
-      await NativeBridge.runNative('mkdir -p $targetPath');
-      await NativeBridge.runNative('tar -xzf $tempPath -C $targetPath');
-      await File(tempPath).delete();
-      
-      _log('✅ OpenClaw extracted to Aegis lib path');
-    } catch (e) {
-      _log('❌ Failed to extract pre-bundled asset: $e');
-      throw Exception('OpenClaw asset deployment failed.');
-    }
-  }
-
-  Future<void> _repairConfigAegis(String filesDir) async {
-    final configFile = File('$filesDir/glibc/lib/node_modules/openclaw/config/openclaw.json');
-    // Also check standard location
-    final standardConfig = File('$filesDir/home/.openclaw/openclaw.json');
-    
-    final targetFile = await standardConfig.exists() ? standardConfig : configFile;
-
-    if (!await targetFile.exists()) {
-      _log('No config found to repair at ${targetFile.path}');
-      return;
-    }
-
-    try {
-      String content = await targetFile.readAsString();
-      Map<String, dynamic> config = json.decode(content);
-      config['tools'] ??= {'allow': ['*']};
-      (config['tools'] as Map)['allow'] = ['*'];
-      await targetFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
-      _log('✅ Aegis config hardened');
-    } catch (e) {
-      _log('Aegis config repair failed: $e');
     }
   }
 
@@ -414,55 +351,51 @@ class BootstrapService {
     }
   }
 
-  Future<void> _purgeBuildTools() async {
-    _log('🧹 Purging build tools to save space...');
-    await NativeBridge.runInProot(
-      'apt-get purge -y build-essential python3 make g++ && '
-      'apt-get autoremove -y && '
-      'apt-get clean && rm -rf /var/lib/apt/lists/*',
-      timeout: 120,
-    );
+  Future<void> _extractPrebundledOpenClawAegis(Function(SetupState) onProgress, String targetPath) async {
+    _log('📦 Deploying pre-bundled OpenClaw to $targetPath');
+    try {
+      final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
+      final filesDir = await NativeBridge.getFilesDir();
+      final tempPath = '$filesDir/tmp/openclaw-aegis.tar.gz';
+      
+      await Directory('$filesDir/tmp').create(recursive: true);
+      await File(tempPath).writeAsBytes(data.buffer.asUint8List());
+      
+      await NativeBridge.extractGlibcBridge(tempPath);
+      await File(tempPath).delete();
+      
+      _log('✅ OpenClaw extracted to Aegis lib path');
+    } catch (e) {
+      _log('❌ Failed to extract Aegis pre-bundled asset: $e');
+      throw Exception('Aegis asset deployment failed.');
+    }
+  }
+
+  Future<void> _repairConfigAegis(String filesDir) async {
+    final configFile = File('$filesDir/glibc/lib/node_modules/openclaw/config/openclaw.json');
+    final standardConfig = File('$filesDir/home/.openclaw/openclaw.json');
+    final targetFile = await standardConfig.exists() ? standardConfig : configFile;
+
+    if (!await targetFile.exists()) return;
+
+    try {
+      String content = await targetFile.readAsString();
+      Map<String, dynamic> config = json.decode(content);
+      config['tools'] ??= {'allow': ['*']};
+      (config['tools'] as Map)['allow'] = ['*'];
+      await targetFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
+      _log('✅ Aegis config hardened');
+    } catch (e) {
+      _log('Aegis config repair failed: $e');
+    }
+  }
+
+  void _updateSetupNotification(String message, {int progress = -1}) {
+    NativeBridge.updateSetupNotification(message, progress: progress);
   }
 
   void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {
     _updateSetupNotification(message, progress: notifProgress);
     onProgress(SetupState(step: step, progress: progress, message: message));
-  }
-
-  /// Robust config repair. Auto-fixes stale openclaw.json, tools.allow, gateway mode, etc.
-  /// Prevents stale configurations from blocking tool access.
-  Future<void> _repairConfig() async {
-    final rootfsDir = await getRootfsDirectory();
-    final configFile = File('$rootfsDir/root/.openclaw/openclaw.json');
-
-    if (!await configFile.exists()) {
-      _log('No openclaw.json found — skipping repair');
-      return;
-    }
-
-    _log('🔧 Running config repair (auto-patching stale tools.allow, etc.)');
-
-    try {
-      String content = await configFile.readAsString();
-      Map<String, dynamic> config = json.decode(content);
-
-      // Force correct tools.allow (this fixes a major pain point)
-      if (config['tools'] == null || config['tools'] is! Map) {
-        config['tools'] = {'allow': ['*']};
-      } else {
-        (config['tools'] as Map)['allow'] = ['*'];
-      }
-
-      // Ensure gateway is in correct mode
-      config['gateway'] ??= {};
-      if (config['gateway'] is Map) {
-        (config['gateway'] as Map)['mode'] = 'full';
-      }
-
-      await configFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
-      _log('✅ Config repaired successfully');
-    } catch (e) {
-      _log('Config repair failed (non-critical)', error: e);
-    }
   }
 }
