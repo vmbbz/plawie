@@ -2,7 +2,7 @@
 
 <div align="center">
   <p align="center">
-    <img src="assets/images/readme_banner.jpg" alt="Plawie Banner" width="100%"/>
+    <img src="https://raw.githubusercontent.com/vmbbz/plawie/main/assets/images/readme_banner.jpg" alt="Plawie Banner" style="max-width: 100%;" width="100%"/>
   </p>
   
   <br/>
@@ -26,7 +26,7 @@
 ## 🚀 PREVIEW: Project Aegis (v2.1.0-beta)
 
 <p align="center">
-  <img src="assets/images/aegis_preview.jpg" alt="Aegis Preview" width="100%"/>
+  <img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/aegis_preview.jpg" alt="Aegis Preview" style="max-width: 100%;" width="100%"/>
 </p>
 
 We are currently stabilizing a massive architectural shift called **Project Aegis**, which will soon replace the PRoot layer with a native glibc engine:
