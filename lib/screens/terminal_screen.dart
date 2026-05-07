@@ -58,7 +58,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
       _addOutput(result, isError: false);
     } catch (e) {
       _addOutput('ERROR: $e', isError: true);
-      DiagnosticService.logError('terminal_command', e);
     } finally {
       if (mounted) setState(() => _isRunning = false);
     }
