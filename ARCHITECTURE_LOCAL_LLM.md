@@ -588,6 +588,20 @@ apk` validation.
 
 ## 7. Known Bugs, Errors & Exact Fixes
 
+### Error: `1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values`
+
+**When it appears:** During WebSocket handshake between the APK (Node or UI) and the local Gateway.
+
+**Root cause:** The OpenClaw Gateway (v2026.5+) uses strict JSON-schema validation for the `connect` frame. It whitelists specific `clientId` and `platform` combinations. The APK was sending `platform: 'android'`, which is rejected when used with the `cli` (node) or `openclaw-control-ui` (operator) identities.
+
+**Fix:**
+- **Node Alignment:** Set `clientId: 'cli'` and `platform: 'linux'`. This "spoofs" the official CLI tool which is whitelisted for full privileges and auto-pairing.
+- **UI Alignment:** Set `clientId: 'openclaw-control-ui'` and `platform: 'web'`.
+- **Payload Sanitization:** Removed non-standard metadata fields (`displayName`, `deviceFamily`, etc.) to match the minimal "official" handshake payloads exactly.
+- **Reference:** Verified against successful terminal logs where `clientId=cli platform=linux` succeeds consistently.
+
+---
+
 ### Error: `fllamaCancel` not defined
 
 **When it appears:** Dart analysis error during migration from old code.
