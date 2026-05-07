@@ -249,13 +249,13 @@ PARAMETER num_batch 512
     _addActivity('[SYS] Expert Fix: Auto-approving device connection ($requestId)...');
     
     try {
-      // Use proot to run the approve command
-      final result = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw devices approve $requestId',
-        timeout: 10,
-      );
+      final result = await NativeBridge.approveDevice(requestId);
       _addActivity('[SYS] Auto-approve result: ${result.trim()}');
+      
+      // Persist pairing approval state
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.lastApprovedRequestId = requestId;
       
       // Trigger a health check to re-connect immediately
       unawaited(_checkHealth());
@@ -1808,11 +1808,7 @@ PARAMETER num_batch 512
     final deviceId = _connection?.deviceId ?? '';
     _addActivity('[INFO] Pairing required — clearing stale operator device record...');
     try {
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
-        timeout: 5,
-      );
+      await NativeBridge.removeDevice(deviceId);
       // Clear persisted deviceToken — it belongs to the now-deleted record.
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(GatewayConnection.prefDeviceToken);
