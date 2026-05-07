@@ -22,8 +22,8 @@ class NodeWsService {
   bool get isConnected => _connected;
 
   // Fires when the gateway closes with 1008 (pairing required).
-  final _pairingRequiredController = StreamController<void>.broadcast();
-  Stream<void> get pairingRequiredStream => _pairingRequiredController.stream;
+  final _pairingRequiredController = StreamController<String?>.broadcast();
+  Stream<String?> get pairingRequiredStream => _pairingRequiredController.stream;
 
   /// Returns true if the WebSocket hasn't received any data for over 90s,
   /// indicating the connection is likely stale.
@@ -93,10 +93,18 @@ class NodeWsService {
         },
         onError: (_) => _handleDisconnect(),
         onDone: () {
-          // Capture close code BEFORE _handleDisconnect nulls _channel.
+          // Capture close code and reason BEFORE _handleDisconnect nulls _channel.
           final closeCode = _channel?.closeCode;
+          final closeReason = _channel?.closeReason;
           if (closeCode == 1008 && !_pairingRequiredController.isClosed) {
-            _pairingRequiredController.add(null);
+            String? requestId;
+            if (closeReason != null && closeReason.contains('requestId:')) {
+              final match = RegExp(r'requestId:\s*([a-f0-9\-]+)').firstMatch(closeReason);
+              if (match != null) {
+                requestId = match.group(1);
+              }
+            }
+            _pairingRequiredController.add(requestId);
           }
           _handleDisconnect();
         },

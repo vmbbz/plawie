@@ -8,6 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// On first launch, generates an Ed25519 key pair and persists it.
 /// Provides signing and device metadata for the connect frame's `device` block.
 class DeviceIdentity {
+  static final DeviceIdentity _instance = DeviceIdentity._internal();
+  factory DeviceIdentity() => _instance;
+  static DeviceIdentity get instance => _instance;
+  DeviceIdentity._internal();
+
   static const _prefPrivateKey = 'openclaw_device_ed25519_private';
   static const _prefPublicKey = 'openclaw_device_ed25519_public';
   static const _prefDeviceId = 'openclaw_device_id';
@@ -22,7 +27,7 @@ class DeviceIdentity {
   String? get publicKeyBase64Url => _publicKeyBase64Url;
 
   /// Load existing identity from SharedPreferences, or generate a new one.
-  Future<void> loadOrCreate() async {
+  Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final existingPrivate = prefs.getString(_prefPrivateKey);
     final existingPublic = prefs.getString(_prefPublicKey);
