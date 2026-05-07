@@ -10,6 +10,10 @@ import 'node_ws_service.dart';
 import 'preferences_service.dart';
 
 class NodeService {
+  static final NodeService _instance = NodeService._internal();
+  factory NodeService() => _instance;
+  NodeService._internal();
+
   final NodeIdentityService _identity = NodeIdentityService();
   final NodeWsService _ws = NodeWsService();
   final _stateController = StreamController<NodeState>.broadcast();
