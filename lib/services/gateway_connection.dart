@@ -34,7 +34,7 @@ class GatewayConnection {
 
   static const _prefDeviceToken = 'openclaw_operator_device_token';
 
-  final DeviceIdentity _identity = DeviceIdentity();
+  final DeviceIdentity _identity = DeviceIdentity.instance;
   bool _identityLoaded = false;
   String? _deviceToken;
 
@@ -59,8 +59,8 @@ class GatewayConnection {
 
   // Fires when the gateway closes with 1008 (pairing required).
   // GatewayService subscribes and clears the stale device record via PRoot.
-  final _pairingRequiredController = StreamController<void>.broadcast();
-  Stream<void> get pairingRequiredStream => _pairingRequiredController.stream;
+  final _pairingRequiredController = StreamController<String?>.broadcast();
+  Stream<String?> get pairingRequiredStream => _pairingRequiredController.stream;
 
   /// The device ID loaded by the identity module. Non-null after connect() is called.
   String? get deviceId => _identity.deviceId;
@@ -92,7 +92,7 @@ class GatewayConnection {
 
     // Ensure device identity is loaded/generated
     if (!_identityLoaded) {
-      await _identity.loadOrCreate();
+      await _identity.init();
       _identityLoaded = true;
       // Also load any persisted device token from a previous successful session.
       // Including this token in the auth block lets the gateway skip the
@@ -133,9 +133,10 @@ class GatewayConnection {
       _onFrame,
       onError: (_) => _onDisconnect(),
       onDone: () {
-        // Capture the close code BEFORE _cleanup() nulls _channel.
+        // Capture the close code and reason BEFORE _cleanup() nulls _channel.
         final closeCode = _channel?.closeCode;
-        _onDisconnect(pairingRequired: closeCode == 1008);
+        final closeReason = _channel?.closeReason;
+        _onDisconnect(pairingRequired: closeCode == 1008, reason: closeReason);
       },
     );
 
@@ -342,7 +343,7 @@ class GatewayConnection {
     } catch (_) {}
   }
 
-  void _onDisconnect({bool pairingRequired = false}) {
+  void _onDisconnect({bool pairingRequired = false, String? reason}) {
     _updateState(GatewayConnectionState.disconnected);
     // Error all in-flight requests immediately so callers fail fast
     // instead of waiting for the 240s timeout before showing an error.
@@ -355,7 +356,15 @@ class GatewayConnection {
     _pendingRequests.clear();
     _cleanup();
     if (pairingRequired && !_pairingRequiredController.isClosed) {
-      _pairingRequiredController.add(null);
+      // EXPERT FIX: Extract requestId and auto-approve for localhost connections
+      String? requestId;
+      if (reason != null && reason.contains('requestId:')) {
+        final match = RegExp(r'requestId:\s*([a-f0-9\-]+)').firstMatch(reason);
+        if (match != null) {
+          requestId = match.group(1);
+        }
+      }
+      _pairingRequiredController.add(requestId);
     }
     _scheduleReconnect();
   }

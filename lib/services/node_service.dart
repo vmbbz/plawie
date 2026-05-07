@@ -5,7 +5,7 @@ import '../constants.dart';
 import '../models/node_frame.dart';
 import '../models/node_state.dart';
 import 'native_bridge.dart';
-import 'node_identity_service.dart';
+import 'device_identity.dart';
 import 'node_ws_service.dart';
 import 'preferences_service.dart';
 
@@ -14,7 +14,7 @@ class NodeService {
   factory NodeService() => _instance;
   NodeService._internal();
 
-  final NodeIdentityService _identity = NodeIdentityService();
+  final DeviceIdentity _identity = DeviceIdentity.instance;
   final NodeWsService _ws = NodeWsService();
   final _stateController = StreamController<NodeState>.broadcast();
   StreamSubscription? _frameSubscription;
@@ -58,8 +58,13 @@ class NodeService {
 
   Future<void> init() async {
     await _identity.init();
-    _updateState(_state.copyWith(deviceId: _identity.deviceId));
-    log('[NODE] Device ID: ${_identity.deviceId.substring(0, 12)}...');
+    final deviceId = _identity.deviceId ?? '';
+    _updateState(_state.copyWith(deviceId: deviceId));
+    if (deviceId.isNotEmpty) {
+      log('[NODE] Device ID: ${deviceId.substring(0, 12)}...');
+    } else {
+      log('[NODE] Warning: Device identity not initialized');
+    }
   }
 
   Future<void> connect({String? host, int? port}) async {
@@ -80,8 +85,8 @@ class NodeService {
     _frameSubscription?.cancel();
     _frameSubscription = _ws.frameStream.listen(_onFrame);
     _pairingSubscription?.cancel();
-    _pairingSubscription = _ws.pairingRequiredStream.listen((_) {
-      _handleNodePairingRequired();
+    _pairingSubscription = _ws.pairingRequiredStream.listen((requestId) {
+      _handleNodePairingRequired(requestId);
     });
 
     try {
@@ -203,7 +208,7 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    const clientId = 'openclaw-android';
+    const clientId = 'openclaw-android-node';
     const clientMode = 'ui';
     const role = AppConstants.nodeRole;
     const scopes = <String>['*'];
@@ -220,7 +225,7 @@ class NodeService {
       token: authToken,
       nonce: nonce,
     );
-    final signature = await _identity.signPayload(authPayload);
+    final signature = await _identity.sign(authPayload) ?? '';
 
     // Build caps (unique capability names) and commands from registered handlers
     final commands = _capabilityHandlers.keys.toList();
@@ -241,8 +246,8 @@ class NodeService {
       'role': role,
       'scopes': scopes,
       if (nonce.isNotEmpty) 'device': {
-        'id': _identity.deviceId,
-        'publicKey': _identity.publicKeyBase64Url,
+        'id': _identity.deviceId ?? '',
+        'publicKey': _identity.publicKeyBase64Url ?? '',
         'signature': signature,
         'nonce': nonce,
         'signedAt': signedAtMs,
@@ -371,7 +376,7 @@ class NodeService {
   Future<void> _handleInvokeRequest(Map<String, dynamic> invokePayload) async {
     final requestId = invokePayload['id'] as String?;
     final command = invokePayload['command'] as String?;
-    final nodeId = invokePayload['nodeId'] as String? ?? _identity.deviceId;
+    final nodeId = invokePayload['nodeId'] as String? ?? (_identity.deviceId ?? '');
     final paramsJSON = invokePayload['paramsJSON'] as String?;
 
     if (requestId == null || command == null) {
@@ -437,14 +442,22 @@ class NodeService {
   /// Called when the gateway closes with 1008 (pairing required).
   /// Deletes the stale device record so the gateway treats the next connect
   /// as a new device, allowing the normal NOT_PAIRED → auto-approve flow.
-  Future<void> _handleNodePairingRequired() async {
+  Future<void> _handleNodePairingRequired(String? requestId) async {
     if (_pairingResolveAttempted) return;
+    
+    // EXPERT FIX: If we have a requestId, use the auto-approval flow via GatewayService
+    if (requestId != null && requestId.isNotEmpty) {
+      await GatewayService().autoApproveDevice(requestId);
+      return;
+    }
+
     _pairingResolveAttempted = true;
     log('[NODE] Pairing required (1008) — clearing stale device record...');
     try {
+      final deviceId = _identity.deviceId ?? '';
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '(openclaw devices remove ${_identity.deviceId} 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
+        '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
         timeout: 5,
       );
       log('[NODE] Device record cleared — will re-pair on next connect');

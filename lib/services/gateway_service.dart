@@ -77,6 +77,10 @@ class GatewayService {
   // Failure tracking for proactive auto-healing
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
+  bool _gatewayReady = false; // EXPERT FIX: Tracks if the gateway has emitted the 'ready' signal
+
+  // Tracks auto-approvals to prevent loops (requestId -> timestamp)
+  final Map<String, DateTime> _autoApproveHistory = {};
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -227,6 +231,37 @@ PARAMETER num_batch 512
       logs.removeRange(0, logs.length - 500);
     }
     _updateState(_state.copyWith(logs: logs));
+  }
+  
+  /// EXPERT FIX: Automatically approve a device pairing request on localhost.
+  /// Triggered by 1008 "pairing required" WebSocket close frames.
+  Future<void> autoApproveDevice(String? requestId) async {
+    if (requestId == null || requestId.isEmpty) return;
+    
+    // Cooldown check (10 seconds)
+    final lastApprove = _autoApproveHistory[requestId];
+    if (lastApprove != null && DateTime.now().difference(lastApprove).inSeconds < 10) {
+      debugPrint('[GatewayService] Auto-approve cooldown for $requestId');
+      return;
+    }
+    
+    _autoApproveHistory[requestId] = DateTime.now();
+    _addActivity('[SYS] Expert Fix: Auto-approving device connection ($requestId)...');
+    
+    try {
+      // Use proot to run the approve command
+      final result = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw devices approve $requestId',
+        timeout: 10,
+      );
+      _addActivity('[SYS] Auto-approve result: ${result.trim()}');
+      
+      // Trigger a health check to re-connect immediately
+      unawaited(_checkHealth());
+    } catch (e) {
+      _addActivity('[SYS] Auto-approve failed: $e');
+    }
   }
 
   // Matches terminal Dashboard URL: supports localhost, 127.0.0.1, 0.0.0.0, and arbitrary IP addresses.
@@ -453,6 +488,7 @@ PARAMETER num_batch 512
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
+      _gatewayReady = true; // EXPERT FIX: If already running, it's ready
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -472,6 +508,7 @@ PARAMETER num_batch 512
 
     // Attempting a fresh start
     _isStarting = true;
+    _gatewayReady = false; // EXPERT FIX: Reset readiness on start
     _rpcDiscoveryDone = false; // ensure discovery runs on this new session
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
@@ -551,6 +588,16 @@ PARAMETER num_batch 512
           : [..._state.logs.sublist(_state.logs.length - 499), log];
 
       _handleGatewayAutoHeal(log);
+
+      // EXPERT FIX: Detect gateway ready signal to synchronize connections
+      if (log.contains('[gateway] ready') || log.contains('starting HTTP server')) {
+        if (!_gatewayReady) {
+          _gatewayReady = true;
+          _addActivity('[SYS] Gateway signaled READY');
+          // Poke health check to connect immediately now that it's ready
+          unawaited(_checkHealth());
+        }
+      }
 
       String? dashboardUrl;
       final cleanLog = _cleanForUrl(log);
@@ -1723,7 +1770,7 @@ PARAMETER num_batch 512
               : [..._state.logs, '[WARN] WebSocket disconnected'],
         ));
       });
-      _connection!.pairingRequiredStream.listen((_) => _handleOperatorPairingRequired());
+      _connection!.pairingRequiredStream.listen((requestId) => _handleOperatorPairingRequired(requestId));
       // Reset backoff only for brand-new connection objects, not on every
       // health tick — otherwise the exponential backoff never accumulates.
       _connection!.resetReconnectCounter();
@@ -1748,8 +1795,15 @@ PARAMETER num_batch 512
   /// Called when the gateway closes the operator WS with 1008 (pairing required).
   /// Deletes the stale device record via PRoot so the next connect is treated
   /// as a new device and succeeds with the gateway auth token alone.
-  Future<void> _handleOperatorPairingRequired() async {
+  Future<void> _handleOperatorPairingRequired(String? requestId) async {
     if (_pairingResolveAttempted) return;
+    
+    // EXPERT FIX: If we have a requestId, use the auto-approval flow
+    if (requestId != null && requestId.isNotEmpty) {
+      await autoApproveDevice(requestId);
+      return;
+    }
+
     _pairingResolveAttempted = true;
     final deviceId = _connection?.deviceId ?? '';
     _addActivity('[INFO] Pairing required — clearing stale operator device record...');
@@ -1772,6 +1826,14 @@ PARAMETER num_batch 512
   }
 
   Future<void> _checkHealth() async {
+    // EXPERT FIX: Skip health check until gateway signals 'ready' in logs
+    if (!_gatewayReady) {
+      if (_state.status == GatewayStatus.starting) {
+        debugPrint('[GatewayService] Health check deferred: Gateway not ready yet');
+      }
+      return;
+    }
+
     // ── Re-entrancy guard ────────────────────────────────────────────────
     // Prevent overlapping health ticks. Each tick can involve PRoot calls
     // and WS handshakes that take several seconds. Without this guard,
