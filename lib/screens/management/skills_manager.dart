@@ -204,6 +204,7 @@ class _SkillsManagerState extends State<SkillsManager>
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final provider = Provider.of<GatewayProvider>(context, listen: false);
 
     if (skill.installSlug == null) {
       // Built-in skill — just navigate to its page
@@ -214,38 +215,71 @@ class _SkillsManagerState extends State<SkillsManager>
       return;
     }
 
-    messenger.showSnackBar(
-      SnackBar(content: Text('Installing ${skill.title}...')),
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _InstallSheet(skillTitle: skill.title),
     );
 
     try {
-      final result = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw skill install ${skill.installSlug} --yes',
-        timeout: 60,
-      );
+      final installCmd = await OpenClawCommandService.getSkillInstallCommand(skill.installSlug!);
+      String cliResult;
+      try {
+        cliResult = await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
+          '&& $installCmd --yes',
+          timeout: 60,
+        );
+      } catch (_) {
+        cliResult = 'error:';
+      }
 
-      if (result.toLowerCase().contains('installed') || result.isEmpty) {
+      // Fallback to direct npx clawhub install if the gateway command fails or is unavailable
+      if (cliResult.toLowerCase().contains('error:') ||
+          cliResult.toLowerCase().contains('too many arguments') ||
+          cliResult.toLowerCase().contains('unknown command')) {
+        cliResult = await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
+          '&& npx --yes clawhub install ${skill.installSlug}',
+          timeout: 60,
+        );
+      }
+
+      if (provider.state.status == GatewayStatus.running) {
+        await OpenClawCommandService.reloadGateway();
+      }
+      ClawHubService.instance.invalidateCache();
+      
+      if (navigator.canPop()) navigator.pop();
+
+      final lower = cliResult.toLowerCase();
+      if (lower.contains('installed') || (!lower.contains('error:') && !lower.contains('failed'))) {
         messenger.showSnackBar(
           SnackBar(
             content: Text('✅ ${skill.title} installed successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.statusGreen,
           ),
         );
-        // Refresh UI (your existing logic)
         if (mounted) setState(() {});
-        // Optional: notify gateway
-        if (context.mounted) {
-          Provider.of<GatewayProvider>(context, listen: false).checkHealth();
-        }
+        provider.checkHealth();
       } else {
-        throw Exception(result);
+        final rl = RegExp(r'reset in (\d+)s').firstMatch(cliResult);
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(rl != null
+                ? 'Rate limited — try again in ${rl.group(1)}s'
+                : 'Install failed: $cliResult'),
+            backgroundColor: AppColors.statusAmber,
+          ),
+        );
       }
     } catch (e) {
+      if (navigator.canPop()) navigator.pop();
       messenger.showSnackBar(
         SnackBar(
           content: Text('❌ Install failed: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.statusRed,
         ),
       );
     }
