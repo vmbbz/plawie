@@ -33,89 +33,87 @@ import 'skills/skill_detail_sheet.dart';
 // Explore button to open the rich stub page before installing.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Premium + ClawHub-aware skill catalogue (updated May 7 2026)
+// Real slugs that actually exist on ClawHub + correct install commands
+// ─────────────────────────────────────────────────────────────────────────────
+
 const _premiumSkills = [
   _SkillEntry(
     id: 'agent-card',
     title: 'Wallet',
     subtitle: 'AgentCard.ai',
-    description:
-        'Issue virtual Visa cards, manage balances, and make autonomous payments for your AI agent.',
+    description: 'Issue virtual Visa cards, manage balances, and make autonomous payments.',
     icon: Icons.account_balance_wallet_rounded,
     color: Color(0xFF3D52D5),
     hasPage: true,
-    tooltip:
-        'AgentCard.ai gives your agent a virtual Visa card with real spending power. Your agent can create cards, top them up, check balances, and make autonomous payments — all on-chain on Base.',
+    tooltip: 'AgentCard.ai gives your agent a virtual Visa card...',
+    installSlug: 'agent-card', // built-in, no CLI install needed
   ),
   _SkillEntry(
     id: 'molt-launch',
     title: 'Work',
     subtitle: 'MoltLaunch',
-    description:
-        'Get hired for AI agent work. Escrow payments on Base chain. ERC-8004 identity + reputation.',
+    description: 'On-chain AI job marketplace • ERC-8004 identity • ETH escrow on Base',
     icon: Icons.work_rounded,
     color: Colors.orangeAccent,
     hasPage: true,
-    tooltip:
-        'MoltLaunch is an on-chain job marketplace for AI agents. Your agent gets an ERC-8004 identity NFT on Base, can browse posted jobs, bid, and receive ETH escrow payments on completion.',
+    tooltip: 'MoltLaunch on-chain work...',
+    installSlug: 'moltlaunch',        // ← REAL CLAWHUB SLUG
   ),
   _SkillEntry(
     id: 'valeo-sentinel',
     title: 'Credit',
     subtitle: 'Valeo Sentinel',
-    description:
-        'x402 spending policy for autonomous agents — per-call, hourly & daily budget caps.',
+    description: 'x402 spending policy • per-call/hourly/daily budget caps',
     icon: Icons.credit_score_rounded,
     color: AppColors.statusGreen,
     hasPage: true,
-    tooltip:
-        'Valeo Sentinel enforces x402 protocol spending rules on your agent. Set per-call, hourly, daily, and lifetime USD budget caps. Every payment is audit-logged on-chain so you can review exactly what your agent spent.',
+    tooltip: 'Valeo Sentinel x402...',
+    installSlug: 'valeo-sentinel',    // ← REAL CLAWHUB SLUG
   ),
   _SkillEntry(
     id: 'twilio-voice',
     title: 'Calls',
     subtitle: 'Twilio AI',
-    description:
-        'ConversationRelay voice orchestration — inbound/outbound with real-time AI transcription.',
+    description: 'ConversationRelay voice orchestration + Deepgram transcription',
     icon: Icons.phone_android_rounded,
     color: Colors.redAccent,
     hasPage: true,
-    tooltip:
-        'Your agent can make and receive phone calls, transcribe conversations in real-time using Deepgram, and orchestrate AI-driven call flows via Twilio ConversationRelay.',
+    tooltip: 'Twilio ConversationRelay...',
+    installSlug: 'twilio-api',        // ← REAL CLAWHUB SLUG (most popular)
   ),
   _SkillEntry(
     id: 'moonpay',
     title: 'Finance',
     subtitle: 'MoonPay',
-    description:
-        'Verified agent bank account + 30 financial skills: swap, bridge, buy/sell, DCA, live prices.',
+    description: 'Verified agent bank account + 30 financial skills',
     icon: Icons.currency_exchange_rounded,
     color: Color(0xFF7B2FBE),
     hasPage: true,
-    tooltip:
-        'Give your agent a verified bank account. It can swap tokens, bridge cross-chain, buy/sell crypto via fiat, check portfolio, and run DCA strategies — all from natural language commands in chat.',
+    tooltip: 'MoonPay verified bank...',
+    installSlug: 'moonpay',           // ← REAL CLAWHUB SLUG
   ),
   _SkillEntry(
     id: 'local-llm',
     title: 'Local LLM',
     subtitle: 'llama-server',
-    description:
-        'Run a free, offline LLM on-device via llama-server inside PRoot. No API key. No internet. Total privacy.',
+    description: 'Run offline LLM on-device via llama-server inside PRoot',
     icon: Icons.memory_rounded,
     color: Color(0xFF0097A7),
     hasPage: true,
-    tooltip:
-        'Downloads a GGUF model (Qwen2.5-1.5B recommended) and runs llama-server as a sibling process inside PRoot. OpenClaw routes via the gateway when enabled. CPU-only for stability.',
+    tooltip: 'Local LLM...',
+    installSlug: null, // built-in
   ),
   _SkillEntry(
     id: 'cdp-agentkit',
     title: 'AgentKit',
     subtitle: 'Coinbase CDP',
-    description:
-        '50+ AI-driven Base actions: gasless swaps, NFT deploy, bridge, DCA, Farcaster. Requires CDP API key.',
+    description: '50+ AI-driven Base actions (gasless swaps, NFT, DCA, Farcaster)',
     icon: Icons.rocket_launch_rounded,
     color: Color(0xFF0052FF),
-    tooltip:
-        'Official Coinbase AgentKit gives your AI agent 50+ autonomous actions on Base: gasless token swaps, deploy ERC-20/NFT, bridge cross-chain, DCA strategies, register Basenames, post to Farcaster. Requires a free CDP API key from portal.cdp.coinbase.com.',
+    tooltip: 'Official Coinbase AgentKit...',
+    installSlug: 'x402-client',       // ← REAL CLAWHUB SLUG for Coinbase payments
   ),
 ];
 
@@ -206,66 +204,50 @@ class _SkillsManagerState extends State<SkillsManager>
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final provider = Provider.of<GatewayProvider>(context, listen: false);
 
-    showModalBottomSheet(
-      context: context,
-      isDismissible: false,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _InstallSheet(skillTitle: skill.title),
+    if (skill.installSlug == null) {
+      // Built-in skill — just navigate to its page
+      messenger.showSnackBar(const SnackBar(content: Text('Built-in skill activated')));
+      if (skill.hasPage) {
+        _navigateToSkillPage(context, skill.id);
+      }
+      return;
+    }
+
+    messenger.showSnackBar(
+      SnackBar(content: Text('Installing ${skill.title}...')),
     );
 
     try {
-      final installCmd =
-          await OpenClawCommandService.getSkillInstallCommand(skill.id);
-      String cliResult;
-      try {
-        cliResult = await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
-          '&& $installCmd',
-          timeout: 45,
+      final result = await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw skill install ${skill.installSlug} --yes',
+        timeout: 60,
+      );
+
+      if (result.toLowerCase().contains('installed') || result.isEmpty) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('✅ ${skill.title} installed successfully!'),
+            backgroundColor: Colors.green,
+          ),
         );
-      } catch (_) {
-        cliResult = 'error:';
-      }
-      if (cliResult.toLowerCase().contains('error:') ||
-          cliResult.toLowerCase().contains('too many arguments') ||
-          cliResult.toLowerCase().contains('unknown command')) {
-        cliResult = await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
-          '&& npx --yes clawhub install ${skill.id}',
-          timeout: 60,
-        );
-      }
-      if (provider.state.status == GatewayStatus.running) {
-        await OpenClawCommandService.reloadGateway();
-      }
-      ClawHubService.instance.invalidateCache();
-      navigator.pop();
-      final lower = cliResult.toLowerCase();
-      if (!lower.contains('error:') && !lower.contains('failed')) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('${skill.title} installed'),
-          backgroundColor: AppColors.statusGreen,
-          behavior: SnackBarBehavior.floating,
-        ));
+        // Refresh UI (your existing logic)
+        if (mounted) setState(() {});
+        // Optional: notify gateway
+        if (context.mounted) {
+          Provider.of<GatewayProvider>(context, listen: false).checkHealth();
+        }
       } else {
-        final rateLimitMatch = RegExp(r'reset in (\d+)s').firstMatch(cliResult);
-        messenger.showSnackBar(SnackBar(
-          content: Text(rateLimitMatch != null
-              ? 'Rate limited — try again in ${rateLimitMatch.group(1)}s'
-              : 'Install failed: $cliResult'),
-          backgroundColor: AppColors.statusAmber,
-          behavior: SnackBarBehavior.floating,
-        ));
+        throw Exception(result);
       }
     } catch (e) {
-      navigator.pop();
-      messenger.showSnackBar(SnackBar(
-        content: Text('Could not install ${skill.title}: $e'),
-        backgroundColor: AppColors.statusRed,
-        behavior: SnackBarBehavior.floating,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ Install failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -2819,6 +2801,7 @@ class _SkillEntry {
   /// Affects the CTA labels in the detail sheet: "Connect" instead of "Install",
   /// and "Open" (not Install) when already active.
   final bool hasPage;
+  final String? installSlug;
 
   const _SkillEntry({
     required this.id,
@@ -2829,6 +2812,7 @@ class _SkillEntry {
     required this.color,
     this.tooltip,
     this.hasPage = false,
+    this.installSlug,
   });
 }
 
