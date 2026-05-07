@@ -209,7 +209,7 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    const clientId = 'openclaw';
+    final clientId = _identity.deviceId ?? 'openclaw-node';
     const clientMode = 'node';
     const role = AppConstants.nodeRole;
     const scopes = <String>['*'];
@@ -239,7 +239,7 @@ class NodeService {
       'client': {
         'id': clientId,
         'displayName': 'OpenClaw Mobile',
-        'version': AppConstants.version,
+        'version': '2026.5.5',
         'platform': 'android',
         'deviceFamily': 'Android',
         'mode': clientMode,
