@@ -1,926 +1,504 @@
-Cosy <cosychiruka@gmail.com>	Wed, May 6, 2026 at 10:35 PM
+Gmail	Cosy <cosychiruka@gmail.com>
+(no subject)
+Cosy <cosychiruka@gmail.com>	Thu, May 7, 2026 at 2:35 PM
 To: Cosy <cosychiruka@gmail.com>
-[INFO] Gateway process detected, attaching...
-[DEBUG] Probing gateway config for auth token...
-[INFO] Gateway is healthy
-[DEBUG] Probing gateway config for auth token...
-[90m2026-05-06T20:26:42.463+00:00 [39m [36m[gateway] [39m [36mloading configuration… [39m
-[90m2026-05-06T20:26:43.283+00:00 [39m [36m[gateway] [39m [36mresolving authentication… [39m
-[INFO] Gateway auth token acquired from config.
-[90m2026-05-06T20:26:43.332+00:00 [39m [36m[gateway] [39m [36mstarting... [39m
-[90m2026-05-06T20:26:56.476+00:00 [39m [36m[gateway] [39m [36mstarting HTTP server... [39m
-[90m2026-05-06T20:26:57.223+00:00 [39m [32m[health-monitor] [39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s) [39m
-[INFO] Gateway auth token acquired from config.
-[INFO] Connecting WebSocket...
 [WARN] WebSocket disconnected
-[90m2026-05-06T20:26:57.443+00:00 [39m [35m[canvas] [39m [36mhost mounted at http://127.0.0.1:18789/__openclaw__/canvas/ (root /root/.openclaw/canvas) [39m
-[90m2026-05-06T20:26:58.844+00:00 [39m [35m[plugins] [39m [90mloading browser from /usr/local/lib/node_modules/openclaw/dist/extensions/browser/index.js [39m
-[90m2026-05-06T20:26:58.914+00:00 [39m [35m[plugins] [39m [90mloading device-pair from /usr/local/lib/node_modules/openclaw/dist/extensions/device-pair/index.js [39m
-Registered plugin command: /pair (plugin: device-pair)
-[90m2026-05-06T20:26:59.159+00:00 [39m [35m[plugins] [39m [90mloading file-transfer from /usr/local/lib/node_modules/openclaw/dist/extensions/file-transfer/index.js [39m
-[90m2026-05-06T20:26:59.214+00:00 [39m [35m[plugins] [39m [90mloading memory-core from /usr/local/lib/node_modules/openclaw/dist/extensions/memory-core/index.js [39m
-Registered plugin command: /dreaming (plugin: memory-core)
-[90m2026-05-06T20:27:03.387+00:00 [39m [35m[plugins] [39m [90mloading phone-control from /usr/local/lib/node_modules/openclaw/dist/extensions/phone-control/index.js [39m
-Registered plugin command: /phone (plugin: phone-control)
-[90m2026-05-06T20:27:03.421+00:00 [39m [35m[plugins] [39m [90mloading talk-voice from /usr/local/lib/node_modules/openclaw/dist/extensions/talk-voice/index.js [39m
-Registered plugin command: /voice (plugin: talk-voice)
-[90m2026-05-06T20:27:03.455+00:00 [39m [35m[plugins] [39m [90mloaded 6 plugin(s) (6 attempted) in 4620.9ms [39m
-[90m2026-05-06T20:27:03.488+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49144 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49144->127.0.0.1:18789 conn=287d7ff5…310d [39m
-[90m2026-05-06T20:27:03.603+00:00 [39m [36m[gateway] [39m [36magent model: ollama/qwen2.5:0.5b (thinking=medium, fast=off) [39m
-[90m2026-05-06T20:27:03.609+00:00 [39m [36m[gateway] [39m [36mhttp server listening (6 plugins: browser, device-pair, file-transfer, memory-core, phone-control, talk-voice; 20.2s) [39m
-[90m2026-05-06T20:27:03.615+00:00 [39m [36m[gateway] [39m [36mlog file: /tmp/openclaw/openclaw-2026-05-06.log [39m
-[90m2026-05-06T20:27:04.298+00:00 [39m [36m[gateway] [39m [36mstarting channels and sidecars... [39m
-[90m2026-05-06T20:27:04.373+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=287d7ff5-3c39-4275-87e2-76a67c27310d peer=127.0.0.1:49144->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:27:04.380+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=872 cause=startup-sidecars-pending handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=75698f2d-68ca-412d-ae96-f460acbf3bb6 endpoint=127.0.0.1:49144->127.0.0.1:18789 [39m
-[90m2026-05-06T20:27:45.483+00:00 [39m [36m[gateway] [39m [33mstartup model warmup timed out after 5000ms; continuing without waiting [39m
-[90m2026-05-06T20:27:45.509+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay,event_loop_utilization interval=53s eventLoopDelayP99Ms=5981.1 eventLoopDelayMaxMs=39090.9 eventLoopUtilization=0.999 cpuCoreRatio=0.463 active=0 waiting=0 queued=0 phase=sidecars.plugin-services recentPhases=sidecars.gmail-model:0ms,sidecars.internal-hooks:0ms,sidecars.channel-start:1ms,sidecars.channels:9ms,post-attach.update-check:103ms,sidecars.model-prewarm:41186ms [39m
-[90m2026-05-06T20:27:45.519+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:27:45.774+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53062 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53062->127.0.0.1:18789 conn=77771f9c…46dd [39m
-[90m2026-05-06T20:27:46.124+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53790 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53790->127.0.0.1:18789 conn=de804cdf…1c46 [39m
-[90m2026-05-06T20:27:46.350+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=de804cdf-7b00-420e-a282-758cce121c46 peer=127.0.0.1:53790->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:27:46.359+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=218 cause=startup-sidecars-pending handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a68c07f4-9526-4f71-96e2-6a0b3c47f72a endpoint=127.0.0.1:53790->127.0.0.1:18789 [39m
-[90m2026-05-06T20:27:46.608+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34214 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34214->127.0.0.1:18789 conn=bd1a4601…b5ac [39m
-[90m2026-05-06T20:27:46.904+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bd1a4601-0922-4c51-a20b-9a86c8bbb5ac peer=127.0.0.1:34214->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:27:46.912+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=285 cause=startup-sidecars-pending handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=593d7659-9adc-4af5-abcc-65fe31944aa9 endpoint=127.0.0.1:34214->127.0.0.1:18789 [39m
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:27:50.229+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34224 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34224->127.0.0.1:18789 conn=06c66353…0d93 [39m
-[90m2026-05-06T20:27:50.301+00:00 [39m [36m[browser/server] [39m [36mBrowser control listening on http://127.0.0.1:18791/ (auth=token) [39m
-[90m2026-05-06T20:27:50.335+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=06c66353-f633-49c7-9d91-64d604390d93 peer=127.0.0.1:34224->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:27:50.341+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=99 cause=startup-sidecars-pending handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=faea85ad-261d-4130-8daf-180025987512 endpoint=127.0.0.1:34224->127.0.0.1:18789 [39m
-[90m2026-05-06T20:27:50.373+00:00 [39m [36m[gateway] [39m [36mready [39m
-[90m2026-05-06T20:27:50.391+00:00 [39m [36m[heartbeat] [39m [36mstarted [39m
-[90m2026-05-06T20:27:50.488+00:00 [39m [35m[plugins] [39m [90m[hooks] running gateway_start (1 handlers) [39m
-[90m2026-05-06T20:27:51.888+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34230 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34230->127.0.0.1:18789 conn=ceb384e0…2951 [39m
-[90m2026-05-06T20:27:52.179+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ceb384e0-8187-479c-b64b-8f1989f72951 peer=127.0.0.1:34230->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:27:52.186+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=278 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f0a79d4f-be01-494f-9294-e0e8293bd9ab endpoint=127.0.0.1:34230->127.0.0.1:18789 [39m
-[90m2026-05-06T20:27:56.984+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57978 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57978->127.0.0.1:18789 conn=28df87f5…f0f8 [39m
-[90m2026-05-06T20:28:00.440+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=28df87f5-1d57-4e4f-b9c3-3b0c2137f0f8 peer=127.0.0.1:57978->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:00.451+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=3445 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=99679d2f-863c-498f-81fa-a3c9707d7053 endpoint=127.0.0.1:57978->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:00.794+00:00 [39m [36m[ws] [39m [33mhandshake timeout conn=77771f9c-d62a-4c3f-b58c-f02940a946dd peer=127.0.0.1:53062->127.0.0.1:18789 remote=127.0.0.1 [39m
-[90m2026-05-06T20:28:00.836+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=77771f9c-d62a-4c3f-b58c-f02940a946dd peer=127.0.0.1:53062->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1000 reason=n/a [39m
-[90m2026-05-06T20:28:00.846+00:00 [39m [36m[ws] [39m [36m→ close code=1000 durationMs=15056 cause=handshake-timeout handshake=failed endpoint=127.0.0.1:53062->127.0.0.1:18789 conn=77771f9c…46dd [39m
-[90m2026-05-06T20:28:03.394+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57994 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57994->127.0.0.1:18789 conn=03a4c45c…0bcc [39m
-[90m2026-05-06T20:28:03.519+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=03a4c45c-2358-42da-b9e7-e2e756b90bcc peer=127.0.0.1:57994->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:03.540+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=92 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=eca38976-e339-471c-ac4e-baa611702491 endpoint=127.0.0.1:57994->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:07.817+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49852 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49852->127.0.0.1:18789 conn=07e47e47…cb0b [39m
-[90m2026-05-06T20:28:08.053+00:00 [39m [36m[gateway] [39m [36mdevice pairing auto-approved device=fb6ea32c26fbc55b04663ca6aa80f5604114eb44e6c4cd62c3464cc7d5aced86 role=operator [39m
-[90m2026-05-06T20:28:08.121+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
-[90m2026-05-06T20:28:08.156+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
-[90m2026-05-06T20:28:23.266+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=3 [39m
-[90m2026-05-06T20:28:23.273+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:28:23.281+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
-[90m2026-05-06T20:28:23.297+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=15513 handshake=connected lastFrameType=req lastFrameMethod=connect lastFrameId=7e3716bf-aa76-45bb-b8c5-fee86d6f1cd7 endpoint=127.0.0.1:49852->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:23.310+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49866 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49866->127.0.0.1:18789 conn=7fed3032…0e6a [39m
-[90m2026-05-06T20:28:23.365+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7fed3032-1ca2-498d-8666-c6a729170e6a peer=127.0.0.1:49866->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:23.382+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=43 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7b068750-b99e-4a76-b540-d7be713dad40 endpoint=127.0.0.1:49866->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:24.721+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37554 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37554->127.0.0.1:18789 conn=1188f989…e980 [39m
-[90m2026-05-06T20:28:24.872+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1188f989-ec22-4ce0-af9d-03cfe3bae980 peer=127.0.0.1:37554->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:24.887+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=94 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=af650d5b-c450-411a-88ba-6ddf61c85046 endpoint=127.0.0.1:37554->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:25.154+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37562 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37562->127.0.0.1:18789 conn=821047bd…3e4d [39m
-[90m2026-05-06T20:28:25.254+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=821047bd-7b0c-4d19-a4b5-c1ef10153e4d peer=127.0.0.1:37562->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:25.275+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=60 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=791cae05-f3d7-4567-a591-67fd7413d02c endpoint=127.0.0.1:37562->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:25.841+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37568 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37568->127.0.0.1:18789 conn=c4ee3407…f996 [39m
-[90m2026-05-06T20:28:25.977+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c4ee3407-d55c-43c8-ab24-4f2388b8f996 peer=127.0.0.1:37568->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:26.005+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=111 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=00f7956c-6446-4fbc-ab56-663aaff3d392 endpoint=127.0.0.1:37568->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:26.946+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37582 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37582->127.0.0.1:18789 conn=60f0f47d…6cf1 [39m
-[90m2026-05-06T20:28:27.037+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=60f0f47d-049f-44ed-9bb1-7002a8636cf1 peer=127.0.0.1:37582->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:27.053+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=64 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=830c4a92-27fe-4db6-bf64-643136d04da9 endpoint=127.0.0.1:37582->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:28.739+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37594 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37594->127.0.0.1:18789 conn=403ba646…18c5 [39m
-[90m2026-05-06T20:28:28.865+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=403ba646-6e9d-45f6-a251-7153eb3318c5 peer=127.0.0.1:37594->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:28.889+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=85 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=eea23de3-7112-4de0-8742-3d41db7ce434 endpoint=127.0.0.1:37594->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:31.759+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37598 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37598->127.0.0.1:18789 conn=acaad60c…2d44 [39m
-[90m2026-05-06T20:28:31.836+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=acaad60c-06c1-4dbe-b22b-128c67f92d44 peer=127.0.0.1:37598->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:31.848+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=68 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=45d0174c-eb47-47ea-9bec-37a45ba28475 endpoint=127.0.0.1:37598->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:34.005+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46418 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46418->127.0.0.1:18789 conn=42f1449e…6c97 [39m
-[90m2026-05-06T20:28:34.081+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
-[90m2026-05-06T20:28:34.096+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
-[90m2026-05-06T20:28:51.350+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=4 [39m
-[90m2026-05-06T20:28:51.379+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=17376 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=610f49ad-817f-4f3a-8284-9cec53f6f1ec endpoint=127.0.0.1:46418->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:51.402+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46424 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46424->127.0.0.1:18789 conn=0468df51…b9cb [39m
-[90m2026-05-06T20:28:52.060+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0468df51-8215-4c7f-b581-4aeb6604b9cb peer=127.0.0.1:46424->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:28:52.074+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=632 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d137d1f7-bdec-467c-a522-31e411b58a87 endpoint=127.0.0.1:46424->127.0.0.1:18789 [39m
-[90m2026-05-06T20:28:59.058+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:28:59.102+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 7739ms conn=42f1449e…6c97 id=610f49ad…f1ec [39m
-[90m2026-05-06T20:29:00.085+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49376 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49376->127.0.0.1:18789 conn=d183616c…891d [39m
-[90m2026-05-06T20:29:00.232+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d183616c-5acf-434e-996b-24d64990891d peer=127.0.0.1:49376->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:00.259+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=126 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=1b49a18c-9883-4f2e-8bbb-5feeb45859d4 endpoint=127.0.0.1:49376->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:08.210+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46610 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46610->127.0.0.1:18789 conn=f03ddb7e…46e7 [39m
-[90m2026-05-06T20:29:08.334+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f03ddb7e-0d9b-4717-a642-9780649d46e7 peer=127.0.0.1:46610->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:08.351+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=97 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=dcf7c8d3-a9b5-4ef3-a419-66f0733fcb00 endpoint=127.0.0.1:46610->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:09.734+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46616 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46616->127.0.0.1:18789 conn=33b853f1…f750 [39m
-[90m2026-05-06T20:29:09.845+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=33b853f1-93ce-4cfb-9dfa-d7337466f750 peer=127.0.0.1:46616->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:09.859+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=90 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=974cc9c5-080a-4a52-b5e8-4e1e30c234a9 endpoint=127.0.0.1:46616->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:10.167+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46630 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46630->127.0.0.1:18789 conn=94761fdc…1c6f [39m
-[90m2026-05-06T20:29:10.254+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=94761fdc-6d18-4e28-b8ed-e76a512b1c6f peer=127.0.0.1:46630->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:10.264+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=58 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=899fb8b6-1b7e-4996-a3e2-fb92c2c9c617 endpoint=127.0.0.1:46630->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:10.860+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46640 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46640->127.0.0.1:18789 conn=7e8fb535…41dd [39m
-[90m2026-05-06T20:29:10.982+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7e8fb535-3173-40c9-8b35-2bb4f0f241dd peer=127.0.0.1:46640->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:10.999+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=106 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=494d4ca0-d1a9-4310-a820-35c5db3651bf endpoint=127.0.0.1:46640->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:11.995+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46654 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46654->127.0.0.1:18789 conn=bab60354…53b3 [39m
-[90m2026-05-06T20:29:12.148+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bab60354-d1b9-44de-a3fa-66500c6053b3 peer=127.0.0.1:46654->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:12.162+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=134 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b45965d7-08a0-4794-904b-83ad49f15a67 endpoint=127.0.0.1:46654->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:13.857+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57476 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57476->127.0.0.1:18789 conn=921ea193…c477 [39m
-[90m2026-05-06T20:29:13.985+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=921ea193-5af8-4227-896c-b484b160c477 peer=127.0.0.1:57476->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:13.999+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=97 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4d694161-ad73-4d37-9a4d-d35bf7045cc0 endpoint=127.0.0.1:57476->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:16.691+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57492 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57492->127.0.0.1:18789 conn=7ce49171…fbd6 [39m
-[90m2026-05-06T20:29:16.804+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7ce49171-fc58-4c8b-bb40-fa9a6712fbd6 peer=127.0.0.1:57492->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:16.814+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=90 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=17936b7e-493b-438a-a131-dadccc137f10 endpoint=127.0.0.1:57492->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:17.083+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57494 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57494->127.0.0.1:18789 conn=8e86f8be…38b7 [39m
-[90m2026-05-06T20:29:17.114+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8e86f8be-45b8-4a4e-a64a-57561d3438b7 peer=127.0.0.1:57494->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:17.120+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=17 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=36bc5f5b-27f1-46ce-8c2b-eacb5397558e endpoint=127.0.0.1:57494->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:17.694+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57504 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57504->127.0.0.1:18789 conn=6ea7e9df…3ec9 [39m
-[90m2026-05-06T20:29:17.724+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6ea7e9df-7c5d-461e-8e19-fcebe2923ec9 peer=127.0.0.1:57504->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:17.729+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=17 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9846074b-889d-4f12-a674-8aa1002f8f6a endpoint=127.0.0.1:57504->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:18.728+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57512 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57512->127.0.0.1:18789 conn=00809724…3dfb [39m
-[90m2026-05-06T20:29:18.760+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=00809724-0045-40bf-ac2f-931714e03dfb peer=127.0.0.1:57512->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:18.766+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=23 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=57aa0db9-6441-41b8-8761-8a28f47ac99e endpoint=127.0.0.1:57512->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:20.479+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57520 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57520->127.0.0.1:18789 conn=5f8aa6da…5873 [39m
-[90m2026-05-06T20:29:20.521+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5f8aa6da-02ac-4e50-b693-90da10835873 peer=127.0.0.1:57520->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:20.528+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=32 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d1b198cd-ae03-48e0-b257-2df20b89a443 endpoint=127.0.0.1:57520->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:23.460+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57536 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57536->127.0.0.1:18789 conn=57b76e80…386b [39m
-[90m2026-05-06T20:29:23.527+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=57b76e80-6612-4ca6-86b2-e2ef2bb5386b peer=127.0.0.1:57536->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:23.535+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=64 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=07075718-a61f-4ebd-b70e-755652ad834e endpoint=127.0.0.1:57536->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:28.492+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37704 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37704->127.0.0.1:18789 conn=04e156fa…fdaa [39m
-[90m2026-05-06T20:29:28.551+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=04e156fa-35f6-49c7-9500-4cb0bb95fdaa peer=127.0.0.1:37704->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:28.560+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=40 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=41b355b5-3c06-4aac-9a1f-9adcb08b1c36 endpoint=127.0.0.1:37704->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:28.986+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37710 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37710->127.0.0.1:18789 conn=71570d68…0129 [39m
-[90m2026-05-06T20:29:29.038+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=71570d68-063d-4cea-8a39-6e17c0880129 peer=127.0.0.1:37710->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:29.046+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=40 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=99555b11-e553-4996-861e-10c744bd8d52 endpoint=127.0.0.1:37710->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:29.059+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:29:29.385+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37736 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37736->127.0.0.1:18789 conn=142d0f13…0a11 [39m
-[90m2026-05-06T20:29:29.435+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=142d0f13-2160-4e91-9ad9-952f635d0a11 peer=127.0.0.1:37736->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:29.446+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=37 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=deacedee-e4de-4d96-9454-343b209d0cf4 endpoint=127.0.0.1:37736->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:30.029+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37740 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37740->127.0.0.1:18789 conn=20ab6e4c…15e7 [39m
-[90m2026-05-06T20:29:30.105+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=20ab6e4c-25f8-42f4-8430-3f35e12415e7 peer=127.0.0.1:37740->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:30.120+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=46 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9a714aec-9d5f-44cb-8ff3-6a620f276b42 endpoint=127.0.0.1:37740->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:31.111+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37746 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37746->127.0.0.1:18789 conn=b6af96fe…5210 [39m
-[90m2026-05-06T20:29:31.209+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b6af96fe-2bfa-4042-986f-675bdeb35210 peer=127.0.0.1:37746->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:31.223+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=76 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6971a862-bebe-42b0-bb8c-5957d52c7f57 endpoint=127.0.0.1:37746->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:32.925+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=37750 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:37750->127.0.0.1:18789 conn=5286e64e…7e9c [39m
-[90m2026-05-06T20:29:33.019+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5286e64e-812c-41a7-bac5-aa68a6427e9c peer=127.0.0.1:37750->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:33.030+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=83 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=df6e99c8-4332-4029-80a7-2bcfbfcc85d9 endpoint=127.0.0.1:37750->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:35.943+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36624 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36624->127.0.0.1:18789 conn=7a7c6746…3a63 [39m
-[90m2026-05-06T20:29:36.020+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7a7c6746-10a5-443b-8b4f-6e244f463a63 peer=127.0.0.1:36624->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:36.031+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=69 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=bb423fac-069e-45d0-a07e-db38ac02131e endpoint=127.0.0.1:36624->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:40.990+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36632 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36632->127.0.0.1:18789 conn=7b29a449…1070 [39m
-[90m2026-05-06T20:29:41.083+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7b29a449-79f2-47cd-8f00-2ec48c581070 peer=127.0.0.1:36632->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:41.097+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=64 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=aabbca0c-32ac-47ce-bc61-943dea03f103 endpoint=127.0.0.1:36632->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:49.074+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33076 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33076->127.0.0.1:18789 conn=82bcde3b…73b0 [39m
-[90m2026-05-06T20:29:49.177+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=82bcde3b-fc07-4908-a1f6-422d897573b0 peer=127.0.0.1:33076->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:49.185+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=68 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=27406d83-587b-421e-a067-999386ae1a26 endpoint=127.0.0.1:33076->127.0.0.1:18789 [39m
-[90m2026-05-06T20:29:59.765+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=31s eventLoopDelayP99Ms=53.2 eventLoopDelayMaxMs=6828.3 eventLoopUtilization=0.303 cpuCoreRatio=0.169 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:78ms,sidecars.session-locks:110ms,sidecars.main-session-recovery:374ms,post-ready.maintenance:4182ms [39m
-[90m2026-05-06T20:29:59.768+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:29:59.778+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53442 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53442->127.0.0.1:18789 conn=9bb0b20f…3d4b [39m
-[90m2026-05-06T20:29:59.846+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9bb0b20f-dd2a-4fa1-b7e8-ceed8d803d4b peer=127.0.0.1:53442->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:29:59.853+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=51 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c8fb5007-0009-4c38-a6d1-73bb3a1166ce endpoint=127.0.0.1:53442->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:07.877+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53120 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53120->127.0.0.1:18789 conn=36d702bc…ca22 [39m
-[90m2026-05-06T20:30:08.008+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=36d702bc-d20f-4132-a6ba-0159601dca22 peer=127.0.0.1:53120->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:08.021+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=100 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2f09113e-74be-498d-a179-97dcddc7f3dd endpoint=127.0.0.1:53120->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:14.009+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48054 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48054->127.0.0.1:18789 conn=596342de…24f0 [39m
-[90m2026-05-06T20:30:14.067+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=596342de-6837-426b-b13e-920e678824f0 peer=127.0.0.1:48054->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:14.074+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=66 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=093450ad-a33d-4f31-9d37-9f86fd75d9d9 endpoint=127.0.0.1:48054->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:14.382+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48056 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48056->127.0.0.1:18789 conn=6513b6d6…1786 [39m
-[90m2026-05-06T20:30:14.426+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6513b6d6-265f-4ec6-aa35-209e5cb01786 peer=127.0.0.1:48056->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:14.432+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=18 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=19ac7f2c-37c2-4a3f-92c0-ca4ca85a9051 endpoint=127.0.0.1:48056->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:14.993+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48072 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48072->127.0.0.1:18789 conn=8f772cd4…6ad3 [39m
-[90m2026-05-06T20:30:15.020+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8f772cd4-27d3-4aed-a514-011186426ad3 peer=127.0.0.1:48072->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:15.026+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=13 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7754f0ee-3470-4180-93af-4b080226be2e endpoint=127.0.0.1:48072->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:16.047+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48082 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48082->127.0.0.1:18789 conn=f4f6a298…f813 [39m
-[90m2026-05-06T20:30:16.118+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f4f6a298-7098-49bf-867d-7c3a8813f813 peer=127.0.0.1:48082->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:16.129+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=46 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=806fb9bd-f57c-49f6-9ca8-693b9e86cf9c endpoint=127.0.0.1:48082->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:17.819+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48096 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48096->127.0.0.1:18789 conn=0d9e9b2a…70be [39m
-[90m2026-05-06T20:30:17.876+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0d9e9b2a-bfc5-4f19-86e4-2a3f546870be peer=127.0.0.1:48096->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:17.883+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=38 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e958f4bf-f706-4519-b046-305df6515a98 endpoint=127.0.0.1:48096->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:20.798+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48098 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48098->127.0.0.1:18789 conn=45b1f40a…f778 [39m
-[90m2026-05-06T20:30:20.903+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=45b1f40a-55a0-4321-81a0-965769a6f778 peer=127.0.0.1:48098->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:20.918+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=69 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c665a9d4-e49e-461c-aeea-e19ddb1d3ffb endpoint=127.0.0.1:48098->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:25.859+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38790 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38790->127.0.0.1:18789 conn=7df0e9bf…3cc5 [39m
-[90m2026-05-06T20:30:25.959+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7df0e9bf-7fc2-4042-b4f9-0890c1503cc5 peer=127.0.0.1:38790->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:25.970+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=84 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=51912e91-d272-4fac-b1b4-cec033039e48 endpoint=127.0.0.1:38790->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:29.775+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:30:33.955+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53100 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53100->127.0.0.1:18789 conn=8b753985…ec13 [39m
-[90m2026-05-06T20:30:34.057+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8b753985-8dc3-47a9-8a46-d717b35dec13 peer=127.0.0.1:53100->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:34.065+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=78 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=bc3573c1-7972-4f0c-87f5-fc8d59fd75cb endpoint=127.0.0.1:53100->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:42.020+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53108 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53108->127.0.0.1:18789 conn=cd00c79f…7ff9 [39m
-[90m2026-05-06T20:30:42.085+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=cd00c79f-0f3f-47ea-9600-2220763b7ff9 peer=127.0.0.1:53108->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:42.094+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=41 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c20c678f-9abf-489a-970d-944493272fc4 endpoint=127.0.0.1:53108->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:50.077+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46814 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46814->127.0.0.1:18789 conn=624bfe3f…3e83 [39m
-[90m2026-05-06T20:30:50.170+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=624bfe3f-578f-4a85-ad86-bdec96e53e83 peer=127.0.0.1:46814->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:50.184+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=57 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a95dcf14-db09-4b14-af54-adc15ff7626a endpoint=127.0.0.1:46814->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:58.110+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52074 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52074->127.0.0.1:18789 conn=2b2e81a2…101e [39m
-[90m2026-05-06T20:30:58.136+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=2b2e81a2-eb63-464d-b696-75efeee1101e peer=127.0.0.1:52074->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:58.142+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=15 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c9b067f8-1b05-46f2-a7ff-d95b57d20646 endpoint=127.0.0.1:52074->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:59.059+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52076 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52076->127.0.0.1:18789 conn=3acf83d5…0fc7 [39m
-[90m2026-05-06T20:30:59.115+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3acf83d5-17de-4a71-b65c-a788f9fd0fc7 peer=127.0.0.1:52076->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:59.123+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=61 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7fe5668e-78f7-446b-aac0-a593b0b5a197 endpoint=127.0.0.1:52076->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:59.472+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52080 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52080->127.0.0.1:18789 conn=7dd3aa1c…78bf [39m
-[90m2026-05-06T20:30:59.550+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7dd3aa1c-8725-4d80-ab3c-304de51078bf peer=127.0.0.1:52080->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:30:59.570+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=50 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8ff1b0f6-6912-40cb-8aeb-6e2d6b146c04 endpoint=127.0.0.1:52080->127.0.0.1:18789 [39m
-[90m2026-05-06T20:30:59.772+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:31:00.122+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52102 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52102->127.0.0.1:18789 conn=a2359740…ce0f [39m
-[90m2026-05-06T20:31:00.211+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a2359740-2cac-412d-bb78-4980e5c0ce0f peer=127.0.0.1:52102->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:00.228+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=53 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6a3ff3d5-4f73-44b5-803a-c36a69ad4b64 endpoint=127.0.0.1:52102->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:01.192+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52114 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52114->127.0.0.1:18789 conn=6e27abfc…06cf [39m
-[90m2026-05-06T20:31:01.274+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6e27abfc-2ad3-4834-97cb-072c7abc06cf peer=127.0.0.1:52114->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:01.289+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=53 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=1b2bd726-463c-42f7-9b26-e5965fbb9190 endpoint=127.0.0.1:52114->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:02.976+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52122 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52122->127.0.0.1:18789 conn=99c085ba…6d69 [39m
-[90m2026-05-06T20:31:03.055+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=99c085ba-6b77-49da-bc16-1ec99b0f6d69 peer=127.0.0.1:52122->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:03.077+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=54 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ec760c9b-7363-4852-bd10-9c42895a204a endpoint=127.0.0.1:52122->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:05.965+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=43944 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:43944->127.0.0.1:18789 conn=e76393b0…284a [39m
-[90m2026-05-06T20:31:06.037+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e76393b0-30e3-4f92-8d6a-fe524d59284a peer=127.0.0.1:43944->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:06.052+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=53 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e67049af-6ba5-4a6a-a578-731250278192 endpoint=127.0.0.1:43944->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:10.995+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=43956 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:43956->127.0.0.1:18789 conn=3a10a7bc…0454 [39m
-[90m2026-05-06T20:31:11.072+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3a10a7bc-ca11-4882-9565-fe1a2fdf0454 peer=127.0.0.1:43956->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:11.090+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=61 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=171f8872-b3d8-4d10-b66d-e94af303e7a5 endpoint=127.0.0.1:43956->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:19.065+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34102 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34102->127.0.0.1:18789 conn=3088d7c0…cffe [39m
-[90m2026-05-06T20:31:19.134+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3088d7c0-cda2-48f6-afb3-61aec40ccffe peer=127.0.0.1:34102->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:19.145+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=52 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c0aead0a-0928-4843-a9ad-f00ed0908c4e endpoint=127.0.0.1:34102->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:27.140+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42704 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42704->127.0.0.1:18789 conn=548c96d4…06bc [39m
-[90m2026-05-06T20:31:27.239+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=548c96d4-c832-459f-ae2a-7f93cf5906bc peer=127.0.0.1:42704->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:27.249+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=73 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4718bfdf-0b64-460b-bf66-5db2cc69c74d endpoint=127.0.0.1:42704->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:29.774+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:31:35.227+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57434 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57434->127.0.0.1:18789 conn=b711c771…f448 [39m
-[90m2026-05-06T20:31:35.314+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b711c771-a611-49a8-ab63-29c08204f448 peer=127.0.0.1:57434->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:35.325+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=66 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=02cad0ce-e232-4e72-9db1-ce7509d5a6cb endpoint=127.0.0.1:57434->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:43.291+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57444 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57444->127.0.0.1:18789 conn=8a8a5ed3…f946 [39m
-[90m2026-05-06T20:31:43.381+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8a8a5ed3-0d8a-458f-9957-868b92eef946 peer=127.0.0.1:57444->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:43.402+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=46 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9832ba44-d95f-4983-a078-f83a0517302c endpoint=127.0.0.1:57444->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:44.047+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50218 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50218->127.0.0.1:18789 conn=517f0f86…a35a [39m
-[90m2026-05-06T20:31:44.126+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=517f0f86-9e1e-4a77-a64b-3ff876c4a35a peer=127.0.0.1:50218->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:44.141+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=49 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=060c4b6d-f7e9-401c-8101-236b2ee52ee2 endpoint=127.0.0.1:50218->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:44.451+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50234 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50234->127.0.0.1:18789 conn=b5113e9c…7a3a [39m
-[90m2026-05-06T20:31:44.536+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b5113e9c-2a4a-4430-9b69-469ffca37a3a peer=127.0.0.1:50234->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:44.558+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=54 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=99af24f8-2535-44d2-a45b-728603175fff endpoint=127.0.0.1:50234->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:45.089+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50250 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50250->127.0.0.1:18789 conn=6cd35f3a…fc47 [39m
-[90m2026-05-06T20:31:45.143+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6cd35f3a-cfa3-499a-b239-9699307ffc47 peer=127.0.0.1:50250->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:45.152+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=41 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=39031e78-3cd1-481e-aeec-58a1c8e505db endpoint=127.0.0.1:50250->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:46.146+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50258 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50258->127.0.0.1:18789 conn=caa75444…de86 [39m
-[90m2026-05-06T20:31:46.211+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=caa75444-8b46-43b4-b083-af24ecebde86 peer=127.0.0.1:50258->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:46.232+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=37 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2f005d2b-6bff-465f-8519-f3949f9934c7 endpoint=127.0.0.1:50258->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:47.904+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50262 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50262->127.0.0.1:18789 conn=79fbc9e7…77c1 [39m
-[90m2026-05-06T20:31:47.962+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=79fbc9e7-ba83-4509-917f-933d119777c1 peer=127.0.0.1:50262->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:47.970+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=38 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=63d4d1a5-fe0a-443b-b2bb-1fae063c611c endpoint=127.0.0.1:50262->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:50.885+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50270 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50270->127.0.0.1:18789 conn=03175654…b4d8 [39m
-[90m2026-05-06T20:31:50.949+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=03175654-a7a0-471d-8c96-68011520b4d8 peer=127.0.0.1:50270->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:50.957+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=56 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=07a46983-9f5c-4327-bd40-f4174a957244 endpoint=127.0.0.1:50270->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:59.612+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=59456 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:59456->127.0.0.1:18789 conn=a91ca529…1457 [39m
-[90m2026-05-06T20:31:59.637+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a91ca529-0dec-47e7-ba08-454fa57e1457 peer=127.0.0.1:59456->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:31:59.643+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=15 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=212a4082-02c8-40b6-8c8d-40df8648ceda endpoint=127.0.0.1:59456->127.0.0.1:18789 [39m
-[90m2026-05-06T20:31:59.768+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=58.1 eventLoopDelayMaxMs=4550.8 eventLoopUtilization=0.286 cpuCoreRatio=0.137 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:78ms,sidecars.session-locks:110ms,sidecars.main-session-recovery:374ms,post-ready.maintenance:4182ms [39m
-[90m2026-05-06T20:31:59.769+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:32:07.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48802 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48802->127.0.0.1:18789 conn=33cfc48e…bd12 [39m
-[90m2026-05-06T20:32:07.772+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=33cfc48e-cff9-432f-bcfd-99ff0908bd12 peer=127.0.0.1:48802->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:07.785+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=72 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7894a906-c731-4882-b3ec-4aabe3777677 endpoint=127.0.0.1:48802->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:15.752+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44798 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44798->127.0.0.1:18789 conn=73da3475…0e3d [39m
-[90m2026-05-06T20:32:15.850+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=73da3475-e96e-4d06-b61b-3f2f55ce0e3d peer=127.0.0.1:44798->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:15.866+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=63 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=81b85ff1-aa92-49ff-9d81-2424623d6ba9 endpoint=127.0.0.1:44798->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:23.835+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42812 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42812->127.0.0.1:18789 conn=47259a09…26d0 [39m
-[90m2026-05-06T20:32:23.944+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=47259a09-1c20-4b43-af2a-fb3882b826d0 peer=127.0.0.1:42812->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:23.961+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=75 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=95f399d6-e42e-415f-b6d4-64f5b11a1f99 endpoint=127.0.0.1:42812->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:29.069+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42818 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42818->127.0.0.1:18789 conn=4a34ec10…1d5b [39m
-[90m2026-05-06T20:32:29.170+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4a34ec10-407a-4332-9ffd-a1213c3c1d5b peer=127.0.0.1:42818->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:29.186+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=66 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=53800ccb-8377-4416-9e4c-95e17a4cd1ef endpoint=127.0.0.1:42818->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:29.485+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42828 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42828->127.0.0.1:18789 conn=f12ab19b…352c [39m
-[90m2026-05-06T20:32:29.530+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f12ab19b-d503-4d57-a2c8-a1b9b01a352c peer=127.0.0.1:42828->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:29.536+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=44 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2fe37c29-60f4-4bd5-b599-c79ac0958180 endpoint=127.0.0.1:42828->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:29.767+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:32:30.110+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42840 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42840->127.0.0.1:18789 conn=9a9ffadc…e158 [39m
-[90m2026-05-06T20:32:30.145+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9a9ffadc-c044-473a-a879-820e7d0ae158 peer=127.0.0.1:42840->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:30.152+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=17 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=16f56996-7fc3-4900-86c3-03febdc5ace2 endpoint=127.0.0.1:42840->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:31.174+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42846 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42846->127.0.0.1:18789 conn=91d0cbe3…96da [39m
-[90m2026-05-06T20:32:31.262+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=91d0cbe3-67ab-4d41-94de-5086ed0196da peer=127.0.0.1:42846->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:31.282+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=54 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=31f0d838-6107-4810-920f-12c9d31eaab3 endpoint=127.0.0.1:42846->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:32.949+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42848 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42848->127.0.0.1:18789 conn=d2c6dd38…2e78 [39m
-[90m2026-05-06T20:32:33.006+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d2c6dd38-7188-400f-bf07-a166c9202e78 peer=127.0.0.1:42848->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:33.016+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=43 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c5038028-3e6b-4088-9c07-32ad0e075776 endpoint=127.0.0.1:42848->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:35.929+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57762 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57762->127.0.0.1:18789 conn=f68fd735…f42a [39m
-[90m2026-05-06T20:32:36.023+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f68fd735-5015-454e-8e0f-7e14820af42a peer=127.0.0.1:57762->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:36.047+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=57 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=567e2c2b-ec41-49db-9bf7-a5a40f724470 endpoint=127.0.0.1:57762->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:40.971+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57776 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57776->127.0.0.1:18789 conn=25456dd8…8b2d [39m
-[90m2026-05-06T20:32:41.084+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=25456dd8-bf81-43d5-bb94-03448e728b2d peer=127.0.0.1:57776->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:41.108+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=62 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2015ebf6-7347-4a69-b8dd-f854a564aecc endpoint=127.0.0.1:57776->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:49.048+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45334 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45334->127.0.0.1:18789 conn=86184b8a…238b [39m
-[90m2026-05-06T20:32:49.151+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=86184b8a-6c32-4ee2-9f89-0af4d06b238b peer=127.0.0.1:45334->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:49.176+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=71 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d86639ce-940a-4562-b652-f1a4e64e837d endpoint=127.0.0.1:45334->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:58.540+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48734 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48734->127.0.0.1:18789 conn=20d7b3d3…2a4a [39m
-[90m2026-05-06T20:32:58.573+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=20d7b3d3-6810-4115-b142-189cc0bb2a4a peer=127.0.0.1:48734->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:32:58.581+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=20 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=cef24f79-ed31-4d57-9146-416aeb5f919b endpoint=127.0.0.1:48734->127.0.0.1:18789 [39m
-[90m2026-05-06T20:32:59.779+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-06T20:33:06.599+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46688 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46688->127.0.0.1:18789 conn=c6c2a986…c168 [39m
-[90m2026-05-06T20:33:06.687+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c6c2a986-98e8-4360-aa35-48641f99c168 peer=127.0.0.1:46688->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:06.698+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=64 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9bcfb19f-76b1-4ce4-8a19-fd208b328f0b endpoint=127.0.0.1:46688->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:14.069+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32888 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32888->127.0.0.1:18789 conn=dbac5f8a…263e [39m
-[90m2026-05-06T20:33:14.173+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=dbac5f8a-b3d3-42fe-a6b5-ff24639d263e peer=127.0.0.1:32888->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:14.195+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=83 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=db3daa64-a8cf-4134-87ba-92682425bd0a endpoint=127.0.0.1:32888->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:14.488+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32890 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32890->127.0.0.1:18789 conn=d82111d0…3d49 [39m
-[90m2026-05-06T20:33:14.565+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d82111d0-c3c6-42f0-8544-905b81213d49 peer=127.0.0.1:32890->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:14.578+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=48 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=196ce179-c33b-4410-9d39-c65637c702da endpoint=127.0.0.1:32890->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:15.163+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32896 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32896->127.0.0.1:18789 conn=53351efb…a596 [39m
-[90m2026-05-06T20:33:15.278+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=53351efb-5666-4c43-afa1-977f6ff0a596 peer=127.0.0.1:32896->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:15.299+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=89 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e355f03f-4516-42fe-8d24-68450918f9b8 endpoint=127.0.0.1:32896->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:16.279+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32900 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32900->127.0.0.1:18789 conn=8a3ffeff…85e4 [39m
-[90m2026-05-06T20:33:16.433+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8a3ffeff-365d-4866-b27c-89738df585e4 peer=127.0.0.1:32900->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:16.454+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=120 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8754cdf4-7290-4894-8309-cfe6e129311b endpoint=127.0.0.1:32900->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:18.136+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32908 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32908->127.0.0.1:18789 conn=874b9b44…807a [39m
-[90m2026-05-06T20:33:18.287+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=874b9b44-5e85-4f7b-83de-6eb3777b807a peer=127.0.0.1:32908->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:18.307+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=124 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2853c765-cd1d-4da6-a9c1-bb968766f8c8 endpoint=127.0.0.1:32908->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:21.205+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32922 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32922->127.0.0.1:18789 conn=b1f0a226…0cbb [39m
-[90m2026-05-06T20:33:21.347+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b1f0a226-703b-4c99-b4ac-30ea81c70cbb peer=127.0.0.1:32922->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:21.362+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=120 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f8e7654f-9c30-48a5-a6e9-d3171001bec0 endpoint=127.0.0.1:32922->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:26.301+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52552 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52552->127.0.0.1:18789 conn=1f47fcfc…b0e9 [39m
-[90m2026-05-06T20:33:26.437+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1f47fcfc-ccdc-4c96-ac2d-99e91a6db0e9 peer=127.0.0.1:52552->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:26.462+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=110 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=81d2527c-3281-4853-a946-ee7accfa2a3d endpoint=127.0.0.1:52552->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:29.777+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
 [WARN] WebSocket connect failed — will retry on next health tick
 [WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:31.393+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52588 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52588->127.0.0.1:18789 conn=9d25a955…08a1 [39m
-[90m2026-05-06T20:33:31.517+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9d25a955-aa5d-4c1a-8009-13e3712008a1 peer=127.0.0.1:52588->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fef478a-bfe4-4061-9356-24149cbaea6b) [39m
-[90m2026-05-06T20:33:31.535+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fef478a-bfe4-4061-9356-24149cbaea6b) durationMs=103 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fb837b0c-a1b7-4ecf-9bc3-010346863049 endpoint=127.0.0.1:52588->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:31.886+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52590 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52590->127.0.0.1:18789 conn=ee8b95e6…4c29 [39m
-[90m2026-05-06T20:33:32.163+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ee8b95e6-5bd1-4318-9204-1250d5144c29 peer=127.0.0.1:52590->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fef478a-bfe4-4061-9356-24149cbaea6b) [39m
-[90m2026-05-06T20:33:32.213+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fef478a-bfe4-4061-9356-24149cbaea6b) durationMs=214 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a16bafdd-b1e6-43ff-a049-7852e0e18d50 endpoint=127.0.0.1:52590->127.0.0.1:18789 [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:32.734+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52602 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52602->127.0.0.1:18789 conn=6c462ed1…9e86 [39m
-[90m2026-05-06T20:33:33.127+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6c462ed1-f04d-4c06-9945-6c6e4e249e86 peer=127.0.0.1:52602->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:33:33.159+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=342 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=3c3ff1ae-076d-46f3-b4d7-d33d55717efe endpoint=127.0.0.1:52602->127.0.0.1:18789 [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:34.099+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38272 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38272->127.0.0.1:18789 conn=e7be706b…4f34 [39m
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:34.407+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e7be706b-ead7-4705-ab02-5d52af074f34 peer=127.0.0.1:38272->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:33:34.445+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=270 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f57ccc10-b652-4233-889e-18c35c539dc3 endpoint=127.0.0.1:38272->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:34.479+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38286 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38286->127.0.0.1:18789 conn=c695bdea…c131 [39m
-[90m2026-05-06T20:33:34.584+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c695bdea-0e11-4ab9-b7e8-843cc90cc131 peer=127.0.0.1:38286->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:34.606+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=62 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=3a10c6d3-464f-4085-982a-248bb5732d46 endpoint=127.0.0.1:38286->127.0.0.1:18789 [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:36.094+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38296 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38296->127.0.0.1:18789 conn=84007c2d…1f38 [39m
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:36.444+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=84007c2d-ecdd-4949-8f4c-4f6b47141f38 peer=127.0.0.1:38296->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:33:36.473+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=299 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=38e54d13-b235-4151-9540-c7f378065ad3 endpoint=127.0.0.1:38296->127.0.0.1:18789 [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:39.363+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38310 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38310->127.0.0.1:18789 conn=3d6bd36f…30fa [39m
-[90m2026-05-06T20:33:39.665+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3d6bd36f-be1c-4865-b735-4c2f8b2030fa peer=127.0.0.1:38310->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:33:39.709+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=269 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e180ae5a-53b9-4585-9288-c5de73146f1d endpoint=127.0.0.1:38310->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:42.575+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38324 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38324->127.0.0.1:18789 conn=da808ee3…9a2b [39m
-[90m2026-05-06T20:33:42.713+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=da808ee3-0b1c-4c98-83a4-86fcc9599a2b peer=127.0.0.1:38324->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:42.736+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=111 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6b932f15-8439-4e5e-9c11-10db92b37813 endpoint=127.0.0.1:38324->127.0.0.1:18789 [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-06T20:33:44.606+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58332 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58332->127.0.0.1:18789 conn=f98e3fb7…a5ea [39m
-[90m2026-05-06T20:33:44.939+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f98e3fb7-4bc9-45ad-892c-3616d950a5ea peer=127.0.0.1:58332->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:33:44.982+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=280 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=24510056-a2e2-47cc-b5ea-800b8993851f endpoint=127.0.0.1:58332->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:51.995+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56088 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56088->127.0.0.1:18789 conn=240bbf6c…4aa8 [39m
+[90m2026-05-07T12:27:52.120+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=240bbf6c-fe18-4dd2-a013-37b7f33e4aa8 peer=127.0.0.1:56088->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:27:52.139+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=88 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e2af9b23-f56e-4251-bc53-f31a5276ae8b endpoint=127.0.0.1:56088->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:52.424+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56098 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56098->127.0.0.1:18789 conn=3b4ca6e2…2e79 [39m
+[90m2026-05-07T12:27:52.481+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3b4ca6e2-c8d5-4e90-9c37-60cdbb8d2e79 peer=127.0.0.1:56098->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:27:52.489+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=53 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=931803cd-67d0-4b03-9188-e0761f20db4e endpoint=127.0.0.1:56098->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:52.702+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56120 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56120->127.0.0.1:18789 conn=a2d1ef06…24cc [39m
+[90m2026-05-07T12:27:52.756+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a2d1ef06-5686-49dd-aefe-9e54ddd624cc peer=127.0.0.1:56120->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:27:52.764+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=40 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e478a247-6850-4061-803b-edabf843b581 endpoint=127.0.0.1:56120->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:53.092+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56130 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56130->127.0.0.1:18789 conn=f5720253…17ed [39m
+[90m2026-05-07T12:27:53.204+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f5720253-7c90-4cde-8f92-20072a3c17ed peer=127.0.0.1:56130->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:27:53.224+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=77 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c4f56c93-4951-49a0-ac87-03063085ddb2 endpoint=127.0.0.1:56130->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:54.191+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56136 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56136->127.0.0.1:18789 conn=abd2ca96…9ae2 [39m
+[90m2026-05-07T12:27:54.329+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=abd2ca96-5365-4949-a493-c408508a9ae2 peer=127.0.0.1:56136->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:27:54.348+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=90 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=517a7ec1-c7e2-4194-97a9-e7bd3475153a endpoint=127.0.0.1:56136->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:56.017+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56148 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56148->127.0.0.1:18789 conn=26b88eb7…b4c4 [39m
+[90m2026-05-07T12:27:56.110+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=26b88eb7-9501-4308-9c93-66dd34dcb4c4 peer=127.0.0.1:56148->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:27:56.127+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=76 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7f3f5bbc-67d6-4d5a-b078-67bbe7faee9e endpoint=127.0.0.1:56148->127.0.0.1:18789 [39m
+[90m2026-05-07T12:27:59.032+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56150 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56150->127.0.0.1:18789 conn=e9c49209…198a [39m
+[90m2026-05-07T12:27:59.175+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e9c49209-3e14-4abe-af35-0fd3cae8198a peer=127.0.0.1:56150->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:27:59.196+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=113 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=beb24a06-4e40-491d-91f8-0d6047165484 endpoint=127.0.0.1:56150->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:04.094+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50204 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50204->127.0.0.1:18789 conn=f87916ee…498d [39m
+[90m2026-05-07T12:28:04.182+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f87916ee-891f-411d-838c-1f2bd7d0498d peer=127.0.0.1:50204->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:04.189+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=55 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0e2271ef-29a5-446a-b2ef-92196b8b22d8 endpoint=127.0.0.1:50204->127.0.0.1:18789 [39m
 [INFO] Connecting WebSocket...
 [WARN] WebSocket disconnected
 [WARN] WebSocket disconnected
 [WARN] WebSocket connect failed — will retry on next health tick
 [WARN] WebSocket disconnected
-[90m2026-05-06T20:33:46.316+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58346 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58346->127.0.0.1:18789 conn=82fcd5f3…1907 [39m
-[90m2026-05-06T20:33:46.687+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=82fcd5f3-2610-47e1-964c-40306ff21907 peer=127.0.0.1:58346->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-06T20:33:46.722+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=316 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c5ac4e99-ad57-45ea-95a1-35649341f800 endpoint=127.0.0.1:58346->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:50.653+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58362 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58362->127.0.0.1:18789 conn=e9a1dcc9…be57 [39m
-[90m2026-05-06T20:33:50.690+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e9a1dcc9-5bff-4b25-8c28-0b79ea74be57 peer=127.0.0.1:58362->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:50.698+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=15 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=00684918-1e1c-4e11-be44-53b15656ded0 endpoint=127.0.0.1:58362->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:51.871+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58366 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58366->127.0.0.1:18789 conn=9be1e4a8…06f7 [39m
-[90m2026-05-06T20:33:51.965+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9be1e4a8-cb2d-4560-9230-c855f92006f7 peer=127.0.0.1:58366->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:51.970+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=58 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=3da7a897-5ee5-4099-97da-b58ac74a9498 endpoint=127.0.0.1:58366->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:51.979+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58380 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58380->127.0.0.1:18789 conn=3711a207…d337 [39m
-[90m2026-05-06T20:33:52.004+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3711a207-87a9-4afa-bf24-aa118ca8d337 peer=127.0.0.1:58380->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:52.010+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=15 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2842c7b7-9b9e-4b62-b2e2-5feea2922497 endpoint=127.0.0.1:58380->127.0.0.1:18789 [39m
-[90m2026-05-06T20:33:52.361+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58384 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58384->127.0.0.1:18789 conn=bfe0f14f…f28a [39m
-[90m2026-05-06T20:33:52.384+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bfe0f14f-40de-4186-a571-09567e53f28a peer=127.0.0.1:58384->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=device identity mismatch [39m
-[90m2026-05-06T20:33:52.389+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=device identity mismatch durationMs=13 cause=device-auth-invalid handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=45bd9a69-482d-4d30-bd54-0eb58ff3aaac endpoint=127.0.0.1:58384->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:07.727+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50220 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50220->127.0.0.1:18789 conn=bdb2b466…c8e9 [39m
+[90m2026-05-07T12:28:07.805+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bdb2b466-f0e9-4314-b905-8bc8c6cbc8e9 peer=127.0.0.1:50220->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:28:07.813+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=55 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2ccccd50-551b-403e-bbcc-61724c35ecb7 endpoint=127.0.0.1:50220->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:09.231+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:28:12.176+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50158 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50158->127.0.0.1:18789 conn=9bf424b6…cc88 [39m
+[90m2026-05-07T12:28:12.297+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9bf424b6-7236-4dc1-ae90-05dec90acc88 peer=127.0.0.1:50158->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:12.308+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=96 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8444229d-0974-4154-bf16-4a96d3fe8d9a endpoint=127.0.0.1:50158->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:20.273+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46902 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46902->127.0.0.1:18789 conn=08c5d58c…5245 [39m
+[90m2026-05-07T12:28:20.335+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46914 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46914->127.0.0.1:18789 conn=3eb60209…2e22 [39m
+[90m2026-05-07T12:28:20.437+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3eb60209-15f0-44e7-b1d3-0eaadb392e22 peer=127.0.0.1:46914->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:20.451+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=90 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fc373203-f10c-47bd-a10f-08a1a602ee8f endpoint=127.0.0.1:46914->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:20.492+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token conn=08c5d58c…5245 [39m
+[90m2026-05-07T12:28:20.503+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-07T12:28:26.411+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=39 [39m
+[90m2026-05-07T12:28:26.438+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 14ms id=930f5d6e…a5c9 [39m
+[90m2026-05-07T12:28:26.450+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6217 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=930f5d6e-590e-4581-ba94-83c7ce83a5c9 endpoint=127.0.0.1:46902->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:28.467+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46942 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46942->127.0.0.1:18789 conn=3f1f79cf…55eb [39m
+[90m2026-05-07T12:28:28.602+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3f1f79cf-6313-4eeb-90f7-1228c65255eb peer=127.0.0.1:46942->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:28.617+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=115 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=011845e6-c444-4e7e-9c23-5e0b0b4f2f0f endpoint=127.0.0.1:46942->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:36.599+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51290 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51290->127.0.0.1:18789 conn=9f0a76b5…223c [39m
+[90m2026-05-07T12:28:36.725+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9f0a76b5-e548-452e-83ac-bd11a256223c peer=127.0.0.1:51290->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:36.740+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=115 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ac3e3307-b7ea-4c8c-8ad5-7575f49631c5 endpoint=127.0.0.1:51290->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:36.957+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51298 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51298->127.0.0.1:18789 conn=076d22dc…2d88 [39m
+[90m2026-05-07T12:28:36.989+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=076d22dc-6811-4162-adbc-395f5de82d88 peer=127.0.0.1:51298->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:36.997+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=21 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9bc91a06-d723-4e35-9727-97edbc5e36b6 endpoint=127.0.0.1:51298->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
 [WARN] WebSocket disconnected
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Is it the same error as last time?
-
-I hope you see this?
-
-Below are logs from the page > Devuce NODE > Node Capabitiles page > device logs section
-
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-[NODE] Challenge received, signing...
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android deviceFamily=Android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - device identity mismatch
-[NODE] Disconnected, will retry...
-
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:28:37.368+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51304 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51304->127.0.0.1:18789 conn=2988ff1a…70c0 [39m
+[90m2026-05-07T12:28:37.501+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=2988ff1a-b395-433f-a124-79777f6e70c0 peer=127.0.0.1:51304->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:37.517+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=97 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=16d30d23-5626-4411-bbee-f563ae8b817c endpoint=127.0.0.1:51304->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:37.705+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51310 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51310->127.0.0.1:18789 conn=bba81da4…d4b2 [39m
+[90m2026-05-07T12:28:37.801+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bba81da4-488f-4f08-b431-c086f7e2d4b2 peer=127.0.0.1:51310->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:28:37.819+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=57 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e6c79308-cde1-44ce-ba5e-78c0d718213a endpoint=127.0.0.1:51310->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:38.075+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51316 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51316->127.0.0.1:18789 conn=3d40687f…f8a3 [39m
+[90m2026-05-07T12:28:38.157+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3d40687f-040b-4607-bc0b-fb2724caf8a3 peer=127.0.0.1:51316->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:38.165+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=74 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=903e1167-fb49-436c-80d7-ac4facabe4ac endpoint=127.0.0.1:51316->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:39.166+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41202 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41202->127.0.0.1:18789 conn=feed0092…02b6 [39m
+[90m2026-05-07T12:28:39.232+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:28:39.290+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=feed0092-70b3-4f0a-a1f9-9ba0095b02b6 peer=127.0.0.1:41202->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:39.301+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=107 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ab1e8fa3-6dbd-44f9-8dda-6071a5aa97d2 endpoint=127.0.0.1:41202->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:41.004+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41220 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41220->127.0.0.1:18789 conn=c208ff57…0a9e [39m
+[90m2026-05-07T12:28:41.132+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c208ff57-7b2e-4ab5-980e-ccfbdde10a9e peer=127.0.0.1:41220->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:41.140+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=99 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=30587891-ae85-402a-984d-f35b235b49ed endpoint=127.0.0.1:41220->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:48.245+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41222 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41222->127.0.0.1:18789 conn=e61203c8…7b48 [39m
+[90m2026-05-07T12:28:48.331+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e61203c8-21e5-4fd0-bcdb-9a54583d7b48 peer=127.0.0.1:41222->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:48.338+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=71 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=3584009d-9a5a-4f78-bc0e-9889e345ef4b endpoint=127.0.0.1:41222->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:28:52.724+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39420 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39420->127.0.0.1:18789 conn=541c39d0…823d [39m
+[90m2026-05-07T12:28:52.822+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=541c39d0-1c0c-49d8-b2be-a610b9a6823d peer=127.0.0.1:39420->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:28:52.835+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=64 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9746c9e1-c273-483c-89f7-b7049e6d1443 endpoint=127.0.0.1:39420->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:53.328+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39430 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39430->127.0.0.1:18789 conn=db5faa1c…ad2c [39m
+[90m2026-05-07T12:28:53.442+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=db5faa1c-037a-40c5-8efc-b61f10fbad2c peer=127.0.0.1:39430->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:28:53.462+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=84 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b35e1a3e-2675-4555-8692-d258504903c0 endpoint=127.0.0.1:39430->127.0.0.1:18789 [39m
+[90m2026-05-07T12:28:59.087+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34602 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34602->127.0.0.1:18789 conn=2a2b582e…d789 [39m
+[90m2026-05-07T12:28:59.256+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-07T12:28:59.282+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-07T12:29:05.151+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=41 [39m
+[90m2026-05-07T12:29:05.163+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34604 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34604->127.0.0.1:18789 conn=bb275834…f58e [39m
+[90m2026-05-07T12:29:05.177+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 17ms conn=2a2b582e…d789 id=4bd5ba6c…e4d0 [39m
+[90m2026-05-07T12:29:05.217+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6164 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=4bd5ba6c-cf90-485c-b11b-7c5c749de4d0 endpoint=127.0.0.1:34602->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:05.244+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bb275834-2681-41d8-be12-e45e6d69f58e peer=127.0.0.1:34604->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:05.253+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=67 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=91439511-379a-47ac-86f5-4fbc16c3ce89 endpoint=127.0.0.1:34604->127.0.0.1:18789 conn=bb275834…f58e [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:29:07.717+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34630 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34630->127.0.0.1:18789 conn=0bb25510…c1e5 [39m
+[90m2026-05-07T12:29:07.800+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0bb25510-8c11-4b20-a56f-6c737169c1e5 peer=127.0.0.1:34630->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:29:07.815+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=59 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=df6f5bd8-af80-4ee2-bcec-199c8f70e3a8 endpoint=127.0.0.1:34630->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:09.243+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=63.2 eventLoopDelayMaxMs=5934.9 eventLoopUtilization=0.451 cpuCoreRatio=0.197 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:67ms,sidecars.session-locks:118ms,sidecars.main-session-recovery:640ms,post-ready.maintenance:3094ms [39m
+[90m2026-05-07T12:29:09.259+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:29:13.285+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47926 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47926->127.0.0.1:18789 conn=16126665…b064 [39m
+[90m2026-05-07T12:29:13.418+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=16126665-2982-4063-81d1-0b44d167b064 peer=127.0.0.1:47926->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:13.437+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=96 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=5edb119d-9998-4c20-a130-d096bfae392d endpoint=127.0.0.1:47926->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:21.384+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55498 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55498->127.0.0.1:18789 conn=8e978697…fb16 [39m
+[90m2026-05-07T12:29:21.516+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8e978697-6c5b-45d8-b798-136cc7a5fb16 peer=127.0.0.1:55498->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:21.525+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=93 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=610281ed-ca29-47d0-8610-30e14f911849 endpoint=127.0.0.1:55498->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:21.969+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55504 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55504->127.0.0.1:18789 conn=367c8f80…08ad [39m
+[90m2026-05-07T12:29:22.033+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=367c8f80-60d9-4e80-9df5-e1db8ad608ad peer=127.0.0.1:55504->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:22.040+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=45 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6d1682ef-d0bd-484e-833c-5dd1032abfee endpoint=127.0.0.1:55504->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:29:22.366+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55510 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55510->127.0.0.1:18789 conn=ef45792d…7a9e [39m
+[90m2026-05-07T12:29:22.423+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ef45792d-bd8e-4f47-b8e7-17c505927a9e peer=127.0.0.1:55510->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:22.431+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=41 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=199281aa-461d-410e-a28c-ead6942c3d26 endpoint=127.0.0.1:55510->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:22.702+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55532 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55532->127.0.0.1:18789 conn=4ac00411…67ad [39m
+[90m2026-05-07T12:29:22.806+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4ac00411-0160-47bc-812f-c61a05fd67ad peer=127.0.0.1:55532->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:29:22.815+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=58 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2eac65e6-b4a4-4973-a375-44a8c4664c8d endpoint=127.0.0.1:55532->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:23.033+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55546 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55546->127.0.0.1:18789 conn=20a79ab5…561a [39m
+[90m2026-05-07T12:29:23.153+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=20a79ab5-0caa-4938-b293-1a70cb7c561a peer=127.0.0.1:55546->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:23.172+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=89 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ef7a33ca-cf8d-4d06-b14c-66283e81966a endpoint=127.0.0.1:55546->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:24.152+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55560 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55560->127.0.0.1:18789 conn=0bfc2a78…73a4 [39m
+[90m2026-05-07T12:29:24.283+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0bfc2a78-61ae-4ae9-8472-b154639073a4 peer=127.0.0.1:55560->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:24.303+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=100 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ab8e089d-6f38-40ff-aff3-8f50370ff315 endpoint=127.0.0.1:55560->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:25.986+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55570 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55570->127.0.0.1:18789 conn=84b7902b…b6b2 [39m
+[90m2026-05-07T12:29:26.135+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=84b7902b-ce51-4ee2-9477-b806ac4bb6b2 peer=127.0.0.1:55570->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:26.162+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=104 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2dfb1eae-e339-4b2b-bf19-4a417af83dd2 endpoint=127.0.0.1:55570->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:29.028+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55582 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55582->127.0.0.1:18789 conn=8ddf9f54…7866 [39m
+[90m2026-05-07T12:29:29.182+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8ddf9f54-63f6-4a5b-a2ac-e57ac6fb7866 peer=127.0.0.1:55582->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:29.203+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=112 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=24de31a4-95e4-4a5c-a898-edb45f2622aa endpoint=127.0.0.1:55582->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:34.109+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34772 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34772->127.0.0.1:18789 conn=0d14c928…9c4d [39m
+[90m2026-05-07T12:29:34.245+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0d14c928-1903-4f58-b91a-c9bdb4ca9c4d peer=127.0.0.1:34772->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:34.252+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=103 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0c9d9c3a-7b29-481d-b2fc-5a9f1c5d6f1b endpoint=127.0.0.1:34772->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:29:37.709+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34790 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34790->127.0.0.1:18789 conn=db20d982…2e26 [39m
+[90m2026-05-07T12:29:37.753+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=db20d982-a403-4e15-a578-412dd10e2e26 peer=127.0.0.1:34790->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:37.760+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=35 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=20afd078-eab2-4c15-a0e7-f30083e15b44 endpoint=127.0.0.1:34790->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:39.241+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:29:42.228+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45834 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45834->127.0.0.1:18789 conn=4980e7f6…f3b2 [39m
+[90m2026-05-07T12:29:42.342+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4980e7f6-8324-440b-b9fc-3b5eff99f3b2 peer=127.0.0.1:45834->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:42.355+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=91 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c1545a81-e7a8-418c-aa73-9d41f8bfa60a endpoint=127.0.0.1:45834->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:48.330+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45836 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45836->127.0.0.1:18789 conn=8a677422…fdee [39m
+[90m2026-05-07T12:29:48.406+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-07T12:29:48.416+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:29:54.417+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=43 [39m
+[90m2026-05-07T12:29:54.456+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6114 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=07ab3ce1-21ab-4e8d-86b0-80b249e3024e endpoint=127.0.0.1:45836->127.0.0.1:18789 [39m
+[90m2026-05-07T12:29:54.468+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44254 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44254->127.0.0.1:18789 conn=6b514f01…b80d [39m
+[90m2026-05-07T12:29:54.491+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 62ms conn=8a677422…fdee id=07ab3ce1…024e [39m
+[90m2026-05-07T12:29:54.537+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6b514f01-9e6f-48bf-ae29-4a627900b80d peer=127.0.0.1:44254->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:54.546+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=53 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=13979506-30cc-44d3-b106-34dc7638d96a endpoint=127.0.0.1:44254->127.0.0.1:18789 conn=6b514f01…b80d [39m
+[90m2026-05-07T12:29:54.565+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44266 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44266->127.0.0.1:18789 conn=b270ae46…a8d2 [39m
+[90m2026-05-07T12:29:54.596+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b270ae46-492f-46e8-8fad-e2dda4ffa8d2 peer=127.0.0.1:44266->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:29:54.604+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=19 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2d4a26f9-9035-4cc9-9ea7-32bae0bfca0f endpoint=127.0.0.1:44266->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:02.575+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35026 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35026->127.0.0.1:18789 conn=d35b30f7…01ad [39m
+[90m2026-05-07T12:30:02.708+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d35b30f7-c184-406d-a672-a303135b01ad peer=127.0.0.1:35026->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:02.717+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=98 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2587d3c7-3d62-4982-a1bc-54f180870531 endpoint=127.0.0.1:35026->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:06.998+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35038 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35038->127.0.0.1:18789 conn=a6a00430…da88 [39m
+[90m2026-05-07T12:30:07.120+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a6a00430-ced5-42e8-8246-807fd113da88 peer=127.0.0.1:35038->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:07.136+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=93 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ef30c614-83e8-4fef-b2c9-fe9daa085775 endpoint=127.0.0.1:35038->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:30:07.427+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35040 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35040->127.0.0.1:18789 conn=7640725b…c7ba [39m
+[90m2026-05-07T12:30:07.481+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7640725b-e24d-4da7-a42c-31b7182dc7ba peer=127.0.0.1:35040->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:07.490+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=48 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9dba88d2-4374-429d-8b29-cd943119b2d4 endpoint=127.0.0.1:35040->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:07.703+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35048 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35048->127.0.0.1:18789 conn=b834ed1f…670a [39m
+[90m2026-05-07T12:30:07.810+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b834ed1f-bf30-40f1-bdaf-882040ba670a peer=127.0.0.1:35048->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:30:07.831+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=53 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0aba939e-b9d2-4255-b459-6940f8c28522 endpoint=127.0.0.1:35048->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:08.078+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35062 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35062->127.0.0.1:18789 conn=5989d6fa…cb4b [39m
+[90m2026-05-07T12:30:08.159+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5989d6fa-e6cc-4a85-96a1-9fcd0b03cb4b peer=127.0.0.1:35062->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:08.167+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=43 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0c2969c0-6bbe-46e1-adf6-fd389dace57c endpoint=127.0.0.1:35062->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:09.163+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34132 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34132->127.0.0.1:18789 conn=c3cec5d6…6f57 [39m
+[90m2026-05-07T12:30:09.301+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c3cec5d6-aeea-42f6-8869-a902825c6f57 peer=127.0.0.1:34132->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:09.323+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=97 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e4ab43a9-09fe-4afa-beb5-5519826d22d0 endpoint=127.0.0.1:34132->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:09.330+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:30:11.001+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34164 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34164->127.0.0.1:18789 conn=ee2a3409…2e8d [39m
+[90m2026-05-07T12:30:11.083+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ee2a3409-c19d-4072-a735-bcf99e3b2e8d peer=127.0.0.1:34164->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:11.091+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=81 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ba43da70-1c87-448e-899d-910c027aa543 endpoint=127.0.0.1:34164->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:14.010+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34166 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34166->127.0.0.1:18789 conn=7f047e94…dad7 [39m
+[90m2026-05-07T12:30:14.126+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7f047e94-da77-406f-9074-db3f242ddad7 peer=127.0.0.1:34166->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:14.138+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=85 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=66f5fdfd-1080-49df-a1c2-f73d79376ec2 endpoint=127.0.0.1:34166->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:19.080+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44608 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44608->127.0.0.1:18789 conn=173d58a3…53d6 [39m
+[90m2026-05-07T12:30:19.209+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=173d58a3-979c-4966-90da-7285d0c053d6 peer=127.0.0.1:44608->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:19.221+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=90 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=bc15930c-6be1-4bea-bcf6-77695f47f9f2 endpoint=127.0.0.1:44608->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:30:22.706+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44618 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44618->127.0.0.1:18789 conn=c8b8db95…5876 [39m
+[90m2026-05-07T12:30:22.762+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c8b8db95-7845-4844-b190-324868695876 peer=127.0.0.1:44618->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:22.769+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=48 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4b099bf4-d904-4660-a493-df7134994961 endpoint=127.0.0.1:44618->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:27.179+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44624 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44624->127.0.0.1:18789 conn=8e75e2c7…5fe3 [39m
+[90m2026-05-07T12:30:27.335+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8e75e2c7-5c01-475f-81f7-c2840c065fe3 peer=127.0.0.1:44624->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:27.353+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=112 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4e89a189-3ac9-41c8-bc8d-7898aa9df017 endpoint=127.0.0.1:44624->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:33.393+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36536 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36536->127.0.0.1:18789 conn=901b87cc…eadc [39m
+[90m2026-05-07T12:30:33.532+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-07T12:30:33.552+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:30:40.007+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=44 [39m
+[90m2026-05-07T12:30:40.011+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:30:40.018+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
+[90m2026-05-07T12:30:40.034+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36550 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36550->127.0.0.1:18789 conn=cd9db040…0354 [39m
+[90m2026-05-07T12:30:40.062+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 33ms conn=901b87cc…eadc id=ee26920d…1b09 [39m
+[90m2026-05-07T12:30:40.092+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6727 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=ee26920d-5650-4fe2-9974-3fe9758f1b09 endpoint=127.0.0.1:36536->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:40.128+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=cd9db040-a6a3-4201-a234-2221e5120354 peer=127.0.0.1:36550->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:40.136+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=80 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ba1271e4-ec6e-4ea3-a7f5-1b4c859ab3b7 endpoint=127.0.0.1:36550->127.0.0.1:18789 conn=cd9db040…0354 [39m
+[90m2026-05-07T12:30:40.150+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48944 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48944->127.0.0.1:18789 conn=5d3e2ac2…1414 [39m
+[90m2026-05-07T12:30:40.175+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5d3e2ac2-c066-4392-9d89-7f35a1b31414 peer=127.0.0.1:48944->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:40.181+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=20 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=138eeff0-def0-4e2c-b5a9-25fd6a8494f6 endpoint=127.0.0.1:48944->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:48.874+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48960 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48960->127.0.0.1:18789 conn=fa9bb31b…61d3 [39m
+[90m2026-05-07T12:30:48.947+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=fa9bb31b-54c3-47de-aee1-d49c4fed61d3 peer=127.0.0.1:48960->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:48.955+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=57 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=bdf63dab-5b5c-43e1-b050-d50ee30aad22 endpoint=127.0.0.1:48960->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:52.010+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57940 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57940->127.0.0.1:18789 conn=92c06fe5…0efd [39m
+[90m2026-05-07T12:30:52.125+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=92c06fe5-af9c-4594-893b-57cefa570efd peer=127.0.0.1:57940->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:52.140+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=84 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8feb883e-f72d-4682-9f09-f59af3b6b516 endpoint=127.0.0.1:57940->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:30:52.437+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57950 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57950->127.0.0.1:18789 conn=a3ecb3f2…43a1 [39m
+[90m2026-05-07T12:30:52.480+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a3ecb3f2-0c83-4ab2-a0bd-66d29f4c43a1 peer=127.0.0.1:57950->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:52.486+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=50 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7710a667-4d42-4c2c-9321-b2406a0536d4 endpoint=127.0.0.1:57950->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:52.717+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57972 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57972->127.0.0.1:18789 conn=2ff17cd0…c484 [39m
+[90m2026-05-07T12:30:52.763+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=2ff17cd0-3149-4b1d-874f-d60e9823c484 peer=127.0.0.1:57972->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:52.769+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=46 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8c2d5efa-ddea-4c05-8462-20508565f139 endpoint=127.0.0.1:57972->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:53.100+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57978 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57978->127.0.0.1:18789 conn=6cf57981…93bb [39m
+[90m2026-05-07T12:30:53.214+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6cf57981-31f1-4230-ab00-d0e2400c93bb peer=127.0.0.1:57978->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:53.231+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=82 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7f5d0a6c-3b5e-4ab7-8e89-5ad35d4cd081 endpoint=127.0.0.1:57978->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:54.205+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57980 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57980->127.0.0.1:18789 conn=2ff7973b…9676 [39m
+[90m2026-05-07T12:30:54.332+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=2ff7973b-40d8-43b4-b5f3-1b4ad25d9676 peer=127.0.0.1:57980->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:54.351+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=87 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f1592772-87f7-4dd8-bd66-c779cb68e31c endpoint=127.0.0.1:57980->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:56.020+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57992 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57992->127.0.0.1:18789 conn=ea362b4c…d14a [39m
+[90m2026-05-07T12:30:56.161+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ea362b4c-70c9-431b-9741-4d28334ed14a peer=127.0.0.1:57992->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:56.177+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=98 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=99fa9f92-24c1-404e-a713-da8fa8b4a9f3 endpoint=127.0.0.1:57992->127.0.0.1:18789 [39m
+[90m2026-05-07T12:30:59.056+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58000 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58000->127.0.0.1:18789 conn=a8dbcd1a…6f49 [39m
+[90m2026-05-07T12:30:59.183+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a8dbcd1a-8d49-4794-a3b7-dbcd00986f49 peer=127.0.0.1:58000->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:30:59.196+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=110 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=726a2177-d004-4429-96b1-dfcd8b5dc321 endpoint=127.0.0.1:58000->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:04.119+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47702 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47702->127.0.0.1:18789 conn=fae03476…3d3f [39m
+[90m2026-05-07T12:31:04.182+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=fae03476-562a-4a25-9fd4-77dfa0993d3f peer=127.0.0.1:47702->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:04.189+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=53 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=01e3f828-48d9-4722-b94e-8f74b753f8a9 endpoint=127.0.0.1:47702->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:31:07.707+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47720 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47720->127.0.0.1:18789 conn=6023c745…319f [39m
+[90m2026-05-07T12:31:07.762+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6023c745-740f-40fd-a295-7da35298319f peer=127.0.0.1:47720->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:07.770+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=42 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0b3df940-0c8c-4022-b19b-7ba5296df8c0 endpoint=127.0.0.1:47720->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:10.022+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=49.3 eventLoopDelayMaxMs=6404.7 eventLoopUtilization=0.289 cpuCoreRatio=0.15 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:67ms,sidecars.session-locks:118ms,sidecars.main-session-recovery:640ms,post-ready.maintenance:3094ms [39m
+[90m2026-05-07T12:31:10.037+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:31:12.206+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51354 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51354->127.0.0.1:18789 conn=9c40e93e…ab92 [39m
+[90m2026-05-07T12:31:12.338+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9c40e93e-e152-48fb-970e-c9cc5720ab92 peer=127.0.0.1:51354->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:12.346+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=105 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ef0cec8d-770f-4e1b-bb6c-270210910373 endpoint=127.0.0.1:51354->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:19.897+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46048 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46048->127.0.0.1:18789 conn=a40a707e…59a4 [39m
+[90m2026-05-07T12:31:20.014+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-07T12:31:20.036+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-07T12:31:26.271+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=46 [39m
+[90m2026-05-07T12:31:26.294+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46064 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46064->127.0.0.1:18789 conn=ced4fbda…e1bc [39m
+[90m2026-05-07T12:31:26.316+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 29ms conn=a40a707e…59a4 id=9c1a4424…a96d [39m
+[90m2026-05-07T12:31:26.337+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6449 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=9c1a4424-eb0a-4fee-8ce6-45351bf2a96d endpoint=127.0.0.1:46048->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:26.378+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ced4fbda-cd75-4caa-8779-266c8196e1bc peer=127.0.0.1:46064->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:26.386+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=74 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e9d5283d-ac69-4e33-9cc8-20b91162f116 endpoint=127.0.0.1:46064->127.0.0.1:18789 conn=ced4fbda…e1bc [39m
+[90m2026-05-07T12:31:34.433+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58334 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58334->127.0.0.1:18789 conn=927b1235…33bd [39m
+[90m2026-05-07T12:31:34.564+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=927b1235-da32-4a23-8ece-a67c213e33bd peer=127.0.0.1:58334->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:34.576+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=123 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8be0468e-f35c-4389-b9bb-5273264c04d5 endpoint=127.0.0.1:58334->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:37.000+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58342 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58342->127.0.0.1:18789 conn=54091182…20ef [39m
+[90m2026-05-07T12:31:37.098+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=54091182-6c06-4653-8952-d0ffaa6e20ef peer=127.0.0.1:58342->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:37.105+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=73 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ef33670f-4c0c-4606-b4c7-d6ca4e27a4ea endpoint=127.0.0.1:58342->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:31:37.427+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58358 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58358->127.0.0.1:18789 conn=72af59a7…13b7 [39m
+[90m2026-05-07T12:31:37.492+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=72af59a7-f517-4daf-92e6-02597ffc13b7 peer=127.0.0.1:58358->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:37.499+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=48 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a37cf20b-4bdb-4cd9-b5dc-4fefae48e85f endpoint=127.0.0.1:58358->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:37.695+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58382 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58382->127.0.0.1:18789 conn=ace93883…22dd [39m
+[90m2026-05-07T12:31:37.750+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ace93883-b66e-4b04-93fb-1c4a0abe22dd peer=127.0.0.1:58382->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:31:37.757+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=47 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b2b7bae0-5f62-4b33-99fe-a985f708d945 endpoint=127.0.0.1:58382->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:38.102+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58384 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58384->127.0.0.1:18789 conn=b805c982…6105 [39m
+[90m2026-05-07T12:31:38.210+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b805c982-b6f7-4a04-aa49-d79e50216105 peer=127.0.0.1:58384->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:38.228+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=87 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2a18de4d-7b27-442e-bb65-8acb25bfa830 endpoint=127.0.0.1:58384->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:39.194+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55954 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55954->127.0.0.1:18789 conn=c4fa012f…b1f7 [39m
+[90m2026-05-07T12:31:39.331+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c4fa012f-d227-4880-9889-af0fd002b1f7 peer=127.0.0.1:55954->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:39.351+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=102 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2915aff2-c4f2-4c5c-becc-e74cd6abd069 endpoint=127.0.0.1:55954->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:40.022+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:31:41.034+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55972 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55972->127.0.0.1:18789 conn=1bf87306…79e3 [39m
+[90m2026-05-07T12:31:41.185+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1bf87306-2368-4995-9dc5-64ecd86b79e3 peer=127.0.0.1:55972->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:41.200+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=116 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a30269b9-fcab-4376-949a-0370bcb9e57b endpoint=127.0.0.1:55972->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:51.504+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55980 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55980->127.0.0.1:18789 conn=c04f2f85…4b3c [39m
+[90m2026-05-07T12:31:51.575+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c04f2f85-7d99-42f9-8663-5d9873844b3c peer=127.0.0.1:55980->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:51.583+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=60 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8064137a-37bc-436e-827d-0517f00f321c endpoint=127.0.0.1:55980->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:31:52.729+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51222 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51222->127.0.0.1:18789 conn=f7cf77f7…de4c [39m
+[90m2026-05-07T12:31:52.844+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f7cf77f7-612c-48c8-969f-1e85c18cde4c peer=127.0.0.1:51222->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:31:52.870+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=74 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=314ff7f2-208a-497e-8245-543904849e99 endpoint=127.0.0.1:51222->127.0.0.1:18789 [39m
+[90m2026-05-07T12:31:56.577+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51228 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51228->127.0.0.1:18789 conn=e6112c21…ec17 [39m
+[90m2026-05-07T12:31:56.736+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e6112c21-a2e6-4876-bfae-874e89efec17 peer=127.0.0.1:51228->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:31:56.753+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=102 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4b30a551-3246-408d-ad86-66f9ba0907fc endpoint=127.0.0.1:51228->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:04.702+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58004 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58004->127.0.0.1:18789 conn=a81c46df…2bc5 [39m
+[90m2026-05-07T12:32:04.853+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a81c46df-ddfe-4c77-872c-d55f87fb2bc5 peer=127.0.0.1:58004->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:04.876+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=103 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=631dbe3f-a5c4-4bb7-a055-1b34dcdafab9 endpoint=127.0.0.1:58004->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:32:08.359+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58006 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58006->127.0.0.1:18789 conn=348228d9…2c03 [39m
+[90m2026-05-07T12:32:08.389+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58024 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58024->127.0.0.1:18789 conn=8b8810fb…e358 [39m
+[90m2026-05-07T12:32:08.484+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8b8810fb-ac12-4a00-a471-22cb8f24e358 peer=127.0.0.1:58024->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:08.494+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=59 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4623caf6-52ab-4eef-afcd-d8259d2aaa66 endpoint=127.0.0.1:58024->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:08.517+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token conn=348228d9…2c03 [39m
+[90m2026-05-07T12:32:08.526+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-07T12:32:14.734+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=48 [39m
+[90m2026-05-07T12:32:14.739+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:32:14.746+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
+[90m2026-05-07T12:32:14.770+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60476 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60476->127.0.0.1:18789 conn=3ad2e9b5…66f7 [39m
+[90m2026-05-07T12:32:14.785+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 29ms conn=348228d9…2c03 id=54d3e814…71f8 [39m
+[90m2026-05-07T12:32:14.811+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6450 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=54d3e814-54d2-4d04-9cae-bcf18fa471f8 endpoint=127.0.0.1:58006->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:14.842+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3ad2e9b5-6abd-46c2-814c-f0e15e0166f7 peer=127.0.0.1:60476->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:14.850+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=58 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=499a250c-b889-4dc9-8bfa-d6fea5ba9be5 endpoint=127.0.0.1:60476->127.0.0.1:18789 conn=3ad2e9b5…66f7 [39m
+[90m2026-05-07T12:32:22.025+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49916 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49916->127.0.0.1:18789 conn=6e12c2de…59b5 [39m
+[90m2026-05-07T12:32:22.139+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=6e12c2de-a9ca-40a1-ad51-0a91b3a859b5 peer=127.0.0.1:49916->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:22.148+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=100 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2f0d38d7-801a-4a5b-8a99-cbb6b742ec1a endpoint=127.0.0.1:49916->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:32:22.438+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49920 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49920->127.0.0.1:18789 conn=ce5860e7…1d40 [39m
+[90m2026-05-07T12:32:22.486+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ce5860e7-19d7-4e8f-8030-e1ad1bcb1d40 peer=127.0.0.1:49920->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:22.493+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=31 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d31e5b58-a982-4d19-ab15-8dc780a62091 endpoint=127.0.0.1:49920->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:22.692+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49936 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49936->127.0.0.1:18789 conn=c2286441…ae2c [39m
+[90m2026-05-07T12:32:22.742+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c2286441-385b-42ad-ad9b-3d9f034dae2c peer=127.0.0.1:49936->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:32:22.750+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=45 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=07f07427-5d97-4e01-9178-7bdb54369338 endpoint=127.0.0.1:49936->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:23.096+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49940 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49940->127.0.0.1:18789 conn=383a503a…a86c [39m
+[90m2026-05-07T12:32:23.227+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=383a503a-a36c-4c47-9f79-0e0a23f1a86c peer=127.0.0.1:49940->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:23.250+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=85 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=606b0320-3cac-449d-ba2d-2c0e9e10b5e9 endpoint=127.0.0.1:49940->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:24.205+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49954 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49954->127.0.0.1:18789 conn=f273ee57…ff97 [39m
+[90m2026-05-07T12:32:24.319+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f273ee57-b356-4f8b-831d-a91787f9ff97 peer=127.0.0.1:49954->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:24.332+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=82 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6c9fcef9-03de-472e-911a-fd9b1557bb5a endpoint=127.0.0.1:49954->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:26.017+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49970 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49970->127.0.0.1:18789 conn=3b29794e…72b5 [39m
+[90m2026-05-07T12:32:26.150+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3b29794e-d7db-4cf1-ac19-281a9a9a72b5 peer=127.0.0.1:49970->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:26.168+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=94 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=73f6e7d3-44f3-4f1b-8089-b0184b8d8407 endpoint=127.0.0.1:49970->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:29.053+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49976 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49976->127.0.0.1:18789 conn=f274132c…96b9 [39m
+[90m2026-05-07T12:32:29.158+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f274132c-6935-49a8-b542-cd77041196b9 peer=127.0.0.1:49976->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:29.166+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=81 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fcddc58a-e156-40fa-8d13-7d1f66b756af endpoint=127.0.0.1:49976->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:34.107+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52094 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52094->127.0.0.1:18789 conn=c9d395d4…81b0 [39m
+[90m2026-05-07T12:32:34.212+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c9d395d4-507a-498d-81ab-f0ad4ee581b0 peer=127.0.0.1:52094->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:34.224+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=88 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=da1f4d7b-2d17-4b5a-ab72-a7e206397859 endpoint=127.0.0.1:52094->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:32:37.729+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52104 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52104->127.0.0.1:18789 conn=984f525f…910f [39m
+[90m2026-05-07T12:32:37.844+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=984f525f-4a9f-40af-a15c-fe55374d910f peer=127.0.0.1:52104->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:37.870+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=74 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c99e2523-42e0-49f9-b84f-50c949f3fbc8 endpoint=127.0.0.1:52104->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:42.214+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52786 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52786->127.0.0.1:18789 conn=58f587fa…b88b [39m
+[90m2026-05-07T12:32:42.334+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=58f587fa-9e54-4e2f-a85d-55229e4ab88b peer=127.0.0.1:52786->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:42.341+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=85 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b196f674-2c2f-4aad-a35a-1c34ea5c3293 endpoint=127.0.0.1:52786->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:47.828+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:32:50.314+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48106 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48106->127.0.0.1:18789 conn=348d2abf…2b5a [39m
+[90m2026-05-07T12:32:50.448+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=348d2abf-d404-4566-9681-91f5aabe2b5a peer=127.0.0.1:48106->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:50.467+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=107 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=45e42ef4-45fc-4b19-95c3-0afa9457672a endpoint=127.0.0.1:48106->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:52.190+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48112 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48112->127.0.0.1:18789 conn=5c5d9859…e0e4 [39m
+[90m2026-05-07T12:32:52.266+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-07T12:32:52.277+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-07T12:32:58.103+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=50 [39m
+[90m2026-05-07T12:32:58.129+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 17ms id=6bc652c7…9f33 [39m
+[90m2026-05-07T12:32:58.143+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5957 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=6bc652c7-a3ed-40ad-bd32-32c277089f33 endpoint=127.0.0.1:48112->127.0.0.1:18789 [39m
+[90m2026-05-07T12:32:58.424+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48132 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48132->127.0.0.1:18789 conn=0f324526…c480 [39m
+[90m2026-05-07T12:32:58.530+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0f324526-e2ef-4e91-ac21-0bf81d7ac480 peer=127.0.0.1:48132->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:32:58.538+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=74 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d4af804b-3ac1-4a09-92ef-7cdd63fe43d9 endpoint=127.0.0.1:48132->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:06.525+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52788 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52788->127.0.0.1:18789 conn=fd7a56b7…18e4 [39m
+[90m2026-05-07T12:33:06.651+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=fd7a56b7-f7da-450d-89ce-850f46cc18e4 peer=127.0.0.1:52788->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:06.662+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=97 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e587e804-1944-4ad7-8aaf-4c864dec0888 endpoint=127.0.0.1:52788->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:06.965+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52792 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52792->127.0.0.1:18789 conn=9f498673…647f [39m
+[90m2026-05-07T12:33:06.995+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9f498673-42e8-4cbc-bee1-deb77aa1647f peer=127.0.0.1:52792->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:07.002+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=30 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f6303b09-3454-4b35-94c2-c0b3160b6d6a endpoint=127.0.0.1:52792->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:07.338+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52802 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52802->127.0.0.1:18789 conn=5b1464c6…1363 [39m
+[90m2026-05-07T12:33:07.396+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5b1464c6-ebfe-4200-bb37-2da836181363 peer=127.0.0.1:52802->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:07.403+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=39 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=1b60537d-fc42-4ee5-b0e3-a4cd72b35d03 endpoint=127.0.0.1:52802->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:33:07.710+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52828 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52828->127.0.0.1:18789 conn=76933a1b…8713 [39m
+[90m2026-05-07T12:33:07.791+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=76933a1b-555f-4a32-9b6c-e7135f548713 peer=127.0.0.1:52828->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:33:07.807+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=49 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=546240f1-68e6-4126-9491-4bf59413e682 endpoint=127.0.0.1:52828->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:07.993+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52838 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52838->127.0.0.1:18789 conn=84ac8a09…3973 [39m
+[90m2026-05-07T12:33:08.090+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=84ac8a09-dc74-4c12-a3b9-042194b43973 peer=127.0.0.1:52838->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:08.104+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=72 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b374b918-d186-4889-880d-fbe14ca7946c endpoint=127.0.0.1:52838->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:09.111+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52382 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52382->127.0.0.1:18789 conn=ebdb76ec…96ac [39m
+[90m2026-05-07T12:33:09.207+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ebdb76ec-ea85-476a-81f5-2704258996ac peer=127.0.0.1:52382->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:09.221+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=95 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6d40c5cc-20c9-4825-9fb4-c89ed0251e64 endpoint=127.0.0.1:52382->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:10.916+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52396 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52396->127.0.0.1:18789 conn=d3106ecc…07e6 [39m
+[90m2026-05-07T12:33:11.016+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d3106ecc-a7b8-4d2d-ad4e-a9700c8c07e6 peer=127.0.0.1:52396->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:11.030+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=74 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4bebe363-642f-41ab-906f-9845fb100e00 endpoint=127.0.0.1:52396->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:13.926+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52406 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52406->127.0.0.1:18789 conn=4a25f27e…fce3 [39m
+[90m2026-05-07T12:33:13.984+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4a25f27e-c825-4d47-a002-afbffec3fce3 peer=127.0.0.1:52406->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:13.991+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=61 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=854c6027-36c5-4a6f-a0c7-2983ef1420d0 endpoint=127.0.0.1:52406->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:17.844+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=62 eventLoopDelayMaxMs=5867.8 eventLoopUtilization=0.267 cpuCoreRatio=0.13 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:67ms,sidecars.session-locks:118ms,sidecars.main-session-recovery:640ms,post-ready.maintenance:3094ms [39m
+[90m2026-05-07T12:33:17.858+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:33:18.945+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52430 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52430->127.0.0.1:18789 conn=f450d9d3…cb77 [39m
+[90m2026-05-07T12:33:18.983+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f450d9d3-acf6-450b-83bc-e7135be6cb77 peer=127.0.0.1:52430->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:18.992+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=22 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=779a4501-5ccd-4573-841c-c79e807cdee8 endpoint=127.0.0.1:52430->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:33:22.738+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51866 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51866->127.0.0.1:18789 conn=47c780c9…a38a [39m
+[90m2026-05-07T12:33:22.810+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=47c780c9-5043-42a2-97cc-071d57efa38a peer=127.0.0.1:51866->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-07T12:33:22.826+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=41 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=49a15e5a-6623-4c3a-a2d4-e8d35b331cf8 endpoint=127.0.0.1:51866->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:22.858+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51878 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51878->127.0.0.1:18789 conn=0693eb5c…8ceb [39m
+[90m2026-05-07T12:33:22.911+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0693eb5c-0437-41fd-bddc-94d4a25b8ceb peer=127.0.0.1:51878->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:22.917+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=31 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=422faf6c-d09f-4524-b3bd-5b4acb617087 endpoint=127.0.0.1:51878->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:23.241+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51886 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51886->127.0.0.1:18789 conn=119f5589…fafa [39m
+[90m2026-05-07T12:33:23.297+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=119f5589-73cd-472d-99f9-89b0a49dfafa peer=127.0.0.1:51886->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:23.305+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=31 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8e2121b6-6d57-4071-8c05-bb39e95d6c39 endpoint=127.0.0.1:51886->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:23.868+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51888 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51888->127.0.0.1:18789 conn=41b7b214…7796 [39m
+[90m2026-05-07T12:33:23.908+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=41b7b214-416f-41c1-824e-08d2cf037796 peer=127.0.0.1:51888->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:23.916+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=20 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0c4fa1c1-61df-494e-a2e4-8bc13f1d620d endpoint=127.0.0.1:51888->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:24.923+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51902 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51902->127.0.0.1:18789 conn=da00ecba…1f66 [39m
+[90m2026-05-07T12:33:24.978+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=da00ecba-db0f-41ca-a6cf-e3efcc581f66 peer=127.0.0.1:51902->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:24.992+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=47 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=173ec702-ee14-496c-8668-d56971f4075a endpoint=127.0.0.1:51902->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:26.729+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51904 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51904->127.0.0.1:18789 conn=72cf6b60…dd96 [39m
+[90m2026-05-07T12:33:26.812+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=72cf6b60-bd5b-4d57-895f-e6bc23bfdd96 peer=127.0.0.1:51904->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:26.825+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=84 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d864ec86-73d2-4f09-85ea-389dccdb5d63 endpoint=127.0.0.1:51904->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:29.717+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50156 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50156->127.0.0.1:18789 conn=f9054b7a…e6f6 [39m
+[90m2026-05-07T12:33:29.812+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f9054b7a-d411-4d56-841a-bd17ab4fe6f6 peer=127.0.0.1:50156->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:29.821+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=69 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=56e8849c-d478-436c-b9ad-d98587907acd endpoint=127.0.0.1:50156->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:32.206+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50168 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50168->127.0.0.1:18789 conn=344255d5…d06e [39m
+[90m2026-05-07T12:33:32.365+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.5 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-07T12:33:32.375+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:33:38.142+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=51 [39m
+[90m2026-05-07T12:33:38.165+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50178 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50178->127.0.0.1:18789 conn=ab7cdc25…4079 [39m
+[90m2026-05-07T12:33:38.183+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 31ms conn=344255d5…d06e id=5dc14ca9…ea7c [39m
+[90m2026-05-07T12:33:38.224+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ab7cdc25-e98b-4f78-99e5-beb2f54a4079 peer=127.0.0.1:50178->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:38.231+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=46 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=aecd0e7a-d68d-45b6-9eb7-7391083fd13f endpoint=127.0.0.1:50178->127.0.0.1:18789 conn=ab7cdc25…4079 [39m
+[90m2026-05-07T12:33:38.242+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=50198 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:50198->127.0.0.1:18789 conn=5e3aa60d…2898 [39m
+[90m2026-05-07T12:33:38.254+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6070 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=5dc14ca9-4371-41be-a4b1-8573cd50ea7c endpoint=127.0.0.1:50168->127.0.0.1:18789 conn=344255d5…d06e [39m
+[90m2026-05-07T12:33:38.277+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5e3aa60d-2c94-4ab1-b633-17940b862898 peer=127.0.0.1:50198->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:38.284+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=26 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=772572cb-9b8d-4aa5-b5f8-05686a2b68f9 endpoint=127.0.0.1:50198->127.0.0.1:18789 conn=5e3aa60d…2898 [39m
+[90m2026-05-07T12:33:49.393+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-07T12:33:49.404+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55972 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55972->127.0.0.1:18789 conn=1247b6cd…fe5f [39m
+[90m2026-05-07T12:33:49.462+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1247b6cd-57cf-4b66-ace8-b6c8a736fe5f peer=127.0.0.1:55972->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:49.478+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=38 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=68b31bbb-686e-4f80-b430-eba7305492c9 endpoint=127.0.0.1:55972->127.0.0.1:18789 [39m
+[INFO] Connecting WebSocket...
+[WARN] WebSocket disconnected
+[WARN] WebSocket disconnected
+[WARN] WebSocket connect failed — will retry on next health tick
+[WARN] WebSocket disconnected
+[90m2026-05-07T12:33:52.715+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38006 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38006->127.0.0.1:18789 conn=79fd396b…1798 [39m
+[90m2026-05-07T12:33:52.785+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=79fd396b-44e5-4ba4-bb88-aa1135f71798 peer=127.0.0.1:38006->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:52.793+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=42 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=28f4e117-7e35-4a87-9fbd-040368c1f899 endpoint=127.0.0.1:38006->127.0.0.1:18789 [39m
+[90m2026-05-07T12:33:57.486+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38016 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38016->127.0.0.1:18789 conn=a2fe12d6…7f20 [39m
+[90m2026-05-07T12:33:57.603+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a2fe12d6-2192-494e-8092-85a958c27f20 peer=127.0.0.1:38016->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values [39m
+[90m2026-05-07T12:33:57.617+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=invalid connect params: at /client/id: must be equal to one of the allowed values durationMs=77 cause=invalid-handshake handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=95c04a25-ba9b-490f-9368-57f4b25f4af8 endpoint=127.0.0.1:38016->127.0.0.1:18789 [39m

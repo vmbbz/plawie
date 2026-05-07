@@ -93,8 +93,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       color: line.isError
                           ? Colors.redAccent
                           : line.isSystem
-                              ? Colors.cyanAccent
-                              : Colors.white,
+                               ? Colors.cyanAccent
+                               : Colors.white,
                       fontSize: 13,
                     ),
                   );

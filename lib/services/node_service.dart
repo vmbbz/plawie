@@ -9,6 +9,7 @@ import 'native_bridge.dart';
 import 'device_identity.dart';
 import 'node_ws_service.dart';
 import 'preferences_service.dart';
+import 'openclaw_service.dart';
 
 class NodeService {
   static final NodeService _instance = NodeService._internal();
@@ -199,6 +200,8 @@ class NodeService {
 
   /// Build and send the `connect` request per Gateway Protocol v3.
   Future<void> _sendConnect(String nonce) async {
+    final version = await OpenClawCommandService.detectOpenClawVersion();
+    
     final prefs = PreferencesService();
     await prefs.init();
     final deviceToken = prefs.nodeDeviceToken;
@@ -209,8 +212,8 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    const clientId = 'openclaw';
-    const clientMode = 'node';
+    const clientId = 'cli';
+    const clientMode = 'cli';
     const role = AppConstants.nodeRole;
     const scopes = <String>['*'];
     final signedAtMs = DateTime.now().millisecondsSinceEpoch;
@@ -238,10 +241,8 @@ class NodeService {
       'maxProtocol': 3,
       'client': {
         'id': clientId,
-        'displayName': 'OpenClaw Mobile',
-        'version': '2026.5.5',
-        'platform': 'android',
-        'deviceFamily': 'Android',
+        'version': version,
+        'platform': 'linux',
         'mode': clientMode,
       },
       'role': role,
@@ -261,7 +262,7 @@ class NodeService {
     });
 
     log('[NODE] Connect frame caps=$caps commands=$commands');
-    log('[NODE] Connect frame platform=android deviceFamily=Android');
+    log('[NODE] Connect frame platform=linux');
     final response = await _ws.sendRequest(connectFrame);
     log('[NODE] Connect response ok=${response.isOk} payload=${response.payload}');
 
