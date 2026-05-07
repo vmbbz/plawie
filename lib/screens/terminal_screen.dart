@@ -1,250 +1,156 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/native_bridge.dart';
+import '../services/diagnostic_service.dart';
 
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key});
-
   @override
   State<TerminalScreen> createState() => _TerminalScreenState();
 }
 
 class _TerminalScreenState extends State<TerminalScreen> {
-  bool _loading = false;
-  String? _error;
-  
-  final List<String> _logs = [
-    'Welcome to OpenClaw Terminal.',
-    'Type a command to execute natively via PRoot.'
-  ];
-  final ScrollController _scrollController = ScrollController();
   final TextEditingController _inputController = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  final List<OutputLine> _output = [];
+  bool _isRunning = false;
+  final List<String> _history = [];
+  int _historyIndex = -1;
 
   @override
   void initState() {
     super.initState();
-    NativeBridge.startTerminalService();
+    _addOutput('🚀 Plawie Stable Terminal ready.\nType openclaw commands below.\n', isSystem: true);
   }
 
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 50), () {
+  void _addOutput(String text, {bool isError = false, bool isSystem = false}) {
+    setState(() {
+      _output.add(OutputLine(
+        text: text,
+        isError: isError,
+        isSystem: isSystem,
+      ));
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 100),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
     });
   }
 
-  Future<void> _sendCommand() async {
+  Future<void> _runCommand() async {
     final cmd = _inputController.text.trim();
-    if (cmd.isEmpty) return;
+    if (cmd.isEmpty || _isRunning) return;
 
-    setState(() => _logs.add('\n\$ $cmd'));
+    _addOutput('> $cmd\n', isSystem: true);
+    _history.insert(0, cmd);
+    _historyIndex = -1;
     _inputController.clear();
-    _focusNode.requestFocus();
-    _scrollToBottom();
-
-    setState(() => _loading = true);
+    setState(() => _isRunning = true);
 
     try {
-      // executeInShell reuses one persistent PRoot/bash process instead of
-      // spawning a new PRoot per command — prevents OOM crashes on mobile.
-      // NODE_OPTIONS is pre-set in the persistent shell environment.
-      final result = await NativeBridge.executeInShell(cmd, timeoutMs: 60000);
-
-      if (!mounted) return;
-
-      setState(() {
-        _logs.addAll(result.split('\n').where((l) => l.trim().isNotEmpty));
-        _loading = false;
-      });
-      _scrollToBottom();
+      // Using runInProot for maximum stability on Android without PTY state issues.
+      final result = await NativeBridge.runInProot(cmd, timeout: 120);
+      _addOutput(result, isError: false);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _logs.add('Error: $e');
-        _loading = false;
-      });
-      _scrollToBottom();
+      _addOutput('ERROR: $e', isError: true);
+      DiagnosticService.logError('terminal_command', e);
+    } finally {
+      if (mounted) setState(() => _isRunning = false);
     }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    _inputController.dispose();
-    _focusNode.dispose();
-    NativeBridge.stopTerminalService();
-    NativeBridge.destroyShell();
-    super.dispose();
-  }
-
-  void _copyAll() {
-    final text = _logs.join('\n');
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied terminal output')),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Terminal'),
+        title: const Text('Stable Terminal'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.copy),
-            tooltip: 'Copy Output',
-            onPressed: _copyAll,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Clear',
-            onPressed: () {
-              setState(() {
-                _logs.clear();
-                _logs.add('Terminal cleared.');
-                _error = null;
-              });
-            },
-          ),
+          IconButton(icon: const Icon(Icons.copy), onPressed: _copyAllOutput),
+          IconButton(icon: const Icon(Icons.clear_all), onPressed: _clearOutput),
         ],
       ),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 48,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _loading = false;
-                    _error = null;
-                  });
-                },
-                icon: const Icon(Icons.refresh),
-                label: const Text('Dismiss'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final theme = Theme.of(context);
-    
-    return Column(
-      children: [
-        // Log Output List
-        Expanded(
-          child: Container(
-            color: Colors.black,
-            child: ListView.builder(
-              controller: _scrollController,
+      body: Column(
+        children: [
+          // Output area
+          Expanded(
+            child: Container(
+              color: Colors.black,
+              width: double.infinity,
               padding: const EdgeInsets.all(12),
-              itemCount: _logs.length,
-              itemBuilder: (context, index) {
-                final line = _logs[index];
-                
-                // Extremely basic parsing for UI distinction
-                Color textColor = Colors.white70;
-                if (line.startsWith('\$ ')) {
-                  textColor = theme.colorScheme.primary;
-                } else if (line.toLowerCase().contains('error') || line.toLowerCase().contains('fail')) {
-                  textColor = Colors.redAccent;
-                }
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: SelectableText(
-                    line,
+              child: ListView.builder(
+                controller: _scrollController,
+                itemCount: _output.length,
+                itemBuilder: (context, index) {
+                  final line = _output[index];
+                  return Text(
+                    line.text,
                     style: TextStyle(
                       fontFamily: 'monospace',
-                      color: textColor,
-                      fontSize: 12,
-                      height: 1.3,
+                      color: line.isError
+                          ? Colors.redAccent
+                          : line.isSystem
+                              ? Colors.cyanAccent
+                              : Colors.white,
+                      fontSize: 13,
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
-        ),
-        
-        if (_loading) const LinearProgressIndicator(),
-        
-        // Command Input Bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 4,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: SafeArea(
+
+          if (_isRunning) const LinearProgressIndicator(),
+
+          // Input bar
+          Padding(
+            padding: const EdgeInsets.all(12),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _inputController,
-                    focusNode: _focusNode,
+                    style: const TextStyle(fontFamily: 'monospace', color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: 'Enter command...',
-                      hintStyle: const TextStyle(fontFamily: 'monospace'),
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      prefixText: '\$ ',
-                      prefixStyle: TextStyle(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'monospace',
-                      ),
+                      hintText: 'openclaw devices approve ...',
+                      filled: true,
+                      fillColor: Colors.grey[900],
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    style: const TextStyle(fontFamily: 'monospace'),
-                    onSubmitted: (_) => _sendCommand(),
+                    onSubmitted: (_) => _runCommand(),
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton.filled(
-                  icon: const Icon(Icons.send, size: 20),
-                  onPressed: _sendCommand,
+                  onPressed: _isRunning ? null : _runCommand,
+                  icon: const Icon(Icons.send),
                 ),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
+  void _copyAllOutput() {
+    final allText = _output.map((e) => e.text).join('\n');
+    Clipboard.setData(ClipboardData(text: allText));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Copied all output')));
+  }
+
+  void _clearOutput() {
+    setState(() => _output.clear());
+  }
+}
+
+class OutputLine {
+  final String text;
+  final bool isError;
+  final bool isSystem;
+  OutputLine({required this.text, this.isError = false, this.isSystem = false});
 }
