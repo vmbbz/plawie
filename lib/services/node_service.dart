@@ -209,7 +209,7 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    final clientId = _identity.deviceId ?? 'openclaw-node';
+    const clientId = 'node';
     const clientMode = 'node';
     const role = AppConstants.nodeRole;
     const scopes = <String>['*'];
