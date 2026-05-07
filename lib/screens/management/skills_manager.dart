@@ -48,7 +48,7 @@ const _premiumSkills = [
     color: Color(0xFF3D52D5),
     hasPage: true,
     tooltip: 'AgentCard.ai gives your agent a virtual Visa card...',
-    installSlug: 'agent-card', // built-in, no CLI install needed
+    installSlug: null, // built-in
   ),
   _SkillEntry(
     id: 'molt-launch',
