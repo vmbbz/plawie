@@ -508,7 +508,7 @@ class SkillsService {
       await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
       return SkillResult.success({'message': 'Entered Picture-in-Picture mode successfully.'});
     } catch (e) {
-      return SkillResult.error('Failed to enter PiP mode: \$e');
+      return SkillResult.error('Failed to enter PiP mode: $e');
     }
   }
 

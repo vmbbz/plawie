@@ -54,8 +54,8 @@ class AgentSkillServer {
 
     if (request.method == 'GET' && path == '/battery') {
       _handleBattery(request);
-    } else if (request.method == 'GET' && path == '/api/tools') {
-      _handleToolsCatalog(request);
+    } else if (request.method == 'GET' && path == '/api/health') {
+      _handleHealth(request);
     } else if (request.method == 'GET' && path == '/api/skills/list') {
       _handleSkillsList(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
@@ -84,6 +84,15 @@ class AgentSkillServer {
   // ── Legacy battery stub ───────────────────────────────────────────────────
   void _handleBattery(HttpRequest request) {
     _sendJson(request, {'level': 85, 'isCharging': true});
+  }
+
+  void _handleHealth(HttpRequest request) {
+    _sendJson(request, {
+      'status': 'ok',
+      'version': '1.0.0',
+      'uptime_secs': DateTime.now().difference(_startTime).inSeconds,
+      'identity': 'openclaw-android-node',
+    });
   }
 
   void _handleToolsCatalog(HttpRequest request) {
@@ -394,7 +403,6 @@ class AgentSkillServer {
     await _server?.close(force: true);
     _server = null;
   }
-}
 
-// Suppress the unawaited Future lint for fire-and-forget calls.
-void unawaited(Future<void> future) {}
+  final DateTime _startTime = DateTime.now();
+}

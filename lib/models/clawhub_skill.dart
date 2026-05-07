@@ -79,7 +79,9 @@ class ClawHubSkill {
     return ClawHubSkill(
       slug:            slug,
       name:            skillObj['displayName']?.toString() ?? slug,
-      description:     skillObj['summary']?.toString() ?? '',
+      description:     skillObj['summary']?.toString() ?? 
+                       skillObj['description']?.toString() ?? 
+                       json['description']?.toString() ?? '',
       version:         latestV['version']?.toString() ??
                        tags['latest']?.toString() ?? '',
       author:          owner['displayName']?.toString() ??

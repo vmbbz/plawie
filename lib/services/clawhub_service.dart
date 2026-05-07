@@ -108,7 +108,7 @@ class ClawHubService {
         final decoded = jsonDecode(response.body);
         final list = decoded is List
             ? decoded
-            : (decoded is Map ? decoded['results'] ?? decoded['skills'] ?? decoded['data'] : null);
+            : (decoded is Map ? (decoded['results'] ?? decoded['skills'] ?? decoded['data'] ?? decoded['items']) : null);
         if (list is List) {
           final results = list
               .whereType<Map<String, dynamic>>()
