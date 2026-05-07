@@ -4,6 +4,7 @@ import 'dart:io';
 import '../constants.dart';
 import '../models/node_frame.dart';
 import '../models/node_state.dart';
+import 'gateway_service.dart';
 import 'native_bridge.dart';
 import 'device_identity.dart';
 import 'node_ws_service.dart';
