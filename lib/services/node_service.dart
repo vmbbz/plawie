@@ -87,7 +87,7 @@ class NodeService {
     _frameSubscription = _ws.frameStream.listen(_onFrame);
     _pairingSubscription?.cancel();
     _pairingSubscription = _ws.pairingRequiredStream.listen((requestId) {
-      _handleNodePairingRequired(requestId);
+      _handleNodePairingRequired(requestId as String?);
     });
 
     try {
@@ -443,26 +443,36 @@ class NodeService {
   /// Called when the gateway closes with 1008 (pairing required).
   /// Deletes the stale device record so the gateway treats the next connect
   /// as a new device, allowing the normal NOT_PAIRED → auto-approve flow.
-  Future<void> _handleNodePairingRequired(String? requestId) async {
-    if (_pairingResolveAttempted) return;
-    
-    // EXPERT FIX: If we have a requestId, use the auto-approval flow via GatewayService
-    if (requestId != null && requestId.isNotEmpty) {
-      await GatewayService().autoApproveDevice(requestId);
-      return;
-    }
-
+  Future<void> _handleNodePairingRequired([String? requestId]) async {
+    if (_pairingResolveAttempted) return; // prevent loops
     _pairingResolveAttempted = true;
+
     log('[NODE] Pairing required (1008) — clearing stale device record...');
+
     try {
-      await NativeBridge.removeDevice(_identity.deviceId ?? '');
-      log('[NODE] Device record cleared — forcing immediate retry');
-      
-      // Expert Polish: Immediate retry after clearing record
-      await Future.delayed(const Duration(milliseconds: 800));
-      unawaited(connect());
+      // Clear any stale record
+      await NativeBridge.runInProot('openclaw devices remove --all --yes 2>/dev/null || true');
+
+      // If we have the exact requestId from the close reason, approve it immediately
+      if (requestId != null && requestId.isNotEmpty) {
+        log('[NODE] Auto-approving requestId: $requestId');
+        await NativeBridge.runInProot('openclaw devices approve $requestId --yes');
+        log('[NODE] Device auto-approved — reconnecting...');
+      } else {
+        // Fallback: approve the latest pending request
+        log('[NODE] No requestId in close reason — approving latest pending request');
+        await NativeBridge.runInProot('openclaw devices approve --latest --yes');
+      }
+
+      // Reset guard after a short delay so future connects work
+      await Future.delayed(const Duration(seconds: 2));
+      _pairingResolveAttempted = false;
+
+      // Force reconnect
+      await connect();
     } catch (e) {
-      log('[NODE] Could not clear device record: $e');
+      log('[NODE] Auto-approve failed: $e');
+      _pairingResolveAttempted = false;
     }
   }
 

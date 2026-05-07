@@ -93,19 +93,22 @@ class NodeWsService {
         },
         onError: (_) => _handleDisconnect(),
         onDone: () {
-          // Capture close code and reason BEFORE _handleDisconnect nulls _channel.
+          // Capture close code AND reason BEFORE _handleDisconnect nulls the channel
           final closeCode = _channel?.closeCode;
-          final closeReason = _channel?.closeReason;
+          final closeReason = _channel?.closeReason ?? '';
+
           if (closeCode == 1008 && !_pairingRequiredController.isClosed) {
-            String? requestId;
-            if (closeReason != null && closeReason.contains('requestId:')) {
-              final match = RegExp(r'requestId:\s*([a-f0-9\-]+)').firstMatch(closeReason);
-              if (match != null) {
-                requestId = match.group(1);
-              }
+            // Extract requestId from the gateway's exact reason string
+            final requestIdMatch = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
+            final requestId = requestIdMatch?.group(1);
+
+            if (requestId != null) {
+              _pairingRequiredController.add(requestId);  // ← NOW PASSES THE ID
+            } else {
+              _pairingRequiredController.add(null);
             }
-            _pairingRequiredController.add(requestId);
           }
+
           _handleDisconnect();
         },
       );
