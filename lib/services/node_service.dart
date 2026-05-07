@@ -209,8 +209,8 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    const clientId = 'openclaw-android-node';
-    const clientMode = 'ui';
+    final clientId = _identity.deviceId ?? 'openclaw-node';
+    const clientMode = 'node';
     const role = AppConstants.nodeRole;
     const scopes = <String>['*'];
     final signedAtMs = DateTime.now().millisecondsSinceEpoch;

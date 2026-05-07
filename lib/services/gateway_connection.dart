@@ -171,7 +171,7 @@ class GatewayConnection {
 
   Future<void> _sendConnectFrame(String? nonce) async {
     final deviceBlock = await _identity.buildDeviceBlock(
-      clientId: 'openclaw-android',
+      clientId: 'openclaw',
       clientMode: 'ui',
       role: 'operator',
       scopes: ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
@@ -188,7 +188,7 @@ class GatewayConnection {
         'minProtocol': 3,
         'maxProtocol': 3,
         'client': {
-          'id': 'openclaw-android',
+          'id': 'openclaw',
           'version': AppConstants.version,
           'platform': 'android',
           'mode': 'ui',
