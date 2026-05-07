@@ -209,7 +209,7 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    final clientId = _identity.deviceId ?? 'openclaw-node';
+    const clientId = 'openclaw';
     const clientMode = 'node';
     const role = AppConstants.nodeRole;
     const scopes = <String>['*'];
@@ -451,17 +451,17 @@ class NodeService {
 
     try {
       // Clear any stale record
-      await NativeBridge.runInProot('openclaw devices remove --all --yes 2>/dev/null || true');
+      await NativeBridge.runInProot('echo y | openclaw devices remove --all 2>/dev/null || true');
 
       // If we have the exact requestId from the close reason, approve it immediately
       if (requestId != null && requestId.isNotEmpty) {
         log('[NODE] Auto-approving requestId: $requestId');
-        await NativeBridge.runInProot('openclaw devices approve $requestId --yes');
+        await NativeBridge.runInProot('echo y | openclaw devices approve $requestId');
         log('[NODE] Device auto-approved — reconnecting...');
       } else {
         // Fallback: approve the latest pending request
         log('[NODE] No requestId in close reason — approving latest pending request');
-        await NativeBridge.runInProot('openclaw devices approve --latest --yes');
+        await NativeBridge.runInProot('echo y | openclaw devices approve --latest');
       }
 
       // Reset guard after a short delay so future connects work
