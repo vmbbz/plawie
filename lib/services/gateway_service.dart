@@ -2234,8 +2234,10 @@ PARAMETER num_batch 512
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
 
-    // Use sessionKey from gateway handshake, or default to 'main'
-    final sessionKey = _connection!.mainSessionKey ?? 'main';
+    // Use agent ID as sessionKey if applicable, otherwise fallback to mainSessionKey
+    final sessionKey = model.startsWith('agent/') 
+        ? model.substring(6) 
+        : (_connection!.mainSessionKey ?? 'main');
 
     // Cold-start (model not yet in RAM) gets 3 min; warm gets 2 min; cloud 90 s.
     // Local Ollama: extended timeout for cold-start model loading.
@@ -2771,7 +2773,7 @@ PARAMETER num_batch 512
               'Authorization': 'Bearer $token',
             },
             body: jsonEncode({
-              'model': PreferencesService().configuredModel ?? 'google/gemini-2.0-flash',
+              'model': await _resolveModel(null),
               'messages': [
                 {
                   'role': 'user',
@@ -2845,7 +2847,7 @@ PARAMETER num_batch 512
               'Authorization': 'Bearer $token',
             },
             body: jsonEncode({
-              'model': PreferencesService().configuredModel ?? 'google/gemini-2.0-flash',
+              'model': await _resolveModel(null),
               'messages': [
                 {
                   'role': 'user',
@@ -2894,6 +2896,11 @@ PARAMETER num_batch 512
   /// user-selected [model]. Returns a map of changed metadata if the
   /// config was updated, allowing for hot-sync via sessions.patch.
   Future<Map<String, dynamic>> _syncModelToConfig(String model) async {
+    // DO NOT sync agent models to the global defaults.
+    // Agents have their own IDs and config; writing 'agent/id' to the global primary
+    // would corrupt the default provider model setting.
+    if (model.startsWith('agent/')) return {};
+
     final Map<String, dynamic> changedMetadata = {};
     final config = await _readConfig();
     
@@ -2920,19 +2927,33 @@ PARAMETER num_batch 512
   }
 
   /// Resolves the intended model ID, falling back to preferences then openclaw.json defaults.
+  /// Also normalizes cloud/agent IDs into the required 'openclaw' or 'openclaw/<agentId>' format.
   Future<String> _resolveModel(String? model) async {
-    if (model != null && model.isNotEmpty) return model;
+    String m = model ?? '';
+    if (m.isEmpty) {
+      final prefs = PreferencesService();
+      await prefs.init();
+      m = prefs.configuredModel ?? '';
+    }
+    if (m.isEmpty) {
+      final config = await _readConfig();
+      m = config['agents']?['defaults']?['model']?['primary'] as String? ?? '';
+    }
+    if (m.isEmpty) {
+      m = 'google/gemini-3.1-pro-preview';
+    }
+
+    // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility
+    // Any model that isn't a local-llm or ollama model must be sent as
+    // 'openclaw' (primary) or 'openclaw/<agentId>' (agent routing).
+    if (!m.startsWith('local-llm/') && !m.startsWith('ollama/')) {
+      if (m.startsWith('agent/')) {
+        return 'openclaw/${m.substring(6)}';
+      }
+      return 'openclaw';
+    }
     
-    final prefs = PreferencesService();
-    await prefs.init();
-    final configured = prefs.configuredModel;
-    if (configured != null && configured.isNotEmpty) return configured;
-    
-    final config = await _readConfig();
-    final primary = config['agents']?['defaults']?['model']?['primary'] as String?;
-    if (primary != null && primary.isNotEmpty) return primary;
-    
-    return 'google/gemini-3.1-pro-preview'; // Final hard fallback
+    return m;
   }
 
   /// Disconnect the persistent WS connection so the next sendMessage() opens a
