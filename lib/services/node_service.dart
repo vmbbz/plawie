@@ -455,7 +455,7 @@ class NodeService {
     _pairingResolveAttempted = true;
     log('[NODE] Pairing required (1008) — clearing stale device record...');
     try {
-      await NativeBridge.removeDevice(_identity.deviceId);
+      await NativeBridge.removeDevice(_identity.deviceId ?? '');
       log('[NODE] Device record cleared — forcing immediate retry');
       
       // Expert Polish: Immediate retry after clearing record
