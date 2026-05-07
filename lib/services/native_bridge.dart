@@ -60,6 +60,22 @@ class NativeBridge {
     return await _channel.invokeMethod('startGateway');
   }
 
+  static Future<String> approveDevice(String requestId) async {
+    return await runInProot(
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+      'openclaw devices approve $requestId',
+      timeout: 10,
+    );
+  }
+
+  static Future<String> removeDevice(String deviceId) async {
+    return await runInProot(
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+      '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
+      timeout: 10,
+    );
+  }
+
   static Future<bool> stopGateway() async {
     return await _channel.invokeMethod('stopGateway');
   }

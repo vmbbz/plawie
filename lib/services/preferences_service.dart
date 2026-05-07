@@ -15,6 +15,7 @@ class PreferencesService {
   static const _keyNodeGatewayPort = 'node_gateway_port';
   static const _keyNodePublicKey = 'node_ed25519_public';
   static const _keyNodeGatewayToken = 'node_gateway_token';
+  static const _keyLastApprovedRequestId = 'last_approved_request_id';
 
   SharedPreferences? _prefs;
 
@@ -212,4 +213,13 @@ class PreferencesService {
   static const _keyLlmThreads = 'llm_thread_count';
   int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 6;
   set llmThreadCount(int v) => _p.setInt(_keyLlmThreads, v);
+
+  String? get lastApprovedRequestId => _p.getString(_keyLastApprovedRequestId);
+  set lastApprovedRequestId(String? value) {
+    if (value != null) {
+      _p.setString(_keyLastApprovedRequestId, value);
+    } else {
+      _p.remove(_keyLastApprovedRequestId);
+    }
+  }
 }

@@ -455,17 +455,12 @@ class NodeService {
     _pairingResolveAttempted = true;
     log('[NODE] Pairing required (1008) — clearing stale device record...');
     try {
-      final deviceId = _identity.deviceId ?? '';
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
-        timeout: 5,
-      );
-      log('[NODE] Device record cleared — will re-pair on next connect');
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.nodeDeviceToken = null;
-      _gatewayAuthToken = null; // Force re-read from openclaw.json
+      await NativeBridge.removeDevice(_identity.deviceId);
+      log('[NODE] Device record cleared — forcing immediate retry');
+      
+      // Expert Polish: Immediate retry after clearing record
+      await Future.delayed(const Duration(milliseconds: 800));
+      unawaited(connect());
     } catch (e) {
       log('[NODE] Could not clear device record: $e');
     }
