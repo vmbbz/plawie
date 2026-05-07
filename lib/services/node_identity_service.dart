@@ -4,15 +4,15 @@ import 'package:cryptography/cryptography.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NodeIdentityService {
-  static const _keyPrivate = 'openclaw_device_ed25519_private';
-  static const _keyPublic = 'openclaw_device_ed25519_public';
-  static const _keyDeviceId = 'openclaw_device_id';
+  static const _keyPrivate = 'openclaw_node_ed25519_private';
+  static const _keyPublic = 'openclaw_node_ed25519_public';
+  static const _keyDeviceId = 'openclaw_node_id';
 
   late SimpleKeyPair _keyPair;
   late String _deviceId;
   late String _publicKeyBase64Url;
 
-  String get deviceId => '$_deviceId:node';
+  String get deviceId => _deviceId;
 
   /// Raw 32-byte public key encoded as base64url (no padding).
   String get publicKeyBase64Url => _publicKeyBase64Url;
@@ -28,10 +28,13 @@ class NodeIdentityService {
       String padBase64(String s) => s.padRight(s.length + (4 - s.length % 4) % 4, '=');
       
       try {
-        _deviceId = storedDeviceId;
         final privateBytes = base64Url.decode(padBase64(storedPrivate));
         final publicBytes = base64Url.decode(padBase64(storedPublic));
         _publicKeyBase64Url = _toBase64Url(publicBytes);
+        
+        // Enforce stable Hex SHA-256 format
+        final hash = await Sha256().hash(publicBytes);
+        _deviceId = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
         _keyPair = SimpleKeyPairData(
           privateBytes,
           publicKey: SimplePublicKey(publicBytes, type: KeyPairType.ed25519),
@@ -53,13 +56,11 @@ class NodeIdentityService {
     final publicKey = await _keyPair.extractPublicKey();
     final publicBytes = Uint8List.fromList(publicKey.bytes);
 
-    // deviceId = SHA-256 hex of raw 32-byte public key
-    final hash = await Sha256().hash(publicBytes);
-    _deviceId = hash.bytes
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
-
     _publicKeyBase64Url = _toBase64Url(publicBytes);
+    
+    // deviceId = SHA-256 hex of raw 32-byte public key (stable format)
+    final hash = await Sha256().hash(publicBytes);
+    _deviceId = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
     final privateBytes = await _keyPair.extractPrivateKeyBytes();
     await prefs.setString(_keyPrivate, _toBase64Url(privateBytes));

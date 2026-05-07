@@ -15,6 +15,7 @@ import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
+import 'node_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 /// Simple mobile-friendly template for Qwen2.5 models.
@@ -450,6 +451,7 @@ PARAMETER num_batch 512
       _connection = null;
       _cachedToken = null;
       _lastTokenFetch = null;
+      NodeService().clearCachedToken();
 
       _subscribeLogs();
       _startHealthCheck();
@@ -1664,6 +1666,7 @@ PARAMETER num_batch 512
     _connection?.dispose();
     _connection = null;
     _cachedToken = null;
+    NodeService().clearCachedToken();
     _lastTokenFetch = null;
 
     try {
