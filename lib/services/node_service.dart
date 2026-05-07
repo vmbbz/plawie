@@ -279,9 +279,9 @@ class NodeService {
       final message = errPayload['message'] as String? ?? 'Connect failed';
 
       if (code == 'TOKEN_INVALID' || code == 'NOT_PAIRED' ||
-          code == 'DEVICE_NOT_PAIRED') {
-        log('[NODE] Not paired, requesting pairing...');
-        await _requestPairing();
+          code == 'DEVICE_NOT_PAIRED' || (code == 'INVALID_REQUEST' && message.contains('identity'))) {
+        log('[NODE] Identity mismatch or not paired, requesting recovery...');
+        await _handleNodePairingRequired();
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
