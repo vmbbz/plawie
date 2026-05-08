@@ -176,7 +176,7 @@ class GatewayConnection {
     final version = await OpenClawCommandService.detectOpenClawVersion();
     
     final deviceBlock = await _identity.buildDeviceBlock(
-      clientId: 'openclaw-control-ui',
+      clientId: 'openclaw-android',
       clientMode: 'ui',
       role: 'operator',
       scopes: ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
@@ -193,7 +193,7 @@ class GatewayConnection {
         'minProtocol': 3,
         'maxProtocol': 3,
         'client': {
-          'id': 'openclaw-control-ui',
+          'id': 'openclaw-android',
           'version': version,
           'platform': 'android',
           'mode': 'ui',
