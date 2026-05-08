@@ -268,8 +268,11 @@ class NodeService {
 
       if (code == 'TOKEN_INVALID' || code == 'NOT_PAIRED' ||
           code == 'DEVICE_NOT_PAIRED' || (code == 'INVALID_REQUEST' && message.contains('identity'))) {
-        log('[NODE] Identity mismatch or not paired, requesting recovery...');
-        await _handleNodePairingRequired();
+        // Extract requestId from the error payload if the gateway included it
+        final requestId = errPayload['requestId'] as String?
+            ?? errPayload['pairRequestId'] as String?;
+        log('[NODE] Identity mismatch or not paired, requesting recovery (requestId=$requestId)...');
+        await _handleNodePairingRequired(requestId);
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
@@ -449,17 +452,34 @@ class NodeService {
         await NativeBridge.runInProot('$env openclaw devices approve $requestId', timeout: 30);
         log('[NODE] Device approved — reconnecting...');
       } else {
-        // No requestId: remove only this device's record so gateway treats it as new.
-        // Never clear --yes here — that nukes all device records including the operator's.
-        final deviceId = _identity.deviceId ?? '';
-        log('[NODE] No requestId — removing stale record for deviceId: ${deviceId.length > 8 ? deviceId.substring(0, 8) : deviceId}...');
-        if (deviceId.isNotEmpty) {
-          await NativeBridge.runInProot(
-            '$env openclaw devices remove $deviceId 2>/dev/null || true',
-            timeout: 30,
-          );
+        // No requestId from error payload — discover it via --latest.
+        // --latest exits 1 and outputs:
+        //   "Approve this exact request with: openclaw devices approve <uuid>"
+        // We catch the PlatformException, parse the UUID, then approve directly.
+        log('[NODE] No requestId — discovering via approve --latest...');
+        try {
+          await NativeBridge.runInProot('$env openclaw devices approve --latest', timeout: 30);
+          log('[NODE] Device approved via --latest');
+        } catch (latestErr) {
+          final match = RegExp(r'openclaw devices approve ([a-f0-9-]{36})')
+              .firstMatch(latestErr.toString());
+          if (match != null) {
+            final discoveredId = match.group(1)!;
+            log('[NODE] Discovered requestId: $discoveredId — approving...');
+            await NativeBridge.runInProot('$env openclaw devices approve $discoveredId', timeout: 30);
+            log('[NODE] Device approved via discovered requestId');
+          } else {
+            // No pending request found — remove only this device's stale record
+            final deviceId = _identity.deviceId ?? '';
+            log('[NODE] No pending request — removing stale record for deviceId: ${deviceId.length > 8 ? deviceId.substring(0, 8) : deviceId}...');
+            if (deviceId.isNotEmpty) {
+              await NativeBridge.runInProot(
+                '$env openclaw devices remove $deviceId 2>/dev/null || true',
+                timeout: 30,
+              );
+            }
+          }
         }
-        // gateway.nodes.autoApprove=true handles re-approval on reconnect
       }
 
       await Future.delayed(const Duration(seconds: 2));

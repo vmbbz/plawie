@@ -264,11 +264,30 @@ class GatewayConnection {
             // Error could be a Map or a String. Avoid fatal TypeErrors on Strings.
             final errorRaw = frame['error'];
             String msg = 'connect rejected';
+            String? errorCode;
+            String? pairingRequestId;
             if (errorRaw is Map) {
               msg = errorRaw['message']?.toString() ?? 'connect rejected';
+              errorCode = errorRaw['code'] as String?;
+              pairingRequestId = errorRaw['requestId'] as String?
+                  ?? frame['requestId'] as String?;
             } else if (errorRaw != null) {
               msg = errorRaw.toString();
             }
+
+            // Emit to pairingRequiredStream BEFORE completing the error.
+            // _cleanup() (called after completeError) cancels the subscription so
+            // onDone never fires — without this, the pairing handler in GatewayService
+            // never gets called and the operator loops forever.
+            final isPairingError = errorCode == 'NOT_PAIRED'
+                || errorCode == 'DEVICE_NOT_PAIRED'
+                || errorCode == 'TOKEN_INVALID'
+                || msg.toLowerCase().contains('pairing')
+                || msg.toLowerCase().contains('not approved');
+            if (isPairingError && !_pairingRequiredController.isClosed) {
+              _pairingRequiredController.add(pairingRequestId);
+            }
+
             _handshakeCompleter!.completeError(Exception(msg));
           }
         }
