@@ -14,7 +14,9 @@ import '../../services/clawhub_service.dart';
 import '../../services/gateway_service.dart';
 import '../../services/local_llm_service.dart';
 import '../../services/native_bridge.dart';
+import '../../services/node_service.dart';
 import '../../services/openclaw_service.dart';
+import '../../services/preferences_service.dart';
 import 'skills/agent_wallet_page.dart';
 import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
@@ -185,7 +187,13 @@ class _SkillsManagerState extends State<SkillsManager>
       );
     } catch (_) {}
 
-    // 4. Refresh gateway state
+    // 4. Device tokens — clear from SharedPreferences and in-memory so the
+    //    next gateway connect performs a fresh identity handshake.
+    await GatewayService().clearDeviceToken(); // operator token (prefs + memory)
+    NodeService().clearCachedToken();           // node gateway auth token (memory)
+    PreferencesService().nodeDeviceToken = null; // node device token (prefs)
+
+    // 5. Refresh gateway state
     if (!mounted) return;
     gateway.checkHealth();
     messenger.showSnackBar(
@@ -1565,6 +1573,47 @@ class _ToolsTabState extends State<_ToolsTab> {
                                         fontSize: 10,
                                         letterSpacing: 1.2,
                                         color: AppColors.statusGreen.withValues(alpha: 0.85))),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          GestureDetector(
+                            onTap: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              final gateway = Provider.of<GatewayProvider>(context, listen: false);
+                              messenger.showSnackBar(const SnackBar(
+                                content: Text('Clearing caches…'),
+                                duration: Duration(seconds: 2),
+                              ));
+                              ClawHubService.instance.invalidateCache();
+                              await GatewayService().clearDeviceToken();
+                              NodeService().clearCachedToken();
+                              PreferencesService().nodeDeviceToken = null;
+                              try {
+                                await NativeBridge.runInProot(
+                                  'npm cache clean --force 2>/dev/null; '
+                                  'rm -rf /root/.npm/_cacache /tmp/npm-* /tmp/.npm 2>/dev/null || true',
+                                  timeout: 30,
+                                );
+                              } catch (_) {}
+                              if (!context.mounted) return;
+                              gateway.checkHealth();
+                              messenger.showSnackBar(const SnackBar(
+                                content: Text('All caches cleared.'),
+                                duration: Duration(seconds: 2),
+                              ));
+                            },
+                            child: Row(
+                              children: [
+                                Icon(Icons.cleaning_services_rounded,
+                                    size: 13,
+                                    color: Colors.white.withValues(alpha: 0.4)),
+                                const SizedBox(width: 4),
+                                Text('CLEAR CACHE',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        letterSpacing: 1.2,
+                                        color: Colors.white.withValues(alpha: 0.4))),
                               ],
                             ),
                           ),

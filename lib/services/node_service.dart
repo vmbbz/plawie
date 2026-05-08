@@ -4,7 +4,6 @@ import 'dart:io';
 import '../constants.dart';
 import '../models/node_frame.dart';
 import '../models/node_state.dart';
-import 'gateway_service.dart';
 import 'native_bridge.dart';
 import 'device_identity.dart';
 import 'node_ws_service.dart';
@@ -88,26 +87,27 @@ class NodeService {
     _frameSubscription = _ws.frameStream.listen(_onFrame);
     _pairingSubscription?.cancel();
     _pairingSubscription = _ws.pairingRequiredStream.listen((requestId) {
-      _handleNodePairingRequired(requestId as String?);
+      if (_state.status == NodeStatus.paired) return; // ignore stale 1008s after successful connect
+      _handleNodePairingRequired(requestId);
     });
 
     try {
       _challengeCompleter = Completer<String?>();
       await _ws.connect(targetHost, targetPort);
       log('[NODE] WebSocket connected, awaiting challenge...');
-      
-      // Wait briefly for a challenge nonce, proceed without one for local connections
-      String? nonce;
+
+      // Wait for the gateway challenge nonce before sending the connect frame.
+      // The gateway sends connect.challenge proactively on connection open.
+      // For localhost trusted devices it may skip the challenge — 800ms timeout then proceed.
+      // Sending nonce: '' causes INVALID_REQUEST (schema requires min 1 char when present).
+      String challengeNonce;
       try {
-        nonce = await _challengeCompleter!.future.timeout(const Duration(milliseconds: 2000));
+        challengeNonce = await _challengeCompleter!.future
+            .timeout(const Duration(milliseconds: 800)) ?? '';
       } catch (_) {
-        nonce = null;
+        challengeNonce = ''; // No challenge within timeout — send without nonce field
       }
-      
-      // If we got here and didn't trigger via _onFrame yet, proceed
-      if (_state.status == NodeStatus.connecting) {
-        await _sendConnect(nonce ?? '');
-      }
+      await _sendConnect(challengeNonce);
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
@@ -138,26 +138,11 @@ class NodeService {
       case 'connect.challenge':
         final nonce = frame.payload?['nonce'] as String?;
         if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
-          _challengeCompleter!.complete(nonce);
+          _challengeCompleter!.complete(nonce ?? '');
         }
         _updateState(_state.copyWith(status: NodeStatus.challenging));
-        if (nonce == null) {
-          log('[NODE] Challenge missing nonce');
-          return;
-        }
-        log('[NODE] Challenge received, signing...');
-        try {
-          // If we haven't sent connect yet (via the 500ms timeout), send it now
-          if (_state.status != NodeStatus.paired && _state.status != NodeStatus.error) {
-             await _sendConnect(nonce);
-          }
-        } catch (e) {
-          log('[NODE] Challenge/connect error: $e');
-          _updateState(_state.copyWith(
-            status: NodeStatus.error,
-            errorMessage: '$e',
-          ));
-        }
+        log(nonce != null ? '[NODE] Challenge received' : '[NODE] Challenge missing nonce');
+        // connect() awaits _challengeCompleter with timeout — no re-send needed here.
         break;
 
       case 'node.invoke.request':
@@ -212,10 +197,10 @@ class NodeService {
     // (gateway verifies device tokens as fallback if gateway token check fails)
     final authToken = _gatewayAuthToken ?? deviceToken;
 
-    const clientId = 'cli';
-    const clientMode = 'cli';
+    const clientId = 'node-host';
+    const clientMode = 'node';
     const role = AppConstants.nodeRole;
-    const scopes = <String>['*'];
+    const scopes = <String>['node.device'];
     final signedAtMs = DateTime.now().millisecondsSinceEpoch;
 
     // Build the structured payload the gateway verifies:
@@ -241,17 +226,19 @@ class NodeService {
       'maxProtocol': 3,
       'client': {
         'id': clientId,
+        'displayName': 'OpenClaw Mobile',
         'version': version,
-        'platform': 'linux',
+        'platform': 'android',
+        'deviceFamily': 'Android',
         'mode': clientMode,
       },
       'role': role,
       'scopes': scopes,
-      if (nonce.isNotEmpty) 'device': {
+      'device': {
         'id': _identity.deviceId ?? '',
         'publicKey': _identity.publicKeyBase64Url ?? '',
         'signature': signature,
-        'nonce': nonce,
+        if (nonce.isNotEmpty) 'nonce': nonce, // omit when empty — gateway schema requires min 1 char
         'signedAt': signedAtMs,
       },
       if (authToken != null) 'auth': {'token': authToken},
@@ -262,7 +249,7 @@ class NodeService {
     });
 
     log('[NODE] Connect frame caps=$caps commands=$commands');
-    log('[NODE] Connect frame platform=linux');
+    log('[NODE] Connect frame platform=android');
     final response = await _ws.sendRequest(connectFrame);
     log('[NODE] Connect response ok=${response.isOk} payload=${response.payload}');
 
@@ -448,21 +435,37 @@ class NodeService {
     if (_pairingResolveAttempted) return; // prevent loops
     _pairingResolveAttempted = true;
 
+    // MANDATORY: Clear cached token immediately to force a fresh handshake
+    clearCachedToken();
+
     log('[NODE] Pairing required (1008) — clearing stale device record...');
 
     try {
-      // Clear any stale record
-      await NativeBridge.runInProot('echo y | openclaw devices remove --all 2>/dev/null || true');
+      // Clear any stale record with a longer timeout and proper environment
+      const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
+      await NativeBridge.runInProot('$env echo y | openclaw devices remove --all 2>/dev/null || true', timeout: 30);
 
       // If we have the exact requestId from the close reason, approve it immediately
       if (requestId != null && requestId.isNotEmpty) {
         log('[NODE] Auto-approving requestId: $requestId');
-        await NativeBridge.runInProot('echo y | openclaw devices approve $requestId');
-        log('[NODE] Device auto-approved — reconnecting...');
+        await NativeBridge.runInProot('$env echo y | openclaw devices approve $requestId', timeout: 30);
+        
+        // SYNC FIX: Wait for DB to settle and reload gateway to pick up approval
+        await Future.delayed(const Duration(seconds: 1));
+        await NativeBridge.runInProot('$env openclaw reload', timeout: 10);
+        
+        log('[NODE] Device auto-approved and reloaded — reconnecting...');
       } else {
-        // Fallback: approve the latest pending request
-        log('[NODE] No requestId in close reason — approving latest pending request');
-        await NativeBridge.runInProot('echo y | openclaw devices approve --latest');
+        // Fallback: clear all device records so the gateway treats the next
+        // connect as a new device. gateway.nodes.autoApprove=true in the
+        // config handles approval automatically on reconnect.
+        log('[NODE] No requestId in close reason — clearing records, will re-pair on reconnect');
+        await NativeBridge.runInProot(
+          '$env openclaw devices clear --yes 2>/dev/null || true',
+          timeout: 30,
+        );
+        await Future.delayed(const Duration(seconds: 1));
+        await NativeBridge.runInProot('$env openclaw reload', timeout: 10);
       }
 
       // Reset guard after a short delay so future connects work

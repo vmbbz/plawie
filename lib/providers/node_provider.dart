@@ -170,7 +170,9 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _requestNodePermissions();
       await _requestBatteryOptimization();
       await NativeBridge.startNodeService();
-      await _nodeService.connect();
+      // NOTE: We do NOT call _nodeService.connect() here anymore.
+      // Connection is triggered via onGatewayStateUpdate once the gateway
+      // is confirmed to be running, or by the watchdog.
       _startWatchdog();
       
       // REGISTER DEVICE NODES

@@ -371,7 +371,11 @@ PARAMETER num_batch 512
         );
       }
       _addActivity('[SYS] $packageName fixed — restarting gateway...');
-      await NativeBridge.runInProot('openclaw reload 2>/dev/null || true', timeout: 10);
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw reload 2>/dev/null || true',
+        timeout: 10,
+      );
     } catch (e) {
       _addActivity('[SYS] Auto-heal failed: $e. Manual repair required.');
     } finally {
@@ -406,8 +410,12 @@ PARAMETER num_batch 512
       // Case 3: Invalid Config
       if (diag['config_health'] == 'INVALID_OR_MISSING') {
         _addActivity('[SYS] Configuration corrupted — rewriting defaults...');
-        await _configureGateway();
-        await NativeBridge.runInProot('openclaw doctor --fix 2>/dev/null || true', timeout: 10);
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'openclaw doctor --fix 2>/dev/null || true',
+          timeout: 10,
+        );
+        await _configureGateway(); // our overrides run after doctor so they aren't undone
         _consecutiveFailures = 0;
         return;
       }
@@ -462,22 +470,15 @@ PARAMETER num_batch 512
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
-      // FIXED: Simplified attach path - only configure once
-      // Remove redundant doctor --fix and reload calls
+      // Run doctor --fix FIRST (sanitises basic issues), then our config overrides
+      // LAST — so doctor cannot undo the allowedOrigins removal or other custom
+      // settings. _configureGateway() already calls openclaw reload internally.
       try {
-        await _configureGateway();
-        
-        // Only run doctor if config validation fails
-        final validation = await NativeBridge.runInProot(
-          'openclaw config --validate 2>/dev/null',
-          timeout: 5,
+        await NativeBridge.runInProot(
+          'openclaw doctor --fix 2>/dev/null || true',
+          timeout: 10,
         );
-        if (validation.contains('ERROR') || validation.contains('failed')) {
-          await NativeBridge.runInProot(
-            'openclaw doctor --fix 2>/dev/null || true',
-            timeout: 10,
-          );
-        }
+        await _configureGateway();
       } catch (_) {}
 
       // After openclaw reload the gateway may issue a new token — wipe the
@@ -529,7 +530,7 @@ PARAMETER num_batch 512
       }
       
       await NativeBridge.acquirePartialWakeLock();
-      await _configureGateway();
+      await _configureGateway(triggerReload: false); // gateway not running yet — skip reload
       await Future.delayed(const Duration(milliseconds: 300));
 
       final success = await NativeBridge.startGateway();
@@ -686,8 +687,11 @@ PARAMETER num_batch 512
     }
   }
 
-  /// Direct I/O: configure gateway binding and node per AidanPark optimization
-  Future<void> _configureGateway() async {
+  /// Direct I/O: configure gateway binding and node per AidanPark optimization.
+  ///
+  /// [triggerReload] — set false when the gateway has not yet started (fresh
+  /// start path) so we skip the `openclaw reload` no-op and save ~10 s.
+  Future<void> _configureGateway({bool triggerReload = true}) async {
     final config = await _readConfig();
     
     config['gateway'] ??= {};
@@ -707,7 +711,23 @@ PARAMETER num_batch 512
     
     // ENODEV FIX: Use official OpenClaw config schema
     // Prevent eth0 ENODEV errors with valid network binding
-    config['gateway']['bind'] = 'loopback';  // localhost-only binding
+    config['gateway']['bind'] = '127.0.0.1';  // Explicitly bind to IPv4 loopback
+    config['gateway']['port'] = AppConstants.gatewayPort; // Force port 18789
+    
+    // Remove any stale allowedOrigins restriction so the gateway uses its
+    // default permissive behavior for localhost connections.
+    // Setting ['*'] does NOT work — gateway matches it as a literal string
+    // against the origin, and dart:io WebSocket never sends an Origin header
+    // (the gateway sees origin=n/a), causing every connection to be rejected.
+    config['gateway']['controlUi'] ??= {};
+    (config['gateway']['controlUi'] as Map<String, dynamic>).remove('allowedOrigins');
+    
+    // Save and signal reload (skipped on fresh start — gateway not running yet)
+    await _writeConfig(config);
+    if (triggerReload) {
+      const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
+      await NativeBridge.runInProot('$env openclaw reload', timeout: 10);
+    }
     
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
@@ -1657,7 +1677,8 @@ PARAMETER num_batch 512
 
   /// Direct I/O: Retrieve token from config file (instant, no proot)
   Future<String?> retrieveTokenFromConfig({bool force = false}) async {
-    if (!force && _cachedToken != null && _lastTokenFetch != null &&
+    if (force) clearTokenCache();
+    if (_cachedToken != null && _lastTokenFetch != null &&
         DateTime.now().difference(_lastTokenFetch!).inMinutes < 5) {
       return _cachedToken;
     }
@@ -1687,6 +1708,23 @@ PARAMETER num_batch 512
     }
 
     return null;
+  }
+
+  /// Clear the host-side token cache to force a fresh read from disk.
+  void clearTokenCache() {
+    _cachedToken = null;
+    _lastTokenFetch = null;
+  }
+
+  /// Clear the operator device token from SharedPreferences and in-memory cache.
+  /// Call this from the UI "Clear Cache" action so the next connect does a
+  /// fresh identity handshake instead of reusing a potentially stale token.
+  Future<void> clearDeviceToken() async {
+    clearTokenCache();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(GatewayConnection.prefDeviceToken);
+    } catch (_) {}
   }
 
 
@@ -1816,6 +1854,9 @@ PARAMETER num_batch 512
     } catch (e) {
       _addActivity('[WARN] Could not clear operator device record: $e');
     }
+    // Invalidate token cache — the 1008 likely means the gateway restarted
+    // and generated a new token, while we were using a stale one.
+    clearTokenCache();
     // Dispose connection so _ensureWebSocket creates a fresh one next tick.
     _connection?.dispose();
     _connection = null;
@@ -2045,6 +2086,7 @@ PARAMETER num_batch 512
     if (_state.isOllamaRunning) {
       try {
         final result = await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'OLLAMA_HOST=127.0.0.1:11434 ollama list 2>&1 | head -3',
           timeout: 8,
         );

@@ -64,7 +64,7 @@ class NativeBridge {
     return await runInProot(
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
       'openclaw devices approve $requestId',
-      timeout: 10,
+      timeout: 30,
     );
   }
 
@@ -72,7 +72,7 @@ class NativeBridge {
     return await runInProot(
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
       '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
-      timeout: 10,
+      timeout: 30,
     );
   }
 
