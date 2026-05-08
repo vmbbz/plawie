@@ -1809,31 +1809,55 @@ PARAMETER num_batch 512
   /// as a new device and succeeds with the gateway auth token alone.
   Future<void> _handleOperatorPairingRequired(String? requestId) async {
     if (_pairingResolveAttempted) return;
-    
-    // EXPERT FIX: If we have a requestId, use the auto-approval flow
+    _pairingResolveAttempted = true;
+
+    // If we have a requestId (from error payload), use the direct approval flow
     if (requestId != null && requestId.isNotEmpty) {
+      _addActivity('[INFO] Operator pairing required — approving requestId: ${requestId.substring(0, 8)}...');
       await autoApproveDevice(requestId);
+      _pairingResolveAttempted = false;
       return;
     }
 
-    _pairingResolveAttempted = true;
-    final deviceId = _connection?.deviceId ?? '';
-    _addActivity('[INFO] Pairing required — clearing stale operator device record...');
+    // No requestId — discover it via --latest, then approve
+    _addActivity('[INFO] Operator pairing required — discovering pending requestId via --latest...');
+    const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
+    bool approved = false;
     try {
-      await NativeBridge.removeDevice(deviceId);
-      // Clear persisted deviceToken — it belongs to the now-deleted record.
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(GatewayConnection.prefDeviceToken);
-      _addActivity('[INFO] Operator device record cleared — reconnecting fresh');
+      await NativeBridge.runInProot('$env openclaw devices approve --latest', timeout: 30);
+      _addActivity('[INFO] Operator device approved via --latest');
+      approved = true;
     } catch (e) {
-      _addActivity('[WARN] Could not clear operator device record: $e');
+      // --latest exits 1 and outputs: "Approve this exact request with: openclaw devices approve <uuid>"
+      final match = RegExp(r'openclaw devices approve ([a-f0-9-]{36})').firstMatch(e.toString());
+      if (match != null) {
+        final discoveredId = match.group(1)!;
+        _addActivity('[INFO] Operator: discovered requestId ${discoveredId.substring(0, 8)}... — approving...');
+        try {
+          await autoApproveDevice(discoveredId);
+          approved = true;
+        } catch (_) {}
+      }
     }
-    // Invalidate token cache — the 1008 likely means the gateway restarted
-    // and generated a new token, while we were using a stale one.
+
+    if (!approved) {
+      // Final fallback: clear stale device record so gateway treats next connect as new
+      final deviceId = _connection?.deviceId ?? '';
+      _addActivity('[INFO] Pairing required — clearing stale operator device record...');
+      try {
+        await NativeBridge.removeDevice(deviceId);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(GatewayConnection.prefDeviceToken);
+        _addActivity('[INFO] Operator device record cleared — reconnecting fresh');
+      } catch (e) {
+        _addActivity('[WARN] Could not clear operator device record: $e');
+      }
+    }
+
     clearTokenCache();
-    // Dispose connection so _ensureWebSocket creates a fresh one next tick.
     _connection?.dispose();
     _connection = null;
+    _pairingResolveAttempted = false;
   }
 
   Future<void> _checkHealth() async {
