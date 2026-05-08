@@ -441,16 +441,24 @@ class NodeService {
     // invalidating the one we're about to approve.
     log('[NODE] Pairing required — halting reconnects for approval...');
     await _ws.disconnect();
-    await Future.delayed(const Duration(seconds: 2));
+    // Wait 5s: the previous connect() call's WebSocket (fffcbbcb) was in flight
+    // and its connect frame takes ~3-4s to be fully processed by the gateway.
+    // Running --latest before that creates a race where fffcbbcb's NEW requestId
+    // supersedes the one we're about to approve → "unknown requestId".
+    await Future.delayed(const Duration(seconds: 5));
 
     log('[NODE] Attempting auto-approval...');
     const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
 
     try {
       for (int attempt = 1; attempt <= 3; attempt++) {
+        // Use "echo y |" to answer the confirmation prompt atomically.
+        // Without it the CLI hangs waiting for stdin → 30s timeout.
+        // For --latest: discovers AND approves the current pending request in one CLI call.
+        // For a known uuid: approves directly with confirmation.
         final cmd = (requestId != null && requestId.isNotEmpty)
-            ? 'openclaw devices approve $requestId'
-            : 'openclaw devices approve --latest';
+            ? 'echo y | openclaw devices approve $requestId'
+            : 'echo y | openclaw devices approve --latest';
         log('[NODE] Attempt $attempt/3 → $cmd');
 
         try {
@@ -459,30 +467,24 @@ class NodeService {
           break;
         } catch (e) {
           final errStr = e.toString();
+          log('[NODE] Approval attempt $attempt error: ${errStr.length > 200 ? errStr.substring(0, 200) : errStr}');
 
-          // --latest exits 1 and prints the real requestId in the error message
+          // If --latest printed a UUID hint, parse it and retry with it directly
           final match = RegExp(r'openclaw devices approve ([a-f0-9-]{36})')
               .firstMatch(errStr);
           if (match != null) {
             requestId = match.group(1)!;
-            log('[NODE] Discovered requestId: $requestId — retrying...');
+            log('[NODE] Discovered requestId: $requestId — retrying with echo y...');
             continue;
           }
 
-          if (attempt < 3 && (errStr.contains('unknown requestId') || errStr.contains('timeout'))) {
-            log('[NODE] Transient error on attempt $attempt — will retry');
-            await Future.delayed(const Duration(milliseconds: 800));
+          if (attempt < 3) {
+            log('[NODE] Retrying in 1s...');
+            await Future.delayed(const Duration(seconds: 1));
             continue;
           }
 
-          final deviceId = _identity.deviceId ?? '';
-          log('[NODE] No pending request — removing stale record...');
-          if (deviceId.isNotEmpty) {
-            await NativeBridge.runInProot(
-              '$env openclaw devices remove $deviceId 2>/dev/null || true',
-              timeout: 30,
-            );
-          }
+          log('[NODE] All approval attempts failed — will reconnect and retry pairing');
           break;
         }
       }
