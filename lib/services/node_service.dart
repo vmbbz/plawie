@@ -438,41 +438,32 @@ class NodeService {
     // MANDATORY: Clear cached token immediately to force a fresh handshake
     clearCachedToken();
 
-    log('[NODE] Pairing required (1008) — clearing stale device record...');
+    log('[NODE] Pairing required (1008) — attempting device approval...');
 
     try {
-      // Clear any stale record with a longer timeout and proper environment
       const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
-      await NativeBridge.runInProot('$env echo y | openclaw devices remove --all 2>/dev/null || true', timeout: 30);
 
-      // If we have the exact requestId from the close reason, approve it immediately
       if (requestId != null && requestId.isNotEmpty) {
         log('[NODE] Auto-approving requestId: $requestId');
-        await NativeBridge.runInProot('$env echo y | openclaw devices approve $requestId', timeout: 30);
-        
-        // SYNC FIX: Wait for DB to settle and reload gateway to pick up approval
-        await Future.delayed(const Duration(seconds: 1));
-        await NativeBridge.runInProot('$env openclaw reload', timeout: 10);
-        
-        log('[NODE] Device auto-approved and reloaded — reconnecting...');
+        // Approval takes effect in-memory immediately — no reload needed
+        await NativeBridge.runInProot('$env openclaw devices approve $requestId', timeout: 30);
+        log('[NODE] Device approved — reconnecting...');
       } else {
-        // Fallback: clear all device records so the gateway treats the next
-        // connect as a new device. gateway.nodes.autoApprove=true in the
-        // config handles approval automatically on reconnect.
-        log('[NODE] No requestId in close reason — clearing records, will re-pair on reconnect');
-        await NativeBridge.runInProot(
-          '$env openclaw devices clear --yes 2>/dev/null || true',
-          timeout: 30,
-        );
-        await Future.delayed(const Duration(seconds: 1));
-        await NativeBridge.runInProot('$env openclaw reload', timeout: 10);
+        // No requestId: remove only this device's record so gateway treats it as new.
+        // Never clear --yes here — that nukes all device records including the operator's.
+        final deviceId = _identity.deviceId ?? '';
+        log('[NODE] No requestId — removing stale record for deviceId: ${deviceId.length > 8 ? deviceId.substring(0, 8) : deviceId}...');
+        if (deviceId.isNotEmpty) {
+          await NativeBridge.runInProot(
+            '$env openclaw devices remove $deviceId 2>/dev/null || true',
+            timeout: 30,
+          );
+        }
+        // gateway.nodes.autoApprove=true handles re-approval on reconnect
       }
 
-      // Reset guard after a short delay so future connects work
       await Future.delayed(const Duration(seconds: 2));
       _pairingResolveAttempted = false;
-
-      // Force reconnect
       await connect();
     } catch (e) {
       log('[NODE] Auto-approve failed: $e');

@@ -71,7 +71,7 @@ class NativeBridge {
   static Future<String> removeDevice(String deviceId) async {
     return await runInProot(
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-      '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
+      'openclaw devices remove $deviceId 2>/dev/null || true',
       timeout: 30,
     );
   }

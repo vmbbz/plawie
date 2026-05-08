@@ -370,12 +370,7 @@ PARAMETER num_batch 512
           timeout: 120,
         );
       }
-      _addActivity('[SYS] $packageName fixed — restarting gateway...');
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw reload 2>/dev/null || true',
-        timeout: 10,
-      );
+      _addActivity('[SYS] $packageName fixed — gateway will pick up changes on reconnect');
     } catch (e) {
       _addActivity('[SYS] Auto-heal failed: $e. Manual repair required.');
     } finally {
@@ -471,8 +466,7 @@ PARAMETER num_batch 512
       ));
 
       // Run doctor --fix FIRST (sanitises basic issues), then our config overrides
-      // LAST — so doctor cannot undo the allowedOrigins removal or other custom
-      // settings. _configureGateway() already calls openclaw reload internally.
+      // LAST — so doctor cannot undo the allowedOrigins removal or other custom settings.
       try {
         await NativeBridge.runInProot(
           'openclaw doctor --fix 2>/dev/null || true',
@@ -530,7 +524,7 @@ PARAMETER num_batch 512
       }
       
       await NativeBridge.acquirePartialWakeLock();
-      await _configureGateway(triggerReload: false); // gateway not running yet — skip reload
+      await _configureGateway();
       await Future.delayed(const Duration(milliseconds: 300));
 
       final success = await NativeBridge.startGateway();
@@ -687,11 +681,8 @@ PARAMETER num_batch 512
     }
   }
 
-  /// Direct I/O: configure gateway binding and node per AidanPark optimization.
-  ///
-  /// [triggerReload] — set false when the gateway has not yet started (fresh
-  /// start path) so we skip the `openclaw reload` no-op and save ~10 s.
-  Future<void> _configureGateway({bool triggerReload = true}) async {
+  /// Direct I/O: configure gateway binding and node settings.
+  Future<void> _configureGateway() async {
     final config = await _readConfig();
     
     config['gateway'] ??= {};
@@ -722,12 +713,8 @@ PARAMETER num_batch 512
     config['gateway']['controlUi'] ??= {};
     (config['gateway']['controlUi'] as Map<String, dynamic>).remove('allowedOrigins');
     
-    // Save and signal reload (skipped on fresh start — gateway not running yet)
+    // Save config — gateway watches its config file for changes automatically
     await _writeConfig(config);
-    if (triggerReload) {
-      const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
-      await NativeBridge.runInProot('$env openclaw reload', timeout: 10);
-    }
     
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
@@ -1471,26 +1458,13 @@ PARAMETER num_batch 512
   }
 
   /// Direct I/O: Persist the selected model (no proot overhead).
-  /// If [reload] is true, triggers an openclaw reload to make it active immediately.
-  Future<void> persistModel(String model, {bool reload = false}) async {
+  Future<void> persistModel(String model) async {
     final config = await _readConfig();
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
     config['agents']['defaults']['model'] ??= {};
     config['agents']['defaults']['model']['primary'] = model;
     await _writeConfig(config);
-
-    if (reload) {
-      invalidateTokenCache();
-      disconnectWebSocket();
-      try {
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'openclaw reload 2>/dev/null || true',
-          timeout: 5
-        );
-      } catch (_) {}
-    }
   }
 
   /// Map a provider name to its default model string (provider/model).
