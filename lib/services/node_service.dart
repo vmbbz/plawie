@@ -431,63 +431,66 @@ class NodeService {
     }
   }
 
-  /// Called when the gateway closes with 1008 (pairing required).
-  /// Deletes the stale device record so the gateway treats the next connect
-  /// as a new device, allowing the normal NOT_PAIRED → auto-approve flow.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
-    if (_pairingResolveAttempted) return; // prevent loops
+    if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
-
-    // MANDATORY: Clear cached token immediately to force a fresh handshake
     clearCachedToken();
 
-    log('[NODE] Pairing required (1008) — attempting device approval...');
+    // Stop auto-reconnect BEFORE running approve.
+    // Each reconnect creates a new pairing requestId at the gateway,
+    // invalidating the one we're about to approve.
+    log('[NODE] Pairing required — halting reconnects for approval...');
+    await _ws.disconnect();
+    await Future.delayed(const Duration(seconds: 2));
+
+    log('[NODE] Attempting auto-approval...');
+    const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
 
     try {
-      const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        final cmd = (requestId != null && requestId.isNotEmpty)
+            ? 'openclaw devices approve $requestId'
+            : 'openclaw devices approve --latest';
+        log('[NODE] Attempt $attempt/3 → $cmd');
 
-      if (requestId != null && requestId.isNotEmpty) {
-        log('[NODE] Auto-approving requestId: $requestId');
-        // Approval takes effect in-memory immediately — no reload needed
-        await NativeBridge.runInProot('$env openclaw devices approve $requestId', timeout: 30);
-        log('[NODE] Device approved — reconnecting...');
-      } else {
-        // No requestId from error payload — discover it via --latest.
-        // --latest exits 1 and outputs:
-        //   "Approve this exact request with: openclaw devices approve <uuid>"
-        // We catch the PlatformException, parse the UUID, then approve directly.
-        log('[NODE] No requestId — discovering via approve --latest...');
         try {
-          await NativeBridge.runInProot('$env openclaw devices approve --latest', timeout: 30);
-          log('[NODE] Device approved via --latest');
-        } catch (latestErr) {
+          await NativeBridge.runInProot('$env $cmd', timeout: 30);
+          log('[NODE] Device approved on attempt $attempt — reconnecting...');
+          break;
+        } catch (e) {
+          final errStr = e.toString();
+
+          // --latest exits 1 and prints the real requestId in the error message
           final match = RegExp(r'openclaw devices approve ([a-f0-9-]{36})')
-              .firstMatch(latestErr.toString());
+              .firstMatch(errStr);
           if (match != null) {
-            final discoveredId = match.group(1)!;
-            log('[NODE] Discovered requestId: $discoveredId — approving...');
-            await NativeBridge.runInProot('$env openclaw devices approve $discoveredId', timeout: 30);
-            log('[NODE] Device approved via discovered requestId');
-          } else {
-            // No pending request found — remove only this device's stale record
-            final deviceId = _identity.deviceId ?? '';
-            log('[NODE] No pending request — removing stale record for deviceId: ${deviceId.length > 8 ? deviceId.substring(0, 8) : deviceId}...');
-            if (deviceId.isNotEmpty) {
-              await NativeBridge.runInProot(
-                '$env openclaw devices remove $deviceId 2>/dev/null || true',
-                timeout: 30,
-              );
-            }
+            requestId = match.group(1)!;
+            log('[NODE] Discovered requestId: $requestId — retrying...');
+            continue;
           }
+
+          if (attempt < 3 && (errStr.contains('unknown requestId') || errStr.contains('timeout'))) {
+            log('[NODE] Transient error on attempt $attempt — will retry');
+            await Future.delayed(const Duration(milliseconds: 800));
+            continue;
+          }
+
+          final deviceId = _identity.deviceId ?? '';
+          log('[NODE] No pending request — removing stale record...');
+          if (deviceId.isNotEmpty) {
+            await NativeBridge.runInProot(
+              '$env openclaw devices remove $deviceId 2>/dev/null || true',
+              timeout: 30,
+            );
+          }
+          break;
         }
       }
-
+    } finally {
       await Future.delayed(const Duration(seconds: 2));
       _pairingResolveAttempted = false;
+      log('[NODE] Reconnecting after approval attempt...');
       await connect();
-    } catch (e) {
-      log('[NODE] Auto-approve failed: $e');
-      _pairingResolveAttempted = false;
     }
   }
 
