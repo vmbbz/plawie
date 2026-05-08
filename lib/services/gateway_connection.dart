@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import 'device_identity.dart';
 import 'openclaw_service.dart';
+import 'gateway_service.dart';
 
 /// Persistent WebSocket connection to the OpenClaw gateway.
 ///
@@ -118,6 +119,7 @@ class GatewayConnection {
     try {
       final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
       _channel = WebSocketChannel.connect(wsUri);
+      
       await _channel!.ready.timeout(const Duration(seconds: 5));
     } catch (e) {
       _updateState(GatewayConnectionState.disconnected);
@@ -193,7 +195,7 @@ class GatewayConnection {
         'client': {
           'id': 'openclaw-control-ui',
           'version': version,
-          'platform': 'web',
+          'platform': 'android',
           'mode': 'ui',
         },
         'role': 'operator',
@@ -359,6 +361,10 @@ class GatewayConnection {
     _pendingRequests.clear();
     _cleanup();
     if (pairingRequired && !_pairingRequiredController.isClosed) {
+      // Invalidate the host-side token cache — 1008 usually means the gateway
+      // restarted and generated a new token that we haven't read yet.
+      GatewayService().clearTokenCache();
+
       // EXPERT FIX: Extract requestId and auto-approve for localhost connections
       String? requestId;
       if (reason != null && reason.contains('requestId:')) {
