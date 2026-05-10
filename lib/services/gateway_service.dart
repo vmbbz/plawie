@@ -1570,6 +1570,9 @@ PARAMETER num_batch 512
       config['env'] ??= {};
       config['env']['vars'] ??= {};
       if (envKey.isNotEmpty) config['env']['vars'][envKey] = key;
+      // Per OpenClaw docs: gateway.mode must always be set explicitly in local mode
+      config['gateway'] ??= {};
+      config['gateway']['mode'] = 'local';
       config['models'] ??= {};
       config['models']['providers'] ??= {};
       final prov = config['models']['providers'][openClawProvider] ?? {};
@@ -1608,7 +1611,11 @@ PARAMETER num_batch 512
 
     // 4. Trigger reload so the gateway picks up the new key
     try {
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/openclaw reload || /usr/local/bin/openclaw gateway config apply');
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        '/usr/local/bin/openclaw reload || /usr/local/bin/openclaw gateway config apply',
+        timeout: 10,
+      );
     } catch (_) {}
   }
 

@@ -1357,9 +1357,9 @@ void _showTtsDownloadDialog() {
                   Text(
                     'AGENT SETTINGS',
                     style: TextStyle(
-                      color: AppColors.statusGreen.withValues(alpha: 0.7),
+                      color: Colors.white.withValues(alpha: 0.4),
                       fontSize: 10,
-                      fontWeight: FontWeight.w600, // Thinner
+                      fontWeight: FontWeight.w600,
                       letterSpacing: 2.0,
                     ),
                   ),
@@ -1379,7 +1379,7 @@ void _showTtsDownloadDialog() {
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.edit_note, color: AppColors.statusGreen, size: 14),
+                          Icon(Icons.edit_note, color: Colors.white70, size: 14),
                           SizedBox(width: 4),
                           Text('EDIT', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                         ],
@@ -1395,9 +1395,9 @@ void _showTtsDownloadDialog() {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: AppColors.statusGreen.withValues(alpha: 0.25), // Soft single shade
+                      color: Colors.white.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                     ),
                     child: Center(
                       child: SvgPicture.asset(
@@ -1502,9 +1502,9 @@ void _showTtsDownloadDialog() {
           height: 36,
           child: Row(
             children: [
-              Icon(Icons.face, color: AppColors.statusGreen, size: 18),
+              Icon(Icons.auto_awesome_rounded, color: Colors.purpleAccent.shade100, size: 18),
               const SizedBox(width: 10),
-              const Text('Avatar Forge', style: TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.w600)),
+              Text('Avatar Forge', style: TextStyle(color: Colors.purpleAccent.shade100, fontWeight: FontWeight.w600)),
               const Spacer(),
               const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 12),
             ],

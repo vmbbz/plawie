@@ -304,12 +304,15 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.statusGreen.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
+                            color: AppColors.statusGreen.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: AppColors.statusGreen.withValues(alpha: 0.5),
+                                width: 1.2),
                           ),
                           child: Text(
                             'EQUIPPED',
-                            style: TextStyle(
+                            style: GoogleFonts.outfit(
                               color: AppColors.statusGreen,
                               fontSize: 8,
                               fontWeight: FontWeight.w800,
