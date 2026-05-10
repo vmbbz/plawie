@@ -49,7 +49,7 @@ We are currently stabilizing a massive architectural shift called **Project Aegi
 
 While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs & OpenClaw Gateway—we took a different path.
 
-**Plawie** represents a top 1% engineering achievement: we successfully embedded a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
+**Plawie** provides a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
 
 You simply install the app, and you immediately possess a world-class, autonomous AI agent capable of multi-step reasoning, tool execution, and native Web3 transactions, right from your pocket. Your data stays on your device. Always.
 
