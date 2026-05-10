@@ -17,10 +17,7 @@ class OpenClawCommandService {
   /// The 'Golden Path' runner: Bare command + explicit PATH security.
   /// Ensures binaries are found even if the environment is unstable.
   static Future<String> _run(String command, {int timeout = 15}) async {
-    return await NativeBridge.runInProot(
-      'export PATH=\$PATH:/usr/local/bin:/usr/bin && $command',
-      timeout: timeout,
-    );
+    return await NativeBridge.runInProot(command, timeout: timeout);
   }
 
   /// Detect the running gateway version, with 5-minute cache.
@@ -74,17 +71,20 @@ class OpenClawCommandService {
         : 'openclaw skill uninstall $skillName';
   }
 
-  /// Normalises any hardcoded `openclaw skill(s) …` command string.
+  /// Normalises any hardcoded `openclaw skill(s) …` command string and applies absolute bypass.
   static Future<String> adaptSkillCommand(String baseCommand) async {
     final modern = await isModernSyntax();
+    String cmd = baseCommand;
     if (modern) {
-      return baseCommand.replaceAllMapped(
+      cmd = baseCommand.replaceAllMapped(
         RegExp(r'openclaw skill (?!s)'),
         (m) => 'openclaw skills ',
       );
     } else {
-      return baseCommand.replaceAll('openclaw skills ', 'openclaw skill ');
+      cmd = baseCommand.replaceAll('openclaw skills ', 'openclaw skill ');
     }
+    
+    return cmd;
   }
 
   /// Returns the list of tool IDs in `tools.allow` from openclaw.json.

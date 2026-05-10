@@ -297,11 +297,16 @@ PARAMETER num_batch 512
     await getFilesDir();
 
     // SELF-HEALING: Ensure binary wrappers are fresh on every startup.
-    // This fixes "No such file or directory" crashes for users updating from
-    // older APKs that had hardcoded npm symlinks instead of our shell scripts.
     try {
+      final diag = await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin; echo "--- /usr/local/bin ---"; ls -F /usr/local/bin; echo "--- /usr/bin ---"; ls -F /usr/bin/open* /usr/bin/npm* 2>/dev/null || true',
+        timeout: 10,
+      );
+      print('[GATEWAY] Path Diagnostic:\n$diag');
       await NativeBridge.createBinWrappers('openclaw');
-    } catch (_) {}
+    } catch (e) {
+      print('[GATEWAY] Self-healing error: $e');
+    }
 
     unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
         .then((_) => unawaited(_probeOllamaOnInit())));
@@ -456,13 +461,15 @@ PARAMETER num_batch 512
       try {
         await _configureGateway();
         await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'openclaw reload 2>/dev/null || true',
+          'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js reload 2>/dev/null || true',
           timeout: 10,
         );
       } catch (_) {}
@@ -1699,7 +1706,7 @@ PARAMETER num_batch 512
       final output = await NativeBridge.runInProot(
         'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-        'openclaw dashboard --no-open',
+        'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);

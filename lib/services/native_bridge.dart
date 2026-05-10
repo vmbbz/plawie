@@ -42,13 +42,29 @@ class NativeBridge {
   }
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
-    return await _channel.invokeMethod('runInProot', {'command': command, 'timeout': timeout});
+    final sanitized = _applyAbsoluteBypass(command);
+    return await _channel.invokeMethod('runInProot', {'command': sanitized, 'timeout': timeout});
   }
 
   /// Execute a command in the persistent shell (one PRoot process reused across calls).
   /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
   static Future<String> executeInShell(String command, {int timeoutMs = 30000}) async {
-    return await _channel.invokeMethod('executeInShell', {'command': command, 'timeoutMs': timeoutMs});
+    final sanitized = _applyAbsoluteBypass(command);
+    return await _channel.invokeMethod('executeInShell', {'command': sanitized, 'timeoutMs': timeoutMs});
+  }
+
+  /// Helper to intercept and fix "openclaw" calls with absolute paths.
+  /// This provides "Ultimate Resilience" across all services.
+  static String _applyAbsoluteBypass(String cmd) {
+    if (!cmd.contains('openclaw')) return cmd;
+    
+    // Replace naked 'openclaw' command but NOT if it's already part of a path 
+    // or the .js entry point itself.
+    // (?<![/\.]) matches only if NOT preceded by / or .
+    // (?!\.js) matches only if NOT followed by .js
+    return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?!\.js)'), (match) {
+      return '/usr/local/bin/node /usr/local/lib/node_modules/openclaw/bin/openclaw.js';
+    });
   }
 
   /// Destroy the persistent shell process (called when terminal screen closes).
