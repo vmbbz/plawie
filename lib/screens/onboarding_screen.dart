@@ -104,7 +104,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       final result = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
-        timeout: 15000
+        timeout: 15
       );
       
       _writeLog(result);
@@ -125,7 +125,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       final result = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $command',
-        timeout: 30000
+        timeout: 30
       );
       
       _writeLog(result);
@@ -194,7 +194,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       final validateResult = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --validate || openclaw doctor --fix',
-        timeout: 10000
+        timeout: 30
       );
       
       if (validateResult.contains('Invalid')) {
@@ -309,7 +309,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     await NativeBridge.runInProot('''
       export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw models add --provider $provider --id $modelId --name "$modelName"
       export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $provider/$modelId
-    ''', timeout: 15000);
+    ''', timeout: 30);
     
     _writeLog('\n🔄 Triggering gateway hot-reload...');
     await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || true');
@@ -345,7 +345,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('OPENCLAW SETUP', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, letterSpacing: 2)),
+        title: Text('OPENCLAW SETUP', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, letterSpacing: 2)),
         automaticallyImplyLeading: !widget.isFirstRun,
       ),
       body: _buildBody(),
@@ -429,13 +429,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       case 'groq': text = 'ULTRA SPEED'; color = const Color(0xFFF55036); break;
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Text(text, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: color)),
+      child: Text(
+        text, 
+        style: GoogleFonts.outfit(
+          fontSize: 9, 
+          fontWeight: FontWeight.w700, 
+          color: color,
+          letterSpacing: 0.5,
+        ),
+      ),
     );
   }
 
@@ -460,7 +468,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(provider['name'], style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
+                      Text(provider['name'], style: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: 18, color: Colors.white)),
                       _buildBadge(id),
                     ],
                   ),
@@ -486,7 +494,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                   _executeProviderSetupUI(id, key, modelId, modelName);
                 },
                 style: FilledButton.styleFrom(backgroundColor: AppColors.statusGreen, foregroundColor: Colors.black),
-                child: const Text('CONFIGURE & CONNECT', style: TextStyle(fontWeight: FontWeight.w900)),
+                child: const Text('CONFIGURE & CONNECT', style: TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ],

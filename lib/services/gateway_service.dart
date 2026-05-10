@@ -728,9 +728,6 @@ PARAMETER num_batch 512
     config['gateway']['controlUi'] ??= {};
     (config['gateway']['controlUi'] as Map).remove('allowedOrigins');
     
-    // Save config — gateway watches its config file for changes automatically
-    await _writeConfig(config);
-    
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
     config['discovery']['mdns'] ??= {};

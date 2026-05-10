@@ -381,15 +381,15 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       return Container(
         width: double.infinity,
         height: 56,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.statusGreen,
-              Color(0xFF00C853), // Slightly darker green for depth
-            ],
-          ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.statusGreen,
+                AppColors.statusGreen.withOpacity(0.8),
+              ],
+            ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -413,7 +413,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     style: GoogleFonts.outfit(
                       color: Colors.black,
                       fontSize: 18,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
                     ),
                   ),

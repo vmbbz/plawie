@@ -166,11 +166,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     try {
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
 
-      // World-Class Stability: Ensure config is healthy before writing keys
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix',
-        timeout: 10000
-      );
+      // Logic Optimized: Skipping redundant doctor --fix during final launch
+      // Step 1: Write API key and Start Gateway
 
       await gatewayProvider.configureAndStart(
         provider: _selectedProvider!,
@@ -347,10 +344,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Plawie Setup',
+                  'Plawie',
                   style: GoogleFonts.outfit(
                     fontSize: 22,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -767,9 +764,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
-                    color: provider.color.withAlpha(isDark ? 40 : 25),
+                    color: AppColors.statusGreen.withAlpha(40),
                   ),
-                  child: Icon(Icons.key, color: provider.color, size: 20),
+                  child: Icon(Icons.key, color: AppColors.statusGreen, size: 20),
                 ),
                 suffixIcon: Container(
                   margin: const EdgeInsets.only(left: 8),
@@ -905,9 +902,14 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
           decoration: InputDecoration(
             hintText: 'e.g. Plawie, Jarvis, Nova...',
-            prefixIcon: const Icon(Icons.smart_toy_outlined, size: 22),
-            border: OutlineInputBorder(
+            prefixIcon: const Icon(Icons.smart_toy_outlined, size: 22, color: AppColors.statusGreen),
+            enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: theme.colorScheme.outline.withAlpha(80)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.statusGreen, width: 2),
             ),
           ),
         ),
@@ -919,14 +921,24 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           children: ['Plawie', 'Atlas', 'Nova', 'Sage', 'Echo']
               .map(
                 (name) => ActionChip(
-                  label: Text(name),
+                  label: Text(
+                    name,
+                    style: TextStyle(
+                      color: _agentNameController.text == name
+                          ? AppColors.statusGreen
+                          : theme.colorScheme.onSurface,
+                      fontWeight: _agentNameController.text == name
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
                   onPressed: () {
                     _agentNameController.text = name;
                     setState(() {});
                   },
                   backgroundColor: _agentNameController.text == name
                       ? AppColors.statusGreen.withAlpha(40)
-                      : null,
+                      : Colors.transparent,
                   side: BorderSide(
                     color: _agentNameController.text == name
                         ? AppColors.statusGreen.withAlpha(150)
@@ -1001,7 +1013,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               Row(
                 children: [
                   const Icon(Icons.check_circle,
-                      color: Color(0xFF00C853), size: 18),
+                      color: AppColors.statusGreen, size: 18),
                   const SizedBox(width: 8),
                   Text(
                     'Ready to launch',
@@ -1070,7 +1082,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       ),
       child: Row(
         children: [
-          Icon(icon, size: 22, color: theme.colorScheme.onSurfaceVariant),
+          Icon(icon, size: 22, color: AppColors.statusGreen),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -1096,7 +1108,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               child: const Text('Configure'),
             )
           else
-            Switch(value: value, onChanged: onChanged),
+            Switch(
+              value: value, 
+              onChanged: onChanged,
+              activeColor: AppColors.statusGreen,
+              activeTrackColor: AppColors.statusGreen.withOpacity(0.3),
+            ),
         ],
       ),
     );
@@ -1167,7 +1184,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             Text(
               _launchStatus,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: AppColors.statusGreen.withOpacity(0.9),
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1183,7 +1201,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                       ? Colors.white.withAlpha(15)
                       : Colors.black.withAlpha(10),
                   valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF00C853)),
+                      AppColors.statusGreen),
                 ),
               ),
             if (_launchComplete) ...[
@@ -1191,14 +1209,14 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               FilledButton.icon(
                 onPressed: _goToDashboard,
                 icon: const Icon(Icons.dashboard_outlined, size: 20, color: Colors.black),
-                label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
+                label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w800)),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.statusGreen,
                   foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 28, vertical: 14),
                   textStyle: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
+                      fontSize: 15, fontWeight: FontWeight.w800),
                 ),
               ),
             ],
@@ -1255,7 +1273,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('Continue',
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w800)),
                   const SizedBox(width: 8),
                   const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
                 ],
@@ -1271,7 +1289,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               },
               icon: const Icon(Icons.rocket_launch, size: 18),
               label: Text('Launch Gateway',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w800)),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.statusGreen,
                 foregroundColor: Colors.black,

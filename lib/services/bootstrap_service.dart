@@ -258,7 +258,7 @@ class BootstrapService {
             },
           );
 
-          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Optimizing environment for local LLM...', 30);
+          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.05, 'Optimizing environment for local LLM...', 30);
           await NativeBridge.extractRootfs(tarPath);
           rootfsReady = true;
         }
@@ -276,7 +276,7 @@ class BootstrapService {
       // Step 3: Install Node.js & Fix Permissions
       // ---------------------------------------------------------
       if (!nodeInstalled) {
-        _emitProgress(onProgress, SetupStep.installingNode, 0.0, 'Fixing rootfs permissions...', 45);
+        _emitProgress(onProgress, SetupStep.installingNode, 0.05, 'Fixing rootfs permissions...', 45);
 
         await NativeBridge.runInProot('''
           mkdir -p /root/.openclaw
@@ -350,19 +350,24 @@ class BootstrapService {
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
       if (!openclawInstalled) {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.0, 'Installing OpenClaw Gateway...', 80);
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.05, 'Installing OpenClaw Gateway...', 80);
         
-        // Phase 2: Install temporary build tools for native module compilation
-        await _installMinimalBuildTools();
+        // 1. Try FAST path first (Pre-bundled assets)
+        bool success = await _extractPrebundledOpenClaw(onProgress);
         
-        // Phase 2.5: Try to extract pre-bundled node_modules from assets (NEW)
-        await _extractPrebundledOpenClaw(onProgress);
-        
-        await _ensureOpenClawPackageExists();
-        
-        // Phase 3: Purge build tools immediately after success to save ~500MB
-        _emitProgress(onProgress, SetupStep.cleanup, 0.5, 'Slimming system (purging tools)...', 96);
-        await _purgeBuildTools();
+        if (!success) {
+          _log('ℹ️ Pre-bundled OpenClaw not found or failed, falling back to slow path (compilation)...');
+          
+          // Phase 2: Install temporary build tools for native module compilation
+          await _installMinimalBuildTools();
+          
+          // Phase 2.6: Install OpenClaw via NPM
+          await _ensureOpenClawPackageExists();
+          
+          // Phase 3: Purge build tools immediately after success to save ~500MB
+          _emitProgress(onProgress, SetupStep.cleanup, 0.5, 'Slimming system (purging tools)...', 96);
+          await _purgeBuildTools();
+        }
         
         // Final heavy cleanup
         _emitProgress(onProgress, SetupStep.cleanup, 0.9, 'Final cache optimization...', 98);
@@ -535,13 +540,13 @@ class BootstrapService {
 
   /// Extracts a pre-bundled openclaw-node-modules.tar.gz from app assets to the rootfs.
   /// This bypasses the need for a 10-minute 'npm install' on the user's device.
-  Future<void> _extractPrebundledOpenClaw(Function(SetupState) onProgress) async {
+  Future<bool> _extractPrebundledOpenClaw(Function(SetupState) onProgress) async {
     _log('📦 Checking for pre-bundled OpenClaw assets...');
     try {
       final rootfsDir = await getRootfsDirectory();
       
       // Check if the asset exists in the bundle
-      // Note: We use a try/catch because rootBundle.load throws if the asset is missing
+      _log('📖 Reading 100MB pre-bundled modules (this may take a moment)...');
       final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
       
       _log('🚚 Pre-bundled OpenClaw found! Extracting...');
@@ -563,9 +568,10 @@ class BootstrapService {
       
       _log('✅ Pre-bundled OpenClaw extracted successfully');
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Pre-bundled OpenClaw ready', 90);
+      return true;
     } catch (e) {
       _log('ℹ️ No pre-bundled OpenClaw found in assets, falling back to npm install. ($e)');
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Installing OpenClaw (slower path)...', 82);
+      return false;
     }
   }
 
@@ -573,7 +579,6 @@ class BootstrapService {
   Future<void> _performFinalCleanup() async {
     _log('🧹 Performing final heavy cleanup...');
     await NativeBridge.runInProot('''
-      npm cache clean --force &&
       rm -rf /root/.npm/_cacache /root/.npm/_logs &&
       apt-get clean &&
       rm -rf /var/lib/apt/lists/* /var/cache/apt/*
