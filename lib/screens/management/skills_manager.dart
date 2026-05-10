@@ -1527,32 +1527,7 @@ class _ToolsTabState extends State<_ToolsTab> {
                     if (!isOffline)
                       Row(
                         children: [
-                          GestureDetector(
-                            onTap: _isResetting ? null : _hardResetConfig,
-                            child: Row(
-                              children: [
-                                _isResetting
-                                    ? SizedBox(
-                                        width: 13,
-                                        height: 13,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 1.5,
-                                          color: Colors.white.withValues(alpha: 0.6),
-                                        ),
-                                      )
-                                    : Icon(Icons.auto_delete_rounded, size: 13,
-                                        color: Colors.white.withValues(alpha: 0.4)),
-                                const SizedBox(width: 4),
-                                Text(_isResetting ? 'RESETTING...' : 'RESET',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        letterSpacing: 1.2,
-                                        color: _isResetting 
-                                            ? Colors.white.withValues(alpha: 0.6)
-                                            : Colors.white.withValues(alpha: 0.4))),
-                              ],
-                            ),
-                          ),
+                          const SizedBox(width: 4),
                           const SizedBox(width: 16),
                           GestureDetector(
                             onTap: () {

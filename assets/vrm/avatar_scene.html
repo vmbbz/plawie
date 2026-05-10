@@ -106,6 +106,55 @@
             'gesture_squat', 'gesture_talk'
         ];
 
+        let neonStool = null;
+        let stoolSeat, stoolLegs = [];
+
+        function createNeonStool() {
+            // Seat (thick glowing disk)
+            const seatGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.08, 32);
+            const seatMat = new THREE.MeshPhongMaterial({
+                color: 0x112233,
+                emissive: 0x00FFFF,      // neon cyan
+                emissiveIntensity: 1.2,
+                shininess: 100,
+                transparent: true,
+                opacity: 0.95
+            });
+            stoolSeat = new THREE.Mesh(seatGeo, seatMat);
+            stoolSeat.rotation.x = Math.PI / 2; // make it flat
+
+            // Visible neon edges (glowing outline)
+            const edgesGeo = new THREE.EdgesGeometry(seatGeo);
+            const edgesMat = new THREE.LineBasicMaterial({
+                color: 0xFF00FF,         // hot magenta edges
+                linewidth: 4
+            });
+            const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+            stoolSeat.add(edges);
+
+            // 4 thin glowing legs
+            const legGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.45, 16);
+            const legMat = new THREE.MeshPhongMaterial({
+                emissive: 0x00FFFF,
+                emissiveIntensity: 0.8
+            });
+
+            for (let i = 0; i < 4; i++) {
+                const leg = new THREE.Mesh(legGeo, legMat);
+                leg.position.set(
+                    Math.cos(i * Math.PI / 2) * 0.25,
+                    -0.25,
+                    Math.sin(i * Math.PI / 2) * 0.25
+                );
+                stoolSeat.add(leg);
+                stoolLegs.push(leg);
+            }
+
+            neonStool = stoolSeat;
+            neonStool.visible = false;
+            scene.add(neonStool);
+        }
+
         // ── Animation State Machine ───────────────────────────────────────────
         // proceduralBlend: 1.0 = full idle procedural, 0.05 = suppressed during VRMA.
         // When a VRMA clip is active the procedural bone overrides are scaled down so
@@ -217,6 +266,7 @@
                     camera.position.z = currentCameraZ;
 
                     mixer = new THREE.AnimationMixer(vrm.scene);
+                    createNeonStool();
 
                     loader.load('./animations/idle_loop.vrma', (vrmaGltf) => {
                         const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
@@ -425,21 +475,36 @@
         };
 
         window.playGesture = (name) => {
-            const n = name.toLowerCase().replace('gesture_', '');
+            window.playCompositeGesture(name);
+        };
+
+        window.playCompositeGesture = (baseClipName, layerClipNames = [], options = {}) => {
+            const n = baseClipName.toLowerCase().replace('gesture_', '').replace('assets/vrm/animations/', '').replace('.vrma', '');
             targetEmotion = GESTURE_EMOTIONS[n] || 'neutral';
 
-            // 'idle' is a special alias meaning "return to idle immediately"
+            // Auto-stool logic
+            const isSitting = n.includes('squat') || n.includes('sit');
+            if (neonStool) {
+                neonStool.visible = isSitting;
+                if (isSitting && currentVrm) {
+                    neonStool.position.set(
+                        currentVrm.scene.position.x,
+                        currentVrm.scene.position.y - 0.05,
+                        currentVrm.scene.position.z - 0.95
+                    );
+                    neonStool.rotation.y = currentVrm.scene.rotation.y;
+                }
+            }
+
             if (n === 'idle') { _returnToIdle(0.5); return; }
 
             const action = gestures[n] || gestures['gesture_' + n];
             if (!action || !currentVrm || !idleAction) return;
             if (currentAction === action && action.isRunning()) return;
 
-            // Fade out whatever is currently playing
             if (currentAction && currentAction !== action) currentAction.fadeOut(0.3);
 
             if (n === 'talk') {
-                // talk is looping — managed by auto-talk system, but also callable directly
                 talkGestureActive = true;
                 action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.3).play();
                 currentAction = action;
@@ -450,12 +515,10 @@
                 action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.3).play();
                 currentAction = action;
 
-                // Schedule return — 300 ms before clip end to start cross-fade
                 const duration = action.getClip().duration;
                 const returnDelay = Math.max((duration * 1000) - 350, 100);
                 setTimeout(() => {
-                    if (currentAction !== action) return; // another gesture took over
-                    // Return to talk if TTS still active, otherwise idle
+                    if (currentAction !== action) return;
                     if (isSpeaking && gestures['talk'] && gestureMode !== 'subtle') {
                         talkGestureActive = true;
                         action.fadeOut(0.4);

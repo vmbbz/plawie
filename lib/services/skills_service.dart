@@ -1,21 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:yaml/yaml.dart';
-import 'package:archive/archive.dart';
-import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:decimal/decimal.dart';
+import '../constants.dart';
+import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'gateway_skill_proxy.dart';
 import 'base_service.dart';
+import 'gateway_service.dart';
 
-/// Skills System with YAML frontmatter and dynamic loading
-/// Inspired by SeekerClaw's skills architecture
+/// Skills System — Thin UI + Native Bridge architecture.
+/// This service acts as the UI manager and execution router for on-device native skills,
+/// while delegating heavy lifting (marketplace, YAML, workspace) to the OpenClaw PRoot CLI.
 class SkillsService {
   static final SkillsService _instance = SkillsService._internal();
   factory SkillsService() => _instance;
@@ -25,1462 +26,409 @@ class SkillsService {
   final Map<String, Skill> _skills = {};
   final StreamController<SkillsEvent> _eventController = StreamController.broadcast();
   final PreferencesService _prefs = PreferencesService();
-  String? _skillsDirectory;
 
   Stream<SkillsEvent> get events => _eventController.stream;
   Map<String, Skill> get skills => Map.unmodifiable(_skills);
 
   Future<void> initialize() async {
     try {
-      _logger.i('Initializing Skills System...');
+      _logger.i('Initializing Skills System (Simplified)...');
       
-      // Initialize preferences
       await _prefs.init();
       
-      // Get skills directory
-      final appDir = await getApplicationDocumentsDirectory();
-      _skillsDirectory = path.join(appDir.path, 'skills');
+      // Load bundled native skills (superpowers)
+      _loadBundledNativeSkills();
       
-      // Create skills directory if it doesn't exist
-      await Directory(_skillsDirectory!).create(recursive: true);
+      // Ensure agent awareness of these and workspace skills
+      await ensureAgentAwareness();
       
-      // Load bundled skills
-      await _loadBundledSkills();
-      
-      // Load custom skills
-      await _loadCustomSkills();
-      
-      _logger.i('Skills System initialized with ${_skills.length} skills');
+      _logger.i('Skills System initialized with ${_skills.length} native skills');
     } catch (e) {
       _logger.e('Failed to initialize Skills System: $e');
-      rethrow;
     }
   }
 
-  /// Load bundled skills.
-  ///
-  /// ONLY real skills live here:
-  ///   • Custom device-native skills → execute via AgentSkillServer HTTP bridge (127.0.0.1:8765)
-  ///   • Partner integration skills  → execute via GatewaySkillProxy WebSocket RPC
-  ///
-  /// DO NOT add stubs that return fake data — the gateway handles generic tasks (weather,
-  /// calculator, search, etc.) natively via its own skill ecosystem.
-  Future<void> _loadBundledSkills() async {
+  /// One-source-of-truth awareness: updates PRoot workspace and refreshes agent session.
+  Future<void> ensureAgentAwareness() async {
+    _logger.i('Ensuring agent awareness of skills...');
     try {
-      final bundledSkills = [
-        // ── Custom device-native skills (app-specific, not in ClawHub) ──────
-        _createAvatarControlSkill(),   // Switch VRM model, trigger gestures
-        _createTtsVoiceSkill(),         // Switch TTS engine / voice
-        _createDeviceNodeSkill(),       // Vibrate, flashlight, battery, sensors
-        // ── Legacy PiP overlay (retained — unique MethodChannel trick) ──────
-        _createAvatarOverlaySkill(),
-        // ── Partner integrations (real GatewaySkillProxy calls) ─────────────
-        _createTwilioSkill(),
-        _createAgentCardSkill(),
-        _createMoltLaunchSkill(),
-        _createValeoSkill(),
-        _createMoonPaySkill(),
-        // ── Base Chain wallet (device-native, executes via BaseService) ───────
-        _createBaseChainSkill(),
-      ];
-
-      for (final skill in bundledSkills) {
-        _skills[skill.id] = skill;
-        _eventController.add(SkillsEvent.skillLoaded(skill.id));
-      }
-
-      _logger.i('Loaded ${bundledSkills.length} bundled skills');
-    } catch (e) {
-      _logger.e('Failed to load bundled skills: $e');
-    }
-  }
-
-  /// Load custom skills from directory
-  Future<void> _loadCustomSkills() async {
-    if (_skillsDirectory == null) return;
-
-    try {
-      final skillsDir = Directory(_skillsDirectory!);
-      if (!await skillsDir.exists()) return;
-
-      await for (final entity in skillsDir.list()) {
-        if (entity is File && entity.path.endsWith('.yaml')) {
-          await _loadSkillFromFile(entity);
-        } else if (entity is File && entity.path.endsWith('.zip')) {
-          await _loadSkillFromZip(entity);
-        }
-      }
-
-      _logger.i('Loaded custom skills from directory');
-    } catch (e) {
-      _logger.e('Failed to load custom skills: $e');
-    }
-  }
-
-  /// Load skill from YAML file
-  Future<void> _loadSkillFromFile(File file) async {
-    try {
-      final content = await file.readAsString();
-      final skill = _parseSkillFromYaml(content, file.path);
+      // 1. Update PRoot workspace tools
+      await NativeBridge.runInProot('$kOpenClawCommand skills update --all --yes');
       
-      if (skill != null) {
-        _skills[skill.id] = skill;
-        _eventController.add(SkillsEvent.skillLoaded(skill.id));
-        _logger.d('Loaded skill: ${skill.id}');
-      }
+      // 2. Install core/native stubs if missing
+      await NativeBridge.runInProot('$kOpenClawCommand skills install gestures voice device-node --yes');
+      
+      // 3. Force a new session so the agent picks up tool changes
+      await NativeBridge.runInProot('$kOpenClawCommand chat new-session --silent');
+      
+      // 4. Push native capabilities to the gateway WebSocket
+      await _registerNativeSkills();
+      
+      _logger.i('Agent awareness synchronized.');
     } catch (e) {
-      _logger.e('Failed to load skill from ${file.path}: $e');
+      _logger.e('Failed to sync agent awareness: $e');
     }
   }
 
-  /// Load skill from ZIP archive
-  Future<void> _loadSkillFromZip(File zipFile) async {
-    try {
-      final bytes = await zipFile.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      
-      for (final file in archive) {
-        if (file.name.endsWith('.yaml') && !file.isFile) continue;
-        
-        final content = utf8.decode(file.content as List<int>);
-        final skill = _parseSkillFromYaml(content, file.name);
-        
-        if (skill != null) {
-          _skills[skill.id] = skill;
-          _eventController.add(SkillsEvent.skillLoaded(skill.id));
-          _logger.d('Loaded skill from ZIP: ${skill.id}');
-        }
-      }
-    } catch (e) {
-      _logger.e('Failed to load skill from ZIP ${zipFile.path}: $e');
+  void _loadBundledNativeSkills() {
+    final bundled = [
+      _createAvatarControlSkill(),
+      _createTtsVoiceSkill(),
+      _createDeviceNodeSkill(),
+      _createAvatarOverlaySkill(),
+      _createBaseChainSkill(),
+      // Partner proxies
+      _createTwilioSkill(),
+      _createAgentCardSkill(),
+      _createMoltLaunchSkill(),
+      _createValeoSkill(),
+      _createMoonPaySkill(),
+    ];
+    for (final s in bundled) {
+      _skills[s.id] = s;
     }
   }
 
-  /// Parse skill from YAML content
-  Skill? _parseSkillFromYaml(String content, String source) {
-    try {
-      final yaml = loadYaml(content);
-      
-      if (yaml is! Map) return null;
-      
-      final frontmatter = yaml['frontmatter'] as Map?;
-      if (frontmatter == null) return null;
-
-      // Validate required fields
-      if (!frontmatter.containsKey('id') || !frontmatter.containsKey('name')) {
-        return null;
-      }
-
-      // Check version and integrity
-      final version = frontmatter['version'] as String? ?? '1.0.0';
-      final expectedHash = frontmatter['sha256'] as String?;
-      
-      if (expectedHash != null) {
-        final actualHash = sha256.convert(utf8.encode(content)).toString();
-        if (actualHash != expectedHash) {
-          _logger.w('Skill integrity check failed for ${frontmatter['id']}');
-          return null;
-        }
-      }
-
-      final skill = Skill(
-        id: frontmatter['id'] as String,
-        name: frontmatter['name'] as String,
-        description: frontmatter['description'] as String? ?? '',
-        version: version,
-        author: frontmatter['author'] as String? ?? 'Unknown',
-        category: frontmatter['category'] as String? ?? 'general',
-        tags: _parseStringList(frontmatter['tags']),
-        requirements: _parseRequirements(frontmatter['requirements']),
-        body: yaml['body'] as String? ?? content,
-        source: source,
-        createdAt: DateTime.now(),
-        enabled: frontmatter['enabled'] as bool? ?? true,
-      );
-
-      return skill;
-    } catch (e) {
-      _logger.e('Failed to parse skill from YAML: $e');
-      return null;
-    }
-  }
-
-  /// Parse string list from YAML
-  List<String> _parseStringList(dynamic value) {
-    if (value == null) return [];
-    if (value is String) return [value];
-    if (value is List) return value.map((e) => e.toString()).toList();
-    return [];
-  }
-
-  /// Parse skill requirements
-  List<SkillRequirement> _parseRequirements(dynamic value) {
-    if (value == null) return [];
-    
-    final requirements = <SkillRequirement>[];
-    
-    if (value is Map) {
-      for (final entry in value.entries) {
-        requirements.add(SkillRequirement(
-          type: entry.key,
-          value: entry.value.toString(),
-        ));
-      }
-    } else if (value is List) {
-      for (final item in value) {
-        if (item is String) {
-          requirements.add(SkillRequirement(
-            type: 'general',
-            value: item,
-          ));
-        }
-      }
-    }
-    
-    return requirements;
-  }
-
-  /// Execute a skill
+  /// Execute a skill — routing to either native code, local HTTP server, or Gateway proxy.
   Future<SkillResult> executeSkill(
     String skillId, {
     Map<String, dynamic>? parameters,
     Map<String, dynamic>? context,
   }) async {
     final skill = _skills[skillId];
-    if (skill == null) {
-      return SkillResult.error('Skill not found: $skillId');
-    }
-
-    if (!skill.enabled) {
-      return SkillResult.error('Skill is disabled: $skillId');
-    }
-
-    // Check requirements
-    final requirementsCheck = await _checkRequirements(skill.requirements);
-    if (!requirementsCheck.success) {
-      return SkillResult.error('Requirements not met: ${requirementsCheck.error}');
-    }
+    if (skill == null) return SkillResult.error('Skill not found: $skillId');
+    if (!skill.enabled) return SkillResult.error('Skill is disabled: $skillId');
 
     try {
       _eventController.add(SkillsEvent.skillExecuting(skillId));
-      
-      // Execute skill based on type
       final result = await _executeSkillLogic(skill, parameters ?? {}, context ?? {});
-      
       _eventController.add(SkillsEvent.skillExecuted(skillId, result));
       return result;
     } catch (e) {
-      _logger.e('Failed to execute skill $skillId: $e');
+      _logger.e('Execution failed: $e');
       _eventController.add(SkillsEvent.skillError(skillId, e.toString()));
       return SkillResult.error(e.toString());
     }
   }
 
-  /// Execute skill logic based on category.
-  Future<SkillResult> _executeSkillLogic(
-    Skill skill,
-    Map<String, dynamic> parameters,
-    Map<String, dynamic> context,
-  ) async {
+  Future<SkillResult> _executeSkillLogic(Skill skill, Map<String, dynamic> params, Map<String, dynamic> ctx) async {
     switch (skill.category) {
-      // ── Custom device-native ──────────────────────────────────────────────
-      case 'avatar':
-        return await _executeAvatarControlSkill(skill, parameters, context);
-      case 'tts':
-        return await _executeTtsVoiceSkill(skill, parameters, context);
-      case 'device':
-        return await _executeDeviceNodeSkill(skill, parameters, context);
-      // ── Legacy PiP (system category, specific id) ─────────────────────────
-      case 'system':
-        return await _executeAvatarPipSkill(skill, parameters, context);
-      // ── Partner integrations ──────────────────────────────────────────────
-      case 'twilio':
-        return await _executeTwilioSkill(skill, parameters, context);
-      case 'agentcard':
-        return await _executeAgentCardSkill(skill, parameters, context);
-      case 'moltlaunch':
-        return await _executeMoltLaunchSkill(skill, parameters, context);
-      case 'valeo':
-        return await _executeValeoSkill(skill, parameters, context);
-      case 'moonpay':
-        return await _executeMoonPaySkill(skill, parameters, context);
-      case 'base':
-        return await _executeBaseChainSkill(skill, parameters, context);
-      default:
-        return SkillResult.error('No executor for category: ${skill.category}');
+      case 'avatar': return await _executeAvatarControlSkill(skill, params, ctx);
+      case 'tts': return await _executeTtsVoiceSkill(skill, params, ctx);
+      case 'device': return await _executeDeviceNodeSkill(skill, params, ctx);
+      case 'system': return await _executeAvatarPipSkill(skill, params, ctx);
+      case 'base': return await _executeBaseChainSkill(skill, params, ctx);
+      case 'twilio': return await _executeTwilioSkill(skill, params, ctx);
+      case 'agentcard': return await _executeAgentCardSkill(skill, params, ctx);
+      case 'moltlaunch': return await _executeMoltLaunchSkill(skill, params, ctx);
+      case 'valeo': return await _executeValeoSkill(skill, params, ctx);
+      case 'moonpay': return await _executeMoonPaySkill(skill, params, ctx);
+      default: return SkillResult.error('No executor for category: ${skill.category}');
     }
   }
 
-  /// Check skill requirements
-  Future<RequirementsCheck> _checkRequirements(List<SkillRequirement> requirements) async {
-    for (final requirement in requirements) {
-      switch (requirement.type) {
-        case 'network':
-          // Check network connectivity
-          try {
-            final response = await http.get(Uri.parse('https://www.google.com'));
-            if (response.statusCode != 200) {
-              return RequirementsCheck.failed('Network connectivity required');
-            }
-          } catch (e) {
-            return RequirementsCheck.failed('Network connectivity required');
-          }
-          break;
-        
-        case 'api_key':
-          // Check for required API keys
-          // This would integrate with the API key detection service
-          break;
-        
-        case 'permission':
-          // Check for required permissions
-          // This would integrate with permission handling
-          break;
-        
-        default:
-          // General requirements check
-          break;
-      }
-    }
-    
-    return RequirementsCheck.success();
-  }
-
-  /// Install skill from URL
-  Future<bool> installSkillFromUrl(String url) async {
+  /// Install skill via PRoot CLI
+  Future<bool> installSkill(String slugOrUrl) async {
     try {
-      _logger.i('Installing skill from URL: $url');
+      _logger.i('Installing skill via CLI: $slugOrUrl');
+      _eventController.add(SkillsEvent.skillInstalling(slugOrUrl));
       
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download skill: ${response.statusCode}');
-      }
-
-      final skill = _parseSkillFromYaml(response.body, url);
-      if (skill == null) {
-        throw Exception('Invalid skill format');
-      }
-
-      // Save skill to local directory
-      if (_skillsDirectory != null) {
-        final skillFile = File(path.join(_skillsDirectory!, '${skill.id}.yaml'));
-        await skillFile.writeAsString(response.body);
-      }
-
-      _skills[skill.id] = skill;
-      _eventController.add(SkillsEvent.skillInstalled(skill.id));
+      await NativeBridge.runInProot('$kOpenClawCommand skills install $slugOrUrl --yes');
+      await ensureAgentAwareness();
       
-      _logger.i('Successfully installed skill: ${skill.id}');
+      _eventController.add(SkillsEvent.skillInstalled(slugOrUrl));
       return true;
     } catch (e) {
-      _logger.e('Failed to install skill from URL: $e');
-      _eventController.add(SkillsEvent.skillError('install', e.toString()));
+      _logger.e('Install failed: $e');
       return false;
     }
   }
 
-  /// Uninstall skill
-  Future<bool> uninstallSkill(String skillId) async {
+  /// Uninstall skill via PRoot CLI
+  Future<bool> uninstallSkill(String id) async {
     try {
-      final skill = _skills[skillId];
-      if (skill == null) return false;
-
-      // Remove from memory
-      _skills.remove(skillId);
-
-      // Remove file if it's a custom skill
-      if (_skillsDirectory != null && skill.source.startsWith(_skillsDirectory!)) {
-        final skillFile = File(skill.source);
-        if (await skillFile.exists()) {
-          await skillFile.delete();
-        }
-      }
-
-      _eventController.add(SkillsEvent.skillUninstalled(skillId));
-      _logger.i('Uninstalled skill: $skillId');
+      _logger.i('Uninstalling skill via CLI: $id');
+      await NativeBridge.runInProot('$kOpenClawCommand skills uninstall $id --yes');
+      await ensureAgentAwareness();
+      
+      _eventController.add(SkillsEvent.skillUninstalled(id));
       return true;
     } catch (e) {
-      _logger.e('Failed to uninstall skill $skillId: $e');
+      _logger.e('Uninstall failed: $e');
       return false;
     }
   }
 
-
-  /// Get skills by category
-  List<Skill> getSkillsByCategory(String category) {
-    return _skills.values
-        .where((skill) => skill.category == category)
-        .toList();
-  }
-
-  /// Search skills
-  List<Skill> searchSkills(String query) {
-    final lowerQuery = query.toLowerCase();
-    
-    return _skills.values.where((skill) {
-      return skill.name.toLowerCase().contains(lowerQuery) ||
-             skill.description.toLowerCase().contains(lowerQuery) ||
-             skill.tags.any((tag) => tag.toLowerCase().contains(lowerQuery));
-    }).toList();
-  }
-
-  // ── Custom device-native skill executors ─────────────────────────────────
-  // These call 127.0.0.1:8765 (AgentSkillServer) which is the HTTP bridge
-  // between the gateway agent and the Flutter app's live UI state.
-
-  /// Avatar Control — change VRM model, trigger gestures, set emotions.
-  /// POST /api/avatar/control with {action, value} JSON.
-  Future<SkillResult> _executeAvatarControlSkill(
-    Skill skill,
-    Map<String, dynamic> parameters,
-    Map<String, dynamic> context,
-  ) async {
-    final action = parameters['action'] as String? ?? 'get_status';
+  /// Fetch full skill details (YAML info) from the PRoot workspace.
+  Future<Map<String, dynamic>?> getSkillDetails(String id) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('http://127.0.0.1:8765/api/avatar/control'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'action': action, ...parameters..remove('action')}),
-          )
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
-        return SkillResult.success(jsonDecode(response.body) as Map<String, dynamic>);
-      }
-      return SkillResult.error('Avatar control failed: HTTP ${response.statusCode}');
+      final output = await NativeBridge.runInProot('$kOpenClawCommand skills info $id --json');
+      if (output.trim().isEmpty) return null;
+      return jsonDecode(output) as Map<String, dynamic>;
     } catch (e) {
-      return SkillResult.error('Avatar skill unreachable: $e');
+      _logger.e('Failed to fetch details for $id: $e');
+      return null;
     }
   }
 
-  /// TTS Voice Control — switch engine, change voice, speak text.
-  /// POST /api/tts/control with {action, engine?, voice?, text?} JSON.
-  Future<SkillResult> _executeTtsVoiceSkill(
-    Skill skill,
-    Map<String, dynamic> parameters,
-    Map<String, dynamic> context,
-  ) async {
-    final action = parameters['action'] as String? ?? 'get_status';
+  /// Fetches an "Epic" skill profile, trying local SKILL.md first (Bootstrap-backed) 
+  /// before falling back to the CLI info.
+  Future<Map<String, dynamic>> getSkillProfile(String id) async {
+    // 1. Try local SKILL.md (Forensic sync guaranteed by BootstrapManager.kt)
+    final profile = await _readLocalSkillProfile(id);
+    if (profile != null) return profile;
+
+    // 2. Fallback: ClawHub lookup via CLI
     try {
-      final response = await http
-          .post(
-            Uri.parse('http://127.0.0.1:8765/api/tts/control'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'action': action, ...parameters..remove('action')}),
-          )
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
-        return SkillResult.success(jsonDecode(response.body) as Map<String, dynamic>);
-      }
-      return SkillResult.error('TTS control failed: HTTP ${response.statusCode}');
-    } catch (e) {
-      return SkillResult.error('TTS skill unreachable: $e');
+      final result = await NativeBridge.runInProot('$kOpenClawCommand skills info $id --json');
+      final decoded = json.decode(result) as Map<String, dynamic>;
+      return {
+        ...decoded,
+        'verified': decoded['source'] == 'official',
+        'iconUrl': decoded['icon'] ?? decoded['image_url'],
+        'tools': decoded['capabilities'] as List? ?? ['Autonomous Execution', 'Agent Logic Integration'],
+        'examples': decoded['examples'] ?? 'Try: "Hey Plawie, use ${decoded['name'] ?? id}"',
+      };
+    } catch (_) {
+      return {
+        'id': id,
+        'name': id.toUpperCase(),
+        'description': 'A community skill from the ClawHub marketplace.',
+        'verified': false,
+        'tools': ['Plugin Capabilities'],
+        'examples': 'Say "Plawie, activate $id"',
+      };
     }
   }
 
-  /// Device Node Control — vibrate, flashlight, battery, sensors.
-  /// POST /api/device/control with {action, ...params} JSON.
-  Future<SkillResult> _executeDeviceNodeSkill(
-    Skill skill,
-    Map<String, dynamic> parameters,
-    Map<String, dynamic> context,
-  ) async {
-    final action = parameters['action'] as String? ?? 'get_battery';
+  Future<Map<String, dynamic>?> _readLocalSkillProfile(String id) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('http://127.0.0.1:8765/api/device/control'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'action': action, ...parameters..remove('action')}),
-          )
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
-        return SkillResult.success(jsonDecode(response.body) as Map<String, dynamic>);
-      }
-      return SkillResult.error('Device control failed: HTTP ${response.statusCode}');
-    } catch (e) {
-      return SkillResult.error('Device skill unreachable: $e');
+      // BootstrapManager copies SKILL.md to /root/.openclaw/skills/[id]/SKILL.md
+      final content = await NativeBridge.runInProot('cat /root/.openclaw/skills/$id/SKILL.md 2>/dev/null');
+      if (content.trim().isEmpty) return null;
+      
+      return {
+        'id': id,
+        'name': id.replaceAll('-', ' ').toUpperCase(),
+        'description': content,
+        'verified': true,
+        'tools': ['Native Hardware Access', 'Low-latency Execution', 'Offline Capability'],
+        'examples': 'Say "Plawie, trigger $id"',
+      };
+    } catch (_) {
+      return null;
     }
   }
 
-  Future<SkillResult> _executeAvatarPipSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
+  // ── Mappings and Executors (Kept for runtime functionality) ───────────────
+
+  final Map<String, String> _fullBodyMap = {
+    'dance': 'assets/vrm/animations/gesture_dance.vrma',
+    'spin': 'assets/vrm/animations/gesture_spin.vrma',
+    'greeting': 'assets/vrm/animations/gesture_greeting.vrma',
+    'squat': 'assets/vrm/animations/gesture_squat.vrma',
+    'fight': 'assets/vrm/animations/gesture_fight.vrma',
+    'cute': 'assets/vrm/animations/gesture_cute.vrma',
+    'elegant': 'assets/vrm/animations/gesture_elegant.vrma',
+    'peacesign': 'assets/vrm/animations/gesture_peacesign.vrma',
+    'pose': 'assets/vrm/animations/gesture_pose.vrma',
+    'powerful': 'assets/vrm/animations/gesture_powerful.vrma',
+    'ready': 'assets/vrm/animations/gesture_ready.vrma',
+    'shoot': 'assets/vrm/animations/gesture_shoot.vrma',
+    'talk': 'assets/vrm/animations/gesture_talk.vrma',
+    'dance_picatrix': 'assets/vrm/animations/dance_picatrix.vrma',
+    'idle': 'assets/vrm/animations/idle_loop.vrma',
+  };
+
+  final Map<String, String> _limbMap = {
+    'cheerful wave left': 'assets/vrm/animations/limbs/Cheerful_Wave_Left_01.vrma',
+    'cheerful wave right': 'assets/vrm/animations/limbs/Cheerful_Wave_Right_01.vrma',
+    'light wave left': 'assets/vrm/animations/limbs/Light_Wave_Left_01.vrma',
+    'light wave right': 'assets/vrm/animations/limbs/Light_Wave_Right_01.vrma',
+    'excited wave left': 'assets/vrm/animations/limbs/Excited_Wave_Left_01.vrma',
+    'excited wave right': 'assets/vrm/animations/limbs/Excited_Wave_Right_01.vrma',
+    'shy wave left': 'assets/vrm/animations/limbs/Shy_Wave_Left_01.vrma',
+    'shy wave right': 'assets/vrm/animations/limbs/Shy_Wave_Right_01.vrma',
+    'bowing': 'assets/vrm/animations/limbs/Bowing_01.vrma',
+    'bowing 2': 'assets/vrm/animations/limbs/Bowing_02.vrma',
+    'bowing 3': 'assets/vrm/animations/limbs/Bowing_03.vrma',
+    'both wave cheer': 'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
+    'both wave cheer 2': 'assets/vrm/animations/limbs/Both_Wave_Cheer_02.vrma',
+    'chill sit': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'cross leg sit': 'assets/vrm/animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
+    'excited sit': 'assets/vrm/animations/limbs/Excited_Sitting_Wave_01.vrma',
+    'sitting wave': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
+    'sitting wave left': 'assets/vrm/animations/limbs/Sitting_Wave_Left_01.vrma',
+    'sitting wave right': 'assets/vrm/animations/limbs/Sitting_Wave_Right_01.vrma',
+    'exaggerated wave': 'assets/vrm/animations/limbs/Exaggerated_Wave_Both_01.vrma',
+    'exaggerated wave left': 'assets/vrm/animations/limbs/Exaggerated_Wave_Left_01.vrma',
+    'exaggerated wave right': 'assets/vrm/animations/limbs/Exaggerated_Wave_Right_01.vrma',
+    'fearful wave': 'assets/vrm/animations/limbs/Fearful_Wave_01.vrma',
+    'stylized wave': 'assets/vrm/animations/limbs/Stylized_Wave_Left_01.vrma',
+    'stylized wave right': 'assets/vrm/animations/limbs/Stylized_Wave_Right_01.vrma',
+    'both wave': 'assets/vrm/animations/limbs/Wave_Both_01.vrma',
+    'wave left': 'assets/vrm/animations/limbs/Wave_Left_01.vrma',
+    'wave right': 'assets/vrm/animations/limbs/Wave_Right_01.vrma',
+  };
+
+  Future<SkillResult> _executeAvatarControlSkill(Skill skill, Map<String, dynamic> params, Map<String, dynamic> ctx) async {
+    final body = Map<String, dynamic>.from(params);
+    String action = params['action'] ?? 'get_status';
+
+    if (action == 'play_gesture' || action == 'play_vrma') {
+      String? raw = params['gesture'] ?? params['animation'] ?? params['value'] ?? params['text'];
+      if (raw != null) {
+        final lower = raw.toLowerCase();
+        String base = 'assets/vrma/cute.vrma';
+        List<String> layers = [];
+        for (var e in _fullBodyMap.entries) { if (lower.contains(e.key)) { base = e.value; break; } }
+        for (var e in _limbMap.entries) { if (lower.contains(e.key)) { layers.add(e.value); } }
+        body['action'] = 'play_vrma_composite';
+        body['base'] = base;
+        body['layers'] = layers;
+        body['blendTime'] = 0.4;
+        action = 'play_vrma_composite';
+        _eventController.add(SkillsEvent.gesturePlayed(
+          base: base.split('/').last,
+          layers: layers.map((p) => p.split('/').last).toList(),
+        ));
+      }
+    }
+    try {
+      final resp = await http.post(Uri.parse('http://127.0.0.1:8765/api/avatar/control'),
+          headers: {'Content-Type': 'application/json'}, body: jsonEncode(body)).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) return SkillResult.success(jsonDecode(resp.body));
+      return SkillResult.error('Avatar fail: ${resp.statusCode}');
+    } catch (e) { return SkillResult.error('Avatar unreachable: $e'); }
+  }
+
+  Future<SkillResult> _executeTtsVoiceSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http.post(Uri.parse('http://127.0.0.1:8765/api/tts/control'),
+          headers: {'Content-Type': 'application/json'}, body: jsonEncode({'action': p['action'] ?? 'get_status', ...p}))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) return SkillResult.success(jsonDecode(resp.body));
+      return SkillResult.error('TTS fail: ${resp.statusCode}');
+    } catch (e) { return SkillResult.error('TTS unreachable: $e'); }
+  }
+
+  Future<SkillResult> _executeDeviceNodeSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http.post(Uri.parse('http://127.0.0.1:8765/api/device/control'),
+          headers: {'Content-Type': 'application/json'}, body: jsonEncode({'action': p['action'] ?? 'get_battery', ...p}))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) return SkillResult.success(jsonDecode(resp.body));
+      return SkillResult.error('Device fail: ${resp.statusCode}');
+    } catch (e) { return SkillResult.error('Device unreachable: $e'); }
+  }
+
+  Future<SkillResult> _executeAvatarPipSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
       await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
-      return SkillResult.success({'message': 'Entered Picture-in-Picture mode successfully.'});
-    } catch (e) {
-      return SkillResult.error('Failed to enter PiP mode: \$e');
-    }
+      return SkillResult.success({'message': 'PiP mode active'});
+    } catch (e) { return SkillResult.error('PiP fail: $e'); }
   }
 
-
-
-  /// Execute Twilio Voice skill via Gateway.
-  /// Response fields per Twilio REST API: phone_number (E.164), status, concurrent_sessions,
-  /// inbound_count, total_duration_h, transcription_enabled, relay_enabled,
-  /// call_logs: [{sid, from, to, direction, duration, status, summary, date_created}]
-  Future<SkillResult> _executeTwilioSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    final method = parameters['method'] ?? 'get_status';
-    final proxy = GatewaySkillProxy();
-    if (!proxy.isAttached) {
-      // Offline fallback — realistic field names matching Twilio REST API
-      switch (method) {
-        case 'get_status':
-          return SkillResult.success({
-            'phone_number': '',
-            'status': 'disconnected',
-            'concurrent_sessions': 0,
-            'inbound_count': 0,
-            'total_duration_h': 0,
-            'transcription_enabled': false,
-            'relay_enabled': false,
-            'call_logs': [],
-          });
-        default:
-          return SkillResult.error('Gateway not connected');
-      }
-    }
+  Future<SkillResult> _executeTwilioSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
-      final data = await proxy.execute('twilio-voice', method,
-          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      final data = await GatewaySkillProxy().execute('twilio-voice', p['method'] ?? 'get_status', params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
-    } on SkillProxyException catch (e) {
-      return SkillResult.error(e.message);
-    }
+    } catch (e) { return SkillResult.error(e.toString()); }
   }
 
-  /// Execute AgentCard.ai skill via Gateway.
-  /// Official product: Visa virtual card by AgentCard.ai (agentcard.ai) — private beta.
-  /// CLI: agentcard cards create --amount X / agentcard cards details [id]
-  /// Response fields: id, last4, balance (cents), spendLimit (cents), status (OPEN|PAUSED|TERMINATED),
-  ///   expiryMonth, expiryYear, network ('Visa'), autoRefill (bool), cardholderName
-  Future<SkillResult> _executeAgentCardSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    final method = parameters['method'] ?? 'get_balance';
-    final proxy = GatewaySkillProxy();
-    if (!proxy.isAttached) {
-      switch (method) {
-        case 'get_balance':
-          return SkillResult.success({
-            'id': '',
-            'last4': '----',
-            'balance': 0,
-            'spendLimit': 0,
-            'status': 'DISCONNECTED',
-            'expiryMonth': '--',
-            'expiryYear': '----',
-            'network': 'Visa',
-            'autoRefill': false,
-          });
-        default:
-          return SkillResult.error('Gateway not connected');
-      }
-    }
+  Future<SkillResult> _executeAgentCardSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
-      final data = await proxy.execute('agent-card', method,
-          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      final data = await GatewaySkillProxy().execute('agent-card', p['method'] ?? 'get_balance', params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
-    } on SkillProxyException catch (e) {
-      return SkillResult.error(e.message);
-    }
+    } catch (e) { return SkillResult.error(e.toString()); }
   }
 
-  /// Execute MoltLaunch skill via Gateway.
-  /// MoltLaunch / Molt.ID: EVM/Base-compatible AI agent job marketplace (moltdotid/AutoPilot-Molt-CLI).
-  /// Identity = ERC-8004 NFT on Base. Jobs are on-chain transactions via Multiclaw tx-queue API.
-  /// get_identity fields: wallet_address, display_name, verified, jobs_count, reputation_score (0.0-1.0)
-  /// get_rep fields: reputation_score, total_jobs_completed, pending_payouts, active_gig_list[]
-  ///   gig: { title, status (in_progress|pending_review|bidding|completed), price, currency }
-  Future<SkillResult> _executeMoltLaunchSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    final method = parameters['method'] ?? 'get_rep';
-    final proxy = GatewaySkillProxy();
-    if (!proxy.isAttached) {
-      switch (method) {
-        case 'get_identity':
-          return SkillResult.success({
-            'wallet_pubkey': '',
-            'display_name': '',
-            'verified': false,
-            'jobs_count': 0,
-            'reputation_score': 0.0,
-          });
-        case 'get_rep':
-          return SkillResult.success({
-            'reputation_score': 0.0,
-            'total_jobs_completed': 0,
-            'pending_payouts': 0,
-            'active_gig_list': [],
-          });
-        default:
-          return SkillResult.error('Gateway not connected');
-      }
-    }
+  Future<SkillResult> _executeMoltLaunchSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
-      final data = await proxy.execute('molt-launch', method,
-          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      final data = await GatewaySkillProxy().execute('molt-launch', p['method'] ?? 'get_rep', params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
-    } on SkillProxyException catch (e) {
-      return SkillResult.error(e.message);
-    }
+    } catch (e) { return SkillResult.error(e.toString()); }
   }
 
-  /// Execute Valeo Sentinel skill via Gateway.
-  /// Valeo.cash Sentinel: x402 payment protocol compliance & budget enforcement for AI agents.
-  /// Budget caps: per_call_limit, hourly_limit, daily_limit, lifetime_limit (all in USD cents).
-  /// Audit log fields per Valeo docs: agentId, team, endpoint, tx_hash, timing, action, amount_cents, result.
-  /// result values: 'approved' | 'blocked' | 'pending'
-  Future<SkillResult> _executeValeoSkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    final method = parameters['method'] ?? 'get_budget';
-    final proxy = GatewaySkillProxy();
-    if (!proxy.isAttached) {
-      switch (method) {
-        case 'get_budget':
-          return SkillResult.success({
-            'budget_cap': 0,
-            'current_spend': 0,
-            'sentinel_active': false,
-            'policy_id': '--',
-            'per_call_limit': 0,
-            'hourly_limit': 0,
-            'daily_limit': 0,
-            'lifetime_limit': 0,
-            'audit_log': [],
-          });
-        default:
-          return SkillResult.error('Gateway not connected');
-      }
-    }
+  Future<SkillResult> _executeValeoSkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
-      final data = await proxy.execute('valeo-sentinel', method,
-          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      final data = await GatewaySkillProxy().execute('valeo-sentinel', p['method'] ?? 'get_budget', params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
-    } on SkillProxyException catch (e) {
-      return SkillResult.error(e.message);
-    }
+    } catch (e) { return SkillResult.error(e.toString()); }
   }
 
-
-
-  /// Execute MoonPay Agents skill via Gateway MCP server.
-  /// MoonPay runs as an MCP server (mp mcp) inside OpenClaw.
-  /// Skills install automatically via `mp skill install` to ~/.claude/skills/.
-  ///
-  /// Agent prompt: tell the agent it has moonpay.* MCP tools available:
-  ///   get_portfolio, get_price, swap, bridge, buy, sell, dca_list, dca_create
-  ///
-  /// Full setup:
-  ///   npm install -g @moonpay/cli
-  ///   mp login && mp wallet create MyWallet
-  ///   Configure in openclaw.yaml: mcp.servers → [name: moonpay, command: mp, args: [mcp]]
-  Future<SkillResult> _executeMoonPaySkill(Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    final method = parameters['method'] ?? 'get_portfolio';
-    final proxy = GatewaySkillProxy();
-    if (!proxy.isAttached) {
-      // Offline fallback with realistic MoonPay field shapes
-      switch (method) {
-        case 'get_portfolio':
-          return SkillResult.success({
-            'wallets': [],
-            'total_usd_value': 0.0,
-          });
-        case 'get_price':
-          return SkillResult.success({
-            'prices': [
-              {'token': 'ETH', 'usd': 0.0, 'change_24h': 0.0},
-              {'token': 'BTC', 'usd': 0.0, 'change_24h': 0.0},
-              {'token': 'SOL', 'usd': 0.0, 'change_24h': 0.0},
-              {'token': 'USDC', 'usd': 1.0, 'change_24h': 0.0},
-            ],
-          });
-        case 'dca_list':
-          return SkillResult.success({'strategies': []});
-        default:
-          return SkillResult.error('Gateway not connected');
-      }
-    }
+  Future<SkillResult> _executeMoonPaySkill(Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
-      final data = await proxy.execute('moonpay', method,
-          params: Map<String, dynamic>.from(parameters)..remove('method'));
+      final data = await GatewaySkillProxy().execute('moonpay', p['method'] ?? 'get_portfolio', params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
-    } on SkillProxyException catch (e) {
-      return SkillResult.error(e.message);
-    }
+    } catch (e) { return SkillResult.error(e.toString()); }
   }
 
-  // ── Custom device-native skill creators ──────────────────────────────────
-
-  Skill _createAvatarControlSkill() {
-    return Skill(
-      id: 'avatar-control',
-      name: 'Avatar Control',
-      description: 'Control the 3D live avatar on the connected Android device. '
-          'Embed (gesture: NAME) anywhere in your response text to play animations inline — '
-          'stripped from speech but plays immediately. '
-          'Example: "Sure thing! (gesture: greeting)" or "Watch this (gesture: spin)". '
-          'Available gestures: greeting, dance, cute, elegant, fight, peacesign, pose, powerful, ready, shoot, spin, squat, talk. '
-          'Use (gesture: NAME) freely and often to be expressive and lively. '
-          'For sustained expression styles call set_mode with mode "expressive" (random gesture interjections while speaking), '
-          '"dance" (dance loop while speaking), or "subtle" (minimal gestures). '
-          'Reset to "normal" when done.',
-      version: '1.0.0',
-      author: 'Custom',
-      category: 'avatar',
-      tags: ['avatar', 'vrm', 'gesture', '3d', 'emotion', 'animation'],
-      requirements: [],
-      body: '''# Avatar Control Skill
-
-Calls AgentSkillServer on 127.0.0.1:8765/api/avatar/control.
-
-## Actions
-- **change_model** — Load a different VRM model by filename (e.g. "clawbot_v2.vrm")
-- **play_gesture** — Trigger a body animation on the live 3D avatar
-- **set_emotion** — Set the avatar's facial expression
-- **set_mode** — Set sustained gesture style: "expressive" (random gestures interspersed while speaking), "dance" (dance loop), "subtle" (minimal), "normal" (default auto-talk)
-- **get_status** — Return current model name and active gesture
-
-## Available Gestures (use exactly these names)
-| Name | Description |
-|------|-------------|
-| greeting | Wave hello — great for introductions |
-| dance | Full dance animation |
-| cute | Cute/kawaii pose |
-| elegant | Elegant flowing pose |
-| fight | Fighting stance |
-| peacesign | Peace sign / V-sign |
-| pose | Cool standing pose (also used while thinking) |
-| powerful | Power/strength pose |
-| ready | Ready stance (also used when task complete) |
-| shoot | Finger-gun shooting pose |
-| spin | Spin / twirl animation |
-| squat | Squat down pose |
-| talk | Talking/gesturing animation |
-| idle | Return to default idle stance |
-
-## Emotions
-happy, sad, neutral, surprised, angry
-
-## Examples
-- User asks you to wave → play_gesture with gesture: "greeting"
-- User asks you to dance → play_gesture with gesture: "dance"
-- User asks you to do something cool → play_gesture with gesture: "powerful" or "pose"
-- Task finished → play_gesture with gesture: "ready"
-''',
-      source: 'custom',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabledOrDefault('avatar-control', defaultValue: true),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'action': {
-            'type': 'string',
-            'enum': ['change_model', 'play_gesture', 'set_emotion', 'set_mode', 'get_status'],
-            'description': 'Avatar action to perform.',
-          },
-          'model': {
-            'type': 'string',
-            'description': 'VRM filename to load (e.g. "clawbot_v2.vrm"). Required for change_model.',
-          },
-          'gesture': {
-            'type': 'string',
-            'enum': [
-              'greeting', 'dance', 'cute', 'elegant', 'fight', 'peacesign',
-              'pose', 'powerful', 'ready', 'shoot', 'spin', 'squat', 'talk', 'idle',
-            ],
-            'description': 'Animation to play on the avatar. Use "greeting" to wave, "dance" to dance, "idle" to return to default. Required for play_gesture.',
-          },
-          'emotion': {
-            'type': 'string',
-            'enum': ['happy', 'sad', 'neutral', 'surprised', 'angry'],
-            'description': 'Facial expression to set. Required for set_emotion.',
-          },
-          'mode': {
-            'type': 'string',
-            'enum': ['normal', 'expressive', 'dance', 'subtle'],
-            'description': 'Gesture style mode. Required for set_mode. "expressive" auto-interjects random gestures during speech. "dance" loops a dance animation. "subtle" disables auto-gestures. "normal" restores default.',
-          },
-        },
-        'required': ['action'],
-      },
-    );
-  }
-
-  Skill _createTtsVoiceSkill() {
-    return Skill(
-      id: 'tts-voice',
-      name: 'TTS Voice Control',
-      description: 'Switch the TTS engine (Piper / ElevenLabs / OpenAI / Native) or change the active voice.',
-      version: '1.0.0',
-      author: 'Custom',
-      category: 'tts',
-      tags: ['tts', 'voice', 'speech', 'piper', 'elevenlabs', 'openai'],
-      requirements: [],
-      body: 'TTS voice control skill. Calls AgentSkillServer on 127.0.0.1:8765/api/tts/control.',
-      source: 'custom',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabledOrDefault('tts-voice', defaultValue: true),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'action': {
-            'type': 'string',
-            'enum': ['set_engine', 'set_voice', 'speak', 'stop', 'get_status'],
-            'description': 'TTS action to perform.',
-          },
-          'engine': {
-            'type': 'string',
-            'enum': ['piper', 'native', 'elevenlabs', 'openai'],
-            'description': 'TTS engine to switch to. Required for set_engine.',
-          },
-          'voice': {
-            'type': 'string',
-            'description': 'Voice ID or name. For ElevenLabs: voice_id. For OpenAI: alloy/echo/fable/onyx/nova/shimmer.',
-          },
-          'text': {
-            'type': 'string',
-            'description': 'Text to speak aloud. Required for speak.',
-          },
-        },
-        'required': ['action'],
-      },
-    );
-  }
-
-  Skill _createDeviceNodeSkill() {
-    return Skill(
-      id: 'device-node',
-      name: 'Device Control',
-      description: 'Control device hardware: vibrate, flashlight, read sensors, get battery. Powered by the Node capabilities layer.',
-      version: '1.0.0',
-      author: 'Custom',
-      category: 'device',
-      tags: ['device', 'vibrate', 'haptic', 'flashlight', 'battery', 'sensor', 'location', 'camera'],
-      requirements: [],
-      body: 'Device node skill. Calls AgentSkillServer on 127.0.0.1:8765/api/device/control.',
-      source: 'custom',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabledOrDefault('device-node', defaultValue: true),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'action': {
-            'type': 'string',
-            'enum': [
-              'vibrate', 'flashlight_on', 'flashlight_off',
-              'get_battery', 'get_location', 'read_sensor', 'take_photo',
-            ],
-            'description': 'Device action. vibrate triggers haptic, get_battery returns level/charging status.',
-          },
-          'pattern': {
-            'type': 'array',
-            'items': {'type': 'integer'},
-            'description': 'Vibration pattern in ms [delay, on, off, on…]. Used with vibrate.',
-          },
-          'sensor_type': {
-            'type': 'string',
-            'enum': ['accelerometer', 'gyroscope', 'magnetometer', 'barometer'],
-            'description': 'Sensor to read. Required for read_sensor.',
-          },
-        },
-        'required': ['action'],
-      },
-    );
-  }
-
-  // ── Bundled skill creators ─────────────────────────────────────────────────
-
-  Skill _createAvatarOverlaySkill() {
-    return Skill(
-      id: 'avatar_overlay',
-      name: 'Floating Transparent Avatar',
-      description: 'Shrink the agent avatar into a transparent floating widget on the home screen.',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'system',
-      tags: ['overlay', 'floating', 'minimize', 'widget', 'shrink', 'transparent'],
-      requirements: [],
-      body: '''# Floating Avatar Skill
-
-## Description
-Shrinks the avatar into a true transparent floating widget, allowing you to use other apps while talking.
-
-## Usage
-- "Minimize to floating widget"
-- "Show floating transparent avatar"
-- "Pop out"
-
-## Requirements
-- SYSTEM_ALERT_WINDOW permission.
-
-## Returns
-- Status of Overlay transition.
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: true,
-
-    );
-  }
-
-  Skill _createTwilioSkill() {
-    return Skill(
-      id: 'twilio-voice',
-      name: 'Twilio AI Voice',
-      description: 'Engage in real-time voice conversations via Twilio ConversationRelay',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'twilio',
-      tags: ['voice', 'telephony', 'twilio', 'call'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: 'Full Twilio functional skill for AI voice bridging.',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('twilio-voice'),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'method': {
-            'type': 'string',
-            'enum': ['get_status', 'send_message'],
-            'description': 'The twilio operation to perform'
-          },
-          'to': {'type': 'string', 'description': 'Recipient phone number'},
-          'body': {'type': 'string', 'description': 'Message body'}
-        },
-        'required': ['method']
-      },
-    );
-  }
-
-  Skill _createAgentCardSkill() {
-    return Skill(
-      id: 'agent-card',
-      name: 'AgentCard Payments',
-      description: 'Issue virtual cards and manage spending budgets',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'agentcard',
-      tags: ['payments', 'visa', 'mastercard', 'finance'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: 'AgentCard restorative skill for programmatic financial actions.',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('agent-card'),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'method': {
-            'type': 'string',
-            'enum': ['get_balance', 'create_card'],
-            'description': 'Payment management operation'
-          }
-        },
-        'required': ['method']
-      },
-    );
-  }
-
-  Skill _createMoltLaunchSkill() {
-    return Skill(
-      id: 'molt-launch',
-      name: 'MoltLaunch Marketplace',
-      description: 'Coordinate tasks and build reputation on-chain',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'moltlaunch',
-      tags: ['marketplace', 'gigs', 'reputation', 'base'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: 'MoltLaunch workplace skill for agent task coordination.',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('molt-launch'),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'method': {
-            'type': 'string',
-            'enum': ['get_rep', 'post_job'],
-            'description': 'Marketplace coordination operation'
-          },
-          'job_details': {'type': 'string', 'description': 'Details for post_job'}
-        },
-        'required': ['method']
-      },
-    );
-  }
-
-  Skill _createValeoSkill() {
-    return Skill(
-      id: 'valeo-sentinel',
-      name: 'Valeo Sentinel',
-      description: 'Budget enforcement and compliance for payments',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'valeo',
-      tags: ['compliance', 'budget', 'audit', 'valeo'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: 'Valeo Sentinel budget skill for payment safety.',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('valeo-sentinel'),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'method': {
-            'type': 'string',
-            'enum': ['get_budget', 'set_policy'],
-            'description': 'Compliance and budget operation'
-          },
-          'policy_id': {'type': 'string', 'description': 'Policy ID for set_policy'}
-        },
-        'required': ['method']
-      },
-    );
-  }
-
-  Skill _createMoonPaySkill() {
-    return Skill(
-      id: 'moonpay',
-      name: 'MoonPay Agents',
-      description: 'Give your agent a verified bank account and 30+ financial skills — buy, sell, swap, bridge, DCA, and live prices via the MoonPay CLI MCP server.',
-      version: '1.0.0',
-      author: 'MoonPay',
-      category: 'moonpay',
-      tags: ['moonpay', 'crypto', 'finance', 'swap', 'buy', 'sell', 'bridge', 'dca', 'portfolio'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: '''# MoonPay Agents Skill
-
-Your agent can call these MCP tools once MoonPay CLI is configured:
-  moonpay.get_portfolio — wallet balances across all chains
-  moonpay.get_price { token } — live USD price + 24h change
-  moonpay.swap { from_token, to_token, amount } — on-chain swap
-  moonpay.bridge { token, from_chain, to_chain, amount } — cross-chain bridge
-  moonpay.buy { token, amount_usd } — fiat onramp
-  moonpay.sell { token, amount } — fiat offramp
-  moonpay.dca_list — active DCA strategies
-  moonpay.dca_create { token, amount_usd, frequency } — new DCA strategy
-
-Setup: npm install -g @moonpay/cli → mp login → mp wallet create MyWallet
-Config: openclaw.yaml → mcp.servers → [name: moonpay, command: mp, args: [mcp]]
-
-Agent instruction: "You have the MoonPay MCP toolkit. Always confirm with user before executing swaps/buys/bridges."
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('moonpay'),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'method': {
-            'type': 'string',
-            'enum': [
-              'get_portfolio', 'get_price', 'swap', 'bridge',
-              'buy', 'sell', 'dca_list', 'dca_create',
-            ],
-            'description': 'The MoonPay operation. get_portfolio for balances, swap/bridge for on-chain, buy/sell for fiat, dca_* for strategies.',
-          },
-          'token': {'type': 'string', 'description': 'Token symbol (ETH, BTC, SOL, USDC…)'},
-          'from_token': {'type': 'string', 'description': 'Source token for swap/bridge'},
-          'to_token': {'type': 'string', 'description': 'Target token for swap'},
-          'from_chain': {'type': 'string', 'description': 'Source chain for bridge'},
-          'to_chain': {'type': 'string', 'description': 'Destination chain for bridge'},
-          'amount': {'type': 'number', 'description': 'Token amount for swap/bridge/sell'},
-          'amount_usd': {'type': 'number', 'description': 'USD amount for buy/dca_create'},
-          'frequency': {
-            'type': 'string',
-            'enum': ['daily', 'weekly', 'biweekly', 'monthly'],
-            'description': 'Purchase frequency for dca_create',
-          },
-          'tokens': {
-            'type': 'array',
-            'items': {'type': 'string'},
-            'description': 'Batch token list for get_price',
-          },
-        },
-        'required': ['method'],
-      },
-    );
-  }
-
-  // ── Base Chain skill ──────────────────────────────────────────────────────
-
-  Skill _createBaseChainSkill() {
-    return Skill(
-      id: 'base-chain',
-      name: 'Base Chain Wallet',
-      description: 'Coinbase Base L2 wallet — send ETH/USDC, check balances, resolve Basenames.',
-      version: '1.0.0',
-      author: 'OpenClaw',
-      category: 'base',
-      tags: ['base', 'blockchain', 'eth', 'usdc', 'wallet', 'coinbase', 'l2', 'evm', 'basenames'],
-      requirements: [SkillRequirement(type: 'network', value: 'internet')],
-      body: '''# Base Chain Skill
-
-## Network Info
-- Chain: Base (Coinbase L2, OP Stack) — EVM-compatible
-- Chain ID: 8453 (mainnet), 84532 (sepolia testnet)
-- RPC: https://mainnet.base.org | https://sepolia.base.org
-- Explorer: https://basescan.org
-
-## Tokens
-- **ETH** — native gas token (18 decimals)
-- **USDC** — native Circle stablecoin on Base (6 decimals)
-  - Contract (mainnet): 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
-
-## Basenames
-- Human-readable `.base.eth` addresses (ENS-compatible, 750 000+ registered)
-- Use `resolve_basename` action to convert a name → 0x address before sending
-
-## Coinbase AgentKit (Official AI Skills — Gateway)
-Install **cdp-agentkit** in Skills Manager to unlock 50+ AI-driven Base actions:
-- Core: transfer, trade (gasless swap on Base), deploy_token, deploy_nft, mint_nft
-- DeFi: wrap_eth, morpho_deposit, morpho_withdraw, superfluid_create_flow
-- Identity: register_basename, resolve_basename
-- Social: post_to_farcaster, create_attestation
-- Requires: CDP_API_KEY + CDP_API_SECRET from https://portal.cdp.coinbase.com
-
-## Actions (this skill)
-| action | params | description |
-|--------|--------|-------------|
-| get_balance | — | Returns ETH + USDC balance |
-| get_address | — | Returns wallet 0x address |
-| send_eth | to, amount | Send ETH (supports .base.eth names) |
-| send_usdc | to, amount | Send USDC stablecoin |
-| resolve_basename | name | Resolve .base.eth → 0x address |
-| get_history | limit? | Last N transactions from Basescan |
-| switch_network | network (mainnet/sepolia) | Toggle network |
-''',
-      source: 'bundled',
-      createdAt: DateTime.now(),
-      enabled: _prefs.isSkillEnabled('base-chain'),
-      parametersSchema: {
-        'type': 'object',
-        'properties': {
-          'action': {
-            'type': 'string',
-            'enum': [
-              'get_balance',
-              'get_address',
-              'send_eth',
-              'send_usdc',
-              'resolve_basename',
-              'get_history',
-              'switch_network',
-            ],
-            'description': 'Base Chain operation to perform.',
-          },
-          'to': {
-            'type': 'string',
-            'description': 'Recipient 0x address or .base.eth Basename. Required for send_eth / send_usdc.',
-          },
-          'amount': {
-            'type': 'string',
-            'description': 'Amount as decimal string (e.g. "0.01"). Required for send_eth / send_usdc.',
-          },
-          'name': {
-            'type': 'string',
-            'description': 'Basename to resolve (e.g. "alice.base.eth"). Required for resolve_basename.',
-          },
-          'limit': {
-            'type': 'integer',
-            'description': 'Number of transactions to return (default 10). For get_history.',
-          },
-          'network': {
-            'type': 'string',
-            'enum': ['mainnet', 'sepolia'],
-            'description': 'Network to switch to. Required for switch_network.',
-          },
-        },
-        'required': ['action'],
-      },
-    );
-  }
-
-  /// Execute Base Chain skill — routes to BaseService (device-native, no gateway needed).
-  Future<SkillResult> _executeBaseChainSkill(
-      Skill skill, Map<String, dynamic> parameters, Map<String, dynamic> context) async {
-    // Import is via the AgentSkillServer HTTP bridge on 127.0.0.1:8765
-    // For now, route direct to BaseService singleton (same process — no HTTP hop needed).
-    final action = parameters['action'] as String? ?? 'get_balance';
+  Future<SkillResult> _executeBaseChainSkill(Skill skill, Map<String, dynamic> p, Map<String, dynamic> ctx) async {
+    final action = p['action'] ?? 'get_balance';
+    final svc = BaseService();
+    if (!svc.isConnected && action != 'switch_network') return SkillResult.error('Wallet not connected');
     try {
       switch (action) {
-        case 'get_address':
-          final svc = _baseServiceInstance;
-          if (!svc.isConnected) return SkillResult.error('No wallet connected. Create one in the Base screen.');
-          return SkillResult.success({'address': svc.address});
-        case 'get_balance':
-          final svc = _baseServiceInstance;
-          if (!svc.isConnected) return SkillResult.error('No wallet connected. Create one in the Base screen.');
-          await svc.refreshBalance();
-          return SkillResult.success({
-            'eth': svc.ethBalance.toStringAsFixed(6),
-            'usdc': svc.usdcBalance.toStringAsFixed(2),
-            'network': svc.networkName,
-            'address': svc.address,
-          });
-        case 'send_eth':
-          final svc = _baseServiceInstance;
-          final to = parameters['to'] as String?;
-          final amount = parameters['amount'] as String?;
-          if (to == null || amount == null) return SkillResult.error('to and amount are required');
-          final dec = Decimal.tryParse(amount);
-          if (dec == null) return SkillResult.error('Invalid amount: $amount');
-          final txHash = await svc.sendEth(to, dec);
-          return SkillResult.success({'txHash': txHash, 'status': 'sent'});
-        case 'send_usdc':
-          final svc = _baseServiceInstance;
-          final to = parameters['to'] as String?;
-          final amount = parameters['amount'] as String?;
-          if (to == null || amount == null) return SkillResult.error('to and amount are required');
-          final dec = Decimal.tryParse(amount);
-          if (dec == null) return SkillResult.error('Invalid amount: $amount');
-          final txHash = await svc.sendUsdc(to, dec);
-          return SkillResult.success({'txHash': txHash, 'status': 'sent'});
-        case 'resolve_basename':
-          final svc = _baseServiceInstance;
-          final name = parameters['name'] as String? ?? parameters['to'] as String?;
-          if (name == null) return SkillResult.error('name is required');
-          final addr = await svc.resolveBasename(name);
-          return SkillResult.success({'name': name, 'address': addr});
-        case 'get_history':
-          final svc = _baseServiceInstance;
-          if (!svc.isConnected) return SkillResult.error('No wallet connected.');
-          final limit = (parameters['limit'] as num?)?.toInt() ?? 10;
-          final txs = await svc.fetchHistory(limit: limit);
-          return SkillResult.success({
-            'transactions': txs.map((t) => {
-              'hash': t.hash,
-              'from': t.from,
-              'to': t.to,
-              'value_eth': t.value.toStringAsFixed(6),
-              'timestamp': t.timestamp.toIso8601String(),
-              'error': t.isError,
-            }).toList(),
-          });
-        case 'switch_network':
-          final network = parameters['network'] as String? ?? 'mainnet';
-          final svc = _baseServiceInstance;
-          await svc.setNetwork(sepolia: network == 'sepolia');
-          return SkillResult.success({'network': svc.networkName, 'chainId': svc.chainId});
-        default:
-          return SkillResult.error('Unknown action: $action');
+        case 'get_address': return SkillResult.success({'address': svc.address});
+        case 'get_balance': await svc.refreshBalance(); return SkillResult.success({'eth': svc.ethBalance.toString(), 'usdc': svc.usdcBalance.toString()});
+        case 'send_eth': final tx = await svc.sendEth(p['to'], Decimal.parse(p['amount'])); return SkillResult.success({'txHash': tx});
+        case 'send_usdc': final tx = await svc.sendUsdc(p['to'], Decimal.parse(p['amount'])); return SkillResult.success({'txHash': tx});
+        case 'resolve_basename': final addr = await svc.resolveBasename(p['name']); return SkillResult.success({'address': addr});
+        case 'get_history': final txs = await svc.fetchHistory(limit: p['limit'] ?? 10); return SkillResult.success({'transactions': txs});
+        case 'switch_network': await svc.setNetwork(sepolia: p['network'] == 'sepolia'); return SkillResult.success({'network': svc.networkName});
+        default: return SkillResult.error('Unknown action: $action');
       }
-    } catch (e) {
-      return SkillResult.error('Base Chain error: $e');
-    }
+    } catch (e) { return SkillResult.error(e.toString()); }
   }
 
-  BaseService get _baseServiceInstance => BaseService();
+  // ── Skill Creators ────────────────────────────────────────────────────────
 
-  Skill? getSkill(String id) => _skills[id];
+  Skill _createAvatarControlSkill() => Skill(id: 'avatar-control', name: 'Avatar Control', description: 'Control 3D avatar gestures and emotions.', version: '1.0.0', author: 'OpenClaw', category: 'avatar', tags: ['3d'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createTtsVoiceSkill() => Skill(id: 'tts-voice', name: 'Voice Control', description: 'Switch TTS voices.', version: '1.0.0', author: 'OpenClaw', category: 'tts', tags: ['voice'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createDeviceNodeSkill() => Skill(id: 'device-node', name: 'Device Tools', description: 'Access flashlight, battery, and sensors.', version: '1.0.0', author: 'OpenClaw', category: 'device', tags: ['hardware'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createAvatarOverlaySkill() => Skill(id: 'avatar_overlay', name: 'Floating Avatar', description: 'Minimize avatar to transparent widget.', version: '1.0.0', author: 'OpenClaw', category: 'system', tags: ['ui'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createBaseChainSkill() => Skill(id: 'base-chain', name: 'Base Wallet', description: 'EVM wallet for Base L2.', version: '1.0.0', author: 'OpenClaw', category: 'base', tags: ['crypto'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createTwilioSkill() => Skill(id: 'twilio-voice', name: 'Twilio Voice', description: 'Voice calls via Twilio.', version: '1.0.0', author: 'OpenClaw', category: 'twilio', tags: ['voice'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createAgentCardSkill() => Skill(id: 'agent-card', name: 'AgentCard', description: 'Virtual cards for AI spending.', version: '1.0.0', author: 'OpenClaw', category: 'agentcard', tags: ['finance'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createMoltLaunchSkill() => Skill(id: 'molt-launch', name: 'MoltLaunch', description: 'AI gig marketplace.', version: '1.0.0', author: 'OpenClaw', category: 'moltlaunch', tags: ['market'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createValeoSkill() => Skill(id: 'valeo-sentinel', name: 'Valeo Budget', description: 'Compliance and spending limits.', version: '1.0.0', author: 'OpenClaw', category: 'valeo', tags: ['budget'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
+  Skill _createMoonPaySkill() => Skill(id: 'moonpay', name: 'MoonPay', description: 'Crypto onramp/offramp.', version: '1.0.0', author: 'MoonPay', category: 'moonpay', tags: ['finance'], source: 'bundled', createdAt: DateTime.now(), enabled: true);
 
-  /// Get list of skills for UI
-  List<Skill> getSkillsList() => _skills.values.toList();
-
-  /// Get simplified tools catalog for Agent Discovery (Claude format)
-  List<Map<String, dynamic>> getToolsCatalog() {
-    return _skills.values
-        .where((s) => s.enabled)
-        .map((s) => s.toToolDefinition())
-        .toList();
-  }
-
-  /// Toggle skill enablement and persist it
-  Future<void> toggleSkill(String skillId, bool enabled) async {
-    final skill = _skills[skillId];
-    if (skill == null) return;
-
-    final updatedSkill = skill.copyWith(enabled: enabled);
-    _skills[skillId] = updatedSkill;
-    
-    await _prefs.setSkillEnabled(skillId, enabled);
-    _eventController.add(SkillsEvent.skillToggled(skillId, enabled));
-    
-    _logger.i('Skill $skillId ${enabled ? 'enabled' : 'disabled'}');
-  }
-
-  /// Dispose skills service
-  Future<void> dispose() async {
-    await _eventController.close();
+  Future<void> _registerNativeSkills() async {
+    try {
+      final gateway = GatewayService();
+      if (gateway.state.isRunning) await gateway.reregisterSkills();
+    } catch (_) {}
   }
 }
 
-/// Skill model
 class Skill {
-  final String id;
-  final String name;
-  final String description;
-  final String version;
-  final String author;
-  final String category;
+  final String id, name, description, version, author, category, source;
   final List<String> tags;
-  final List<SkillRequirement> requirements;
-  final String body;
-  final String source;
   final DateTime createdAt;
   final bool enabled;
-  final Map<String, dynamic>? parametersSchema;
-
-  Skill({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.version,
-    required this.author,
-    required this.category,
-    required this.tags,
-    required this.requirements,
-    required this.body,
-    required this.source,
-    required this.createdAt,
-    required this.enabled,
-    this.parametersSchema,
-  });
-
-  Skill copyWith({
-    String? id,
-    String? name,
-    String? description,
-    String? version,
-    String? author,
-    String? category,
-    List<String>? tags,
-    List<SkillRequirement>? requirements,
-    String? body,
-    String? source,
-    DateTime? createdAt,
-    bool? enabled,
-    Map<String, dynamic>? parametersSchema,
-  }) {
-    return Skill(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      version: version ?? this.version,
-      author: author ?? this.author,
-      category: category ?? this.category,
-      tags: tags ?? this.tags,
-      requirements: requirements ?? this.requirements,
-      body: body ?? this.body,
-      source: source ?? this.source,
-      createdAt: createdAt ?? this.createdAt,
-      enabled: enabled ?? this.enabled,
-      parametersSchema: parametersSchema ?? this.parametersSchema,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'version': version,
-      'author': author,
-      'category': category,
-      'tags': tags,
-      'source': source,
-      'enabled': enabled,
-      'parametersSchema': parametersSchema,
-    };
-  }
-
-  /// Converts to Claude tool definition format
-  Map<String, dynamic> toToolDefinition() {
-    return {
-      'name': id,
-      'description': description,
-      'input_schema': parametersSchema ?? {
-        'type': 'object',
-        'properties': {},
-      },
-    };
-  }
+  Skill({required this.id, required this.name, required this.description, required this.version, required this.author, required this.category, required this.tags, required this.source, required this.createdAt, required this.enabled});
+  Map<String, dynamic> toToolDefinition() => {'name': id, 'description': description, 'input_schema': {'type': 'object', 'properties': {}}};
 }
 
-/// Skill Requirement model
-class SkillRequirement {
-  final String type;
-  final String value;
-
-  SkillRequirement({
-    required this.type,
-    required this.value,
-  });
-}
-
-/// Skill Result model
-class SkillResult {
-  final bool success;
-  final dynamic data;
-  final String? error;
-
-  SkillResult({required this.success, this.data, this.error});
-
-  factory SkillResult.success(dynamic data) {
-    return SkillResult(success: true, data: data);
-  }
-
-  factory SkillResult.error(String error) {
-    return SkillResult(success: false, error: error);
-  }
-}
-
-/// Requirements Check model
-class RequirementsCheck {
-  final bool success;
-  final String? error;
-
-  RequirementsCheck({required this.success, this.error});
-
-  factory RequirementsCheck.success() {
-    return RequirementsCheck(success: true);
-  }
-
-  factory RequirementsCheck.failed(String error) {
-    return RequirementsCheck(success: false, error: error);
-  }
-}
-
-/// Skills Event model
+enum SkillsEventType { loaded, executing, executed, error, installed, uninstalled, toggled, installing, gesturePlayed }
 class SkillsEvent {
-  final SkillsEventType type;
-  final String? skillId;
-  final SkillResult? result;
-  final String? error;
-
-  SkillsEvent({
-    required this.type,
-    this.skillId,
-    this.result,
-    this.error,
-  });
-
-  factory SkillsEvent.skillLoaded(String skillId) =>
-      SkillsEvent(type: SkillsEventType.loaded, skillId: skillId);
-
-  factory SkillsEvent.skillExecuting(String skillId) =>
-      SkillsEvent(type: SkillsEventType.executing, skillId: skillId);
-
-  factory SkillsEvent.skillExecuted(String skillId, SkillResult result) =>
-      SkillsEvent(type: SkillsEventType.executed, skillId: skillId, result: result);
-
-  factory SkillsEvent.skillError(String skillId, String error) =>
-      SkillsEvent(type: SkillsEventType.error, skillId: skillId, error: error);
-
-  factory SkillsEvent.skillInstalled(String skillId) =>
-      SkillsEvent(type: SkillsEventType.installed, skillId: skillId);
-
-  factory SkillsEvent.skillUninstalled(String skillId) =>
-      SkillsEvent(type: SkillsEventType.uninstalled, skillId: skillId);
-
-  factory SkillsEvent.skillToggled(String skillId, bool enabled) =>
-      SkillsEvent(type: SkillsEventType.toggled, skillId: skillId);
+  final SkillsEventType type; final String? skillId; final dynamic result; final String? error; final String? base; final List<String>? layers;
+  SkillsEvent({required this.type, this.skillId, this.result, this.error, this.base, this.layers});
+  factory SkillsEvent.skillLoaded(String id) => SkillsEvent(type: SkillsEventType.loaded, skillId: id);
+  factory SkillsEvent.skillExecuting(String id) => SkillsEvent(type: SkillsEventType.executing, skillId: id);
+  factory SkillsEvent.skillExecuted(String id, dynamic res) => SkillsEvent(type: SkillsEventType.executed, skillId: id, result: res);
+  factory SkillsEvent.skillError(String id, String err) => SkillsEvent(type: SkillsEventType.error, skillId: id, error: err);
+  factory SkillsEvent.skillInstalling(String id) => SkillsEvent(type: SkillsEventType.installing, skillId: id);
+  factory SkillsEvent.skillInstalled(String id) => SkillsEvent(type: SkillsEventType.installed, skillId: id);
+  factory SkillsEvent.skillUninstalled(String id) => SkillsEvent(type: SkillsEventType.uninstalled, skillId: id);
+  factory SkillsEvent.gesturePlayed({required String base, required List<String> layers}) => SkillsEvent(type: SkillsEventType.gesturePlayed, base: base, layers: layers);
 }
 
-/// Skills Event Type enum
-enum SkillsEventType {
-  loaded,
-  executing,
-  executed,
-  error,
-  installed,
-  uninstalled,
-  toggled,
+class SkillResult {
+  final bool success; final dynamic data; final String? error;
+  SkillResult({required this.success, this.data, this.error});
+  factory SkillResult.success(dynamic d) => SkillResult(success: true, data: d);
+  factory SkillResult.error(String e) => SkillResult(success: false, error: e);
 }

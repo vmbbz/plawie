@@ -38,6 +38,11 @@ class NativeBridge {
     return Map<String, dynamic>.from(result);
   }
 
+  static Future<Map<String, dynamic>> ensureOpenClawReady() async {
+    final result = await _channel.invokeMethod('ensureOpenClawReady');
+    return Map<String, dynamic>.from(result);
+  }
+
   static Future<bool> extractRootfs(String tarPath) async {
     return await _channel.invokeMethod('extractRootfs', {'tarPath': tarPath});
   }
