@@ -24,7 +24,7 @@ class OpenClawCommandService {
     }
     try {
       final result = await NativeBridge.runInProot(
-        'openclaw --version',
+        '/usr/local/bin/openclaw --version',
         timeout: 10,
       );
       // Handles: "2026.3.27", "v2026.3.27", "OpenClaw v2026.3.27-alpha"
@@ -56,16 +56,16 @@ class OpenClawCommandService {
     final modern = await isModernSyntax();
     final versionStr = version != null ? '@$version' : '';
     return modern
-        ? 'openclaw skills install $skillName$versionStr'
-        : 'openclaw skill install $skillName$versionStr';
+        ? '/usr/local/bin/openclaw skills install $skillName$versionStr'
+        : '/usr/local/bin/openclaw skill install $skillName$versionStr';
   }
 
   /// Returns the correct uninstall command for the detected gateway version.
   static Future<String> getSkillUninstallCommand(String skillName) async {
     final modern = await isModernSyntax();
     return modern
-        ? 'openclaw skills uninstall $skillName'
-        : 'openclaw skill uninstall $skillName';
+        ? '/usr/local/bin/openclaw skills uninstall $skillName'
+        : '/usr/local/bin/openclaw skill uninstall $skillName';
   }
 
   /// Normalises any hardcoded `openclaw skill(s) …` command string.
@@ -89,7 +89,7 @@ class OpenClawCommandService {
     return [];
   }
 
-  static String getSkillListCommand() => 'openclaw skills list';
+  static String getSkillListCommand() => '/usr/local/bin/openclaw skills list';
 
   // ── Extended service methods ──────────────────────────────────────────────
 
@@ -111,8 +111,8 @@ class OpenClawCommandService {
   static Future<List<String>> getInstalledSkills() async {
     try {
       final result = await NativeBridge.runInProot(
-        'openclaw skills list --json 2>/dev/null '
-        '|| openclaw skill list --json 2>/dev/null '
+        '/usr/local/bin/openclaw skills list --json 2>/dev/null '
+        '|| /usr/local/bin/openclaw skill list --json 2>/dev/null '
         '|| echo "[]"',
         timeout: 15,
       );
@@ -139,7 +139,7 @@ class OpenClawCommandService {
   static Future<void> reloadGateway() async {
     try {
       await NativeBridge.runInProot(
-        'openclaw reload 2>/dev/null || true',
+        '/usr/local/bin/openclaw reload 2>/dev/null || true',
         timeout: 10,
       );
     } catch (_) {}
@@ -170,7 +170,7 @@ class OpenClawCommandService {
 
     try {
       final result = await NativeBridge.runInProot(
-        'openclaw models list --json 2>/dev/null || echo "[]"',
+        '/usr/local/bin/openclaw models list --json 2>/dev/null || echo "[]"',
         timeout: 10,
       );
       final decoded = jsonDecode(result.trim());
