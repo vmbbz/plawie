@@ -274,6 +274,12 @@ class BootstrapService {
       }
 
       // ---------------------------------------------------------
+      // Step 2.5: Harden Environment (PATH fix)
+      // ---------------------------------------------------------
+      _emitProgress(onProgress, SetupStep.installingNode, 0.01, 'Hardening environment PATH...', 42);
+      await _hardenEnvironment();
+
+      // ---------------------------------------------------------
       // Step 3: Install Node.js & Fix Permissions
       // ---------------------------------------------------------
       if (!nodeInstalled) {
@@ -490,10 +496,11 @@ class BootstrapService {
         timeout: 10,
       );
       
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Recreating binary wrappers...', 90);
-      
       // 3. Re-create wrappers using the hardened native logic
       await NativeBridge.createBinWrappers('openclaw');
+
+      // 4. Harden environment again
+      await _hardenEnvironment();
       
       _emitProgress(onProgress, SetupStep.complete, 1.0, 'Repair complete! Restarting gateway...', 100);
       
@@ -676,4 +683,19 @@ class BootstrapService {
       _log('Config repair failed (non-critical)', error: e);
     }
   }
+  /// Hardens the PRoot environment by ensuring a robust PATH is always available.
+  /// This appends a permanent PATH export to /root/.bashrc.
+  Future<void> _hardenEnvironment() async {
+    _log('🛡 Hardening environment PATH in /root/.bashrc...');
+    try {
+      const pathExport = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH';
+      await NativeBridge.runInProot(
+        'grep -q "export PATH=/usr/local/sbin" /root/.bashrc || echo "$pathExport" >> /root/.bashrc'
+      );
+      _log('✅ Environment hardened');
+    } catch (e) {
+      _log('Non-fatal: Environment hardening failed', error: e);
+    }
+  }
 }
+
