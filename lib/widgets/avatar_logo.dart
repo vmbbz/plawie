@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../app.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -158,30 +159,31 @@ class CircuitPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = (isDark ? Colors.white : Colors.black).withOpacity(0.05)
-      ..strokeWidth = 0.5;
-
     final dotPaint = Paint()..style = PaintingStyle.fill;
 
-    // Grid dots with random lighting
-    for (double x = size.width * 0.15; x < size.width * 0.9; x += size.width * 0.2) {
-      for (double y = size.height * 0.15; y < size.height * 0.9; y += size.height * 0.2) {
+    // Grid dots with random lighting (denser grid for more detail)
+    for (double x = size.width * 0.1; x < size.width * 0.95; x += size.width * 0.15) {
+      for (double y = size.height * 0.1; y < size.height * 0.95; y += size.height * 0.15) {
         // Pseudo-random lighting based on x, y and animation
-        final dotSeed = (x * 37.0 + y * 13.0) % 1.0;
-        final isGlowing = (animation - dotSeed).abs() < 0.15;
+        // Use a more complex seed to break the linear patterns
+        final dotSeed = (x * 43.0 + y * 17.0 + (x * y * 0.1)) % 1.0;
+        
+        // Dynamic intensity based on animation and the unique seed
+        final intensity = (0.5 + 0.5 * math.sin(animation * 2 * math.pi + dotSeed * 10)).clamp(0.0, 1.0);
+        final isGlowing = intensity > 0.7;
         
         if (isGlowing) {
-          dotPaint.color = AppColors.statusGreen.withOpacity(0.4 * animation);
-          canvas.drawCircle(Offset(x, y), 2.5, dotPaint);
+          final glowAlpha = (intensity - 0.7) / 0.3;
+          dotPaint.color = AppColors.statusGreen.withValues(alpha: 0.5 * glowAlpha);
+          canvas.drawCircle(Offset(x, y), 2.2, dotPaint);
           
           final glowPaint = Paint()
-            ..color = AppColors.statusGreen.withOpacity(0.2 * animation)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-          canvas.drawCircle(Offset(x, y), 5, glowPaint);
+            ..color = AppColors.statusGreen.withValues(alpha: 0.25 * glowAlpha)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+          canvas.drawCircle(Offset(x, y), 4.5, glowPaint);
         } else {
-          dotPaint.color = (isDark ? Colors.white : Colors.black).withOpacity(0.1);
-          canvas.drawCircle(Offset(x, y), 1.5, dotPaint);
+          dotPaint.color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08);
+          canvas.drawCircle(Offset(x, y), 1.2, dotPaint);
         }
       }
     }

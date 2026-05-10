@@ -386,7 +386,7 @@ class BootstrapService {
       await _fixOpenClawShebang();
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
+      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/openclaw --version || echo openclaw_installed');
 
       // ---------------------------------------------------------
       // Step 5: Install Native Android Skills
@@ -457,7 +457,7 @@ class BootstrapService {
       final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
       
       // 1. Force remove old installation and any stray files
-      await NativeBridge.runInProot('npm uninstall -g openclaw || true');
+      await NativeBridge.runInProot('/usr/local/bin/node /usr/local/bin/npm uninstall -g openclaw || true');
       await NativeBridge.runInProot('rm -rf /usr/local/lib/node_modules/openclaw');
       await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw'); 
       await NativeBridge.runInProot('npm cache clean --force || true');

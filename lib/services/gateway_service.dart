@@ -269,7 +269,7 @@ PARAMETER num_batch 512
   /// Validate gateway process health before marking as healthy
   Future<void> _validateGatewayProcess() async {
     try {
-      final result = await NativeBridge.runInProot('pgrep -f openclaw || echo "not_running"', timeout: 5);
+      final result = await NativeBridge.runInProot('pgrep -f /usr/local/bin/openclaw || echo "not_running"', timeout: 5);
       if (result.trim() == 'not_running') {
         _addActivity('[HEALTH] Gateway process not found - marking as stopped');
         _updateState(_state.copyWith(status: GatewayStatus.stopped));
@@ -448,12 +448,12 @@ PARAMETER num_batch 512
       try {
         await _configureGateway();
         await NativeBridge.runInProot(
-          'openclaw doctor --fix 2>/dev/null || true',
+          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'openclaw reload 2>/dev/null || true',
+          '/usr/local/bin/openclaw reload 2>/dev/null || true',
           timeout: 5,
         );
       } catch (_) {}
@@ -1581,7 +1581,7 @@ PARAMETER num_batch 512
 
     // 4. Trigger reload so the gateway picks up the new key
     try {
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || openclaw gateway config apply');
+      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/openclaw reload || /usr/local/bin/openclaw gateway config apply');
     } catch (_) {}
   }
 
@@ -1602,14 +1602,13 @@ PARAMETER num_batch 512
     // Gateway v2026.x embeds a fully-authenticated URL in the connect payload — no CLI needed.
     final canvasUrl = _connection?.canvasHostUrl;
     if (canvasUrl != null && canvasUrl.isNotEmpty) {
-      _updateState(_state.copyWith(
-        dashboardUrl: canvasUrl,
-        logs: [..._state.logs, '[INFO] Web UI URL acquired from gateway handshake (canvasHostUrl).'],
-      ));
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.dashboardUrl = canvasUrl;
-      return canvasUrl;
+      if (!force) {
+        _updateState(_state.copyWith(
+          dashboardUrl: canvasUrl,
+          logs: [..._state.logs, '[INFO] Web UI URL acquired from gateway handshake.'],
+        ));
+        return canvasUrl;
+      }
     }
 
     _updateState(_state.copyWith(
@@ -1654,7 +1653,7 @@ PARAMETER num_batch 512
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && openclaw dashboard --no-open',
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && /usr/local/bin/openclaw dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);

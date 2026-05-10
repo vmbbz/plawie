@@ -460,7 +460,7 @@ class ProcessManager(
         // so we don't need to export it again in the shell command.
         // Redirect stdout/stderr to gateway.log so the log streaming thread
         // can pick up output (including the dashboard token URL).
-        val gatewayCmd = "mkdir -p /root/.openclaw && openclaw gateway --verbose --allow-unconfigured > /root/.openclaw/gateway.log 2>&1"
+        val gatewayCmd = "mkdir -p /root/.openclaw && /usr/local/bin/openclaw gateway --verbose --allow-unconfigured > /root/.openclaw/gateway.log 2>&1"
         
         return try {
             android.util.Log.i("ProcessManager", "Starting gateway (output → gateway.log)")
@@ -499,7 +499,7 @@ class ProcessManager(
     fun isGatewayRunning(): Boolean {
         // Original approach: Check if openclaw gateway process is running
         return try {
-            val checkCmd = "pgrep -f 'openclaw gateway' > /dev/null 2>&1"
+            val checkCmd = "pgrep -f '/usr/local/bin/openclaw gateway' > /dev/null 2>&1"
             val fullCmd = buildGatewayCommand(checkCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()

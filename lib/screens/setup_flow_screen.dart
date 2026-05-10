@@ -453,9 +453,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       children: [
         Text(
           'Which AI would you like to use?',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 20),
@@ -544,8 +545,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 children: [
                   Text(
                     provider.name,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
                     ),
                   ),
                   Text(
@@ -677,8 +679,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 const SizedBox(height: 16),
                 Text(
                   'No API key needed',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -696,7 +699,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         ] else ...[
           Text(
             'Enter your ${provider.name} API key',
-            style: theme.textTheme.bodyLarge?.copyWith(
+            style: GoogleFonts.outfit(
+              fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -852,8 +856,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               children: [
                 Text(
                   'Where to find your key',
-                  style: theme.textTheme.titleSmall?.copyWith(
+                  style: GoogleFonts.outfit(
                     fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -881,8 +886,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       children: [
         Text(
           'What should your AI agent be called?',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w500,
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 6),
@@ -909,7 +915,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.statusGreen, width: 2),
+              borderSide: const BorderSide(color: AppColors.statusGreen, width: 1.5),
             ),
           ),
         ),
@@ -960,8 +966,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       children: [
         Text(
           'Final touches',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w500,
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 6),
@@ -1013,13 +1020,23 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               Row(
                 children: [
                   const Icon(Icons.check_circle,
-                      color: AppColors.statusGreen, size: 18),
+                      color: AppColors.statusGreen, size: 16),
                   const SizedBox(width: 8),
-                  Text(
-                    'Ready to launch',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF00C853),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusGreen.withAlpha(25),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.statusGreen.withAlpha(60)),
+                    ),
+                    child: Text(
+                      'READY TO LAUNCH',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        letterSpacing: 0.5,
+                        color: AppColors.statusGreen,
+                      ),
                     ),
                   ),
                 ],
@@ -1168,15 +1185,19 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                       ),
                       child: const Padding(
                         padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(strokeWidth: 3),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.statusGreen),
+                        ),
                       ),
                     ),
             ),
             const SizedBox(height: 32),
             Text(
               _launchComplete ? 'You\'re all set!' : 'Setting up...',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
+              style: GoogleFonts.outfit(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
                 letterSpacing: -0.5,
               ),
             ),
@@ -1184,8 +1205,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             Text(
               _launchStatus,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.statusGreen.withOpacity(0.9),
-                fontWeight: FontWeight.w600,
+                color: AppColors.statusGreen,
+                fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1209,14 +1230,14 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               FilledButton.icon(
                 onPressed: _goToDashboard,
                 icon: const Icon(Icons.dashboard_outlined, size: 20, color: Colors.black),
-                label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w800)),
+                label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.statusGreen,
                   foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 28, vertical: 14),
                   textStyle: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800),
+                      fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
             ],

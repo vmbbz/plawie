@@ -312,7 +312,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     ''', timeout: 30);
     
     _writeLog('\n🔄 Triggering gateway hot-reload...');
-    await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || true');
+    await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/openclaw reload || true');
 
     _writeLog('✅ API key and model ($modelName) synced.');
   }
