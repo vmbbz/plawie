@@ -245,7 +245,44 @@ graph TD
 
 ---
 
-## 6. Project Aegis (v2.1.0) Roadmap — Active Development
+## 6. Deep Dive: Industrial-Grade Pathing & Environment Resilience
+
+The most significant architectural challenge in embedding a Linux gateway inside Android is **Environment Leakage and Path Resolution**. In a PRoot environment, Node.js sub-processes often lose track of their binaries because they spawn sub-shells that do not inherit the Android-injected environment.
+
+### The "Triple-Layered" Defense Strategy
+
+To achieve 100% reliability for "Joes and Peters" on the Play Store, we implemented a redundant, multi-level hardening strategy:
+
+1.  **Native Hardening (Kotlin Layer)**:
+    - **BootstrapManager.kt**: During the initial rootfs configuration, we idempotently append absolute `PATH` and `NODE_OPTIONS` exports to `/root/.bashrc`.
+    - This ensures that *any* interactive or non-interactive shell spawned inside the container (even months after install) is correctly configured at the source.
+
+2.  **Service Hardening (Dart Layer)**:
+    - **BootstrapService.dart**: During both the `runFullSetup` and `repairOpenClaw` flows, the Dart side verifies the integrity of the `.bashrc` and enforces the "Industrial Grade" environment.
+    - It also triggers a silent `openclaw doctor --fix` which is the official OpenClaw 2026.5.x recommendation for stabilizing database and workspace paths.
+
+3.  **Command Hardening (Bridge Layer)**:
+    - **NativeBridge.dart**: Every single command sent through `runInProot` or `executeInShell` is prepended with an explicit environment export.
+    - **Absolute Bypass**: A regex-based interceptor (`_applyAbsoluteBypass`) scans every command for the string `openclaw` and replaces it with the absolute path to the Node.js entry point (`kOpenClawCommand`), bypassing potential symlink failures entirely.
+
+### The Dynamic Wrapper Mechanism
+
+NPM's default behavior is to create symbolic links in `/usr/local/bin`. On many Android devices, these symlinks fail silently within PRoot or are blocked by filesystem permissions.
+
+**Our Solution**: We implemented a dynamic shell-wrapper generator in `BootstrapManager.kt`.
+- It reads the `bin` field from `package.json`.
+- It creates a real shell script (`#!/bin/sh`) that explicitly calls `node` with the absolute path to the package's internal JS entry point.
+- These wrappers are more robust than symlinks and provide the "It Just Works" experience required for production.
+
+### Bionic-Bypass Universality
+
+The `bionic-bypass.js` shim is critical for patching Node.js APIs (like DNS and MAC address lookups) that fail under Android's Bionic libc.
+- We have made this bypass **universal** by injecting it into the `NODE_OPTIONS` environment variable in every execution path (`ProcessManager.kt`, `NativeBridge.dart`, and `.bashrc`).
+- This ensures that even nested sub-processes spawned by the OpenClaw gateway correctly inherit the Android compatibility patches.
+
+---
+
+## 7. Project Aegis (v2.1.0) Roadmap — Active Development
 
 We are currently transitioning from the PRoot container model to a high-performance **Hybrid glibc Migration**. This architecture retains the Flutter UI and Skills Hub but replaces the Linux userland with a lightweight glibc-runner.
 
