@@ -226,4 +226,7 @@ class PreferencesService {
       _p.remove(_keyLastApprovedRequestId);
     }
   }
+
+  bool get isSkillsEquippedNotified => _p.getBool('skills_equipped_notified') ?? false;
+  Future<void> setSkillsEquippedNotified(bool value) => _p.setBool('skills_equipped_notified', value);
 }

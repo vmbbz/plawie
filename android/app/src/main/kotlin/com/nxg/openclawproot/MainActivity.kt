@@ -85,8 +85,8 @@ class MainActivity : FlutterActivity() {
         val filesDir = applicationContext.filesDir.absolutePath
         val nativeLibDir = applicationContext.applicationInfo.nativeLibraryDir
 
-        bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir)
         processManager = ProcessManager(applicationContext, filesDir, nativeLibDir)
+        bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
 
@@ -165,6 +165,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "getBootstrapStatus" -> {
                     result.success(bootstrapManager.getBootstrapStatus())
+                }
+                "ensureOpenClawReady" -> {
+                    result.success(bootstrapManager.ensureOpenClawReady())
                 }
                 "extractRootfs" -> {
                     val tarPath = call.argument<String>("tarPath")

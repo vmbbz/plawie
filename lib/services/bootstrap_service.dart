@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'preferences_service.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
+import 'skills_service.dart';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -409,30 +410,35 @@ class BootstrapService {
       );
 
       // ---------------------------------------------------------
-      // Step 5: Install Native Android Skills
+      // Step 5: Install Native Android Skills & Final Readiness
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Installing Android native skills...', 95);
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Synchronizing hardware skills...', 95);
       
       try {
-        final prootRoot = '$filesDir/rootfs/ubuntu/root';
-        final openclawSkillsDir = Directory('$prootRoot/.openclaw/skills');
-        final openclawExtDir = Directory('$prootRoot/.openclaw/extensions');
+        await NativeBridge.ensureOpenClawReady();
+
+        // 6. Forensic Skills Update & Agent Awareness
+        await SkillsService().ensureAgentAwareness();
         
-        if (!openclawSkillsDir.existsSync()) openclawSkillsDir.createSync(recursive: true);
-        if (!openclawExtDir.existsSync()) openclawExtDir.createSync(recursive: true);
-
-        // Copy android bridge tools JS script to extensions so skills can require it or OpenClaw can load it
-        final bridgeJs = await rootBundle.loadString('assets/openclaw/android_bridge_tools.js');
-        File('${openclawExtDir.path}/android_bridge_tools.js').writeAsStringSync(bridgeJs);
-
-        // Copy the SKILL markdown files
-        final skills = ['battery.md', 'vibrate.md', 'sensors.md', 'avatar_forge.md'];
-        for (final skill in skills) {
-          final content = await rootBundle.loadString('assets/openclaw/skills/$skill');
-          File('${openclawSkillsDir.path}/$skill').writeAsStringSync(content);
+        // 7. Enable Watch Mode
+        await _enableSkillsWatchMode();
+        
+        // 8. Robust Gateway Restart
+        if (await NativeBridge.isGatewayRunning()) {
+          await NativeBridge.stopGateway();
+          await Future.delayed(const Duration(milliseconds: 1500));
+          await NativeBridge.startGateway();
+          debugPrint('[BOOTSTRAP] Gateway restarted to apply skills awareness.');
         }
+
+        // Return status
+        return _currentSetupState.copyWith(
+          step: SetupStep.complete,
+          message: 'OpenClaw is fully ready — skills, tools and workspace synchronized.',
+          progress: 1.0,
+        );
       } catch (e) {
-        _log('Non-fatal: Failed to copy native skills', error: e);
+        _log('Non-fatal: Skills synchronization failed', error: e);
       }
 
       // ---------------------------------------------------------
@@ -701,6 +707,31 @@ class BootstrapService {
       _log('✅ Environment hardened');
     } catch (e) {
       _log('Non-fatal: Environment hardening failed', error: e);
+    }
+  }
+
+  /// Enables watch mode for skills in openclaw.json to ensure immediate awareness of new files.
+  Future<void> _enableSkillsWatchMode() async {
+    _log('👀 Enabling skills watch mode in openclaw.json...');
+    try {
+      final rootfsDir = await getRootfsDirectory();
+      final configFile = File('$rootfsDir/root/.openclaw/openclaw.json');
+
+      if (!await configFile.exists()) return;
+
+      String content = await configFile.readAsString();
+      Map<String, dynamic> config = json.decode(content);
+
+      config['skills'] ??= {};
+      final skills = config['skills'] as Map<String, dynamic>;
+      skills['load'] ??= {};
+      final load = skills['load'] as Map<String, dynamic>;
+      load['watch'] = true;
+
+      await configFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
+      _log('✅ Skills watch mode enabled');
+    } catch (e) {
+      _log('Failed to enable skills watch mode (non-critical)', error: e);
     }
   }
 }

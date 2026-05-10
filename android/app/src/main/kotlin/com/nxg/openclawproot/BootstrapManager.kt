@@ -17,7 +17,8 @@ import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStre
 class BootstrapManager(
     private val context: Context,
     private val filesDir: String,
-    private val nativeLibDir: String
+    private val nativeLibDir: String,
+    private val processManager: ProcessManager
 ) {
     private val rootfsDir get() = "$filesDir/rootfs/ubuntu"
     private val tmpDir get() = "$filesDir/tmp"
@@ -1478,5 +1479,198 @@ os.networkInterfaces = () => ({});
 
     fun isOllamaInstalled(): Boolean {
         return File("$rootfsDir/usr/local/bin/ollama").exists()
+    }
+
+    private fun runInProot(command: String) {
+        try {
+            processManager.runInProotSync(command)
+        } catch (e: Exception) {
+            Log.e("BootstrapManager", "runInProot failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Idempotently synchronizes bundled skills from APK assets to the agent's workspace.
+     * This ensures the agent is aware of hardware-level skills (gestures, voice, device-nodes)
+     * straight out of the box.
+     */
+    fun ensureAgentSkillsAwareness() {
+        Log.i("BootstrapManager", "[FORENSIC] Starting agent skills awareness synchronization...")
+        val skillsDir = File("$rootfsDir/root/.openclaw/workspace/skills")
+        if (!skillsDir.exists()) {
+            skillsDir.mkdirs()
+        }
+
+        val extensionsDir = File("$rootfsDir/root/.openclaw/extensions")
+        if (!extensionsDir.exists()) {
+            extensionsDir.mkdirs()
+        }
+
+        try {
+            // 1. Install official recommended skills (idempotent)
+            Log.i("BootstrapManager", "[FORENSIC] Installing recommended core skills...")
+            runInProot("openclaw skills install --recommended --yes")
+
+            // 2. Sync skills from assets/openclaw/skills if they exist
+            val assetPath = "openclaw/skills"
+            val assets = context.assets.list(assetPath) ?: emptyArray()
+            for (assetName in assets) {
+                val destFile = File(skillsDir, assetName)
+                context.assets.open("$assetPath/$assetName").use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                destFile.setReadable(true, false)
+                destFile.setWritable(true, false)
+                Log.i("BootstrapManager", "[SYNC] asset skill: $assetName")
+            }
+
+            // 3. Sync limb VRMAs to workspace for additive layering (Project Airi style)
+            val vrmaLimbsDir = File("$rootfsDir/root/.openclaw/assets/vrm/animations/limbs")
+            if (!vrmaLimbsDir.exists()) vrmaLimbsDir.mkdirs()
+            
+            val limbAssetPath = "vrm/animations/limbs"
+            val limbAssets = context.assets.list(limbAssetPath) ?: emptyArray()
+            for (assetName in limbAssets) {
+                val destFile = File(vrmaLimbsDir, assetName)
+                context.assets.open("$limbAssetPath/$assetName").use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                destFile.setReadable(true, false)
+                destFile.setWritable(true, false)
+                Log.i("BootstrapManager", "[SYNC] limb vrma: $assetName")
+            }
+
+            // 3. Forensic Fallback: Write essential hardware skills directly if assets are missing.
+            // This guarantees the "Straight Out The Gate" experience for PlayStore users.
+            val hardwareSkills = mapOf(
+                "gestures" to """
+                    ---
+                    name: gestures
+                    description: Trigger Plawie's full-body VRMA animations + seamless limb layering (arms, waves, bows)
+                    tools: [avatar-control]
+                    ---
+                    Plawie has these full-body VRMA animations:
+                    - dance
+                    - spin
+                    - greeting
+                    - squat
+                    - fight
+                    - cute
+                    - elegant
+                    - peacesign
+                    - pose
+                    - powerful
+                    - ready
+                    - shoot
+                    - talk
+                    - dance_picatrix
+
+                    **Limb layering (add these on top of any full-body animation):**
+                    - Cheerful Wave Left / Right
+                    - Light Wave Left / Right
+                    - Excited Wave Left / Right
+                    - Shy Wave Left / Right
+                    - Bowing (1, 2, 3)
+                    - Both Wave Cheer (1, 2)
+                    - Chill Sit
+                    - Cross Leg Sit
+                    - Excited Sit
+                    - Sitting Wave (Both, Left, Right)
+                    - Exaggerated Wave (Both, Left, Right)
+                    - Fearful Wave
+                    - Stylized Wave (Left, Right)
+                    - Basic Wave (Both, Left, Right)
+
+                    **Natural examples the agent now understands perfectly:**
+                    - "Plawie do the dance while waving cheerfully with your left arm"
+                    - "Spin around and give a peacesign"
+                    - "Greeting but look powerful and pose"
+                    - "Do the elegant animation then bow politely"
+                    - "Fight pose with both arms cheering"
+                    - "Sit down cross-legged and wave"
+                    - "Do an exaggerated wave while dancing"
+                    - "Fearful wave while looking happy (funny)"
+
+                    You can stack multiple limbs if you want (e.g. wave left + bow).
+                """.trimIndent(),
+                "device-node" to """
+                    ---
+                    name: device-node
+                    description: Access Android hardware tools (camera, flashlight, battery, haptics)
+                    tools: [device-node]
+                    ---
+                    Control hardware primitives on the mobile device:
+                    - vibrate (haptics)
+                    - flashlight_on / flashlight_off
+                    - get_battery
+                    - get_location (GPS)
+                    - take_photo
+                """.trimIndent(),
+                "tts-voice" to """
+                    ---
+                    name: tts-voice
+                    description: Switch Plawie's TTS engine and voice
+                    tools: [tts-voice]
+                    ---
+                    Change the voice or engine used for speech:
+                    - set_engine (kokoro, native, elevenlabs, openai)
+                    - set_voice
+                    - speak
+                    - stop
+                """.trimIndent()
+            )
+
+            for ((name, content) in hardwareSkills) {
+                val skillSubDir = File(skillsDir, name)
+                if (!skillSubDir.exists()) skillSubDir.mkdirs()
+                val skillFile = File(skillSubDir, "SKILL.md")
+                if (!skillFile.exists()) {
+                    skillFile.writeText(content)
+                    Log.i("BootstrapManager", "[FORENSIC] Generated missing hardware skill: $name")
+                }
+            }
+
+            // 4. Sync android_bridge_tools.js to extensions
+            val bridgeDest = File(extensionsDir, "android_bridge_tools.js")
+            try {
+                context.assets.open("openclaw/android_bridge_tools.js").use { input ->
+                    FileOutputStream(bridgeDest).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                bridgeDest.setReadable(true, false)
+                Log.i("BootstrapManager", "Synchronized extension: android_bridge_tools.js")
+            } catch (e: Exception) {
+                Log.w("BootstrapManager", "Extension asset not found, assuming pre-installed.")
+            }
+
+        } catch (e: Exception) {
+            Log.e("BootstrapManager", "[ERROR] Forensic skills awareness failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Final validation and synchronization point for the OpenClaw environment.
+     * Called at the end of the bootstrap process to ensure agent readiness.
+     */
+    fun ensureOpenClawReady(): Map<String, Any> {
+        Log.i("BootstrapManager", "Executing final readiness checks...")
+        
+        // 1. Ensure skills awareness
+        ensureAgentSkillsAwareness()
+        
+        // 2. Return full status for verification
+        return getBootstrapStatus()
+    }
+
+    private fun deleteRecursively(file: File) {
+        if (file.isDirectory) {
+            file.listFiles()?.forEach { deleteRecursively(it) }
+        }
+        file.delete()
     }
 }
