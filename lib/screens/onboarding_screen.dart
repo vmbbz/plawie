@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'dart:ui';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
@@ -344,43 +346,92 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('OPENCLAW SETUP', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, letterSpacing: 2)),
-        automaticallyImplyLeading: !widget.isFirstRun,
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          Column(
+            children: [
+              // Blurred app bar
+              ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    child: SafeArea(
+                      bottom: false,
+                      child: SizedBox(
+                        height: 56,
+                        child: Row(
+                          children: [
+                            if (!widget.isFirstRun)
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white70, size: 18),
+                                onPressed: () => Navigator.of(context).pop(),
+                              )
+                            else
+                              const SizedBox(width: 16),
+                            Expanded(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SvgPicture.asset('assets/app_icon_official.svg', width: 18, height: 18,
+                                      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+                                  const SizedBox(width: 10),
+                                  Text('OPENCLAW SETUP',
+                                      style: GoogleFonts.outfit(
+                                        fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2.5, color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 48),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Styled TabBar
+              Container(
+                color: Colors.black.withValues(alpha: 0.4),
+                child: TabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    Tab(text: 'TERMINAL'),
+                    Tab(text: 'QUICK SETUP'),
+                  ],
+                  indicatorColor: AppColors.statusGreen,
+                  indicatorWeight: 2,
+                  labelColor: AppColors.statusGreen,
+                  unselectedLabelColor: Colors.white38,
+                  labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5),
+                  unselectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 11, letterSpacing: 1.5),
+                ),
+              ),
+              Expanded(
+                child: _buildBody(),
+              ),
+            ],
+          ),
+        ],
       ),
-      body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(color: AppColors.statusGreen));
     }
-    
     if (_error != null) {
-      return Center(child: Text('Error: $_error'));
+      return Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.white70)));
     }
-
-    return Column(
+    return TabBarView(
+      controller: _tabController,
       children: [
-        TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'TERMINAL'),
-            Tab(text: 'QUICK SETUP'),
-          ],
-          indicatorColor: AppColors.statusGreen,
-          labelColor: AppColors.statusGreen,
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildTerminalTab(),
-              _buildQuickSetupTab(),
-            ],
-          ),
-        ),
+        _buildTerminalTab(),
+        _buildQuickSetupTab(),
       ],
     );
   }
@@ -391,12 +442,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       child: Column(
         children: [
           Expanded(
-            child: Container(
+            child: GlassCard(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(12),
-              ),
               child: ListView.builder(
                 controller: _scrollController,
                 itemCount: _logs.length,
@@ -431,9 +478,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(
         text, 

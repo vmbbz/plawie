@@ -24,6 +24,19 @@ import 'help_screen.dart';
 import 'management/bot_management_dashboard.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+/// Zoom-in page transition — cards feel like they're flying into the new screen.
+Route<T> _zoomRoute<T>(Widget page) => PageRouteBuilder<T>(
+  transitionDuration: const Duration(milliseconds: 360),
+  pageBuilder: (_, __, ___) => page,
+  transitionsBuilder: (_, anim, __, child) {
+    final curve = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+    return FadeTransition(
+      opacity: curve,
+      child: ScaleTransition(scale: Tween(begin: 0.88, end: 1.0).animate(curve), child: child),
+    );
+  },
+);
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -133,7 +146,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               blobSeed: 0,
                               enabled: gwState.isRunning,
                               onTap: gwState.isRunning
-                                  ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatScreen()))
+                                  ? () => Navigator.of(context).push(_zoomRoute(const ChatScreen()))
                                   : null,
                             ),
                             _BlobDashCard(
@@ -143,7 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: const Color(0xFF0052FF),
                               widthFactor: 0.48,
                               blobSeed: 1,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BaseScreen())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const BaseScreen())),
                             ),
                             _BlobDashCard(
                               title: 'Terminal',
@@ -152,7 +165,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: Colors.cyanAccent,
                               widthFactor: 0.48,
                               blobSeed: 2,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TerminalScreen())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const TerminalScreen())),
                             ),
                             _BlobDashCard(
                               title: 'Web Dashboard',
@@ -165,14 +178,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                               onTap: gwState.isRunning ? () async {
                                 final currentUrl = gwState.dashboardUrl;
                                 if (currentUrl != null && currentUrl.contains('token=')) {
-                                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: currentUrl)));
+                                  Navigator.of(context).push(_zoomRoute(WebDashboardScreen(url: currentUrl)));
                                   return;
                                 }
                                 showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
                                 final url = await provider.fetchAuthenticatedDashboardUrl();
                                 if (context.mounted) {
                                   Navigator.of(context).pop();
-                                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)));
+                                  Navigator.of(context).push(_zoomRoute(WebDashboardScreen(url: url)));
                                 }
                               } : null,
                             ),
@@ -183,7 +196,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: Colors.tealAccent,
                               widthFactor: 0.48,
                               blobSeed: 4,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotManagementDashboard())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const BotManagementDashboard())),
                             ),
                             Consumer<NodeProvider>(
                               builder: (context, nodeProvider, _) => _BlobDashCard(
@@ -193,7 +206,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 iconColor: Colors.white60,
                                 widthFactor: 0.48,
                                 blobSeed: 5,
-                                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NodeScreen())),
+                                onTap: () => Navigator.of(context).push(_zoomRoute(const NodeScreen())),
                               ),
                             ),
                             _BlobDashCard(
@@ -236,7 +249,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: Colors.orangeAccent,
                               widthFactor: 0.48,
                               blobSeed: 7,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OnboardingScreen())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const OnboardingScreen())),
                             ),
                             _BlobDashCard(
                               title: 'Help',
@@ -245,7 +258,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: Colors.white70,
                               widthFactor: 0.48,
                               blobSeed: 8,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const HelpScreen())),
                             ),
                             _BlobDashCard(
                               title: 'Logs',
@@ -254,7 +267,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: Colors.white54,
                               widthFactor: 0.48,
                               blobSeed: 9,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogsScreen())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const LogsScreen())),
                             ),
                             _BlobDashCard(
                               title: 'Packages',
@@ -263,7 +276,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               iconColor: Colors.purpleAccent,
                               widthFactor: 0.48,
                               blobSeed: 10,
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PackagesScreen())),
+                              onTap: () => Navigator.of(context).push(_zoomRoute(const PackagesScreen())),
                             ),
                           ],
                         );
@@ -432,7 +445,33 @@ class _BlobDashCard extends StatefulWidget {
 
 class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMixin {
   late AnimationController _blobCtrl; // slow organic morph
-  late AnimationController _tapCtrl;  // fast tap feedback
+  late AnimationController _tapCtrl;  // fast tap scale feedback
+
+  // Physics float state
+  Offset _floatOffset = Offset.zero;
+  Offset _floatVelocity = Offset.zero;
+  static const double _stiffness = 80.0;   // spring pull toward zero
+  static const double _damping = 14.0;     // air resistance
+  static const double _idleAmplitude = 2.5; // px, very subtle hover
+
+  void _tick() {
+    if (!mounted) return;
+    final dt = 1 / 60;
+    final seed = widget.blobSeed.toDouble();
+    final t = _blobCtrl.value;
+
+    // Idle sinusoidal float — unique phase per card
+    final idleX = _idleAmplitude * math.sin(t * 2 * math.pi + seed * 1.1);
+    final idleY = _idleAmplitude * math.cos(t * 2 * math.pi * 0.7 + seed * 0.8);
+    final idleTarget = Offset(idleX, idleY);
+
+    // Spring toward idle position
+    final springForce = (idleTarget - _floatOffset) * _stiffness;
+    _floatVelocity = (_floatVelocity + springForce * dt) * (1.0 - _damping * dt).clamp(0.0, 1.0);
+    _floatOffset = _floatOffset + _floatVelocity * dt;
+
+    setState(() {});
+  }
 
   @override
   void initState() {
@@ -443,6 +482,7 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
       vsync: this,
       duration: Duration(milliseconds: (speed * 1000).toInt()),
     )..repeat();
+    _blobCtrl.addListener(_tick);
     _tapCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 130));
   }
 
@@ -467,7 +507,13 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
         onTapUp: (_) => _tapCtrl.reverse(),
         onTapCancel: () => _tapCtrl.reverse(),
         onTap: widget.onTap,
-        child: ScaleTransition(
+        onPanUpdate: (d) {
+          // Nudge velocity on drag — spring will pull it back
+          _floatVelocity += d.delta * 2.5;
+        },
+        child: Transform.translate(
+          offset: _floatOffset,
+          child: ScaleTransition(
           scale: _tapCtrl.drive(
             Tween(begin: 1.0, end: 0.93).chain(CurveTween(curve: Curves.easeOutCubic)),
           ),
@@ -545,6 +591,7 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                     ),
             ),
           ),
+        ),
         ),
       ),
     );

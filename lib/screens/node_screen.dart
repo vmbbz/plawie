@@ -1,10 +1,14 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../app.dart';
 import '../providers/node_provider.dart';
 import '../services/preferences_service.dart';
 import '../widgets/node_controls.dart';
+import '../widgets/glass_card.dart';
 import '../models/node_state.dart';
 
 class NodeScreen extends StatefulWidget {
@@ -52,290 +56,368 @@ class _NodeScreenState extends State<NodeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Node Configuration')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<NodeProvider>(
-              builder: (context, provider, _) {
-                final state = provider.state;
-
-                return ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    const NodeControls(),
-                    const SizedBox(height: 16),
-
-                    // Gateway Connection
-                    _sectionHeader(theme, 'GATEWAY CONNECTION'),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            RadioListTile<bool>(
-                              title: const Text('Local Gateway'),
-                              subtitle: const Text('Auto-pair with gateway on this device'),
-                              value: true,
-                              groupValue: _isLocal,
-                              onChanged: (value) {
-                                setState(() => _isLocal = value!);
-                              },
-                            ),
-                            RadioListTile<bool>(
-                              title: const Text('Remote Gateway'),
-                              subtitle: const Text('Connect to a gateway on another device'),
-                              value: false,
-                              groupValue: _isLocal,
-                              onChanged: (value) {
-                                setState(() => _isLocal = value!);
-                              },
-                            ),
-                            if (!_isLocal) ...[
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _hostController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Gateway Host',
-                                  hintText: '192.168.1.100',
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _portController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Gateway Port',
-                                  hintText: '18789',
-                                ),
-                                keyboardType: TextInputType.number,
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _tokenController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Gateway Token',
-                                  hintText: 'Paste token from gateway dashboard URL',
-                                  helperText: 'Found in dashboard URL after #token=',
-                                  prefixIcon: Icon(Icons.key),
-                                ),
-                                obscureText: true,
-                              ),
-                              const SizedBox(height: 12),
-                              FilledButton.icon(
-                                onPressed: () {
-                                  final host = _hostController.text.trim();
-                                  final port = int.tryParse(_portController.text.trim()) ?? 18789;
-                                  final token = _tokenController.text.trim();
-                                  if (host.isNotEmpty) {
-                                    provider.connectRemote(host, port,
-                                        token: token.isNotEmpty ? token : null);
-                                  }
-                                },
-                                icon: const Icon(Icons.link),
-                                label: const Text('Connect'),
-                              ),
-                            ] else if (state.status == NodeStatus.error || (state.logs.isNotEmpty && state.logs.last.contains('TOKEN_INVALID'))) ...[
-                               const SizedBox(height: 12),
-                               OutlinedButton.icon(
-                                 onPressed: () => provider.refreshToken(),
-                                 icon: const Icon(Icons.refresh),
-                                 label: const Text('Refresh Local Token'),
-                                 style: OutlinedButton.styleFrom(
-                                   foregroundColor: theme.colorScheme.error,
-                                   side: BorderSide(color: theme.colorScheme.error),
-                                 ),
-                               ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Pairing Status
-                    if (state.pairingCode != null) ...[
-                      _sectionHeader(theme, 'PAIRING'),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              const Icon(Icons.qr_code, size: 48),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Approve this code on the gateway:',
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                              const SizedBox(height: 8),
-                              SelectableText(
-                                state.pairingCode!,
-                                style: theme.textTheme.headlineMedium?.copyWith(
-                                  fontFamily: 'monospace',
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    // Capabilities
-                    _sectionHeader(theme, 'CAPABILITIES'),
-                    _capabilityTile(
-                      theme,
-                      'Camera',
-                      'Capture photos and video clips',
-                      Icons.camera_alt,
-                    ),
-                    _capabilityTile(
-                      theme,
-                      'Canvas',
-                      'Navigate and interact with web pages',
-                      Icons.web,
-                    ),
-                    _capabilityTile(
-                      theme,
-                      'Location',
-                      'Get device GPS coordinates',
-                      Icons.location_on,
-                    ),
-                    _capabilityTile(
-                      theme,
-                      'Screen Recording',
-                      'Record device screen (requires consent each time)',
-                      Icons.screen_share,
-                    ),
-                    _capabilityTile(
-                      theme,
-                      'Flashlight',
-                      'Toggle device torch on/off',
-                      Icons.flashlight_on,
-                    ),
-                    _capabilityTile(
-                      theme,
-                      'Vibration',
-                      'Trigger haptic feedback and vibration patterns',
-                      Icons.vibration,
-                    ),
-                    _capabilityTile(
-                      theme,
-                      'Sensors',
-                      'Read accelerometer, gyroscope, magnetometer, barometer',
-                      Icons.sensors,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Device Info
-                    if (state.deviceId != null) ...[
-                      _sectionHeader(theme, 'DEVICE INFO'),
-                      ListTile(
-                        title: const Text('Device ID'),
-                        subtitle: SelectableText(
-                          state.deviceId!,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                        ),
-                        leading: const Icon(Icons.fingerprint),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-
-                    // Logs
-                    _sectionHeader(
-                      theme, 
-                      'NODE LOGS',
-                      trailing: IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.copy_all, size: 16),
-                        onPressed: () {
-                          if (state.logs.isNotEmpty) {
-                            Clipboard.setData(ClipboardData(text: state.logs.join('\n')));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Logs copied to clipboard'),
-                                behavior: SnackBarBehavior.floating,
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          }
-                        },
-                        tooltip: 'Copy all logs',
-                      ),
-                    ),
-                    Card(
-                      child: Container(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          CustomScrollView(
+            slivers: [
+              _buildAppBar(context),
+              SliverToBoxAdapter(
+                child: _loading
+                    ? const SizedBox(
                         height: 200,
-                        padding: const EdgeInsets.all(12),
-                        child: state.logs.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No logs yet',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
+                        child: Center(child: CircularProgressIndicator(color: AppColors.statusGreen)),
+                      )
+                    : Consumer<NodeProvider>(
+                        builder: (context, provider, _) {
+                          final state = provider.state;
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 48),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Node status card
+                                const NodeControls(),
+                                const SizedBox(height: 20),
+
+                                _sectionLabel('GATEWAY CONNECTION'),
+                                const SizedBox(height: 10),
+                                GlassCard(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Column(
+                                    children: [
+                                      _glassRadio('Local Gateway', 'Auto-pair with gateway on this device', true, state),
+                                      _glassRadio('Remote Gateway', 'Connect to a gateway on another device', false, state),
+                                      if (!_isLocal) ...[
+                                        const SizedBox(height: 14),
+                                        _darkField(_hostController, 'Gateway Host', '192.168.1.100', Icons.dns_rounded),
+                                        const SizedBox(height: 10),
+                                        _darkField(_portController, 'Gateway Port', '18789', Icons.router_rounded, isNumber: true),
+                                        const SizedBox(height: 10),
+                                        _darkField(_tokenController, 'Gateway Token', 'Paste token from dashboard URL', Icons.key_rounded, obscure: true),
+                                        const SizedBox(height: 14),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: _primaryBtn(
+                                            'CONNECT',
+                                            Icons.link_rounded,
+                                            AppColors.statusGreen,
+                                            () {
+                                              final host = _hostController.text.trim();
+                                              final port = int.tryParse(_portController.text.trim()) ?? 18789;
+                                              final token = _tokenController.text.trim();
+                                              if (host.isNotEmpty) {
+                                                provider.connectRemote(host, port, token: token.isNotEmpty ? token : null);
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ] else if (state.status == NodeStatus.error ||
+                                          (state.logs.isNotEmpty && state.logs.last.contains('TOKEN_INVALID'))) ...[
+                                        const SizedBox(height: 12),
+                                        _primaryBtn('REFRESH LOCAL TOKEN', Icons.refresh_rounded, AppColors.statusAmber, () => provider.refreshToken()),
+                                      ],
+                                    ],
                                   ),
                                 ),
-                              )
-                            : ListView.builder(
-                                reverse: true,
-                                itemCount: state.logs.length,
-                                itemBuilder: (context, index) {
-                                  final log = state.logs[state.logs.length - 1 - index];
-                                  return Text(
-                                    log,
-                                    style: const TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontSize: 11,
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-    );
-  }
 
-  Widget _sectionHeader(ThemeData theme, String title, {Widget? trailing}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.2,
-            ),
+                                if (state.pairingCode != null) ...[
+                                  const SizedBox(height: 20),
+                                  _sectionLabel('PAIRING CODE'),
+                                  const SizedBox(height: 10),
+                                  GlassCard(
+                                    accentColor: AppColors.statusAmber,
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.qr_code_2_rounded, color: AppColors.statusAmber, size: 48),
+                                        const SizedBox(height: 12),
+                                        Text('Approve this code on the gateway:', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+                                        const SizedBox(height: 12),
+                                        SelectableText(
+                                          state.pairingCode!,
+                                          style: GoogleFonts.firaCode(
+                                            fontSize: 26,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.statusAmber,
+                                            letterSpacing: 6,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+
+                                const SizedBox(height: 20),
+                                _sectionLabel('CAPABILITIES'),
+                                const SizedBox(height: 10),
+                                _capabilitiesGrid(),
+
+                                if (state.deviceId != null) ...[
+                                  const SizedBox(height: 20),
+                                  _sectionLabel('DEVICE IDENTITY'),
+                                  const SizedBox(height: 10),
+                                  GlassCard(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.06),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: const Icon(Icons.fingerprint, color: Colors.white54, size: 20),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: SelectableText(
+                                            state.deviceId!,
+                                            style: GoogleFonts.firaCode(fontSize: 11, color: Colors.white54),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+
+                                const SizedBox(height: 20),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _sectionLabel('NODE LOGS'),
+                                    GestureDetector(
+                                      onTap: () {
+                                        if (state.logs.isNotEmpty) {
+                                          Clipboard.setData(ClipboardData(text: state.logs.join('\n')));
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Logs copied'), duration: Duration(seconds: 1)),
+                                          );
+                                        }
+                                      },
+                                      child: Icon(Icons.copy_all_rounded, size: 16, color: Colors.white38),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                GlassCard(
+                                  padding: const EdgeInsets.all(14),
+                                  child: SizedBox(
+                                    height: 180,
+                                    child: state.logs.isEmpty
+                                        ? Center(child: Text('No logs yet', style: TextStyle(color: Colors.white24, fontSize: 13)))
+                                        : ListView.builder(
+                                            reverse: true,
+                                            itemCount: state.logs.length,
+                                            itemBuilder: (context, index) {
+                                              final log = state.logs[state.logs.length - 1 - index];
+                                              return Text(
+                                                log,
+                                                style: GoogleFonts.firaCode(fontSize: 10, color: Colors.white54),
+                                              );
+                                            },
+                                          ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
-          if (trailing != null) trailing,
         ],
       ),
     );
   }
 
-  Widget _capabilityTile(
-      ThemeData theme, String title, String subtitle, IconData icon) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(
-          Icons.check_circle,
-          color: AppColors.statusGreen,
-          size: 20,
+  Widget _buildAppBar(BuildContext context) {
+    return SliverAppBar(
+      expandedHeight: 90,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white70, size: 18),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset('assets/app_icon_official.svg', width: 18, height: 18,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+          const SizedBox(width: 10),
+          Text('NODE', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 3.0, color: Colors.white)),
+        ],
+      ),
+      centerTitle: true,
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: FlexibleSpaceBar(background: Container(color: Colors.black.withValues(alpha: 0.2))),
         ),
       ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.outfit(
+        fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2.0,
+        color: AppColors.statusGreen.withValues(alpha: 0.75),
+      ),
+    );
+  }
+
+  Widget _glassRadio(String title, String subtitle, bool value, NodeState state) {
+    final isSelected = _isLocal == value;
+    return GestureDetector(
+      onTap: () => setState(() => _isLocal = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? AppColors.statusGreen.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.04),
+          border: Border.all(
+            color: isSelected ? AppColors.statusGreen.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.08),
+            width: isSelected ? 1.2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 18, height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? AppColors.statusGreen : Colors.transparent,
+                border: Border.all(
+                  color: isSelected ? AppColors.statusGreen : Colors.white24,
+                  width: 2,
+                ),
+              ),
+              child: isSelected ? const Icon(Icons.check, size: 10, color: Colors.black) : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(subtitle, style: TextStyle(color: Colors.white38, fontSize: 11)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _darkField(TextEditingController ctrl, String label, String hint, IconData icon,
+      {bool isNumber = false, bool obscure = false}) {
+    return TextField(
+      controller: ctrl,
+      obscureText: obscure,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      style: GoogleFonts.firaCode(color: Colors.white70, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: TextStyle(color: Colors.white38, fontSize: 12),
+        hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+        prefixIcon: Icon(icon, color: Colors.white30, size: 18),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.statusGreen, width: 1.2),
+        ),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.04),
+        isDense: true,
+      ),
+    );
+  }
+
+  Widget _primaryBtn(String label, IconData icon, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(colors: [color, color.withValues(alpha: 0.75)]),
+          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Text(label, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1.2)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _capabilitiesGrid() {
+    const caps = [
+      (Icons.camera_alt_rounded, 'Camera', 'Capture photos & clips', AppColors.statusGreen),
+      (Icons.web_rounded, 'Canvas', 'Navigate web pages', Colors.blueAccent),
+      (Icons.location_on_rounded, 'Location', 'GPS coordinates', Colors.orangeAccent),
+      (Icons.screen_share_rounded, 'Screen', 'Record device display', Colors.cyanAccent),
+      (Icons.flashlight_on_rounded, 'Torch', 'Toggle flashlight', AppColors.statusAmber),
+      (Icons.vibration_rounded, 'Haptics', 'Vibration patterns', Colors.purpleAccent),
+      (Icons.sensors_rounded, 'Sensors', 'Accel · Gyro · Mag', Colors.tealAccent),
+    ];
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: caps.map((c) {
+        return SizedBox(
+          width: (MediaQuery.of(context).size.width - 50) / 2,
+          child: GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            accentColor: c.$4,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: c.$4.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(c.$1, color: c.$4, size: 16),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c.$2, style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      Text(c.$3, style: TextStyle(color: Colors.white38, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.check_circle_rounded, color: AppColors.statusGreen, size: 14),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

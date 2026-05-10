@@ -1,10 +1,14 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../app.dart';
 import '../models/optional_package.dart';
 import '../services/package_service.dart';
+import '../widgets/glass_card.dart';
 import 'package_install_screen.dart';
 
-/// Lists all optional packages with install/uninstall actions.
+/// Lists all optional packages with install/uninstall actions — dark glass redesign.
 class PackagesScreen extends StatefulWidget {
   const PackagesScreen({super.key});
 
@@ -32,42 +36,27 @@ class _PackagesScreenState extends State<PackagesScreen> {
     }
   }
 
-  Future<void> _navigateToInstall(
-    OptionalPackage package, {
-    bool isUninstall = false,
-  }) async {
+  Future<void> _navigateToInstall(OptionalPackage package, {bool isUninstall = false}) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => PackageInstallScreen(
-          package: package,
-          isUninstall: isUninstall,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => PackageInstallScreen(package: package, isUninstall: isUninstall)),
     );
-    if (result == true) {
-      _refreshStatuses();
-    }
+    if (result == true) _refreshStatuses();
   }
 
   void _confirmUninstall(OptionalPackage package) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Uninstall ${package.name}?'),
-        content: Text(
-          'This will remove ${package.name} from the environment.',
-        ),
+        backgroundColor: const Color(0xFF0E0E14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Uninstall ${package.name}?', style: const TextStyle(color: Colors.white)),
+        content: Text('This will remove ${package.name} from the environment.',
+            style: const TextStyle(color: Colors.white60)),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _navigateToInstall(package, isUninstall: true);
-            },
-            child: const Text('Uninstall'),
+            onPressed: () { Navigator.pop(ctx); _navigateToInstall(package, isUninstall: true); },
+            child: Text('Uninstall', style: TextStyle(color: AppColors.statusRed)),
           ),
         ],
       ),
@@ -76,110 +65,200 @@ class _PackagesScreenState extends State<PackagesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final installedCount = _statuses.values.where((v) => v).length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Optional Packages')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  'Development tools you can install inside the Ubuntu environment.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          CustomScrollView(
+            slivers: [
+              _buildAppBar(context, installedCount),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 48),
+                  child: _loading
+                      ? const SizedBox(height: 200, child: Center(child: CircularProgressIndicator(color: AppColors.statusGreen)))
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Summary strip
+                            GlassCard(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                              accentColor: AppColors.statusGreen,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.extension_rounded, color: AppColors.statusGreen, size: 20),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Development tools for the Ubuntu PRoot environment.',
+                                      style: GoogleFonts.outfit(color: Colors.white.withValues(alpha: 0.7), fontSize: 13, height: 1.4),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.statusGreen.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      '$installedCount / ${OptionalPackage.all.length}',
+                                      style: GoogleFonts.outfit(color: AppColors.statusGreen, fontSize: 11, fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Text('AVAILABLE PACKAGES',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2.0,
+                                  color: AppColors.statusGreen.withValues(alpha: 0.75),
+                                )),
+                            const SizedBox(height: 12),
+                            ...OptionalPackage.all.map((pkg) => _buildPackageCard(pkg)),
+                          ],
+                        ),
                 ),
-                const SizedBox(height: 16),
-                for (final pkg in OptionalPackage.all)
-                  _buildPackageCard(theme, pkg, isDark),
-              ],
-            ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildPackageCard(ThemeData theme, OptionalPackage package, bool isDark) {
-    final installed = _statuses[package.id] ?? false;
-    final iconBg = isDark ? AppColors.darkSurfaceAlt : const Color(0xFFF3F4F6);
+  Widget _buildAppBar(BuildContext context, int installedCount) {
+    return SliverAppBar(
+      expandedHeight: 90,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white70, size: 18),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset('assets/app_icon_official.svg', width: 18, height: 18,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+          const SizedBox(width: 10),
+          Text('PACKAGES', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 3.0, color: Colors.white)),
+        ],
+      ),
+      centerTitle: true,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded, color: Colors.white54, size: 20),
+          onPressed: () { setState(() => _loading = true); _refreshStatuses(); },
+        ),
+      ],
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: FlexibleSpaceBar(background: Container(color: Colors.black.withValues(alpha: 0.2))),
+        ),
+      ),
+    );
+  }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+  Widget _buildPackageCard(OptionalPackage package) {
+    final installed = _statuses[package.id] ?? false;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassCard(
+        padding: const EdgeInsets.all(18),
+        accentColor: installed ? AppColors.statusGreen : null,
         child: Row(
           children: [
+            // Icon container
             Container(
-              width: 48,
-              height: 48,
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
-                color: iconBg,
+                color: (installed ? AppColors.statusGreen : Colors.white).withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: (installed ? AppColors.statusGreen : Colors.white).withValues(alpha: 0.15),
+                ),
               ),
-              child: Icon(package.icon, color: theme.colorScheme.onSurfaceVariant),
+              child: Icon(package.icon,
+                  color: installed ? AppColors.statusGreen : Colors.white54, size: 20),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
+            // Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Text(
-                        package.name,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      Text(package.name,
+                          style: GoogleFonts.outfit(
+                              color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
                       if (installed) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.statusGreen.withAlpha(25),
-                            borderRadius: BorderRadius.circular(12),
+                            color: AppColors.statusGreen.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
                           ),
-                          child: Text(
-                            'Installed',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: AppColors.statusGreen,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          child: Text('INSTALLED',
+                              style: GoogleFonts.outfit(
+                                  color: AppColors.statusGreen, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
                         ),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    package.description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  const SizedBox(height: 3),
+                  Text(package.description,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, height: 1.4)),
                   const SizedBox(height: 2),
-                  Text(
-                    package.estimatedSize,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  Text(package.estimatedSize,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10)),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
+            // Action button
             installed
-                ? OutlinedButton(
-                    onPressed: () => _confirmUninstall(package),
-                    child: const Text('Uninstall'),
+                ? GestureDetector(
+                    onTap: () => _confirmUninstall(package),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.statusRed.withValues(alpha: 0.4)),
+                        color: AppColors.statusRed.withValues(alpha: 0.06),
+                      ),
+                      child: Text('Remove',
+                          style: GoogleFonts.outfit(color: AppColors.statusRed, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ),
                   )
-                : FilledButton(
-                    onPressed: () => _navigateToInstall(package),
-                    child: const Text('Install'),
+                : GestureDetector(
+                    onTap: () => _navigateToInstall(package),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        gradient: LinearGradient(colors: [
+                          AppColors.statusGreen,
+                          AppColors.statusGreen.withValues(alpha: 0.75),
+                        ]),
+                        boxShadow: [BoxShadow(color: AppColors.statusGreen.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
+                      ),
+                      child: Text('Install',
+                          style: GoogleFonts.outfit(color: Colors.black, fontSize: 11, fontWeight: FontWeight.w800)),
+                    ),
                   ),
           ],
         ),
