@@ -194,7 +194,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       try {
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          '/usr/local/bin/openclaw doctor --non-interactive 2>&1 | tail -5 || true',
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --non-interactive 2>&1 | tail -5 || true',
           timeout: 15,
         );
       } catch (_) {
