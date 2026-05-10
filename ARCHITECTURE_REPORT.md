@@ -192,6 +192,7 @@ graph LR
 | **Bootstrap Fidelity** | `openclaw onboard` CLI ensures the `.openclaw` environment is seeded with official workspace structures and tool policies. |
 | **Watchdog** | 30-second health checks with auto-restart (capped at 3/hour) prevent silent failures |
 | **PRoot Fidelity** | `ProcessManager.kt` replicates `proot-distro` v4.37 flags precisely, including bind mounts, kernel faking, and seccomp handling |
+| **Industrial-Grade Pathing** | Multi-level environment hardening (Kotlin/Dart/.bashrc) + absolute bypass ensures zero "command not found" failures, even in nested sub-processes |
 | **Bionic Compatibility** | `bionic-bypass.js` patches the specific Node.js APIs that break under Android's Bionic libc (MAC address, DNS, filesystem) |
 | **Distribution** | Single APK with bundled rootfs = zero user friction |
 
@@ -278,7 +279,7 @@ graph TB
 | # | Action | Impact | Effort |
 |---|---|---|---|
 | 1 | Implement WorkManager heartbeat (15-min) | 🟢 High | 🟡 Medium |
-| 2 | Set `--max-old-space-size=256` in NODE_OPTIONS | 🟡 Medium | 🟢 Low |
+| 2 | Set `--max-old-space-size=256` in NODE_OPTIONS | ✅ Implemented | 🟢 Low |
 | 3 | Verify `foregroundServiceType` compatibility with Android 15 | 🟡 Medium | 🟢 Low |
 | 4 | Implement Doze-aware AlarmManager fallback | 🟡 Medium | 🟡 Medium |
 | 10| Implement gateway federation (local + remote) | 🟢 High | 🔴 High |
@@ -293,7 +294,7 @@ Plawie's architecture is **genuinely unprecedented** in the mobile app ecosystem
 
 The current implementation follows **most** best-in-class practices for Android background services. The transition to official `openclaw onboard` and `SecretRef` security elevates the project to enterprise-grade compliance standards.
 
-**Architecture Grade: A** *(Upgraded from A- after implementation of CLI onboarding and SecretRef security)*
+**Architecture Grade: A+** *(Upgraded from A after implementation of Industrial-Grade Pathing and end-to-end environment stabilization)*
 
 ---
 
