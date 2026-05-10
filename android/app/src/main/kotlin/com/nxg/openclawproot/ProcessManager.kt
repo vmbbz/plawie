@@ -163,6 +163,8 @@ class ProcessManager(
         // NOTE: --sysvipc is NOT used during install (matches proot-distro).
         // It causes SIGABRT when dpkg forks child processes.
 
+        val nodeOptions = "--require /root/.openclaw/bionic-bypass.js"
+
         // Guest environment via env -i (matching proot-distro's run_proot_cmd)
         flags.addAll(listOf(
             "/usr/bin/env", "-i",
@@ -171,6 +173,7 @@ class ProcessManager(
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "TERM=xterm-256color",
             "TMPDIR=/tmp",
+            "NODE_OPTIONS=$nodeOptions",
             "DEBIAN_FRONTEND=noninteractive",
             // npm cache location (mkdir broken in proot, pre-created by Java)
             "npm_config_cache=/tmp/npm-cache",

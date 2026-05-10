@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -13,6 +14,8 @@ import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
+import 'bootstrap_service.dart';
+import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
@@ -1704,9 +1707,7 @@ PARAMETER num_batch 512
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-        'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js dashboard --no-open',
+        '$kOpenClawCommand dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);

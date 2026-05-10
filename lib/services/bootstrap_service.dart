@@ -6,8 +6,10 @@ import '../constants.dart';
 import '../models/setup_state.dart';
 import 'native_bridge.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'preferences_service.dart';
 import 'dart:io';
+import '../constants/openclaw_paths.dart';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -26,9 +28,7 @@ class BootstrapService {
       _updateSetupNotification('Updating OpenClaw gateway...', progress: 50);
       
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js update -g openclaw',
+        '$kOpenClawCommand update -g openclaw',
         timeout: 300,
       );
       
@@ -392,16 +392,19 @@ class BootstrapService {
       await _fixOpenClawShebang();
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
-      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
+      await NativeBridge.runInProot('$kOpenClawCommand --version || echo openclaw_installed');
+
+      // Industrial Grade: Run doctor --fix immediately after install/verify
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.92, 'Running system health check...', 92);
+      await NativeBridge.runInProot('$kOpenClawCommand doctor --fix');
 
       // Seed official onboarding config - auth-choice skip means we defer API key to setup flow
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Initializing environment...', 95);
       await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk && '
-        'openclaw models sync --provider ollama --primary qwen2.5:0.5b && '
-        'openclaw skills install core @buape/carbon --no-audit --no-fund && '
-        'openclaw update -g openclaw',
+        '$kOpenClawCommand onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk && '
+        '$kOpenClawCommand models sync --provider ollama --primary qwen2.5:0.5b && '
+        '$kOpenClawCommand skills install core @buape/carbon --no-audit --no-fund && '
+        '$kOpenClawCommand update -g openclaw',
         timeout: 120,
       );
 
@@ -474,25 +477,23 @@ class BootstrapService {
       final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
       
       // 1. Force remove old installation and any stray files
-      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && npm uninstall -g openclaw || true');
+      await NativeBridge.runInProot('npm uninstall -g openclaw || true');
       await NativeBridge.runInProot('rm -rf /usr/local/lib/node_modules/openclaw');
       await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw'); 
-      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && npm cache clean --force || true');
+      await NativeBridge.runInProot('npm cache clean --force || true');
       await NativeBridge.runInProot('apt-get clean || true');
       
       String content = await openclawMjs.readAsString();
       
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
         'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
         'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true',
         timeout: 1800,
       );
       
       await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
+        '$kOpenClawCommand doctor --fix 2>/dev/null || true',
         timeout: 10,
       );
       
@@ -683,14 +684,19 @@ class BootstrapService {
       _log('Config repair failed (non-critical)', error: e);
     }
   }
-  /// Hardens the PRoot environment by ensuring a robust PATH is always available.
-  /// This appends a permanent PATH export to /root/.bashrc.
+  /// Hardens the PRoot environment by ensuring a robust PATH and NODE_OPTIONS are always available.
+  /// This appends permanent exports to /root/.bashrc.
   Future<void> _hardenEnvironment() async {
-    _log('🛡 Hardening environment PATH in /root/.bashrc...');
+    _log('🛡 Hardening environment in /root/.bashrc...');
     try {
       const pathExport = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH';
+      const nodeOptions = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js"';
+      
       await NativeBridge.runInProot(
         'grep -q "export PATH=/usr/local/sbin" /root/.bashrc || echo "$pathExport" >> /root/.bashrc'
+      );
+      await NativeBridge.runInProot(
+        'grep -q "export NODE_OPTIONS" /root/.bashrc || echo "$nodeOptions" >> /root/.bashrc'
       );
       _log('✅ Environment hardened');
     } catch (e) {
