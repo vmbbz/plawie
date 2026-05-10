@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -43,8 +44,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    
-    // Start the rotation loop
     _rotationTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (mounted) {
         setState(() => _showTagline = !_showTagline);
@@ -93,10 +92,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
       body: Stack(
         children: [
-          // ── Nebula background ──────────────────────────────────────────────
           NebulaBg(),
-
-          // ── Content ────────────────────────────────────────────────────────
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
@@ -104,11 +100,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const GatewayControls(),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
 
-                  // Section label
                   Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 10),
+                    padding: const EdgeInsets.only(left: 4, bottom: 12),
                     child: Text(
                       'QUICK ACTIONS',
                       style: TextStyle(
@@ -120,221 +115,160 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   ),
 
-                  // ── Fluid Staggered Grid ─────────────────────────────────────────
-                  Consumer<GatewayProvider>(
-                    builder: (context, provider, _) {
-                      final gwState = provider.state;
-                      return Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          // 1. Primary Action: Chat (Wide Fluid Pod)
-                          _FluidDashCard(
-                            title: 'Chat with Plawie',
-                            subtitle: gwState.isRunning ? 'Talk to your local AI' : 'Start gateway first',
-                            icon: Icons.chat_bubble_outline_rounded,
-                            iconColor: AppColors.statusGreen,
-                            widthFactor: 1.0, 
-                            enabled: gwState.isRunning,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(32),
-                              topRight: Radius.circular(16),
-                              bottomLeft: Radius.circular(16),
-                              bottomRight: Radius.circular(32),
+                  // Moving dark gradient background layer
+                  _AnimatedDarkGridBg(
+                    child: Consumer<GatewayProvider>(
+                      builder: (context, provider, _) {
+                        final gwState = provider.state;
+                        return Wrap(
+                          spacing: 14,
+                          runSpacing: 14,
+                          children: [
+                            _BlobDashCard(
+                              title: 'Chat with Plawie',
+                              subtitle: gwState.isRunning ? 'Talk to your local AI' : 'Start gateway first',
+                              icon: Icons.chat_bubble_outline_rounded,
+                              iconColor: AppColors.statusGreen,
+                              widthFactor: 1.0,
+                              blobSeed: 0,
+                              enabled: gwState.isRunning,
+                              onTap: gwState.isRunning
+                                  ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatScreen()))
+                                  : null,
                             ),
-                            onTap: gwState.isRunning ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatScreen())) : null,
-                          ),
-                          
-                          // 2. Base Chain (Square Fluid Pod)
-                          _FluidDashCard(
-                            title: 'Base',
-                            subtitle: 'ETH & USDC',
-                            icon: Icons.account_balance_wallet_rounded,
-                            iconColor: const Color(0xFF0052FF),
-                            widthFactor: 0.48, 
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(16),
-                              topRight: Radius.circular(32),
-                              bottomLeft: Radius.circular(28),
-                              bottomRight: Radius.circular(12),
-                            ),
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BaseScreen())),
-                          ),
-
-                          // 3. Terminal (Square Fluid Pod)
-                          _FluidDashCard(
-                            title: 'Terminal',
-                            subtitle: 'Ubuntu Shell',
-                            icon: Icons.terminal_rounded,
-                            iconColor: Colors.cyanAccent,
-                            widthFactor: 0.48,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(28),
-                              topRight: Radius.circular(14),
-                              bottomLeft: Radius.circular(14),
-                              bottomRight: Radius.circular(32),
-                            ),
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TerminalScreen())),
-                          ),
-
-                          // 4. Web Dashboard (Wide)
-                          _FluidDashCard(
-                            title: 'Web Dashboard',
-                            subtitle: gwState.isRunning ? 'Open in browser' : 'Offline',
-                            icon: Icons.dashboard_rounded,
-                            iconColor: Colors.blueAccent,
-                            widthFactor: 1.0,
-                            enabled: gwState.isRunning,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(16),
-                              topRight: Radius.circular(16),
-                              bottomLeft: Radius.circular(32),
-                              bottomRight: Radius.circular(32),
-                            ),
-                            onTap: gwState.isRunning ? () async {
-                              final currentUrl = gwState.dashboardUrl;
-                              if (currentUrl != null && currentUrl.contains('token=')) {
-                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: currentUrl)));
-                                return;
-                              }
-                              showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-                              final url = await provider.fetchAuthenticatedDashboardUrl();
-                              if (context.mounted) {
-                                Navigator.of(context).pop();
-                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)));
-                              }
-                            } : null,
-                          ),
-
-                          // 5. Bot Management (Square)
-                          _FluidDashCard(
-                            title: 'Bots',
-                            subtitle: 'System RPCs',
-                            icon: Icons.settings_ethernet_rounded,
-                            iconColor: Colors.tealAccent,
-                            widthFactor: 0.48,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(32),
-                              topRight: Radius.circular(12),
-                              bottomLeft: Radius.circular(12),
-                              bottomRight: Radius.circular(24),
-                            ),
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotManagementDashboard())),
-                          ),
-
-                          // 6. Node (Square)
-                          Consumer<NodeProvider>(
-                            builder: (context, nodeProvider, _) => _FluidDashCard(
-                              title: 'Node',
-                              subtitle: nodeProvider.state.isPaired ? 'Linked' : 'Capabilities',
-                              icon: Icons.devices_rounded,
-                              iconColor: Colors.white60,
+                            _BlobDashCard(
+                              title: 'Base',
+                              subtitle: 'ETH & USDC',
+                              icon: Icons.account_balance_wallet_rounded,
+                              iconColor: const Color(0xFF0052FF),
                               widthFactor: 0.48,
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                                topRight: Radius.circular(32),
-                                bottomLeft: Radius.circular(24),
-                                bottomRight: Radius.circular(12),
+                              blobSeed: 1,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BaseScreen())),
+                            ),
+                            _BlobDashCard(
+                              title: 'Terminal',
+                              subtitle: 'Ubuntu Shell',
+                              icon: Icons.terminal_rounded,
+                              iconColor: Colors.cyanAccent,
+                              widthFactor: 0.48,
+                              blobSeed: 2,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TerminalScreen())),
+                            ),
+                            _BlobDashCard(
+                              title: 'Web Dashboard',
+                              subtitle: gwState.isRunning ? 'Open in browser' : 'Offline',
+                              icon: Icons.dashboard_rounded,
+                              iconColor: Colors.blueAccent,
+                              widthFactor: 1.0,
+                              blobSeed: 3,
+                              enabled: gwState.isRunning,
+                              onTap: gwState.isRunning ? () async {
+                                final currentUrl = gwState.dashboardUrl;
+                                if (currentUrl != null && currentUrl.contains('token=')) {
+                                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: currentUrl)));
+                                  return;
+                                }
+                                showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                                final url = await provider.fetchAuthenticatedDashboardUrl();
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+                                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)));
+                                }
+                              } : null,
+                            ),
+                            _BlobDashCard(
+                              title: 'Bots',
+                              subtitle: 'System RPCs',
+                              icon: Icons.settings_ethernet_rounded,
+                              iconColor: Colors.tealAccent,
+                              widthFactor: 0.48,
+                              blobSeed: 4,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BotManagementDashboard())),
+                            ),
+                            Consumer<NodeProvider>(
+                              builder: (context, nodeProvider, _) => _BlobDashCard(
+                                title: 'Node',
+                                subtitle: nodeProvider.state.isPaired ? 'Linked' : 'Capabilities',
+                                icon: Icons.devices_rounded,
+                                iconColor: Colors.white60,
+                                widthFactor: 0.48,
+                                blobSeed: 5,
+                                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NodeScreen())),
                               ),
-                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NodeScreen())),
                             ),
-                          ),
-
-                          // 7. Gateway Update (Square)
-                          _FluidDashCard(
-                            title: 'Update',
-                            subtitle: 'Fix WebSocket',
-                            icon: Icons.system_update_alt_rounded,
-                            iconColor: Colors.purpleAccent,
-                            widthFactor: 0.48,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(12),
-                              topRight: Radius.circular(32),
-                              bottomLeft: Radius.circular(24),
-                              bottomRight: Radius.circular(12),
-                            ),
-                            onTap: () async {
-                              final confirmed = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text('Update Gateway'),
-                                  content: const Text('This will update OpenClaw to the latest version to fix WebSocket handshake issues. Continue?'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(false),
-                                      child: const Text('Cancel'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(true),
-                                      child: const Text('Update'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              
-                              if (confirmed == true) {
-                                try {
-                                  await BootstrapService().updateGateway();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Gateway updated successfully!'),
-                                        backgroundColor: AppColors.statusGreen,
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Update failed: $e'),
-                                        backgroundColor: AppColors.statusRed,
-                                      ),
-                                    );
+                            _BlobDashCard(
+                              title: 'Update',
+                              subtitle: 'Fix WebSocket',
+                              icon: Icons.system_update_alt_rounded,
+                              iconColor: Colors.purpleAccent,
+                              widthFactor: 0.48,
+                              blobSeed: 6,
+                              onTap: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Update Gateway'),
+                                    content: const Text('This will update OpenClaw to the latest version. Continue?'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                                      TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Update')),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed == true) {
+                                  try {
+                                    await BootstrapService().updateGateway();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gateway updated!'), backgroundColor: AppColors.statusGreen));
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: $e'), backgroundColor: AppColors.statusRed));
+                                    }
                                   }
                                 }
-                              }
-                            },
-                          ),
-
-                          // 8. Onboarding & Help (Small Row)
-                           _FluidDashCard(
-                            title: 'Setup',
-                            subtitle: 'Config keys',
-                            icon: Icons.vpn_key_rounded,
-                            iconColor: Colors.orangeAccent,
-                            widthFactor: 0.48,
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OnboardingScreen())),
-                          ),
-                          _FluidDashCard(
-                            title: 'Help',
-                            subtitle: 'Usage guides',
-                            icon: Icons.help_outline_rounded,
-                            iconColor: Colors.white70,
-                            widthFactor: 0.48,
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
-                          ),
-                          
-                          // 8. System Tools: Logs & Packages (Bottom Row)
-                          _FluidDashCard(
-                            title: 'Logs',
-                            subtitle: 'Real-time feed',
-                            icon: Icons.article_outlined,
-                            iconColor: Colors.white54,
-                            widthFactor: 0.48,
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogsScreen())),
-                          ),
-                          _FluidDashCard(
-                            title: 'Packages',
-                            subtitle: 'Go, Brew, toolkits',
-                            icon: Icons.extension_rounded,
-                            iconColor: Colors.purpleAccent,
-                            widthFactor: 0.48,
-                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PackagesScreen())),
-                          ),
-                        ],
-                      );
-                    },
+                              },
+                            ),
+                            _BlobDashCard(
+                              title: 'Setup',
+                              subtitle: 'Config keys',
+                              icon: Icons.vpn_key_rounded,
+                              iconColor: Colors.orangeAccent,
+                              widthFactor: 0.48,
+                              blobSeed: 7,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OnboardingScreen())),
+                            ),
+                            _BlobDashCard(
+                              title: 'Help',
+                              subtitle: 'Usage guides',
+                              icon: Icons.help_outline_rounded,
+                              iconColor: Colors.white70,
+                              widthFactor: 0.48,
+                              blobSeed: 8,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
+                            ),
+                            _BlobDashCard(
+                              title: 'Logs',
+                              subtitle: 'Real-time feed',
+                              icon: Icons.article_outlined,
+                              iconColor: Colors.white54,
+                              widthFactor: 0.48,
+                              blobSeed: 9,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogsScreen())),
+                            ),
+                            _BlobDashCard(
+                              title: 'Packages',
+                              subtitle: 'Go, Brew, toolkits',
+                              icon: Icons.extension_rounded,
+                              iconColor: Colors.purpleAccent,
+                              widthFactor: 0.48,
+                              blobSeed: 10,
+                              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PackagesScreen())),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
 
                   const SizedBox(height: 36),
@@ -343,19 +277,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                       children: [
                         Text(
                           'Plawie v${AppConstants.version}',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.25),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 11, fontWeight: FontWeight.w500),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           AppConstants.appMotto,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            fontSize: 10,
-                          ),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.18), fontSize: 10),
                         ),
                       ],
                     ),
@@ -373,7 +300,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // App icon prefix - always present
         SvgPicture.asset(
           'assets/app_icon_official.svg',
           width: 22,
@@ -384,16 +310,13 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
         const SizedBox(width: 12),
-        // Rotator
         SizedBox(
           height: 40,
           child: Center(
             child: AnimatedCrossFade(
               duration: const Duration(milliseconds: 600),
               alignment: Alignment.centerLeft,
-              crossFadeState: _showTagline 
-                  ? CrossFadeState.showSecond 
-                  : CrossFadeState.showFirst,
+              crossFadeState: _showTagline ? CrossFadeState.showSecond : CrossFadeState.showFirst,
               firstChild: Text(
                 provider.state.isRepairing ? 'Repairing System...' : 'Plawie',
                 style: TextStyle(
@@ -404,12 +327,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
               secondChild: Text(
-                provider.state.isRepairing 
-                    ? 'PLEASE WAIT...' 
-                    : AppConstants.appMotto.toUpperCase(),
+                provider.state.isRepairing ? 'PLEASE WAIT...' : AppConstants.appMotto.toUpperCase(),
                 style: TextStyle(
-                  color: provider.state.isRepairing 
-                      ? AppColors.statusAmber.withValues(alpha: 0.8) 
+                  color: provider.state.isRepairing
+                      ? AppColors.statusAmber.withValues(alpha: 0.8)
                       : Colors.white.withValues(alpha: 0.6),
                   fontWeight: FontWeight.w800,
                   fontSize: 10,
@@ -424,8 +345,66 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-/// Liquid glass fluid dashboard pod.
-class _FluidDashCard extends StatefulWidget {
+// ─── Animated dark gradient background behind the grid ────────────────────────
+
+class _AnimatedDarkGridBg extends StatefulWidget {
+  final Widget child;
+  const _AnimatedDarkGridBg({required this.child});
+
+  @override
+  State<_AnimatedDarkGridBg> createState() => _AnimatedDarkGridBgState();
+}
+
+class _AnimatedDarkGridBgState extends State<_AnimatedDarkGridBg>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = _ctrl.value;
+        final dx = math.sin(t * 2 * math.pi) * 0.4;
+        final dy = math.cos(t * 2 * math.pi) * 0.3;
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            gradient: RadialGradient(
+              center: Alignment(dx, dy),
+              radius: 1.2,
+              colors: const [
+                Color(0xFF0A0A0A),
+                Color(0xFF060810),
+                Color(0xFF000000),
+              ],
+              stops: const [0.0, 0.5, 1.0],
+            ),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: child!,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+// ─── Organic Blob Card ────────────────────────────────────────────────────────
+
+class _BlobDashCard extends StatefulWidget {
   final String title;
   final String subtitle;
   final IconData icon;
@@ -433,168 +412,287 @@ class _FluidDashCard extends StatefulWidget {
   final VoidCallback? onTap;
   final bool enabled;
   final double widthFactor;
-  final BorderRadius? borderRadius;
+  /// Seed offsets the animation phase so each card has a unique blob shape.
+  final int blobSeed;
 
-  const _FluidDashCard({
+  const _BlobDashCard({
     required this.title,
     required this.subtitle,
     required this.icon,
+    required this.blobSeed,
     this.iconColor = Colors.white70,
     this.onTap,
     this.enabled = true,
     this.widthFactor = 1.0,
-    this.borderRadius,
   });
 
   @override
-  State<_FluidDashCard> createState() => _FluidDashCardState();
+  State<_BlobDashCard> createState() => _BlobDashCardState();
 }
 
-class _FluidDashCardState extends State<_FluidDashCard> with TickerProviderStateMixin {
-  late AnimationController _tapAnim;
-  late AnimationController _fluidAnim;
+class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMixin {
+  late AnimationController _blobCtrl; // slow organic morph
+  late AnimationController _tapCtrl;  // fast tap feedback
 
   @override
   void initState() {
     super.initState();
-    _tapAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
-    _fluidAnim = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat(reverse: true);
+    // Each card gets a unique speed slightly offset so they never look in sync
+    final speed = 5 + (widget.blobSeed % 3) * 1.5;
+    _blobCtrl = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: (speed * 1000).toInt()),
+    )..repeat();
+    _tapCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 130));
   }
 
   @override
   void dispose() {
-    _tapAnim.dispose();
-    _fluidAnim.dispose();
+    _blobCtrl.dispose();
+    _tapCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final opacity = widget.enabled ? 1.0 : 0.45;
     final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 12 : 0)) * widget.widthFactor;
-
-    // Fluid asymmetric shapes if not specified
-    final radius = widget.borderRadius ?? BorderRadius.circular(20);
+    final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 14 : 0)) * widget.widthFactor;
+    final cardHeight = widget.widthFactor == 1.0 ? 88.0 : 106.0;
+    final opacity = widget.enabled ? 1.0 : 0.4;
 
     return Opacity(
       opacity: opacity,
       child: GestureDetector(
-        onTapDown: (_) => _tapAnim.forward(),
-        onTapUp: (_) => _tapAnim.reverse(),
-        onTapCancel: () => _tapAnim.reverse(),
+        onTapDown: (_) => _tapCtrl.forward(),
+        onTapUp: (_) => _tapCtrl.reverse(),
+        onTapCancel: () => _tapCtrl.reverse(),
         onTap: widget.onTap,
         child: ScaleTransition(
-          scale: _tapAnim.drive(Tween(begin: 1.0, end: 0.94).chain(CurveTween(curve: Curves.easeOutCubic))),
-          child: SizedBox(
-            width: cardWidth,
-            child: AnimatedBuilder(
-              animation: _fluidAnim,
-              builder: (context, child) {
-                final double v = _fluidAnim.value;
-                return Container(
-                  decoration: BoxDecoration(
-                    borderRadius: radius,
-                    boxShadow: [
-                      BoxShadow(
-                        color: widget.iconColor.withValues(alpha: 0.1 + (v * 0.1)),
-                        blurRadius: 15 + (v * 10),
-                        spreadRadius: -2,
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: radius,
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: radius,
-                          border: Border.all(
-                            color: widget.iconColor.withValues(alpha: 0.2 + (v * 0.2)),
-                            width: 1.2,
-                          ),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment(v * 2, v * 2),
-                            colors: [
-                              widget.iconColor.withValues(alpha: 0.15 + (v * 0.1)),
-                              Colors.black.withValues(alpha: 0.4),
-                              widget.iconColor.withValues(alpha: 0.05),
-                            ],
-                            stops: const [0.0, 0.5, 1.0],
+          scale: _tapCtrl.drive(
+            Tween(begin: 1.0, end: 0.93).chain(CurveTween(curve: Curves.easeOutCubic)),
+          ),
+          child: AnimatedBuilder(
+            animation: _blobCtrl,
+            builder: (context, child) {
+              final t = _blobCtrl.value;
+              final seed = widget.blobSeed.toDouble();
+              final clipper = _BlobClipper(t: t, seed: seed);
+              return SizedBox(
+                width: cardWidth,
+                height: cardHeight,
+                child: Stack(
+                  children: [
+                    // Layer 1: Glass fill clipped to blob
+                    ClipPath(
+                      clipper: clipper,
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                        child: Container(
+                          width: cardWidth,
+                          height: cardHeight,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                widget.iconColor.withValues(alpha: 0.08 + 0.04 * math.sin(t * 2 * math.pi + seed)),
+                                Colors.black.withValues(alpha: 0.55),
+                                widget.iconColor.withValues(alpha: 0.04),
+                              ],
+                              stops: const [0.0, 0.55, 1.0],
+                            ),
                           ),
                         ),
-                        child: child,
                       ),
                     ),
-                  ),
-                );
-              },
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: widget.onTap,
-                  splashColor: widget.iconColor.withValues(alpha: 0.2),
-                  highlightColor: widget.iconColor.withValues(alpha: 0.1),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    // Layer 2: Animated glowing blob border
+                    CustomPaint(
+                      size: Size(cardWidth, cardHeight),
+                      painter: _BlobBorderPainter(
+                        t: t,
+                        seed: seed,
+                        color: widget.iconColor,
+                      ),
+                    ),
+                    // Layer 3: Content
+                    child!,
+                  ],
+                ),
+              );
+            },
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.widthFactor == 1.0 ? 20 : 16,
+                vertical: 14,
+              ),
+              child: widget.widthFactor == 1.0
+                  ? Row(
                       children: [
-                        // Icon header with epic glow
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: widget.iconColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: widget.iconColor.withValues(alpha: 0.4),
-                              width: 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: widget.iconColor.withValues(alpha: 0.4),
-                                blurRadius: 8,
-                                spreadRadius: -2,
-                              ),
-                            ],
-                          ),
-                          child: Icon(widget.icon, color: widget.iconColor, size: 18),
-                        ),
-                        const SizedBox(height: 16),
-                        // Text
-                        Text(
-                          widget.title,
-                          style: GoogleFonts.outfit(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.subtitle,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        _iconBox(),
+                        const SizedBox(width: 16),
+                        Expanded(child: _textCol()),
+                        Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white.withValues(alpha: 0.2)),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _iconBox(),
+                        const SizedBox(height: 14),
+                        _textCol(),
                       ],
                     ),
-                  ),
-                ),
-              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  Widget _iconBox() {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: widget.iconColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: widget.iconColor.withValues(alpha: 0.35), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: widget.iconColor.withValues(alpha: 0.3),
+            blurRadius: 8,
+            spreadRadius: -2,
+          ),
+        ],
+      ),
+      child: Icon(widget.icon, color: widget.iconColor, size: 17),
+    );
+  }
+
+  Widget _textCol() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          widget.title,
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          widget.subtitle,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 11,
+            fontWeight: FontWeight.w400,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Blob math ────────────────────────────────────────────────────────────────
+//
+// We model the blob as 8 control points around an ellipse.
+// Each point's radius oscillates with sin/cos at a unique phase derived
+// from its index and the card's seed. This gives a slow "breathing membrane"
+// effect — organic but not chaotic.
+
+List<Offset> _blobPoints(double t, double seed, double w, double h) {
+  const n = 8;
+  final cx = w / 2;
+  final cy = h / 2;
+  final rx = w * 0.46;
+  final ry = h * 0.44;
+
+  return List.generate(n, (i) {
+    final angle = (i / n) * 2 * math.pi;
+    // Each point breathes at its own rate/phase, seeded by card index
+    final phase = seed * 0.7 + i * 0.9;
+    final radiusScale = 1.0 + 0.14 * math.sin(t * 2 * math.pi + phase)
+                            + 0.07 * math.cos(t * 4 * math.pi + phase * 1.3);
+    return Offset(
+      cx + rx * radiusScale * math.cos(angle),
+      cy + ry * radiusScale * math.sin(angle),
+    );
+  });
+}
+
+Path _buildBlobPath(double t, double seed, double w, double h) {
+  final pts = _blobPoints(t, seed, w, h);
+  final n = pts.length;
+  final path = Path();
+
+  for (int i = 0; i < n; i++) {
+    final prev = pts[(i - 1 + n) % n];
+    final curr = pts[i];
+    final next = pts[(i + 1) % n];
+
+    // Catmull-Rom → Bézier: smooth tangents through all points
+    final cp1 = Offset(curr.dx + (next.dx - prev.dx) / 6, curr.dy + (next.dy - prev.dy) / 6);
+    final cp2next = pts[(i + 2) % n];
+    final cp2 = Offset(next.dx - (cp2next.dx - curr.dx) / 6, next.dy - (cp2next.dy - curr.dy) / 6);
+
+    if (i == 0) path.moveTo(curr.dx, curr.dy);
+    path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, next.dx, next.dy);
+  }
+  path.close();
+  return path;
+}
+
+class _BlobClipper extends CustomClipper<Path> {
+  final double t;
+  final double seed;
+  _BlobClipper({required this.t, required this.seed});
+
+  @override
+  Path getClip(Size size) => _buildBlobPath(t, seed, size.width, size.height);
+
+  @override
+  bool shouldReclip(_BlobClipper old) => old.t != t;
+}
+
+class _BlobBorderPainter extends CustomPainter {
+  final double t;
+  final double seed;
+  final Color color;
+  _BlobBorderPainter({required this.t, required this.seed, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _buildBlobPath(t, seed, size.width, size.height);
+    final alpha = 0.22 + 0.18 * math.sin(t * 2 * math.pi + seed);
+
+    // Outer glow
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: alpha * 0.5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    // Crisp inner border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BlobBorderPainter old) => old.t != t;
 }
