@@ -53,9 +53,12 @@ class BootstrapManager(
         val node = File("$rootfsDir/usr/local/bin/node")
         val openclawBin1 = File("$rootfsDir/usr/local/bin/openclaw")
         val openclawBin2 = File("$rootfsDir/usr/bin/openclaw")
-        val openclaw = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json")
+        val openclawPkg = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json")
+        val openclawJS = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js")
+        
         return rootfs.exists() && binBash.exists() && bypass.exists()
-            && node.exists() && (openclawBin1.exists() || openclawBin2.exists()) && openclaw.exists()
+            && node.exists() && (openclawBin1.exists() || openclawBin2.exists()) 
+            && openclawPkg.exists() && openclawJS.exists()
     }
 
     fun getBootstrapStatus(): Map<String, Any> {
@@ -64,10 +67,12 @@ class BootstrapManager(
         val nodeExists = File("$rootfsDir/usr/local/bin/node").exists()
         val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists() || 
                                File("$rootfsDir/usr/bin/openclaw").exists()
-        val openclawExists = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json").exists()
+        val openclawPkgExists = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json").exists()
+        val openclawJSExists = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js").exists()
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
+        
         val complete = rootfsExists && binBashExists && bypassExists
-                && nodeExists && openclawBinExists && openclawExists
+                && nodeExists && openclawBinExists && openclawPkgExists && openclawJSExists
 
         return mapOf(
             "rootfsExists" to rootfsExists,

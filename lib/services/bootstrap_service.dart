@@ -27,7 +27,7 @@ class BootstrapService {
       
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '/usr/local/bin/npm update -g openclaw',
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw update -g openclaw',
         timeout: 300,
       );
       
@@ -335,8 +335,7 @@ class BootstrapService {
         
         const wrapper = '/root/.openclaw/node-wrapper.js';
         const nodeRun = '/usr/local/bin/node $wrapper';
-        const npmCli = '/usr/local/lib/node_modules/npm/bin/npm-cli.js';
-        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/node --version && $nodeRun $npmCli --version');
+        await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && npm --version');
       } else {
         _emitProgress(onProgress, SetupStep.installingNode, 1.0, 'Node.js already installed, skipping...', 78);
       }
@@ -392,7 +391,10 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Initializing environment...', 95);
       await NativeBridge.runInProot(
         'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
+        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk && '
+        'openclaw models sync --provider ollama --primary qwen2.5:0.5b && '
+        'openclaw skills install core @buape/carbon --no-audit --no-fund && '
+        'openclaw update -g openclaw',
         timeout: 120,
       );
 
@@ -465,19 +467,20 @@ class BootstrapService {
       final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
       
       // 1. Force remove old installation and any stray files
-      await NativeBridge.runInProot('/usr/local/bin/node /usr/local/bin/npm uninstall -g openclaw || true');
+      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && npm uninstall -g openclaw || true');
       await NativeBridge.runInProot('rm -rf /usr/local/lib/node_modules/openclaw');
       await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw'); 
-      await NativeBridge.runInProot('npm cache clean --force || true');
+      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && npm cache clean --force || true');
       await NativeBridge.runInProot('apt-get clean || true');
       
       String content = await openclawMjs.readAsString();
       
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
-        'cd /usr/local/lib/node_modules/openclaw && /usr/local/bin/npm install --no-audit --no-fund 2>/dev/null || true',
+        'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
+        'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true',
         timeout: 1800,
       );
       

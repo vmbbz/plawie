@@ -296,6 +296,13 @@ PARAMETER num_batch 512
     // Initialize file directory early
     await getFilesDir();
 
+    // SELF-HEALING: Ensure binary wrappers are fresh on every startup.
+    // This fixes "No such file or directory" crashes for users updating from
+    // older APKs that had hardcoded npm symlinks instead of our shell scripts.
+    try {
+      await NativeBridge.createBinWrappers('openclaw');
+    } catch (_) {}
+
     unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
         .then((_) => unawaited(_probeOllamaOnInit())));
   }
@@ -329,17 +336,19 @@ PARAMETER num_batch 512
     try {
       if (isGlobal) {
         await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          '/usr/local/bin/npm install -g $packageName --no-audit --no-fund && '
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
+          'npm install -g $packageName --no-audit --no-fund && '
+          'openclaw doctor --fix 2>/dev/null || true',
           timeout: 300,
         );
       } else {
         await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'cd /usr/local/lib/node_modules/openclaw && '
-          '/usr/local/bin/npm install --no-save --no-audit --no-fund $packageName 2>/dev/null && '
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
+          'npm install --no-save --no-audit --no-fund $packageName 2>/dev/null && '
+          'openclaw doctor --fix 2>/dev/null || true',
           timeout: 120,
         );
       }
