@@ -160,15 +160,15 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       _isProcessing = true;
       _error = null;
       _launchStatus = 'Saving API key...';
-      _launchProgress = 0.3;
+      _launchProgress = 0.2;
     });
 
     try {
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
 
       setState(() {
-        _launchStatus = 'Configuring environment...';
-        _launchProgress = 0.4;
+        _launchStatus = 'Configuring API credentials...';
+        _launchProgress = 0.35;
       });
 
       await gatewayProvider.configureAndStart(
@@ -179,11 +179,29 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       setState(() {
         _launchStatus = 'Seeding workspace...';
+        _launchProgress = 0.6;
+      });
+
+      // Give CLI side-effects time to settle
+      await Future.delayed(const Duration(seconds: 3));
+
+      setState(() {
+        _launchStatus = 'Verifying setup...';
         _launchProgress = 0.8;
       });
 
-      // Safe wait for CLI side-effects to settle
-      await Future.delayed(const Duration(seconds: 4));
+      // Run openclaw doctor as a post-onboard health check (non-blocking — failure is fine here)
+      try {
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          '/usr/local/bin/openclaw doctor --non-interactive 2>&1 | tail -5 || true',
+          timeout: 15,
+        );
+      } catch (_) {
+        // doctor failures are non-fatal during setup
+      }
+
+      await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
         _launchProgress = 1.0;
@@ -905,7 +923,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           onChanged: (_) => setState(() {}),
           textCapitalization: TextCapitalization.words,
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
           ),
           decoration: InputDecoration(
             hintText: 'e.g. Plawie, Jarvis, Nova...',
