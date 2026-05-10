@@ -770,11 +770,19 @@ _channel = IOWebSocketChannel.connect(
 );
 ```
 
-### ❌ Using `openclaw devices approve --latest` in automation
+### ✅ Using `echo y | openclaw devices approve --latest` in automation
+
+> **Corrected** — earlier entries marked this as wrong. It is the correct approach.
 
 ```bash
-# WRONG — exits code 1, approves nothing, does not read stdin
+# CORRECT — discovers the current pending requestId and approves it in one call.
+# "echo y |" answers the CLI confirmation prompt non-interactively.
+# If the CLI reads from tty (not stdin), it exits 1 and embeds the requestId
+# in the error output — parse that UUID and retry with the explicit form below.
 echo y | openclaw devices approve --latest
+
+# Explicit UUID form (used on retry after extracting from --latest error output):
+echo y | openclaw devices approve <uuid>
 ```
 
 ### ❌ Gating device block on nonce
@@ -818,6 +826,36 @@ const clientId = 'openclaw-android'; // for a NodeService? No.
 | [lib/services/gateway_service.dart](../lib/services/gateway_service.dart) | `doctor --fix` before `_configureGateway()` in attach + heal paths; `triggerReload` param (false on fresh start); added `clearDeviceToken()` public method |
 | [lib/services/node_service.dart](../lib/services/node_service.dart) | Wait 800 ms for challenge before sending connect; `if (nonce.isNotEmpty) 'nonce': nonce`; stale 1008 guard on pairing listener; challenge handler no longer re-sends |
 | [lib/screens/management/skills_manager.dart](../lib/screens/management/skills_manager.dart) | `_clearAllCaches()` now clears operator + node device tokens; CLEAR CACHE button added to Tools tab header |
+
+### Round 3 — Race Condition Fix
+
+**Root cause confirmed from gateway logs:**
+
+`_handleNodePairingRequired` previously called `await connect()` inside its `finally` block. That `connect()` call opened a new WebSocket immediately. The new WebSocket's connect frame took 3-4 seconds to be fully processed by the gateway, during which time the gateway created a **new** `device.pair` requestId, invalidating the one we were about to approve. This produced the recurring:
+```
+GatewayClientRequestError: unknown requestId
+```
+
+The fix is to never call `connect()` from inside the handler. Instead, `NodeWsService.resumeReconnect()` is called — a non-blocking method that re-enables `_shouldReconnect`, resets backoff, and schedules `_doConnect()` after 1.5 seconds via a Timer. The handler exits cleanly with no in-flight WebSocket open, so there is no race.
+
+**Why this was not obvious:**
+
+The pattern `connect()` → 1008 → `_handleNodePairingRequired()` → `connect()` → 1008 → ... is a recursive call chain disguised as sequential code. Each iteration's `connect()` races against the previous iteration's approve. The 5-second delay added in `91589c6` was a workaround — it helped but didn't eliminate the race because the backoff could still fire within the window. `resumeReconnect()` eliminates the race entirely.
+
+**Gateway Protocol Note — `clientId` and `device` block (updated May 2026):**
+
+The following values are **correct per updated gateway whitelist requirements** and should not be reverted:
+- `clientId: 'node-host'` — the approved identifier for Android capability nodes
+- `clientMode: 'node'`
+- `scopes: ['node.device']`
+- `device` block always present (not gated on nonce) — gateway requires it for device identity verification
+
+The April 2024 values (`clientId: 'openclaw-android'`, `clientMode: 'ui'`, `scopes: ['*']`) used the old operator flow and are **not valid** for node connections under the current gateway spec.
+
+| File | Change |
+|---|---|
+| [lib/services/node_ws_service.dart](../lib/services/node_ws_service.dart) | Added `resumeReconnect({int delayMs})` — re-enables `_shouldReconnect`, resets backoff counter, schedules `_doConnect()` via Timer |
+| [lib/services/node_service.dart](../lib/services/node_service.dart) | `_handleNodePairingRequired`: replaced `await connect()` in `finally` with `_ws.resumeReconnect(delayMs: 1500)`; reduced settle delay from 5s to 1s; reset `_pairingResolveAttempted` before reconnect |
 
 ---
 

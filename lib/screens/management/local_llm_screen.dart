@@ -1779,7 +1779,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                       final Color entryColor = entry.contains('✗') || entry.contains('⚠')
                           ? Colors.redAccent
                           : entry.contains('✓')
-                              ? Colors.greenAccent
+                              ? AppColors.statusGreen
                               : Colors.white54;
                       return Text(
                         entry,

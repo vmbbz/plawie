@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:ui';
 import '../constants.dart';
+import '../app.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
 import '../widgets/avatar_logo.dart';
@@ -31,7 +33,6 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     
-    // Epic animation controllers for 2026 feel
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -45,7 +46,6 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 800),
     );
 
-    // Create sophisticated animations
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeInOutCubic,
@@ -65,7 +65,6 @@ class _SplashScreenState extends State<SplashScreen>
       curve: Curves.easeOutCubic,
     ));
 
-    // Start epic animation sequence
     _startEpicAnimation();
     _checkAndRoute();
   }
@@ -128,7 +127,6 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         );
       } else {
-        // If bootstrap is complete, go to onboarding; otherwise go to setup
         Widget targetScreen;
         if (bootstrapOk) {
           targetScreen = const OnboardingScreen(isFirstRun: true);
@@ -187,19 +185,15 @@ class _SplashScreenState extends State<SplashScreen>
         ),
         child: Stack(
           children: [
-            // Animated background elements
             Positioned.fill(
               child: _buildAnimatedBackground(isDark),
             ),
-            
-            // Main content
             Center(
               child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Liquid glass logo container
                     Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
@@ -208,7 +202,7 @@ class _SplashScreenState extends State<SplashScreen>
                           : Colors.black.withOpacity(0.05),
                         border: Border.all(
                           color: isDark 
-                            ? Colors.white.withOpacity(0.15)
+                            ? AppColors.statusGreen.withOpacity(0.3)
                             : Colors.black.withOpacity(0.1),
                           width: 1,
                         ),
@@ -220,14 +214,6 @@ class _SplashScreenState extends State<SplashScreen>
                             blurRadius: 30,
                             offset: const Offset(0, 15),
                             spreadRadius: 0,
-                          ),
-                          BoxShadow(
-                            color: isDark 
-                              ? Colors.white.withOpacity(0.1)
-                              : Colors.white.withOpacity(0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                            spreadRadius: -5,
                           ),
                         ],
                       ),
@@ -244,17 +230,14 @@ class _SplashScreenState extends State<SplashScreen>
                           'assets/app_icon_official.svg',
                           width: 100,
                           height: 100,
-                          colorFilter: ColorFilter.mode(
-                            isDark ? Colors.white : Colors.black,
+                          colorFilter: const ColorFilter.mode(
+                            AppColors.statusGreen,
                             BlendMode.srcIn,
                           ),
                         ),
                       ),
                     ),
-                    
                     const SizedBox(height: 40),
-                    
-                    // Liquid glass title
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                       decoration: BoxDecoration(
@@ -268,40 +251,25 @@ class _SplashScreenState extends State<SplashScreen>
                             : Colors.black.withOpacity(0.1),
                           width: 1,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: isDark 
-                              ? Colors.black.withOpacity(0.2)
-                              : Colors.black.withOpacity(0.08),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                            spreadRadius: 0,
-                          ),
-                        ],
                       ),
                       child: ShaderMask(
                         shaderCallback: (bounds) => LinearGradient(
                           colors: isDark
-                            ? [const Color(0xFFFFFFFF), const Color(0xFFE0E0E0)]
-                            : [const Color(0xFF000000), const Color(0xFF333333)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                            ? [Colors.white, AppColors.statusGreen.withValues(alpha: 0.8)]
+                            : [Colors.black, const Color(0xFF333333)],
                         ).createShader(bounds),
                         child: Text(
                           'Plawie',
-                          style: GoogleFonts.inter(
-                            fontSize: 36,
+                          style: GoogleFonts.outfit(
+                            fontSize: 48,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
+                            letterSpacing: 1.5,
                             color: Colors.white,
                           ),
                         ),
                       ),
                     ),
-                    
                     const SizedBox(height: 20),
-                    
-                    // Liquid glass subtitle
                     SlideTransition(
                       position: _slideAnimation,
                       child: Container(
@@ -332,10 +300,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                     ),
-                    
                     const SizedBox(height: 60),
-                    
-                    // Modern glass loading indicator
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -349,32 +314,19 @@ class _SplashScreenState extends State<SplashScreen>
                             : Colors.black.withOpacity(0.1),
                           width: 1,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: isDark 
-                              ? Colors.black.withOpacity(0.2)
-                              : Colors.black.withOpacity(0.08),
-                            blurRadius: 15,
-                            offset: const Offset(0, 8),
-                            spreadRadius: 0,
-                          ),
-                        ],
                       ),
-                      child: SizedBox(
+                      child: const SizedBox(
                         width: 40,
                         height: 40,
                         child: CircularProgressIndicator(
                           strokeWidth: 3,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            isDark ? const Color(0xFF00C853) : const Color(0xFF00C853),
+                            AppColors.statusGreen,
                           ),
                         ),
                       ),
                     ),
-                    
                     const SizedBox(height: 24),
-                    
-                    // Glass status text
                     FadeTransition(
                       opacity: _fadeAnimation,
                       child: Container(
@@ -393,9 +345,9 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         child: Text(
                           _status,
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.outfit(
                             fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                             color: isDark 
                               ? const Color(0xFFE0E0E0)
                               : const Color(0xFF666666),
@@ -417,7 +369,6 @@ class _SplashScreenState extends State<SplashScreen>
   Widget _buildAnimatedBackground(bool isDark) {
     return Stack(
       children: [
-        // Floating glass orbs
         Positioned(
           top: MediaQuery.of(context).size.height * 0.1,
           left: MediaQuery.of(context).size.width * 0.1,
@@ -449,8 +400,8 @@ class _SplashScreenState extends State<SplashScreen>
             gradient: RadialGradient(
               colors: isDark
                 ? [
-                    Colors.white.withOpacity(opacity * 0.3),
-                    Colors.white.withOpacity(opacity * 0.1),
+                    AppColors.statusGreen.withOpacity(opacity * 0.4),
+                    AppColors.statusGreen.withOpacity(opacity * 0.1),
                     Colors.transparent,
                   ]
                 : [
@@ -462,7 +413,7 @@ class _SplashScreenState extends State<SplashScreen>
             boxShadow: [
               BoxShadow(
                 color: isDark 
-                  ? Colors.white.withOpacity(opacity * 0.2)
+                  ? AppColors.statusGreen.withOpacity(opacity * 0.3)
                   : Colors.black.withOpacity(opacity * 0.1),
                 blurRadius: 20,
                 spreadRadius: 5,

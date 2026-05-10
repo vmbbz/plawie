@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
+import '../widgets/glass_card.dart';
+import '../app.dart';
 import 'dashboard_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -133,7 +136,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       if (lowercaseCommand.contains('api-key')) {
         _writeLog('\n🔑 Syncing API key to agent profiles...');
         
-        // Extract key and provider
         String? key;
         String? provider;
         
@@ -190,7 +192,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     try {
       _writeLog('\nChecking OpenClaw configuration...');
       
-      // BEFORE starting gateway - exact user-requested validation
       final validateResult = await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --validate || openclaw doctor --fix',
         timeout: 10000
@@ -212,9 +213,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       _writeLog('\nCurrent config: $configCheck');
       
-      if (configCheck.contains('claude-api-key') || configCheck.contains('openai-api-key') || 
-          configCheck.contains('gemini-api-key') || configCheck.contains('groq-api-key')) {
-        
+      if (configCheck.contains('api-key')) {
         _writeLog('\n✅ API key found, starting OpenClaw CLI Gateway...');
         
         await NativeBridge.runInProot(
@@ -227,7 +226,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
         if (gatewayStarted) {
           _writeLog('\n✅ OpenClaw CLI Gateway started successfully');
           _writeLog('\n🤖 OpenClaw Agent is now running 24/7');
-          _writeLog('\n📱 Dashboard available at: http://localhost:18789');
           
           await Future.delayed(const Duration(seconds: 2));
           if (mounted) _triggerGatewayStateRefresh();
@@ -266,18 +264,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     gatewayProvider.checkHealth();
   }
 
-  Future<void> _copyCommand(String command) async {
-    await Clipboard.setData(ClipboardData(text: command));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Command copied!'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
   @override
   void dispose() {
     _commandController.dispose();
@@ -292,10 +278,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   Future<void> _processProviderSetup(String provider, String key, {String? modelId, String? modelName}) async {
     final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
     
-    _writeLog('\n🔑 Syncing $provider API key to agent profiles...');
+    _writeLog('\n🔑 Configuring $provider API key and syncing to global .env...');
     await gatewayProvider.configureApiKey(provider, key);
 
-    // Dynamic model fallback
     if (modelId == null || modelName == null) {
       switch (provider.toLowerCase()) {
         case 'google':
@@ -314,42 +299,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           modelId = 'llama-3.1-405b';
           modelName = 'Llama 3.1 405B';
           break;
-        case 'openrouter':
-          modelId = 'anthropic/claude-sonnet-4.5';
-          modelName = 'Claude Sonnet 4.5 via OpenRouter';
-          break;
         default:
           modelId = 'default';
           modelName = 'Default Model';
       }
     }
 
-    _writeLog('\n🔄 Syncing auth-profiles.json for agent "main"...');
-    String baseUrl = provider == 'google' ? 'https://generativelanguage.googleapis.com/v1beta' :
-                     provider == 'anthropic' ? 'https://api.anthropic.com' :
-                     provider == 'openai' ? 'https://api.openai.com/v1' : 
-                     provider == 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.groq.com/openai/v1';
-
-    await NativeBridge.runInProot('''
-      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node -e '
-        const fs = require("fs");
-        const path = "/root/.openclaw/agents/main/agent/auth-profiles.json";
-        let config = {};
-        try { config = JSON.parse(fs.readFileSync(path, "utf8")); } catch (e) {}
-        config["$provider"] = { apiKey: "$key", baseUrl: "$baseUrl" };
-        fs.writeFileSync(path, JSON.stringify(config, null, 2));
-        console.log("Synced $provider to auth-profiles.json");
-      '
-    ''');
-
-    _writeLog('\n📦 Adding specific model and setting as primary...');
-    // The exact sequence requested by the user
+    _writeLog('\n📦 Registering model ($modelName) via CLI...');
     await NativeBridge.runInProot('''
       export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw models add --provider $provider --id $modelId --name "$modelName"
-      export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix
       export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $provider/$modelId
     ''', timeout: 15000);
     
+    _writeLog('\n🔄 Triggering gateway hot-reload...');
+    await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || true');
+
     _writeLog('✅ API key and model ($modelName) synced.');
   }
 
@@ -381,15 +345,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OpenClaw Onboarding'),
+        title: Text('OPENCLAW SETUP', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, letterSpacing: 2)),
         automaticallyImplyLeading: !widget.isFirstRun,
-        actions: [
-          if (widget.isFirstRun)
-            TextButton(
-              onPressed: _goToDashboard,
-              child: const Text('Dashboard'),
-            ),
-        ],
       ),
       body: _buildBody(),
     );
@@ -397,74 +354,34 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading onboarding options...'),
-          ],
-        ),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
     
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+      return Center(child: Text('Error: $_error'));
+    }
+
+    return Column(
+      children: [
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'TERMINAL'),
+            Tab(text: 'QUICK SETUP'),
+          ],
+          indicatorColor: AppColors.statusGreen,
+          labelColor: AppColors.statusGreen,
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
             children: [
-              const Icon(Icons.error, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text('Error: $_error', textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _loadOnboardingHelp,
-                child: const Text('Retry'),
-              ),
+              _buildTerminalTab(),
+              _buildQuickSetupTab(),
             ],
           ),
         ),
-      );
-    }
-
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.1),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(icon: Icon(Icons.terminal, size: 20), text: 'Terminal'),
-                Tab(icon: Icon(Icons.flash_on, size: 20), text: 'Quick Setup'),
-              ],
-              labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-              indicatorColor: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildTerminalTab(),
-                _buildQuickSetupTab(),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -475,80 +392,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
         children: [
           Expanded(
             child: Container(
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.black,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-                  width: 1,
-                ),
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: ListView.builder(
-                   controller: _scrollController,
-                   padding: const EdgeInsets.all(12),
-                   itemCount: _logs.length,
-                   itemBuilder: (context, index) {
-                     return Padding(
-                       padding: const EdgeInsets.only(bottom: 2),
-                       child: SelectableText(
-                         _logs[index],
-                         style: const TextStyle(
-                           fontFamily: 'monospace',
-                           color: Colors.lightGreenAccent,
-                           fontSize: 12,
-                           height: 1.3,
-                         ),
-                       ),
-                     );
-                   },
-                 ),
+              child: ListView.builder(
+                controller: _scrollController,
+                itemCount: _logs.length,
+                itemBuilder: (context, index) => Text(
+                  _logs[index],
+                  style: GoogleFonts.jetBrainsMono(color: AppColors.statusGreen, fontSize: 12),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _commandController,
-                  decoration: InputDecoration(
-                    hintText: 'Enter CLI command...',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
-                  onSubmitted: (val) {
-                    if (val.trim().isNotEmpty) {
-                      _executeCommand(val);
-                      _commandController.clear();
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton(
-                onPressed: () {
-                  if (_commandController.text.trim().isNotEmpty) {
-                    _executeCommand(_commandController.text);
-                    _commandController.clear();
-                  }
-                },
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: const Icon(Icons.send, size: 20),
-              ),
-            ],
           ),
         ],
       ),
@@ -556,156 +413,85 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   }
 
   Widget _buildQuickSetupTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Configure your AI model:',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          ..._providers.map((p) => _buildProviderCard(p)),
-          
-          const SizedBox(height: 32),
-          const Divider(),
-          const SizedBox(height: 24),
-          Text(
-            'Advanced CLI Command:',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _commandController,
-                  decoration: InputDecoration(
-                    hintText: 'e.g., openclaw onboard --binding 127.0.0.1',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: () => _executeCommand(_commandController.text),
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Execute'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-              ),
-            ],
-          ),
-        ],
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: _providers.map((p) => _buildProviderCard(p)).toList(),
+    );
+  }
+
+  Widget _buildBadge(String id) {
+    String text = 'VERIFIED';
+    Color color = AppColors.statusGreen;
+    switch (id) {
+      case 'google': text = 'MOST SCALABLE'; color = const Color(0xFF4285F4); break;
+      case 'anthropic': text = 'BEST INTELLIGENCE'; color = const Color(0xFFD97757); break;
+      case 'openai': text = 'FASTEST RESPONSE'; color = const Color(0xFF10A37F); break;
+      case 'groq': text = 'ULTRA SPEED'; color = const Color(0xFFF55036); break;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
+      child: Text(text, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: color)),
     );
   }
 
   Widget _buildProviderCard(Map<String, dynamic> provider) {
-    final String id = provider['id'];
+    final id = provider['id'];
     _apiKeyControllers.putIfAbsent(id, () => TextEditingController());
     _selectedModels.putIfAbsent(id, () => provider['defaultModel']);
-
     final models = provider['models'] as List<Map<String, String>>;
-    final theme = Theme.of(context);
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.2),
-          width: 1,
+
+    return GlassCard(
+      blurStrength: 20,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.api, color: AppColors.statusGreen),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(provider['name'], style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
+                      _buildBadge(id),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _apiKeyControllers[id],
+              decoration: const InputDecoration(hintText: 'Enter API Key', isDense: true),
+              obscureText: true,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  final key = _apiKeyControllers[id]?.text.trim();
+                  if (key == null || key.isEmpty) return;
+                  final modelId = _selectedModels[id]!;
+                  final modelName = models.firstWhere((m) => m['id'] == modelId)['name']!;
+                  _tabController.animateTo(0);
+                  _executeProviderSetupUI(id, key, modelId, modelName);
+                },
+                style: FilledButton.styleFrom(backgroundColor: AppColors.statusGreen, foregroundColor: Colors.black),
+                child: const Text('CONFIGURE & CONNECT', style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(_getIconForCommand(provider['icon']), color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(provider['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _apiKeyControllers[id],
-            decoration: InputDecoration(
-              hintText: 'Enter API Key (sk-...)',
-              isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            obscureText: true,
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _selectedModels[id],
-            decoration: InputDecoration(
-              labelText: 'Starting Model',
-              isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            items: models.map((m) => DropdownMenuItem(
-              value: m['id'],
-              child: Text(m['name']!),
-            )).toList(),
-            onChanged: (val) {
-              if (val != null) setState(() => _selectedModels[id] = val);
-            },
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () {
-                final key = _apiKeyControllers[id]?.text.trim();
-                if (key == null || key.isEmpty) {
-                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an API key')));
-                   return;
-                }
-                final modelId = _selectedModels[id];
-                final modelName = models.firstWhere((m) => m['id'] == modelId)['name'];
-                
-                // Switch to terminal tab and configure
-                _tabController.animateTo(0);
-                _executeProviderSetupUI(id, key, modelId!, modelName!);
-              },
-              child: const Text('Configure & Connect'),
-            ),
-          ),
-        ],
-      ),
     );
-  }
-
-  IconData _getIconForCommand(String iconType) {
-    switch (iconType) {
-      case 'api': return Icons.api;
-      case 'smart_toy': return Icons.smart_toy;
-      case 'psychology': return Icons.psychology;
-      case 'speed': return Icons.speed;
-      case 'settings_ethernet': return Icons.settings_ethernet;
-      default: return Icons.code;
-    }
   }
 }

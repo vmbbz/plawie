@@ -79,8 +79,8 @@ class PlawieApp extends StatelessWidget {
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.darkBg,
       colorScheme: const ColorScheme.dark(
-        primary: AppColors.darkHighlight,
-        onPrimary: AppColors.inverseText,
+        primary: AppColors.statusGreen,
+        onPrimary: Colors.black,
         secondary: AppColors.darkMetallic,
         onSecondary: AppColors.inverseText,
         surface: AppColors.darkSurface,
@@ -211,9 +211,9 @@ class PlawieApp extends StatelessWidget {
       scaffoldBackgroundColor: AppColors.lightBg,
       colorScheme: const ColorScheme.light(
         primary: AppColors.statusGreen,
-        onPrimary: AppColors.inverseText,
+        onPrimary: Colors.black,
         secondary: AppColors.statusGreen,
-        onSecondary: AppColors.inverseText,
+        onSecondary: Colors.black,
         surface: AppColors.lightBg,
         onSurface: Color(0xFF0A0A0A),
         onSurfaceVariant: AppColors.mutedText,

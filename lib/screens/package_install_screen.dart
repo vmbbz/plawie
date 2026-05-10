@@ -2,10 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:ui';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/optional_package.dart';
 import '../services/native_bridge.dart';
 import '../services/terminal_service.dart';
 import '../services/openclaw_service.dart';
+import '../app.dart';
+import '../widgets/glass_card.dart';
 
 class PackageInstallScreen extends StatefulWidget {
   final OptionalPackage package;
@@ -134,12 +139,28 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('$action ${widget.package.name}'),
-        automaticallyImplyLeading: false,
-      ),
-      body: Column(
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
+          NebulaBg(),
+          CustomScrollView(
+            slivers: [
+              _buildAppBar(context, action),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildPitchHeader(context, action),
+                      const SizedBox(height: 28),
+                    ],
+                  ),
+                ),
+              ),
+              SliverFillRemaining(
+                child: Column(
+                  children: [
           if (_loading)
             const Expanded(
               child: Center(
@@ -221,8 +242,80 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
                 ),
               ),
             ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, String action) {
+    return SliverAppBar(
+      expandedHeight: 100,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      centerTitle: true,
+      backgroundColor: Colors.transparent,
+      automaticallyImplyLeading: false,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            'assets/app_icon_official.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '${action.toUpperCase()} PACKAGE',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 3.0,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: FlexibleSpaceBar(
+            background: Container(color: Colors.black.withValues(alpha: 0.2)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPitchHeader(BuildContext context, String action) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$action\n${widget.package.name}',
+          style: GoogleFonts.outfit(
+            fontSize: 32,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            height: 1.1,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          widget.package.description,
+          style: GoogleFonts.outfit(
+            fontSize: 15,
+            color: Colors.white.withValues(alpha: 0.7),
+            height: 1.5,
+          ),
+        ),
+      ],
     );
   }
 }

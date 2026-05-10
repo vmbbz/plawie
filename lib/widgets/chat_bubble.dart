@@ -391,7 +391,7 @@ class _ToolEventChipState extends State<_ToolEventChip> {
   @override
   Widget build(BuildContext context) {
     final isCall = widget.event.type == 'tool_use';
-    final color = isCall ? Colors.amber : Colors.greenAccent;
+    final color = isCall ? Colors.amber : AppColors.statusGreen;
     final icon = isCall ? Icons.build_outlined : Icons.check_circle_outline;
     final label = isCall ? 'Tool  ${widget.event.name}' : 'Result  ${widget.event.name}';
 

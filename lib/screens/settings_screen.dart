@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../constants.dart';
 import '../providers/gateway_provider.dart';
 import '../providers/node_provider.dart';
@@ -108,48 +109,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(color: Colors.black.withValues(alpha: 0.2)),
-          ),
-        ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/icon/plawie_icon.png',
-              width: 20,
-              height: 20,
-              color: Colors.white,
-              errorBuilder: (_, __, ___) => const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'SETTINGS',
-              style: GoogleFonts.outfit(
-                fontWeight: FontWeight.w900,
-                fontSize: 14,
-                letterSpacing: 3.0,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
       body: Stack(
         children: [
-          const NebulaBg(),
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : SafeArea(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          NebulaBg(),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else
+            CustomScrollView(
+              slivers: [
+                _buildAppBar(context),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildPitchHeader(context),
+                        const SizedBox(height: 28),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  sliver: SliverList.list(
                     children: [
                 _sectionHeader(theme, 'GENERAL'),
                 SwitchListTile(
@@ -644,14 +627,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => launchUrl(
                     Uri.parse('https://discord.gg/openclaw'),
-                    mode: LaunchMode.externalApplication,
-                  ),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context) {
+    return SliverAppBar(
+      expandedHeight: 100,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      centerTitle: true,
+      backgroundColor: Colors.transparent,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            'assets/app_icon_official.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'SETTINGS',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 3.0,
+              color: Colors.white,
             ),
           ),
         ],
       ),
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: FlexibleSpaceBar(
+            background: Container(color: Colors.black.withValues(alpha: 0.2)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPitchHeader(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Command\nCenter',
+          style: GoogleFonts.outfit(
+            fontSize: 32,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            height: 1.1,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Configure your OpenClaw environment, manage API keys, node permissions, and local LLMs.',
+          style: GoogleFonts.outfit(
+            fontSize: 15,
+            color: Colors.white.withValues(alpha: 0.7),
+            height: 1.5,
+          ),
+        ),
+      ],
     );
   }
 

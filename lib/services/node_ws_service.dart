@@ -12,6 +12,7 @@ class NodeWsService {
 
   bool _connected = false;
   bool _shouldReconnect = false;
+  bool _pairingInProgress = false;
   int _reconnectAttempt = 0;
   Timer? _reconnectTimer;
   Timer? _pingTimer;
@@ -20,6 +21,7 @@ class NodeWsService {
 
   Stream<NodeFrame> get frameStream => _frameController.stream;
   bool get isConnected => _connected;
+  bool get isPairingInProgress => _pairingInProgress;
 
   // Fires when the gateway closes with 1008 (pairing required).
   final _pairingRequiredController = StreamController<String?>.broadcast();
@@ -98,14 +100,23 @@ class NodeWsService {
           final closeReason = _channel?.closeReason ?? '';
 
           if (closeCode == 1008 && !_pairingRequiredController.isClosed) {
+            // CRITICAL: Stop reconnect immediately and synchronously.
+            // _handleDisconnect() (called below) checks _shouldReconnect and
+            // schedules the next attempt. If we don't cancel here first,
+            // the timer fires before _handleNodePairingRequired can call
+            // ws.disconnect(), flooding the gateway with new connections that
+            // each create a fresh requestId, invalidating the one we're approving.
+            _shouldReconnect = false;
+            _reconnectTimer?.cancel();
+
             // Extract requestId from the gateway's exact reason string
             final requestIdMatch = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
             final requestId = requestIdMatch?.group(1);
 
-            if (requestId != null) {
-              _pairingRequiredController.add(requestId);  // ← NOW PASSES THE ID
+          if (requestId != null) {
+              signalPairingRequired(requestId);
             } else {
-              _pairingRequiredController.add(null);
+              signalPairingRequired(null);
             }
           }
 
@@ -238,6 +249,7 @@ class NodeWsService {
 
   Future<void> disconnect() async {
     _shouldReconnect = false;
+    _pairingInProgress = false;  // reset so next connect() cycle can pair again
     _reconnectTimer?.cancel();
     _pingTimer?.cancel();
     _subscription?.cancel();
@@ -249,6 +261,46 @@ class NodeWsService {
       completer.completeError('Disconnected');
     }
     _pendingRequests.clear();
+  }
+
+  /// Stop reconnect timers and close any in-flight socket connections.
+  /// Use this during pairing approval to freeze all outbound traffic while
+  /// letting the gateway event loop drain before the CLI approve call.
+  void haltReconnect() {
+    _shouldReconnect = false;
+    _reconnectTimer?.cancel();
+    _subscription?.cancel();
+    _subscription = null;
+    // Close the sink to abort any pending connect frame in flight.
+    try { _channel?.sink.close(); } catch (_) {}
+  }
+
+  /// Emit a pairing-required signal exactly once. Subsequent calls are no-ops
+  /// until disconnect() resets the flag, preventing duplicate approval flows.
+  void signalPairingRequired(String? requestId) {
+    if (_pairingInProgress) return;
+    _pairingInProgress = true;
+    _shouldReconnect = false;
+    _reconnectTimer?.cancel();
+    if (!_pairingRequiredController.isClosed) {
+      _pairingRequiredController.add(requestId);
+    }
+  }
+
+  /// Re-enable auto-reconnect after a pairing approval sequence and schedule
+  /// the next attempt after [delayMs]. Resets backoff so reconnect is prompt.
+  void resumeReconnect({int delayMs = 1500}) {
+    if (_url == null) return;
+    _shouldReconnect = true;
+    _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () async {
+      if (_shouldReconnect) {
+        try {
+          await _doConnect();
+        } catch (_) {}
+      }
+    });
   }
 
   void dispose() {

@@ -15,7 +15,7 @@ class HelpScreen extends StatelessWidget {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          const NebulaBg(),
+          NebulaBg(),
           CustomScrollView(
             slivers: [
               _buildAppBar(context),
@@ -394,7 +394,7 @@ class HelpScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           ...[
-            (Icons.check_circle_rounded, Colors.greenAccent, 'My Skills',
+            (Icons.check_circle_rounded, AppColors.statusGreen, 'My Skills',
                 'Your installed skills, Local LLM status, Base Chain wallet, and workspace config — all in one place.'),
             (Icons.explore_rounded, Colors.cyanAccent, 'Discover',
                 'Live search against the ClawHub community registry. Browse, preview, and install skills with one tap.'),

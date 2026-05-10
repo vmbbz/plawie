@@ -288,8 +288,9 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       } catch (_) {}
 
-      if (!_state.isPaired && !_state.isConnecting) {
-        // Connection dropped — reconnect
+      if (!_state.isPaired && !_state.isConnecting &&
+          (_lastGatewayState?.isRunning ?? false)) {
+        // Connection dropped and gateway is up — reconnect
         _nodeService.connect();
       } else if (_state.isPaired && _nodeService.isConnectionStale) {
         // Connection appears alive but no data received — force reconnect

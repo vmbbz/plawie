@@ -77,10 +77,6 @@ class GatewayService {
   // Failure tracking for proactive auto-healing
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
-  bool _gatewayReady = false; // EXPERT FIX: Tracks if the gateway has emitted the 'ready' signal
-
-  // Tracks auto-approvals to prevent loops (requestId -> timestamp)
-  final Map<String, DateTime> _autoApproveHistory = {};
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -210,6 +206,7 @@ PARAMETER num_batch 512
 
   /// Buffer + broadcast a single activity event.
   void _addActivity(String event) {
+    print('[GATEWAY] $event'); // logcat visibility
     _activityBuffer.add(event);
     if (_activityBuffer.length > 40) _activityBuffer.removeAt(0);
     _chatActivityController.add(event);
@@ -233,36 +230,6 @@ PARAMETER num_batch 512
     _updateState(_state.copyWith(logs: logs));
   }
   
-  /// EXPERT FIX: Automatically approve a device pairing request on localhost.
-  /// Triggered by 1008 "pairing required" WebSocket close frames.
-  Future<void> autoApproveDevice(String? requestId) async {
-    if (requestId == null || requestId.isEmpty) return;
-    
-    // Cooldown check (10 seconds)
-    final lastApprove = _autoApproveHistory[requestId];
-    if (lastApprove != null && DateTime.now().difference(lastApprove).inSeconds < 10) {
-      debugPrint('[GatewayService] Auto-approve cooldown for $requestId');
-      return;
-    }
-    
-    _autoApproveHistory[requestId] = DateTime.now();
-    _addActivity('[SYS] Expert Fix: Auto-approving device connection ($requestId)...');
-    
-    try {
-      final result = await NativeBridge.approveDevice(requestId);
-      _addActivity('[SYS] Auto-approve result: ${result.trim()}');
-      
-      // Persist pairing approval state
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.lastApprovedRequestId = requestId;
-      
-      // Trigger a health check to re-connect immediately
-      unawaited(_checkHealth());
-    } catch (e) {
-      _addActivity('[SYS] Auto-approve failed: $e');
-    }
-  }
 
   // Matches terminal Dashboard URL: supports localhost, 127.0.0.1, 0.0.0.0, and arbitrary IP addresses.
   static final _tokenUrlRegex = RegExp(r'https?://[a-zA-Z0-9\.\-]+:\d+/[^\s]*[#?]token=[^\s&]+');
@@ -317,6 +284,12 @@ PARAMETER num_batch 512
   /// Check if gateway is already running (e.g. after app restart)
   /// and sync UI state accordingly.
   Future<void> init() async {
+    final isComplete = await NativeBridge.isBootstrapComplete();
+    if (!isComplete) {
+      _addActivity('[SYS] Bootstrap incomplete. Awaiting setup...');
+      return;
+    }
+
     final prefs = PreferencesService();
     await prefs.init();
     
@@ -451,6 +424,12 @@ PARAMETER num_batch 512
     // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
 
+    final isComplete = await NativeBridge.isBootstrapComplete();
+    if (!isComplete) {
+      _addActivity('[SYS] Bootstrap incomplete. Gateway cannot start.');
+      return;
+    }
+
     final prefs = PreferencesService();
     await prefs.init();
 
@@ -460,19 +439,23 @@ PARAMETER num_batch 512
     if (alreadyRunning) {
       if (_state.status == GatewayStatus.running) return; // Already fully attached
 
+      print('[GATEWAY] Process detected — attaching...');
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
-      // Run doctor --fix FIRST (sanitises basic issues), then our config overrides
-      // LAST — so doctor cannot undo the allowedOrigins removal or other custom settings.
       try {
+        await _configureGateway();
         await NativeBridge.runInProot(
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
-        await _configureGateway();
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+          'openclaw reload 2>/dev/null || true',
+          timeout: 5,
+        );
       } catch (_) {}
 
       // After openclaw reload the gateway may issue a new token — wipe the
@@ -483,7 +466,6 @@ PARAMETER num_batch 512
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
-      _gatewayReady = true; // EXPERT FIX: If already running, it's ready
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -493,6 +475,7 @@ PARAMETER num_batch 512
 
     // 2. Not running. POLICY: Should we spawn a NEW one?
     if (!autoStart && !forceStart) {
+      print('[GATEWAY] Not running. Auto-start is off (autoStartGateway=${prefs.autoStartGateway})');
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] Gateway not running. Auto-start is off.']
       ));
@@ -503,8 +486,8 @@ PARAMETER num_batch 512
 
     // Attempting a fresh start
     _isStarting = true;
-    _gatewayReady = false; // EXPERT FIX: Reset readiness on start
     _rpcDiscoveryDone = false; // ensure discovery runs on this new session
+    print('[GATEWAY] Starting gateway process...');
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
       clearError: true,
@@ -584,15 +567,6 @@ PARAMETER num_batch 512
 
       _handleGatewayAutoHeal(log);
 
-      // EXPERT FIX: Detect gateway ready signal to synchronize connections
-      if (log.contains('[gateway] ready') || log.contains('starting HTTP server')) {
-        if (!_gatewayReady) {
-          _gatewayReady = true;
-          _addActivity('[SYS] Gateway signaled READY');
-          // Poke health check to connect immediately now that it's ready
-          unawaited(_checkHealth());
-        }
-      }
 
       String? dashboardUrl;
       final cleanLog = _cleanForUrl(log);
@@ -652,13 +626,33 @@ PARAMETER num_batch 512
     return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
+  /// Recursively casts a Map<dynamic,dynamic> (as returned by jsonDecode)
+  /// to Map<String,dynamic>. Required because jsonDecode on Android/Dart
+  /// returns Map<dynamic,dynamic> even when all keys are strings.
+  Map<String, dynamic> _deepCastMap(Map<dynamic, dynamic> raw) {
+    return raw.map((k, v) {
+      if (v is Map) return MapEntry(k.toString(), _deepCastMap(v));
+      if (v is List) return MapEntry(k.toString(), _deepCastList(v));
+      return MapEntry(k.toString(), v);
+    });
+  }
+
+  List<dynamic> _deepCastList(List<dynamic> raw) {
+    return raw.map((v) {
+      if (v is Map) return _deepCastMap(v);
+      if (v is List) return _deepCastList(v);
+      return v;
+    }).toList();
+  }
+
   /// Direct Dart-native config read/write (bypasses proot overhead)
   Future<Map<String, dynamic>> _readConfig() async {
     try {
       final file = File(await _openClawConfigPath());
       if (await file.exists()) {
         final content = await file.readAsString();
-        return jsonDecode(content) as Map<String, dynamic>;
+        final decoded = jsonDecode(content);
+        if (decoded is Map) return _deepCastMap(decoded);
       }
     } catch (e) {
       debugPrint('[GatewayService] Config read error: $e');
@@ -681,13 +675,34 @@ PARAMETER num_batch 512
     }
   }
 
+  Future<void> _writeEnvFile(String key, String value) async {
+    try {
+      final configPath = await _openClawConfigPath();
+      final envPath = configPath.replaceAll('openclaw.json', '.env');
+      final file = File(envPath);
+      
+      String content = '';
+      if (await file.exists()) {
+        content = await file.readAsString();
+      }
+      
+      final lines = content.split('\n')
+          .where((l) => l.trim().isNotEmpty && !l.startsWith('$key='))
+          .toList();
+      lines.add('$key=$value');
+      
+      await file.writeAsString(lines.join('\n'));
+    } catch (e) {
+      debugPrint('[GatewayService] .env write error: $e');
+    }
+  }
+
   /// Direct I/O: configure gateway binding and node settings.
   Future<void> _configureGateway() async {
     final config = await _readConfig();
     
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
-    config['gateway']['nodes']['autoApprove'] = true;
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [
       'camera.snap', 'camera.clip', 'camera.list',
@@ -711,7 +726,7 @@ PARAMETER num_batch 512
     // against the origin, and dart:io WebSocket never sends an Origin header
     // (the gateway sees origin=n/a), causing every connection to be rejected.
     config['gateway']['controlUi'] ??= {};
-    (config['gateway']['controlUi'] as Map<String, dynamic>).remove('allowedOrigins');
+    (config['gateway']['controlUi'] as Map).remove('allowedOrigins');
     
     // Save config — gateway watches its config file for changes automatically
     await _writeConfig(config);
@@ -731,11 +746,12 @@ PARAMETER num_batch 512
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
+
     // Ollama Default Provider — always ensure models array is present.
     config['models'] ??= {};
     config['models']['providers'] ??= {};
     config['models']['providers']['ollama'] ??= <String, dynamic>{};
-    final ollama = config['models']['providers']['ollama'] as Map<String, dynamic>;
+    final ollama = Map<String, dynamic>.from(config['models']['providers']['ollama'] as Map);
     ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
     ollama['apiKey'] ??= 'ollama-local';
     ollama['api'] ??= 'ollama';
@@ -1560,6 +1576,16 @@ PARAMETER num_batch 512
     } catch (e) {
       debugPrint('[GatewayService] Auth patch error: $e');
     }
+
+    // 3. Update .env for CLI compatibility
+    if (envKey.isNotEmpty) {
+      await _writeEnvFile(envKey, key);
+    }
+
+    // 4. Trigger reload so the gateway picks up the new key
+    try {
+      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || openclaw gateway config apply');
+    } catch (_) {}
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
@@ -1573,6 +1599,20 @@ PARAMETER num_batch 512
     // If we already have a tokenized URL and aren't forcing, return it immediately
     if (!force && _state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
       return _state.dashboardUrl;
+    }
+
+    // STEP 0: Use the canvasHostUrl directly from the hello-ok handshake response.
+    // Gateway v2026.x embeds a fully-authenticated URL in the connect payload — no CLI needed.
+    final canvasUrl = _connection?.canvasHostUrl;
+    if (canvasUrl != null && canvasUrl.isNotEmpty) {
+      _updateState(_state.copyWith(
+        dashboardUrl: canvasUrl,
+        logs: [..._state.logs, '[INFO] Web UI URL acquired from gateway handshake (canvasHostUrl).'],
+      ));
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.dashboardUrl = canvasUrl;
+      return canvasUrl;
     }
 
     _updateState(_state.copyWith(
@@ -1782,6 +1822,7 @@ PARAMETER num_batch 512
               : [..._state.logs, '[WARN] WebSocket disconnected'],
         ));
       });
+      // Listen for 1008 pairing required events from the gateway
       _connection!.pairingRequiredStream.listen((requestId) => _handleOperatorPairingRequired(requestId));
       // Reset backoff only for brand-new connection objects, not on every
       // health tick — otherwise the exponential backoff never accumulates.
@@ -1805,69 +1846,47 @@ PARAMETER num_batch 512
   }
 
   /// Called when the gateway closes the operator WS with 1008 (pairing required).
-  /// Deletes the stale device record via PRoot so the next connect is treated
-  /// as a new device and succeeds with the gateway auth token alone.
-  Future<void> _handleOperatorPairingRequired(String? requestId) async {
+  Future<void> _handleOperatorPairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
+    final deviceId = _connection?.deviceId ?? '';
 
-    // If we have a requestId (from error payload), use the direct approval flow
     if (requestId != null && requestId.isNotEmpty) {
-      _addActivity('[INFO] Operator pairing required — approving requestId: ${requestId.substring(0, 8)}...');
-      await autoApproveDevice(requestId);
-      _pairingResolveAttempted = false;
-      return;
-    }
-
-    // No requestId — discover it via --latest, then approve
-    _addActivity('[INFO] Operator pairing required — discovering pending requestId via --latest...');
-    const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
-    bool approved = false;
-    try {
-      await NativeBridge.runInProot('$env openclaw devices approve --latest', timeout: 30);
-      _addActivity('[INFO] Operator device approved via --latest');
-      approved = true;
-    } catch (e) {
-      // --latest exits 1 and outputs: "Approve this exact request with: openclaw devices approve <uuid>"
-      final match = RegExp(r'openclaw devices approve ([a-f0-9-]{36})').firstMatch(e.toString());
-      if (match != null) {
-        final discoveredId = match.group(1)!;
-        _addActivity('[INFO] Operator: discovered requestId ${discoveredId.substring(0, 8)}... — approving...');
-        try {
-          await autoApproveDevice(discoveredId);
-          approved = true;
-        } catch (_) {}
-      }
-    }
-
-    if (!approved) {
-      // Final fallback: clear stale device record so gateway treats next connect as new
-      final deviceId = _connection?.deviceId ?? '';
-      _addActivity('[INFO] Pairing required — clearing stale operator device record...');
+      _addActivity('[INFO] Pairing required (1008) — auto-approving operator $requestId...');
       try {
-        await NativeBridge.removeDevice(deviceId);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(GatewayConnection.prefDeviceToken);
-        _addActivity('[INFO] Operator device record cleared — reconnecting fresh');
+        await NativeBridge.approveDevice(requestId);
+        await Future.delayed(const Duration(milliseconds: 1500));
+        _addActivity('[INFO] Operator device approved successfully');
       } catch (e) {
-        _addActivity('[WARN] Could not clear operator device record: $e');
+        _addActivity('[WARN] Operator auto-approve failed: $e');
+        _clearOperatorDeviceRecord(deviceId);
       }
+    } else {
+      _clearOperatorDeviceRecord(deviceId);
     }
 
-    clearTokenCache();
     _connection?.dispose();
     _connection = null;
     _pairingResolveAttempted = false;
   }
 
-  Future<void> _checkHealth() async {
-    // EXPERT FIX: Skip health check until gateway signals 'ready' in logs
-    if (!_gatewayReady) {
-      if (_state.status == GatewayStatus.starting) {
-        debugPrint('[GatewayService] Health check deferred: Gateway not ready yet');
-      }
-      return;
+  Future<void> _clearOperatorDeviceRecord(String deviceId) async {
+    _addActivity('[INFO] Pairing required — clearing stale operator device record...');
+    try {
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
+        timeout: 5,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(GatewayConnection.prefDeviceToken);
+      _addActivity('[INFO] Operator device record cleared — reconnecting fresh');
+    } catch (e) {
+      _addActivity('[WARN] Could not clear operator device record: $e');
     }
+  }
+
+  Future<void> _checkHealth() async {
 
     // ── Re-entrancy guard ────────────────────────────────────────────────
     // Prevent overlapping health ticks. Each tick can involve PRoot calls

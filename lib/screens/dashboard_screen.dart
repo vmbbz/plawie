@@ -94,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       body: Stack(
         children: [
           // ── Nebula background ──────────────────────────────────────────────
-          const NebulaBg(),
+          NebulaBg(),
 
           // ── Content ────────────────────────────────────────────────────────
           SafeArea(
@@ -450,18 +450,21 @@ class _FluidDashCard extends StatefulWidget {
   State<_FluidDashCard> createState() => _FluidDashCardState();
 }
 
-class _FluidDashCardState extends State<_FluidDashCard> with SingleTickerProviderStateMixin {
-  late AnimationController _anim;
+class _FluidDashCardState extends State<_FluidDashCard> with TickerProviderStateMixin {
+  late AnimationController _tapAnim;
+  late AnimationController _fluidAnim;
 
   @override
   void initState() {
     super.initState();
-    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
+    _tapAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
+    _fluidAnim = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _anim.dispose();
+    _tapAnim.dispose();
+    _fluidAnim.dispose();
     super.dispose();
   }
 
@@ -477,78 +480,113 @@ class _FluidDashCardState extends State<_FluidDashCard> with SingleTickerProvide
     return Opacity(
       opacity: opacity,
       child: GestureDetector(
-        onTapDown: (_) => _anim.forward(),
-        onTapUp: (_) => _anim.reverse(),
-        onTapCancel: () => _anim.reverse(),
+        onTapDown: (_) => _tapAnim.forward(),
+        onTapUp: (_) => _tapAnim.reverse(),
+        onTapCancel: () => _tapAnim.reverse(),
         onTap: widget.onTap,
         child: ScaleTransition(
-          scale: _anim.drive(Tween(begin: 1.0, end: 0.94).chain(CurveTween(curve: Curves.easeOutCubic))),
+          scale: _tapAnim.drive(Tween(begin: 1.0, end: 0.94).chain(CurveTween(curve: Curves.easeOutCubic))),
           child: SizedBox(
             width: cardWidth,
-            child: GlassCard(
-              padding: EdgeInsets.zero,
-              borderRadius: 0, // Handled by outer decoration
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: radius,
-                  border: Border.all(
-                    color: widget.iconColor.withValues(alpha: 0.15),
-                    width: 1.2,
-                  ),
-                ),
-                child: ClipRRect(
-                  borderRadius: radius,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: widget.onTap,
-                      splashColor: widget.iconColor.withValues(alpha: 0.1),
-                      highlightColor: widget.iconColor.withValues(alpha: 0.05),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Icon header
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: widget.iconColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: widget.iconColor.withValues(alpha: 0.25),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Icon(widget.icon, color: widget.iconColor, size: 18),
-                            ),
-                            const SizedBox(height: 16),
-                            // Text
-                            Text(
-                              widget.title,
-                              style: GoogleFonts.outfit(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.subtitle,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
+            child: AnimatedBuilder(
+              animation: _fluidAnim,
+              builder: (context, child) {
+                final double v = _fluidAnim.value;
+                return Container(
+                  decoration: BoxDecoration(
+                    borderRadius: radius,
+                    boxShadow: [
+                      BoxShadow(
+                        color: widget.iconColor.withValues(alpha: 0.1 + (v * 0.1)),
+                        blurRadius: 15 + (v * 10),
+                        spreadRadius: -2,
                       ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: radius,
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: radius,
+                          border: Border.all(
+                            color: widget.iconColor.withValues(alpha: 0.2 + (v * 0.2)),
+                            width: 1.2,
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment(v * 2, v * 2),
+                            colors: [
+                              widget.iconColor.withValues(alpha: 0.15 + (v * 0.1)),
+                              Colors.black.withValues(alpha: 0.4),
+                              widget.iconColor.withValues(alpha: 0.05),
+                            ],
+                            stops: const [0.0, 0.5, 1.0],
+                          ),
+                        ),
+                        child: child,
+                      ),
+                    ),
+                  ),
+                );
+              },
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  splashColor: widget.iconColor.withValues(alpha: 0.2),
+                  highlightColor: widget.iconColor.withValues(alpha: 0.1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Icon header with epic glow
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: widget.iconColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: widget.iconColor.withValues(alpha: 0.4),
+                              width: 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: widget.iconColor.withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                spreadRadius: -2,
+                              ),
+                            ],
+                          ),
+                          child: Icon(widget.icon, color: widget.iconColor, size: 18),
+                        ),
+                        const SizedBox(height: 16),
+                        // Text
+                        Text(
+                          widget.title,
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.subtitle,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                 ),
