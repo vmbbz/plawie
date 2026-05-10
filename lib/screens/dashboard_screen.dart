@@ -399,11 +399,11 @@ class _AnimatedDarkGridBgState extends State<_AnimatedDarkGridBg>
               center: Alignment(dx, dy),
               radius: 1.2,
               colors: const [
-                Color(0xFF0A0A0A),
-                Color(0xFF060810),
+                Color(0xFF0D0F16),
+                Color(0xFF080A12),
                 Color(0xFF000000),
               ],
-              stops: const [0.0, 0.5, 1.0],
+              stops: const [0.0, 0.45, 1.0],
             ),
           ),
           padding: const EdgeInsets.all(14),
@@ -497,7 +497,7 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 14 : 0)) * widget.widthFactor;
-    final cardHeight = widget.widthFactor == 1.0 ? 88.0 : 106.0;
+    final cardHeight = widget.widthFactor == 1.0 ? 88.0 : 92.0; // Slightly shorter for pro look
     final opacity = widget.enabled ? 1.0 : 0.4;
 
     return Opacity(
@@ -541,11 +541,11 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                widget.iconColor.withValues(alpha: 0.08 + 0.04 * math.sin(t * 2 * math.pi + seed)),
-                                Colors.black.withValues(alpha: 0.55),
-                                widget.iconColor.withValues(alpha: 0.04),
+                                widget.iconColor.withValues(alpha: 0.16 + 0.06 * math.sin(t * 2 * math.pi + seed)),
+                                widget.iconColor.withValues(alpha: 0.08),
+                                Colors.transparent, // Remove diagonal black shade, use transparency
                               ],
-                              stops: const [0.0, 0.55, 1.0],
+                              stops: const [0.0, 0.4, 1.0],
                             ),
                           ),
                         ),
@@ -571,24 +571,15 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                 horizontal: widget.widthFactor == 1.0 ? 20 : 16,
                 vertical: 14,
               ),
-              child: widget.widthFactor == 1.0
-                  ? Row(
-                      children: [
-                        _iconBox(),
-                        const SizedBox(width: 16),
-                        Expanded(child: _textCol()),
-                        Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white.withValues(alpha: 0.2)),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _iconBox(),
-                        const SizedBox(height: 14),
-                        _textCol(),
-                      ],
-                    ),
+              child: Row( // Always icon on left, text on right
+                children: [
+                  _iconBox(),
+                  const SizedBox(width: 16),
+                  Expanded(child: _textCol()),
+                  if (widget.widthFactor == 1.0)
+                    Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white.withValues(alpha: 0.2)),
+                ],
+              ),
             ),
           ),
         ),
@@ -602,14 +593,14 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: widget.iconColor.withValues(alpha: 0.12),
+        color: widget.iconColor.withValues(alpha: 0.22), // More rich
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: widget.iconColor.withValues(alpha: 0.35), width: 1),
+        border: Border.all(color: widget.iconColor.withValues(alpha: 0.55), width: 1.2), // Sharper
         boxShadow: [
           BoxShadow(
-            color: widget.iconColor.withValues(alpha: 0.3),
-            blurRadius: 8,
-            spreadRadius: -2,
+            color: widget.iconColor.withValues(alpha: 0.45), // More vibrant glow
+            blurRadius: 10,
+            spreadRadius: -1,
           ),
         ],
       ),
@@ -625,10 +616,10 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
         Text(
           widget.title,
           style: GoogleFonts.outfit(
-            color: Colors.white,
+            color: Colors.white.withValues(alpha: 0.95), // Crisper white
             fontSize: 14,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.2,
+            fontWeight: FontWeight.w800, // Stronger weight
+            letterSpacing: 0.3,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -667,8 +658,8 @@ List<Offset> _blobPoints(double t, double seed, double w, double h) {
     final angle = (i / n) * 2 * math.pi;
     // Each point breathes at its own rate/phase, seeded by card index
     final phase = seed * 0.7 + i * 0.9;
-    final radiusScale = 1.0 + 0.14 * math.sin(t * 2 * math.pi + phase)
-                            + 0.07 * math.cos(t * 4 * math.pi + phase * 1.3);
+    final radiusScale = 1.0 + 0.06 * math.sin(t * 2 * math.pi + phase)
+                            + 0.03 * math.cos(t * 4 * math.pi + phase * 1.3);
     return Offset(
       cx + rx * radiusScale * math.cos(angle),
       cy + ry * radiusScale * math.sin(angle),

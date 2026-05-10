@@ -79,26 +79,32 @@ class _NodeScreenState extends State<NodeScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Node status card
+                                // Node status section — clean and functional
                                 const NodeControls(),
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 24),
 
                                 _sectionLabel('GATEWAY CONNECTION'),
-                                const SizedBox(height: 10),
-                                GlassCard(
+                                const SizedBox(height: 12),
+                                // Pro configuration block
+                                Container(
                                   padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.03),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                  ),
                                   child: Column(
                                     children: [
                                       _glassRadio('Local Gateway', 'Auto-pair with gateway on this device', true, state),
                                       _glassRadio('Remote Gateway', 'Connect to a gateway on another device', false, state),
                                       if (!_isLocal) ...[
-                                        const SizedBox(height: 14),
+                                        const SizedBox(height: 16),
                                         _darkField(_hostController, 'Gateway Host', '192.168.1.100', Icons.dns_rounded),
-                                        const SizedBox(height: 10),
+                                        const SizedBox(height: 12),
                                         _darkField(_portController, 'Gateway Port', '18789', Icons.router_rounded, isNumber: true),
-                                        const SizedBox(height: 10),
+                                        const SizedBox(height: 12),
                                         _darkField(_tokenController, 'Gateway Token', 'Paste token from dashboard URL', Icons.key_rounded, obscure: true),
-                                        const SizedBox(height: 14),
+                                        const SizedBox(height: 16),
                                         SizedBox(
                                           width: double.infinity,
                                           child: _primaryBtn(
@@ -157,11 +163,16 @@ class _NodeScreenState extends State<NodeScreen> {
                                 _capabilitiesGrid(),
 
                                 if (state.deviceId != null) ...[
-                                  const SizedBox(height: 20),
+                                  const SizedBox(height: 24),
                                   _sectionLabel('DEVICE IDENTITY'),
-                                  const SizedBox(height: 10),
-                                  GlassCard(
+                                  const SizedBox(height: 12),
+                                  Container(
                                     padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.03),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                    ),
                                     child: Row(
                                       children: [
                                         Container(
@@ -184,7 +195,7 @@ class _NodeScreenState extends State<NodeScreen> {
                                   ),
                                 ],
 
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 24),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
@@ -202,9 +213,14 @@ class _NodeScreenState extends State<NodeScreen> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 10),
-                                GlassCard(
-                                  padding: const EdgeInsets.all(14),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.4),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                  ),
                                   child: SizedBox(
                                     height: 180,
                                     child: state.logs.isEmpty
@@ -249,10 +265,10 @@ class _NodeScreenState extends State<NodeScreen> {
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SvgPicture.asset('assets/app_icon_official.svg', width: 18, height: 18,
+          SvgPicture.asset('assets/app_icon_official.svg', width: 22, height: 22, // Consistency with Dashboard
               colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
-          const SizedBox(width: 10),
-          Text('NODE', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 3.0, color: Colors.white)),
+          const SizedBox(width: 12),
+          Text('NODE', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 2.0, color: Colors.white)),
         ],
       ),
       centerTitle: true,
@@ -389,15 +405,26 @@ class _NodeScreenState extends State<NodeScreen> {
       children: caps.map((c) {
         return SizedBox(
           width: (MediaQuery.of(context).size.width - 50) / 2,
-          child: GlassCard(
+          child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            accentColor: c.$4,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              boxShadow: [
+                BoxShadow(
+                  color: c.$4.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: c.$4.withValues(alpha: 0.12),
+                    color: c.$4.withValues(alpha: 0.15), // Richer
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(c.$1, color: c.$4, size: 16),
@@ -407,12 +434,12 @@ class _NodeScreenState extends State<NodeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(c.$2, style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      Text(c.$2, style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)), // Thicker font
                       Text(c.$3, style: TextStyle(color: Colors.white38, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
                     ],
                   ),
                 ),
-                const Icon(Icons.check_circle_rounded, color: AppColors.statusGreen, size: 14),
+                Icon(Icons.check_circle_rounded, color: AppColors.statusGreen.withValues(alpha: 0.6), size: 12), // Subtle check
               ],
             ),
           ),
