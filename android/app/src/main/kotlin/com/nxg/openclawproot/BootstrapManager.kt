@@ -512,6 +512,9 @@ class BootstrapManager(
         //    (dpkg error 100 = "Could not exec dpkg" = permission issue).
         //    Recursively ensure all files in bin/sbin/lib dirs are executable.
         fixBinPermissions()
+
+        // 9. Harden environment PATH permanently
+        ensurePermanentProfile()
     }
 
     /**
@@ -809,6 +812,30 @@ class BootstrapManager(
             binFile.writeText(wrapper)
             binFile.setExecutable(true, false)
             binFile.setReadable(true, false)
+        }
+
+        // After creating wrappers, ensure the PATH is also hardened in .bashrc
+        ensurePermanentProfile()
+    }
+
+    /**
+     * Idempotently appends the robust PATH to /root/.bashrc.
+     * This is the "Peter and Joe" proof production fix.
+     */
+    fun ensurePermanentProfile() {
+        val bashrc = File("$rootfsDir/root/.bashrc")
+        if (!bashrc.exists()) {
+            bashrc.parentFile?.mkdirs()
+            bashrc.createNewFile()
+        }
+        
+        val content = bashrc.readText()
+        val profileLine = "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH"
+        
+        if (!content.contains("PATH=/usr/local/sbin")) {
+            val header = "\n# OpenClaw Android PRoot permanent PATH (v2026.5.9 compatible)\n"
+            bashrc.appendText("$header$profileLine\n")
+            Log.i("BootstrapManager", "Hardened .bashrc PATH")
         }
     }
 
