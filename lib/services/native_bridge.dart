@@ -43,14 +43,16 @@ class NativeBridge {
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    return await _channel.invokeMethod('runInProot', {'command': sanitized, 'timeout': timeout});
+    final withPath = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && $sanitized';
+    return await _channel.invokeMethod('runInProot', {'command': withPath, 'timeout': timeout});
   }
 
   /// Execute a command in the persistent shell (one PRoot process reused across calls).
   /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
   static Future<String> executeInShell(String command, {int timeoutMs = 30000}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    return await _channel.invokeMethod('executeInShell', {'command': sanitized, 'timeoutMs': timeoutMs});
+    final withPath = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && $sanitized';
+    return await _channel.invokeMethod('executeInShell', {'command': withPath, 'timeoutMs': timeoutMs});
   }
 
   /// Helper to intercept and fix "openclaw" calls with absolute paths.
