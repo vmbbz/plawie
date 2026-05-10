@@ -386,30 +386,9 @@ class _AnimatedDarkGridBgState extends State<_AnimatedDarkGridBg>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, child) {
-        final t = _ctrl.value;
-        final dx = math.sin(t * 2 * math.pi) * 0.4;
-        final dy = math.cos(t * 2 * math.pi) * 0.3;
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            gradient: RadialGradient(
-              center: Alignment(dx, dy),
-              radius: 1.2,
-              colors: const [
-                Color(0xFF0D0F16),
-                Color(0xFF080A12),
-                Color(0xFF000000),
-              ],
-              stops: const [0.0, 0.45, 1.0],
-            ),
-          ),
-          padding: const EdgeInsets.all(14),
-          child: child!,
-        );
-      },
+    // Background and padding removed as requested to let cards breathe
+    return Padding(
+      padding: EdgeInsets.zero,
       child: widget.child,
     );
   }
