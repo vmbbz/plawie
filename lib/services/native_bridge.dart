@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
+import '../constants/openclaw_paths.dart';
 
 class NativeBridge {
   static const _channel = MethodChannel('com.nxg.openclawproot/native');
@@ -43,20 +44,20 @@ class NativeBridge {
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    final withPath = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && $sanitized';
-    return await _channel.invokeMethod('runInProot', {'command': withPath, 'timeout': timeout});
+    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && ' +
+                    'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
+    return await _channel.invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
   }
 
   /// Execute a command in the persistent shell (one PRoot process reused across calls).
   /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
   static Future<String> executeInShell(String command, {int timeoutMs = 30000}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    final withPath = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && $sanitized';
-    return await _channel.invokeMethod('executeInShell', {'command': withPath, 'timeoutMs': timeoutMs});
+    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && ' +
+                    'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
+    return await _channel.invokeMethod('executeInShell', {'command': withEnv, 'timeoutMs': timeoutMs});
   }
 
-  /// Helper to intercept and fix "openclaw" calls with absolute paths.
-  /// This provides "Ultimate Resilience" across all services.
   static String _applyAbsoluteBypass(String cmd) {
     if (!cmd.contains('openclaw')) return cmd;
     
@@ -65,7 +66,7 @@ class NativeBridge {
     // (?<![/\.]) matches only if NOT preceded by / or .
     // (?!\.js) matches only if NOT followed by .js
     return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?!\.js)'), (match) {
-      return '/usr/local/bin/node /usr/local/lib/node_modules/openclaw/bin/openclaw.js';
+      return kOpenClawCommand;
     });
   }
 

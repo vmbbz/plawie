@@ -830,12 +830,26 @@ class BootstrapManager(
         }
         
         val content = bashrc.readText()
-        val profileLine = "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH"
+        val pathLine = "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH"
+        val nodeLine = "export NODE_OPTIONS=\"--require /root/.openclaw/bionic-bypass.js\""
         
+        val header = "\n# OpenClaw Android PRoot permanent environment (v2026.5.10 compatible)\n"
+        var changed = false
+        var newContent = content
+
         if (!content.contains("PATH=/usr/local/sbin")) {
-            val header = "\n# OpenClaw Android PRoot permanent PATH (v2026.5.9 compatible)\n"
-            bashrc.appendText("$header$profileLine\n")
-            Log.i("BootstrapManager", "Hardened .bashrc PATH")
+            newContent += "$header$pathLine\n"
+            changed = true
+        }
+        if (!content.contains("NODE_OPTIONS")) {
+            if (!changed) newContent += "\n"
+            newContent += "$nodeLine\n"
+            changed = true
+        }
+
+        if (changed) {
+            bashrc.writeText(newContent)
+            Log.i("BootstrapManager", "Hardened .bashrc environment")
         }
     }
 
