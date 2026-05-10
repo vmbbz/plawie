@@ -386,15 +386,14 @@ class BootstrapService {
       await _fixOpenClawShebang();
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
-      await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/openclaw --version || echo openclaw_installed');
+      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw --version || echo openclaw_installed');
 
       // Seed official onboarding config - auth-choice skip means we defer API key to setup flow
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Initializing environment...', 95);
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '/usr/local/bin/openclaw onboard --non-interactive --mode local --flow quickstart '
-        '--auth-choice skip --skip-health --skip-bootstrap --accept-risk',
-        timeout: 60,
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
+        timeout: 120,
       );
 
       // ---------------------------------------------------------
@@ -478,9 +477,13 @@ class BootstrapService {
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
         '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
-        'cd /usr/local/lib/node_modules/openclaw && /usr/local/bin/npm install --no-audit --no-fund 2>/dev/null || true && '
-        '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
+        'cd /usr/local/lib/node_modules/openclaw && /usr/local/bin/npm install --no-audit --no-fund 2>/dev/null || true',
         timeout: 1800,
+      );
+      
+      await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
+        timeout: 10,
       );
       
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Recreating binary wrappers...', 90);

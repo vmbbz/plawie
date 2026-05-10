@@ -14,6 +14,15 @@ class OpenClawCommandService {
   static DateTime? _cacheTime;
   static const _cacheTtl = Duration(minutes: 5);
 
+  /// The 'Golden Path' runner: Bare command + explicit PATH security.
+  /// Ensures binaries are found even if the environment is unstable.
+  static Future<String> _run(String command, {int timeout = 15}) async {
+    return await NativeBridge.runInProot(
+      'export PATH=\$PATH:/usr/local/bin:/usr/bin && $command',
+      timeout: timeout,
+    );
+  }
+
   /// Detect the running gateway version, with 5-minute cache.
   static Future<String> detectOpenClawVersion() async {
     final now = DateTime.now();
@@ -23,10 +32,7 @@ class OpenClawCommandService {
       return _cachedVersion!;
     }
     try {
-      final result = await NativeBridge.runInProot(
-        '/usr/local/bin/openclaw --version',
-        timeout: 10,
-      );
+      final result = await _run('openclaw --version', timeout: 10);
       // Handles: "2026.3.27", "v2026.3.27", "OpenClaw v2026.3.27-alpha"
       final match = RegExp(r'(\d{4}\.\d+\.\d+)').firstMatch(result);
       _cachedVersion = match?.group(1) ?? '0.0.0';
@@ -56,16 +62,16 @@ class OpenClawCommandService {
     final modern = await isModernSyntax();
     final versionStr = version != null ? '@$version' : '';
     return modern
-        ? '/usr/local/bin/openclaw skills install $skillName$versionStr'
-        : '/usr/local/bin/openclaw skill install $skillName$versionStr';
+        ? 'openclaw skills install $skillName$versionStr'
+        : 'openclaw skill install $skillName$versionStr';
   }
 
   /// Returns the correct uninstall command for the detected gateway version.
   static Future<String> getSkillUninstallCommand(String skillName) async {
     final modern = await isModernSyntax();
     return modern
-        ? '/usr/local/bin/openclaw skills uninstall $skillName'
-        : '/usr/local/bin/openclaw skill uninstall $skillName';
+        ? 'openclaw skills uninstall $skillName'
+        : 'openclaw skill uninstall $skillName';
   }
 
   /// Normalises any hardcoded `openclaw skill(s) …` command string.
@@ -89,14 +95,14 @@ class OpenClawCommandService {
     return [];
   }
 
-  static String getSkillListCommand() => '/usr/local/bin/openclaw skills list';
+  static String getSkillListCommand() => 'openclaw skills list';
 
   // ── Extended service methods ──────────────────────────────────────────────
 
   /// Reads /root/.openclaw/openclaw.json from PRoot.
   static Future<Map<String, dynamic>?> getOpenClawConfig() async {
     try {
-      final result = await NativeBridge.runInProot(
+      final result = await _run(
         'cat /root/.openclaw/openclaw.json 2>/dev/null || echo "{}"',
         timeout: 5,
       );
@@ -110,9 +116,9 @@ class OpenClawCommandService {
   /// Returns the list of installed skill IDs.
   static Future<List<String>> getInstalledSkills() async {
     try {
-      final result = await NativeBridge.runInProot(
-        '/usr/local/bin/openclaw skills list --json 2>/dev/null '
-        '|| /usr/local/bin/openclaw skill list --json 2>/dev/null '
+      final result = await _run(
+        'openclaw skills list --json 2>/dev/null '
+        '|| openclaw skill list --json 2>/dev/null '
         '|| echo "[]"',
         timeout: 15,
       );
@@ -138,10 +144,7 @@ class OpenClawCommandService {
   /// Asks the running gateway to rescan and hot-reload skills.
   static Future<void> reloadGateway() async {
     try {
-      await NativeBridge.runInProot(
-        '/usr/local/bin/openclaw reload 2>/dev/null || true',
-        timeout: 10,
-      );
+      await _run('openclaw reload 2>/dev/null || true', timeout: 10);
     } catch (_) {}
   }
 
@@ -169,8 +172,8 @@ class OpenClawCommandService {
     } catch (_) {}
 
     try {
-      final result = await NativeBridge.runInProot(
-        '/usr/local/bin/openclaw models list --json 2>/dev/null || echo "[]"',
+      final result = await _run(
+        'openclaw models list --json 2>/dev/null || echo "[]"',
         timeout: 10,
       );
       final decoded = jsonDecode(result.trim());
@@ -202,25 +205,19 @@ class OpenClawCommandService {
   };
 
   /// Writes [tools] as the new `tools.allow` list in openclaw.json.
-  /// npm-skill slugs and device names are silently dropped — only valid
-  /// gateway primitive IDs are written. When no primitives are selected the
-  /// block is set to ["*"] (explicit wildcard = all tools allowed). This is
-  /// more robust than an absent block on gateway v2026.5+. Returns true on success.
   static Future<bool> saveToolsAllow(List<String> tools) async {
     try {
       final config = await getOpenClawConfig() ?? <String, dynamic>{};
       final valid = tools.where(_kGatewayPrimitives.contains).toList()..sort();
       config['tools'] ??= <String, dynamic>{};
       if (valid.isEmpty || (valid.length == 1 && valid.first == '*')) {
-        // ["*"] = explicit all-allowed wildcard. More reliable than absent block.
         config['tools']['allow'] = ['*'];
       } else {
-        // Remove '*' if mixed with specific primitives — gateway prefers explicit list.
         config['tools']['allow'] = valid.where((e) => e != '*').toList();
       }
       final encoded = jsonEncode(config);
       final escaped = encoded.replaceAll("'", "'\\''");
-      await NativeBridge.runInProot(
+      await _run(
         "echo '$escaped' | tee /root/.openclaw/openclaw.json > /dev/null",
         timeout: 10,
       );
