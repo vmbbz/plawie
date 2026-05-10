@@ -269,7 +269,7 @@ PARAMETER num_batch 512
   /// Validate gateway process health before marking as healthy
   Future<void> _validateGatewayProcess() async {
     try {
-      final result = await NativeBridge.runInProot('pgrep -f /usr/local/bin/openclaw || echo "not_running"', timeout: 5);
+      final result = await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && pgrep -f openclaw || echo "not_running"', timeout: 5);
       if (result.trim() == 'not_running') {
         _addActivity('[HEALTH] Gateway process not found - marking as stopped');
         _updateState(_state.copyWith(status: GatewayStatus.stopped));
@@ -331,7 +331,7 @@ PARAMETER num_batch 512
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           '/usr/local/bin/npm install -g $packageName --no-audit --no-fund && '
-          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
           timeout: 300,
         );
       } else {
@@ -339,7 +339,7 @@ PARAMETER num_batch 512
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'cd /usr/local/lib/node_modules/openclaw && '
           '/usr/local/bin/npm install --no-save --no-audit --no-fund $packageName 2>/dev/null && '
-          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
           timeout: 120,
         );
       }
@@ -379,8 +379,7 @@ PARAMETER num_batch 512
       if (diag['config_health'] == 'INVALID_OR_MISSING') {
         _addActivity('[SYS] Configuration corrupted — rewriting defaults...');
         await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         await _configureGateway(); // our overrides run after doctor so they aren't undone
@@ -448,13 +447,14 @@ PARAMETER num_batch 512
       try {
         await _configureGateway();
         await NativeBridge.runInProot(
-          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          '/usr/local/bin/openclaw reload 2>/dev/null || true',
-          timeout: 5,
+          'openclaw reload 2>/dev/null || true',
+          timeout: 10,
         );
       } catch (_) {}
 
@@ -1316,7 +1316,7 @@ PARAMETER num_batch 512
       // isModelDownloaded() on the host FS already confirmed the GGUF exists —
       // no redundant PRoot file-check needed here.
       final result = await NativeBridge.runInProot(
-        'OLLAMA_HOST=127.0.0.1:11434 ollama create "$name" -f "$prootModelfilePath"',
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && OLLAMA_HOST=127.0.0.1:11434 ollama create "$name" -f "$prootModelfilePath"',
         timeout: 180,
       );
 
@@ -1547,10 +1547,11 @@ PARAMETER num_batch 512
     // Use official 'onboard' CLI for production-ready config
     // We pass sensitive keys via environment variables to enable SecretRef storage
     final onboardCmd = [
+      'export PATH=\$PATH:/usr/local/bin:/usr/bin',
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js"',
       'export OPENCLAW_GATEWAY_TOKEN="$gatewayToken"',
       'export OPENCLAW_PROVIDER_KEY="$key"',
-      '/usr/local/bin/openclaw onboard --non-interactive',
+      'openclaw onboard --non-interactive',
       '--mode local',
       '--auth-choice custom-api-key',
       '--custom-base-url "${openClawProvider == 'google' ? "https://generativelanguage.googleapis.com/v1beta" : ""}"',
@@ -1612,8 +1613,8 @@ PARAMETER num_batch 512
     // 4. Trigger reload so the gateway picks up the new key
     try {
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '/usr/local/bin/openclaw reload || /usr/local/bin/openclaw gateway config apply',
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw reload || openclaw gateway config apply',
         timeout: 10,
       );
     } catch (_) {}
@@ -1687,7 +1688,9 @@ PARAMETER num_batch 512
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && /usr/local/bin/openclaw dashboard --no-open',
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
+        'openclaw dashboard --no-open',
         timeout: 10
       );
       final urlMatch = _tokenUrlRegex.firstMatch(output);
