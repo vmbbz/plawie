@@ -388,6 +388,14 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
       await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/openclaw --version || echo openclaw_installed');
 
+      // Seed official onboarding config (Advanced)
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Initializing environment...', 95);
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        '/usr/local/bin/openclaw onboard --non-interactive --mode local --flow quickstart --skip-health --skip-bootstrap --accept-risk',
+        timeout: 60,
+      );
+
       // ---------------------------------------------------------
       // Step 5: Install Native Android Skills
       // ---------------------------------------------------------
