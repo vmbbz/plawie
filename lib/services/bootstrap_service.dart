@@ -27,7 +27,8 @@ class BootstrapService {
       
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw update -g openclaw',
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+        'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js update -g openclaw',
         timeout: 300,
       );
       

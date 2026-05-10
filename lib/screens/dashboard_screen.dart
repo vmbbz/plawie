@@ -476,7 +476,7 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 14 : 0)) * widget.widthFactor;
-    final cardHeight = widget.widthFactor == 1.0 ? 84.0 : 112.0; // Taller for stacked layout
+    final cardHeight = 112.0; // Consistent height for all cards for premium alignment
     final opacity = widget.enabled ? 1.0 : 0.4;
 
     return Opacity(
@@ -512,25 +512,26 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                       width: cardWidth,
                       height: cardHeight,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(12),
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            widget.iconColor.withValues(alpha: 0.14),
-                            widget.iconColor.withValues(alpha: 0.05),
-                            Colors.black.withValues(alpha: 0.2),
+                            widget.iconColor.withValues(alpha: 0.15 + 0.05 * math.sin(t * 2 * math.pi + seed)),
+                            widget.iconColor.withValues(alpha: 0.06 + 0.03 * math.cos(t * 2 * math.pi + seed)),
+                            Colors.black.withValues(alpha: 0.4 + 0.1 * math.sin(t * 2 * math.pi + seed)),
                           ],
+                          stops: const [0.0, 0.5, 1.0],
                         ),
                         border: Border.all(
-                          color: widget.iconColor.withValues(alpha: 0.1),
+                          color: widget.iconColor.withValues(alpha: 0.15),
                           width: 1,
                         ),
                       ),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(12),
                         child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
                           child: Container(color: Colors.transparent),
                         ),
                       ),
@@ -550,28 +551,15 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                 ),
               );
             },
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: widget.widthFactor == 1.0 ? 20 : 16,
-                vertical: 14,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _iconBox(),
+                  const SizedBox(height: 12),
+                  _textCol(),
+                ],
               ),
-              child: widget.widthFactor == 1.0
-                  ? Row(
-                      children: [
-                        _iconBox(),
-                        const SizedBox(width: 16),
-                        Expanded(child: _textCol()),
-                        Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white.withValues(alpha: 0.25)),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _iconBox(),
-                        const Spacer(),
-                        _textCol(),
-                      ],
-                    ),
             ),
           ),
         ),
@@ -602,28 +590,29 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
 
   Widget _textCol() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           widget.title,
           style: GoogleFonts.outfit(
             color: Colors.white.withValues(alpha: 0.95),
-            fontSize: widget.widthFactor == 1.0 ? 15 : 13, // Scale for grid
+            fontSize: 14, 
             fontWeight: FontWeight.w800,
             letterSpacing: 0.4,
           ),
+          textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Text(
           widget.subtitle,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.55),
-            fontSize: widget.widthFactor == 1.0 ? 11 : 10,
+            fontSize: 10,
             fontWeight: FontWeight.w400,
           ),
+          textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -640,23 +629,36 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
 // effect — organic but not chaotic.
 
 List<Offset> _blobPoints(double t, double seed, double w, double h) {
-  const n = 8;
-  final cx = w / 2;
-  final cy = h / 2;
-  final rx = w * 0.46;
-  final ry = h * 0.44;
+  final List<Offset> points = [];
+  const segmentsPerSide = 16; // High fidelity
+  final amplitude = 2.0; // Very tight wobble for "glued" feel
+  final radius = 12.0; // Follow card border radius
+  
+  // Helper to get wavy offset
+  double wav(double pos, double sideSeed) => amplitude * math.sin(t * 2 * math.pi + seed + sideSeed + pos * 2);
 
-  return List.generate(n, (i) {
-    final angle = (i / n) * 2 * math.pi;
-    // Each point breathes at its own rate/phase, seeded by card index
-    final phase = seed * 0.7 + i * 0.9;
-    final radiusScale = 1.0 + 0.06 * math.sin(t * 2 * math.pi + phase)
-                            + 0.03 * math.cos(t * 4 * math.pi + phase * 1.3);
-    return Offset(
-      cx + rx * radiusScale * math.cos(angle),
-      cy + ry * radiusScale * math.sin(angle),
-    );
-  });
+  // TOP (Left to Right, accounting for corners)
+  for (int i = 0; i <= segmentsPerSide; i++) {
+    double x = radius + (i / segmentsPerSide) * (w - 2 * radius);
+    points.add(Offset(x, wav(i.toDouble(), 0)));
+  }
+  // RIGHT (Top to Bottom)
+  for (int i = 0; i <= segmentsPerSide; i++) {
+    double y = radius + (i / segmentsPerSide) * (h - 2 * radius);
+    points.add(Offset(w + wav(i.toDouble(), 1.5), y));
+  }
+  // BOTTOM (Right to Left)
+  for (int i = 0; i <= segmentsPerSide; i++) {
+    double x = (w - radius) - (i / segmentsPerSide) * (w - 2 * radius);
+    points.add(Offset(x, h + wav(i.toDouble(), 3.0)));
+  }
+  // LEFT (Bottom to Top)
+  for (int i = 0; i <= segmentsPerSide; i++) {
+    double y = (h - radius) - (i / segmentsPerSide) * (h - 2 * radius);
+    points.add(Offset(wav(i.toDouble(), 4.5), y));
+  }
+  
+  return points;
 }
 
 Path _buildBlobPath(double t, double seed, double w, double h) {
@@ -669,10 +671,10 @@ Path _buildBlobPath(double t, double seed, double w, double h) {
     final curr = pts[i];
     final next = pts[(i + 1) % n];
 
-    // Catmull-Rom → Bézier: smooth tangents through all points
-    final cp1 = Offset(curr.dx + (next.dx - prev.dx) / 6, curr.dy + (next.dy - prev.dy) / 6);
+    // Stiffer control points (/8 instead of /5) to keep it rectangular
+    final cp1 = Offset(curr.dx + (next.dx - prev.dx) / 8, curr.dy + (next.dy - prev.dy) / 8);
     final cp2next = pts[(i + 2) % n];
-    final cp2 = Offset(next.dx - (cp2next.dx - curr.dx) / 6, next.dy - (cp2next.dy - curr.dy) / 6);
+    final cp2 = Offset(next.dx - (cp2next.dx - curr.dx) / 8, next.dy - (cp2next.dy - curr.dy) / 8);
 
     if (i == 0) path.moveTo(curr.dx, curr.dy);
     path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, next.dx, next.dy);
@@ -702,26 +704,27 @@ class _BlobBorderPainter extends CustomPainter {
   @override
   @override
   void paint(Canvas canvas, Size size) {
-    // Yesterday's "Soul" - a subtle, breathing RRect border glow
-    final rrect = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(16));
-    final alpha = 0.3 + 0.2 * math.sin(t * 2 * math.pi + seed);
+    // Yesterday's "Soul" - NOW WAVY as requested
+    final path = _buildBlobPath(t, seed, size.width, size.height);
+    final alpha = 0.35 + 0.25 * math.sin(t * 2 * math.pi + seed);
 
-    // Subtle outer glow
-    canvas.drawRRect(
-      rrect,
+    // Subtle outer glow following the wavy path
+    canvas.drawPath(
+      path,
       Paint()
-        ..color = color.withValues(alpha: alpha * 0.4)
+        ..color = color.withValues(alpha: alpha * 0.45)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+        ..strokeWidth = 3.5
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
     );
-    // Crisp breathing inner border
-    canvas.drawRRect(
-      rrect,
+    
+    // Crisp breathing inner border following the wavy path
+    canvas.drawPath(
+      path,
       Paint()
         ..color = color.withValues(alpha: alpha)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0,
+        ..strokeWidth = 1.2,
     );
   }
 

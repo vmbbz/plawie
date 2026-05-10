@@ -78,7 +78,8 @@ class BootstrapManager(
             "rootfsExists" to rootfsExists,
             "binBashExists" to binBashExists,
             "nodeInstalled" to nodeExists,
-            "openclawInstalled" to openclawExists,
+            "openclawInstalled" to openclawPkgExists,
+            "openclawJSExists" to openclawJSExists,
             "openclawBinExists" to openclawBinExists,
             "bypassInstalled" to bypassExists,
             "rootfsPath" to rootfsDir,
@@ -744,10 +745,17 @@ class BootstrapManager(
      * (no shell escaping needed).
      */
     fun createBinWrappers(packageName: String) {
-        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/$packageName")
-        val pkgJson = File(pkgDir, "package.json")
+        var pkgDir = File("$rootfsDir/usr/local/lib/node_modules/$packageName")
+        var pkgJson = File(pkgDir, "package.json")
+        
         if (!pkgJson.exists()) {
-            throw RuntimeException("Package not found: $pkgDir")
+            // Fallback to standard /usr/lib
+            pkgDir = File("$rootfsDir/usr/lib/node_modules/$packageName")
+            pkgJson = File(pkgDir, "package.json")
+        }
+
+        if (!pkgJson.exists()) {
+            return // Silently skip if package not found anywhere
         }
 
         // Simple JSON parsing for the "bin" field
@@ -784,10 +792,13 @@ class BootstrapManager(
             }
         }
 
+        val rootfsPrefix = rootfsDir ?: ""
+        val internalPkgPath = pkgDir.absolutePath.removePrefix(rootfsPrefix)
+
         for ((name, relPath) in binEntries) {
             val binFile = File(binDir, name)
 
-            val target = "/usr/local/lib/node_modules/$packageName/$relPath"
+            val target = "$internalPkgPath/$relPath"
             val wrapper = "#!/bin/sh\nexec node \"$target\" \"\$@\"\n"
             
             // Unconditionally delete existing file/symlink (including broken links)
