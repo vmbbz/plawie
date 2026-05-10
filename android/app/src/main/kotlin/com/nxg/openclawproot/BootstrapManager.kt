@@ -51,19 +51,23 @@ class BootstrapManager(
         val binBash = File("$rootfsDir/bin/bash")
         val bypass = File("$rootfsDir/root/.openclaw/bionic-bypass.js")
         val node = File("$rootfsDir/usr/local/bin/node")
-        val openclawBin = File("$rootfsDir/usr/local/bin/openclaw")
+        val openclawBin1 = File("$rootfsDir/usr/local/bin/openclaw")
+        val openclawBin2 = File("$rootfsDir/usr/bin/openclaw")
         val openclaw = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json")
         return rootfs.exists() && binBash.exists() && bypass.exists()
-            && node.exists() && openclawBin.exists() && openclaw.exists()
+            && node.exists() && (openclawBin1.exists() || openclawBin2.exists()) && openclaw.exists()
     }
 
     fun getBootstrapStatus(): Map<String, Any> {
         val rootfsExists = File(rootfsDir).exists()
         val binBashExists = File("$rootfsDir/bin/bash").exists()
         val nodeExists = File("$rootfsDir/usr/local/bin/node").exists()
-        val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists()
+        val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists() || 
+                               File("$rootfsDir/usr/bin/openclaw").exists()
         val openclawExists = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json").exists()
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
+        val complete = rootfsExists && binBashExists && bypassExists
+                && nodeExists && openclawBinExists && openclawExists
 
         return mapOf(
             "rootfsExists" to rootfsExists,
@@ -73,8 +77,7 @@ class BootstrapManager(
             "openclawBinExists" to openclawBinExists,
             "bypassInstalled" to bypassExists,
             "rootfsPath" to rootfsDir,
-            "complete" to (rootfsExists && binBashExists && bypassExists
-                && nodeExists && openclawBinExists && openclawExists)
+            "complete" to complete
         )
     }
 
