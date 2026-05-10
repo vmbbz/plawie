@@ -21,7 +21,7 @@ This is the holy grail other developers are still trying to build: a fully local
 
 ---
 
-## 🧠 The Core Foundation: A Masterpiece of Mobile Engineering
+## 🧠 The Core Foundation: Aegis Native glibc Engine
 
 Underneath the beautiful exterior, Plawie is driven by an industrial-grade local architecture:
 
@@ -38,7 +38,7 @@ Because the core OpenClaw engine runs locally, Plawie has access to over 35+ nat
 
 ## 🎭 The UI Layer: Airi-Style Immersive Companion
 
-Once we perfected the untouchable local OpenClaw foundation, we faced a new challenge: *A chat box simply isn't an interface worthy of this technology.* 
+Once we perfected the native OpenClaw foundation, we faced a new challenge:
 
 So, we layered on an incredibly immersive, **Airi-style** companion experience for maximum engagement. 
 
