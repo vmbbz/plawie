@@ -497,7 +497,7 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 14 : 0)) * widget.widthFactor;
-    final cardHeight = widget.widthFactor == 1.0 ? 88.0 : 92.0; // Slightly shorter for pro look
+    final cardHeight = widget.widthFactor == 1.0 ? 84.0 : 112.0; // Taller for stacked layout
     final opacity = widget.enabled ? 1.0 : 0.4;
 
     return Opacity(
@@ -528,26 +528,31 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                 height: cardHeight,
                 child: Stack(
                   children: [
-                    // Layer 1: Glass fill clipped to blob
-                    ClipPath(
-                      clipper: clipper,
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                        child: Container(
-                          width: cardWidth,
-                          height: cardHeight,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                widget.iconColor.withValues(alpha: 0.16 + 0.06 * math.sin(t * 2 * math.pi + seed)),
-                                widget.iconColor.withValues(alpha: 0.08),
-                                Colors.transparent, // Remove diagonal black shade, use transparency
-                              ],
-                              stops: const [0.0, 0.4, 1.0],
-                            ),
-                          ),
+                    // Layer 1: Glass fill (Stable RRect, no clipping)
+                    Container(
+                      width: cardWidth,
+                      height: cardHeight,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            widget.iconColor.withValues(alpha: 0.14),
+                            widget.iconColor.withValues(alpha: 0.05),
+                            Colors.black.withValues(alpha: 0.2),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: widget.iconColor.withValues(alpha: 0.1),
+                          width: 1,
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: Container(color: Colors.transparent),
                         ),
                       ),
                     ),
@@ -571,15 +576,23 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
                 horizontal: widget.widthFactor == 1.0 ? 20 : 16,
                 vertical: 14,
               ),
-              child: Row( // Always icon on left, text on right
-                children: [
-                  _iconBox(),
-                  const SizedBox(width: 16),
-                  Expanded(child: _textCol()),
-                  if (widget.widthFactor == 1.0)
-                    Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white.withValues(alpha: 0.2)),
-                ],
-              ),
+              child: widget.widthFactor == 1.0
+                  ? Row(
+                      children: [
+                        _iconBox(),
+                        const SizedBox(width: 16),
+                        Expanded(child: _textCol()),
+                        Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white.withValues(alpha: 0.25)),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _iconBox(),
+                        const Spacer(),
+                        _textCol(),
+                      ],
+                    ),
             ),
           ),
         ),
@@ -593,14 +606,14 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: widget.iconColor.withValues(alpha: 0.22), // More rich
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: widget.iconColor.withValues(alpha: 0.55), width: 1.2), // Sharper
+        color: widget.iconColor.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.iconColor.withValues(alpha: 0.6), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: widget.iconColor.withValues(alpha: 0.45), // More vibrant glow
-            blurRadius: 10,
-            spreadRadius: -1,
+            color: widget.iconColor.withValues(alpha: 0.4),
+            blurRadius: 12,
+            spreadRadius: -2,
           ),
         ],
       ),
@@ -616,10 +629,10 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
         Text(
           widget.title,
           style: GoogleFonts.outfit(
-            color: Colors.white.withValues(alpha: 0.95), // Crisper white
-            fontSize: 14,
-            fontWeight: FontWeight.w800, // Stronger weight
-            letterSpacing: 0.3,
+            color: Colors.white.withValues(alpha: 0.95),
+            fontSize: widget.widthFactor == 1.0 ? 15 : 13, // Scale for grid
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.4,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -628,8 +641,8 @@ class _BlobDashCardState extends State<_BlobDashCard> with TickerProviderStateMi
         Text(
           widget.subtitle,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.5),
-            fontSize: 11,
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: widget.widthFactor == 1.0 ? 11 : 10,
             fontWeight: FontWeight.w400,
           ),
           maxLines: 1,
@@ -708,26 +721,28 @@ class _BlobBorderPainter extends CustomPainter {
   _BlobBorderPainter({required this.t, required this.seed, required this.color});
 
   @override
+  @override
   void paint(Canvas canvas, Size size) {
-    final path = _buildBlobPath(t, seed, size.width, size.height);
-    final alpha = 0.22 + 0.18 * math.sin(t * 2 * math.pi + seed);
+    // Yesterday's "Soul" - a subtle, breathing RRect border glow
+    final rrect = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(16));
+    final alpha = 0.3 + 0.2 * math.sin(t * 2 * math.pi + seed);
 
-    // Outer glow
-    canvas.drawPath(
-      path,
+    // Subtle outer glow
+    canvas.drawRRect(
+      rrect,
       Paint()
-        ..color = color.withValues(alpha: alpha * 0.5)
+        ..color = color.withValues(alpha: alpha * 0.4)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.0
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..strokeWidth = 3.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
-    // Crisp inner border
-    canvas.drawPath(
-      path,
+    // Crisp breathing inner border
+    canvas.drawRRect(
+      rrect,
       Paint()
         ..color = color.withValues(alpha: alpha)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
+        ..strokeWidth = 1.0,
     );
   }
 
