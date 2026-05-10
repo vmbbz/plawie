@@ -63,7 +63,7 @@ class NativeBridge {
   static Future<String> approveDevice(String requestId) async {
     return await runInProot(
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-      'openclaw devices approve $requestId',
+      'echo y | openclaw devices approve $requestId',
       timeout: 30,
     );
   }

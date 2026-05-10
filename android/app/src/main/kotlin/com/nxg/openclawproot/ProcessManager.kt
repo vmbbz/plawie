@@ -174,6 +174,7 @@ class ProcessManager(
             "DEBIAN_FRONTEND=noninteractive",
             // npm cache location (mkdir broken in proot, pre-created by Java)
             "npm_config_cache=/tmp/npm-cache",
+            "UV_USE_IO_URING=0",
             "/bin/bash", "-c",
             command,
         ))
@@ -325,6 +326,7 @@ class ProcessManager(
             "TMPDIR=/tmp",
             "NODE_OPTIONS=--require /root/.openclaw/bionic-bypass.js",
             "npm_config_cache=/tmp/npm-cache",
+            "UV_USE_IO_URING=0",
             "/bin/bash", "--norc", "--noprofile",
         ))
         return flags
@@ -537,6 +539,9 @@ class ProcessManager(
                 while (!Thread.currentThread().isInterrupted) {
                     if (logFile.exists()) {
                         val currentLength = logFile.length()
+                        if (currentLength < lastPosition) {
+                            lastPosition = 0L // File was truncated
+                        }
                         if (currentLength > lastPosition) {
                             logFile.inputStream().use { input ->
                                 input.skip(lastPosition)

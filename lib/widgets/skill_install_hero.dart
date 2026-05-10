@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/skills_service.dart';
 import 'dart:ui';
+import '../app.dart';
 
 class SkillInstallHero extends StatefulWidget {
   final Skill skill;
@@ -115,7 +116,7 @@ class _SkillInstallHeroState extends State<SkillInstallHero> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 18),
+            const Icon(Icons.check_circle_outline, color: AppColors.statusGreen, size: 18),
             const SizedBox(width: 12),
             Text(
               f,

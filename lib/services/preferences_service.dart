@@ -30,7 +30,7 @@ class PreferencesService {
     return _prefs!;
   }
 
-  bool get autoStartGateway => _p.getBool(_keyAutoStart) ?? false;
+  bool get autoStartGateway => _p.getBool(_keyAutoStart) ?? true;
   set autoStartGateway(bool value) => _p.setBool(_keyAutoStart, value);
 
   bool get setupComplete => _p.getBool(_keySetupComplete) ?? false;

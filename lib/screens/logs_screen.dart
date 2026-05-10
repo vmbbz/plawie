@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'dart:ui';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../app.dart';
+import '../widgets/glass_card.dart';
 import '../providers/gateway_provider.dart';
 
 class LogsScreen extends StatefulWidget {
@@ -29,98 +33,151 @@ class _LogsScreenState extends State<LogsScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gateway Logs'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _autoScroll ? Icons.vertical_align_bottom : Icons.vertical_align_top,
-            ),
-            tooltip: _autoScroll ? 'Auto-scroll on' : 'Auto-scroll off',
-            onPressed: () => setState(() => _autoScroll = !_autoScroll),
-          ),
-          IconButton(
-            icon: const Icon(Icons.copy),
-            tooltip: 'Copy all logs',
-            onPressed: () => _copyLogs(context),
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          const NebulaBg(),
+          CustomScrollView(
+            slivers: [
+              _buildAppBar(context),
+              SliverFillRemaining(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Filter logs...',
+                            prefixIcon: const Icon(Icons.search),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            suffixIcon: _filter.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _filter = '');
+                                    },
+                                  )
+                                : null,
+                          ),
+                          onChanged: (value) => setState(() => _filter = value),
+                        ),
+                      ),
+                      Expanded(
+                        child: Consumer<GatewayProvider>(
+                          builder: (context, provider, _) {
+                            final logs = provider.state.logs;
+                            final filtered = _filter.isEmpty
+                                ? logs
+                                : logs.where((l) =>
+                                    l.toLowerCase().contains(_filter.toLowerCase())).toList();
+
+                            if (filtered.isEmpty) {
+                              return Center(
+                                child: Text(
+                                  logs.isEmpty ? 'No logs yet. Start the gateway.' : 'No matching logs.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (_autoScroll && _scrollController.hasClients) {
+                                _scrollController.jumpTo(
+                                  _scrollController.position.maxScrollExtent,
+                                );
+                              }
+                            });
+
+                            return ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final line = filtered[index];
+                                return Text(
+                                  line,
+                                  style: TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                    color: _logColor(line, theme),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-      body: Column(
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context) {
+    return SliverAppBar(
+      expandedHeight: 100,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      centerTitle: true,
+      backgroundColor: Colors.transparent,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Filter logs...',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                suffixIcon: _filter.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _filter = '');
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: (value) => setState(() => _filter = value),
-            ),
+          SvgPicture.asset(
+            'assets/app_icon_official.svg',
+            width: 20,
+            height: 20,
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
           ),
-          Expanded(
-            child: Consumer<GatewayProvider>(
-              builder: (context, provider, _) {
-                final logs = provider.state.logs;
-                final filtered = _filter.isEmpty
-                    ? logs
-                    : logs.where((l) =>
-                        l.toLowerCase().contains(_filter.toLowerCase())).toList();
-
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Text(
-                      logs.isEmpty ? 'No logs yet. Start the gateway.' : 'No matching logs.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  );
-                }
-
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_autoScroll && _scrollController.hasClients) {
-                    _scrollController.jumpTo(
-                      _scrollController.position.maxScrollExtent,
-                    );
-                  }
-                });
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final line = filtered[index];
-                    return Text(
-                      line,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        color: _logColor(line, theme),
-                      ),
-                    );
-                  },
-                );
-              },
+          const SizedBox(width: 12),
+          Text(
+            'GATEWAY LOGS',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+              letterSpacing: 3.0,
+              color: Colors.white,
             ),
           ),
         ],
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(
+            _autoScroll ? Icons.vertical_align_bottom : Icons.vertical_align_top,
+          ),
+          tooltip: _autoScroll ? 'Auto-scroll on' : 'Auto-scroll off',
+          onPressed: () => setState(() => _autoScroll = !_autoScroll),
+        ),
+        IconButton(
+          icon: const Icon(Icons.copy),
+          tooltip: 'Copy all logs',
+          onPressed: () => _copyLogs(context),
+        ),
+      ],
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: FlexibleSpaceBar(
+            background: Container(color: Colors.black.withValues(alpha: 0.2)),
+          ),
+        ),
       ),
     );
   }

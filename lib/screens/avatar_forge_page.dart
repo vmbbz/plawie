@@ -92,7 +92,7 @@ class _AvatarForgePageState extends State<AvatarForgePage>
       body: Stack(
         children: [
           // Universal Nebula Background matching Main Chat
-          const NebulaBg(),
+          NebulaBg(),
           // Scrollable content
           SafeArea(
             child: SingleChildScrollView(
@@ -102,7 +102,7 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                 children: [
                   _buildHeroSection(),
                   const SizedBox(height: 32),
-                  _buildSectionLabel('MY LIBRARY', Icons.grid_view_rounded, Colors.greenAccent),
+                  _buildSectionLabel('MY LIBRARY', Icons.grid_view_rounded, AppColors.statusGreen),
                   const SizedBox(height: 12),
                   _buildLibraryGrid(),
                   const SizedBox(height: 32),

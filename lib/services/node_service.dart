@@ -40,6 +40,7 @@ class NodeService {
   }
 
   void log(String message) {
+    print(message); // logcat visibility
     final logs = [..._state.logs, message];
     if (logs.length > 500) {
       logs.removeRange(0, logs.length - 500);
@@ -59,8 +60,16 @@ class NodeService {
 
   Future<void> init() async {
     await _identity.init();
+    // Reset pairing state on each fresh init — the singleton persists across
+    // gateway restarts and a stale _pairingResolveAttempted=true would silently
+    // block all subsequent connect() calls.
+    _pairingResolveAttempted = false;
     final deviceId = _identity.deviceId ?? '';
     _updateState(_state.copyWith(deviceId: deviceId));
+    log('');
+    log('  🦞 LOBSTER-8.0');
+    log('  ============');
+    log('');
     if (deviceId.isNotEmpty) {
       log('[NODE] Device ID: ${deviceId.substring(0, 12)}...');
     } else {
@@ -69,6 +78,17 @@ class NodeService {
   }
 
   Future<void> connect({String? host, int? port}) async {
+    if (_pairingResolveAttempted) {
+      log('[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)');
+      return;
+    }
+
+    final isComplete = await NativeBridge.isBootstrapComplete();
+    if (!isComplete) {
+      log('[NODE] Bootstrap incomplete. Node connection deferred.');
+      return;
+    }
+
     final prefs = PreferencesService();
     await prefs.init();
 
@@ -87,7 +107,10 @@ class NodeService {
     _frameSubscription = _ws.frameStream.listen(_onFrame);
     _pairingSubscription?.cancel();
     _pairingSubscription = _ws.pairingRequiredStream.listen((requestId) {
-      if (_state.status == NodeStatus.paired) return; // ignore stale 1008s after successful connect
+      // One-shot: cancel immediately so subsequent 1008 closes on stray
+      // reconnect attempts don't trigger a second concurrent approval flow.
+      _pairingSubscription?.cancel();
+      _pairingSubscription = null;
       _handleNodePairingRequired(requestId);
     });
 
@@ -103,7 +126,7 @@ class NodeService {
       String challengeNonce;
       try {
         challengeNonce = await _challengeCompleter!.future
-            .timeout(const Duration(milliseconds: 800)) ?? '';
+            .timeout(const Duration(milliseconds: 3000)) ?? '';
       } catch (_) {
         challengeNonce = ''; // No challenge within timeout — send without nonce field
       }
@@ -193,9 +216,9 @@ class NodeService {
 
     _gatewayAuthToken ??= await _readGatewayToken();
 
-    // Prefer gateway auth token (exact match); fall back to device token
-    // (gateway verifies device tokens as fallback if gateway token check fails)
-    final authToken = _gatewayAuthToken ?? deviceToken;
+    // Protocol v3: The device identity signature ONLY signs the gateway auth token
+    // (if provided). The device token is passed separately in auth.deviceToken.
+    final signatureToken = _gatewayAuthToken;
 
     const clientId = 'node-host';
     const clientMode = 'node';
@@ -211,7 +234,7 @@ class NodeService {
       role: role,
       scopes: scopes,
       signedAtMs: signedAtMs,
-      token: authToken,
+      token: signatureToken,
       nonce: nonce,
     );
     final signature = await _identity.sign(authPayload) ?? '';
@@ -241,7 +264,10 @@ class NodeService {
         if (nonce.isNotEmpty) 'nonce': nonce, // omit when empty — gateway schema requires min 1 char
         'signedAt': signedAtMs,
       },
-      if (authToken != null) 'auth': {'token': authToken},
+      'auth': {
+        if (_gatewayAuthToken != null) 'token': _gatewayAuthToken,
+        if (deviceToken != null && deviceToken.isNotEmpty) 'deviceToken': deviceToken,
+      },
       'locale': 'en-US',
       // Include caps/commands for node registration
       'caps': caps,
@@ -267,12 +293,9 @@ class NodeService {
       final message = errPayload['message'] as String? ?? 'Connect failed';
 
       if (code == 'TOKEN_INVALID' || code == 'NOT_PAIRED' ||
-          code == 'DEVICE_NOT_PAIRED' || (code == 'INVALID_REQUEST' && message.contains('identity'))) {
-        // Extract requestId from the error payload if the gateway included it
-        final requestId = errPayload['requestId'] as String?
-            ?? errPayload['pairRequestId'] as String?;
-        log('[NODE] Identity mismatch or not paired, requesting recovery (requestId=$requestId)...');
-        await _handleNodePairingRequired(requestId);
+          code == 'DEVICE_NOT_PAIRED') {
+        log('[NODE] Not paired or token invalid, gateway will close with 1008...');
+        // Do nothing — await the 1008 close event to trigger _handleNodePairingRequired
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
@@ -292,73 +315,7 @@ class NodeService {
     log('[NODE] Paired and connected');
   }
 
-  Future<void> _requestPairing() async {
-    _updateState(_state.copyWith(status: NodeStatus.pairing));
-    log('[NODE] Requesting pairing...');
 
-    try {
-      final pairReq = NodeFrame.request('node.pair.request', {
-        'deviceId': _identity.deviceId,
-      });
-      final response = await _ws.sendRequest(
-        pairReq,
-        timeout: const Duration(milliseconds: AppConstants.pairingTimeoutMs),
-      );
-
-      if (response.isError) {
-        final errPayload = response.payload ?? response.error ?? {};
-        _updateState(_state.copyWith(
-          status: NodeStatus.error,
-          errorMessage: errPayload['message'] as String? ?? 'Pairing failed',
-        ));
-        log('[NODE] Pairing error: $errPayload');
-        return;
-      }
-
-      final respPayload = response.payload ?? {};
-      final code = respPayload['code'] as String?;
-      final token = respPayload['token'] as String? ??
-          (respPayload['auth'] as Map?)?['deviceToken'] as String?;
-
-      if (token != null) {
-        final prefs = PreferencesService();
-        await prefs.init();
-        prefs.nodeDeviceToken = token;
-        log('[NODE] Pairing approved, token received');
-        await Future.delayed(const Duration(milliseconds: 500));
-        await _ws.disconnect();
-        await connect();
-        return;
-      }
-
-      if (code != null) {
-        _updateState(_state.copyWith(pairingCode: code));
-        log('[NODE] Pairing code: $code');
-
-        // Auto-approve if connecting to localhost
-        final isLocal = _state.gatewayHost == '127.0.0.1' ||
-            _state.gatewayHost == 'localhost';
-        if (isLocal) {
-          log('[NODE] Local gateway detected, auto-approving...');
-          try {
-            await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw nodes approve $code');
-            log('[NODE] Auto-approve command sent');
-            await Future.delayed(const Duration(milliseconds: 500));
-            await _ws.disconnect();
-            await connect();
-          } catch (e) {
-            log('[NODE] Auto-approve failed: $e (user must approve manually)');
-          }
-        }
-      }
-    } catch (e) {
-      _updateState(_state.copyWith(
-        status: NodeStatus.error,
-        errorMessage: 'Pairing timeout: $e',
-      ));
-      log('[NODE] Pairing failed: $e');
-    }
-  }
 
   /// Handle a node.invoke.request event from the gateway.
   /// The gateway sends: event "node.invoke.request" with payload:
@@ -431,68 +388,54 @@ class NodeService {
     }
   }
 
+  /// Called when the gateway closes the WebSocket with 1008 (pairing required).
+  /// This means the device is known to the gateway but not approved yet.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
     clearCachedToken();
+    _ws.haltReconnect();
 
-    // Stop auto-reconnect BEFORE running approve.
-    // Each reconnect creates a new pairing requestId at the gateway,
-    // invalidating the one we're about to approve.
-    log('[NODE] Pairing required — halting reconnects for approval...');
-    await _ws.disconnect();
-    // Wait 5s: the previous connect() call's WebSocket (fffcbbcb) was in flight
-    // and its connect frame takes ~3-4s to be fully processed by the gateway.
-    // Running --latest before that creates a race where fffcbbcb's NEW requestId
-    // supersedes the one we're about to approve → "unknown requestId".
-    await Future.delayed(const Duration(seconds: 5));
-
-    log('[NODE] Attempting auto-approval...');
-    const env = 'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && ';
-
-    try {
-      for (int attempt = 1; attempt <= 3; attempt++) {
-        // Use "echo y |" to answer the confirmation prompt atomically.
-        // Without it the CLI hangs waiting for stdin → 30s timeout.
-        // For --latest: discovers AND approves the current pending request in one CLI call.
-        // For a known uuid: approves directly with confirmation.
-        final cmd = (requestId != null && requestId.isNotEmpty)
-            ? 'echo y | openclaw devices approve $requestId'
-            : 'echo y | openclaw devices approve --latest';
-        log('[NODE] Attempt $attempt/3 → $cmd');
-
-        try {
-          await NativeBridge.runInProot('$env $cmd', timeout: 30);
-          log('[NODE] Device approved on attempt $attempt — reconnecting...');
-          break;
-        } catch (e) {
-          final errStr = e.toString();
-          log('[NODE] Approval attempt $attempt error: ${errStr.length > 200 ? errStr.substring(0, 200) : errStr}');
-
-          // If --latest printed a UUID hint, parse it and retry with it directly
-          final match = RegExp(r'openclaw devices approve ([a-f0-9-]{36})')
-              .firstMatch(errStr);
-          if (match != null) {
-            requestId = match.group(1)!;
-            log('[NODE] Discovered requestId: $requestId — retrying with echo y...');
-            continue;
-          }
-
-          if (attempt < 3) {
-            log('[NODE] Retrying in 1s...');
-            await Future.delayed(const Duration(seconds: 1));
-            continue;
-          }
-
-          log('[NODE] All approval attempts failed — will reconnect and retry pairing');
-          break;
-        }
+    if (requestId != null && requestId.isNotEmpty) {
+      log('[NODE] Pairing required (1008) — auto-approving device $requestId...');
+      try {
+        await NativeBridge.approveDevice(requestId);
+        await Future.delayed(const Duration(milliseconds: 1500));
+        log('[NODE] Device approved successfully');
+      } catch (e) {
+        log('[NODE] Auto-approve failed: $e');
+        await _clearNodeDeviceRecord();
       }
-    } finally {
-      await Future.delayed(const Duration(seconds: 2));
-      _pairingResolveAttempted = false;
-      log('[NODE] Reconnecting after approval attempt...');
-      await connect();
+    } else {
+      await _clearNodeDeviceRecord();
+    }
+
+    _pairingResolveAttempted = false;
+    await _ws.disconnect();
+    await connect();
+  }
+
+  Future<void> _clearNodeDeviceRecord() async {
+    log('[NODE] Pairing required (1008) — clearing stale device record via filesystem...');
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      
+      final devicesDir = Directory('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices');
+      if (devicesDir.existsSync()) {
+        devicesDir.deleteSync(recursive: true);
+      }
+      final devicesFile = File('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices.json');
+      if (devicesFile.existsSync()) {
+        devicesFile.deleteSync();
+      }
+
+      log('[NODE] Device record cleared — will re-pair on next connect');
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.nodeDeviceToken = null;
+      _gatewayAuthToken = null;
+    } catch (e) {
+      log('[NODE] Could not clear device record: $e');
     }
   }
 

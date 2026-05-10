@@ -258,7 +258,7 @@ class BootstrapService {
             },
           );
 
-          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Extracting rootfs (this takes a while)...', 30);
+          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.0, 'Optimizing environment for local LLM...', 30);
           await NativeBridge.extractRootfs(tarPath);
           rootfsReady = true;
         }
@@ -460,19 +460,28 @@ class BootstrapService {
       
       String content = await openclawMjs.readAsString();
       
-      // Fix the broken shebang by replacing the invalid exec line with proper ESM handling
-      if (content.contains('exec node "')) {
-        // Replace the broken shebang with a proper Node.js ESM invocation
-        content = content.replaceAll(
-          RegExp(r'^exec node ".*?" "\$@"'),
-          '#!/bin/sh\\n":" //# comment; exec /usr/bin/env node --input-type=module "\$0" "\$@"',
-        );
-        
-        await openclawMjs.writeAsString(content);
-        _log('Fixed openclaw.mjs shebang for ESM compatibility');
-      }
-    } catch (e) {
-      _log('Failed to fix openclaw.mjs shebang: $e');
+      // 2. Fresh install (latest) + peer dep fix for @buape/carbon
+      await NativeBridge.runInProot(
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
+        'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
+        'openclaw doctor --fix 2>/dev/null || true',
+        timeout: 1800,
+      );
+      
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Recreating binary wrappers...', 90);
+      
+      // 3. Re-create wrappers using the hardened native logic
+      await NativeBridge.createBinWrappers('openclaw');
+      
+      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Repair complete! Restarting gateway...', 100);
+      
+    } catch (e, stack) {
+      _log('Repair failed', error: e, stackTrace: stack);
+      onProgress(SetupState(
+        step: SetupStep.error,
+        error: 'Repair failed: $e. Check your internet connection.',
+      ));
     }
   }
 

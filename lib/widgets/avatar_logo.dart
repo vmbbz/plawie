@@ -19,85 +19,58 @@ class AvatarLogo extends StatefulWidget {
 }
 
 class _AvatarLogoState extends State<AvatarLogo>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _controller;
+  late AnimationController _flickerController;
   late Animation<double> _floatAnimation;
   late Animation<double> _pulseAnimation;
   late Animation<double> _rotateAnimation;
   late Animation<double> _blinkAnimation;
-  late Animation<double> _clawAnimation;
-  late Animation<double> _lightningAnimation;
 
   @override
   void initState() {
     super.initState();
     
+    _controller = AnimationController(
+      duration: const Duration(seconds: 4),
+      vsync: this,
+    );
+
+    _flickerController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+
+    _floatAnimation = Tween<double>(begin: -5, end: 5).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    ));
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
+    ));
+
+    _rotateAnimation = Tween<double>(begin: -0.03, end: 0.03).animate(CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.5, 1.0, curve: Curves.easeInOut),
+    ));
+
+    _blinkAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.7, 0.8, curve: Curves.easeInOut),
+    ));
+
     if (widget.animated) {
-      _controller = AnimationController(
-        duration: const Duration(seconds: 2),
-        vsync: this,
-      );
-
-      _floatAnimation = Tween<double>(
-        begin: -5,
-        end: 5,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ));
-
-      _pulseAnimation = Tween<double>(
-        begin: 1.0,
-        end: 1.05,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
-      ));
-
-      _rotateAnimation = Tween<double>(
-        begin: -0.05,
-        end: 0.05,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.5, 1.0, curve: Curves.easeInOut),
-      ));
-
-      // Blinking animation - quick close, slow open (faster)
-      _blinkAnimation = Tween<double>(
-        begin: 1.0,
-        end: 0.0,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.6, 0.7, curve: Curves.easeInOut),
-      ));
-
-      // Claw animation - snap open and close
-      _clawAnimation = Tween<double>(
-        begin: 0.0,
-        end: 1.0,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.8, 0.9, curve: Curves.elasticOut),
-      ));
-
-      // Lightning animation - movement and glow (faster)
-      _lightningAnimation = Tween<double>(
-        begin: 0.0,
-        end: 1.0,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.75, 0.85, curve: Curves.easeInOut),
-      ));
-
       _controller.repeat(reverse: true);
+      _flickerController.repeat(reverse: true);
     }
   }
 
   @override
   void dispose() {
-    if (widget.animated) {
-      _controller.dispose();
-    }
+    _controller.dispose();
+    _flickerController.dispose();
     super.dispose();
   }
 
@@ -106,140 +79,116 @@ class _AvatarLogoState extends State<AvatarLogo>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    Widget avatar = Container(
-      width: widget.size,
-      height: widget.size,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [
-                  AppColors.darkSurface,
-                  AppColors.darkSurfaceAlt,
-                  AppColors.darkBg,
-                ]
-              : [
-                  const Color(0xFFF8F9FA),
-                  const Color(0xFFE8EAED),
-                  const Color(0xFFDADCE0),
-                ],
-        ),
-        borderRadius: BorderRadius.circular(widget.size * 0.15),
-        border: Border.all(
-          color: isDark 
-              ? AppColors.darkBorder.withOpacity(0.3)
-              : AppColors.lightBorder.withOpacity(0.5),
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isDark 
-                ? Colors.black.withOpacity(0.4)
-                : Colors.black.withOpacity(0.15),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-          if (widget.showGlow)
-            BoxShadow(
-              color: AppColors.statusGreen.withOpacity(0.3),
-              blurRadius: 30,
-              offset: const Offset(0, 0),
-            ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Background circuit pattern
-          Positioned.fill(
-            child: CustomPaint(
-              painter: CircuitPainter(isDark: isDark),
-            ),
-          ),
-          // Avatar logo
-          Center(
-            child: SvgPicture.asset(
-              'assets/app_icon_official.svg',
-              width: widget.size * 0.7,
-              height: widget.size * 0.7,
-              colorFilter: const ColorFilter.mode(
-                Color(0xFF00C853), // Plawie Green
-                BlendMode.srcIn,
+    return AnimatedBuilder(
+      animation: Listenable.merge([_controller, _flickerController]),
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, _floatAnimation.value),
+          child: Transform.scale(
+            scale: _pulseAnimation.value,
+            child: Transform.rotate(
+              angle: _rotateAnimation.value,
+              child: Container(
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [AppColors.darkSurface, AppColors.darkSurfaceAlt, AppColors.darkBg]
+                        : [const Color(0xFFF8F9FA), const Color(0xFFE8EAED), const Color(0xFFDADCE0)],
+                  ),
+                  borderRadius: BorderRadius.circular(widget.size * 0.2),
+                  border: Border.all(
+                    color: isDark 
+                        ? AppColors.statusGreen.withOpacity(0.2)
+                        : AppColors.lightBorder.withOpacity(0.5),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    if (widget.showGlow)
+                      BoxShadow(
+                        color: AppColors.statusGreen.withOpacity(0.2),
+                        blurRadius: 30,
+                        spreadRadius: 5,
+                      ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(widget.size * 0.2),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: CircuitPainter(
+                            isDark: isDark,
+                            animation: _flickerController.value,
+                          ),
+                        ),
+                      ),
+                      Center(
+                        child: SvgPicture.asset(
+                          'assets/app_icon_official.svg',
+                          width: widget.size * 0.65,
+                          height: widget.size * 0.65,
+                          colorFilter: const ColorFilter.mode(
+                            AppColors.statusGreen,
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
-
-    if (widget.animated) {
-      return AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: Offset(0, _floatAnimation.value),
-            child: Transform.scale(
-              scale: _pulseAnimation.value,
-              child: Transform.rotate(
-                angle: _rotateAnimation.value,
-                child: child,
-              ),
-            ),
-          );
-        },
-        child: avatar,
-      );
-    }
-
-    return avatar;
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class CircuitPainter extends CustomPainter {
   final bool isDark;
+  final double animation;
 
-  CircuitPainter({required this.isDark});
+  CircuitPainter({required this.isDark, required this.animation});
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = (isDark ? const Color(0xFFFFFFFF) : const Color(0xFF000000)).withOpacity(0.1)
-      ..strokeWidth = 1.0;
+      ..color = (isDark ? Colors.white : Colors.black).withOpacity(0.05)
+      ..strokeWidth = 0.5;
 
-    // Draw circuit-like patterns
-    final path = Path();
-    
-    // Horizontal lines
-    for (double y = size.height * 0.1; y < size.height * 0.9; y += size.height * 0.15) {
-      path.moveTo(size.width * 0.1, y);
-      path.lineTo(size.width * 0.3, y);
-      path.moveTo(size.width * 0.7, y);
-      path.lineTo(size.width * 0.9, y);
-    }
+    final dotPaint = Paint()..style = PaintingStyle.fill;
 
-    // Vertical lines
-    for (double x = size.width * 0.1; x < size.width * 0.9; x += size.width * 0.15) {
-      path.moveTo(x, size.height * 0.1);
-      path.lineTo(x, size.height * 0.3);
-      path.moveTo(x, size.height * 0.7);
-      path.lineTo(x, size.height * 0.9);
-    }
-
-    // Dots at intersections
-    for (double x = size.width * 0.1; x < size.width * 0.9; x += size.width * 0.15) {
-      for (double y = size.height * 0.1; y < size.height * 0.9; y += size.height * 0.15) {
-        canvas.drawCircle(Offset(x, y), 1.5, paint);
+    // Grid dots with random lighting
+    for (double x = size.width * 0.15; x < size.width * 0.9; x += size.width * 0.2) {
+      for (double y = size.height * 0.15; y < size.height * 0.9; y += size.height * 0.2) {
+        // Pseudo-random lighting based on x, y and animation
+        final dotSeed = (x * 37.0 + y * 13.0) % 1.0;
+        final isGlowing = (animation - dotSeed).abs() < 0.15;
+        
+        if (isGlowing) {
+          dotPaint.color = AppColors.statusGreen.withOpacity(0.4 * animation);
+          canvas.drawCircle(Offset(x, y), 2.5, dotPaint);
+          
+          final glowPaint = Paint()
+            ..color = AppColors.statusGreen.withOpacity(0.2 * animation)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+          canvas.drawCircle(Offset(x, y), 5, glowPaint);
+        } else {
+          dotPaint.color = (isDark ? Colors.white : Colors.black).withOpacity(0.1);
+          canvas.drawCircle(Offset(x, y), 1.5, dotPaint);
+        }
       }
     }
-
-    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(CircuitPainter oldDelegate) => oldDelegate.animation != animation;
 }
 
 class LightningBoltPainter extends CustomPainter {

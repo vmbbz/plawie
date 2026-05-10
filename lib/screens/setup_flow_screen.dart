@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../app.dart';
+import '../constants.dart';
 import '../providers/gateway_provider.dart';
 import '../models/gateway_state.dart';
 import '../services/native_bridge.dart';
@@ -331,8 +334,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 'assets/app_icon_official.svg',
                 width: 24,
                 height: 24,
-                colorFilter: ColorFilter.mode(
-                  const Color(0xFF00C853),
+                colorFilter: const ColorFilter.mode(
+                  AppColors.statusGreen,
                   BlendMode.srcIn,
                 ),
               ),
@@ -345,16 +348,18 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               children: [
                 Text(
                   'Plawie Setup',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
+                  style: GoogleFonts.outfit(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
                     letterSpacing: -0.5,
                   ),
                 ),
                 Text(
                   _stepTitles[_currentStep],
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: GoogleFonts.outfit(
                     color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
                   ),
                 ),
               ],
@@ -412,9 +417,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(2),
                 color: isPast
-                    ? const Color(0xFF00C853)
+                    ? AppColors.statusGreen
                     : isActive
-                        ? const Color(0xFF00C853).withAlpha(180)
+                        ? AppColors.statusGreen.withAlpha(180)
                         : (isDark
                             ? Colors.white.withAlpha(20)
                             : Colors.black.withAlpha(20)),
@@ -920,11 +925,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     setState(() {});
                   },
                   backgroundColor: _agentNameController.text == name
-                      ? const Color(0xFF00C853).withAlpha(30)
+                      ? AppColors.statusGreen.withAlpha(40)
                       : null,
                   side: BorderSide(
                     color: _agentNameController.text == name
-                        ? const Color(0xFF00C853).withAlpha(120)
+                        ? AppColors.statusGreen.withAlpha(150)
                         : theme.colorScheme.outline.withAlpha(60),
                   ),
                 ),
@@ -984,10 +989,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF00C853).withAlpha(isDark ? 15 : 10),
+            color: AppColors.statusGreen.withAlpha(isDark ? 15 : 10),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: const Color(0xFF00C853).withAlpha(40),
+              color: AppColors.statusGreen.withAlpha(60),
             ),
           ),
           child: Column(
@@ -1118,20 +1123,21 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                         shape: BoxShape.circle,
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFF00C853),
-                            const Color(0xFF00C853).withAlpha(180),
+                            AppColors.statusGreen,
+                            AppColors.statusGreen.withOpacity(0.7),
                           ],
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF00C853).withAlpha(80),
-                            blurRadius: 24,
+                            color: AppColors.statusGreen.withAlpha(80),
+                            blurRadius: 30,
+                            spreadRadius: 5,
                             offset: const Offset(0, 8),
                           ),
                         ],
                       ),
                       child: const Icon(Icons.check_rounded,
-                          color: Colors.white, size: 40),
+                          color: Colors.black, size: 40),
                     )
                   : Container(
                       key: const ValueKey('loading'),
@@ -1184,11 +1190,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _goToDashboard,
-                icon: const Icon(Icons.dashboard_outlined, size: 20),
-                label: const Text('Open Dashboard'),
+                icon: const Icon(Icons.dashboard_outlined, size: 20, color: Colors.black),
+                label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF00C853),
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.statusGreen,
+                  foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 28, vertical: 14),
                   textStyle: const TextStyle(
@@ -1238,8 +1244,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             FilledButton(
               onPressed: _canProceed ? _nextStep : null,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF00C853),
-                foregroundColor: Colors.white,
+                backgroundColor: AppColors.statusGreen,
+                foregroundColor: Colors.black,
                 disabledBackgroundColor:
                     isDark ? Colors.white.withAlpha(15) : Colors.black.withAlpha(10),
                 padding:
@@ -1247,11 +1253,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
+                children: [
                   Text('Continue',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  SizedBox(width: 6),
-                  Icon(Icons.arrow_forward, size: 18),
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
                 ],
               ),
             )
@@ -1264,11 +1270,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     const Duration(milliseconds: 500), _launchGateway);
               },
               icon: const Icon(Icons.rocket_launch, size: 18),
-              label: const Text('Launch Gateway',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              label: Text('Launch Gateway',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w900)),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF00C853),
-                foregroundColor: Colors.white,
+                backgroundColor: AppColors.statusGreen,
+                foregroundColor: Colors.black,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               ),

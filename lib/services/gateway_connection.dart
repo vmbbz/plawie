@@ -49,6 +49,10 @@ class GatewayConnection {
   /// The list of methods supported by the gateway, extracted from the hello-ok response.
   List<String> supportedMethods = [];
 
+  /// The canvas/web UI URL returned by the gateway in hello-ok.
+  /// This is a fully-authenticated URL — use it directly instead of probing the CLI.
+  String? canvasHostUrl;
+
   final _stateNotifier = StreamController<GatewayConnectionState>.broadcast();
   Stream<GatewayConnectionState> get stateStream => _stateNotifier.stream;
 
@@ -136,10 +140,15 @@ class GatewayConnection {
       _onFrame,
       onError: (_) => _onDisconnect(),
       onDone: () {
-        // Capture the close code and reason BEFORE _cleanup() nulls _channel.
+        // Capture the close code BEFORE _cleanup() nulls _channel.
         final closeCode = _channel?.closeCode;
-        final closeReason = _channel?.closeReason;
-        _onDisconnect(pairingRequired: closeCode == 1008, reason: closeReason);
+        final closeReason = _channel?.closeReason ?? '';
+        String? reqId;
+        if (closeCode == 1008) {
+          final m = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
+          reqId = m?.group(1);
+        }
+        _onDisconnect(pairingRequired: closeCode == 1008, requestId: reqId);
       },
     );
 
@@ -243,6 +252,9 @@ class GatewayConnection {
             supportedMethods = List<String>.from(methods);
           }
 
+          // Extract the gateway's own web UI URL — fully authenticated, no CLI probe needed.
+          canvasHostUrl = payload?['canvasHostUrl'] as String?;
+
           // Persist device token so future connects include it in the auth block.
           // Without this, every reconnect triggers the security scope-upgrade
           // audit → pairing-required, even for already-approved devices.
@@ -264,30 +276,11 @@ class GatewayConnection {
             // Error could be a Map or a String. Avoid fatal TypeErrors on Strings.
             final errorRaw = frame['error'];
             String msg = 'connect rejected';
-            String? errorCode;
-            String? pairingRequestId;
             if (errorRaw is Map) {
               msg = errorRaw['message']?.toString() ?? 'connect rejected';
-              errorCode = errorRaw['code'] as String?;
-              pairingRequestId = errorRaw['requestId'] as String?
-                  ?? frame['requestId'] as String?;
             } else if (errorRaw != null) {
               msg = errorRaw.toString();
             }
-
-            // Emit to pairingRequiredStream BEFORE completing the error.
-            // _cleanup() (called after completeError) cancels the subscription so
-            // onDone never fires — without this, the pairing handler in GatewayService
-            // never gets called and the operator loops forever.
-            final isPairingError = errorCode == 'NOT_PAIRED'
-                || errorCode == 'DEVICE_NOT_PAIRED'
-                || errorCode == 'TOKEN_INVALID'
-                || msg.toLowerCase().contains('pairing')
-                || msg.toLowerCase().contains('not approved');
-            if (isPairingError && !_pairingRequiredController.isClosed) {
-              _pairingRequiredController.add(pairingRequestId);
-            }
-
             _handshakeCompleter!.completeError(Exception(msg));
           }
         }
@@ -367,7 +360,7 @@ class GatewayConnection {
     } catch (_) {}
   }
 
-  void _onDisconnect({bool pairingRequired = false, String? reason}) {
+  void _onDisconnect({bool pairingRequired = false, String? requestId}) {
     _updateState(GatewayConnectionState.disconnected);
     // Error all in-flight requests immediately so callers fail fast
     // instead of waiting for the 240s timeout before showing an error.
@@ -380,18 +373,6 @@ class GatewayConnection {
     _pendingRequests.clear();
     _cleanup();
     if (pairingRequired && !_pairingRequiredController.isClosed) {
-      // Invalidate the host-side token cache — 1008 usually means the gateway
-      // restarted and generated a new token that we haven't read yet.
-      GatewayService().clearTokenCache();
-
-      // EXPERT FIX: Extract requestId and auto-approve for localhost connections
-      String? requestId;
-      if (reason != null && reason.contains('requestId:')) {
-        final match = RegExp(r'requestId:\s*([a-f0-9\-]+)').firstMatch(reason);
-        if (match != null) {
-          requestId = match.group(1);
-        }
-      }
       _pairingRequiredController.add(requestId);
     }
     _scheduleReconnect();

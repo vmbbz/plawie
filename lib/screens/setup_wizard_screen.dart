@@ -101,7 +101,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          const NebulaBg(),
+          NebulaBg(),
           SafeArea(
             child: Consumer<SetupProvider>(
               builder: (context, provider, _) {
@@ -179,7 +179,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark 
-              ? AppColors.darkBorder.withOpacity(0.3)
+              ? AppColors.statusGreen.withOpacity(0.3)
               : AppColors.lightBorder.withOpacity(0.5),
           width: 1,
         ),
@@ -208,15 +208,16 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 ShaderMask(
                   shaderCallback: (bounds) => LinearGradient(
                     colors: isDark
-                        ? [AppColors.inverseText, AppColors.inverseText.withOpacity(0.8)]
+                        ? [Colors.white, AppColors.statusGreen]
                         : [AppColors.darkBg, AppColors.darkBg.withOpacity(0.8)],
                   ).createShader(bounds),
                   child: Text(
                     'Setup Plawie',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? AppColors.inverseText : AppColors.darkBg,
+                    style: GoogleFonts.outfit(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -381,20 +382,20 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         width: double.infinity,
         height: 56,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
               AppColors.statusGreen,
-              AppColors.statusGreen.withOpacity(0.8),
+              Color(0xFF00C853), // Slightly darker green for depth
             ],
           ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
               color: AppColors.statusGreen.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -403,20 +404,21 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () => _goToApp(context),
-            child: const Center(
+            child: Center(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.arrow_forward, color: Colors.white, size: 20),
-                  SizedBox(width: 8),
                   Text(
                     'Continue to App',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                    style: GoogleFonts.outfit(
+                      color: Colors.black,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 22),
                 ],
               ),
             ),
@@ -435,8 +437,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                    isDark ? AppColors.darkBorder.withOpacity(0.8) : AppColors.lightBorder.withOpacity(0.8),
+                    isDark ? AppColors.darkBorder.withOpacity(0.5) : AppColors.lightBorder,
+                    isDark ? AppColors.darkBorder.withOpacity(0.3) : AppColors.lightBorder.withOpacity(0.8),
                   ],
                 )
               : LinearGradient(
