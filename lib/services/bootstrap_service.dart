@@ -27,7 +27,7 @@ class BootstrapService {
       
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'npm update -g openclaw',
+        '/usr/local/bin/npm update -g openclaw',
         timeout: 300,
       );
       
@@ -334,9 +334,9 @@ class BootstrapService {
         _emitProgress(onProgress, SetupStep.installingNode, 0.9, 'Verifying Node.js...', 78);
         
         const wrapper = '/root/.openclaw/node-wrapper.js';
-        const nodeRun = 'node $wrapper';
+        const nodeRun = '/usr/local/bin/node $wrapper';
         const npmCli = '/usr/local/lib/node_modules/npm/bin/npm-cli.js';
-        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && $nodeRun $npmCli --version');
+        await NativeBridge.runInProot('export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && /usr/local/bin/node --version && $nodeRun $npmCli --version');
       } else {
         _emitProgress(onProgress, SetupStep.installingNode, 1.0, 'Node.js already installed, skipping...', 78);
       }
@@ -477,9 +477,9 @@ class BootstrapService {
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
-        'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true && '
-        'openclaw doctor --fix 2>/dev/null || true',
+        '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
+        'cd /usr/local/lib/node_modules/openclaw && /usr/local/bin/npm install --no-audit --no-fund 2>/dev/null || true && '
+        '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
         timeout: 1800,
       );
       
@@ -520,7 +520,7 @@ class BootstrapService {
       // 1. Install with minimal flags
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
+        '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
         timeout: 600,
       );
 

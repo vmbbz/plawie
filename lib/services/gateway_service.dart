@@ -330,16 +330,16 @@ PARAMETER num_batch 512
       if (isGlobal) {
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'npm install -g $packageName --no-audit --no-fund && '
-          'openclaw doctor --fix 2>/dev/null || true',
+          '/usr/local/bin/npm install -g $packageName --no-audit --no-fund && '
+          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
           timeout: 300,
         );
       } else {
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'cd /usr/local/lib/node_modules/openclaw && '
-          'npm install --no-save --no-audit --no-fund $packageName 2>/dev/null && '
-          'openclaw doctor --fix 2>/dev/null || true',
+          '/usr/local/bin/npm install --no-save --no-audit --no-fund $packageName 2>/dev/null && '
+          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
           timeout: 120,
         );
       }
@@ -380,7 +380,7 @@ PARAMETER num_batch 512
         _addActivity('[SYS] Configuration corrupted — rewriting defaults...');
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'openclaw doctor --fix 2>/dev/null || true',
+          '/usr/local/bin/openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         await _configureGateway(); // our overrides run after doctor so they aren't undone
