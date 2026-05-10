@@ -166,8 +166,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     try {
       final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
 
-      // Logic Optimized: Skipping redundant doctor --fix during final launch
-      // Step 1: Write API key and Start Gateway
+      setState(() {
+        _launchStatus = 'Configuring environment...';
+        _launchProgress = 0.4;
+      });
 
       await gatewayProvider.configureAndStart(
         provider: _selectedProvider!,
@@ -175,14 +177,13 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         agentName: _agentNameController.text.trim(),
       );
 
-
       setState(() {
-        _launchStatus = 'Starting gateway...';
-        _launchProgress = 0.7;
+        _launchStatus = 'Seeding workspace...';
+        _launchProgress = 0.8;
       });
 
-      // Short safe wait (matches the working commit)
-      await Future.delayed(const Duration(seconds: 3));
+      // Safe wait for CLI side-effects to settle
+      await Future.delayed(const Duration(seconds: 4));
 
       setState(() {
         _launchProgress = 1.0;
@@ -347,7 +348,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   'Plawie',
                   style: GoogleFonts.outfit(
                     fontSize: 22,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -934,8 +935,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                           ? AppColors.statusGreen
                           : theme.colorScheme.onSurface,
                       fontWeight: _agentNameController.text == name
-                          ? FontWeight.bold
-                          : FontWeight.normal,
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      fontSize: 12,
                     ),
                   ),
                   onPressed: () {
@@ -943,12 +945,17 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     setState(() {});
                   },
                   backgroundColor: _agentNameController.text == name
-                      ? AppColors.statusGreen.withAlpha(40)
+                      ? AppColors.statusGreen.withOpacity(0.08)
                       : Colors.transparent,
                   side: BorderSide(
                     color: _agentNameController.text == name
                         ? AppColors.statusGreen.withAlpha(150)
-                        : theme.colorScheme.outline.withAlpha(60),
+                        : theme.colorScheme.outline.withAlpha(40),
+                    width: _agentNameController.text == name ? 1.2 : 1,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
               )
@@ -1002,6 +1009,26 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             } catch (_) {}
           },
           isAction: true,
+        ),
+        const SizedBox(height: 12),
+        _buildSettingTile(
+          theme: theme,
+          isDark: isDark,
+          icon: Icons.security_outlined,
+          title: 'Advanced Onboarding',
+          subtitle: 'Use SecretRef for secure key handling',
+          value: true,
+          onChanged: (_) {},
+        ),
+        const SizedBox(height: 12),
+        _buildSettingTile(
+          theme: theme,
+          isDark: isDark,
+          icon: Icons.settings_input_component,
+          title: 'Daemon Persistence',
+          subtitle: 'Keep gateway running in background',
+          value: false,
+          onChanged: (_) {},
         ),
         const SizedBox(height: 24),
         // Summary card
@@ -1201,15 +1228,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 letterSpacing: -0.5,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              _launchStatus,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.statusGreen,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            const SizedBox(height: 12),
+            _buildStatusBadge(_launchStatus, AppColors.statusGreen),
             const SizedBox(height: 24),
             // Progress bar
             if (!_launchComplete)
@@ -1294,7 +1314,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('Continue',
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.w800)),
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
                   const SizedBox(width: 8),
                   const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
                 ],
@@ -1310,7 +1330,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               },
               icon: const Icon(Icons.rocket_launch, size: 18),
               label: Text('Launch Gateway',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.w800)),
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.statusGreen,
                 foregroundColor: Colors.black,
@@ -1323,6 +1343,26 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           else
             const SizedBox.shrink(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withAlpha(120), width: 1.2),
+      ),
+      child: Text(
+        text.toUpperCase(),
+        style: GoogleFonts.outfit(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 1.2,
+        ),
       ),
     );
   }

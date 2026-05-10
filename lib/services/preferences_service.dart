@@ -15,6 +15,7 @@ class PreferencesService {
   static const _keyNodeGatewayPort = 'node_gateway_port';
   static const _keyNodePublicKey = 'node_ed25519_public';
   static const _keyNodeGatewayToken = 'node_gateway_token';
+  static const _keyGatewayToken = 'gateway_token';
   static const _keyLastApprovedRequestId = 'last_approved_request_id';
 
   SharedPreferences? _prefs;
@@ -79,6 +80,9 @@ class PreferencesService {
       _p.remove(_keyNodeGatewayToken);
     }
   }
+
+  String get gatewayToken => _p.getString(_keyGatewayToken) ?? '';
+  set gatewayToken(String value) => _p.setString(_keyGatewayToken, value);
 
   int? get nodeGatewayPort {
     final val = _p.getInt(_keyNodeGatewayPort);

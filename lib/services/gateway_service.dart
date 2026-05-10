@@ -1535,24 +1535,51 @@ PARAMETER num_batch 512
       defaultModels = [{'id': 'default', 'name': 'Default Model'}];
     }
 
-    // 1. Update openclaw.json
-    final config = await _readConfig();
-    config['env'] ??= {};
-    config['env']['vars'] ??= {};
-    if (envKey.isNotEmpty) config['env']['vars'][envKey] = key;
-
-    config['models'] ??= {};
-    config['models']['providers'] ??= {};
-    final prov = config['models']['providers'][openClawProvider] ?? {};
-    config['models']['providers'][openClawProvider] = {
-      ...prov,
-      'apiKey': key,
-      'models': prov['models'] ?? defaultModels,
-    };
-    if (openClawProvider == 'google' && config['models']['providers']['google']['baseUrl'] == null) {
-      config['models']['providers']['google']['baseUrl'] = "https://generativelanguage.googleapis.com/v1beta";
+    // Generate a secure gateway token if we don't have one
+    final prefs = PreferencesService();
+    await prefs.init();
+    String gatewayToken = prefs.gatewayToken;
+    if (gatewayToken.isEmpty) {
+      gatewayToken = const Uuid().v4();
+      prefs.gatewayToken = gatewayToken;
     }
-    await _writeConfig(config);
+
+    // Use official 'onboard' CLI for production-ready config
+    // We pass sensitive keys via environment variables to enable SecretRef storage
+    final onboardCmd = [
+      'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js"',
+      'export OPENCLAW_GATEWAY_TOKEN="$gatewayToken"',
+      'export OPENCLAW_PROVIDER_KEY="$key"',
+      '/usr/local/bin/openclaw onboard --non-interactive',
+      '--mode local',
+      '--auth-choice custom-api-key',
+      '--custom-base-url "${openClawProvider == 'google' ? "https://generativelanguage.googleapis.com/v1beta" : ""}"',
+      '--custom-model-id "${defaultModels.first['id']}"',
+      '--custom-api-key-ref-env OPENCLAW_PROVIDER_KEY', // Use SecretRef for API Key
+      '--gateway-auth token',
+      '--gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN', // Use SecretRef for Gateway Token
+      '--accept-risk'
+    ].join(' && ');
+
+    try {
+      await NativeBridge.runInProot(onboardCmd, timeout: 60);
+    } catch (e) {
+      debugPrint('[GatewayService] Onboarding CLI error: $e');
+      // Fallback: Manual patch if CLI fails (keeps app usable)
+      final config = await _readConfig();
+      config['env'] ??= {};
+      config['env']['vars'] ??= {};
+      if (envKey.isNotEmpty) config['env']['vars'][envKey] = key;
+      config['models'] ??= {};
+      config['models']['providers'] ??= {};
+      final prov = config['models']['providers'][openClawProvider] ?? {};
+      config['models']['providers'][openClawProvider] = {
+        ...prov,
+        'apiKey': key,
+        'models': prov['models'] ?? defaultModels,
+      };
+      await _writeConfig(config);
+    }
 
     // 2. Update agent auth-profiles.json
     try {
