@@ -10,7 +10,7 @@
 
 While the rest of the industry expects you to buy a $2,000 MacBook or wrestle with complex Docker containers just to run an autonomous AI agent, we took a different path. 
 
-**Plawie** represents a top 1% engineering achievement: we successfully engineered a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
+**Plawie** provides a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
 
 **What does this mean for you?**
 - **Zero Cloud:** Your data never leaves your device. Total privacy.
