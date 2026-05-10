@@ -262,7 +262,7 @@ class _SplashScreenState extends State<SplashScreen>
                           'Plawie',
                           style: GoogleFonts.outfit(
                             fontSize: 48,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             letterSpacing: 1.5,
                             color: Colors.white,
                           ),
