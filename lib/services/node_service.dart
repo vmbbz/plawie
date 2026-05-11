@@ -410,9 +410,12 @@ class NodeService {
       await _clearNodeDeviceRecord();
     }
 
-    _pairingResolveAttempted = false;
     await _ws.disconnect();
-    await connect();
+    _pairingResolveAttempted = false;
+    unawaited(Future.delayed(
+      const Duration(milliseconds: 1500),
+      () => connect(),
+    ));
   }
 
   Future<void> _clearNodeDeviceRecord() async {

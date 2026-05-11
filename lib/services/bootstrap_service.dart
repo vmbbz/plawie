@@ -765,6 +765,12 @@ class BootstrapService {
       // Replicate the Ollama-first logic from GatewayService for setup-time hardening
       config['gateway'] ??= {};
       config['gateway']['mode'] = 'local';
+      config['gateway']['bind'] = '127.0.0.1';
+      config['gateway']['port'] = AppConstants.gatewayPort;
+      config['gateway']['nodes'] ??= {};
+      config['gateway']['nodes']['autoApprove'] = true;
+      config['gateway']['controlUi'] ??= {};
+      (config['gateway']['controlUi'] as Map).remove('allowedOrigins');
       
       config['models'] ??= {};
       config['models']['providers'] ??= {};

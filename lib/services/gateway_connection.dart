@@ -76,6 +76,7 @@ class GatewayConnection {
 
   Completer<void>? _handshakeCompleter;
   Completer<String?>? _challengeCompleter;
+  bool _pairingRequiredDuringConnect = false;
 
   Future<bool>? _connectFuture;
 
@@ -119,6 +120,7 @@ class GatewayConnection {
   Future<bool> _doConnect() async {
     _updateState(GatewayConnectionState.connecting);
     _cleanup();
+    _pairingRequiredDuringConnect = false;
 
     try {
       final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
@@ -171,7 +173,9 @@ class GatewayConnection {
     } catch (_) {
       _updateState(GatewayConnectionState.disconnected);
       _cleanup();
-      _scheduleReconnect();
+      if (!_pairingRequiredDuringConnect) {
+        _scheduleReconnect();
+      }
       return false;
     }
 
@@ -184,11 +188,16 @@ class GatewayConnection {
   Future<void> _sendConnectFrame(String? nonce) async {
     final version = await OpenClawCommandService.detectOpenClawVersion();
     
+    const clientId = 'openclaw-control-ui';
+    const clientMode = 'ui';
+    const role = 'operator';
+    const scopes = ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'];
+
     final deviceBlock = await _identity.buildDeviceBlock(
-      clientId: 'openclaw-android',
-      clientMode: 'ui',
-      role: 'operator',
-      scopes: ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
+      clientId: clientId,
+      clientMode: clientMode,
+      role: role,
+      scopes: scopes,
       token: _token,
       nonce: nonce,
     );
@@ -202,13 +211,13 @@ class GatewayConnection {
         'minProtocol': 3,
         'maxProtocol': 3,
         'client': {
-          'id': 'openclaw-android',
+          'id': clientId,
           'version': version,
           'platform': 'android',
-          'mode': 'ui',
+          'mode': clientMode,
         },
-        'role': 'operator',
-        'scopes': ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'],
+        'role': role,
+        'scopes': scopes,
         'auth': {
           'token': _token,
           if (_deviceToken != null && _deviceToken!.isNotEmpty) 'deviceToken': _deviceToken,
@@ -361,6 +370,9 @@ class GatewayConnection {
   }
 
   void _onDisconnect({bool pairingRequired = false, String? requestId}) {
+    if (pairingRequired) {
+      _pairingRequiredDuringConnect = true;
+    }
     _updateState(GatewayConnectionState.disconnected);
     // Error all in-flight requests immediately so callers fail fast
     // instead of waiting for the 240s timeout before showing an error.
@@ -372,8 +384,14 @@ class GatewayConnection {
     }
     _pendingRequests.clear();
     _cleanup();
+    if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+      _handshakeCompleter!.completeError(
+        StateError(pairingRequired ? 'Pairing required' : 'WebSocket disconnected'),
+      );
+    }
     if (pairingRequired && !_pairingRequiredController.isClosed) {
       _pairingRequiredController.add(requestId);
+      return;
     }
     _scheduleReconnect();
   }

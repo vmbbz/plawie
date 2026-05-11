@@ -758,6 +758,7 @@ PARAMETER num_batch 512
     
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
+    config['gateway']['nodes']['autoApprove'] = true;
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [
       'camera.snap', 'camera.clip', 'camera.list',
@@ -1936,6 +1937,7 @@ PARAMETER num_batch 512
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
     final deviceId = _connection?.deviceId ?? '';
+    await clearDeviceToken();
 
     if (requestId != null && requestId.isNotEmpty) {
       _addActivity('[INFO] Pairing required (1008) — auto-approving operator $requestId...');
@@ -1945,15 +1947,19 @@ PARAMETER num_batch 512
         _addActivity('[INFO] Operator device approved successfully');
       } catch (e) {
         _addActivity('[WARN] Operator auto-approve failed: $e');
-        _clearOperatorDeviceRecord(deviceId);
+        await _clearOperatorDeviceRecord(deviceId);
       }
     } else {
-      _clearOperatorDeviceRecord(deviceId);
+      await _clearOperatorDeviceRecord(deviceId);
     }
 
     _connection?.dispose();
     _connection = null;
     _pairingResolveAttempted = false;
+    unawaited(Future.delayed(
+      const Duration(milliseconds: 750),
+      () => _checkHealth(),
+    ));
   }
 
   Future<void> _clearOperatorDeviceRecord(String deviceId) async {
