@@ -1,18 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'app.dart';
 import 'services/agent_skill_server.dart';
 import 'services/skills_service.dart';
 
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Start the AgentSkillServer (Port 8765) for native openclaw skills
-  final skillServer = AgentSkillServer();
-  await skillServer.start();
-
-  // Initialize Skills System
-  await SkillsService().initialize();
 
   runApp(const PlawieApp());
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(_startBackgroundServices());
+  });
+}
+
+Future<void> _startBackgroundServices() async {
+  // These services are useful soon after launch, but they must not block the
+  // first Flutter frame. SkillsService can run PRoot/OpenClaw commands.
+  await AgentSkillServer().start();
+  await SkillsService().initialize();
 }
