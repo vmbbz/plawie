@@ -53,38 +53,45 @@ class BootstrapManager(
         val binBash = File("$rootfsDir/bin/bash")
         val bypass = File("$rootfsDir/root/.openclaw/bionic-bypass.js")
         val node = File("$rootfsDir/usr/local/bin/node")
-        val openclawBin1 = File("$rootfsDir/usr/local/bin/openclaw")
-        val openclawBin2 = File("$rootfsDir/usr/bin/openclaw")
+        val openclawBin = File("$rootfsDir/usr/local/bin/openclaw")
         val openclawPkg = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json")
-        val openclawJS = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js")
         
+        // Flexible entry point check (resolves .mjs vs .js vs bin/ issues)
+        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
+        val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
+                             File(pkgDir, "bin/openclaw.js").exists() ||
+                             File(pkgDir, "index.js").exists()
+
         return rootfs.exists() && binBash.exists() && bypass.exists()
-            && node.exists() && (openclawBin1.exists() || openclawBin2.exists()) 
-            && openclawPkg.exists() && openclawJS.exists()
+            && node.exists() && openclawBin.exists() 
+            && openclawPkg.exists() && entryPointExists
     }
 
     fun getBootstrapStatus(): Map<String, Any> {
         val rootfsExists = File(rootfsDir).exists()
         val binBashExists = File("$rootfsDir/bin/bash").exists()
         val nodeExists = File("$rootfsDir/usr/local/bin/node").exists()
-        val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists() || 
-                               File("$rootfsDir/usr/bin/openclaw").exists()
-        val openclawPkgExists = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json").exists()
-        val openclawJSExists = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js").exists()
+        val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists()
+        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
+        val openclawPkgExists = File(pkgDir, "package.json").exists()
+        
+        val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
+                             File(pkgDir, "bin/openclaw.js").exists() ||
+                             File(pkgDir, "index.js").exists()
+
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
         
         val complete = rootfsExists && binBashExists && bypassExists
-                && nodeExists && openclawBinExists && openclawPkgExists && openclawJSExists
+                && nodeExists && openclawBinExists && openclawPkgExists && entryPointExists
 
         return mapOf(
             "rootfsExists" to rootfsExists,
             "binBashExists" to binBashExists,
             "nodeInstalled" to nodeExists,
             "openclawInstalled" to openclawPkgExists,
-            "openclawJSExists" to openclawJSExists,
+            "openclawEntryPointExists" to entryPointExists,
             "openclawBinExists" to openclawBinExists,
             "bypassInstalled" to bypassExists,
-            "rootfsPath" to rootfsDir,
             "complete" to complete
         )
     }
@@ -768,28 +775,25 @@ class BootstrapManager(
         val binDir = File("$rootfsDir/usr/local/bin")
         binDir.mkdirs()
 
-        // Parse bin entries from package.json
-        // "bin": "cli.js"  OR  "bin": {"openclaw": "bin/openclaw.js", ...}
+        // Parse bin entries from package.json with multi-line support
         val binEntries = mutableMapOf<String, String>()
-
-        val binMatch = Regex(""""bin"\s*:\s*(\{[^}]*\}|"[^"]*")""").find(json)
+        val binRegex = Regex("""(?s)"bin"\s*:\s*(\{[^}]*\}|"[^"]*")""")
+        val binMatch = binRegex.find(json)
+        
         if (binMatch != null) {
             val value = binMatch.groupValues[1]
             if (value.startsWith("{")) {
-                // Object: {"name": "path", ...}
                 Regex(""""([^"]+)"\s*:\s*"([^"]+)"""").findAll(value).forEach {
                     binEntries[it.groupValues[1]] = it.groupValues[2]
                 }
             } else {
-                // String: "path" — use package name as bin name
-                val path = value.trim('"')
-                binEntries[packageName] = path
+                binEntries[packageName] = value.trim('"')
             }
         }
 
         if (binEntries.isEmpty()) {
-            // Fallback: check for common entry points
-            for (candidate in listOf("bin/$packageName.js", "bin/$packageName", "cli.js", "index.js")) {
+            // Fallback: check for common entry points including .mjs
+            for (candidate in listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw.js", "bin/openclaw", "cli.js", "index.js")) {
                 if (File(pkgDir, candidate).exists()) {
                     binEntries[packageName] = candidate
                     break
@@ -1683,16 +1687,21 @@ os.networkInterfaces = () => ({});
             return
         }
 
-        // 1. Try pre-bundled fast path first
-        preBundleOpenClawIfNeeded()
+        // 1. Try pre-bundled fast path first (DISABLED FOR TESTING LIVE NPM RECOVERY)
+        // preBundleOpenClawIfNeeded()
 
         // 2. Final verification with fallback to live npm
-        if (!localJs.exists() && !libJs.exists()) {
-            Log.w("BootstrapManager", "Pre-bundled extraction failed or module not found – falling back to live install")
+        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
+        val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
+                             File(pkgDir, "bin/openclaw.js").exists() ||
+                             File(pkgDir, "index.js").exists()
+
+        if (!entryPointExists) {
+            Log.w("BootstrapManager", "OpenClaw entry point not found – falling back to live install")
             fallbackToNpmInstall()
         }
 
-        if (!localJs.exists() && !libJs.exists()) {
+        if (!File(pkgDir, "package.json").exists()) {
             throw RuntimeException("OpenClaw install failed inside proot. Check proot logs.")
         }
         
@@ -1720,7 +1729,7 @@ os.networkInterfaces = () => ({});
             // 2. Create target dir
             File("$rootfsDir/usr/local/lib/node_modules").mkdirs()
 
-            // 3. Extract and handle the common "package/" folder case from npm tarballs
+            // 3. Extract and handle various tarball structures (package/, openclaw/, or lib/node_modules/)
             // This ensures industrial-grade consistency regardless of tarball structure
             runInProot("""
                 cd /tmp && \
@@ -1732,12 +1741,21 @@ os.networkInterfaces = () => ({});
                 elif [ -d openclaw ]; then \
                     rm -rf /usr/local/lib/node_modules/openclaw && \
                     mv openclaw /usr/local/lib/node_modules/openclaw; \
+                elif [ -d lib/node_modules/openclaw ]; then \
+                    rm -rf /usr/local/lib/node_modules/openclaw && \
+                    mv lib/node_modules/openclaw /usr/local/lib/node_modules/openclaw; \
+                    # Also move any other modules if they exist in the bundle
+                    if [ -d lib/node_modules ]; then \
+                        cp -r lib/node_modules/* /usr/local/lib/node_modules/ 2>/dev/null || true; \
+                    fi \
                 fi && \
                 chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.js 2>/dev/null || true
             """.trimIndent())
 
             if (jsPath.exists()) {
-                Log.i("BootstrapManager", "Pre-bundled OpenClaw successfully extracted and mapped")
+                Log.i("BootstrapManager", "[FORENSIC] Pre-bundled OpenClaw successfully extracted and mapped to /usr/local")
+            } else {
+                Log.w("BootstrapManager", "[FORENSIC] Extraction finished but openclaw.js not found at target path: ${jsPath.absolutePath}")
             }
         } catch (e: Exception) {
             Log.w("BootstrapManager", "Pre-bundled extraction failed: ${e.message}")

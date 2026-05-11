@@ -76,14 +76,12 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
       // Primary search pattern: JSON output with download sorting
       String result = await NativeBridge.runInProot(
         '$kOpenClawCommand skills search "$query" --json --limit 20 --sort downloads',
-        silent: true,
       );
 
       // Fallback strategy: If first pattern fails or returns empty, try broad search
       if (result.trim().isEmpty || result.contains('error')) {
         result = await NativeBridge.runInProot(
           '$kOpenClawCommand skills search "$query" --json --limit 10',
-          silent: true,
         );
       }
 

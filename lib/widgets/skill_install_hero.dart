@@ -27,7 +27,7 @@ class _SkillInstallHeroState extends State<SkillInstallHero> {
     // Simulate some installation work (e.g. provisioning on-chain or network check)
     await Future.delayed(const Duration(seconds: 2));
     
-    await SkillsService().toggleSkill(widget.skill.id, true);
+    await SkillsService().installSkill(widget.skill.id);
     
     if (mounted) {
       widget.onInstalled();
