@@ -1683,15 +1683,71 @@ os.networkInterfaces = () => ({});
             return
         }
 
-        Log.i("BootstrapManager", "OpenClaw not found in rootfs – installing fresh (pre-bundled fast path fallback)")
-        
-        // This is the line that was missing in the latest regression commit
-        runInProot("npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --silent")
+        // 1. Try pre-bundled fast path first
+        preBundleOpenClawIfNeeded()
+
+        // 2. Final verification with fallback to live npm
+        if (!localJs.exists() && !libJs.exists()) {
+            Log.w("BootstrapManager", "Pre-bundled extraction failed or module not found – falling back to live install")
+            fallbackToNpmInstall()
+        }
 
         if (!localJs.exists() && !libJs.exists()) {
             throw RuntimeException("OpenClaw install failed inside proot. Check proot logs.")
         }
         
         Log.i("BootstrapManager", "[BOOTSTRAP] OpenClaw verified and ready.")
+    }
+
+    private fun preBundleOpenClawIfNeeded() {
+        val jsPath = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js")
+        if (jsPath.exists()) return
+
+        Log.i("BootstrapManager", "Checking for pre-bundled OpenClaw (fast setup)...")
+
+        val assetName = "openclaw-node-modules.tar.gz"
+        val tempTar = File("$rootfsDir/tmp/openclaw-prebundled.tar.gz")
+
+        try {
+            // 1. Copy from assets to rootfs tmp
+            context.assets.open(assetName).use { input ->
+                FileOutputStream(tempTar).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Log.i("BootstrapManager", "Copied pre-bundled tar from APK assets")
+
+            // 2. Create target dir
+            File("$rootfsDir/usr/local/lib/node_modules").mkdirs()
+
+            // 3. Extract and handle the common "package/" folder case from npm tarballs
+            // This ensures industrial-grade consistency regardless of tarball structure
+            runInProot("""
+                cd /tmp && \
+                tar -xzf openclaw-prebundled.tar.gz && \
+                rm openclaw-prebundled.tar.gz && \
+                if [ -d package ]; then \
+                    rm -rf /usr/local/lib/node_modules/openclaw && \
+                    mv package /usr/local/lib/node_modules/openclaw; \
+                elif [ -d openclaw ]; then \
+                    rm -rf /usr/local/lib/node_modules/openclaw && \
+                    mv openclaw /usr/local/lib/node_modules/openclaw; \
+                fi && \
+                chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.js 2>/dev/null || true
+            """.trimIndent())
+
+            if (jsPath.exists()) {
+                Log.i("BootstrapManager", "Pre-bundled OpenClaw successfully extracted and mapped")
+            }
+        } catch (e: Exception) {
+            Log.w("BootstrapManager", "Pre-bundled extraction failed: ${e.message}")
+        } finally {
+            if (tempTar.exists()) tempTar.delete()
+        }
+    }
+
+    private fun fallbackToNpmInstall() {
+        Log.i("BootstrapManager", "Performing industrial-grade live fallback install via npm...")
+        runInProot("npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --silent")
     }
 }
