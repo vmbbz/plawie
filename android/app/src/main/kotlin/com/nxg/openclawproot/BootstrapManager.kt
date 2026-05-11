@@ -54,13 +54,13 @@ class BootstrapManager(
         val bypass = File("$rootfsDir/root/.openclaw/bionic-bypass.js")
         val node = File("$rootfsDir/usr/local/bin/node")
         val openclawBin = File("$rootfsDir/usr/local/bin/openclaw")
-        val openclawPkg = File("$rootfsDir/usr/local/lib/node_modules/openclaw/package.json")
-        
-        // Flexible entry point check (resolves .mjs vs .js vs bin/ issues)
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
-                             File(pkgDir, "bin/openclaw.js").exists() ||
-                             File(pkgDir, "index.js").exists()
+        val entryPointExists = pkgDir.exists() && (
+            File(pkgDir, "openclaw.mjs").exists() || 
+            File(pkgDir, "bin/openclaw.mjs").exists() ||
+            File(pkgDir, "bin/openclaw.js").exists() ||
+            File(pkgDir, "index.js").exists()
+        )
 
         return rootfs.exists() && binBash.exists() && bypass.exists()
             && node.exists() && openclawBin.exists() 
@@ -792,8 +792,8 @@ class BootstrapManager(
         }
 
         if (binEntries.isEmpty()) {
-            // Fallback: check for common entry points including .mjs
-            val candidates = listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw.js", "bin/openclaw", "cli.js", "index.js")
+            // Fallback: check for common entry points
+            val candidates = listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw", "cli", "index")
             for (candidate in candidates) {
                 if (File(pkgDir, candidate).exists()) {
                     binEntries[packageName] = candidate
@@ -805,7 +805,7 @@ class BootstrapManager(
         // Final safety: if still empty, scan the pkgDir for any file that looks like an entry point
         if (binEntries.isEmpty()) {
             pkgDir.listFiles()?.forEach { file ->
-                if (file.name.startsWith(packageName) && (file.name.endsWith(".mjs") || file.name.endsWith(".js"))) {
+                if (file.name.startsWith(packageName) && (file.name.endsWith(".mjs") || file.name.endsWith(".js") || !file.name.contains("."))) {
                     binEntries[packageName] = file.name
                 }
             }
@@ -1689,10 +1689,10 @@ os.networkInterfaces = () => ({});
     }
 
     private fun ensureOpenClawInstalled() {
-        val localJs = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js")
-        val libJs   = File("$rootfsDir/usr/lib/node_modules/openclaw/bin/openclaw.js")
-
-        if (localJs.exists() || libJs.exists()) {
+        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
+        val packageJson = File(pkgDir, "package.json")
+        
+        if (packageJson.exists()) {
             Log.i("BootstrapManager", "OpenClaw already present in rootfs")
             return
         }
@@ -1726,8 +1726,8 @@ os.networkInterfaces = () => ({});
     }
 
     private fun preBundleOpenClawIfNeeded() {
-        val jsPath = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js")
-        if (jsPath.exists()) return
+        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
+        if (pkgDir.exists()) return
 
         Log.i("BootstrapManager", "Checking for pre-bundled OpenClaw (fast setup)...")
 
@@ -1768,13 +1768,14 @@ os.networkInterfaces = () => ({});
                 fi && \
                 chmod +x /usr/local/lib/node_modules/openclaw/openclaw.mjs 2>/dev/null || true; \
                 chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs 2>/dev/null || true; \
-                chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.js 2>/dev/null || true
+                chmod +x /usr/local/lib/node_modules/openclaw/*.mjs 2>/dev/null || true; \
+                chmod +x /usr/local/lib/node_modules/openclaw/bin/*.js 2>/dev/null || true
             """.trimIndent())
 
-            if (jsPath.exists()) {
+            if (pkgDir.exists()) {
                 Log.i("BootstrapManager", "[FORENSIC] Pre-bundled OpenClaw successfully extracted and mapped to /usr/local")
             } else {
-                Log.w("BootstrapManager", "[FORENSIC] Extraction finished but openclaw.js not found at target path: ${jsPath.absolutePath}")
+                Log.w("BootstrapManager", "[FORENSIC] Extraction finished but package directory not found: ${pkgDir.absolutePath}")
             }
         } catch (e: Exception) {
             Log.w("BootstrapManager", "Pre-bundled extraction failed: ${e.message}")
