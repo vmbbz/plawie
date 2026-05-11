@@ -1,6 +1,7 @@
 package com.nxg.openclawproot
 
 import android.content.Context
+import android.util.Log
 import android.system.Os
 import java.io.BufferedInputStream
 import java.io.File
@@ -1660,17 +1661,37 @@ os.networkInterfaces = () => ({});
     fun ensureOpenClawReady(): Map<String, Any> {
         Log.i("BootstrapManager", "Executing final readiness checks...")
         
-        // 1. Ensure skills awareness
+        // === CRITICAL: FORCE INSTALL INSIDE PROOT FIRST ===
+        // This resolves the MODULE_NOT_FOUND error on fresh device installs
+        ensureOpenClawInstalled()
+
+        // 2. Re-verify binary wrappers and sync skills
+        createBinWrappers("openclaw")
         ensureAgentSkillsAwareness()
+        ensurePermanentProfile()
         
-        // 2. Return full status for verification
+        // 4. Return full status for verification (industrial-grade consistency)
         return getBootstrapStatus()
     }
 
-    private fun deleteRecursively(file: File) {
-        if (file.isDirectory) {
-            file.listFiles()?.forEach { deleteRecursively(it) }
+    private fun ensureOpenClawInstalled() {
+        val localJs = File("$rootfsDir/usr/local/lib/node_modules/openclaw/bin/openclaw.js")
+        val libJs   = File("$rootfsDir/usr/lib/node_modules/openclaw/bin/openclaw.js")
+
+        if (localJs.exists() || libJs.exists()) {
+            Log.i("BootstrapManager", "OpenClaw already present in rootfs")
+            return
         }
-        file.delete()
+
+        Log.i("BootstrapManager", "OpenClaw not found in rootfs – installing fresh (pre-bundled fast path fallback)")
+        
+        // This is the line that was missing in the latest regression commit
+        runInProot("npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --silent")
+
+        if (!localJs.exists() && !libJs.exists()) {
+            throw RuntimeException("OpenClaw install failed inside proot. Check proot logs.")
+        }
+        
+        Log.i("BootstrapManager", "[BOOTSTRAP] OpenClaw verified and ready.")
     }
 }
