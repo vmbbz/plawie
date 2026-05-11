@@ -58,13 +58,14 @@ class BootstrapManager(
         val entryPointExists = pkgDir.exists() && (
             File(pkgDir, "openclaw.mjs").exists() || 
             File(pkgDir, "bin/openclaw.mjs").exists() ||
+            File(pkgDir, "openclaw.js").exists() ||
             File(pkgDir, "bin/openclaw.js").exists() ||
             File(pkgDir, "index.js").exists()
         )
 
         return rootfs.exists() && binBash.exists() && bypass.exists()
             && node.exists() && openclawBin.exists() 
-            && openclawPkg.exists() && entryPointExists
+            && pkgDir.exists() && entryPointExists
     }
 
     fun getBootstrapStatus(): Map<String, Any> {
@@ -76,6 +77,8 @@ class BootstrapManager(
         val openclawPkgExists = File(pkgDir, "package.json").exists()
         
         val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
+                             File(pkgDir, "bin/openclaw.mjs").exists() ||
+                             File(pkgDir, "openclaw.js").exists() ||
                              File(pkgDir, "bin/openclaw.js").exists() ||
                              File(pkgDir, "index.js").exists()
 
@@ -817,7 +820,37 @@ class BootstrapManager(
         for ((name, relPath) in binEntries) {
             val binFile = File(binDir, name)
 
-            val target = "$internalPkgPath/$relPath"
+            // HARDENING: Verify existence of target and try variants (.mjs vs .js)
+            var actualRelPath = relPath
+            var targetFile = File(pkgDir, actualRelPath)
+            
+            if (!targetFile.exists()) {
+                // Try appending variants or swapping extensions
+                val variants = listOf("${relPath}.mjs", "${relPath}.js", relPath.replace(".js", ".mjs"))
+                for (variant in variants) {
+                    val vf = File(pkgDir, variant)
+                    if (vf.exists()) {
+                        actualRelPath = variant
+                        targetFile = vf
+                        break
+                    }
+                }
+            }
+            
+            // If still not found, try the prioritized candidates list for the main command
+            if (!targetFile.exists() && name == packageName) {
+                val candidates = listOf("openclaw.mjs", "bin/openclaw.mjs", "openclaw.js", "bin/openclaw.js")
+                for (cand in candidates) {
+                    val cf = File(pkgDir, cand)
+                    if (cf.exists()) {
+                        actualRelPath = cand
+                        targetFile = cf
+                        break
+                    }
+                }
+            }
+
+            val target = "$internalPkgPath/$actualRelPath"
             val wrapper = "#!/bin/sh\nexec node \"$target\" \"\$@\"\n"
             
             // Unconditionally delete existing file/symlink (including broken links)
@@ -1701,8 +1734,7 @@ os.networkInterfaces = () => ({});
         preBundleOpenClawIfNeeded()
 
         // 2. Final verification with fallback to live npm
-        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        val packageJson = File(pkgDir, "package.json")
+        // Use existing pkgDir and packageJson
         
         // Comprehensive entry point check
         fun hasEntryPoint(): Boolean {

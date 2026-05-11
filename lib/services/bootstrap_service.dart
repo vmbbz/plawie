@@ -395,19 +395,42 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
       await NativeBridge.runInProot('$kOpenClawCommand --version || echo openclaw_installed');
 
+      // Industrial Grade: Harden the config before the first CLI command runs
+      // This ensures Ollama-first design is active even before onboarding.
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.91, 'Hardening environment config...', 91);
+      await _hardenOpenClawConfig();
+
       // Industrial Grade: Run doctor --fix immediately after install/verify
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.92, 'Running system health check...', 92);
       await NativeBridge.runInProot('$kOpenClawCommand doctor --fix');
 
       // Seed official onboarding config - auth-choice skip means we defer API key to setup flow
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Initializing environment...', 95);
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.93, 'Onboarding gateway...', 93);
       await NativeBridge.runInProot(
-        '$kOpenClawCommand onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk && '
-        '$kOpenClawCommand models sync --provider ollama --primary qwen2.5:0.5b && '
-        '$kOpenClawCommand skills install core @buape/carbon --no-audit --no-fund && '
-        '$kOpenClawCommand update -g openclaw',
-        timeout: 120,
+        '$kOpenClawCommand onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
+        timeout: 60,
       );
+
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.94, 'Syncing model configuration...', 94);
+      await NativeBridge.runInProot(
+        '$kOpenClawCommand models sync',
+        timeout: 60,
+      );
+
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.96, 'Installing core skills...', 96);
+      await NativeBridge.runInProot(
+        '$kOpenClawCommand skills install core @buape/carbon --no-audit --no-fund',
+        timeout: 300,
+      );
+
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Finalizing package...', 98);
+      await NativeBridge.runInProot(
+        '$kOpenClawCommand update -g openclaw',
+        timeout: 300,
+      );
+
+      // Post-update hardening: Ensure wrappers are still shell scripts (npm update -g might have replaced them with symlinks)
+      await NativeBridge.createBinWrappers('openclaw');
 
       // ---------------------------------------------------------
       // Step 5: Install Native Android Skills & Final Readiness
@@ -737,6 +760,46 @@ class BootstrapService {
       _log('✅ Skills watch mode enabled');
     } catch (e) {
       _log('Failed to enable skills watch mode (non-critical)', error: e);
+    }
+  }
+
+  Future<void> _hardenOpenClawConfig() async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final configPath = '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json';
+      final configFile = File(configPath);
+
+      Map<String, dynamic> config = {};
+      if (await configFile.exists()) {
+        try {
+          config = jsonDecode(await configFile.readAsString());
+        } catch (_) {
+          // If corrupt, start fresh
+        }
+      } else {
+        await configFile.parent.create(recursive: true);
+      }
+
+      // Replicate the Ollama-first logic from GatewayService for setup-time hardening
+      config['gateway'] ??= {};
+      config['gateway']['mode'] = 'local';
+      
+      config['models'] ??= {};
+      config['models']['providers'] ??= {};
+      config['models']['providers']['ollama'] ??= <String, dynamic>{};
+      
+      final ollama = Map<String, dynamic>.from(config['models']['providers']['ollama'] as Map);
+      ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
+      ollama['apiKey'] ??= 'ollama-local';
+      ollama['api'] ??= 'ollama';
+      ollama['models'] ??= <Map<String, dynamic>>[];
+      
+      config['models']['providers']['ollama'] = ollama;
+
+      await configFile.writeAsString(jsonEncode(config));
+      _log('[CONFIG] Hardened Ollama-first configuration for setup.');
+    } catch (e) {
+      _log('[CONFIG] Hardening failed during setup', error: e);
     }
   }
 }
