@@ -11,6 +11,7 @@ import 'preferences_service.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
+import 'gateway_service.dart';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -411,61 +412,42 @@ class BootstrapService {
         timeout: 60,
       );
 
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.94, 'Syncing model configuration...', 94);
-      await NativeBridge.runInProot(
-        '$kOpenClawCommand models sync',
-        timeout: 60,
-      );
+      // Newer OpenClaw CLI builds expose `models` as a zero-argument command.
+      // Re-apply our config hardening directly instead of calling the removed
+      // `models sync` subcommand.
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.94, 'Finalizing model configuration...', 94);
+      await _hardenOpenClawConfig();
 
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.96, 'Installing core skills...', 96);
-      await NativeBridge.runInProot(
-        '$kOpenClawCommand skills install core @buape/carbon --no-audit --no-fund',
-        timeout: 300,
-      );
+      // Keep first-run setup offline and deterministic. The native readiness
+      // step syncs bundled hardware skills/VRMA assets and recreates wrappers;
+      // ClawHub installs are user-driven after the gateway is healthy.
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.96, 'Synchronizing hardware awareness & AI intelligence...', 96);
+      await NativeBridge.ensureOpenClawReady();
+      await SkillsService().ensureAgentAwareness();
+      await _enableSkillsWatchMode();
 
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Finalizing package...', 98);
-      await NativeBridge.runInProot(
-        '$kOpenClawCommand update -g openclaw',
-        timeout: 300,
-      );
-
-      // Post-update hardening: Ensure wrappers are still shell scripts (npm update -g might have replaced them with symlinks)
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Finalizing package environment...', 98);
+      await _hardenEnvironment();
+      await _hardenOpenClawConfig();
       await NativeBridge.createBinWrappers('openclaw');
 
-      // ---------------------------------------------------------
-      // Step 5: Install Native Android Skills & Final Readiness
-      // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.95, 'Synchronizing hardware skills...', 95);
+      // Industrial Grade: Explicitly start the gateway and wait for "First Breath"
+      // This bridges the 60-second Node.js warmup gap so users don't see a "Disconnected" screen.
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.99, 'Warming up AI Gateway (this may take a minute)...', 99);
       
       try {
-        await NativeBridge.ensureOpenClawReady();
-
-        // 6. Forensic Skills Update & Agent Awareness
-        await SkillsService().ensureAgentAwareness();
-        
-        // 7. Enable Watch Mode
-        await _enableSkillsWatchMode();
-        
-        // 8. Robust Gateway Restart
-        if (await NativeBridge.isGatewayRunning()) {
-          await NativeBridge.stopGateway();
-          await Future.delayed(const Duration(milliseconds: 1500));
-          await NativeBridge.startGateway();
-          debugPrint('[BOOTSTRAP] Gateway restarted to apply skills awareness.');
-        }
-
-        // Signal completion
-        onProgress(const SetupState(
-          step: SetupStep.complete,
-          message: 'OpenClaw is fully ready — skills, tools and workspace synchronized.',
-          progress: 1.0,
-        ));
+        final gateway = GatewayService();
+        await gateway.start();
+        await gateway.waitForStartup(timeout: const Duration(seconds: 120));
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'System Online & Ready', 100);
       } catch (e) {
-        _log('Non-fatal: Skills synchronization failed', error: e);
+        // Fallback: If warmup times out, we still finish. User can see status in-app.
+        _log('Gateway warmup timed out or failed', error: e);
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'System starting in background', 100);
       }
 
       // ---------------------------------------------------------
-      // Step 6: Finalize
+      // Step 5: Finalize
       // ---------------------------------------------------------
       await NativeBridge.markBootstrapComplete();
       final prefs = PreferencesService();
