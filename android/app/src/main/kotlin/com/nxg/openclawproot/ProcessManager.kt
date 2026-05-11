@@ -590,19 +590,35 @@ class ProcessManager(
 
     fun startOllama(): Boolean {
         return try {
-            android.util.Log.i("ProcessManager", "Starting internal Ollama server")
+            android.util.Log.i("ProcessManager", "Starting lean internal Ollama server")
             // Ensure any existing instances are cleared first to avoid port collision
             stopOllama()
             
-            // Start ollama as a separate process inside PRoot.
+            // Start Ollama as a separate long-lived process inside PRoot.
             // - OLLAMA_HOST=127.0.0.1:11434 ensures accessibility across PRoot namespaces securely.
             // - OLLAMA_ORIGINS=* ensures the Flutter client can connect across the bridge.
-            // - OLLAMA_KEEP_ALIVE=-1 keeps the model in memory indefinitely (no eviction after 5 min idle).
-            //   Without this, every request after the eviction window triggers a 10–30s reload, pushing
-            //   total request time past the 240s chat timeout on thermally throttled devices.
+            // - OLLAMA_KEEP_ALIVE=15m prevents indefinite model residency while keeping short sessions warm.
             // - OLLAMA_NUM_PARALLEL=1 prevents Ollama from loading multiple copies of the model for
             //   parallel requests — saves ~1.5 GB RAM on mobile (only one request at a time anyway).
-            val ollamaCmd = "env OLLAMA_HOST=127.0.0.1:11434 OLLAMA_ORIGINS=\"*\" OLLAMA_KEEP_ALIVE=-1 OLLAMA_NUM_PARALLEL=1 OLLAMA_MAX_LOADED_MODELS=1 /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1"
+            // - OLLAMA_MAX_LOADED_MODELS=1 and OLLAMA_MAX_QUEUE=8 fail small instead of exhausting RAM.
+            // - Flash Attention + q8_0 KV cache reduce context memory when supported by the model/runtime.
+            //
+            // Do not append '&' here. buildGatewayCommand uses --kill-on-exit, so backgrounding the server
+            // can let the shell exit and cause PRoot to kill the Ollama child.
+            val ollamaCmd = """
+                ulimit -n 4096 2>/dev/null || true
+                exec nice -n 10 env \
+                  OLLAMA_HOST=127.0.0.1:11434 \
+                  OLLAMA_ORIGINS="*" \
+                  OLLAMA_KEEP_ALIVE=15m \
+                  OLLAMA_NUM_PARALLEL=1 \
+                  OLLAMA_MAX_LOADED_MODELS=1 \
+                  OLLAMA_MAX_QUEUE=8 \
+                  OLLAMA_CONTEXT_LENGTH=2048 \
+                  OLLAMA_FLASH_ATTENTION=1 \
+                  OLLAMA_KV_CACHE_TYPE=q8_0 \
+                  /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1
+            """.trimIndent()
             val fullCmd = buildGatewayCommand(ollamaCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
@@ -617,8 +633,8 @@ class ProcessManager(
 
     fun stopOllama(): Boolean {
         return try {
-            // Forcefully kill ollama and any related inference subprocesses
-            val stopCmd = "pkill -9 -f '[o]llama' || true"
+            // Try graceful termination first so Ollama can release model state, then force-kill stragglers.
+            val stopCmd = "pkill -TERM -f '[o]llama serve' 2>/dev/null || true; sleep 1; pkill -9 -f '[o]llama' 2>/dev/null || true"
             val fullCmd = buildGatewayCommand(stopCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
