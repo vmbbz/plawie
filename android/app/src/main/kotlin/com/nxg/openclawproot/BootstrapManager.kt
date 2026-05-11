@@ -793,10 +793,20 @@ class BootstrapManager(
 
         if (binEntries.isEmpty()) {
             // Fallback: check for common entry points including .mjs
-            for (candidate in listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw.js", "bin/openclaw", "cli.js", "index.js")) {
+            val candidates = listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw.js", "bin/openclaw", "cli.js", "index.js")
+            for (candidate in candidates) {
                 if (File(pkgDir, candidate).exists()) {
                     binEntries[packageName] = candidate
                     break
+                }
+            }
+        }
+
+        // Final safety: if still empty, scan the pkgDir for any file that looks like an entry point
+        if (binEntries.isEmpty()) {
+            pkgDir.listFiles()?.forEach { file ->
+                if (file.name.startsWith(packageName) && (file.name.endsWith(".mjs") || file.name.endsWith(".js"))) {
+                    binEntries[packageName] = file.name
                 }
             }
         }
@@ -1687,21 +1697,28 @@ os.networkInterfaces = () => ({});
             return
         }
 
-        // 1. Try pre-bundled fast path first (DISABLED FOR TESTING LIVE NPM RECOVERY)
-        // preBundleOpenClawIfNeeded()
+        // 1. Try pre-bundled fast path first
+        preBundleOpenClawIfNeeded()
 
         // 2. Final verification with fallback to live npm
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
-                             File(pkgDir, "bin/openclaw.js").exists() ||
-                             File(pkgDir, "index.js").exists()
+        val packageJson = File(pkgDir, "package.json")
+        
+        // Comprehensive entry point check
+        fun hasEntryPoint(): Boolean {
+            if (!pkgDir.exists()) return false
+            val candidates = listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw.js", "bin/openclaw", "cli.js", "index.js")
+            if (candidates.any { File(pkgDir, it).exists() }) return true
+            // Dir scan
+            return pkgDir.listFiles()?.any { it.name.startsWith("openclaw") && (it.name.endsWith(".mjs") || it.name.endsWith(".js")) } == true
+        }
 
-        if (!entryPointExists) {
-            Log.w("BootstrapManager", "OpenClaw entry point not found – falling back to live install")
+        if (!hasEntryPoint()) {
+            Log.w("BootstrapManager", "OpenClaw entry point not found after pre-bundle – falling back to live install")
             fallbackToNpmInstall()
         }
 
-        if (!File(pkgDir, "package.json").exists()) {
+        if (!packageJson.exists() && !hasEntryPoint()) {
             throw RuntimeException("OpenClaw install failed inside proot. Check proot logs.")
         }
         
@@ -1749,6 +1766,8 @@ os.networkInterfaces = () => ({});
                         cp -r lib/node_modules/* /usr/local/lib/node_modules/ 2>/dev/null || true; \
                     fi \
                 fi && \
+                chmod +x /usr/local/lib/node_modules/openclaw/openclaw.mjs 2>/dev/null || true; \
+                chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs 2>/dev/null || true; \
                 chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.js 2>/dev/null || true
             """.trimIndent())
 
