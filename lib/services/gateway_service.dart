@@ -84,6 +84,14 @@ class GatewayService {
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
 
+  Future<bool> _configuredModelNeedsLocalOllama() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    final model = (prefs.configuredModel ?? '').trim();
+    if (model.isEmpty || model.contains(':cloud')) return false;
+    return model.startsWith('ollama/') || model.startsWith('local-llm/');
+  }
+
   /// Live stream of human-readable chat and hub events for the Agent Hub panel.
   /// Emits: Flutter-side send/receive events + parsed Ollama server signals.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -420,10 +428,11 @@ PARAMETER num_batch 512
     }
   }
 
-  /// Called once at init. If Ollama is already running (e.g. survived app restart),
-  /// emit the correct state and re-sync models so the chat dropdown is populated.
+  /// Called once at init for local-model sessions. Cloud-first users should not
+  /// pay an Ollama PRoot probe/sync cost just because the gateway started.
   Future<void> _probeOllamaOnInit() async {
     try {
+      if (!await _configuredModelNeedsLocalOllama()) return;
       final running = await NativeBridge.isOllamaRunning();
       if (!running) return;
       _updateState(_state.copyWith(
@@ -1993,12 +2002,12 @@ PARAMETER num_batch 512
           // Eagerly warm the dashboard auth token in the background so that
           // opening WebDashboardScreen feels instant (token is already cached).
           unawaited(fetchAuthenticatedDashboardUrl(force: false).catchError((_) => null));
-          // After gateway (re)start, re-probe Ollama in case it was already
-          // running when the gateway stopped (stop() no longer clears
-          // isOllamaRunning, but after a process restart we must re-confirm).
+          // After gateway (re)start, only re-probe Ollama when the selected
+          // model is local. Cloud/default users should not hit the hub path.
           if (!_state.isOllamaRunning) {
             unawaited(Future(() async {
-              if (await checkOllamaHealth()) {
+              if (await _configuredModelNeedsLocalOllama() &&
+                  await checkOllamaHealth()) {
                 unawaited(syncLocalModelsWithOllama());
               }
             }));
