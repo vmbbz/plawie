@@ -431,12 +431,12 @@ class BootstrapService {
           debugPrint('[BOOTSTRAP] Gateway restarted to apply skills awareness.');
         }
 
-        // Return status
-        return _currentSetupState.copyWith(
+        // Signal completion
+        onProgress(const SetupState(
           step: SetupStep.complete,
           message: 'OpenClaw is fully ready — skills, tools and workspace synchronized.',
           progress: 1.0,
-        );
+        ));
       } catch (e) {
         _log('Non-fatal: Skills synchronization failed', error: e);
       }
@@ -591,8 +591,12 @@ class BootstrapService {
       await File(tempTarPath).writeAsBytes(buffer);
       
       // 3. Extract using tar inside proot (native and fast)
+      // Handles the common 'package/' folder structure found in npm tarballs
       await NativeBridge.runInProot(
-        'tar -xzf /tmp/openclaw-modules.tar.gz -C /usr/local/lib/node_modules && rm /tmp/openclaw-modules.tar.gz',
+        'cd /tmp && tar -xzf openclaw-modules.tar.gz && rm openclaw-modules.tar.gz && ' +
+        'if [ -d package ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv package /usr/local/lib/node_modules/openclaw; ' +
+        'elif [ -d openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv openclaw /usr/local/lib/node_modules/openclaw; fi && ' +
+        'chmod +x /usr/local/lib/node_modules/openclaw/bin/openclaw.js 2>/dev/null || true',
         timeout: 120,
       );
       
