@@ -13,6 +13,7 @@ import 'preferences_service.dart';
 import 'gateway_skill_proxy.dart';
 import 'base_service.dart';
 import 'gateway_service.dart';
+import '../constants/openclaw_paths.dart';
 
 /// Skills System — Thin UI + Native Bridge architecture.
 /// This service acts as the UI manager and execution router for on-device native skills,
@@ -126,38 +127,47 @@ class SkillsService {
       default: return SkillResult.error('No executor for category: ${skill.category}');
     }
   }
-
-  /// Install skill via PRoot CLI
-  Future<bool> installSkill(String slugOrUrl) async {
+  /// Installs a skill via the OpenClaw CLI and triggers a forensic awareness sync.
+  Future<bool> installSkill(String id, {bool silent = false}) async {
     try {
-      _logger.i('Installing skill via CLI: $slugOrUrl');
-      _eventController.add(SkillsEvent.skillInstalling(slugOrUrl));
+      if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
       
-      await NativeBridge.runInProot('$kOpenClawCommand skills install $slugOrUrl --yes');
+      final result = await NativeBridge.runInProot('$kOpenClawCommand skills install $id --yes');
+      
+      if (result.contains('Error')) {
+        throw Exception(result);
+      }
+
       await ensureAgentAwareness();
       
-      _eventController.add(SkillsEvent.skillInstalled(slugOrUrl));
+      if (!silent) _broadcast(SkillsEvent.skillInstalled(id));
       return true;
     } catch (e) {
-      _logger.e('Install failed: $e');
+      if (!silent) _broadcast(SkillsEvent.skillError(id, e.toString()));
       return false;
     }
   }
 
-  /// Uninstall skill via PRoot CLI
-  Future<bool> uninstallSkill(String id) async {
+  /// Uninstalls a skill via the OpenClaw CLI and triggers a forensic awareness sync.
+  Future<bool> uninstallSkill(String id, {bool silent = false}) async {
     try {
-      _logger.i('Uninstalling skill via CLI: $id');
-      await NativeBridge.runInProot('$kOpenClawCommand skills uninstall $id --yes');
+      final result = await NativeBridge.runInProot('$kOpenClawCommand skills uninstall $id --yes');
+      
+      if (result.contains('Error')) {
+        throw Exception(result);
+      }
+
       await ensureAgentAwareness();
       
-      _eventController.add(SkillsEvent.skillUninstalled(id));
+      if (!silent) _broadcast(SkillsEvent.skillUninstalled(id));
       return true;
     } catch (e) {
-      _logger.e('Uninstall failed: $e');
+      if (!silent) _broadcast(SkillsEvent.skillError(id, e.toString()));
       return false;
     }
   }
+
+  void _broadcast(SkillsEvent event) => _eventController.add(event);
 
   /// Fetch full skill details (YAML info) from the PRoot workspace.
   Future<Map<String, dynamic>?> getSkillDetails(String id) async {
@@ -401,14 +411,47 @@ class SkillsService {
       if (gateway.state.isRunning) await gateway.reregisterSkills();
     } catch (_) {}
   }
+
+  /// Returns the definitions of all enabled native skills for gateway registration.
+  List<Map<String, dynamic>> getToolsCatalog() {
+    return _skills.values
+        .where((s) => s.enabled)
+        .map((s) => s.toToolDefinition())
+        .toList();
+  }
+
+  /// Returns the list of all registered native skills.
+  List<Skill> getSkillsList() {
+    return _skills.values.toList();
+  }
+
+  /// Returns a specific skill by its ID.
+  Skill? getSkill(String id) {
+    return _skills[id];
+  }
 }
 
 class Skill {
-  final String id, name, description, version, author, category, source;
+  final String id, name, description, version, author, category, source, body;
   final List<String> tags;
   final DateTime createdAt;
   final bool enabled;
-  Skill({required this.id, required this.name, required this.description, required this.version, required this.author, required this.category, required this.tags, required this.source, required this.createdAt, required this.enabled});
+  Skill({required this.id, required this.name, required this.description, required this.version, required this.author, required this.category, required this.tags, required this.source, required this.createdAt, required this.enabled, this.body = ''});
+  
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'version': version,
+    'author': author,
+    'category': category,
+    'tags': tags,
+    'source': source,
+    'createdAt': createdAt.toIso8601String(),
+    'enabled': enabled,
+    'body': body,
+  };
+
   Map<String, dynamic> toToolDefinition() => {'name': id, 'description': description, 'input_schema': {'type': 'object', 'properties': {}}};
 }
 
