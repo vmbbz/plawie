@@ -466,13 +466,13 @@ PARAMETER num_batch 512
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js doctor --fix 2>/dev/null || true',
+          'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'node /usr/local/lib/node_modules/openclaw/bin/openclaw.js reload 2>/dev/null || true',
+          'openclaw reload 2>/dev/null || true',
           timeout: 10,
         );
       } catch (_) {}
