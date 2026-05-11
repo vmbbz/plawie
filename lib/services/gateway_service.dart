@@ -471,13 +471,16 @@ PARAMETER num_batch 512
       ));
 
       try {
-        await _configureGateway();
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
+        // doctor --fix can restore gateway.controlUi.allowedOrigins. Apply
+        // Plawie's local gateway overrides after doctor so dart:io WebSockets
+        // are not rejected as origin=n/a.
+        await _configureGateway();
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '

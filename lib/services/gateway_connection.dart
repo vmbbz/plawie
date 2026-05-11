@@ -77,6 +77,7 @@ class GatewayConnection {
   Completer<void>? _handshakeCompleter;
   Completer<String?>? _challengeCompleter;
   bool _pairingRequiredDuringConnect = false;
+  bool _policyRejectedDuringConnect = false;
 
   Future<bool>? _connectFuture;
 
@@ -121,6 +122,7 @@ class GatewayConnection {
     _updateState(GatewayConnectionState.connecting);
     _cleanup();
     _pairingRequiredDuringConnect = false;
+    _policyRejectedDuringConnect = false;
 
     try {
       final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
@@ -146,11 +148,21 @@ class GatewayConnection {
         final closeCode = _channel?.closeCode;
         final closeReason = _channel?.closeReason ?? '';
         String? reqId;
-        if (closeCode == 1008) {
+        if (closeCode == 1008 && closeReason.contains('pairing required')) {
           final m = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
           reqId = m?.group(1);
         }
-        _onDisconnect(pairingRequired: closeCode == 1008, requestId: reqId);
+        final pairingRequired = closeCode == 1008 &&
+            (reqId != null || closeReason.contains('pairing required'));
+        final policyRejected = closeCode == 1008 &&
+            !pairingRequired &&
+            (closeReason.contains('origin not allowed') ||
+                closeReason.contains('origin-mismatch'));
+        _onDisconnect(
+          pairingRequired: pairingRequired,
+          policyRejected: policyRejected,
+          requestId: reqId,
+        );
       },
     );
 
@@ -173,7 +185,7 @@ class GatewayConnection {
     } catch (_) {
       _updateState(GatewayConnectionState.disconnected);
       _cleanup();
-      if (!_pairingRequiredDuringConnect) {
+      if (!_pairingRequiredDuringConnect && !_policyRejectedDuringConnect) {
         _scheduleReconnect();
       }
       return false;
@@ -369,9 +381,16 @@ class GatewayConnection {
     } catch (_) {}
   }
 
-  void _onDisconnect({bool pairingRequired = false, String? requestId}) {
+  void _onDisconnect({
+    bool pairingRequired = false,
+    bool policyRejected = false,
+    String? requestId,
+  }) {
     if (pairingRequired) {
       _pairingRequiredDuringConnect = true;
+    }
+    if (policyRejected) {
+      _policyRejectedDuringConnect = true;
     }
     _updateState(GatewayConnectionState.disconnected);
     // Error all in-flight requests immediately so callers fail fast
@@ -393,6 +412,7 @@ class GatewayConnection {
       _pairingRequiredController.add(requestId);
       return;
     }
+    if (policyRejected) return;
     _scheduleReconnect();
   }
 
