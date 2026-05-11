@@ -52,22 +52,36 @@ class SkillsService {
   /// One-source-of-truth awareness: updates PRoot workspace and refreshes agent session.
   Future<void> ensureAgentAwareness() async {
     _logger.i('Ensuring agent awareness of skills...');
+    // OpenClaw 2026.5.x skill CLI docs do not expose npm-style `--yes`
+    // flags. Keep these refreshes best-effort so a registry/network hiccup
+    // never blocks first-run setup.
+    await _runSkillCommandBestEffort(
+      'refresh tracked workspace skills',
+      '$kOpenClawCommand skills update --all',
+      timeout: 120,
+    );
+
+    await _runSkillCommandBestEffort(
+      'start a fresh agent session',
+      '$kOpenClawCommand chat new-session --silent',
+      timeout: 30,
+    );
+
+    // Push native capabilities to the gateway WebSocket even if CLI refreshes
+    // were unavailable; bundled hardware skills are synced by BootstrapManager.
+    await _registerNativeSkills();
+    _logger.i('Agent awareness synchronized.');
+  }
+
+  Future<void> _runSkillCommandBestEffort(
+    String description,
+    String command, {
+    int timeout = 60,
+  }) async {
     try {
-      // 1. Update PRoot workspace tools
-      await NativeBridge.runInProot('$kOpenClawCommand skills update --all --yes');
-      
-      // 2. Install core/native stubs if missing
-      await NativeBridge.runInProot('$kOpenClawCommand skills install gestures voice device-node --yes');
-      
-      // 3. Force a new session so the agent picks up tool changes
-      await NativeBridge.runInProot('$kOpenClawCommand chat new-session --silent');
-      
-      // 4. Push native capabilities to the gateway WebSocket
-      await _registerNativeSkills();
-      
-      _logger.i('Agent awareness synchronized.');
+      await NativeBridge.runInProot(command, timeout: timeout);
     } catch (e) {
-      _logger.e('Failed to sync agent awareness: $e');
+      _logger.w('Could not $description: $e');
     }
   }
 
@@ -132,7 +146,7 @@ class SkillsService {
     try {
       if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
       
-      final result = await NativeBridge.runInProot('$kOpenClawCommand skills install $id --yes');
+      final result = await NativeBridge.runInProot('$kOpenClawCommand skills install $id');
       
       if (result.contains('Error')) {
         throw Exception(result);
@@ -151,7 +165,7 @@ class SkillsService {
   /// Uninstalls a skill via the OpenClaw CLI and triggers a forensic awareness sync.
   Future<bool> uninstallSkill(String id, {bool silent = false}) async {
     try {
-      final result = await NativeBridge.runInProot('$kOpenClawCommand skills uninstall $id --yes');
+      final result = await NativeBridge.runInProot('$kOpenClawCommand skills uninstall $id');
       
       if (result.contains('Error')) {
         throw Exception(result);

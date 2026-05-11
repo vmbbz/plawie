@@ -1555,9 +1555,8 @@ os.networkInterfaces = () => ({});
         }
 
         try {
-            // 1. Install official recommended skills (idempotent)
-            Log.i("BootstrapManager", "[FORENSIC] Installing recommended core skills...")
-            runInProot("openclaw skills install --recommended --yes")
+            // 1. Asset Sync: Skills from assets/openclaw/skills if they exist
+            // (Recommended core skills moved to Dart layer for better timeout management)
 
             // 2. Sync skills from assets/openclaw/skills if they exist
             val assetPath = "openclaw/skills"

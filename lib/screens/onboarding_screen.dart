@@ -307,16 +307,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       }
     }
 
-    _writeLog('\n📦 Registering model ($modelName) via CLI...');
-    await NativeBridge.runInProot('''
-      export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw models add --provider $provider --id $modelId --name "$modelName"
-      export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw agents update --primary-model $provider/$modelId
-    ''', timeout: 30);
+    final openClawProvider = _toOpenClawProvider(provider);
+    final primaryModel = '$openClawProvider/$modelId';
+
+    _writeLog('\n📦 Saving model preference ($modelName)...');
+    await gatewayProvider.persistModel(primaryModel);
     
     _writeLog('\n🔄 Triggering gateway hot-reload...');
     await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || true');
 
     _writeLog('✅ API key and model ($modelName) synced.');
+  }
+
+  String _toOpenClawProvider(String provider) {
+    final p = provider.toLowerCase();
+    if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
+    if (p.contains('openai')) return 'openai';
+    if (p.contains('gemini') || p.contains('google')) return 'google';
+    if (p.contains('groq')) return 'groq';
+    if (p.contains('ollama')) return 'ollama';
+    return p;
   }
 
   Future<void> _executeProviderSetupUI(String provider, String key, String modelId, String modelName) async {

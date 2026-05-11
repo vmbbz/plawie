@@ -576,6 +576,33 @@ PARAMETER num_batch 512
     await _attachOrStart(forceStart: true);
   }
 
+  /// Explicitly await the gateway reaching a healthy/running state.
+  /// Useful for setup wizards to prevent users from landing on a "Disconnected" screen.
+  Future<void> waitForStartup({Duration timeout = const Duration(seconds: 120)}) async {
+    if (_state.status == GatewayStatus.running) return;
+
+    final completer = Completer<void>();
+    StreamSubscription? sub;
+    Timer? timeoutTimer;
+
+    sub = _stateController.stream.listen((state) {
+      if (state.status == GatewayStatus.running) {
+        timeoutTimer?.cancel();
+        sub?.cancel();
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    timeoutTimer = Timer(timeout, () {
+      sub?.cancel();
+      if (!completer.isCompleted) {
+        completer.completeError(TimeoutException('Gateway warmup timed out after ${timeout.inSeconds}s'));
+      }
+    });
+
+    return completer.future;
+  }
+
   void _subscribeLogs() {
     _logSubscription?.cancel();
     _logSubscription = NativeBridge.gatewayLogStream.listen((log) {
