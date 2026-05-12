@@ -478,12 +478,19 @@ config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];  /
 **Validation Sources**:
 - [OpenClaw Official Documentation](https://docs.openclaw.ai/gateway/configuration-reference)
 - [Community Best Practices](https://lucaberton.com/blog/openclaw-gateway-bind-modes-loopback-lan-tailnet-auto-custom/)
+- **Regression Research**: 
+  - Issue #9358: WebSocket origin check regression since commit 66d8117
+  - Issue #49950: Config reload loops from allowedOrigins reset
+  - Issue #41043: Broken dangerouslyDisableDeviceAuth flag
+  - Confirmed this affects all mobile apps using Dart WebSocket (origin=n/a)
 
 **Results**:
 - ✅ No more "Invalid --bind" errors
 - ✅ No more "Unrecognized key" validation errors  
 - ✅ Gateway starts and reloads config successfully
-- ✅ WebSocket connections established without "origin not allowed" failures
+- ✅ **KNOWN REGRESSION FIX**: Resolves OpenClaw commit 66d8117 WebSocket origin issue
+- ✅ **CONFIG STABILITY**: Prevents gateway restart loops from allowedOrigins reset
+- ✅ **MOBILE COMPATIBILITY**: Allows Dart WebSocket connections (origin=n/a)
 
 ## Things Most Likely To Break
 
