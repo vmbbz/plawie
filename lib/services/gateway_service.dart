@@ -476,14 +476,14 @@ PARAMETER num_batch 512
         await _configureGateway();
         
         await NativeBridge.runInProot(
-          'export PATH=$PATH:/usr/local/bin:/usr/bin && '
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
         
         await NativeBridge.runInProot(
-          'export PATH=$PATH:/usr/local/bin:/usr/bin && '
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
           'openclaw reload 2>/dev/null || true',
           timeout: 10,
