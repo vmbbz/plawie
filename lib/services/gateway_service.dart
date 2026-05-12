@@ -471,18 +471,19 @@ PARAMETER num_batch 512
       ));
 
       try {
+        // Apply Plawie's local gateway overrides BEFORE doctor --fix
+        // This prevents config reload loops when openclaw reload detects our changes
+        await _configureGateway();
+        
         await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+          'export PATH=$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
-        // doctor --fix can restore gateway.controlUi.allowedOrigins. Apply
-        // Plawie's local gateway overrides after doctor so dart:io WebSockets
-        // are not rejected as origin=n/a.
-        await _configureGateway();
+        
         await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+          'export PATH=$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
           'openclaw reload 2>/dev/null || true',
           timeout: 10,
