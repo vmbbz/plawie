@@ -761,7 +761,8 @@ PARAMETER num_batch 512
     
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
-    config['gateway']['nodes']['autoApprove'] = true;
+    config['gateway']['nodes']['pairing'] ??= {};
+    config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];  // Auto-approve localhost only
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [
       'camera.snap', 'camera.clip', 'camera.list',
@@ -776,7 +777,7 @@ PARAMETER num_batch 512
     
     // ENODEV FIX: Use official OpenClaw config schema
     // Prevent eth0 ENODEV errors with valid network binding
-    config['gateway']['bind'] = '127.0.0.1';  // Explicitly bind to IPv4 loopback
+    config['gateway']['bind'] = 'loopback';  // Use proper OpenClaw enum value
     config['gateway']['port'] = AppConstants.gatewayPort; // Force port 18789
     
     // Remove any stale allowedOrigins restriction so the gateway uses its
