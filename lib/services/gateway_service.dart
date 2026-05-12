@@ -780,18 +780,11 @@ PARAMETER num_batch 512
     config['gateway']['bind'] = 'loopback';  // Use proper OpenClaw enum value
     config['gateway']['port'] = AppConstants.gatewayPort; // Force port 18789
     
-    // FIX: Explicitly allow localhost origins for loopback mode
-    // Dart WebSocket doesn't send Origin header (origin=n/a), so we need
-    // to explicitly allow null/empty origins for localhost connections
-    config['gateway']['controlUi'] ??= {};
-    config['gateway']['controlUi']['allowedOrigins'] = [
-      'http://localhost:*',
-      'http://127.0.0.1:*',
-      'ws://localhost:*', 
-      'ws://127.0.0.1:*',
-      // Allow null/empty origin for Dart WebSocket connections
-      ''
-    ];
+    // FIX: Remove entire controlUi section to prevent config reload loops
+    // OpenClaw detects allowedOrigins changes as runtime config modifications
+    // and restarts the gateway. Removing the section entirely allows
+    // default localhost behavior without triggering reloads.
+    config['gateway'].remove('controlUi');
     
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
