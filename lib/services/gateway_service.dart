@@ -781,20 +781,14 @@ PARAMETER num_batch 512
     config['gateway']['bind'] = 'loopback';  // Use proper OpenClaw enum value
     config['gateway']['port'] = AppConstants.gatewayPort; // Force port 18789
     
-    // FIX: Implement competitor-proven explicit controlUi configuration
-    // Based on mithun50/openclaw-termux solution for origin=n/a handling
+    // FIX: Auditor's exact solution for app://localhost origin handling
+    // Control UI sends Origin: app://localhost (standard for Flutter/dart:io)
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
+      'app://localhost',
       'http://127.0.0.1:18789',
-      'https://127.0.0.1:18789',
-      'http://localhost:18789',
-      'https://localhost:18789',
-      // Critical: Allow empty origin for Dart WebSocket (origin=n/a)
-      ''
+      'http://localhost:18789'
     ];
-    // Auto-approve localhost connections to prevent approval loops
-    config['gateway']['controlUi']['dangerouslyDisableDeviceAuth'] = true;
-    config['gateway']['controlUi']['allowInsecureAuth'] = true;
     
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
