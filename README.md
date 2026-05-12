@@ -112,6 +112,21 @@ We run a complete local Unix environment inside Android using PRoot. Inside this
 - **Bootstrap**: Parallel Multi-Threaded Engine (<40s Setup)
 - **Footprint**: Ephemeral Build Lifecycle (Saves 800MB+ storage)
 
+#### Gateway Configuration
+The gateway uses official OpenClaw configuration schema validated against community best practices:
+
+**Key Configuration Settings:**
+- **`gateway.bind: 'loopback'`** - Secure local-only binding (default & safest)
+- **`gateway.nodes.pairing.autoApproveCidrs: ['127.0.0.1/32']`** - Auto-approve localhost connections only
+- **`gateway.mode: 'local'`** - Local execution mode for mobile privacy
+- **`gateway.port: 18789`** - Standard OpenClaw port (configurable)
+
+**Security Features:**
+- Loopback binding prevents network exposure
+- CIDR-based auto-approval restricts to localhost
+- No `allowedOrigins` required for loopback mode
+- Config validation prevents invalid schema values
+
 ### 2. Precision Background Stability
 Plawie is built for 24/7 autonomous operation. Unlike standard apps that die when backgrounded:
 - **Sticky Foreground Services**: The OpenClaw engine runs as a high-priority Android service, surviving app closures and "Doze" mode.

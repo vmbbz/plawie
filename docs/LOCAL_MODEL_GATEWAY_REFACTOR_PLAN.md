@@ -453,6 +453,38 @@ Option B: NDK bridge fails tool-call parity.
   - Ollama for gateway-compatible local agent loop.
 - Still keep cleanup/refactor benefits.
 
+## Gateway Configuration Validation (RESOLVED)
+
+### Recent Configuration Fixes
+
+**Issue**: Invalid OpenClaw gateway configuration preventing startup and causing WebSocket connection failures.
+
+**Root Causes Identified**:
+1. **Invalid bind value**: `gateway.bind: '127.0.0.1'` (IP address not allowed)
+2. **Invalid autoApprove schema**: `gateway.nodes.autoApprove: true` (wrong key location)
+
+**Official Schema Validation**:
+- **Valid bind modes**: `"loopback", "lan", "tailnet", "auto", "custom"`
+- **Correct autoApprove schema**: `gateway.nodes.pairing.autoApproveCidrs: ['127.0.0.1/32']`
+
+**Applied Fixes**:
+```dart
+// lib/services/gateway_service.dart
+config['gateway']['bind'] = 'loopback';  // Valid enum, safest option
+config['gateway']['nodes']['pairing'] ??= {};
+config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];  // CIDR array
+```
+
+**Validation Sources**:
+- [OpenClaw Official Documentation](https://docs.openclaw.ai/gateway/configuration-reference)
+- [Community Best Practices](https://lucaberton.com/blog/openclaw-gateway-bind-modes-loopback-lan-tailnet-auto-custom/)
+
+**Results**:
+- ✅ No more "Invalid --bind" errors
+- ✅ No more "Unrecognized key" validation errors  
+- ✅ Gateway starts and reloads config successfully
+- ✅ WebSocket connections established without "origin not allowed" failures
+
 ## Things Most Likely To Break
 
 ### Gateway config reload
