@@ -736,6 +736,7 @@ class BootstrapService {
       config['gateway']['port'] = AppConstants.gatewayPort;
       config['gateway']['controlUi'] ??= {};
       config['gateway']['controlUi']['allowedOrigins'] = [
+        '*',
         'n/a', 
         'http://127.0.0.1:18789',
         'http://localhost:18789'
@@ -777,6 +778,7 @@ class BootstrapService {
       config['gateway'] ??= {};
       config['gateway']['controlUi'] ??= {};
       config['gateway']['controlUi']['allowedOrigins'] = [
+        '*',
         'n/a', 
         'http://127.0.0.1:18789',
         'http://localhost:18789'

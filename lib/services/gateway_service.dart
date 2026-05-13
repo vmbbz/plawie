@@ -3273,8 +3273,18 @@ PARAMETER num_batch 512
   }
 
   /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
+  /// We run this TWICE with a delay to ensure it survives any background touches
+  /// by the 'onboard' wizard or internal gateway reloads.
   Future<void> hardenGatewayConfigViaCli() async {
-    // 1. Fetch current token so we don't clobber it if the patch merge is shallow
+    // 1. Initial immediate sweep
+    await _applyHardeningPatch();
+    
+    // 2. Secondary sweep after 2s to win any race conditions with the wizard/onboard
+    unawaited(Future.delayed(const Duration(seconds: 2), () => _applyHardeningPatch()));
+  }
+
+  Future<void> _applyHardeningPatch() async {
+    // Fetch current token so we don't clobber it if the patch merge is shallow
     final currentToken = await retrieveTokenFromConfig();
     
     final patchJson = '''
@@ -3282,7 +3292,7 @@ PARAMETER num_batch 512
   "gateway": {
     ${currentToken != null ? '"auth": { "token": "$currentToken" },' : ''}
     "controlUi": {
-      "allowedOrigins": ["n/a", "http://127.0.0.1:18789", "http://localhost:18789"]
+      "allowedOrigins": ["*", "n/a", "http://127.0.0.1:18789", "http://localhost:18789"]
     },
     "nodes": {
       "pairing": {
@@ -3311,8 +3321,8 @@ PARAMETER num_batch 512
         'openclaw reload',
         timeout: 30,
       );
-      debugPrint('✅ Hardening sweep (config patch) completed successfully');
-      _addActivity('[SYS] Industrial-grade CLI hardening complete.');
+      debugPrint('✅ Hardening sweep (config patch) applied successfully');
+      _addActivity('[SYS] Industrial-grade CLI hardening applied.');
     } catch (e) {
       debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }
