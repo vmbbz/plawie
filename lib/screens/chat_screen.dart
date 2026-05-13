@@ -120,8 +120,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     'default_avatar.vrm',
   ];
   
-  bool _isTtsDownloaded = false;
-  double _downloadProgress = 0.0;
   bool _isDownloadingTts = false;
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
@@ -138,12 +136,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   // Latest camera.snap base64 captured by AI tool call — attached to bot message after stream ends
   String? _pendingAiSnapBase64;
-
-  // Gateway TTS audio playback
-  AudioPlayer? _gatewayAudioPlayer;
-  bool _gatewayTtsActive = false;
-  StreamSubscription? _gwAudioStateSub;
-  StreamSubscription? _gwAudioCompleteSub;
 
   // Canvas overlay state
   WebViewController? _canvasController;
@@ -260,7 +252,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
     _initVoiceParams();
     _loadChatHistory();
-    _checkTtsModel();
     // Fetch gateway agents after first frame — gateway may not be ready yet
     WidgetsBinding.instance.addPostFrameCallback((_) => _fetchDynamicAgents());
 
@@ -309,127 +300,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         GatewayService().reregisterSkills();
       }
     });
-    
-    // Gateway TTS audio — intercept MP3 served by gateway HTTP server
-    GatewayService().onGatewayTtsAudio = (url) => _playGatewayAudio(url);
-
-    // Listen for background download progress
-    _tts.onDownloadProgress = (p) {
-      if (mounted) {
-        setState(() {
-          _downloadProgress = p;
-          if (p >= 1.0) {
-            _isDownloadingTts = false;
-            _isTtsDownloaded = true;
-            // Persist so future visits skip the download prompt
-            final prefs = PreferencesService();
-            prefs.ttsModelDownloaded = true;
-            prefs.ttsEngine = 'kokoro';
-          } else if (p > 0) {
-            _isDownloadingTts = true;
-          }
-        });
-      }
-    };
-  }
-
-  Future<void> _checkTtsModel() async {
-    final prefs = PreferencesService();
-    if (prefs.ttsModelDownloaded) {
-      if (mounted) setState(() => _isTtsDownloaded = true);
-      return;
-    }
-    final downloaded = await _tts.isModelDownloaded();
-    if (downloaded) prefs.ttsModelDownloaded = true;
-    if (mounted) setState(() => _isTtsDownloaded = downloaded);
-  }
-
-void _showTtsDownloadDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Download Voice Data'),
-        content: const Text('To enable voice, a one-time ~320MB high-quality voice model (Kokoro) needs to be downloaded.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Later'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _startKokoroDownload();
-            },
-            child: const Text('Download Now'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _startKokoroDownload() async {
-    if (_isDownloadingTts) return;
-
-    setState(() {
-      _isDownloadingTts = true;
-      _downloadProgress = 0.0;
-    });
-
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      _addDiagnosticLog('Starting Kokoro TTS background download...');
-      await _tts.init(forceDownload: true);
-
-      if (mounted) {
-        // Persist download flag — won't re-prompt on next navigation
-        final prefs = PreferencesService();
-        prefs.ttsModelDownloaded = true;
-        prefs.ttsEngine = 'kokoro';
-
-        setState(() {
-          _isDownloadingTts = false;
-          _isTtsDownloaded = true;
-          _downloadProgress = 1.0;
-        });
-
-        // Verify Kokoro actually loaded (sherpa-onnx may fail silently)
-        if (!_tts.isReady) {
-          final ok = await _tts.reinitializeKokoro();
-          if (!ok && mounted) {
-            messenger.showSnackBar(const SnackBar(
-              content: Text('Voice model downloaded but could not start — using device voice.'),
-              backgroundColor: Colors.orange,
-            ));
-            return;
-          }
-        }
-
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Natural voice ready! Kokoro TTS is now active.'),
-            backgroundColor: AppColors.statusGreen,
-          ),
-        );
-      }
-    } catch (e) {
-      _addDiagnosticLog('Download Error: $e');
-      if (mounted) {
-        setState(() => _isDownloadingTts = false);
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Download failed: ${e.toString().split(':').last.trim()}'),
-            backgroundColor: Colors.redAccent,
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: () => _startKokoroDownload(),
-            ),
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _loadChatHistory() async {
@@ -686,7 +556,7 @@ void _showTtsDownloadDialog() {
   }
 
   Future<void> _processNextTtsInQueue() async {
-    if (_isTtsSpeaking || _ttsQueue.isEmpty || _gatewayTtsActive) return;
+    if (_isTtsSpeaking || _ttsQueue.isEmpty || _tts.isSpeaking) return;
     _isTtsSpeaking = true;
     final sentence = _ttsQueue.removeAt(0);
     try {
@@ -705,44 +575,6 @@ void _showTtsDownloadDialog() {
       _processNextTtsInQueue();
     }
     _ttsSentenceBuffer = '';
-  }
-
-  Future<void> _playGatewayAudio(String url) async {
-    await _gwAudioStateSub?.cancel();
-    await _gwAudioCompleteSub?.cancel();
-    await _gatewayAudioPlayer?.stop();
-    _gatewayAudioPlayer?.dispose();
-    _gatewayAudioPlayer = AudioPlayer();
-    _gatewayTtsActive = true;
-
-    final speed = PreferencesService().ttsSpeed.clamp(0.5, 2.0);
-    await _gatewayAudioPlayer!.setPlaybackRate(speed);
-
-    _gwAudioStateSub = _gatewayAudioPlayer!.onPlayerStateChanged.listen((state) {
-      if (state == PlayerState.playing && mounted) {
-        setState(() => _speechIntensity = 0.8);
-      }
-    });
-    _gwAudioCompleteSub = _gatewayAudioPlayer!.onPlayerComplete.listen((_) {
-      _gatewayTtsActive = false;
-      _gwAudioStateSub?.cancel();
-      _gwAudioCompleteSub?.cancel();
-      _gatewayAudioPlayer?.dispose();
-      _gatewayAudioPlayer = null;
-      if (mounted) {
-        setState(() {
-          _speechIntensity = 0.0;
-          _currentGesture = 'ready';
-        });
-        if (PreferencesService().continuousMode && !_isGenerating) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isGenerating && !_isListening) _startListening();
-          });
-        }
-      }
-    });
-
-    await _gatewayAudioPlayer!.play(UrlSource(url));
   }
 
   void _scrollToBottom({bool instant = false}) {
@@ -874,13 +706,8 @@ void _showTtsDownloadDialog() {
     _ttsQueue.clear();
     _ttsSentenceBuffer = '';
     _isTtsSpeaking = false;
-    // Also stop gateway audio — user interrupted, don't keep playing old response.
-    await _gwAudioStateSub?.cancel();
-    await _gwAudioCompleteSub?.cancel();
-    await _gatewayAudioPlayer?.stop();
-    _gatewayAudioPlayer?.dispose();
-    _gatewayAudioPlayer = null;
-    _gatewayTtsActive = false;
+    // Also stop unified TTS (handles both local and gateway audio)
+    _tts.stop();
     setState(() => _speechIntensity = 0.0);
 
     // Capture and clear pending attachments before any async gaps
@@ -1174,8 +1001,7 @@ void _showTtsDownloadDialog() {
     // callbacks handle the restart once the last audio chunk finishes.
     if (mounted &&
         PreferencesService().continuousMode &&
-        !_isTtsSpeaking &&
-        !_gatewayTtsActive &&
+        !_tts.isSpeaking &&
         _ttsQueue.isEmpty) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted && !_isGenerating && !_isListening) _startListening();
@@ -1824,49 +1650,14 @@ void _showTtsDownloadDialog() {
           ),
         ),
         PopupMenuItem<String>(
-          value: 'tts_status',
+          value: 'setup_local_llm',
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
+            child: const Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: (_isTtsDownloaded ? AppColors.statusGreen : (_isDownloadingTts ? Colors.orange : Colors.blue)).withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _isTtsDownloaded ? Icons.volume_up : (_isDownloadingTts ? Icons.downloading : Icons.cloud_download),
-                    color: _isTtsDownloaded ? AppColors.statusGreen : (_isDownloadingTts ? Colors.orange : Colors.blue),
-                    size: 16,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _isTtsDownloaded ? 'Kokoro Voice Engine' : (_isDownloadingTts ? 'Downloading...' : 'Voice Engine'),
-                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        _isTtsDownloaded 
-                          ? 'Active & Ready' 
-                          : (_isDownloadingTts 
-                              ? '${(_downloadProgress * 100).toInt()}% complete' 
-                              : 'High-quality TTS required'),
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!_isTtsDownloaded && !_isDownloadingTts)
-                   const Icon(Icons.arrow_circle_right_outlined, color: Colors.blue, size: 20),
+                Icon(Icons.memory, color: Colors.cyanAccent, size: 20),
+                SizedBox(width: 12),
+                Text('Agent Intelligence', style: TextStyle(color: Colors.white, fontSize: 14)),
               ],
             ),
           ),
@@ -1875,9 +1666,7 @@ void _showTtsDownloadDialog() {
     ).then((value) {
       if (value == null) return;
       
-      if (value == 'tts_status' && !_isTtsDownloaded && !_isDownloadingTts) {
-        _showTtsDownloadDialog();
-      } else if (value == 'setup_local_llm') {
+      if (value == 'setup_local_llm') {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const LocalLlmScreen(),
         ));
@@ -1965,10 +1754,6 @@ void _showTtsDownloadDialog() {
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
     _skillsSub?.cancel();
-    _gwAudioStateSub?.cancel();
-    _gwAudioCompleteSub?.cancel();
-    _gatewayAudioPlayer?.stop();
-    _gatewayAudioPlayer?.dispose();
     _glowController.dispose();
     _tts.stop();
     _speechToText.stop();
@@ -2400,47 +2185,6 @@ void _showTtsDownloadDialog() {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // --- KOKORO TTS GLOBAL PROGRESS OVERLAY ---
-                  if (_isDownloadingTts)
-                    Container(
-                      margin: const EdgeInsets.fromLTRB(20, 100, 20, 0),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.downloading, color: Colors.blue, size: 16),
-                              const SizedBox(width: 10),
-                              Text(
-                                _downloadProgress > 0.82 ? 'Extracting Kokoro...' : 'Downloading Kokoro (~320MB)',
-                                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${(_downloadProgress * 100).toInt()}%',
-                                style: const TextStyle(color: Colors.white70, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: _downloadProgress,
-                              backgroundColor: Colors.white.withValues(alpha: 0.1),
-                              color: Colors.blue,
-                              minHeight: 4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   // 5. Epic Floating Chat/Mic Bar
 
                   if (!_isChatCollapsed) const Spacer(flex: 3),

@@ -215,30 +215,12 @@ class AgentSkillServer {
 
     switch (action) {
       case 'set_engine':
-        final engine = data['engine'] as String?;
-        if (engine == null) return _sendError(request, 'Missing engine parameter');
-        final validEngines = ['kokoro', 'native', 'elevenlabs', 'openai'];
-        if (!validEngines.contains(engine)) {
-          return _sendError(request, 'Invalid engine. Valid: ${validEngines.join(", ")}');
-        }
-        prefs.ttsEngine = engine;
-        _sendJson(request, {'success': true, 'engine': engine});
+        // No-op: Local engines removed. App strictly uses Gateway TTS.
+        _sendJson(request, {'success': true, 'engine': 'gateway'});
 
       case 'set_voice':
-        final voice = data['voice'] as String?;
-        if (voice == null) return _sendError(request, 'Missing voice parameter');
-        switch (prefs.ttsEngine) {
-          case 'elevenlabs':
-            prefs.elevenLabsVoiceId = voice;
-          case 'openai':
-            prefs.openAiTtsVoice = voice;
-          case 'kokoro':
-            final sid = int.tryParse(voice);
-            if (sid != null) TtsService().updateKokoroVoice(sid);
-          default:
-            break;
-        }
-        _sendJson(request, {'success': true, 'voice': voice, 'engine': prefs.ttsEngine});
+        // No-op: Voice selection is now handled on the Gateway side.
+        _sendJson(request, {'success': true, 'message': 'Voice changes should be handled in the Gateway config.'});
 
       case 'speak':
         final text = data['text'] as String?;
@@ -254,10 +236,8 @@ class AgentSkillServer {
 
       case 'get_status':
         _sendJson(request, {
-          'engine': prefs.ttsEngine,
-          'voice': prefs.elevenLabsVoiceId.isNotEmpty ? prefs.elevenLabsVoiceId
-              : prefs.openAiTtsVoice.isNotEmpty ? prefs.openAiTtsVoice
-              : 'default',
+          'engine': 'gateway',
+          'voice': 'default',
         });
 
       default:

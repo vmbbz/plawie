@@ -18,6 +18,7 @@ import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
+import 'tts_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 /// Simple mobile-friendly template for Qwen2.5 models.
@@ -2599,6 +2600,11 @@ PARAMETER num_batch 512
                   final relativePath = mediaStr.substring('MEDIA:/tmp/openclaw/'.length);
                   final audioUrl = 'http://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}/__openclaw__/media/$relativePath';
                   _addActivity('[TTS] serving audio at $audioUrl');
+                  
+                  // Primary: route through unified TtsService facade
+                  TtsService().speakUrl(audioUrl);
+                  
+                  // Optional: trigger UI callback if any
                   onGatewayTtsAudio?.call(audioUrl);
                   // Don't forward tts tool result to the chat stream — it's audio, not display text.
                   return;
