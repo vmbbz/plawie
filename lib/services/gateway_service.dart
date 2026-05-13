@@ -794,12 +794,13 @@ PARAMETER num_batch 512
     ];
     config['gateway']['mode'] = 'local';
 
-    // EVENT-LOOP OPTIMIZATION: disable expensive model prewarm + sidecar maintenance
-    config['gateway']['startup'] ??= {};
-    config['gateway']['startup']['modelPrewarm'] = false;           // prevents 10-20s model warmup delay
-    config['gateway']['startup']['sidecarRecovery'] = false;        // reduces post-ready.maintenance
-    config['gateway']['heartbeat'] ??= {};
-    config['gateway']['heartbeat']['intervalSeconds'] = 300;        // longer heartbeat = less CPU churn
+    // FIX: Ensure allowedOrigins is present and contains 'n/a'
+    config['gateway']['controlUi'] ??= {};
+    config['gateway']['controlUi']['allowedOrigins'] = [
+      'n/a', 
+      'http://127.0.0.1:18789',
+      'http://localhost:18789'
+    ];
 
     
     // ENODEV FIX: Use official OpenClaw config schema
