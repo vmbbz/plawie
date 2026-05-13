@@ -244,16 +244,16 @@ PARAMETER num_batch 512
   /// Send an audio file to the gateway for transcription (STT)
   Future<String?> transcribeAudio(File audioFile) async {
     try {
-      final token = await fetchAuthenticatedDashboardUrl().then((url) {
-        final uri = Uri.parse(url);
-        return uri.queryParameters['token'];
-      });
-
+      final dashboardUrl = await fetchAuthenticatedDashboardUrl();
+      if (dashboardUrl == null) throw Exception('No gateway dashboard URL');
+      
+      final uri = Uri.parse(dashboardUrl);
+      final token = uri.queryParameters['token'];
       if (token == null) throw Exception('No gateway token');
 
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('${AppConstants.gatewayBaseUrl}/talk/stt'),
+        Uri.parse('${AppConstants.gatewayUrl}/talk/stt'),
       );
       request.headers['Authorization'] = 'Bearer $token';
       request.files.add(await http.MultipartFile.fromPath('audio', audioFile.path));
