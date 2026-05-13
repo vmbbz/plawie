@@ -772,10 +772,10 @@ class BootstrapService {
         'http://localhost:18789'
       ];
       
-      // Fix autoApprove path to match OpenClaw schema
+      // Fix autoApprove path to match official OpenClaw 2.0 strict schema
       config['gateway']['nodes'] ??= {};
       config['gateway']['nodes']['pairing'] ??= {};
-      config['gateway']['nodes']['pairing']['autoApprove'] = true;
+      config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];
       
       // EVENT-LOOP OPTIMIZATION: disable expensive tasks during setup
       config['gateway']['startup'] ??= {};
