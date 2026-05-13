@@ -153,6 +153,10 @@ class PreferencesService {
   int get silenceTimeoutSeconds => _p.getInt('silence_timeout_seconds') ?? 5;
   set silenceTimeoutSeconds(int value) => _p.setInt('silence_timeout_seconds', value);
 
+  /// Current voice persona name (provider-agnostic)
+  String get currentTtsPersona => _p.getString('current_tts_persona') ?? 'default';
+  set currentTtsPersona(String value) => _p.setString('current_tts_persona', value);
+
   // ── Wake Word ───────────────────────────────────────────────────────────────
 
   /// Wake word mode: 'off' | 'foreground' | 'always'

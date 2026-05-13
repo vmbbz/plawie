@@ -823,6 +823,22 @@ class BootstrapService {
         'http://localhost:18789'
       ];
 
+      // 6. LOCAL-FIRST TTS HARDENING (Offline voice support)
+      config['messages'] ??= {};
+      config['messages']['tts'] ??= {};
+      config['messages']['tts']['provider'] ??= 'sherpa-onnx';
+      config['messages']['tts']['auto'] ??= 'inbound';
+      config['messages']['tts']['personas'] ??= {
+        'default': { 'provider': 'sherpa-onnx', 'voice': 'en_US-lessac-high' },
+        'friendly': { 'provider': 'sherpa-onnx', 'voice': 'en_US-amy-low' },
+        'warm': { 'provider': 'sherpa-onnx', 'voice': 'en_US-kathleen-low' },
+        'professional': { 'provider': 'sherpa-onnx', 'voice': 'en_US-lessac-medium' },
+        'authoritative': { 'provider': 'sherpa-onnx', 'voice': 'en_US-ryan-high' },
+        'casual': { 'provider': 'sherpa-onnx', 'voice': 'en_US-lessac-low' },
+        'enthusiastic': { 'provider': 'sherpa-onnx', 'voice': 'en_US-amy-medium' },
+        'whispering': { 'provider': 'sherpa-onnx', 'voice': 'en_US-kathleen-low' },
+      };
+
       await configFile.writeAsString(jsonEncode(config));
       _log('[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');
     } catch (e) {

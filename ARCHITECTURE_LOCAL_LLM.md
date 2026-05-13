@@ -64,6 +64,14 @@ Local LLM (any GGUF model):
   [No PRoot. No Node.js. No HTTP server. Runs entirely inside Flutter's process.]
 ```
 
+### The Offline Voice Path
+
+While **fllama** generates text entirely without PRoot, the **Gateway (PRoot)** still serves as our primary **Local Audio Server**. 
+- Even when the app is offline and using the Local LLM, the Gateway is used to generate TTS.
+- By configuring the Gateway to use **Sherpa-ONNX** (local/offline TTS), we ensure the agent can speak without an internet connection.
+- **Path**: Flutter (LocalLlmService) → chat_screen → TtsService → Gateway (PRoot) → Sherpa-ONNX → local MP3 → Flutter.
+- This maintains the "Lean APK" strategy (no heavy TTS models in assets) while ensuring full offline autonomy.
+
 The gateway (PRoot) and fllama are **completely independent**. If PRoot crashes, local inference
 keeps working. If the user hasn't set up PRoot yet, local inference still works.
 

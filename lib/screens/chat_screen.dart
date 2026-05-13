@@ -11,8 +11,9 @@ import '../services/native_bridge.dart';
 import '../services/video_capture_service.dart';
 import '../utils/video_frame_extractor.dart';
 import '../models/agent_info.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../services/voice_persona_service.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
@@ -27,6 +28,7 @@ import '../main.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
+import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -397,6 +399,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       });
     }
   }
+
+  Offset _headPosition = Offset.zero;
+  bool _isTtsMenuOpen = false;
 
   void _addDiagnosticLog(String log) {
     if (!mounted) return;
@@ -2171,6 +2176,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       }
                       _addDiagnosticLog(log);
                     },
+                    onHeadUpdate: (pos) {
+                      if (mounted) setState(() => _headPosition = pos);
+                    },
                   ),
                 ),
               ),
@@ -2251,29 +2259,80 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                   ),
                                 ),
                               ),
-                              Expanded(
-                                child: ShaderMask(
-                                  shaderCallback: (bounds) => const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
-                                    stops: [0.0, 0.05, 0.95, 1.0],
-                                  ).createShader(bounds),
-                                  blendMode: BlendMode.dstIn,
+                              if (!_isChatCollapsed)
+                                Expanded(
+                                  child: ShaderMask(
+                                    shaderCallback: (bounds) => const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
+                                      stops: [0.0, 0.05, 0.95, 1.0],
+                                    ).createShader(bounds),
+                                    blendMode: BlendMode.dstIn,
+                                    child: ListView.builder(
+                                      controller: _scrollController,
+                                      padding: const EdgeInsets.all(20),
+                                      itemCount: _messages.length,
+                                      itemBuilder: (context, i) {
+                                        final msg = _messages[i];
+                                        return ChatBubble(
+                                          message: msg,
+                                          isThinking: i == _messages.length - 1 && _isThinking,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+
+                              // --- QUICK MOOD CHIPS ---
+                              if (!_isChatCollapsed)
+                                Container(
+                                  height: 44,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
                                   child: ListView.builder(
-                                    controller: _scrollController,
-                                    padding: const EdgeInsets.all(20),
-                                    itemCount: _messages.length,
+                                    scrollDirection: Axis.horizontal,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: VoicePersonaService.commonPersonas.length,
                                     itemBuilder: (context, i) {
-                                      final msg = _messages[i];
-                                      return ChatBubble(
-                                        message: msg,
-                                        isThinking: i == _messages.length - 1 && _isThinking,
+                                      final persona = VoicePersonaService.commonPersonas[i];
+                                      final isSelected = TtsService().currentPersona == persona;
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: ChoiceChip(
+                                          label: Text(
+                                            persona.toUpperCase(),
+                                            style: GoogleFonts.outfit(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 1.0,
+                                              color: isSelected ? Colors.black : Colors.white70,
+                                            ),
+                                          ),
+                                          selected: isSelected,
+                                          onSelected: (val) async {
+                                            if (val) {
+                                              await TtsService().setVoicePersona(persona);
+                                              if (mounted) setState(() {});
+                                            }
+                                          },
+                                          selectedColor: AppColors.statusGreen,
+                                          backgroundColor: Colors.white.withValues(alpha: 0.05),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            side: BorderSide(
+                                              color: isSelected ? AppColors.statusGreen : Colors.white10,
+                                              width: 1,
+                                            ),
+                                          ),
+                                          showCheckmark: false,
+                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                        ),
                                       );
                                     },
                                   ),
                                 ),
-                              ),
+
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: _isChatCollapsed ? 0 : 16, 
@@ -2609,6 +2668,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
           // PiP mic is handled by native Android RemoteAction (see MainActivity.kt).
           // Flutter UI touch events are blocked in PiP mode by the OS.
+
+          // --- AURA DOT (Holographic Interface) ---
+          if (!_isPipMode && _isReady)
+            AuraDot(
+              position: _headPosition,
+              isSpeaking: TtsService().isSpeaking,
+              onTap: () => _showHolographicTtsMenu(context),
+            ),
         ],
       ),
     );
@@ -2744,6 +2811,164 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
         ],
       ),
+    );
+  }
+
+  // ── Holographic TTS Menu ───────────────────────────────────────────────────
+
+  void _showHolographicTtsMenu(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'TTS Menu',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.85,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.statusGreen.withValues(alpha: 0.15),
+                      blurRadius: 30,
+                      spreadRadius: 5,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.psychology_alt, color: AppColors.statusGreen, size: 20),
+                        const SizedBox(width: 12),
+                        Text(
+                          'VOICE PERSONA',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12, height: 32),
+                    
+                    // Persona Grid
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: VoicePersonaService.commonPersonas.map((p) {
+                        final isSelected = TtsService().currentPersona == p;
+                        return GestureDetector(
+                          onTap: () async {
+                            await TtsService().setVoicePersona(p);
+                            if (mounted) setState(() {});
+                            Navigator.pop(context);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppColors.statusGreen : Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isSelected ? AppColors.statusGreen : Colors.white10,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              p.toUpperCase(),
+                              style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: isSelected ? Colors.black : Colors.white70,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    
+                    const SizedBox(height: 32),
+                    
+                    // Speed Control
+                    Row(
+                      children: [
+                        const Icon(Icons.speed, color: Colors.white54, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'SPEECH VELOCITY',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${PreferencesService().ttsSpeed.toStringAsFixed(1)}X',
+                          style: GoogleFonts.outfit(color: AppColors.statusGreen, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: AppColors.statusGreen,
+                        inactiveTrackColor: Colors.white10,
+                        thumbColor: Colors.white,
+                        trackHeight: 2,
+                      ),
+                      child: Slider(
+                        value: PreferencesService().ttsSpeed,
+                        min: 0.5,
+                        max: 2.0,
+                        onChanged: (v) {
+                          setState(() {
+                            PreferencesService().ttsSpeed = v;
+                          });
+                        },
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    Text(
+                      'AI Voice Personas are processed by OpenClaw Gateway.',
+                      style: TextStyle(color: Colors.white24, fontSize: 9, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return FadeTransition(
+          opacity: anim1,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.8, end: 1.0).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutBack)),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
