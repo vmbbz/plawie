@@ -1666,8 +1666,19 @@ PARAMETER num_batch 512
     config['models']['providers'][openClawProvider] = {
       ...prov,
       'apiKey': key,
+      'baseUrl': prov['baseUrl'] ?? (openClawProvider == 'google' ? 'https://generativelanguage.googleapis.com/v1beta' : null),
       'models': prov['models'] ?? defaultModels,
     };
+
+    // REINFORCE: origin=n/a fix must survive every write
+    config['gateway'] ??= {};
+    config['gateway']['controlUi'] ??= {};
+    config['gateway']['controlUi']['allowedOrigins'] = [
+      'n/a', 
+      'http://127.0.0.1:18789',
+      'http://localhost:18789'
+    ];
+
     await _writeConfig(config);
     _addActivity('[Gateway] Fast-path API key config complete.');
 

@@ -790,20 +790,36 @@ class BootstrapService {
         'http://localhost:18789'
       ];
       
+      // 3. Hardened Ollama-first
       config['models'] ??= {};
       config['models']['providers'] ??= {};
       config['models']['providers']['ollama'] ??= <String, dynamic>{};
-      
       final ollama = Map<String, dynamic>.from(config['models']['providers']['ollama'] as Map);
       ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
       ollama['apiKey'] ??= 'ollama-local';
       ollama['api'] ??= 'ollama';
-      ollama['models'] ??= <Map<String, dynamic>>[];
-      
       config['models']['providers']['ollama'] = ollama;
 
+      // 4. Hardened Google/Gemini (Prevents "expected string, received undefined" reload error)
+      config['models'] ??= {};
+      config['models']['providers'] ??= {};
+      config['models']['providers']['google'] ??= <String, dynamic>{};
+      final google = Map<String, dynamic>.from(config['models']['providers']['google'] as Map);
+      google['baseUrl'] ??= 'https://generativelanguage.googleapis.com/v1beta';
+      google['api'] ??= 'google';
+      config['models']['providers']['google'] = google;
+
+      // 5. GLOBAL ORIGIN ENFORCEMENT
+      config['gateway'] ??= {};
+      config['gateway']['controlUi'] ??= {};
+      config['gateway']['controlUi']['allowedOrigins'] = [
+        'n/a', 
+        'http://127.0.0.1:18789',
+        'http://localhost:18789'
+      ];
+
       await configFile.writeAsString(jsonEncode(config));
-      _log('[CONFIG] Hardened Ollama-first configuration for setup.');
+      _log('[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');
     } catch (e) {
       _log('[CONFIG] Hardening failed during setup', error: e);
     }
