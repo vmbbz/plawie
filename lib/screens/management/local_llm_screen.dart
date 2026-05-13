@@ -1448,7 +1448,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           const SizedBox(height: 10),
           _instructionStep('1  Download', 'Tap Download on the model card above to save it to your device (~1–2 GB).'),
           const SizedBox(height: 6),
-          _instructionStep('2  Start (NDK)', 'Tap Start to load the model via the on-device NDK engine (fllama). Select it in the chat model picker for private, offline chat — no internet needed.'),
+          _instructionStep('2  Direct Mode', 'Tap Start to load via the on-device NDK (fllama). This provides a high-speed, direct LLM experience with 100% offline Voice — bypassing the gateway for maximum privacy.'),
           const SizedBox(height: 6),
           _instructionStep('3  Agent Hub', 'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
           const SizedBox(height: 10),
@@ -1495,12 +1495,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
   Widget _buildAgentPromptGuide() {
     const prompt =
-        'fllama (NDK) system prompt hint — paste into your custom agent system prompt '
-        'when using the NDK direct-chat mode:\n\n'
-        'You are running via fllama (llama.cpp NDK, on-device). Context window is '
-        'limited — keep responses focused. No tool calls are available in this mode. '
-        'For multi-step tasks or tool use, ask the user to switch to the Integrated '
-        'Agent Hub (ollama/ model) in chat settings.';
+        'NDK Direct Mode provides a high-performance, "Sovereign AI" experience. Unlike Gateway models, '
+        'fllama (llama.cpp NDK) interacts directly with your processor, bypassing the PRoot sandbox for '
+        'maximum speed and privacy. This mode supports 100% offline Voice interactions and a lean '
+        'direct LLM experience. Use this for private, high-speed chat when you don\'t need the '
+        'full multi-step Agentic tool-loops of the Gateway.';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1517,7 +1516,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               const Icon(Icons.smart_toy_outlined, color: Colors.white54, size: 16),
               const SizedBox(width: 8),
               Text(
-                'NDK Direct Mode — Prompt Hint',
+                'NDK Direct — Sovereign AI Experience',
                 style: GoogleFonts.outfit(
                     color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
               ),
