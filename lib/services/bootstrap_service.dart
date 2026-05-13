@@ -786,14 +786,12 @@ class BootstrapService {
       config['gateway']['nodes'] ??= {};
       config['gateway']['nodes']['pairing'] ??= {};
       config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];
-      
-      // FIX: Ensure allowedOrigins is present and contains 'n/a'
-      config['gateway']['controlUi'] ??= {};
-      config['gateway']['controlUi']['allowedOrigins'] = [
-        'n/a', 
-        'http://127.0.0.1:18789',
-        'http://localhost:18789'
-      ];
+
+      // 2. Default Agent configuration
+      config['agents'] ??= {};
+      config['agents']['defaults'] ??= {};
+      config['agents']['defaults']['model'] ??= {};
+      config['agents']['defaults']['model']['primary'] ??= 'google/gemini-3.1-pro-preview';
       
       // 3. Hardened Ollama-first
       config['models'] ??= {};
@@ -803,6 +801,7 @@ class BootstrapService {
       ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
       ollama['apiKey'] ??= 'ollama-local';
       ollama['api'] ??= 'ollama';
+      ollama['models'] ??= []; // FIX: Prevents "expected array, received undefined" error
       config['models']['providers']['ollama'] = ollama;
 
       // 4. Hardened Google/Gemini (Prevents "expected string, received undefined" reload error)
@@ -812,6 +811,7 @@ class BootstrapService {
       final google = Map<String, dynamic>.from(config['models']['providers']['google'] as Map);
       google['baseUrl'] ??= 'https://generativelanguage.googleapis.com/v1beta';
       google['api'] ??= 'google';
+      google['models'] ??= [];
       config['models']['providers']['google'] = google;
 
       // 5. GLOBAL ORIGIN ENFORCEMENT
