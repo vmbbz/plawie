@@ -240,6 +240,39 @@ PARAMETER num_batch 512
     }
     _updateState(_state.copyWith(logs: logs));
   }
+
+  /// Send an audio file to the gateway for transcription (STT)
+  Future<String?> transcribeAudio(File audioFile) async {
+    try {
+      final token = await fetchAuthenticatedDashboardUrl().then((url) {
+        final uri = Uri.parse(url);
+        return uri.queryParameters['token'];
+      });
+
+      if (token == null) throw Exception('No gateway token');
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${AppConstants.gatewayBaseUrl}/talk/stt'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(await http.MultipartFile.fromPath('audio', audioFile.path));
+
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        final body = await response.stream.bytesToString();
+        final data = jsonDecode(body);
+        return data['text']?.toString();
+      } else {
+        debugPrint('STT Error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('STT Exception: $e');
+      return null;
+    }
+  }
+  
   
 
   // Matches terminal Dashboard URL: supports localhost, 127.0.0.1, 0.0.0.0, and arbitrary IP addresses.

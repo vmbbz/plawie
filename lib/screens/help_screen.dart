@@ -88,8 +88,10 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Natural Voice (Piper TTS)',
-                        description: 'The app ships with native Android TTS by default (fast, robotic). To unlock a natural-sounding AI voice, download the Piper TTS model from the chat page banner — tap "Enable Voice" and wait for the one-time download (~45 MB).\n\nOnce downloaded, the natural voice activates immediately and the setting persists — you will never be prompted to download again. Switch back to native TTS anytime in Settings.',
+                        title: 'Natural Voice (Cloud & Offline)',
+                        description: 'Plawie features a hybrid voice engine:\n\n'
+                            '• Cloud (Default) — High-fidelity voices streamed from the OpenClaw Gateway. Best for performance and variety.\n\n'
+                            '• Offline (Piper) — Professional-grade private voices running entirely on your phone. To enable, go to Settings → TTS Engine & Models and download a model (e.g. Lessac-High). Once downloaded, toggle the engine to "Offline" for 100% private speech generation.',
                         icon: Icons.record_voice_over_rounded,
                         color: Colors.tealAccent,
                       ),

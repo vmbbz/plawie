@@ -47,4 +47,40 @@ class VoicePersonaService {
   String getCurrentPersonaSync() {
     return PreferencesService().currentTtsPersona;
   }
+
+  /// Switch between Cloud (Gateway) and Offline (Sherpa-ONNX) TTS
+  Future<void> setTtsEngine(String engine) async {
+    try {
+      debugPrint('VoicePersonaService: Switching TTS engine to: $engine');
+      
+      final provider = engine == 'offline' ? 'sherpa-onnx' : 'elevenlabs'; // default cloud provider
+      
+      await NativeBridge.runInProot(
+        'openclaw config set messages.tts.provider "$provider"',
+      );
+      
+      PreferencesService().ttsEngine = engine;
+      await NativeBridge.runInProot('openclaw reload');
+    } catch (e) {
+      debugPrint('VoicePersonaService: Failed to set TTS engine: $e');
+    }
+  }
+
+  /// Configure the gateway to use a specific offline model file
+  Future<void> applyOfflineModel(String modelId) async {
+    try {
+      final modelPath = '/root/.openclaw/models/tts/$modelId.onnx';
+      debugPrint('VoicePersonaService: Applying offline model: $modelPath');
+      
+      // Map the persona to use this local file
+      await NativeBridge.runInProot(
+        'openclaw config set messages.tts.personas.default.model "$modelPath"',
+      );
+      
+      PreferencesService().offlineVoiceModel = modelId;
+      await NativeBridge.runInProot('openclaw reload');
+    } catch (e) {
+      debugPrint('VoicePersonaService: Failed to apply offline model: $e');
+    }
+  }
 }
