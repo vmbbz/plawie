@@ -475,6 +475,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
+      unawaited(_forceSetOrigins()); // REINFORCE: ensure origins are always correct
       return;
     }
 
@@ -519,6 +520,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
+      unawaited(_forceSetOrigins()); // REINFORCE: ensure origins are always correct
       return;
     }
 
@@ -591,6 +593,7 @@ PARAMETER num_batch 512
       // 15s timer tick before discovering the gateway is already responding.
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
+      unawaited(_forceSetOrigins()); // REINFORCE: ensure origins are always correct
     } catch (e) {
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
@@ -3192,5 +3195,19 @@ PARAMETER num_batch 512
     _connection?.dispose();
     _stateController.close();
     _chatActivityController.close();
+  }
+
+  /// FORCE origin fix after doctor/onboard (this is the reliable way)
+  Future<void> _forceSetOrigins() async {
+    try {
+      await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw config set gateway.controlUi.allowedOrigins \'["n/a","http://127.0.0.1:18789","http://localhost:18789"]\'',
+        timeout: 10,
+      );
+    } catch (e) {
+      debugPrint('[GATEWAY] Failed to force allowedOrigins (non-fatal): $e');
+    }
   }
 }
