@@ -542,19 +542,22 @@ PARAMETER num_batch 512
         );
       } catch (_) {}
 
-      // After openclaw reload the gateway may issue a new token — wipe the
-      // cache and existing WS object so _checkHealth() re-probes fresh.
+      // Wipe the cache so we don't use a stale token from a previous run
       _connection?.dispose();
       _connection = null;
       _cachedToken = null;
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
+      // Apply hardening BEFORE we start polling/connecting
+      await _hardenGatewayConfigViaCli(); 
+      
+      // Now re-probe the fresh token (after the possible reload/restart)
+      await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
+
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
-      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      await _hardenGatewayConfigViaCli(); // AWAITED: source of truth
       return;
     }
 
@@ -621,14 +624,20 @@ PARAMETER num_batch 512
       }());
 
       await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Wipe cache and ensure we have the fresh token from the new process
+      _cachedToken = null;
+      _lastTokenFetch = null;
+      NodeService().clearCachedToken();
+
+      await _hardenGatewayConfigViaCli(); // ensure origins are correct BEFORE connect
+      
+      // Force token re-acquisition after hardening (which may have triggered a reload)
+      await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
+
       _subscribeLogs();
       _startHealthCheck();
-      // Probe immediately — same as the attach path — so we don't wait a full
-      // 15s timer tick before discovering the gateway is already responding.
       unawaited(_checkHealth());
-      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      await _hardenGatewayConfigViaCli(); // AWAITED: ensure origins are correct BEFORE connect
-      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload');
     } catch (e) {
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
@@ -761,15 +770,23 @@ PARAMETER num_batch 512
 
   /// Direct Dart-native config read/write (bypasses proot overhead)
   Future<Map<String, dynamic>> _readConfig() async {
-    try {
-      final file = File(await _openClawConfigPath());
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        final decoded = jsonDecode(content);
-        if (decoded is Map) return _deepCastMap(decoded);
+    for (int i = 0; i < 3; i++) {
+      try {
+        final file = File(await _openClawConfigPath());
+        if (await file.exists()) {
+          final content = await file.readAsString();
+          if (content.trim().isEmpty) {
+            await Future.delayed(const Duration(milliseconds: 200));
+            continue;
+          }
+          final decoded = jsonDecode(content);
+          if (decoded is Map) return _deepCastMap(decoded);
+        }
+        break;
+      } catch (e) {
+        debugPrint('[GatewayService] Config read attempt ${i+1} error: $e');
+        await Future.delayed(const Duration(milliseconds: 200));
       }
-    } catch (e) {
-      debugPrint('[GatewayService] Config read error: $e');
     }
     return {};
   }
@@ -816,6 +833,14 @@ PARAMETER num_batch 512
   Future<void> _configureGateway() async {
     final config = await _readConfig();
     
+    // Safety check: if read failed but file exists, abort to prevent clobbering auth tokens
+    if (config.isEmpty) {
+      final file = File(await _openClawConfigPath());
+      if (await file.exists()) {
+        debugPrint('[GatewayService] Aborting configureGateway: Config read returned empty while file exists.');
+        return;
+      }
+    }
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
     config['gateway']['nodes']['pairing'] ??= {};
@@ -3237,27 +3262,49 @@ PARAMETER num_batch 512
     _chatActivityController.close();
   }
 
-  /// INDUSTRIAL HARDENING: Force critical specs via CLI (the definitive way)
+  /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
   Future<void> _hardenGatewayConfigViaCli() async {
-    try {
-      final commands = [
-        'openclaw config set gateway.controlUi.allowedOrigins \'["n/a","http://127.0.0.1:18789","http://localhost:18789"]\'',
-        'openclaw config set gateway.mode local',
-        'openclaw config set gateway.bind loopback',
-        'openclaw config set gateway.port 18789',
-        'openclaw config set gateway.nodes.pairing.autoApproveCidrs \'["127.0.0.1/32"]\'',
-        'openclaw config set discovery.mdns.mode off',
-      ];
+    // 1. Fetch current token so we don't clobber it if the patch merge is shallow
+    final currentToken = await retrieveTokenFromConfig();
+    
+    final patchJson = '''
+{
+  "gateway": {
+    ${currentToken != null ? '"auth": { "token": "$currentToken" },' : ''}
+    "controlUi": {
+      "allowedOrigins": ["n/a", "http://127.0.0.1:18789", "http://localhost:18789"]
+    },
+    "nodes": {
+      "pairing": {
+        "autoApproveCidrs": ["127.0.0.1/32"]
+      }
+    },
+    "mode": "local",
+    "bind": "loopback",
+    "port": 18789
+  },
+  "discovery": {
+    "mdns": {
+      "mode": "off"
+    }
+  }
+}
+''';
 
+    try {
       await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '${commands.join(' && ')}',
+        'cat > /tmp/harden.json << \'EOF\'\n' +
+        patchJson +
+        '\nEOF && ' +
+        'openclaw config patch --file /tmp/harden.json && ' +
+        'rm -f /tmp/harden.json && ' +
+        'openclaw reload',
         timeout: 30,
       );
+      debugPrint('✅ Hardening sweep (config patch) completed successfully');
       _addActivity('[SYS] Industrial-grade CLI hardening complete.');
     } catch (e) {
-      debugPrint('[GATEWAY] CLI hardening failed (non-fatal): $e');
+      debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }
   }
 }
