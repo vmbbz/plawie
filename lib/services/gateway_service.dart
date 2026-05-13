@@ -1642,7 +1642,7 @@ PARAMETER num_batch 512
       'export OPENCLAW_PROVIDER_KEY="$key"',
       'openclaw onboard --non-interactive',
       '--mode local',
-      '--auth-choice custom-api-key',
+      '--auth-choice ${openClawProvider == 'ollama' ? 'skip' : 'custom-api-key'}',
       '--custom-base-url "${openClawProvider == 'google' ? "https://generativelanguage.googleapis.com/v1beta" : ""}"',
       '--custom-model-id "${defaultModels.first['id']}"',
       '--custom-api-key-ref-env OPENCLAW_PROVIDER_KEY', // Use SecretRef for API Key
