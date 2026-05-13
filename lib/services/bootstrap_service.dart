@@ -419,6 +419,11 @@ class BootstrapService {
       // `models sync` subcommand.
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.94, 'Finalizing model configuration...', 94);
       await _hardenOpenClawConfig();
+      
+      // EXTRA ROBUSTNESS: Run doctor again after background tasks start
+      await Future.delayed(const Duration(seconds: 3));
+      await NativeBridge.runInProot('$kOpenClawCommand doctor --fix || true');
+      await NativeBridge.runInProot('$kOpenClawCommand reload || true');
 
       // Keep first-run setup offline and deterministic. The native readiness
       // step syncs bundled hardware skills/VRMA assets and recreates wrappers;
