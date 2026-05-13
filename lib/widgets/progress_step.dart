@@ -157,10 +157,10 @@ class ProgressStep extends StatelessWidget {
                             child: Text(
                               subMessage!,
                               style: GoogleFonts.jetBrainsMono(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                fontStyle: FontStyle.italic,
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                fontStyle: FontStyle.normal,
                                 letterSpacing: -0.2,
                               ),
                             ),

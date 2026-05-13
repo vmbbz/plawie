@@ -1259,9 +1259,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   _launchSubStatus!,
                   style: GoogleFonts.jetBrainsMono(
                     fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withOpacity(0.9),
-                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    fontStyle: FontStyle.normal,
                     letterSpacing: -0.2,
                   ),
                 ),
