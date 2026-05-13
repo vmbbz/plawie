@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 class AppConstants {
   static const String appName = 'Plawie';
   static const String version = '2026.5.5';
@@ -64,4 +66,39 @@ class AppConstants {
         return rootfsArm64;
     }
   }
+}
+
+/// Centralized premium metallic color palette for entire app.
+class AppColors {
+  AppColors._();
+
+  // Premium metallic palette - Black & White with grey accents
+  
+  // Dark mode (premium black with metallic accents)
+  static const Color darkBg = Color(0xFF000000); // Pure black
+  static const Color darkSurface = Color(0xFF0A0A0A); // Slightly lifted black
+  static const Color darkSurfaceAlt = Color(0xFF141414); // Elevated surface
+  static const Color darkBorder = Color(0xFF2A2A2A); // Subtle border
+  static const Color darkMetallic = Color(0xFF1A1A1A); // Metallic sheen
+  static const Color darkHighlight = Color(0xFF333333); // Highlight accent
+
+  // Light mode (premium white with metallic accents)
+  static const Color lightBg = Color(0xFFFFFFFF); // Pure white
+  static const Color lightSurface = Color(0xFAFAFA); // Soft white
+  static const Color lightSurfaceAlt = Color(0xFFF5F5F5); // Elevated surface
+  static const Color lightBorder = Color(0xFFE0E0E0); // Subtle border
+  static const Color lightMetallic = Color(0xFFF0F0F0); // Metallic sheen
+  static const Color lightHighlight = Color(0xFFCCCCCC); // Highlight accent
+
+  // Status colors (monochromatic with intensity)
+  static const Color statusGreen = Color(0xFF00FFA3); // Premium Neon Mint
+  static const Color statusAmber = Color(0xFFFFB300); // Vibrant amber
+  static const Color statusRed = Color(0xFFFF1744); // Vibrant red
+  static const Color statusGrey = Color(0xFF757575); // Neutral grey
+
+  // Text hierarchy
+  static const Color primaryText = Color(0xFF000000); // Pure black for light mode
+  static const Color secondaryText = Color(0xFF666666); // Muted text
+  static const Color mutedText = Color(0xFF999999); // Subtle text
+  static const Color inverseText = Color(0xFFFFFFFF); // Pure white for dark mode
 }

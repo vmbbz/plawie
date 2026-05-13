@@ -175,7 +175,7 @@ class BootstrapService {
             final progress = received / total;
             final mb = (received / 1024 / 1024).toStringAsFixed(1);
             final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-            final notifProgress = 5 + (progress * 20).round();
+            final int notifProgress = 5 + (progress * 20).round();
             
             _updateSetupNotification('Downloading Node.js: $mb / $totalMb MB', progress: notifProgress);
             onProgress(SetupState(
@@ -191,7 +191,7 @@ class BootstrapService {
       await NativeBridge.extractNodeTarball(nodeTarPath);
       
       // Fix ESM shebang after Node.js update
-      await _fixOpenClawShebang();
+      await _fixOpenClawShebang(onProgress: onProgress);
       
       _emitProgress(onProgress, SetupStep.complete, 1.0, 'Node.js update complete!', 100);
       
@@ -441,7 +441,7 @@ class BootstrapService {
 
   /// FIX: Repair broken openclaw.mjs shebang for ESM compatibility
   /// The exec node line is being parsed as JavaScript instead of shell
-  Future<void> _fixOpenClawShebang() async {
+  Future<void> _fixOpenClawShebang({required void Function(SetupState) onProgress}) async {
     try {
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Cleaning broken installation...', 82,
           subMessage: 'Purging global node_modules & apt cache');
@@ -804,6 +804,41 @@ class BootstrapService {
       _log('[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');
     } catch (e) {
       _log('[CONFIG] Hardening failed during setup', error: e);
+    }
+  }
+
+  Future<void> repairOpenClaw({required void Function(SetupState) onProgress}) async {
+    await _fixOpenClawShebang(onProgress: onProgress);
+  }
+
+  Future<bool> checkNodeUpgradeRequired() async {
+    try {
+      final status = await NativeBridge.getBootstrapStatus();
+      final currentVersion = status['nodeVersion'] as String? ?? '0.0.0';
+      // If version is 18.x or lower, we definitely need 22.x
+      return currentVersion.startsWith('v18') || currentVersion.startsWith('v16') || currentVersion == '0.0.0';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _downloadWithRetry(
+    String url,
+    String savePath, {
+    required void Function(int received, int total) onProgress,
+    int retries = 3,
+  }) async {
+    int attempt = 0;
+    while (attempt < retries) {
+      try {
+        await _downloadParallel(url, savePath, onProgress: onProgress);
+        return;
+      } catch (e) {
+        attempt++;
+        if (attempt >= retries) rethrow;
+        _log('Download failed, retrying ($attempt/$retries)... $e');
+        await Future.delayed(Duration(seconds: 2 * attempt));
+      }
     }
   }
 

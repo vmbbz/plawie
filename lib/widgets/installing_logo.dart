@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import '../app.dart';
+import '../constants.dart';
 
 class InstallingLogo extends StatefulWidget {
   final double size;
