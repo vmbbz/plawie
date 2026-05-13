@@ -2146,7 +2146,7 @@ PARAMETER num_batch 512
           // Bug 2 fix: Capabilities (tools.allow) discovery from config since capabilities.list RPC doesn't exist
           try {
             final cfg = await _readConfig();
-            if (cfg != null && cfg['tools'] is Map && cfg['tools']['allow'] is List) {
+            if (cfg['tools'] is Map && cfg['tools']['allow'] is List) {
               final toolsList = (cfg['tools']['allow'] as List).map((e) => e.toString()).toList();
               _updateState(_state.copyWith(capabilities: toolsList));
             } else {
