@@ -6,7 +6,6 @@ import '../constants.dart';
 import '../models/setup_state.dart';
 import 'native_bridge.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'preferences_service.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
@@ -342,8 +341,6 @@ class BootstrapService {
 
         _emitProgress(onProgress, SetupStep.installingNode, 0.9, 'Verifying Node.js...', 78);
         
-        const wrapper = '/root/.openclaw/node-wrapper.js';
-        const nodeRun = '/usr/local/bin/node $wrapper';
         await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && npm --version');
       } else {
         _emitProgress(onProgress, SetupStep.installingNode, 1.0, 'Node.js already installed, skipping...', 78);
