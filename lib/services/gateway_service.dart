@@ -352,7 +352,7 @@ PARAMETER num_batch 512
       debugPrint('[GATEWAY] Self-healing error: $e');
     }
 
-    unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
+    unawaited(attachOrStart(autoStart: prefs.autoStartGateway)
         .then((_) => unawaited(_probeOllamaOnInit())));
   }
 
@@ -487,7 +487,7 @@ PARAMETER num_batch 512
 
   /// Unified entry point for starting or attaching to the gateway.
   /// Prevents double-spawns and handles self-healing.
-  Future<void> _attachOrStart({bool autoStart = false, bool forceStart = false}) async {
+  Future<void> attachOrStart({bool autoStart = false, bool forceStart = false}) async {
     // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
 
@@ -509,7 +509,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      await _hardenGatewayConfigViaCli(); // AWAITED: source of truth
+      await hardenGatewayConfigViaCli(); // AWAITED: source of truth
       return;
     }
 
@@ -550,7 +550,7 @@ PARAMETER num_batch 512
       NodeService().clearCachedToken();
 
       // Apply hardening BEFORE we start polling/connecting
-      await _hardenGatewayConfigViaCli(); 
+      await hardenGatewayConfigViaCli(); 
       
       // Now re-probe the fresh token (after the possible reload/restart)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
@@ -630,7 +630,7 @@ PARAMETER num_batch 512
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
-      await _hardenGatewayConfigViaCli(); // ensure origins are correct BEFORE connect
+      await hardenGatewayConfigViaCli(); // ensure origins are correct BEFORE connect
       
       // Force token re-acquisition after hardening (which may have triggered a reload)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
@@ -650,7 +650,7 @@ PARAMETER num_batch 512
   }
 
   Future<void> start() async {
-    await _attachOrStart(forceStart: true);
+    await attachOrStart(forceStart: true);
   }
 
   /// Explicitly await the gateway reaching a healthy/running state.
@@ -2261,7 +2261,7 @@ PARAMETER num_batch 512
         final prefs = PreferencesService();
         await prefs.init();
         if (prefs.autoStartGateway) {
-          unawaited(_attachOrStart(autoStart: true));
+          unawaited(attachOrStart(autoStart: true));
         }
       }
     } finally {
@@ -3263,7 +3263,7 @@ PARAMETER num_batch 512
   }
 
   /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
-  Future<void> _hardenGatewayConfigViaCli() async {
+  Future<void> hardenGatewayConfigViaCli() async {
     // 1. Fetch current token so we don't clobber it if the patch merge is shallow
     final currentToken = await retrieveTokenFromConfig();
     

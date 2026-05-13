@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../app.dart';
 
 class ProgressStep extends StatelessWidget {
   final int stepNumber;
   final String label;
+  final String? subMessage;
   final bool isActive;
   final bool isComplete;
   final bool hasError;
@@ -13,6 +15,7 @@ class ProgressStep extends StatelessWidget {
     super.key,
     required this.stepNumber,
     required this.label,
+    this.subMessage,
     this.isActive = false,
     this.isComplete = false,
     this.hasError = false,
@@ -145,6 +148,20 @@ class ProgressStep extends StatelessWidget {
                                 color: AppColors.statusGreen.withValues(alpha: 0.7),
                                 fontSize: 9,
                                 fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        if (subMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              subMessage!,
+                              style: GoogleFonts.jetBrainsMono(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                fontStyle: FontStyle.italic,
+                                letterSpacing: -0.2,
                               ),
                             ),
                           ),

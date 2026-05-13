@@ -14,12 +14,14 @@ class SetupState {
   final SetupStep step;
   final double progress;
   final String message;
+  final String? subMessage;
   final String? error;
 
   const SetupState({
     this.step = SetupStep.checkingStatus,
     this.progress = 0.0,
     this.message = '',
+    this.subMessage,
     this.error,
   });
 
@@ -27,12 +29,14 @@ class SetupState {
     SetupStep? step,
     double? progress,
     String? message,
+    String? subMessage,
     String? error,
   }) {
     return SetupState(
       step: step ?? this.step,
       progress: progress ?? this.progress,
       message: message ?? this.message,
+      subMessage: subMessage ?? this.subMessage,
       error: error,
     );
   }

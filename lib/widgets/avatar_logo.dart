@@ -111,8 +111,8 @@ class _AvatarLogoState extends State<AvatarLogo>
                       Center(
                         child: Image.asset(
                           'assets/ic_launcher.png',
-                          width: widget.size * 0.9,
-                          height: widget.size * 0.9,
+                          width: widget.size * 1.25,
+                          height: widget.size * 1.25,
                           fit: BoxFit.contain,
                         ),
                       ),

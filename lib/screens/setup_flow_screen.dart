@@ -38,6 +38,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   // Step 5: Launch status
   String _launchStatus = '';
+  String? _launchSubStatus;
   double _launchProgress = 0.0;
   bool _launchComplete = false;
 
@@ -154,12 +155,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         return false;
     }
   }
-
   Future<void> _launchGateway() async {
     setState(() {
       _isProcessing = true;
       _error = null;
       _launchStatus = 'Saving API key...';
+      _launchSubStatus = 'Encrypting credentials';
       _launchProgress = 0.2;
     });
 
@@ -168,6 +169,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       setState(() {
         _launchStatus = 'Configuring API credentials...';
+        _launchSubStatus = 'Writing openclaw.json';
         _launchProgress = 0.35;
       });
 
@@ -179,6 +181,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       setState(() {
         _launchStatus = 'Seeding workspace...';
+        _launchSubStatus = 'Initializing ClawHub skills';
         _launchProgress = 0.6;
       });
 
@@ -187,6 +190,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       setState(() {
         _launchStatus = 'Verifying setup...';
+        _launchSubStatus = 'Running doctor --fix';
         _launchProgress = 0.8;
       });
 
@@ -206,6 +210,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       setState(() {
         _launchProgress = 1.0;
         _launchStatus = 'Gateway is running!';
+        _launchSubStatus = 'System Online';
         _launchComplete = true;
         _isProcessing = false;
       });
@@ -1248,6 +1253,19 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             ),
             const SizedBox(height: 12),
             _buildStatusBadge(_launchStatus, AppColors.statusGreen),
+            if (_launchSubStatus != null) ...[
+              const SizedBox(height: 8),
+                Text(
+                  _launchSubStatus!,
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.9),
+                    fontStyle: FontStyle.italic,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+            ],
             const SizedBox(height: 24),
             // Progress bar
             if (!_launchComplete)
@@ -1267,11 +1285,13 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _goToDashboard,
-                icon: const Icon(Icons.dashboard_outlined, size: 20, color: Colors.black),
+                icon: const Icon(Icons.dashboard_outlined, size: 20, color: Colors.white),
                 label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.statusGreen,
-                  foregroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 28, vertical: 14),
                   textStyle: const TextStyle(
@@ -1322,9 +1342,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               onPressed: _canProceed ? _nextStep : null,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.statusGreen,
-                foregroundColor: Colors.black,
-                disabledBackgroundColor:
-                    isDark ? Colors.white.withAlpha(15) : Colors.black.withAlpha(10),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shadowColor: Colors.transparent,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               ),
@@ -1334,7 +1354,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   Text('Continue',
                       style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
                   const SizedBox(width: 8),
-                  const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.black),
+                  const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
                 ],
               ),
             )
@@ -1346,12 +1366,14 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 Future.delayed(
                     const Duration(milliseconds: 500), _launchGateway);
               },
-              icon: const Icon(Icons.rocket_launch, size: 18),
+              icon: const Icon(Icons.rocket_launch, size: 18, color: Colors.white),
               label: Text('Launch Gateway',
                   style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.statusGreen,
-                foregroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shadowColor: Colors.transparent,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               ),

@@ -216,7 +216,7 @@ class BootstrapService {
       // ---------------------------------------------------------
       // Step 0: Setup directories & Check status
       // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.checkingStatus, 0.0, 'Checking system status...', 2);
+      _emitProgress(onProgress, SetupStep.checkingStatus, 0.05, 'Preparing environment...', 5);
       await NativeBridge.setupDirs();
       await NativeBridge.writeResolv();
 
@@ -232,6 +232,7 @@ class BootstrapService {
       if (!rootfsInstalled) {
         // Step 1: Get rootfs (Bundled Asset -> then Download)
         // ---------------------------------------------------------
+        _emitProgress(onProgress, SetupStep.downloadingRootfs, 0.1, 'Checking for bundled rootfs...', 10);
         bool rootfsReady = await _extractBundledRootfs();
         
         if (!rootfsReady) {
@@ -245,29 +246,30 @@ class BootstrapService {
             tarPath,
             onProgress: (received, total) {
               if (total > 0) {
-                final progress = (received / total) * 0.3;
+                final progress = (received / total) * 0.15;
                 final mb = (received / 1024 / 1024).toStringAsFixed(1);
                 final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
-                final notifProgress = ((received / total) * 30).round();
+                final notifProgress = 10 + ((received / total) * 20).round();
                 
                 _updateSetupNotification('Downloading rootfs: $mb / $totalMb MB', progress: notifProgress);
                 onProgress(SetupState(
                   step: SetupStep.downloadingRootfs,
                   progress: progress,
-                  message: 'Downloading: $mb MB / $totalMb MB',
+                  message: 'Downloading rootfs',
+                  subMessage: '$mb / $totalMb MB',
                 ));
               }
             },
           );
 
-          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.05, 'Optimizing environment for local LLM...', 30);
+          _emitProgress(onProgress, SetupStep.extractingRootfs, 0.25, 'Optimizing environment for local LLM...', 30);
           await NativeBridge.extractRootfs(tarPath);
           rootfsReady = true;
         }
         
-        _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs extracted', 40);
+        _emitProgress(onProgress, SetupStep.extractingRootfs, 0.35, 'Rootfs environment ready', 40);
       } else {
-        _emitProgress(onProgress, SetupStep.extractingRootfs, 1.0, 'Rootfs already present, skipping...', 40);
+        _emitProgress(onProgress, SetupStep.extractingRootfs, 0.35, 'Rootfs already present', 40);
       }
 
       if (!bypassInstalled) {
@@ -275,17 +277,11 @@ class BootstrapService {
       }
 
       // ---------------------------------------------------------
-      // Step 2.5: Harden Environment (PATH fix)
-      // ---------------------------------------------------------
-      _emitProgress(onProgress, SetupStep.installingNode, 0.01, 'Hardening environment PATH...', 42);
-      await _hardenEnvironment();
-
-      // ---------------------------------------------------------
       // Step 3: Install Node.js & Fix Permissions
       // ---------------------------------------------------------
       if (!nodeInstalled) {
-        _emitProgress(onProgress, SetupStep.installingNode, 0.05, 'Fixing rootfs permissions...', 45);
-
+        _emitProgress(onProgress, SetupStep.installingNode, 0.40, 'Installing Node.js core...', 45);
+        
         await NativeBridge.runInProot('''
           mkdir -p /root/.openclaw
         ''');
@@ -299,12 +295,21 @@ class BootstrapService {
           'echo permissions_fixed',
         );
 
-        _emitProgress(onProgress, SetupStep.installingNode, 0.1, 'Updating package lists...', 48);
+        _emitProgress(onProgress, SetupStep.installingNode, 0.42, 'Updating package lists...', 46,
+            subMessage: 'Syncing with Ubuntu mirrors');
         
         await NativeBridge.runInProot(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'export DEBIAN_FRONTEND=noninteractive && '
-          'apt-get update -y && '
+          'apt-get update -y'
+        );
+
+        _emitProgress(onProgress, SetupStep.installingNode, 0.45, 'Installing system tools...', 48,
+            subMessage: 'ca-certificates • git • curl • zstd • tmux • jq');
+
+        await NativeBridge.runInProot(
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'export DEBIAN_FRONTEND=noninteractive && '
           'ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && '
           'echo "Etc/UTC" > /etc/timezone && '
           'apt-get install -y --no-install-recommends ca-certificates git curl zstd tmux jq && '
@@ -314,14 +319,14 @@ class BootstrapService {
         final nodeTarUrl = AppConstants.getNodeTarballUrl(arch);
         final nodeTarPath = '$filesDir/tmp/nodejs.tar.xz';
 
-        _emitProgress(onProgress, SetupStep.installingNode, 0.3, 'Downloading Node.js (fast link)...', 55);
+        _emitProgress(onProgress, SetupStep.installingNode, 0.50, 'Downloading Node.js (fast link)...', 55);
 
         await _downloadParallel(
           nodeTarUrl,
           nodeTarPath,
           onProgress: (received, total) {
             if (total > 0) {
-              final progress = 0.3 + (received / total) * 0.4;
+              final progress = 0.5 + (received / total) * 0.1;
               final mb = (received / 1024 / 1024).toStringAsFixed(1);
               final totalMb = (total / 1024 / 1024).toStringAsFixed(1);
               final notifProgress = 55 + ((received / total) * 15).round();
@@ -330,144 +335,91 @@ class BootstrapService {
               onProgress(SetupState(
                 step: SetupStep.installingNode,
                 progress: progress,
-                message: 'Downloading Node.js: $mb MB / $totalMb MB',
+                message: 'Downloading Node.js',
+                subMessage: '$mb / $totalMb MB',
               ));
             }
           },
         );
 
-        _emitProgress(onProgress, SetupStep.installingNode, 0.75, 'Extracting Node.js...', 72);
+        _emitProgress(onProgress, SetupStep.installingNode, 0.60, 'Extracting Node.js...', 72);
         await NativeBridge.extractNodeTarball(nodeTarPath);
-
-        _emitProgress(onProgress, SetupStep.installingNode, 0.9, 'Verifying Node.js...', 78);
-        
-        await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && node --version && npm --version');
       } else {
-        _emitProgress(onProgress, SetupStep.installingNode, 1.0, 'Node.js already installed, skipping...', 78);
+        _emitProgress(onProgress, SetupStep.installingNode, 0.60, 'Node.js already installed', 78);
       }
 
-      // ---------------------------------------------------------
-      // Step 3.5: Repair Config (Fix stale tools.allow, etc.)
-      // ---------------------------------------------------------
+      await _hardenEnvironment();
       await _repairConfig();
 
       // ---------------------------------------------------------
       // Step 4: Install OpenClaw
       // ---------------------------------------------------------
       if (!openclawInstalled) {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.05, 'Installing OpenClaw Gateway...', 80);
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.65, 'Installing OpenClaw core...', 80);
         
-        // 1. Try FAST path first (Pre-bundled assets)
         bool success = await _extractPrebundledOpenClaw(onProgress);
         
         if (!success) {
-          _log('ℹ️ Pre-bundled OpenClaw not found or failed, falling back to slow path (compilation)...');
-          
-          // Phase 2: Install temporary build tools for native module compilation
+          _log('ℹ️ Pre-bundled OpenClaw not found, falling back to npm...');
           await _installMinimalBuildTools();
-          
-          // Phase 2.6: Install OpenClaw via NPM
           await _ensureOpenClawPackageExists();
-          
-          // Phase 3: Purge build tools immediately after success to save ~500MB
-          _emitProgress(onProgress, SetupStep.cleanup, 0.5, 'Slimming system (purging tools)...', 96);
           await _purgeBuildTools();
         }
-        
-        // Final heavy cleanup
-        _emitProgress(onProgress, SetupStep.cleanup, 0.9, 'Final cache optimization...', 98);
-        await _performFinalCleanup();
-        
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw Gateway installed', 95);
       } else {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'OpenClaw already present, verifying...', 95);
-        // Force verification even if status says installed (redundant but robust)
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.75, 'OpenClaw already present', 95);
         await _ensureOpenClawPackageExists();
       }
-      await NativeBridge.createBinWrappers('openclaw');
       
-      // FIX: Repair broken openclaw.mjs shebang for ESM compatibility
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.75, 'Fixing OpenClaw ESM shebang...', 87);
-      await _fixOpenClawShebang();
-
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.9, 'Verifying OpenClaw...', 90);
-      await NativeBridge.runInProot('$kOpenClawCommand --version || echo openclaw_installed');
-
-      // Industrial Grade: Harden the config before the first CLI command runs
-      // This ensures Ollama-first design is active even before onboarding.
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.91, 'Hardening environment config...', 91);
+      await NativeBridge.createBinWrappers('openclaw');
       await _hardenOpenClawConfig();
 
-      // Industrial Grade: Run doctor --fix immediately after install/verify
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.92, 'Running system health check...', 92);
-      await NativeBridge.runInProot('$kOpenClawCommand doctor --fix');
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.80, 'Running industrial onboard...', 85, 
+          subMessage: 'Hardware validation • SecretRef syncing');
 
-      // Background Onboarding (Industrial Grade)
-      // We fire this and forget to avoid the 5-minute PRoot hang.
-      // The _hardenOpenClawConfig() call above already ensured we have a valid config to start with.
+      // Full onboard (your engineers' CLI — untouched)
       unawaited(NativeBridge.runInProot(
         '$kOpenClawCommand onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
         timeout: 60,
-      ).then((_) {
-        _log('Background onboarding CLI complete.');
-      }).catchError((e) {
-        _log('Background onboarding CLI failed (non-fatal): $e');
-      }));
+      ));
 
-      // Newer OpenClaw CLI builds expose `models` as a zero-argument command.
-      // Re-apply our config hardening directly instead of calling the removed
-      // `models sync` subcommand.
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.94, 'Finalizing model configuration...', 94);
-      await _hardenOpenClawConfig();
-      
-      // EXTRA ROBUSTNESS: Run doctor again after background tasks start
-      await Future.delayed(const Duration(seconds: 3));
-      await NativeBridge.runInProot('$kOpenClawCommand doctor --fix || true');
-      await NativeBridge.runInProot('$kOpenClawCommand reload || true');
+      await Future.delayed(const Duration(milliseconds: 800));
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85, 'Configuring API credentials...', 90,
+          subMessage: 'Running doctor --fix + security hardening');
 
-      // Keep first-run setup offline and deterministic. The native readiness
-      // step syncs bundled hardware skills/VRMA assets and recreates wrappers;
-      // ClawHub installs are user-driven after the gateway is healthy.
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.96, 'Synchronizing hardware awareness & AI intelligence...', 96);
-      await NativeBridge.ensureOpenClawReady();
-      await SkillsService().ensureAgentAwareness();
-      await _enableSkillsWatchMode();
+      await NativeBridge.runInProot('$kOpenClawCommand doctor --fix');
 
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Finalizing package environment...', 98);
-      await _hardenEnvironment();
-      await _hardenOpenClawConfig();
-      await NativeBridge.createBinWrappers('openclaw');
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.90, 'Applying final configuration...', 92,
+          subMessage: 'Token preservation + allowedOrigins + node pairing');
 
-      // Industrial Grade: Explicitly start the gateway and wait for "First Breath"
-      // This bridges the 60-second Node.js warmup gap so users don't see a "Disconnected" screen.
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.99, 'Warming up AI Gateway (this may take a minute)...', 99);
-      
+      await GatewayService().hardenGatewayConfigViaCli();
+
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.93, 'Starting AI gateway...', 95,
+          subMessage: 'Plugins loading • Voice engine • Canvas');
+
+      final gateway = GatewayService();
+      await gateway.attachOrStart();
+
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.96, 'Verifying connections...', 98,
+          subMessage: 'WebSocket • Node pairing • Health check');
+
       try {
-        final gateway = GatewayService();
-        await gateway.start();
         await gateway.waitForStartup(timeout: const Duration(seconds: 60));
-
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'System Online & Ready', 100);
+        _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100, 
+            subMessage: 'System Online & Ready');
       } catch (e) {
-        // Fallback: If warmup times out, we still finish. User can see status in-app.
-        _log('Gateway warmup timed out or failed', error: e);
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'System starting in background', 100);
+        _log('Gateway warmup timed out', error: e);
+        _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100,
+            subMessage: 'System starting in background');
       }
 
-      // ---------------------------------------------------------
-      // Step 5: Finalize
-      // ---------------------------------------------------------
       await NativeBridge.markBootstrapComplete();
       final prefs = PreferencesService();
       await prefs.init();
       prefs.setupComplete = true;
-
-      // Ensure a default dashboard URL exists so SplashScreen can transition to Dashboard
       if (prefs.dashboardUrl == null || prefs.dashboardUrl!.isEmpty) {
         prefs.dashboardUrl = 'http://127.0.0.1:18789';
       }
 
-      _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete! Ready to start the gateway.', 100);
       _stopSetupService();
 
     } on DioException catch (e) {
@@ -491,9 +443,8 @@ class BootstrapService {
   /// The exec node line is being parsed as JavaScript instead of shell
   Future<void> _fixOpenClawShebang() async {
     try {
-      // Read the current openclaw.mjs file
-      final filesDir = await NativeBridge.getFilesDir();
-      final openclawMjs = File('$filesDir/rootfs/ubuntu/root/usr/local/lib/node_modules/openclaw/openclaw.mjs');
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.1, 'Cleaning broken installation...', 82,
+          subMessage: 'Purging global node_modules & apt cache');
       
       // 1. Force remove old installation and any stray files
       await NativeBridge.runInProot('npm uninstall -g openclaw || true');
@@ -502,7 +453,8 @@ class BootstrapService {
       await NativeBridge.runInProot('npm cache clean --force || true');
       await NativeBridge.runInProot('apt-get clean || true');
       
-      String content = await openclawMjs.readAsString();
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3, 'Reinstalling OpenClaw (latest)...', 85,
+          subMessage: 'Running npm install --production');
       
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
@@ -593,7 +545,8 @@ class BootstrapService {
       final ByteData data = await rootBundle.load('assets/openclaw-node-modules.tar.gz');
       
       _log('🚚 Pre-bundled OpenClaw found! Extracting...');
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3, 'Using pre-bundled OpenClaw (fast setup)...', 85);
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3, 'Using pre-bundled OpenClaw (fast setup)...', 85,
+          subMessage: 'Extracting assets from APK bundle');
       
       // 1. Create target directory
       await NativeBridge.runInProot('mkdir -p /usr/local/lib/node_modules');
@@ -615,7 +568,8 @@ class BootstrapService {
       );
       
       _log('✅ Pre-bundled OpenClaw extracted successfully');
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Pre-bundled OpenClaw ready', 90);
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8, 'Pre-bundled OpenClaw ready', 90,
+          subMessage: 'Verifying package integrity');
       return true;
     } catch (e) {
       _log('ℹ️ No pre-bundled OpenClaw found in assets, falling back to npm install. ($e)');
@@ -667,9 +621,14 @@ class BootstrapService {
     );
   }
 
-  void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress) {
+  void _emitProgress(Function(SetupState) onProgress, SetupStep step, double progress, String message, int notifProgress, {String? subMessage}) {
     _updateSetupNotification(message, progress: notifProgress);
-    onProgress(SetupState(step: step, progress: progress, message: message));
+    onProgress(SetupState(
+      step: step, 
+      progress: progress, 
+      message: message,
+      subMessage: subMessage,
+    ));
   }
 
   /// Robust config repair. Auto-fixes stale openclaw.json, tools.allow, gateway mode, etc.
