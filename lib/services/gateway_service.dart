@@ -475,7 +475,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      unawaited(_forceSetOrigins()); // REINFORCE: ensure origins are always correct
+      unawaited(_hardenGatewayConfigViaCli()); // INDUSTRIAL HARDENING: source of truth
       return;
     }
 
@@ -520,7 +520,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      unawaited(_forceSetOrigins()); // REINFORCE: ensure origins are always correct
+      unawaited(_hardenGatewayConfigViaCli()); // INDUSTRIAL HARDENING: source of truth
       return;
     }
 
@@ -593,7 +593,7 @@ PARAMETER num_batch 512
       // 15s timer tick before discovering the gateway is already responding.
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      unawaited(_forceSetOrigins()); // REINFORCE: ensure origins are always correct
+      unawaited(_hardenGatewayConfigViaCli()); // INDUSTRIAL HARDENING: source of truth
     } catch (e) {
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
@@ -3197,17 +3197,27 @@ PARAMETER num_batch 512
     _chatActivityController.close();
   }
 
-  /// FORCE origin fix after doctor/onboard (this is the reliable way)
-  Future<void> _forceSetOrigins() async {
+  /// INDUSTRIAL HARDENING: Force critical specs via CLI (the definitive way)
+  Future<void> _hardenGatewayConfigViaCli() async {
     try {
+      final commands = [
+        'openclaw config set gateway.controlUi.allowedOrigins \'["n/a","http://127.0.0.1:18789","http://localhost:18789"]\'',
+        'openclaw config set gateway.mode local',
+        'openclaw config set gateway.bind loopback',
+        'openclaw config set gateway.port 18789',
+        'openclaw config set gateway.nodes.pairing.autoApproveCidrs \'["127.0.0.1/32"]\'',
+        'openclaw config set discovery.mdns.mode off',
+      ];
+
       await NativeBridge.runInProot(
         'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw config set gateway.controlUi.allowedOrigins \'["n/a","http://127.0.0.1:18789","http://localhost:18789"]\'',
-        timeout: 10,
+        '${commands.join(' && ')}',
+        timeout: 30,
       );
+      _addActivity('[SYS] Industrial-grade CLI hardening complete.');
     } catch (e) {
-      debugPrint('[GATEWAY] Failed to force allowedOrigins (non-fatal): $e');
+      debugPrint('[GATEWAY] CLI hardening failed (non-fatal): $e');
     }
   }
 }
