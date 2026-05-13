@@ -606,10 +606,10 @@ class BootstrapService {
       // 3. Extract using tar inside proot (native and fast)
       // Handles various structures (package/, openclaw/, or lib/node_modules/)
       await NativeBridge.runInProot(
-        'cd /tmp && tar -xzf openclaw-modules.tar.gz && rm openclaw-modules.tar.gz && ' +
-        'if [ -d package ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv package /usr/local/lib/node_modules/openclaw; ' +
-        'elif [ -d openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv openclaw /usr/local/lib/node_modules/openclaw; ' +
-        'elif [ -d lib/node_modules/openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv lib/node_modules/openclaw /usr/local/lib/node_modules/openclaw; fi && ' +
+        'cd /tmp && tar -xzf openclaw-modules.tar.gz && rm openclaw-modules.tar.gz && '
+        'if [ -d package ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv package /usr/local/lib/node_modules/openclaw; '
+        'elif [ -d openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv openclaw /usr/local/lib/node_modules/openclaw; '
+        'elif [ -d lib/node_modules/openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv lib/node_modules/openclaw /usr/local/lib/node_modules/openclaw; fi && '
         'chmod +x /usr/local/lib/node_modules/openclaw/*.mjs 2>/dev/null || true',
         timeout: 120,
       );

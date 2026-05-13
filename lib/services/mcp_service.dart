@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:logger/logger.dart';
 

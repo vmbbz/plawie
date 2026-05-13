@@ -64,6 +64,8 @@ You simply install the app, and you immediately possess a world-class, autonomou
 - **📱 Native Device Skills** — 35+ tools including Camera, Location, Haptics, Sensors, and Terminal Shell.
 - **🔗 Web3 Ready** — On-chain actions, MoonPay integration, and native **Base** L2 support.
 - **🖥️ Professional Web Dashboard** — Full gateway control from any desktop browser on your network.
+- **🦞 Stylized Node ID** — Precision LOBSTER identification in logs for industrial-grade observability.
+- **🛡️ Production Logging** — High-performance, linter-compliant `debugPrint` infrastructure across all services.
 
 ---
 

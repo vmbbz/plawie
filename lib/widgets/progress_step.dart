@@ -36,7 +36,7 @@ class ProgressStep extends StatelessWidget {
       circleChild = const Icon(Icons.check, color: Colors.black, size: 18);
       shadows = [
         BoxShadow(
-          color: AppColors.statusGreen.withOpacity(0.3),
+          color: AppColors.statusGreen.withValues(alpha: 0.3),
           blurRadius: 10,
           spreadRadius: 2,
         )
@@ -53,13 +53,13 @@ class ProgressStep extends StatelessWidget {
       );
       shadows = [
         BoxShadow(
-          color: AppColors.statusGreen.withOpacity(0.5),
+          color: AppColors.statusGreen.withValues(alpha: 0.5),
           blurRadius: 15,
           spreadRadius: 3,
         )
       ];
     } else {
-      circleColor = isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05);
+      circleColor = isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05);
       circleChild = Text(
         '$stepNumber',
         style: TextStyle(
@@ -132,7 +132,7 @@ class ProgressStep extends StatelessWidget {
                           child: LinearProgressIndicator(
                             value: progress,
                             minHeight: 4,
-                            backgroundColor: Colors.white.withOpacity(0.05),
+                            backgroundColor: Colors.white.withValues(alpha: 0.05),
                             valueColor: const AlwaysStoppedAnimation(AppColors.statusGreen),
                           ),
                         ),
@@ -142,7 +142,7 @@ class ProgressStep extends StatelessWidget {
                             child: Text(
                               '${(progress! * 100).toInt()}% complete',
                               style: TextStyle(
-                                color: AppColors.statusGreen.withOpacity(0.7),
+                                color: AppColors.statusGreen.withValues(alpha: 0.7),
                                 fontSize: 9,
                                 fontWeight: FontWeight.bold,
                               ),

@@ -1,5 +1,5 @@
-🦞 LOBSTER-8.0
-  ============
+  🦞 LOBSTER-fa07...2f45
+  =====================
 
 [NODE] Device ID: fa078b44323b...
 [NODE] Connecting to 127.0.0.1:18789...

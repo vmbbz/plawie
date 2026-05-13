@@ -216,7 +216,7 @@ PARAMETER num_batch 512
 
   /// Buffer + broadcast a single activity event.
   void _addActivity(String event) {
-    print('[GATEWAY] $event'); // logcat visibility
+    debugPrint('[GATEWAY] $event'); // logcat visibility
     _activityBuffer.add(event);
     if (_activityBuffer.length > 40) _activityBuffer.removeAt(0);
     _chatActivityController.add(event);
@@ -312,10 +312,10 @@ PARAMETER num_batch 512
         'export PATH=\$PATH:/usr/local/bin:/usr/bin; echo "--- /usr/local/bin ---"; ls -F /usr/local/bin; echo "--- /usr/bin ---"; ls -F /usr/bin/open* /usr/bin/npm* 2>/dev/null || true',
         timeout: 10,
       );
-      print('[GATEWAY] Path Diagnostic:\n$diag');
+      debugPrint('[GATEWAY] Path Diagnostic:\n$diag');
       await NativeBridge.createBinWrappers('openclaw');
     } catch (e) {
-      print('[GATEWAY] Self-healing error: $e');
+      debugPrint('[GATEWAY] Self-healing error: $e');
     }
 
     unawaited(_attachOrStart(autoStart: prefs.autoStartGateway)
@@ -482,7 +482,7 @@ PARAMETER num_batch 512
     if (alreadyRunning) {
       if (_state.status == GatewayStatus.running) return; // Already fully attached
 
-      print('[GATEWAY] Process detected — attaching...');
+      debugPrint('[GATEWAY] Process detected — attaching...');
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
@@ -526,7 +526,7 @@ PARAMETER num_batch 512
 
     // 2. Not running. POLICY: Should we spawn a NEW one?
     if (!autoStart && !forceStart) {
-      print('[GATEWAY] Not running. Auto-start is off (autoStartGateway=${prefs.autoStartGateway})');
+      debugPrint('[GATEWAY] Not running. Auto-start is off (autoStartGateway=${prefs.autoStartGateway})');
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[DEBUG] Gateway not running. Auto-start is off.']
       ));
@@ -538,7 +538,7 @@ PARAMETER num_batch 512
     // Attempting a fresh start
     _isStarting = true;
     _rpcDiscoveryDone = false; // ensure discovery runs on this new session
-    print('[GATEWAY] Starting gateway process...');
+    debugPrint('[GATEWAY] Starting gateway process...');
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
       clearError: true,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -58,12 +59,12 @@ class KokoroTtsService {
 
       if (!await modelExtractedDir.exists() || forceDownload) {
         if (!forceDownload && !await modelExtractedDir.exists()) {
-          print('KokoroTTS: Model missing and forceDownload is false. Aborting silent init.');
+          debugPrint('KokoroTTS: Model missing and forceDownload is false. Aborting silent init.');
           _isInit = false;
           return;
         }
 
-        print('KokoroTTS: Preparing to download Kokoro ONNX model (~320MB)...');
+        debugPrint('KokoroTTS: Preparing to download Kokoro ONNX model (~320MB)...');
         await voicesDir.create(recursive: true);
 
         final url = Uri.parse('https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2');
@@ -96,7 +97,7 @@ class KokoroTtsService {
           await sink.close();
         }
 
-        print('KokoroTTS: Download complete. Extracting via background isolate...');
+        debugPrint('KokoroTTS: Download complete. Extraction via background isolate...');
         onDownloadProgress?.call(0.85);
 
         final voicesDirPath = voicesDir.path;
@@ -124,7 +125,7 @@ class KokoroTtsService {
         }
 
         onDownloadProgress?.call(1.0);
-        print('KokoroTTS: Extraction complete.');
+        debugPrint('KokoroTTS: Extraction complete.');
       }
 
       // Free previous instance before reassigning to avoid memory leak
@@ -165,12 +166,12 @@ class KokoroTtsService {
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
 
       _isInit = true;
-      print('KokoroTTS: Initialization successful.');
+      debugPrint('KokoroTTS: Initialization successful.');
 
       // Silently clean up old Piper model directory if it exists (frees ~67MB)
       _cleanupOldPiperModel(docDir.path);
     } catch (e) {
-      print('KokoroTTS Error: $e');
+      debugPrint('KokoroTTS Error: $e');
       _isInit = false;
       rethrow;
     }
@@ -230,7 +231,7 @@ class KokoroTtsService {
       final estimatedMs = (samples.length / sampleRate * 1000).toInt() + 2000;
       _safetyTimer?.cancel();
       _safetyTimer = Timer(Duration(milliseconds: estimatedMs), () {
-        print('KokoroTTS: Safety timeout fired — forcing onComplete');
+        debugPrint('KokoroTTS: Safety timeout fired — forcing onComplete');
         onComplete?.call();
       });
 
@@ -238,7 +239,7 @@ class KokoroTtsService {
       //    onComplete fires via onPlayerComplete listener set in init().
       await _audioPlayer.play(BytesSource(wavBytes));
     } catch (e) {
-      print('KokoroTTS Speak Error: $e');
+      debugPrint('KokoroTTS Speak Error: $e');
       onComplete?.call();
     }
   }
@@ -295,9 +296,9 @@ class KokoroTtsService {
     oldDir.exists().then((exists) {
       if (exists) {
         oldDir.delete(recursive: true).then((_) {
-          print('KokoroTTS: Removed old Piper model (freed ~67MB).');
+          debugPrint('KokoroTTS: Removed old Piper model (freed ~67MB).');
         }).catchError((e) {
-          print('KokoroTTS: Could not remove old Piper model: $e');
+          debugPrint('KokoroTTS: Could not remove old Piper model: $e');
         });
       }
     });

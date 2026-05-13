@@ -73,7 +73,7 @@ class _JsonEditorState extends State<JsonEditor> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.statusRed.withOpacity(0.1),
+                  color: AppColors.statusRed.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -94,7 +94,7 @@ class _JsonEditorState extends State<JsonEditor> {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: _error != null 
-                ? AppColors.statusRed.withOpacity(0.5) 
+                ? AppColors.statusRed.withValues(alpha: 0.5) 
                 : (isDark ? Colors.white10 : Colors.black12),
             ),
           ),
@@ -106,7 +106,7 @@ class _JsonEditorState extends State<JsonEditor> {
                 keyboardType: TextInputType.multiline,
                 style: GoogleFonts.firaCode(
                   fontSize: 13,
-                  color: _error != null ? AppColors.statusRed.withOpacity(0.8) : null,
+                  color: _error != null ? AppColors.statusRed.withValues(alpha: 0.8) : null,
                 ),
                 decoration: const InputDecoration(
                   contentPadding: EdgeInsets.all(16),

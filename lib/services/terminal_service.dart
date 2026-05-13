@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import '../constants.dart';
 
 /// Provides proot shell configuration for the terminal and onboarding screens.
 /// Must match ProcessManager.kt's gateway mode (command_login) exactly.
@@ -100,11 +99,8 @@ class TerminalService {
     ];
 
     // Hardware acceleration binds (GPU)
-    for (final dev in ['/dev/kgsl-3d0', '/dev/mali0', '/dev/dri']) {
-      // Note: We can't use File(dev).exists() synchronously here easily for all,
-      // but we can pass them as args; if they don't exist PRoot usually just warns.
-      // However, for stability, let's just match ProcessManager.kt logic if we could.
-      // Since this is Dart, we'll keep it to the confirmed ones.
+    for (final _ in ['/dev/kgsl-3d0', '/dev/mali0', '/dev/dri']) {
+      // Loop kept for structural matching with ProcessManager.kt
     }
     
     // Add guest environment and command

@@ -585,6 +585,16 @@ Saves ~8–12 s from the fresh start sequence on slow devices.
 
 ### Node / Capability Host
 
+#### Local Node Identification (LOBSTER)
+On initialization, the node logs a stylized header using a truncated version of its unique `deviceId` for easy identification in logcat/console:
+
+```text
+  🦞 LOBSTER-fa07...2f45
+  =====================
+```
+This ID is derived from the hex-encoded SHA-256 hash of the node's Ed25519 public key.
+
+#### Handshake Payload
 ```json
 {
   "type": "req",

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/skills_service.dart';
-import 'dart:ui';
 import '../app.dart';
 
 class SkillInstallHero extends StatefulWidget {

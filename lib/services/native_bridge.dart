@@ -49,7 +49,7 @@ class NativeBridge {
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && ' +
+    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
                     'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
     return await _channel.invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
   }
@@ -58,7 +58,7 @@ class NativeBridge {
   /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
   static Future<String> executeInShell(String command, {int timeoutMs = 30000}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && ' +
+    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
                     'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
     return await _channel.invokeMethod('executeInShell', {'command': withEnv, 'timeoutMs': timeoutMs});
   }
