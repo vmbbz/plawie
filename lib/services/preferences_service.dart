@@ -141,10 +141,6 @@ class PreferencesService {
 
   // ── Voice & Speech ──────────────────────────────────────────────────────────
 
-  /// TTS engine: 'kokoro' | 'native' | 'elevenlabs' | 'openai'
-  String get ttsEngine => _p.getString('tts_engine') ?? 'native';
-  set ttsEngine(String value) => _p.setString('tts_engine', value);
-
   /// Speech speed multiplier (0.5–2.0). Default 1.2 to match competitor default.
   double get ttsSpeed => _p.getDouble('tts_speed') ?? 1.2;
   set ttsSpeed(double value) => _p.setDouble('tts_speed', value);
@@ -157,58 +153,11 @@ class PreferencesService {
   int get silenceTimeoutSeconds => _p.getInt('silence_timeout_seconds') ?? 5;
   set silenceTimeoutSeconds(int value) => _p.setInt('silence_timeout_seconds', value);
 
-  /// ElevenLabs API key
-  String? get elevenLabsApiKey => _p.getString('elevenlabs_api_key');
-  set elevenLabsApiKey(String? value) {
-    if (value != null && value.isNotEmpty) {
-      _p.setString('elevenlabs_api_key', value);
-    } else {
-      _p.remove('elevenlabs_api_key');
-    }
-  }
-
-  /// ElevenLabs voice ID
-  String get elevenLabsVoiceId => _p.getString('elevenlabs_voice_id') ?? 'EXAVITQu4vr4xnSDxMaL';
-
-  set elevenLabsVoiceId(String value) => _p.setString('elevenlabs_voice_id', value);
-
   // ── Wake Word ───────────────────────────────────────────────────────────────
 
   /// Wake word mode: 'off' | 'foreground' | 'always'
   String get wakeWordMode => _p.getString('wake_word_mode') ?? 'off';
   set wakeWordMode(String value) => _p.setString('wake_word_mode', value);
-
-  // ── Cloud TTS API Keys ──────────────────────────────────────────────────────
-
-  /// OpenAI API key (used for TTS — separate from the gateway-injected key)
-  String? get openAiApiKey => _p.getString('openai_api_key_tts');
-  set openAiApiKey(String? value) {
-    if (value != null && value.isNotEmpty) {
-      _p.setString('openai_api_key_tts', value);
-    } else {
-      _p.remove('openai_api_key_tts');
-    }
-  }
-
-  /// OpenAI TTS voice (alloy, echo, shimmer, fable, onyx, nova, coral)
-  String get openAiTtsVoice => _p.getString('openai_tts_voice') ?? 'coral';
-  set openAiTtsVoice(String value) => _p.setString('openai_tts_voice', value);
-
-  /// OpenAI TTS model
-  String get openAiTtsModel => _p.getString('openai_tts_model') ?? 'gpt-4o-mini-tts';
-  set openAiTtsModel(String value) => _p.setString('openai_tts_model', value);
-
-  /// Whether the Kokoro TTS model has been fully downloaded to disk.
-  /// Persists across navigation so the chat page doesn't re-prompt every visit.
-  /// Key renamed from 'tts_piper_downloaded' → 'tts_model_downloaded' so existing
-  /// Piper users get a fresh filesystem check on first launch after upgrade.
-  bool get ttsModelDownloaded => _p.getBool('tts_model_downloaded') ?? false;
-  set ttsModelDownloaded(bool value) => _p.setBool('tts_model_downloaded', value);
-
-  /// Kokoro voice speaker ID (0–10 for kokoro-en-v0_19).
-  /// Default: 1 = af_bella (American Female, highest quality).
-  int get kokoroVoiceSid => _p.getInt('kokoro_voice_sid') ?? 1;
-  set kokoroVoiceSid(int value) => _p.setInt('kokoro_voice_sid', value);
 
   // ── Local LLM ───────────────────────────────────────────────────────────────
 

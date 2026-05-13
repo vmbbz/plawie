@@ -45,13 +45,11 @@ dependencies:
   # Natural Scheduling
   cron: ^0.6.2
   
-  flutter_tts: ^4.2.5
   speech_to_text: ^7.3.0
   
   # Base Chain (EVM) utilities
   decimal: ^2.3.3
   equatable: ^2.0.5
-  sherpa_onnx: ^1.12.28
   audioplayers: ^6.6.0
   # On-device LLM inference via Android NDK — no PRoot, no Node.js
   fllama:

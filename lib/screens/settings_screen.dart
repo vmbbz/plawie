@@ -65,10 +65,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _autoStart = _prefs.autoStartGateway;
     _nodeEnabled = _prefs.nodeEnabled;
     _selectedAvatar = _prefs.selectedAvatar;
-    _ttsEngine = _prefs.ttsEngine;
     _ttsSpeed = _prefs.ttsSpeed;
     _continuousMode = _prefs.continuousMode;
-    _kokoroVoiceSid = _prefs.kokoroVoiceSid;
     _silenceTimeout = _prefs.silenceTimeoutSeconds;
     _wakeWordMode = _prefs.wakeWordMode;
     _hotwordRunning = await NativeBridge.isHotwordRunning();
@@ -287,23 +285,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(),
                 _sectionHeader(theme, 'VOICE & SPEECH'),
-                // TTS engine selector
-                ListTile(
-                  title: const Text('TTS Engine'),
-                  subtitle: Text(_ttsEngineLabel(_ttsEngine)),
-                  leading: const Icon(Icons.record_voice_over),
-                  trailing: const Icon(Icons.swap_horiz, size: 18),
-                  onTap: () => _showTtsEnginePicker(context),
-                ),
-                // Kokoro voice picker — only shown when Kokoro is the active engine
-                if (_ttsEngine == 'kokoro')
-                  ListTile(
-                    title: const Text('Kokoro Voice'),
-                    subtitle: Text(_kokoroVoiceLabel(_kokoroVoiceSid)),
-                    leading: const Icon(Icons.mic_none),
-                    trailing: const Icon(Icons.swap_horiz, size: 18),
-                    onTap: () => _showKokoroVoicePicker(context),
-                  ),
                 // Speed slider
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -743,91 +724,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
-  }
-
-  static const _ttsEngines = [
-    ('kokoro',     'Kokoro (Offline)'),
-    ('native',     'Device TTS'),
-    ('elevenlabs', 'ElevenLabs'),
-    ('openai',     'OpenAI TTS'),
-  ];
-
-  static const _kokoroVoices = [
-    (0,  'af — American Female'),
-    (1,  'af_bella — American Female (Best)'),
-    (2,  'af_nicole — American Female'),
-    (3,  'af_sarah — American Female'),
-    (4,  'af_sky — American Female'),
-    (5,  'am_adam — American Male'),
-    (6,  'am_michael — American Male'),
-    (7,  'bf_emma — British Female'),
-    (8,  'bf_isabella — British Female'),
-    (9,  'bm_george — British Male'),
-    (10, 'bm_lewis — British Male'),
-  ];
-
-  String _ttsEngineLabel(String id) =>
-      _ttsEngines.firstWhere((e) => e.$1 == id, orElse: () => (id, id)).$2;
-
-  Future<void> _showTtsEnginePicker(BuildContext context) async {
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('TTS Engine'),
-        children: _ttsEngines.map((e) {
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, e.$1),
-            child: Row(
-              children: [
-                Icon(
-                  _ttsEngine == e.$1 ? Icons.radio_button_checked : Icons.radio_button_off,
-                  size: 20,
-                  color: _ttsEngine == e.$1 ? Theme.of(ctx).colorScheme.primary : Colors.white38,
-                ),
-                const SizedBox(width: 12),
-                Text(e.$2),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-    if (picked != null && picked != _ttsEngine) {
-      setState(() => _ttsEngine = picked);
-      _prefs.ttsEngine = picked;
-    }
-  }
-
-  String _kokoroVoiceLabel(int sid) =>
-      _kokoroVoices.firstWhere((v) => v.$1 == sid, orElse: () => (sid, 'Voice $sid')).$2;
-
-  Future<void> _showKokoroVoicePicker(BuildContext context) async {
-    final picked = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Kokoro Voice'),
-        children: _kokoroVoices.map((v) {
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, v.$1),
-            child: Row(
-              children: [
-                Icon(
-                  _kokoroVoiceSid == v.$1 ? Icons.radio_button_checked : Icons.radio_button_off,
-                  size: 20,
-                  color: _kokoroVoiceSid == v.$1 ? Theme.of(ctx).colorScheme.primary : Colors.white38,
-                ),
-                const SizedBox(width: 12),
-                Text(v.$2),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-    if (picked != null && picked != _kokoroVoiceSid) {
-      setState(() => _kokoroVoiceSid = picked);
-      TtsService().updateKokoroVoice(picked);
-    }
   }
 
   String _getModelLabel(String modelId) {
