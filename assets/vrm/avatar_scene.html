@@ -177,6 +177,7 @@
         let isSpeaking = false;
         let isThinking = false;
         let targetEmotion = 'neutral';
+        let lastHeadSync = 0;
 
         // ── Viseme engine state (world-class syllable-rhythm driver) ──────────
         // Replaces the old 8 Hz round-robin. Each "syllable slot" picks a
@@ -798,6 +799,24 @@
                     const cur = currentVrm.expressionManager.getValue('mouthOpen') || 0;
                     if (cur > 0.001) currentVrm.expressionManager.setValue('mouthOpen', THREE.MathUtils.lerp(cur, 0, 0.4));
                     else currentVrm.expressionManager.setValue('mouthOpen', 0);
+                }
+            }
+
+            // --- SYNC HEAD POSITION TO FLUTTER ---
+            if (head && window.PlawieBridge) {
+                const headWorldPos = new THREE.Vector3();
+                head.getWorldPosition(headWorldPos);
+                
+                // Offset slightly above the head bone (near the crown/aura)
+                headWorldPos.y += 0.22; 
+
+                const vector = headWorldPos.project(camera);
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+
+                if (time - lastHeadSync > 0.05) {
+                    window.PlawieBridge.postMessage(`HEAD:${x}:${y}`);
+                    lastHeadSync = time;
                 }
             }
 

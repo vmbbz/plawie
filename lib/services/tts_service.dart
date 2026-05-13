@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'audio_playback_service.dart';
+import 'voice_persona_service.dart';
 
 /// Lean TTS facade — now 100% relies on OpenClaw Gateway TTS.
 /// The gateway handles text → MP3 generation and returns a playable URL.
@@ -15,12 +16,26 @@ class TtsService {
   }
 
   final AudioPlaybackService _playback = AudioPlaybackService();
+  final VoicePersonaService _personaService = VoicePersonaService();
 
   /// Fires when TTS starts speaking (used by VRM lip-sync).
   Function? onStart;
 
   /// Fires when TTS finishes speaking (used by VRM + continuous mode).
   Function? onComplete;
+
+  // ── Voice Persona Support ──────────────────────────────────────────────────
+
+  /// Set the character/mood of the gateway's voice
+  Future<void> setVoicePersona(String persona) async {
+    await _personaService.setPersona(persona);
+  }
+
+  /// Get the active persona name
+  String get currentPersona => _personaService.getCurrentPersonaSync();
+
+  /// List of personas recognized by the OpenClaw gateway
+  List<String> get availablePersonas => VoicePersonaService.commonPersonas;
 
   /// No-op for direct text speaking — gateway handles actual generation
   /// via tool calls and returns a URL to [speakUrl].

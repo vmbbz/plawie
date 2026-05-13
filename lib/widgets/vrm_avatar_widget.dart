@@ -20,6 +20,7 @@ class VrmAvatarWidget extends StatefulWidget {
   /// Agent-controlled gesture mode: 'normal' | 'expressive' | 'dance' | 'subtle'
   final String? gestureMode;
   final Function(String)? onLog;
+  final Function(Offset)? onHeadUpdate;
   final bool isOverlay;
   final bool isPip;
 
@@ -33,6 +34,7 @@ class VrmAvatarWidget extends StatefulWidget {
     this.gesture,
     this.gestureMode,
     this.onLog,
+    this.onHeadUpdate,
     this.isOverlay = false,
     this.isPip = false,
   });
@@ -73,6 +75,14 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
               setState(() => _isReady = true);
               _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
               _syncState();
+            }
+          }
+          if (message.message.startsWith('HEAD:')) {
+            final parts = message.message.split(':');
+            if (parts.length == 3) {
+              final x = double.tryParse(parts[1]) ?? 0.0;
+              final y = double.tryParse(parts[2]) ?? 0.0;
+              widget.onHeadUpdate?.call(Offset(x, y));
             }
           }
           // Propagate all logs to parent

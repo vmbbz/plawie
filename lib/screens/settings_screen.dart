@@ -285,6 +285,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(),
                 _sectionHeader(theme, 'VOICE & SPEECH'),
+                ListTile(
+                  title: const Text('Voice Persona'),
+                  subtitle: Text(TtsService().currentPersona.toUpperCase()),
+                  leading: const Icon(Icons.psychology_alt),
+                  trailing: const Icon(Icons.swap_horiz, size: 18),
+                  onTap: () => _showPersonaPicker(context),
+                ),
                 // Speed slider
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -619,6 +626,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showPersonaPicker(BuildContext context) async {
+    final tts = TtsService();
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Voice Persona'),
+        children: tts.availablePersonas.map((p) {
+          final isSelected = tts.currentPersona == p;
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, p),
+            child: Row(
+              children: [
+                Icon(
+                  isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                  size: 20,
+                  color: isSelected ? Theme.of(ctx).colorScheme.primary : Colors.white38,
+                ),
+                const SizedBox(width: 12),
+                Text(p[0].toUpperCase() + p.substring(1)),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+
+    if (picked != null && picked != tts.currentPersona) {
+      setState(() {}); // Refresh local UI state
+      await tts.setVoicePersona(picked);
+      if (mounted) setState(() {}); // Final refresh
+    }
   }
 
   Widget _buildAppBar(BuildContext context) {
