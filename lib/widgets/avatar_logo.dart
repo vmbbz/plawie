@@ -26,7 +26,6 @@ class _AvatarLogoState extends State<AvatarLogo>
   late Animation<double> _floatAnimation;
   late Animation<double> _pulseAnimation;
   late Animation<double> _rotateAnimation;
-  late Animation<double> _blinkAnimation;
 
   @override
   void initState() {
@@ -57,10 +56,6 @@ class _AvatarLogoState extends State<AvatarLogo>
       curve: const Interval(0.5, 1.0, curve: Curves.easeInOut),
     ));
 
-    _blinkAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.7, 0.8, curve: Curves.easeInOut),
-    ));
 
     if (widget.animated) {
       _controller.repeat(reverse: true);
@@ -103,14 +98,14 @@ class _AvatarLogoState extends State<AvatarLogo>
                   borderRadius: BorderRadius.circular(widget.size * 0.2),
                   border: Border.all(
                     color: isDark 
-                        ? AppColors.statusGreen.withOpacity(0.2)
-                        : AppColors.lightBorder.withOpacity(0.5),
+                        ? AppColors.statusGreen.withValues(alpha: 0.2)
+                        : AppColors.lightBorder.withValues(alpha: 0.5),
                     width: 1.5,
                   ),
                   boxShadow: [
                     if (widget.showGlow)
                       BoxShadow(
-                        color: AppColors.statusGreen.withOpacity(0.2),
+                        color: AppColors.statusGreen.withValues(alpha: 0.2),
                         blurRadius: 30,
                         spreadRadius: 5,
                       ),

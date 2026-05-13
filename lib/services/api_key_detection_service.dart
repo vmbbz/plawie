@@ -21,7 +21,6 @@ class ApiKeyDetectionService {
   static const String _groqKey = 'groq_api_key';
   static const String _openrouterKey = 'openrouter_api_key';
   
-  String? _tokenCache;
   DateTime? _lastCheck;
   
   Future<void> initialize() async {

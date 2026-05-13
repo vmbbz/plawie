@@ -7,7 +7,6 @@ import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import 'device_identity.dart';
 import 'openclaw_service.dart';
-import 'gateway_service.dart';
 
 /// Persistent WebSocket connection to the OpenClaw gateway.
 ///

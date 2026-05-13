@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'preferences_service.dart';
 import 'engines/tts_engine.dart';
 import 'engines/kokoro_tts_engine.dart';
@@ -46,7 +47,7 @@ class TtsService {
   Future<void> speak(String text) async {
     final engine = _activeEngine;
     if (isUsingFallback) {
-      print('TtsService: Kokoro not ready, falling back to Native TTS');
+      debugPrint('TtsService: Kokoro not ready, falling back to Native TTS');
     }
     engine.onStart = () => onStart?.call();
     engine.onComplete = () => onComplete?.call();
