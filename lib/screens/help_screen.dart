@@ -56,7 +56,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'On-Device Local LLM',
                         description: 'Two local inference modes:\n\n'
-                            '• NDK Direct (fllama) — GGUF models run entirely inside the app via llama.cpp NDK. Zero network, maximum privacy. Download models in Local LLM settings, then select a local-llm/ model in the chat picker. No tools or skills — pure private inference.\n\n'
+                            '• NDK Direct (fllama) — GGUF models run entirely inside the app via llama.cpp NDK. Zero network, maximum privacy. Download models in Local LLM settings, then select a local-llm/ model in the chat picker. Supports essential tools and 100% offline Voice — operates independently of the OpenClaw gateway for maximum speed.\n\n'
                             '• Local LLM Hub (Ollama) — the same models routed through the OpenClaw gateway agent loop. Full tool-use, skills, and multi-step reasoning. Start Ollama in Local LLM settings and pick an ollama/ model in the chat model picker.',
                         icon: Icons.memory_rounded,
                         color: AppColors.statusGreen,
@@ -513,7 +513,7 @@ class HelpScreen extends StatelessWidget {
       (Icons.currency_exchange_rounded, 'Finance', 'MoonPay',
           'Verified agent bank account — swap, bridge, DCA, fiat onramps and live market prices.', false),
       (Icons.memory_rounded, 'Local LLM', 'fllama / Ollama',
-          'NDK fllama for private offline chat. Local LLM Hub (Ollama) for full tool-use and skills. No API key — total on-device control.', false),
+          'NDK Direct (fllama) for high-speed offline voice and tools. Local LLM Hub (Ollama) for full multi-step agentic skills.', false),
     ];
 
     return GlassCard(

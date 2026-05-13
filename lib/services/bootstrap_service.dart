@@ -810,7 +810,7 @@ class BootstrapService {
       config['models']['providers']['google'] ??= <String, dynamic>{};
       final google = Map<String, dynamic>.from(config['models']['providers']['google'] as Map);
       google['baseUrl'] ??= 'https://generativelanguage.googleapis.com/v1beta';
-      google['api'] ??= 'google';
+      google['api'] ??= 'google-generative-ai';
       google['models'] ??= [];
       config['models']['providers']['google'] = google;
 

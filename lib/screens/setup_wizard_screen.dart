@@ -308,7 +308,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
             children: [
               Icon(
                 Icons.error_outline,
-                color: theme.colorScheme.error,
+                color: Colors.white,
                 size: 24,
               ),
               const SizedBox(width: 12),
@@ -316,7 +316,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 child: Text(
                   'Setup Error',
                   style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.error,
+                    color: Colors.white,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -336,7 +336,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 },
                 icon: Icon(
                   Icons.copy,
-                  color: theme.colorScheme.error,
+                  color: Colors.white,
                   size: 20,
                 ),
                 tooltip: 'Copy error message',
@@ -359,7 +359,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
               child: SelectableText(
                 errorMessage,
                 style: TextStyle(
-                  color: theme.colorScheme.onErrorContainer,
+                  color: Colors.white,
                   fontSize: 12,
                   fontFamily: 'monospace',
                 ),
