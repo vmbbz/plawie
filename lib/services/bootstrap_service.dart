@@ -782,12 +782,13 @@ class BootstrapService {
       config['gateway']['nodes']['pairing'] ??= {};
       config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];
       
-      // EVENT-LOOP OPTIMIZATION: disable expensive tasks during setup
-      config['gateway']['startup'] ??= {};
-      config['gateway']['startup']['modelPrewarm'] = false;
-      config['gateway']['startup']['sidecarRecovery'] = false;
-      config['gateway']['heartbeat'] ??= {};
-      config['gateway']['heartbeat']['intervalSeconds'] = 300;
+      // FIX: Ensure allowedOrigins is present and contains 'n/a'
+      config['gateway']['controlUi'] ??= {};
+      config['gateway']['controlUi']['allowedOrigins'] = [
+        'n/a', 
+        'http://127.0.0.1:18789',
+        'http://localhost:18789'
+      ];
       
       config['models'] ??= {};
       config['models']['providers'] ??= {};
