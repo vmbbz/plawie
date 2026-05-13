@@ -402,12 +402,17 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.92, 'Running system health check...', 92);
       await NativeBridge.runInProot('$kOpenClawCommand doctor --fix');
 
-      // Seed official onboarding config - auth-choice skip means we defer API key to setup flow
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.93, 'Onboarding gateway...', 93);
-      await NativeBridge.runInProot(
+      // Background Onboarding (Industrial Grade)
+      // We fire this and forget to avoid the 5-minute PRoot hang.
+      // The _hardenOpenClawConfig() call above already ensured we have a valid config to start with.
+      unawaited(NativeBridge.runInProot(
         '$kOpenClawCommand onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
         timeout: 60,
-      );
+      ).then((_) {
+        _log('Background onboarding CLI complete.');
+      }).catchError((e) {
+        _log('Background onboarding CLI failed (non-fatal): $e');
+      }));
 
       // Newer OpenClaw CLI builds expose `models` as a zero-argument command.
       // Re-apply our config hardening directly instead of calling the removed

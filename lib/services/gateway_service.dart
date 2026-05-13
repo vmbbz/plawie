@@ -1650,28 +1650,33 @@ PARAMETER num_batch 512
       '--accept-risk'
     ].join(' && ');
 
-    try {
-      await NativeBridge.runInProot(onboardCmd, timeout: 60);
-    } catch (e) {
-      debugPrint('[GatewayService] Onboarding CLI error: $e');
-      // Fallback: Manual patch if CLI fails (keeps app usable)
-      final config = await _readConfig();
-      config['env'] ??= {};
-      config['env']['vars'] ??= {};
-      if (envKey.isNotEmpty) config['env']['vars'][envKey] = key;
-      // Per OpenClaw docs: gateway.mode must always be set explicitly in local mode
-      config['gateway'] ??= {};
-      config['gateway']['mode'] = 'local';
-      config['models'] ??= {};
-      config['models']['providers'] ??= {};
-      final prov = config['models']['providers'][openClawProvider] ?? {};
-      config['models']['providers'][openClawProvider] = {
-        ...prov,
-        'apiKey': key,
-        'models': prov['models'] ?? defaultModels,
-      };
-      await _writeConfig(config);
-    }
+    // HYBRID PATH: 
+    // 1. Manual patch first (instant) — ensures app is usable immediately
+    final config = await _readConfig();
+    config['env'] ??= {};
+    config['env']['vars'] ??= {};
+    if (envKey.isNotEmpty) config['env']['vars'][envKey] = key;
+    // Per OpenClaw docs: gateway.mode must always be set explicitly in local mode
+    config['gateway'] ??= {};
+    config['gateway']['mode'] = 'local';
+    config['models'] ??= {};
+    config['models']['providers'] ??= {};
+    final prov = config['models']['providers'][openClawProvider] ?? {};
+    config['models']['providers'][openClawProvider] = {
+      ...prov,
+      'apiKey': key,
+      'models': prov['models'] ?? defaultModels,
+    };
+    await _writeConfig(config);
+    _log('[Gateway] Fast-path API key config complete.');
+
+    // 2. Official 'onboard' CLI in background (for long-term integrity/SecretRefs)
+    // We do NOT await this, preventing the 5-minute UI deadlock.
+    unawaited(NativeBridge.runInProot(onboardCmd, timeout: 60).then((_) {
+      _log('[Gateway] Background onboarding CLI complete.');
+    }).catchError((e) {
+      _log('[Gateway] Background onboarding CLI failed (non-fatal): $e');
+    }));
 
     // 2. Update agent auth-profiles.json
     try {
