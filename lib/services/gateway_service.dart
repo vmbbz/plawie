@@ -781,7 +781,6 @@ PARAMETER num_batch 512
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
     config['gateway']['nodes']['pairing'] ??= {};
-    config['gateway']['nodes']['pairing']['autoApprove'] = true;
     config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];  // Auto-approve localhost only
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [
