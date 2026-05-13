@@ -1669,14 +1669,14 @@ PARAMETER num_batch 512
       'models': prov['models'] ?? defaultModels,
     };
     await _writeConfig(config);
-    _log('[Gateway] Fast-path API key config complete.');
+    _addActivity('[Gateway] Fast-path API key config complete.');
 
     // 2. Official 'onboard' CLI in background (for long-term integrity/SecretRefs)
     // We do NOT await this, preventing the 5-minute UI deadlock.
     unawaited(NativeBridge.runInProot(onboardCmd, timeout: 60).then((_) {
-      _log('[Gateway] Background onboarding CLI complete.');
+      _addActivity('[Gateway] Background onboarding CLI complete.');
     }).catchError((e) {
-      _log('[Gateway] Background onboarding CLI failed (non-fatal): $e');
+      _addActivity('[Gateway] Background onboarding CLI failed: $e');
     }));
 
     // 2. Update agent auth-profiles.json
