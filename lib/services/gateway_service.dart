@@ -475,7 +475,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      unawaited(_hardenGatewayConfigViaCli()); // INDUSTRIAL HARDENING: source of truth
+      await _hardenGatewayConfigViaCli(); // AWAITED: source of truth
       return;
     }
 
@@ -520,7 +520,7 @@ PARAMETER num_batch 512
       _startHealthCheck();
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      unawaited(_hardenGatewayConfigViaCli()); // INDUSTRIAL HARDENING: source of truth
+      await _hardenGatewayConfigViaCli(); // AWAITED: source of truth
       return;
     }
 
@@ -593,7 +593,8 @@ PARAMETER num_batch 512
       // 15s timer tick before discovering the gateway is already responding.
       unawaited(_checkHealth());
       unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      unawaited(_hardenGatewayConfigViaCli()); // INDUSTRIAL HARDENING: source of truth
+      await _hardenGatewayConfigViaCli(); // AWAITED: ensure origins are correct BEFORE connect
+      await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload');
     } catch (e) {
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
