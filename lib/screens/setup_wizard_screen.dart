@@ -114,14 +114,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   _refreshPkgStatuses();
                 }
 
-                if (state.isComplete && !_didAutoNavigate) {
-                  _didAutoNavigate = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    Future.delayed(const Duration(milliseconds: 1500), () {
-                      if (mounted) _goToApp(context);
-                    });
-                  });
-                }
+                // REMOVED: Auto-navigation glitch fix.
+                // Users must now manually click the button to proceed.
 
                 return FadeTransition(
                   opacity: _fadeAnimation,
@@ -138,7 +132,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                           _buildDescriptionSection(theme, isDark),
                           const SizedBox(height: 32),
                           Expanded(
-                            child: _buildSteps(state, theme, isDark),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              child: _buildSteps(state, theme, isDark),
+                            ),
                           ),
                           if (state.hasError) ...[
                             _buildErrorSection(state, theme),
@@ -196,7 +193,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       child: Row(
         children: [
           AvatarLogo(
-            size: 80,
+            size: 96,
             animated: true,
             showGlow: true,
           ),
@@ -391,13 +388,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
               ],
             ),
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.statusGreen.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
         child: Material(
           color: Colors.transparent,
@@ -411,14 +401,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   Text(
                     'Continue to App',
                     style: GoogleFonts.outfit(
-                      color: Colors.black,
+                      color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 22),
+                  const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 22),
                 ],
               ),
             ),
@@ -450,15 +440,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   ],
                 ),
           borderRadius: BorderRadius.circular(16),
-          boxShadow: provider.isRunning
-              ? []
-              : [
-                  BoxShadow(
-                    color: AppColors.statusGreen.withOpacity(0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
         ),
         child: Material(
           color: Colors.transparent,
@@ -568,6 +549,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           ProgressStep(
             stepNumber: num,
             label: state.step == step ? state.message : label,
+            subMessage: state.step == step ? state.subMessage : null,
             isActive: state.step == step,
             isComplete: state.stepNumber > step.index + 1 || state.isComplete,
             hasError: state.hasError && state.step == step,
