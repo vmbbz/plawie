@@ -88,26 +88,19 @@ class _AvatarLogoState extends State<AvatarLogo>
                 width: widget.size,
                 height: widget.size,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: isDark
-                        ? [AppColors.darkSurface, AppColors.darkSurfaceAlt, AppColors.darkBg]
-                        : [const Color(0xFFF8F9FA), const Color(0xFFE8EAED), const Color(0xFFDADCE0)],
-                  ),
                   borderRadius: BorderRadius.circular(widget.size * 0.2),
                   border: Border.all(
                     color: isDark 
-                        ? AppColors.statusGreen.withValues(alpha: 0.2)
-                        : AppColors.lightBorder.withValues(alpha: 0.5),
-                    width: 1.5,
+                        ? AppColors.statusGreen.withValues(alpha: 0.15)
+                        : AppColors.lightBorder.withValues(alpha: 0.3),
+                    width: 1,
                   ),
                   boxShadow: [
                     if (widget.showGlow)
                       BoxShadow(
-                        color: AppColors.statusGreen.withValues(alpha: 0.2),
-                        blurRadius: 30,
-                        spreadRadius: 5,
+                        color: AppColors.statusGreen.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        spreadRadius: 2,
                       ),
                   ],
                 ),
@@ -115,23 +108,12 @@ class _AvatarLogoState extends State<AvatarLogo>
                   borderRadius: BorderRadius.circular(widget.size * 0.2),
                   child: Stack(
                     children: [
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: CircuitPainter(
-                            isDark: isDark,
-                            animation: _flickerController.value,
-                          ),
-                        ),
-                      ),
                       Center(
-                        child: SvgPicture.asset(
-                          'assets/app_icon_official.svg',
-                          width: widget.size * 0.65,
-                          height: widget.size * 0.65,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.statusGreen,
-                            BlendMode.srcIn,
-                          ),
+                        child: Image.asset(
+                          'assets/ic_launcher.png',
+                          width: widget.size * 0.9,
+                          height: widget.size * 0.9,
+                          fit: BoxFit.contain,
                         ),
                       ),
                     ],

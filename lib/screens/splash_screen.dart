@@ -226,14 +226,11 @@ class _SplashScreenState extends State<SplashScreen>
                             child: child,
                           );
                         },
-                        child: SvgPicture.asset(
-                          'assets/app_icon_official.svg',
+                        child: Image.asset(
+                          'assets/ic_launcher.png',
                           width: 100,
                           height: 100,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.statusGreen,
-                            BlendMode.srcIn,
-                          ),
+                          fit: BoxFit.contain,
                         ),
                       ),
                     ),

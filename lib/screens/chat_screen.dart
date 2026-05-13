@@ -1031,7 +1031,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       final tempDir = await getTemporaryDirectory();
       final path = '${tempDir.path}/stt_recording.m4a';
       
-      const config = RecordConfig(); // default 44.1kHz, AAC
+      final config = RecordConfig(); // default 44.1kHz, AAC
       
       await _audioRecorder.start(config, path: path);
       
@@ -1731,7 +1731,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     });
   }
 
-  @override
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final mode = PreferencesService().wakeWordMode;

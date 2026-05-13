@@ -1455,17 +1455,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.08),
+              color: Colors.blueAccent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+              border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.2)),
             ),
             child: Row(children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 13),
+              const Icon(Icons.bolt_rounded, color: Colors.blueAccent, size: 13),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'NDK mode = direct private chat only. No tools, skills, or agent features. For the full OpenClaw experience use the Integrated Agent Hub.',
-                  style: const TextStyle(color: Colors.amber, fontSize: 10, height: 1.4),
+                  'NDK Direct = Pure offline Voice & high-speed LLM. Not connected to the OpenClaw Gateway. Optimized for direct performance.',
+                  style: const TextStyle(color: Colors.blueAccent, fontSize: 10, height: 1.4),
                 ),
               ),
             ]),
@@ -1494,12 +1494,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   }
 
   Widget _buildAgentPromptGuide() {
-    const prompt =
-        'NDK Direct Mode provides a high-performance, "Sovereign AI" experience. Unlike Gateway models, '
-        'fllama (llama.cpp NDK) interacts directly with your processor, bypassing the PRoot sandbox for '
-        'maximum speed and privacy. This mode supports 100% offline Voice interactions and a lean '
-        'direct LLM experience. Use this for private, high-speed chat when you don\'t need the '
-        'full multi-step Agentic tool-loops of the Gateway.';
+    const info =
+        'NDK Direct Mode provides a "Sovereign AI" experience. Unlike the Gateway, '
+        'fllama (llama.cpp NDK) interacts directly with your device processor for '
+        'maximum speed and privacy. It features built-in offline Voice and '
+        'supports essential tools without needing the OpenClaw Gateway or '
+        'multi-step agentic loops. This is a pure, direct LLM implementation.';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1513,19 +1513,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         children: [
           Row(
             children: [
-              const Icon(Icons.smart_toy_outlined, color: Colors.white54, size: 16),
+              const Icon(Icons.offline_bolt_outlined, color: Colors.blueAccent, size: 16),
               const SizedBox(width: 8),
               Text(
-                'NDK Direct — Sovereign AI Experience',
+                'NDK Direct — Direct LLM Experience',
                 style: GoogleFonts.outfit(
-                    color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 13),
+                    color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          SelectableText(
-            prompt,
-            style: GoogleFonts.jetBrainsMono(
+          Text(
+            info,
+            style: GoogleFonts.outfit(
               color: Colors.white54,
               fontSize: 10,
               height: 1.6,
