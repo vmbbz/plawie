@@ -446,8 +446,7 @@ PARAMETER num_batch 512
   Future<bool> _isGatewayHealthy() async {
     // Quick health check without full reload
     try {
-      final state = await getState();
-      return state.status == GatewayStatus.running && state.webSocketConnected;
+      return state.status == GatewayStatus.running && state.isWebsocketConnected;
     } catch (_) {
       return false;
     }
