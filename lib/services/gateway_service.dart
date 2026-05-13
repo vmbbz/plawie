@@ -596,8 +596,18 @@ PARAMETER num_batch 512
       
       await NativeBridge.acquirePartialWakeLock();
       await _configureGateway();
-      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Auditor Safety Net: Force bind via CLI immediately before native start (survives any native flag)
+      try {
+        await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'openclaw config set gateway.bind loopback && openclaw config set gateway.port 18789',
+          timeout: 10,
+        );
+      } catch (_) {}
 
+      await Future.delayed(const Duration(milliseconds: 300));
       final success = await NativeBridge.startGateway();
 
       if (!success) {

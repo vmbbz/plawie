@@ -10,6 +10,8 @@ import '../models/optional_package.dart';
 import '../providers/setup_provider.dart';
 import '../services/package_service.dart';
 import '../services/preferences_service.dart';
+import '../services/gateway_service.dart';
+import '../models/gateway_state.dart';
 import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
 import '../widgets/glass_card.dart';
@@ -133,7 +135,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                           const SizedBox(height: 32),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              padding: const EdgeInsets.only(left: 14, right: 14),
                               child: _buildSteps(state, theme, isDark),
                             ),
                           ),
@@ -192,10 +194,18 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       ),
       child: Row(
         children: [
-          AvatarLogo(
-            size: 96,
-            animated: true,
-            showGlow: true,
+          StreamBuilder<GatewayState>(
+            stream: GatewayService().stateStream,
+            initialData: GatewayService().state,
+            builder: (context, snapshot) {
+              final isRunning = snapshot.data?.status == GatewayStatus.running;
+              return AvatarLogo(
+                size: 104,
+                animated: true,
+                showGlow: true,
+                isGatewayRunning: isRunning,
+              );
+            },
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -422,24 +432,16 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         width: double.infinity,
         height: 56,
         decoration: BoxDecoration(
-          gradient: provider.isRunning
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    isDark ? AppColors.darkBorder.withOpacity(0.5) : AppColors.lightBorder,
-                    isDark ? AppColors.darkBorder.withOpacity(0.3) : AppColors.lightBorder.withOpacity(0.8),
-                  ],
-                )
-              : LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.statusGreen,
-                    AppColors.statusGreen.withOpacity(0.8),
-                  ],
-                ),
+          color: provider.isRunning 
+              ? (isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurfaceAlt)
+              : AppColors.statusGreen,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: provider.isRunning
+                ? (isDark ? AppColors.darkBorder : AppColors.lightBorder)
+                : AppColors.statusGreen.withOpacity(0.5),
+            width: 1.5,
+          ),
         ),
         child: Material(
           color: Colors.transparent,
@@ -617,169 +619,163 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: installed
-                  ? [
-                      AppColors.statusGreen.withOpacity(0.2),
-                      AppColors.statusGreen.withOpacity(0.1),
-                    ]
-                  : [
-                      isDark 
-                          ? AppColors.darkSurfaceAlt.withOpacity(0.8)
-                          : const Color(0xFFF1F3F4),
-                      isDark 
-                          ? AppColors.darkSurfaceAlt.withOpacity(0.6)
-                          : const Color(0xFFE8EAED),
-                    ],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: installed
-                  ? AppColors.statusGreen.withOpacity(0.3)
-                  : (isDark 
-                      ? AppColors.darkBorder.withOpacity(0.2)
-                      : AppColors.lightBorder.withOpacity(0.3)),
-              width: 1,
-            ),
-          ),
-          child: Icon(
-            package.icon,
-            color: installed 
-                ? AppColors.statusGreen
-                : (isDark 
-                    ? AppColors.inverseText.withOpacity(0.7)
-                    : AppColors.darkBg.withOpacity(0.7)),
-            size: 24,
-          ),
-        ),
-        title: Row(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // Leading Icon
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: installed
+                      ? [
+                          AppColors.statusGreen.withOpacity(0.2),
+                          AppColors.statusGreen.withOpacity(0.1),
+                        ]
+                      : [
+                          isDark 
+                              ? AppColors.darkSurfaceAlt.withOpacity(0.8)
+                              : const Color(0xFFF1F3F4),
+                          isDark 
+                              ? AppColors.darkSurfaceAlt.withOpacity(0.6)
+                              : const Color(0xFFE8EAED),
+                        ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: installed
+                      ? AppColors.statusGreen.withOpacity(0.3)
+                      : (isDark 
+                          ? AppColors.darkBorder.withOpacity(0.2)
+                          : AppColors.lightBorder.withOpacity(0.3)),
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                package.icon,
+                color: installed 
+                    ? AppColors.statusGreen
+                    : (isDark 
+                        ? AppColors.inverseText.withOpacity(0.7)
+                        : AppColors.darkBg.withOpacity(0.7)),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Content
             Expanded(
-              child: Text(
-                package.name,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.inverseText : AppColors.darkBg,
-                  fontSize: 15,
-                ),
-              ),
-            ),
-            if (installed) ...[
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.statusGreen.withOpacity(0.2),
-                      AppColors.statusGreen.withOpacity(0.1),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          package.name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? AppColors.inverseText : AppColors.darkBg,
+                            fontSize: 15,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (installed) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.check_circle, color: AppColors.statusGreen, size: 14),
+                      ],
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.statusGreen.withOpacity(0.3),
-                    width: 1,
+                  const SizedBox(height: 4),
+                  Text(
+                    package.description,
+                    style: TextStyle(
+                      color: isDark 
+                          ? AppColors.inverseText.withOpacity(0.6)
+                          : AppColors.darkBg.withOpacity(0.6),
+                      fontSize: 12,
+                      height: 1.2,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                child: Text(
-                  'Installed',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.statusGreen,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
+                  const SizedBox(height: 4),
+                  Text(
+                    package.estimatedSize,
+                    style: TextStyle(
+                      color: isDark 
+                          ? AppColors.statusGreen.withOpacity(0.7)
+                          : AppColors.statusGreen,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'monospace',
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              package.description,
-              style: TextStyle(
-                color: isDark 
-                    ? AppColors.inverseText.withOpacity(0.7)
-                    : AppColors.darkBg.withOpacity(0.7),
-                fontSize: 13,
+                ],
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              package.estimatedSize,
-              style: TextStyle(
-                color: isDark 
-                    ? AppColors.inverseText.withOpacity(0.5)
-                    : AppColors.darkBg.withOpacity(0.5),
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        trailing: installed
-            ? Container(
+            const SizedBox(width: 12),
+            // Action
+            if (installed)
+              Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: AppColors.statusGreen.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  Icons.check_circle,
+                  Icons.check,
                   color: AppColors.statusGreen,
-                  size: 20,
+                  size: 16,
                 ),
               )
-            : Container(
+            else
+              Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
+                      AppColors.statusGreen,
                       AppColors.statusGreen.withOpacity(0.8),
-                      AppColors.statusGreen.withOpacity(0.6),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.statusGreen.withOpacity(0.2),
+                      color: AppColors.statusGreen.withOpacity(0.3),
                       blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     onTap: () => _installPackage(package),
                     child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       child: Text(
                         'Install',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
+          ],
+        ),
       ),
     );
   }

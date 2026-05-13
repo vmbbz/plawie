@@ -19,5 +19,12 @@ This is a **Beta** release of the Aegis Native Engine.
 - Existing users will experience a "One-Time Migration" where the 1.5GB rootfs is purged.
 - Performance and battery life are significantly improved compared to v2.0.0.
 
+## 💎 v2.1.0-beta.2 (The Polish Update)
+- **🎭 State-Aware Logo**: Implemented a dynamic transition from an animated "Installing" circuit logo to the premium Avatar reveal upon gateway health.
+- **🛡️ Hardened Binding**: Forced `loopback` (127.0.0.1) binding for the gateway to resolve PRoot network interface detection issues.
+- **📈 Granular Progress**: Refactored the "Setting Up" phase with terminal-style monospaced fonts and high-resolution sub-step reporting.
+- **📐 Precision Alignment**: Refined the setup wizard layout to perfectly align icons with the header's anchor points.
+- **📦 Robust Packages**: Fixed the "Optional Packages" layout to prevent text squashing and ensure a premium look on all screen sizes.
+
 ---
 *Project Aegis: Minimal Footprint. Maximum Power.*

@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../app.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'installing_logo.dart';
 
 class AvatarLogo extends StatefulWidget {
   final double size;
   final bool animated;
   final bool showGlow;
+  final bool isGatewayRunning;
 
   const AvatarLogo({
     super.key,
     this.size = 64,
     this.animated = true,
     this.showGlow = true,
+    this.isGatewayRunning = true,
   });
 
   @override
@@ -56,7 +58,6 @@ class _AvatarLogoState extends State<AvatarLogo>
       curve: const Interval(0.5, 1.0, curve: Curves.easeInOut),
     ));
 
-
     if (widget.animated) {
       _controller.repeat(reverse: true);
       _flickerController.repeat(reverse: true);
@@ -72,6 +73,10 @@ class _AvatarLogoState extends State<AvatarLogo>
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.isGatewayRunning) {
+      return InstallingLogo(size: widget.size);
+    }
+
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -109,11 +114,14 @@ class _AvatarLogoState extends State<AvatarLogo>
                   child: Stack(
                     children: [
                       Center(
-                        child: Image.asset(
-                          'assets/ic_launcher.png',
-                          width: widget.size * 1.25,
-                          height: widget.size * 1.25,
-                          fit: BoxFit.contain,
+                        child: Transform.scale(
+                          scale: 1.35,
+                          child: Image.asset(
+                            'assets/ic_launcher.png',
+                            width: widget.size,
+                            height: widget.size,
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                     ],

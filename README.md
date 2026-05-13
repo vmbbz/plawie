@@ -27,7 +27,7 @@
 
 ---
 
-## 🚀 PREVIEW: Project Aegis (v2.1.0-beta)
+## 🚀 Project Aegis: Phase 1 (v2.1.0-beta.2)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/vmbbz/plawie/feat/project-aegis/assets/images/aegis_preview.jpg" 
@@ -36,12 +36,12 @@
        width="500"/>
 </p>
 
-We are currently stabilizing a massive architectural shift called **Project Aegis**, which will soon replace the PRoot layer with a native glibc engine:
-- **⚡ Sub-10s Cold Boot** — Native glibc execution bypasses all container overhead.
-- **💾 Reclaim 1.5GB Storage** — Total removal of the legacy Ubuntu rootfs.
-- **🔋 Battery Optimized** — No more background PRoot processes draining power.
+We are currently in **Phase 1** of Project Aegis. This phase hardens the existing PRoot infrastructure while laying the groundwork for a native glibc engine:
+- **🛡️ Loopback Hardening** — Forced `127.0.0.1` binding for industrial-grade stability and security.
+- **📈 Granular Progress** — Real-time sub-step reporting during the complex "Setting Up" phase.
+- **🎭 Dynamic Logo** — State-aware UI that switches from an animated "Installing" logo to the premium Avatar the moment the gateway is healthy.
 
-*The Aegis Beta is currently available as a pre-release for developers and early testers.*
+*The Aegis Roadmap: Minimal Footprint. Maximum Power.*
 
 ---
 
@@ -58,13 +58,13 @@ You simply install the app, and you immediately possess a world-class, autonomou
 ## ✨ What Makes Plawie Special
 
 - **🤖 Fully Local LLM + Gateway** — Runs in a sandboxed PRoot Ubuntu environment with GPU acceleration.
-- **🎭 Immersive VRM Avatar** — 3D digital companion with procedural gestures and perfect lip-sync.
+- **🎭 State-Aware UI** — Dynamic logo transition from animated "Installing" circuit to 3D Avatar reveal.
+- **Immersive VRM Avatar** — 3D digital companion with procedural gestures and perfect lip-sync.
 - **🖼️ Hologram Presenter** — Beautiful floating overlays for canvas, images, web previews, and media.
 - **🎙️ Voice-First Intelligence** — Continuous listening, wake word, and multiple offline TTS engines.
 - **📱 Native Device Skills** — 35+ tools including Camera, Location, Haptics, Sensors, and Terminal Shell.
 - **🔗 Web3 Ready** — On-chain actions, MoonPay integration, and native **Base** L2 support.
-- **🖥️ Professional Web Dashboard** — Full gateway control from any desktop browser on your network.
-- **🦞 Stylized Node ID** — Precision LOBSTER identification in logs for industrial-grade observability.
+- **📈 Precision Progress** — Granular status updates using monospaced terminal-style fonts for better observability.
 - **🛡️ Production Logging** — High-performance, linter-compliant `debugPrint` infrastructure across all services.
 
 ---
@@ -118,15 +118,15 @@ We run a complete local Unix environment inside Android using PRoot. Inside this
 The gateway uses official OpenClaw configuration schema validated against community best practices:
 
 **Key Configuration Settings:**
-- **`gateway.bind: 'loopback'`** - Secure local-only binding (default & safest)
+- **`gateway.bind: 'loopback'`** - Enforced local-only binding (127.0.0.1). Resolves PRoot network stability issues.
 - **`gateway.nodes.pairing.autoApproveCidrs: ['127.0.0.1/32']`** - Auto-approve localhost connections only
 - **`gateway.mode: 'local'`** - Local execution mode for mobile privacy
 - **`gateway.port: 18789`** - Standard OpenClaw port (configurable)
 
 **Security Features:**
-- Loopback binding prevents network exposure
-- CIDR-based auto-approval restricts to localhost
-- No `allowedOrigins` required for loopback mode
+- **Loopback Enforcement**: Prevents unauthorized network access and interface detection failures.
+- **CIDR Restriction**: Auto-approval is strictly limited to localhost.
+- **Origin Hardening**: No `allowedOrigins` required for loopback mode, reducing the attack surface.
 - Config validation prevents invalid schema values
 
 ### 2. Precision Background Stability
