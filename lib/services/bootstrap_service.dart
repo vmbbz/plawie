@@ -438,7 +438,8 @@ class BootstrapService {
       try {
         final gateway = GatewayService();
         await gateway.start();
-        await gateway.waitForStartup(timeout: const Duration(seconds: 120));
+        await gateway.waitForStartup(timeout: const Duration(seconds: 60));
+
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 1.0, 'System Online & Ready', 100);
       } catch (e) {
         // Fallback: If warmup times out, we still finish. User can see status in-app.
@@ -790,5 +791,8 @@ class BootstrapService {
       _log('[CONFIG] Hardening failed during setup', error: e);
     }
   }
+
+
+
 }
 

@@ -443,6 +443,16 @@ PARAMETER num_batch 512
     } catch (_) {}
   }
 
+  Future<bool> _isGatewayHealthy() async {
+    // Quick health check without full reload
+    try {
+      final state = await getState();
+      return state.status == GatewayStatus.running && state.webSocketConnected;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Unified entry point for starting or attaching to the gateway.
   /// Prevents double-spawns and handles self-healing.
   Future<void> _attachOrStart({bool autoStart = false, bool forceStart = false}) async {
@@ -460,6 +470,15 @@ PARAMETER num_batch 512
 
     // 1. ALWAYS check if already running and attach if so
     final alreadyRunning = await NativeBridge.isGatewayRunning();
+
+    if (alreadyRunning && await _isGatewayHealthy()) {
+      // FAST PATH: already healthy → skip config write + doctor + reload
+      _subscribeLogs();
+      _startHealthCheck();
+      unawaited(_checkHealth());
+      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
+      return;
+    }
 
     if (alreadyRunning) {
       if (_state.status == GatewayStatus.running) return; // Already fully attached
@@ -734,6 +753,7 @@ PARAMETER num_batch 512
     }
   }
 
+
   Future<void> _writeEnvFile(String key, String value) async {
     try {
       final configPath = await _openClawConfigPath();
@@ -775,6 +795,14 @@ PARAMETER num_batch 512
       'haptic.vibrate',
     ];
     config['gateway']['mode'] = 'local';
+
+    // EVENT-LOOP OPTIMIZATION: disable expensive model prewarm + sidecar maintenance
+    config['gateway']['startup'] ??= {};
+    config['gateway']['startup']['modelPrewarm'] = false;           // prevents 10-20s model warmup delay
+    config['gateway']['startup']['sidecarRecovery'] = false;        // reduces post-ready.maintenance
+    config['gateway']['heartbeat'] ??= {};
+    config['gateway']['heartbeat']['intervalSeconds'] = 300;        // longer heartbeat = less CPU churn
+
     
     // ENODEV FIX: Use official OpenClaw config schema
     // Prevent eth0 ENODEV errors with valid network binding
