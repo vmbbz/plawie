@@ -14,7 +14,6 @@ import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
-import 'bootstrap_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
@@ -782,6 +781,7 @@ PARAMETER num_batch 512
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
     config['gateway']['nodes']['pairing'] ??= {};
+    config['gateway']['nodes']['pairing']['autoApprove'] = true;
     config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];  // Auto-approve localhost only
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [

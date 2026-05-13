@@ -765,10 +765,24 @@ class BootstrapService {
       config['gateway']['mode'] = 'local';
       config['gateway']['bind'] = '127.0.0.1';
       config['gateway']['port'] = AppConstants.gatewayPort;
-      config['gateway']['nodes'] ??= {};
-      config['gateway']['nodes']['autoApprove'] = true;
       config['gateway']['controlUi'] ??= {};
-      (config['gateway']['controlUi'] as Map).remove('allowedOrigins');
+      config['gateway']['controlUi']['allowedOrigins'] = [
+        'n/a', 
+        'http://127.0.0.1:18789',
+        'http://localhost:18789'
+      ];
+      
+      // Fix autoApprove path to match OpenClaw schema
+      config['gateway']['nodes'] ??= {};
+      config['gateway']['nodes']['pairing'] ??= {};
+      config['gateway']['nodes']['pairing']['autoApprove'] = true;
+      
+      // EVENT-LOOP OPTIMIZATION: disable expensive tasks during setup
+      config['gateway']['startup'] ??= {};
+      config['gateway']['startup']['modelPrewarm'] = false;
+      config['gateway']['startup']['sidecarRecovery'] = false;
+      config['gateway']['heartbeat'] ??= {};
+      config['gateway']['heartbeat']['intervalSeconds'] = 300;
       
       config['models'] ??= {};
       config['models']['providers'] ??= {};
