@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -40,7 +41,8 @@ class NodeService {
   }
 
   void log(String message) {
-    print(message); // logcat visibility
+    debugPrint(message); // logcat visibility
+
     final logs = [..._state.logs, message];
     if (logs.length > 500) {
       logs.removeRange(0, logs.length - 500);
@@ -66,15 +68,19 @@ class NodeService {
     _pairingResolveAttempted = false;
     final deviceId = _identity.deviceId ?? '';
     _updateState(_state.copyWith(deviceId: deviceId));
+    final displayId = deviceId.length > 8 
+        ? '${deviceId.substring(0, 4)}...${deviceId.substring(deviceId.length - 4)}'
+        : (deviceId.isNotEmpty ? deviceId : 'ANONYMOUS');
+    
     log('');
-    log('  🦞 LOBSTER-8.0');
-    log('  ============');
+    log('  🦞 LOBSTER-$displayId');
+    log('  =====================');
     log('');
-    if (deviceId.isNotEmpty) {
-      log('[NODE] Device ID: ${deviceId.substring(0, 12)}...');
-    } else {
+    
+    if (deviceId.isEmpty) {
       log('[NODE] Warning: Device identity not initialized');
     }
+
   }
 
   Future<void> connect({String? host, int? port}) async {
