@@ -45,7 +45,8 @@ dependencies:
   # Natural Scheduling
   cron: ^0.6.2
   
-  speech_to_text: ^7.3.0
+  # speech_to_text: ^7.3.0  # Removed in favor of Gateway-side STT logic
+  record: ^5.1.0
   
   # Base Chain (EVM) utilities
   decimal: ^2.3.3

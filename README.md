@@ -143,13 +143,14 @@ Plawie is your ultimate Web3 co-pilot. We built a robust, fully native **Base (E
 - **On-Chain Queries:** Real-time RPC balance checks and historical transaction fetching.
 - **Zero Cloud Intermediaries:** Your private keys never touch a server; transactions are constructed and signed locally.
 
-### 4. Voice-First Intelligence Pipeline
-Plawie ships a complete, multi-engine voice stack that puts you in full control — no cloud dependency required:
-- **4 TTS Engines** — Switch between Piper (fully offline), Android Native TTS, ElevenLabs, or OpenAI TTS.
-- **Speech Speed Control** — Smooth 0.5×–2.0× speed slider, persisted across sessions.
-- **Continuous Mode** — After TTS finishes speaking, the mic automatically restarts. Enables truly hands-free, back-and-forth conversations with your agent.
-- **Configurable Silence Timeout** — 1s–15s slider controls how long Plawie waits before auto-submitting.
-- **Wake Word "Plawie"** — say *"Plawie"* to activate the mic from anywhere, entirely offline using the Vosk ASR engine (Grammar-constrained to near-zero false positives).
+### 4. Hybrid Voice Pipeline (Gateway-First)
+Plawie ships with a production-grade, multi-engine voice stack designed for high performance and minimal footprint:
+- **☁️ Cloud Voices** — Default high-fidelity voices streamed directly from the OpenClaw Gateway.
+- **🔇 Offline Voices (Piper)** — Professional-grade on-device speech generation. Models are downloaded on-demand (e.g., Lessac-High, Amy-Medium) to keep the base APK lean.
+- **🎙️ Gateway-STT** — Transcription is offloaded to the OpenClaw Gateway, ensuring high accuracy and consistent reasoning across all agent interactions.
+- **🗣️ Speech Speed Control** — Smooth 0.5×–2.0× speed slider, persisted across sessions.
+- **🔄 Continuous Mode** — Optional back-and-forth hands-free conversation logic.
+- **🐕 Wake Word "Plawie"** — Activate the mic entirely offline using the Vosk ASR engine.
 
 ### 5. Video Vision AI
 Your agent can see the world around you:

@@ -38,6 +38,8 @@ import '../services/hologram_service.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -67,7 +69,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   
   // Voice Pipeline (Kokoro TTS / Local VITS)
   final TtsService _tts = TtsService();
-  final stt.SpeechToText _speechToText = stt.SpeechToText();
+  final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isListening = false;
   String? _currentGesture;
   String? _currentGestureMode;
@@ -264,7 +266,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           // When LEAVING PIP, stop microphone if it was listening
           if (!isPip && _isListening) {
             _addDiagnosticLog('Exiting PIP — stopping mic to reset state');
-            await _speechToText.stop();
+            await _audioRecorder.stop();
             setState(() {
               _isListening = false;
               _isPipMode = false;
@@ -427,9 +429,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _initVoiceParams() async {
-    // Only initialize the shell STT, don't pre-emptively init Kokoro (it hangs)
-    await _speechToText.initialize();
-
+    // Permission check for recorder is handled at start-time
+    _tts.init();
     // Subscribe to wake word events from HotwordService (no-op if service not running)
     _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
       if (event == 'wake_word_detected' && mounted && !_isGenerating && !_isListening) {
@@ -1022,44 +1023,46 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     }
   }
 
-  /// Start STT — called when user begins holding the mic orb (hold-to-record UX).
+  /// Start recording — called when user begins holding the mic orb (hold-to-record UX).
   Future<void> _startListening() async {
     if (_isListening) return;
-    bool available = await _speechToText.initialize();
-    if (available) {
+
+    if (await _audioRecorder.hasPermission()) {
+      final tempDir = await getTemporaryDirectory();
+      final path = '${tempDir.path}/stt_recording.m4a';
+      
+      const config = RecordConfig(); // default 44.1kHz, AAC
+      
+      await _audioRecorder.start(config, path: path);
+      
       setState(() => _isListening = true);
       _syncOverlayState();
-      _addDiagnosticLog('Voice listening started.');
-      final silenceSecs = PreferencesService().silenceTimeoutSeconds;
-      await _speechToText.listen(
-        onResult: (result) {
-          _textController.text = result.recognizedWords;
-          if (result.hasConfidenceRating &&
-              result.confidence > 0 &&
-              result.recognizedWords.isNotEmpty &&
-              !_speechToText.isListening) {
-            _addDiagnosticLog('Voice recognized: ${result.recognizedWords}');
-            _handleSubmit(result.recognizedWords);
-          }
-        },
-        pauseFor: Duration(seconds: silenceSecs),
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.confirmation,
-          cancelOnError: true,
-        ),
-      );
+      _addDiagnosticLog('Voice recording started.');
     } else {
-      _addDiagnosticLog('Voice recognition unavailable on device.');
+      _addDiagnosticLog('Microphone permission denied.');
     }
   }
 
-  /// Stop STT — called when user releases the mic orb (hold-to-record UX).
+  /// Stop recording and transcribe — called when user releases the mic orb.
   Future<void> _stopListening() async {
     if (!_isListening) return;
-    await _speechToText.stop();
+    
+    final path = await _audioRecorder.stop();
     setState(() => _isListening = false);
     _syncOverlayState();
-    _addDiagnosticLog('Voice listening stopped.');
+    _addDiagnosticLog('Voice recording stopped.');
+
+    if (path != null) {
+      _addDiagnosticLog('Transcribing audio at $path...');
+      final text = await GatewayService().transcribeAudio(File(path));
+      if (text != null && text.isNotEmpty) {
+        _textController.text = text;
+        _addDiagnosticLog('Gateway STT recognized: $text');
+        _handleSubmit(text);
+      } else {
+        _addDiagnosticLog('Gateway STT failed or returned empty text.');
+      }
+    }
   }
 
   /// Tell native Android to update the PiP RemoteAction icon based on listening state.
@@ -1761,7 +1764,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _skillsSub?.cancel();
     _glowController.dispose();
     _tts.stop();
-    _speechToText.stop();
+    _audioRecorder.dispose();
     _textController.dispose();
     _scrollController.dispose();
     _logScrollController.dispose();

@@ -163,6 +163,16 @@ class PreferencesService {
   String get wakeWordMode => _p.getString('wake_word_mode') ?? 'off';
   set wakeWordMode(String value) => _p.setString('wake_word_mode', value);
 
+  // ── TTS Engine & Offline Models ──────────────────────────────────────────────
+
+  /// Selected TTS Engine: 'gateway' (Cloud) | 'offline' (Sherpa-ONNX)
+  String get ttsEngine => _p.getString('tts_engine') ?? 'gateway';
+  set ttsEngine(String value) => _p.setString('tts_engine', value);
+
+  /// Currently active offline voice model ID (e.g. 'en_US-lessac-high')
+  String get offlineVoiceModel => _p.getString('offline_voice_model') ?? 'en_US-lessac-high';
+  set offlineVoiceModel(String value) => _p.setString('offline_voice_model', value);
+
   // ── Local LLM ───────────────────────────────────────────────────────────────
 
   /// CPU thread count for local inference (fllama + Ollama Modelfile).
