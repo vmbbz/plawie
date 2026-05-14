@@ -177,6 +177,15 @@ class NodeService {
       case 'node.invoke.request':
         await _handleInvokeRequest(frame.payload ?? {});
         break;
+      
+      case '_policy_rejected':
+        log('[NODE] Policy rejected (1008 Origin Mismatch). Stopping reconnect to avoid loop.');
+        _ws.haltReconnect();
+        _updateState(_state.copyWith(
+          status: NodeStatus.error,
+          errorMessage: 'Security policy rejected the connection (Origin Mismatch).',
+        ));
+        break;
     }
   }
 
@@ -406,14 +415,15 @@ class NodeService {
       log('[NODE] Pairing required (1008) — auto-approving device $requestId...');
       try {
         await NativeBridge.approveDevice(requestId);
-        await Future.delayed(const Duration(milliseconds: 1500));
+        await Future.delayed(const Duration(milliseconds: 2000));
         log('[NODE] Device approved successfully');
       } catch (e) {
         log('[NODE] Auto-approve failed: $e');
-        await _clearNodeDeviceRecord();
       }
     } else {
-      await _clearNodeDeviceRecord();
+      // If no requestId was provided, we can't auto-approve.
+      // Do NOT clear records here unless we are sure they are corrupted.
+      log('[NODE] Pairing required but no requestId provided. Manual approval may be needed.');
     }
 
     await _ws.disconnect();

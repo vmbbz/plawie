@@ -74,7 +74,6 @@ flutter:
   assets:
     - README.md
     - assets/bionic_bypass.js
-    - assets/proot/
     - assets/resolv.conf
     - assets/ic_launcher.png
     - assets/app_icon_official.svg

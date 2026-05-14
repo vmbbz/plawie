@@ -54,12 +54,14 @@ class GatewayService {
   StreamSubscription? _logSubscription;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
-  bool _rpcDiscoveryDone = false; // RPC discovery runs once after first WS connect
+  bool _rpcDiscoveryDone =
+      false; // RPC discovery runs once after first WS connect
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
   bool _isStopping = false;
-  bool _isSyncing = false; // guard against concurrent syncLocalModelsWithOllama calls
+  bool _isSyncing =
+      false; // guard against concurrent syncLocalModelsWithOllama calls
   // Set to true after _clearStaleSessions() runs, reset on WS disconnect.
   // Prevents wiping sessions on every sendMessage (was causing "new LLM every few messages").
   bool _sessionCleanedThisConnection = false;
@@ -76,7 +78,7 @@ class GatewayService {
   bool _isFixingDep = false;
   // Guards the one-time pairing-required recovery per session.
   bool _pairingResolveAttempted = false;
-  
+
   // Failure tracking for proactive auto-healing
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
@@ -116,52 +118,52 @@ class GatewayService {
     //   Vision     → 2048 (vision encoder adds extra RAM overhead)
     final modelContexts = {
       // ── Qwen2.5 text ──
-      'qwen2.5:0.5b':  4096,
-      'qwen2.5-0.5b':  4096,
-      'qwen2.5:1.5b':  4096,
-      'qwen2.5-1.5b':  4096,
-      'qwen2.5:3b':    4096,
-      'qwen2.5-3b':    4096,
-      'qwen2.5:7b':    2048,
-      'qwen2.5-7b':    2048,
-      'qwen2.5:14b':   2048,
-      'qwen2.5-14b':   2048,
+      'qwen2.5:0.5b': 4096,
+      'qwen2.5-0.5b': 4096,
+      'qwen2.5:1.5b': 4096,
+      'qwen2.5-1.5b': 4096,
+      'qwen2.5:3b': 4096,
+      'qwen2.5-3b': 4096,
+      'qwen2.5:7b': 2048,
+      'qwen2.5-7b': 2048,
+      'qwen2.5:14b': 2048,
+      'qwen2.5-14b': 2048,
       // ── Qwen2.5 Coder ──
-      'qwen2.5-coder:3b':  4096,
-      'qwen2.5-coder:7b':  2048,
+      'qwen2.5-coder:3b': 4096,
+      'qwen2.5-coder:7b': 2048,
       // ── SmolLM2 ──
-      'smollm2:135m':  2048,
-      'smollm2-135m':  2048,
-      'smollm2:360m':  2048,
-      'smollm2-360m':  2048,
-      'smollm2:1.7b':  4096,
-      'smollm2-1.7b':  4096,
+      'smollm2:135m': 2048,
+      'smollm2-135m': 2048,
+      'smollm2:360m': 2048,
+      'smollm2-360m': 2048,
+      'smollm2:1.7b': 4096,
+      'smollm2-1.7b': 4096,
       // ── Llama 3.x ──
-      'llama3.2:1b':   4096,
-      'llama3.2-1b':   4096,
-      'llama3.2:3b':   4096,
-      'llama3.2-3b':   4096,
-      'llama3.1:8b':   2048,
-      'llama3.1-8b':   2048,
+      'llama3.2:1b': 4096,
+      'llama3.2-1b': 4096,
+      'llama3.2:3b': 4096,
+      'llama3.2-3b': 4096,
+      'llama3.1:8b': 2048,
+      'llama3.1-8b': 2048,
       'llama3.2-vision': 2048,
       // ── DeepSeek R1 ──
       'deepseek-r1:1.5b': 4096,
       'deepseek-r1-1.5b': 4096,
-      'deepseek-r1:7b':   2048,
-      'deepseek-r1-7b':   2048,
+      'deepseek-r1:7b': 2048,
+      'deepseek-r1-7b': 2048,
       // ── Phi ──
-      'phi4-mini':   4096,
-      'phi4:14b':    2048,
-      'phi4-14b':    2048,
+      'phi4-mini': 4096,
+      'phi4:14b': 2048,
+      'phi4-14b': 2048,
       // ── Mistral ──
-      'mistral:7b':  2048,
-      'mistral-7b':  2048,
+      'mistral:7b': 2048,
+      'mistral-7b': 2048,
       // ── Vision ──
       'llava-1.5-7b': 2048,
-      'llava':        2048,
-      'qwen2-vl-2b':  2048,
-      'qwen2-vl-7b':  2048,
-      'qwen2-vl':     2048,
+      'llava': 2048,
+      'qwen2-vl-2b': 2048,
+      'qwen2-vl-7b': 2048,
+      'qwen2-vl': 2048,
     };
     for (final entry in modelContexts.entries) {
       if (modelId.contains(entry.key)) return entry.value;
@@ -173,7 +175,8 @@ class GatewayService {
   /// Dynamic Modelfile template. TEMPLATE block is required — without it Ollama
   /// falls back to a broken default format and generates 0 tokens.
   /// [modelName] is used to select the correct chat template and stop tokens.
-  String _buildModelfileTemplate(String ggufPath, int contextSize, {String modelName = '', int numThreads = 6}) {
+  String _buildModelfileTemplate(String ggufPath, int contextSize,
+      {String modelName = '', int numThreads = 6}) {
     final name = modelName.toLowerCase();
 
     // Llama 3.x format
@@ -246,7 +249,7 @@ PARAMETER num_batch 512
     try {
       final dashboardUrl = await fetchAuthenticatedDashboardUrl();
       if (dashboardUrl == null) throw Exception('No gateway dashboard URL');
-      
+
       final uri = Uri.parse(dashboardUrl);
       final token = uri.queryParameters['token'];
       if (token == null) throw Exception('No gateway token');
@@ -256,7 +259,8 @@ PARAMETER num_batch 512
         Uri.parse('${AppConstants.gatewayUrl}/talk/stt'),
       );
       request.headers['Authorization'] = 'Bearer $token';
-      request.files.add(await http.MultipartFile.fromPath('audio', audioFile.path));
+      request.files
+          .add(await http.MultipartFile.fromPath('audio', audioFile.path));
 
       final response = await request.send();
       if (response.statusCode == 200) {
@@ -272,11 +276,10 @@ PARAMETER num_batch 512
       return null;
     }
   }
-  
-  
 
   // Matches terminal Dashboard URL: supports localhost, 127.0.0.1, 0.0.0.0, and arbitrary IP addresses.
-  static final _tokenUrlRegex = RegExp(r'https?://[a-zA-Z0-9\.\-]+:\d+/[^\s]*[#?]token=[^\s&]+');
+  static final _tokenUrlRegex =
+      RegExp(r'https?://[a-zA-Z0-9\.\-]+:\d+/[^\s]*[#?]token=[^\s&]+');
   static final _boxDrawing = RegExp(r'[│┤├┬┴┼╮╯╰╭─╌╴╶┌┐└┘◇◆]+');
 
   /// Strip ANSI, box-drawing chars, and whitespace to reconstruct URLs
@@ -313,7 +316,9 @@ PARAMETER num_batch 512
   /// Validate gateway process health before marking as healthy
   Future<void> _validateGatewayProcess() async {
     try {
-      final result = await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && pgrep -f openclaw || echo "not_running"', timeout: 5);
+      final result = await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && pgrep -f openclaw || echo "not_running"',
+          timeout: 5);
       if (result.trim() == 'not_running') {
         _addActivity('[HEALTH] Gateway process not found - marking as stopped');
         _updateState(_state.copyWith(status: GatewayStatus.stopped));
@@ -336,7 +341,7 @@ PARAMETER num_batch 512
 
     final prefs = PreferencesService();
     await prefs.init();
-    
+
     // Initialize file directory early
     await getFilesDir();
 
@@ -362,26 +367,30 @@ PARAMETER num_batch 512
 
     // 1. Missing specific dependencies
     if (log.contains("Cannot find module '@buape/carbon'")) {
-       _runTargetedFix('@buape/carbon');
+      _runTargetedFix('@buape/carbon');
     } else if (log.contains("Cannot find module 'openclaw'")) {
-       // This implies the package is missing from node_modules but binary was called
-       _runTargetedFix('openclaw', isGlobal: true);
-    } else if (log.contains("Error: Cannot find module") && !log.contains("node_modules")) {
-       // Generic module error that doesn't specify a path - likely a broken install
-       _addActivity('[SYS] Detected missing module. If gateway fails, please run Repair in Settings.');
+      // This implies the package is missing from node_modules but binary was called
+      _runTargetedFix('openclaw', isGlobal: true);
+    } else if (log.contains("Error: Cannot find module") &&
+        !log.contains("node_modules")) {
+      // Generic module error that doesn't specify a path - likely a broken install
+      _addActivity(
+          '[SYS] Detected missing module. If gateway fails, please run Repair in Settings.');
     }
-    
+
     // 2. Syntax Errors (corrupted downloads)
     if (log.contains('SyntaxError:')) {
-       _addActivity('[SYS] Gateway syntax error detected (possible corruption).');
+      _addActivity(
+          '[SYS] Gateway syntax error detected (possible corruption).');
     }
   }
 
-  Future<void> _runTargetedFix(String packageName, {bool isGlobal = false}) async {
+  Future<void> _runTargetedFix(String packageName,
+      {bool isGlobal = false}) async {
     if (_isFixingDep) return;
     _isFixingDep = true;
     _addActivity('[SYS] Auto-Healing: Fixing missing $packageName...');
-    
+
     try {
       if (isGlobal) {
         await NativeBridge.runInProot(
@@ -401,7 +410,8 @@ PARAMETER num_batch 512
           timeout: 120,
         );
       }
-      _addActivity('[SYS] $packageName fixed — gateway will pick up changes on reconnect');
+      _addActivity(
+          '[SYS] $packageName fixed — gateway will pick up changes on reconnect');
     } catch (e) {
       _addActivity('[SYS] Auto-heal failed: $e. Manual repair required.');
     } finally {
@@ -417,10 +427,11 @@ PARAMETER num_batch 512
 
     try {
       final diag = await DiagnosticService.runGatewayDiagnostics();
-      
+
       // Case 1: Missing OpenClaw package
       if (diag['openclaw_package'] == 'MISSING') {
-        _addActivity('[SYS] OpenClaw package missing — attempting targeted install...');
+        _addActivity(
+            '[SYS] OpenClaw package missing — attempting targeted install...');
         await _runTargetedFix('openclaw', isGlobal: true);
         _consecutiveFailures = 0; // Allow a fresh chance
         return;
@@ -428,8 +439,10 @@ PARAMETER num_batch 512
 
       // Case 2: Missing Node.js
       if (diag['node_binary'] == 'MISSING') {
-        _addActivity('[SYS] Node.js binary missing. Please run "Setup" from the Home screen.');
-        _updateState(_state.copyWith(status: GatewayStatus.error, errorMessage: 'Node.js missing'));
+        _addActivity(
+            '[SYS] Node.js binary missing. Please run "Setup" from the Home screen.');
+        _updateState(_state.copyWith(
+            status: GatewayStatus.error, errorMessage: 'Node.js missing'));
         return;
       }
 
@@ -446,14 +459,16 @@ PARAMETER num_batch 512
       }
 
       // Case 4: Process not running but port closed
-      if (diag['gateway_process'] == 'NOT_RUNNING' && _state.status == GatewayStatus.running) {
+      if (diag['gateway_process'] == 'NOT_RUNNING' &&
+          _state.status == GatewayStatus.running) {
         _addActivity('[SYS] Gateway process died — attempting restart...');
         unawaited(start());
         _consecutiveFailures = 0;
         return;
       }
 
-      _addActivity('[SYS] Could not identify a fixable issue. Please use Settings -> Repair.');
+      _addActivity(
+          '[SYS] Could not identify a fixable issue. Please use Settings -> Repair.');
     } catch (e) {
       _addActivity('[SYS] Passive heal error: $e');
     } finally {
@@ -470,7 +485,10 @@ PARAMETER num_batch 512
       if (!running) return;
       _updateState(_state.copyWith(
         isOllamaRunning: true,
-        logs: [..._state.logs, '[INFO] Ollama Hub already running — syncing models...'],
+        logs: [
+          ..._state.logs,
+          '[INFO] Ollama Hub already running — syncing models...'
+        ],
       ));
       await syncLocalModelsWithOllama();
     } catch (_) {}
@@ -479,7 +497,8 @@ PARAMETER num_batch 512
   Future<bool> _isGatewayHealthy() async {
     // Quick health check without full reload
     try {
-      return state.status == GatewayStatus.running && state.isWebsocketConnected;
+      return state.status == GatewayStatus.running &&
+          state.isWebsocketConnected;
     } catch (_) {
       return false;
     }
@@ -487,7 +506,8 @@ PARAMETER num_batch 512
 
   /// Unified entry point for starting or attaching to the gateway.
   /// Prevents double-spawns and handles self-healing.
-  Future<void> attachOrStart({bool autoStart = false, bool forceStart = false}) async {
+  Future<void> attachOrStart(
+      {bool autoStart = false, bool forceStart = false}) async {
     // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
 
@@ -508,13 +528,15 @@ PARAMETER num_batch 512
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
-      unawaited(fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
+      unawaited(
+          fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
       await hardenGatewayConfigViaCli(); // AWAITED: source of truth
       return;
     }
 
     if (alreadyRunning) {
-      if (_state.status == GatewayStatus.running) return; // Already fully attached
+      if (_state.status == GatewayStatus.running)
+        return; // Already fully attached
 
       debugPrint('[GATEWAY] Process detected — attaching...');
       _updateState(_state.copyWith(
@@ -526,14 +548,14 @@ PARAMETER num_batch 512
         // Apply Plawie's local gateway overrides BEFORE doctor --fix
         // This prevents config reload loops when openclaw reload detects our changes
         await _configureGateway();
-        
+
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
-        
+
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
@@ -550,8 +572,8 @@ PARAMETER num_batch 512
       NodeService().clearCachedToken();
 
       // Apply hardening BEFORE we start polling/connecting
-      await hardenGatewayConfigViaCli(); 
-      
+      await hardenGatewayConfigViaCli();
+
       // Now re-probe the fresh token (after the possible reload/restart)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
@@ -563,10 +585,12 @@ PARAMETER num_batch 512
 
     // 2. Not running. POLICY: Should we spawn a NEW one?
     if (!autoStart && !forceStart) {
-      debugPrint('[GATEWAY] Not running. Auto-start is off (autoStartGateway=${prefs.autoStartGateway})');
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] Gateway not running. Auto-start is off.']
-      ));
+      debugPrint(
+          '[GATEWAY] Not running. Auto-start is off (autoStartGateway=${prefs.autoStartGateway})');
+      _updateState(_state.copyWith(logs: [
+        ..._state.logs,
+        '[DEBUG] Gateway not running. Auto-start is off.'
+      ]));
       return;
     }
 
@@ -588,15 +612,18 @@ PARAMETER num_batch 512
       final isOptimized = await NativeBridge.isBatteryOptimized();
       if (isOptimized) {
         _updateState(_state.copyWith(
-          logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
+          logs: [
+            ..._state.logs,
+            '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'
+          ],
         ));
         // Request optimization but don't wait for it (non-blocking)
         unawaited(NativeBridge.requestBatteryOptimization().catchError((_) {}));
       }
-      
+
       await NativeBridge.acquirePartialWakeLock();
       await _configureGateway();
-      
+
       // Auditor Safety Net: Force bind via CLI immediately before native start (survives any native flag)
       try {
         await NativeBridge.runInProot(
@@ -626,7 +653,10 @@ PARAMETER num_batch 512
           final isOptimized = await NativeBridge.isBatteryOptimized();
           if (isOptimized) {
             _updateState(_state.copyWith(
-              logs: [..._state.logs, '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'],
+              logs: [
+                ..._state.logs,
+                '[WARN] Battery Optimization is ACTIVE — may kill gateway in background.'
+              ],
             ));
             await NativeBridge.requestBatteryOptimization();
           }
@@ -634,14 +664,14 @@ PARAMETER num_batch 512
       }());
 
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       // Wipe cache and ensure we have the fresh token from the new process
       _cachedToken = null;
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
       await hardenGatewayConfigViaCli(); // ensure origins are correct BEFORE connect
-      
+
       // Force token re-acquisition after hardening (which may have triggered a reload)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
@@ -665,7 +695,8 @@ PARAMETER num_batch 512
 
   /// Explicitly await the gateway reaching a healthy/running state.
   /// Useful for setup wizards to prevent users from landing on a "Disconnected" screen.
-  Future<void> waitForStartup({Duration timeout = const Duration(seconds: 120)}) async {
+  Future<void> waitForStartup(
+      {Duration timeout = const Duration(seconds: 120)}) async {
     if (_state.status == GatewayStatus.running) return;
 
     final completer = Completer<void>();
@@ -683,7 +714,8 @@ PARAMETER num_batch 512
     timeoutTimer = Timer(timeout, () {
       sub?.cancel();
       if (!completer.isCompleted) {
-        completer.completeError(TimeoutException('Gateway warmup timed out after ${timeout.inSeconds}s'));
+        completer.completeError(TimeoutException(
+            'Gateway warmup timed out after ${timeout.inSeconds}s'));
       }
     });
 
@@ -699,7 +731,6 @@ PARAMETER num_batch 512
           : [..._state.logs.sublist(_state.logs.length - 499), log];
 
       _handleGatewayAutoHeal(log);
-
 
       String? dashboardUrl;
       final cleanLog = _cleanForUrl(log);
@@ -794,7 +825,7 @@ PARAMETER num_batch 512
         }
         break;
       } catch (e) {
-        debugPrint('[GatewayService] Config read attempt ${i+1} error: $e');
+        debugPrint('[GatewayService] Config read attempt ${i + 1} error: $e');
         await Future.delayed(const Duration(milliseconds: 200));
       }
     }
@@ -805,34 +836,34 @@ PARAMETER num_batch 512
     try {
       final path = await _openClawConfigPath();
       final file = File(path);
-      
+
       // Ensure directory exists
       final dir = Directory(file.parent.path);
       if (!await dir.exists()) await dir.create(recursive: true);
-      
+
       await file.writeAsString(jsonEncode(config));
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
     }
   }
 
-
   Future<void> _writeEnvFile(String key, String value) async {
     try {
       final configPath = await _openClawConfigPath();
       final envPath = configPath.replaceAll('openclaw.json', '.env');
       final file = File(envPath);
-      
+
       String content = '';
       if (await file.exists()) {
         content = await file.readAsString();
       }
-      
-      final lines = content.split('\n')
+
+      final lines = content
+          .split('\n')
           .where((l) => l.trim().isNotEmpty && !l.startsWith('$key='))
           .toList();
       lines.add('$key=$value');
-      
+
       await file.writeAsString(lines.join('\n'));
     } catch (e) {
       debugPrint('[GatewayService] .env write error: $e');
@@ -842,27 +873,37 @@ PARAMETER num_batch 512
   /// Direct I/O: configure gateway binding and node settings.
   Future<void> _configureGateway() async {
     final config = await _readConfig();
-    
+
     // Safety check: if read failed but file exists, abort to prevent clobbering auth tokens
     if (config.isEmpty) {
       final file = File(await _openClawConfigPath());
       if (await file.exists()) {
-        debugPrint('[GatewayService] Aborting configureGateway: Config read returned empty while file exists.');
+        debugPrint(
+            '[GatewayService] Aborting configureGateway: Config read returned empty while file exists.');
         return;
       }
     }
     config['gateway'] ??= {};
     config['gateway']['nodes'] ??= {};
     config['gateway']['nodes']['pairing'] ??= {};
-    config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];  // Auto-approve localhost only
+    config['gateway']['nodes']['pairing']
+        ['autoApproveCidrs'] = ['127.0.0.1/32']; // Auto-approve localhost only
     config['gateway']['nodes']['denyCommands'] = [];
     config['gateway']['nodes']['allowCommands'] = [
-      'camera.snap', 'camera.clip', 'camera.list',
-      'canvas.navigate', 'canvas.eval', 'canvas.snapshot',
-      'flash.on', 'flash.off', 'flash.toggle', 'flash.status',
+      'camera.snap',
+      'camera.clip',
+      'camera.list',
+      'canvas.navigate',
+      'canvas.eval',
+      'canvas.snapshot',
+      'flash.on',
+      'flash.off',
+      'flash.toggle',
+      'flash.status',
       'location.get',
       'screen.record',
-      'sensor.read', 'sensor.list',
+      'sensor.read',
+      'sensor.list',
       'haptic.vibrate',
     ];
     config['gateway']['mode'] = 'local';
@@ -870,47 +911,46 @@ PARAMETER num_batch 512
     // FIX: Ensure allowedOrigins is present and contains 'n/a'
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
-      'n/a', 
+      'n/a',
       'http://127.0.0.1:18789',
       'http://localhost:18789'
     ];
 
-    
     // ENODEV FIX: Use official OpenClaw config schema
     // Prevent eth0 ENODEV errors with valid network binding
-    config['gateway']['bind'] = 'loopback';  // Use proper OpenClaw enum value
+    config['gateway']['bind'] = 'loopback'; // Use proper OpenClaw enum value
     config['gateway']['port'] = AppConstants.gatewayPort; // Force port 18789
-    
+
     // FIX: GitHub issue #9358 solution for origin=n/a WebSocket rejections
     // Dart WebSocket sends origin=n/a, not app://localhost
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
-      'n/a',  // Critical: Allow origin=n/a from Dart/Flutter WebSocket
+      'n/a', // Critical: Allow origin=n/a from Dart/Flutter WebSocket
       'http://127.0.0.1:18789',
       'http://localhost:18789'
     ];
-    
+
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
     config['discovery']['mdns'] ??= {};
-    config['discovery']['mdns']['mode'] = 'off';  // disable mDNS/Bonjour
-    
+    config['discovery']['mdns']['mode'] = 'off'; // disable mDNS/Bonjour
+
     // WIDE-AREA FIX: Disable DNS-SD discovery
     config['discovery']['wideArea'] ??= {};
     config['discovery']['wideArea']['enabled'] = false;
-    
+
     // Enable the OpenAI-compatible REST endpoints on port 18789.
     config['gateway']['http'] ??= {};
     config['gateway']['http']['endpoints'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
-
     // Ollama Default Provider — always ensure models array is present.
     config['models'] ??= {};
     config['models']['providers'] ??= {};
     config['models']['providers']['ollama'] ??= <String, dynamic>{};
-    final ollama = Map<String, dynamic>.from(config['models']['providers']['ollama'] as Map);
+    final ollama = Map<String, dynamic>.from(
+        config['models']['providers']['ollama'] as Map);
     ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
     ollama['apiKey'] ??= 'ollama-local';
     ollama['api'] ??= 'ollama';
@@ -922,24 +962,33 @@ PARAMETER num_batch 512
     // passes schema validation instead of running in best-effort mode.
     final agentsDefaults = config['agents']?['defaults'];
     if (agentsDefaults is Map) {
-      agentsDefaults.remove('provider');          // not in agents.defaults schema
-      agentsDefaults.remove('tools');             // not in agents.defaults schema
-      agentsDefaults.remove('timeoutMs');         // not in agents.defaults schema
-      agentsDefaults.remove('systemPrompt');      // not in agents.defaults schema — causes "Unrecognized keys" reload failure
+      agentsDefaults.remove('provider'); // not in agents.defaults schema
+      agentsDefaults.remove('tools'); // not in agents.defaults schema
+      agentsDefaults.remove('timeoutMs'); // not in agents.defaults schema
+      agentsDefaults.remove(
+          'systemPrompt'); // not in agents.defaults schema — causes "Unrecognized keys" reload failure
     }
     final skills = config['skills'];
     if (skills is Map) {
-      skills.remove('discovery');                 // not in skills schema
-      skills.remove('mode');                      // not in skills schema
-      skills.remove('sync');                      // not in skills schema
+      skills.remove('discovery'); // not in skills schema
+      skills.remove('mode'); // not in skills schema
+      skills.remove('sync'); // not in skills schema
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
-    
+
     // Sanitize tools.allow: remove any entries that aren't valid gateway primitives.
     // npm-skill slugs and device names cause the gateway to warn "unknown entries"
     // and give the AI zero tools. ["*"] wildcard is preserved — it means all-allowed.
     const validPrimitives = {
-      '*', 'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
+      '*',
+      'browser',
+      'computer',
+      'files',
+      'memory',
+      'search',
+      'image',
+      'canvas',
+      'shell',
     };
     final existingAllow = config['tools']?['allow'];
     if (existingAllow is List) {
@@ -960,11 +1009,11 @@ PARAMETER num_batch 512
     final ollamaProvider = config['models']?['providers']?['ollama'];
     if (ollamaProvider is Map) {
       ollamaProvider.remove('defaultContextWindow'); // not in gateway schema
-      ollamaProvider.remove('contextWindow');        // not in gateway schema
+      ollamaProvider.remove('contextWindow'); // not in gateway schema
       final ollamaModels = ollamaProvider['models'];
       if (ollamaModels is List) {
         for (final m in ollamaModels) {
-          if (m is Map) m.remove('contextWindow');   // not in model entry schema
+          if (m is Map) m.remove('contextWindow'); // not in model entry schema
         }
       }
     }
@@ -1001,10 +1050,12 @@ PARAMETER num_batch 512
       'baseUrl': baseUrl,
       'apiKey': 'ollama-local',
       'api': 'ollama',
-      'models': syncedModels.map((n) => <String, dynamic>{
-        'id': n,
-        'name': n,
-      }).toList(),
+      'models': syncedModels
+          .map((n) => <String, dynamic>{
+                'id': n,
+                'name': n,
+              })
+          .toList(),
     };
 
     config['models']['providers']['ollama'] = ollamaConfig;
@@ -1013,7 +1064,9 @@ PARAMETER num_batch 512
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
-      final fullModel = primaryModel.startsWith('ollama/') ? primaryModel : 'ollama/$primaryModel';
+      final fullModel = primaryModel.startsWith('ollama/')
+          ? primaryModel
+          : 'ollama/$primaryModel';
       config['agents']['defaults']['model']['primary'] = fullModel;
 
       // NOTE: agents.defaults.systemPrompt, agents.defaults.tools, and agents.defaults.timeoutMs
@@ -1034,7 +1087,8 @@ PARAMETER num_batch 512
   }
 
   /// Probe the Ollama server directly via HTTP.
-  Future<bool> checkOllamaHealth({String baseUrl = 'http://127.0.0.1:11434'}) async {
+  Future<bool> checkOllamaHealth(
+      {String baseUrl = 'http://127.0.0.1:11434'}) async {
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/api/tags'))
@@ -1059,9 +1113,12 @@ PARAMETER num_batch 512
     final success = await NativeBridge.startOllama();
     _updateState(_state.copyWith(
       isOllamaRunning: success,
-      logs: [..._state.logs, success
-          ? '[INFO] Ollama Hub starting — waiting for ready signal...'
-          : '[WARN] Ollama start returned failure.'],
+      logs: [
+        ..._state.logs,
+        success
+            ? '[INFO] Ollama Hub starting — waiting for ready signal...'
+            : '[WARN] Ollama start returned failure.'
+      ],
     ));
     if (success) {
       // Poll health in the background; auto-sync once Ollama responds.
@@ -1080,7 +1137,10 @@ PARAMETER num_batch 512
       if (await checkOllamaHealth()) {
         _updateState(_state.copyWith(
           isOllamaRunning: true,
-          logs: [..._state.logs, '[INFO] Ollama Hub ready — auto-syncing models...'],
+          logs: [
+            ..._state.logs,
+            '[INFO] Ollama Hub ready — auto-syncing models...'
+          ],
         ));
         // Clear stale session files before syncing. Aborted runs pile up
         // assistant/error messages that inflatethe conversation history
@@ -1091,7 +1151,10 @@ PARAMETER num_batch 512
       }
     }
     _updateState(_state.copyWith(
-      logs: [..._state.logs, '[WARN] Ollama Hub did not respond after 30 s — check logs.'],
+      logs: [
+        ..._state.logs,
+        '[WARN] Ollama Hub did not respond after 30 s — check logs.'
+      ],
     ));
   }
 
@@ -1106,7 +1169,8 @@ PARAMETER num_batch 512
 
     try {
       final filesDir = await getFilesDir();
-      final sessionsDir = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
+      final sessionsDir =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
       final dir = Directory(sessionsDir);
       if (!await dir.exists()) return;
       await for (final entity in dir.list()) {
@@ -1118,8 +1182,10 @@ PARAMETER num_batch 512
           if (bytes > 51200) {
             await entity.writeAsString('');
             _updateState(_state.copyWith(
-              logs: [..._state.logs,
-                '[HUB] Cleared stale session (${(bytes / 1024).toStringAsFixed(1)} KB): ${entity.uri.pathSegments.last}'],
+              logs: [
+                ..._state.logs,
+                '[HUB] Cleared stale session (${(bytes / 1024).toStringAsFixed(1)} KB): ${entity.uri.pathSegments.last}'
+              ],
             ));
           }
         }
@@ -1151,11 +1217,13 @@ PARAMETER num_batch 512
   /// Removes Ollama registrations that belong to OUR GGUFs but use a stale
   /// name format (e.g., dots replaced with dashes from a previous build).
   /// Identified by stripping all punctuation and comparing the result.
-  Future<void> _cleanupStaleOllamaRegistrations(Set<String> canonicalNames) async {
+  Future<void> _cleanupStaleOllamaRegistrations(
+      Set<String> canonicalNames) async {
     final registered = await _getRegisteredOllamaModels();
     // Pre-compute normalised canonical set once rather than inside the inner loop.
     final normalisedCanonicals = {
-      for (final c in canonicalNames) c.replaceAll(_staleNamePattern, '').toLowerCase(): c,
+      for (final c in canonicalNames)
+        c.replaceAll(_staleNamePattern, '').toLowerCase(): c,
     };
     for (final name in registered) {
       if (canonicalNames.contains(name)) continue; // already canonical — keep
@@ -1194,7 +1262,8 @@ PARAMETER num_batch 512
           'skills': catalog,
           'callbackUrl': 'http://127.0.0.1:8765',
         }).timeout(const Duration(seconds: 5));
-        _addActivity('[SKILLS] Registered ${catalog.length} device skills with gateway');
+        _addActivity(
+            '[SKILLS] Registered ${catalog.length} device skills with gateway');
       }
     } catch (e) {
       _addActivity('[SKILLS] skills.register failed: $e');
@@ -1217,7 +1286,10 @@ PARAMETER num_batch 512
     // Safety check: is Ollama actually reachable?
     if (!await isInternalOllamaRunning()) {
       _updateState(_state.copyWith(
-        logs: [..._state.logs, '[ERROR] Cannot sync: Integrated Hub is OFFLINE.'],
+        logs: [
+          ..._state.logs,
+          '[ERROR] Cannot sync: Integrated Hub is OFFLINE.'
+        ],
       ));
       return;
     }
@@ -1244,14 +1316,17 @@ PARAMETER num_batch 512
     }
 
     // Compute canonical names for cleanup, then clean up stale registrations.
-    final canonicalNames = {for (final m in downloadedToolModels) _toOllamaModelName(m.id as String)};
+    final canonicalNames = {
+      for (final m in downloadedToolModels) _toOllamaModelName(m.id as String)
+    };
     await _cleanupStaleOllamaRegistrations(canonicalNames);
 
     // Pre-fetch registered models to skip re-hashing on every startup.
     final registered = await _getRegisteredOllamaModels();
 
     int synced = 0;
-    final syncedModelNames = <String>[]; // collect for gateway config + state emit
+    final syncedModelNames =
+        <String>[]; // collect for gateway config + state emit
 
     for (final model in downloadedToolModels) {
       final ollamaName = _toOllamaModelName(model.id as String);
@@ -1265,18 +1340,25 @@ PARAMETER num_batch 512
       }
       try {
         final success = await _createOllamaModelFromGguf(
-          ollamaName, model.prootModelPath as String,
+          ollamaName,
+          model.prootModelPath as String,
           supportsToolCalls: model.supportsToolCalls as bool,
         );
         if (success) {
           synced++;
           syncedModelNames.add(ollamaName);
           _updateState(_state.copyWith(
-            logs: [..._state.logs, '[INFO] Registered ${model.id} as $ollamaName.'],
+            logs: [
+              ..._state.logs,
+              '[INFO] Registered ${model.id} as $ollamaName.'
+            ],
           ));
         } else {
           _updateState(_state.copyWith(
-            logs: [..._state.logs, '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'],
+            logs: [
+              ..._state.logs,
+              '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'
+            ],
           ));
         }
       } catch (e) {
@@ -1308,22 +1390,26 @@ PARAMETER num_batch 512
       // The user chose a cloud model — sync should only update the local model
       // registry, not hijack their primary model choice.
       if (isCloudModel) {
-        _addActivity('[SYNC] Cloud model active ($currentModel) — skipping local model sync to save RAM.');
+        _addActivity(
+            '[SYNC] Cloud model active ($currentModel) — skipping local model sync to save RAM.');
         await configureOllama(syncedModels: [], setAsPrimary: false);
         return;
       } else {
         // Check if openclaw.json primary is in sync with the user's preference.
         final liveConfig = await _readConfig();
-        final jsonPrimary = liveConfig['agents']?['defaults']?['model']?['primary'] as String?;
+        final jsonPrimary =
+            liveConfig['agents']?['defaults']?['model']?['primary'] as String?;
         final jsonPrimaryIsLocal = jsonPrimary != null &&
-            (jsonPrimary.startsWith('ollama/') || jsonPrimary.startsWith('local-llm/'));
+            (jsonPrimary.startsWith('ollama/') ||
+                jsonPrimary.startsWith('local-llm/'));
 
         // Force-write the primary if the JSON config doesn't reflect it — this
         // repairs drift after gateway restarts that regenerate openclaw.json.
         // BUT: if the user already has a specific local model selected, preserve
         // their choice instead of picking syncedModelNames.first.
         final needsPrimaryWrite = !alreadyLocal || !jsonPrimaryIsLocal;
-        final primaryToWrite = alreadyLocal ? currentModel : syncedModelNames.first;
+        final primaryToWrite =
+            alreadyLocal ? currentModel : syncedModelNames.first;
 
         await configureOllama(
           syncedModels: syncedModelNames,
@@ -1388,7 +1474,8 @@ PARAMETER num_batch 512
           .get(Uri.parse('http://127.0.0.1:11434/api/version'))
           .timeout(const Duration(seconds: 3));
       if (r.statusCode == 200) {
-        return (jsonDecode(r.body) as Map<String, dynamic>)['version'] as String?;
+        return (jsonDecode(r.body) as Map<String, dynamic>)['version']
+            as String?;
       }
     } catch (_) {}
     return null;
@@ -1401,11 +1488,13 @@ PARAMETER num_batch 512
     if (!await isInternalOllamaRunning()) return;
     final ollamaName = _toOllamaModelName(catalogId);
     try {
-      await http.delete(
-        Uri.parse('http://127.0.0.1:11434/api/delete'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'model': ollamaName}),
-      ).timeout(const Duration(seconds: 10));
+      await http
+          .delete(
+            Uri.parse('http://127.0.0.1:11434/api/delete'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'model': ollamaName}),
+          )
+          .timeout(const Duration(seconds: 10));
       _updateState(_state.copyWith(
         logs: [..._state.logs, '[INFO] Deregistered $ollamaName from Hub.'],
       ));
@@ -1418,7 +1507,8 @@ PARAMETER num_batch 512
 
   /// Searches the Ollama model registry for available models.
   /// Returns a list of model metadata maps with keys: name, description, pulls, tags.
-  Future<List<Map<String, dynamic>>> fetchOllamaRegistryModels(String query) async {
+  Future<List<Map<String, dynamic>>> fetchOllamaRegistryModels(
+      String query) async {
     try {
       final uri = Uri.parse('https://ollama.com/api/search').replace(
         queryParameters: {'q': query, 'sort': 'popular'},
@@ -1443,7 +1533,8 @@ PARAMETER num_batch 512
   ///
   /// The Modelfile is written to $filesDir/rootfs/ubuntu/tmp/ (Android host FS), which
   /// appears as /tmp/ inside PRoot — accessible by the Ollama CLI process.
-  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath, {bool supportsToolCalls = false}) async {
+  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath,
+      {bool supportsToolCalls = false}) async {
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[HUB] Registering $name...'],
     ));
@@ -1454,23 +1545,26 @@ PARAMETER num_batch 512
       final filesDir = await getFilesDir();
       final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
       tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
-      
+
       // Get dynamic context size and user-configured thread count
       final contextSize = _getDynamicContextSize(name);
       final prefs = PreferencesService();
       await prefs.init();
       final modelfileContent = _buildModelfileTemplate(
-        ggufPath, contextSize,
+        ggufPath,
+        contextSize,
         modelName: name,
         numThreads: prefs.llmThreadCount,
       );
       await tempModelfile.writeAsString(modelfileContent);
-      
+
       // Verify Modelfile contains correct context size
       if (modelfileContent.contains('PARAMETER num_ctx $contextSize')) {
-        _addActivity('[HUB] Modelfile created with num_ctx=$contextSize for $name');
+        _addActivity(
+            '[HUB] Modelfile created with num_ctx=$contextSize for $name');
       } else {
-        _addActivity('[HUB] WARNING: Modelfile missing num_ctx=$contextSize for $name');
+        _addActivity(
+            '[HUB] WARNING: Modelfile missing num_ctx=$contextSize for $name');
       }
 
       final prootModelfilePath = '/tmp/oc_mf_$safeName';
@@ -1502,7 +1596,9 @@ PARAMETER num_batch 512
       return false;
     } finally {
       // Clean up temp Modelfile regardless of outcome.
-      try { await tempModelfile?.delete(); } catch (_) {}
+      try {
+        await tempModelfile?.delete();
+      } catch (_) {}
     }
   }
 
@@ -1514,15 +1610,18 @@ PARAMETER num_batch 512
 
     final client = http.Client();
     try {
-      final request = http.Request('POST', Uri.parse('http://127.0.0.1:11434/api/pull'));
+      final request =
+          http.Request('POST', Uri.parse('http://127.0.0.1:11434/api/pull'));
       request.body = jsonEncode({'name': name});
-      
+
       final response = await client.send(request);
       if (response.statusCode != 200) {
         throw Exception('Pull failed: ${response.statusCode}');
       }
 
-      await for (final line in response.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
         if (line.trim().isEmpty) continue;
         try {
           final data = jsonDecode(line);
@@ -1570,27 +1669,31 @@ PARAMETER num_batch 512
   }
 
   Future<void> installInternalOllama({Function(double)? onProgress}) async {
-    const url = 'https://github.com/ollama/ollama/releases/download/v0.19.0/ollama-linux-arm64.tar.zst';
+    const url =
+        'https://github.com/ollama/ollama/releases/download/v0.19.0/ollama-linux-arm64.tar.zst';
     int attempts = 0;
-    
+
     while (attempts < 3) {
       attempts++;
       final client = http.Client();
       _updateState(_state.copyWith(
-        logs: [..._state.logs, '[INFO] Downloading internal Ollama binary (ARM64) [Attempt $attempts/3]...'],
+        logs: [
+          ..._state.logs,
+          '[INFO] Downloading internal Ollama binary (ARM64) [Attempt $attempts/3]...'
+        ],
       ));
 
       try {
         final request = http.Request('GET', Uri.parse(url));
         final response = await client.send(request);
-        
+
         if (response.statusCode != 200) {
           throw Exception('Download failed: ${response.statusCode}');
         }
 
         final contentLength = response.contentLength ?? 0;
         int downloaded = 0;
-        
+
         final tempFile = File('${Directory.systemTemp.path}/ollama_dl.tar.zst');
         if (await tempFile.exists()) await tempFile.delete();
         final sink = tempFile.openWrite();
@@ -1605,14 +1708,20 @@ PARAMETER num_batch 512
         await sink.close();
 
         _updateState(_state.copyWith(
-          logs: [..._state.logs, '[INFO] Binary downloaded. Calling native installer...'],
+          logs: [
+            ..._state.logs,
+            '[INFO] Binary downloaded. Calling native installer...'
+          ],
         ));
 
         final success = await NativeBridge.installOllama(tempFile.path);
         if (!success) throw Exception('Native installation failed.');
 
         _updateState(_state.copyWith(
-          logs: [..._state.logs, '[INFO] Internal Ollama installed successfully.'],
+          logs: [
+            ..._state.logs,
+            '[INFO] Internal Ollama installed successfully.'
+          ],
         ));
         return; // Success!
       } catch (e) {
@@ -1620,7 +1729,7 @@ PARAMETER num_batch 512
           logs: [..._state.logs, '[WARNING] Attempt $attempts failed: $e'],
         ));
         if (attempts >= 3) {
-           _updateState(_state.copyWith(
+          _updateState(_state.copyWith(
             logs: [..._state.logs, '[ERROR] All download attempts failed.'],
           ));
           rethrow;
@@ -1646,12 +1755,18 @@ PARAMETER num_batch 512
   /// Public so GatewayProvider can call it during configureAndStart.
   String getModelForProvider(String provider) {
     switch (_normalizeProvider(provider)) {
-      case 'google': return 'google/gemini-3.1-pro-preview';
-      case 'anthropic': return 'anthropic/claude-opus-4.6';
-      case 'openai': return 'openai/gpt-4o';
-      case 'groq': return 'groq/llama-3.1-405b';
-      case 'ollama': return 'ollama/qwen2.5:0.5b';
-      default: return provider;
+      case 'google':
+        return 'google/gemini-3.1-pro-preview';
+      case 'anthropic':
+        return 'anthropic/claude-opus-4.6';
+      case 'openai':
+        return 'openai/gpt-4o';
+      case 'groq':
+        return 'groq/llama-3.1-405b';
+      case 'ollama':
+        return 'ollama/qwen2.5:0.5b';
+      default:
+        return provider;
     }
   }
 
@@ -1671,11 +1786,16 @@ PARAMETER num_batch 512
   /// Get the standard environment variable name for a provider's API key.
   String _getEnvKeyForProvider(String provider) {
     switch (_normalizeProvider(provider)) {
-      case 'anthropic': return 'ANTHROPIC_API_KEY';
-      case 'openai': return 'OPENAI_API_KEY';
-      case 'google': return 'GOOGLE_API_KEY';
-      case 'groq': return 'GROQ_API_KEY';
-      default: return '';
+      case 'anthropic':
+        return 'ANTHROPIC_API_KEY';
+      case 'openai':
+        return 'OPENAI_API_KEY';
+      case 'google':
+        return 'GOOGLE_API_KEY';
+      case 'groq':
+        return 'GROQ_API_KEY';
+      default:
+        return '';
     }
   }
 
@@ -1686,15 +1806,25 @@ PARAMETER num_batch 512
 
     final List<Map<String, dynamic>> defaultModels;
     if (openClawProvider == 'google') {
-      defaultModels = [{'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'}];
+      defaultModels = [
+        {'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'}
+      ];
     } else if (openClawProvider == 'anthropic') {
-      defaultModels = [{'id': 'claude-opus-4.6', 'name': 'Claude Opus 4.6'}];
+      defaultModels = [
+        {'id': 'claude-opus-4.6', 'name': 'Claude Opus 4.6'}
+      ];
     } else if (openClawProvider == 'openai') {
-      defaultModels = [{'id': 'gpt-4o', 'name': 'GPT-4o'}];
+      defaultModels = [
+        {'id': 'gpt-4o', 'name': 'GPT-4o'}
+      ];
     } else if (openClawProvider == 'groq') {
-      defaultModels = [{'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'}];
+      defaultModels = [
+        {'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'}
+      ];
     } else {
-      defaultModels = [{'id': 'default', 'name': 'Default Model'}];
+      defaultModels = [
+        {'id': 'default', 'name': 'Default Model'}
+      ];
     }
 
     // Generate a secure gateway token if we don't have one
@@ -1724,7 +1854,7 @@ PARAMETER num_batch 512
       '--accept-risk'
     ].join(' && ');
 
-    // HYBRID PATH: 
+    // HYBRID PATH:
     // 1. Manual patch first (instant) — ensures app is usable immediately
     final config = await _readConfig();
     config['env'] ??= {};
@@ -1739,7 +1869,10 @@ PARAMETER num_batch 512
     config['models']['providers'][openClawProvider] = {
       ...prov,
       'apiKey': key,
-      'baseUrl': prov['baseUrl'] ?? (openClawProvider == 'google' ? 'https://generativelanguage.googleapis.com/v1beta' : null),
+      'baseUrl': prov['baseUrl'] ??
+          (openClawProvider == 'google'
+              ? 'https://generativelanguage.googleapis.com/v1beta'
+              : null),
       'models': prov['models'] ?? defaultModels,
     };
 
@@ -1747,7 +1880,7 @@ PARAMETER num_batch 512
     config['gateway'] ??= {};
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
-      'n/a', 
+      'n/a',
       'http://127.0.0.1:18789',
       'http://localhost:18789'
     ];
@@ -1766,16 +1899,17 @@ PARAMETER num_batch 512
     // 2. Update agent auth-profiles.json
     try {
       final filesDir = await getFilesDir();
-      final authPath = '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json';
+      final authPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json';
       final authFile = File(authPath);
       Map<String, dynamic> auth = {};
-      
+
       if (await authFile.exists()) {
         auth = jsonDecode(await authFile.readAsString());
       } else {
         await Directory(authFile.parent.path).create(recursive: true);
       }
-      
+
       auth['providers'] ??= {};
       (auth['providers'][openClawProvider] ??= {})['apiKey'] = key;
       await authFile.writeAsString(jsonEncode(auth));
@@ -1807,7 +1941,9 @@ PARAMETER num_batch 512
   /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
   Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
     // If we already have a tokenized URL and aren't forcing, return it immediately
-    if (!force && _state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
+    if (!force &&
+        _state.dashboardUrl != null &&
+        _state.dashboardUrl!.contains('token=')) {
       return _state.dashboardUrl;
     }
 
@@ -1818,15 +1954,19 @@ PARAMETER num_batch 512
       if (!force) {
         _updateState(_state.copyWith(
           dashboardUrl: canvasUrl,
-          logs: [..._state.logs, '[INFO] Web UI URL acquired from gateway handshake.'],
+          logs: [
+            ..._state.logs,
+            '[INFO] Web UI URL acquired from gateway handshake.'
+          ],
         ));
         return canvasUrl;
       }
     }
 
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[DEBUG] Probing gateway config for auth token...']
-    ));
+    _updateState(_state.copyWith(logs: [
+      ..._state.logs,
+      '[DEBUG] Probing gateway config for auth token...'
+    ]));
 
     // STEP 1: Try reading token directly from config file.
     // This is isolated in its own try/catch so proot errors don't produce a false [ERROR] log.
@@ -1843,22 +1983,26 @@ PARAMETER num_batch 512
       await prefs.init();
       // Construct the authenticated URL
       final baseUrl = _state.dashboardUrl ?? AppConstants.gatewayUrl;
-      
+
       // Sanitize the baseUrl: brutally strip out any fragments (#) or query params (?)
       // This prevents malformed URLs from stacking parameters (e.g. /#token=.../?token=...&token=...)
       var sanitizedBaseUrl = baseUrl.split('#').first.split('?').first;
-      
+
       // Remove any trailing slashes to unify exact domain formatting
       while (sanitizedBaseUrl.endsWith('/')) {
-        sanitizedBaseUrl = sanitizedBaseUrl.substring(0, sanitizedBaseUrl.length - 1);
+        sanitizedBaseUrl =
+            sanitizedBaseUrl.substring(0, sanitizedBaseUrl.length - 1);
       }
-      
+
       // A clean gateway dashboard URL requires /#token= for the SPA frontend
       final urlWithToken = '$sanitizedBaseUrl/#token=$token';
       prefs.dashboardUrl = urlWithToken;
       _updateState(_state.copyWith(
         dashboardUrl: urlWithToken,
-        logs: [..._state.logs, '[INFO] Gateway auth token acquired from config.'],
+        logs: [
+          ..._state.logs,
+          '[INFO] Gateway auth token acquired from config.'
+        ],
       ));
       return urlWithToken;
     }
@@ -1866,9 +2010,8 @@ PARAMETER num_batch 512
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
-        '$kOpenClawCommand dashboard --no-open',
-        timeout: 10
-      );
+          '$kOpenClawCommand dashboard --no-open',
+          timeout: 10);
       final urlMatch = _tokenUrlRegex.firstMatch(output);
 
       if (urlMatch != null) {
@@ -1882,14 +2025,14 @@ PARAMETER num_batch 512
         ));
         return url;
       } else {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[WARN] Dashboard probe failed to find token. Ensure openclaw is starting correctly.']
-        ));
+        _updateState(_state.copyWith(logs: [
+          ..._state.logs,
+          '[WARN] Dashboard probe failed to find token. Ensure openclaw is starting correctly.'
+        ]));
       }
     } catch (e) {
       _updateState(_state.copyWith(
-        logs: [..._state.logs, '[WARN] CLI dashboard probe failed: $e']
-      ));
+          logs: [..._state.logs, '[WARN] CLI dashboard probe failed: $e']));
     }
 
     return _state.dashboardUrl;
@@ -1901,27 +2044,30 @@ PARAMETER num_batch 512
   /// Direct I/O: Retrieve token from config file (instant, no proot)
   Future<String?> retrieveTokenFromConfig({bool force = false}) async {
     if (force) clearTokenCache();
-    if (_cachedToken != null && _lastTokenFetch != null &&
+    if (_cachedToken != null &&
+        _lastTokenFetch != null &&
         DateTime.now().difference(_lastTokenFetch!).inMinutes < 5) {
       return _cachedToken;
     }
 
     final config = await _readConfig();
-    
+
     // MERGED: Robust multi-path token discovery while maintaining host-side file I/O speed.
     final token = config['gateway']?['auth']?['token'] as String? ??
-                 config['gateway']?['token'] as String? ??
-                 config['gateway']?['apiKey'] as String? ??
-                 config['auth']?['token'] as String?;
-    
+        config['gateway']?['token'] as String? ??
+        config['gateway']?['apiKey'] as String? ??
+        config['auth']?['token'] as String?;
+
     if (token != null && token.isNotEmpty) {
       _cachedToken = token;
       _lastTokenFetch = DateTime.now();
       return token;
     }
     // FALLBACK: Extract from dashboard URL if config is missing it
-    if (_state.dashboardUrl != null && _state.dashboardUrl!.contains('token=')) {
-      final uri = Uri.parse(_state.dashboardUrl!.replaceAll('#', '?')); // fragment to query
+    if (_state.dashboardUrl != null &&
+        _state.dashboardUrl!.contains('token=')) {
+      final uri = Uri.parse(
+          _state.dashboardUrl!.replaceAll('#', '?')); // fragment to query
       final urlToken = uri.queryParameters['token'];
       if (urlToken != null && urlToken.isNotEmpty) {
         _cachedToken = urlToken;
@@ -1950,14 +2096,16 @@ PARAMETER num_batch 512
     } catch (_) {}
   }
 
-
   /// Reset the RPC discovery flag so the next health-check tick re-runs
   /// `health` and `skills.status`. Call this after
   /// installing/uninstalling a skill or any time the user wants a fresh read.
   void refreshRpcDiscovery() {
     _rpcDiscoveryDone = false;
     _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] RPC discovery refreshed — will re-query on next tick'],
+      logs: [
+        ..._state.logs,
+        '[INFO] RPC discovery refreshed — will re-query on next tick'
+      ],
     ));
   }
 
@@ -2021,18 +2169,24 @@ PARAMETER num_batch 512
         final connected = wsState == GatewayConnectionState.connected;
         if (connected) _pairingResolveAttempted = false; // Reset on success
         if (!connected) {
-          _sessionCleanedThisConnection = false; // Allow cleanup on next reconnect
-          _rpcDiscoveryDone = false; // Bug 1 fix: Reset RPC discovery flag on WS disconnect
+          _sessionCleanedThisConnection =
+              false; // Allow cleanup on next reconnect
+          _rpcDiscoveryDone =
+              false; // Bug 1 fix: Reset RPC discovery flag on WS disconnect
         }
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
           logs: connected
-              ? [..._state.logs, '[INFO] WebSocket connected (session: ${_connection?.mainSessionKey ?? 'pending'})']
+              ? [
+                  ..._state.logs,
+                  '[INFO] WebSocket connected (session: ${_connection?.mainSessionKey ?? 'pending'})'
+                ]
               : [..._state.logs, '[WARN] WebSocket disconnected'],
         ));
       });
       // Listen for 1008 pairing required events from the gateway
-      _connection!.pairingRequiredStream.listen((requestId) => _handleOperatorPairingRequired(requestId));
+      _connection!.pairingRequiredStream
+          .listen((requestId) => _handleOperatorPairingRequired(requestId));
       // Reset backoff only for brand-new connection objects, not on every
       // health tick — otherwise the exponential backoff never accumulates.
       _connection!.resetReconnectCounter();
@@ -2044,11 +2198,17 @@ PARAMETER num_batch 512
     if (ok) {
       _updateState(_state.copyWith(
         isWebsocketConnected: true,
-        logs: [..._state.logs, '[INFO] WebSocket handshake complete (session: ${_connection!.mainSessionKey ?? 'main'})'],
+        logs: [
+          ..._state.logs,
+          '[INFO] WebSocket handshake complete (session: ${_connection!.mainSessionKey ?? 'main'})'
+        ],
       ));
     } else {
       _updateState(_state.copyWith(
-        logs: [..._state.logs, '[WARN] WebSocket connect failed — will retry on next health tick'],
+        logs: [
+          ..._state.logs,
+          '[WARN] WebSocket connect failed — will retry on next health tick'
+        ],
       ));
     }
     return ok;
@@ -2062,7 +2222,8 @@ PARAMETER num_batch 512
     await clearDeviceToken();
 
     if (requestId != null && requestId.isNotEmpty) {
-      _addActivity('[INFO] Pairing required (1008) — auto-approving operator $requestId...');
+      _addActivity(
+          '[INFO] Pairing required (1008) — auto-approving operator $requestId...');
       try {
         await NativeBridge.approveDevice(requestId);
         await Future.delayed(const Duration(milliseconds: 1500));
@@ -2085,7 +2246,8 @@ PARAMETER num_batch 512
   }
 
   Future<void> _clearOperatorDeviceRecord(String deviceId) async {
-    _addActivity('[INFO] Pairing required — clearing stale operator device record...');
+    _addActivity(
+        '[INFO] Pairing required — clearing stale operator device record...');
     try {
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
@@ -2094,21 +2256,21 @@ PARAMETER num_batch 512
       );
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(GatewayConnection.prefDeviceToken);
-      _addActivity('[INFO] Operator device record cleared — reconnecting fresh');
+      _addActivity(
+          '[INFO] Operator device record cleared — reconnecting fresh');
     } catch (e) {
       _addActivity('[WARN] Could not clear operator device record: $e');
     }
   }
 
   Future<void> _checkHealth() async {
-
     // ── Re-entrancy guard ────────────────────────────────────────────────
     // Prevent overlapping health ticks. Each tick can involve PRoot calls
     // and WS handshakes that take several seconds. Without this guard,
     // timer ticks pile up and cause cascading stalls.
     if (_healthCheckInFlight) return;
     _healthCheckInFlight = true;
-    
+
     // Add process validation before health checks
     unawaited(_validateGatewayProcess());
 
@@ -2129,7 +2291,8 @@ PARAMETER num_batch 512
           ));
           // Eagerly warm the dashboard auth token in the background so that
           // opening WebDashboardScreen feels instant (token is already cached).
-          unawaited(fetchAuthenticatedDashboardUrl(force: false).catchError((_) => null));
+          unawaited(fetchAuthenticatedDashboardUrl(force: false)
+              .catchError((_) => null));
           // After gateway (re)start, only re-probe Ollama when the selected
           // model is local. Cloud/default users should not hit the hub path.
           if (!_state.isOllamaRunning) {
@@ -2149,7 +2312,10 @@ PARAMETER num_batch 512
               .timeout(const Duration(seconds: 5));
         } catch (_) {
           _updateState(_state.copyWith(
-            logs: [..._state.logs, '[WARN] Token retrieval timed out — skipping WS/RPC this tick'],
+            logs: [
+              ..._state.logs,
+              '[WARN] Token retrieval timed out — skipping WS/RPC this tick'
+            ],
           ));
           return; // Skip WS + RPC work; next tick will retry
         }
@@ -2174,8 +2340,8 @@ PARAMETER num_batch 512
           _rpcDiscoveryDone = true; // set first so a timeout doesn't re-run
 
           try {
-            final healthResult = await invoke('health')
-                .timeout(const Duration(seconds: 8));
+            final healthResult =
+                await invoke('health').timeout(const Duration(seconds: 8));
             final healthData = healthResult.containsKey('payload')
                 ? healthResult['payload']
                 : healthResult;
@@ -2183,7 +2349,10 @@ PARAMETER num_batch 512
                 (healthData['ok'] == true || healthData['health'] != null)) {
               _updateState(_state.copyWith(
                 detailedHealth: healthData,
-                logs: [..._state.logs, '[INFO] Health RPC: ok=${healthData['ok'] ?? healthData['health']}'],
+                logs: [
+                  ..._state.logs,
+                  '[INFO] Health RPC: ok=${healthData['ok'] ?? healthData['health']}'
+                ],
               ));
             }
           } catch (_) {
@@ -2205,7 +2374,9 @@ PARAMETER num_batch 512
                   ? skillsResult['payload']
                   : skillsResult;
               if (skillsData != null &&
-                  (skillsResult['ok'] == true || skillsData is Map || skillsData is List)) {
+                  (skillsResult['ok'] == true ||
+                      skillsData is Map ||
+                      skillsData is List)) {
                 // skills.status returns {skills: SkillInfo[]} — each entry has
                 // name, skillKey, description, eligible, disabled, etc.
                 final rawList = skillsData is List
@@ -2217,7 +2388,11 @@ PARAMETER num_batch 512
                   if (skill is Map) {
                     final mapped = Map<String, dynamic>.from(skill);
                     parsedSkills.add(mapped);
-                    final id = (mapped['skillKey'] ?? mapped['name'] ?? mapped['id'])?.toString().toLowerCase() ?? '';
+                    final id =
+                        (mapped['skillKey'] ?? mapped['name'] ?? mapped['id'])
+                                ?.toString()
+                                .toLowerCase() ??
+                            '';
                     if (id.isNotEmpty) parsedIds.add(id);
                   } else if (skill is String) {
                     parsedSkills.add({'id': skill, 'name': skill});
@@ -2226,7 +2401,10 @@ PARAMETER num_batch 512
                 }
                 _updateState(_state.copyWith(
                   activeSkills: parsedSkills,
-                  logs: [..._state.logs, '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'],
+                  logs: [
+                    ..._state.logs,
+                    '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'
+                  ],
                 ));
               }
             } catch (_) {}
@@ -2236,13 +2414,15 @@ PARAMETER num_batch 512
           try {
             final cfg = await _readConfig();
             if (cfg['tools'] is Map && cfg['tools']['allow'] is List) {
-              final toolsList = (cfg['tools']['allow'] as List).map((e) => e.toString()).toList();
+              final toolsList = (cfg['tools']['allow'] as List)
+                  .map((e) => e.toString())
+                  .toList();
               _updateState(_state.copyWith(capabilities: toolsList));
             } else {
-               _updateState(_state.copyWith(capabilities: []));
+              _updateState(_state.copyWith(capabilities: []));
             }
           } catch (_) {
-             _updateState(_state.copyWith(capabilities: []));
+            _updateState(_state.copyWith(capabilities: []));
           }
 
           // Re-register device skills so the AI always has the current enabled set.
@@ -2251,9 +2431,11 @@ PARAMETER num_batch 512
       }
     } catch (e) {
       _consecutiveFailures++;
-      if (_state.status == GatewayStatus.starting || _state.status == GatewayStatus.running) {
-        _addActivity('[HEALTH] Probe failed ($_consecutiveFailures/3): ${e.toString().split('\n').first}');
-        
+      if (_state.status == GatewayStatus.starting ||
+          _state.status == GatewayStatus.running) {
+        _addActivity(
+            '[HEALTH] Probe failed ($_consecutiveFailures/3): ${e.toString().split('\n').first}');
+
         if (_consecutiveFailures >= 3 && !_isAutoHealingInProgress) {
           _triggerPassiveAutoHeal();
         }
@@ -2289,7 +2471,6 @@ PARAMETER num_batch 512
       return false;
     }
   }
-
 
   /// Checks if the Ollama daemon is authenticated with ollama.com.
   /// Uses multiple strategies because the PRoot credential file path varies
@@ -2328,7 +2509,9 @@ PARAMETER num_batch 512
           return false;
         }
         // If we get actual model output or "NAME" header, user IS signed in
-        if (lower.contains('name') || lower.contains(':') || result.trim().isNotEmpty) {
+        if (lower.contains('name') ||
+            lower.contains(':') ||
+            result.trim().isNotEmpty) {
           _addActivity('[AUTH] ollama list → signed in (live probe)');
           return true;
         }
@@ -2348,7 +2531,8 @@ PARAMETER num_batch 512
   ///                is overriding it (fundamental gateway limitation).
   ///                WS fallback: direct :11434 with options.num_ctx when WS fails.
   /// • cloud      → WS chat.send → gateway agent loop → visible in dashboard
-  Stream<String> sendMessage(String message, {
+  Stream<String> sendMessage(
+    String message, {
     String? model,
     List<Map<String, dynamic>>? conversationHistory,
   }) async* {
@@ -2382,9 +2566,9 @@ PARAMETER num_batch 512
 
     if (token == null || token.isEmpty) {
       yield '[Error] Gateway is not running.\n\n'
-            'The Agent Hub (gateway) needs to be started before you can chat.\n\n'
-            '**Go to Local LLM page and tap the Start button on the Agent Hub**, '
-            'then try again.';
+          'The Agent Hub (gateway) needs to be started before you can chat.\n\n'
+          '**Go to Local LLM page and tap the Start button on the Agent Hub**, '
+          'then try again.';
       return;
     }
 
@@ -2417,17 +2601,22 @@ PARAMETER num_batch 512
     if (isLocalOllama) {
       try {
         // /proc/meminfo is readable directly from Android — no PRoot needed.
-        final meminfo = await File('/proc/meminfo').readAsString()
-            .catchError((_) => '');
-        final totalMb = _parseMemKbLineToMb(
-            meminfo.split('\n').firstWhere((l) => l.startsWith('MemTotal:'), orElse: () => ''));
-        final availMb = _parseMemAvailableMb(
-            meminfo.split('\n').firstWhere((l) => l.startsWith('MemAvailable:'), orElse: () => ''));
-        final swapMb = _parseMemKbLineToMb(
-            meminfo.split('\n').firstWhere((l) => l.startsWith('SwapFree:'), orElse: () => ''));
-        _addActivity('[MEM] Total: ${totalMb}MB | Available: ${availMb}MB | Swap: ${swapMb}MB');
+        final meminfo =
+            await File('/proc/meminfo').readAsString().catchError((_) => '');
+        final totalMb = _parseMemKbLineToMb(meminfo
+            .split('\n')
+            .firstWhere((l) => l.startsWith('MemTotal:'), orElse: () => ''));
+        final availMb = _parseMemAvailableMb(meminfo.split('\n').firstWhere(
+            (l) => l.startsWith('MemAvailable:'),
+            orElse: () => ''));
+        final swapMb = _parseMemKbLineToMb(meminfo
+            .split('\n')
+            .firstWhere((l) => l.startsWith('SwapFree:'), orElse: () => ''));
+        _addActivity(
+            '[MEM] Total: ${totalMb}MB | Available: ${availMb}MB | Swap: ${swapMb}MB');
         if (availMb < 1100) {
-          _addActivity('[MEM] ⚠ Only ${availMb}MB free — need ~1.1GB for Qwen2.5-1.5B. Inference may crash.');
+          _addActivity(
+              '[MEM] ⚠ Only ${availMb}MB free — need ~1.1GB for Qwen2.5-1.5B. Inference may crash.');
         } else if (availMb < 1500) {
           _addActivity('[MEM] △ ${availMb}MB free — tight but may work');
         }
@@ -2435,23 +2624,27 @@ PARAMETER num_batch 512
       // Check what Ollama has loaded — also determines cold-start timeout.
       // A failed /api/ps means Ollama isn't running yet (ollamaReachable stays false).
       try {
-        final psResp = await http.get(Uri.parse('http://127.0.0.1:11434/api/ps'))
+        final psResp = await http
+            .get(Uri.parse('http://127.0.0.1:11434/api/ps'))
             .timeout(const Duration(seconds: 3));
         if (psResp.statusCode == 200) {
           ollamaReachable = true;
           final psData = jsonDecode(psResp.body) as Map<String, dynamic>?;
           final loadedModels = psData?['models'] as List?;
           if (loadedModels != null && loadedModels.isNotEmpty) {
-            final names = loadedModels.map((m) => (m as Map)['name'] ?? '?').join(', ');
+            final names =
+                loadedModels.map((m) => (m as Map)['name'] ?? '?').join(', ');
             _addActivity('[MEM] Ollama loaded: $names');
             ollamaColdStart = false; // model is already in memory
           } else {
-            _addActivity('[MEM] Ollama: no model cached (cold start — using extended timeout)');
+            _addActivity(
+                '[MEM] Ollama: no model cached (cold start — using extended timeout)');
           }
         }
       } catch (_) {
         // /api/ps timeout or connection refused → Ollama not running
-        _addActivity('[MEM] ✗ Ollama not reachable at :11434 — start it from Local LLM Hub');
+        _addActivity(
+            '[MEM] ✗ Ollama not reachable at :11434 — start it from Local LLM Hub');
       }
 
       // Pre-send health gate: if Ollama is completely down, fail fast instead of
@@ -2488,7 +2681,8 @@ PARAMETER num_batch 512
       if (isLocalOllama) {
         // WS fallback: direct local Ollama — no dashboard, but inference still works.
         final ollamaModel = model.substring('ollama/'.length);
-        _addActivity('[CHAT] ⚠ WS unavailable — direct fallback for $ollamaModel');
+        _addActivity(
+            '[CHAT] ⚠ WS unavailable — direct fallback for $ollamaModel');
         yield* sendMessageHttp(message,
             model: ollamaModel,
             directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -2496,7 +2690,9 @@ PARAMETER num_batch 512
             ollamaOptions: {'num_ctx': 1024});
       } else {
         // Cloud Ollama fallback: route via HTTP gateway proxy (same as cloud models).
-        yield* sendMessageHttp(message, model: model, token: token,
+        yield* sendMessageHttp(message,
+            model: model,
+            token: token,
             conversationHistory: conversationHistory);
       }
       return;
@@ -2508,14 +2704,15 @@ PARAMETER num_batch 512
     final chunkController = StreamController<String>();
 
     // Use agent ID as sessionKey if applicable, otherwise fallback to mainSessionKey
-    final sessionKey = model.startsWith('agent/') 
-        ? model.substring(6) 
+    final sessionKey = model.startsWith('agent/')
+        ? model.substring(6)
         : (_connection!.mainSessionKey ?? 'main');
 
     // Cold-start (model not yet in RAM) gets 3 min; warm gets 2 min; cloud 90 s.
     // Local Ollama: extended timeout for cold-start model loading.
     // Cloud Ollama: treat like any cloud model (90s) — no local load delay.
-    final timeoutMs = isLocalOllama ? (ollamaColdStart ? 180000 : 120000) : 90000;
+    final timeoutMs =
+        isLocalOllama ? (ollamaColdStart ? 180000 : 120000) : 90000;
 
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
@@ -2545,7 +2742,8 @@ PARAMETER num_batch 512
           // Gateway-level error (e.g. rate limit, provider failure)
           if (type == 'error') {
             final payload = frame['payload'] as Map<String, dynamic>?;
-            final errMsg = payload?['message'] as String? ?? 'API Error encountered';
+            final errMsg =
+                payload?['message'] as String? ?? 'API Error encountered';
             _addActivity('[CHAT] ✗ $errMsg');
             if (!chunkController.isClosed) {
               chunkController.add('[Error] $errMsg');
@@ -2557,8 +2755,12 @@ PARAMETER num_batch 512
           // Any frame carrying a root-level 'error' field
           if (frame.containsKey('error') && frame['error'] != null) {
             final errObj = frame['error'];
-            final errStr = errObj is Map ? (errObj['message']?.toString() ?? errObj.toString()) : errObj.toString();
-            if (errStr.toLowerCase().contains('rate limit') || errStr.toLowerCase().contains('api') || errStr.toLowerCase().contains('invalid')) {
+            final errStr = errObj is Map
+                ? (errObj['message']?.toString() ?? errObj.toString())
+                : errObj.toString();
+            if (errStr.toLowerCase().contains('rate limit') ||
+                errStr.toLowerCase().contains('api') ||
+                errStr.toLowerCase().contains('invalid')) {
               _addActivity('[CHAT] ✗ $errStr');
               if (!chunkController.isClosed) {
                 chunkController.add('[Error] $errStr');
@@ -2608,9 +2810,10 @@ PARAMETER num_batch 512
 
           // Chat lifecycle events (final / aborted / error → close stream)
           if (type == 'event' && frame['event'] == 'chat') {
-            final Map<String, dynamic> data = (frame['payload'] as Map<String, dynamic>?)
-                ?? (frame['data'] as Map<String, dynamic>?)
-                ?? frame;
+            final Map<String, dynamic> data =
+                (frame['payload'] as Map<String, dynamic>?) ??
+                    (frame['data'] as Map<String, dynamic>?) ??
+                    frame;
             final state = data['state'] as String?;
             // Guard: only close on final/aborted once our agent run has started.
             // event chat frames don't carry a run ID, so we use runStarted (set from
@@ -2620,7 +2823,8 @@ PARAMETER num_batch 512
             if ((state == 'final' || state == 'aborted' || state == 'error') &&
                 (runStarted || !firstToken)) {
               if (!chunkController.isClosed) {
-                if (isOllama) _addActivity('[CHAT] ✓ Hub stream finished (state: $state)');
+                if (isOllama)
+                  _addActivity('[CHAT] ✓ Hub stream finished (state: $state)');
                 chunkController.close();
               }
             }
@@ -2629,15 +2833,20 @@ PARAMETER num_batch 512
           // Agent events — streaming text deltas and lifecycle
           if (type == 'event' && frame['event'] == 'agent') {
             final payload = frame['payload'] as Map<String, dynamic>?;
-            final agentRun = frame['run'] as String? ?? payload?['run'] as String?;
-            final innerData = payload?['data'] as Map<String, dynamic>?
-                ?? frame['data'] as Map<String, dynamic>?;
+            final agentRun =
+                frame['run'] as String? ?? payload?['run'] as String?;
+            final innerData = payload?['data'] as Map<String, dynamic>? ??
+                frame['data'] as Map<String, dynamic>?;
             final stream = (payload?['stream'] ?? frame['stream']) as String?;
 
             if (stream == 'assistant') {
               // Filter text from runs other than ours (activeRunId updated from phase=start)
-              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
-              final text = (innerData?['text'] ?? payload?['text'] ?? frame['text']) as String?;
+              if (activeRunId != null &&
+                  agentRun != null &&
+                  agentRun != activeRunId) return;
+              final text = (innerData?['text'] ??
+                  payload?['text'] ??
+                  frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
                 if (firstToken) {
                   firstToken = false;
@@ -2646,32 +2855,49 @@ PARAMETER num_batch 512
                 chunkController.add(text);
               }
             } else if (stream == 'tool_use') {
-              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
-              final name = (innerData?['name'] ?? payload?['name'] ?? frame['name']) as String? ?? '';
+              if (activeRunId != null &&
+                  agentRun != null &&
+                  agentRun != activeRunId) return;
+              final name = (innerData?['name'] ??
+                      payload?['name'] ??
+                      frame['name']) as String? ??
+                  '';
               final input = innerData?['input'] ?? payload?['input'];
               if (name.isNotEmpty && !chunkController.isClosed) {
-                chunkController.add('\x00TOOL_USE:$name:${jsonEncode(input ?? {})}\x00');
+                chunkController
+                    .add('\x00TOOL_USE:$name:${jsonEncode(input ?? {})}\x00');
               }
             } else if (stream == 'tool_result') {
-              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
-              final name = (innerData?['name'] ?? payload?['name'] ?? frame['name']) as String? ?? 'tool';
-              final result = innerData?['result'] ?? payload?['result'] ?? innerData?['output'] ?? payload?['output'];
+              if (activeRunId != null &&
+                  agentRun != null &&
+                  agentRun != activeRunId) return;
+              final name = (innerData?['name'] ??
+                      payload?['name'] ??
+                      frame['name']) as String? ??
+                  'tool';
+              final result = innerData?['result'] ??
+                  payload?['result'] ??
+                  innerData?['output'] ??
+                  payload?['output'];
 
               // Gateway TTS: intercept tts tool results that contain a MEDIA: path.
               // The gateway sherpa-onnx-tts skill returns a plain string like:
               //   "MEDIA:/tmp/openclaw/tts-xxxxx/voice-xxxxxxxxxx.mp3"
               // Convert to an HTTP URL served by the gateway's media endpoint.
               if (name == 'tts') {
-                final mediaStr = result is String ? result : result?.toString() ?? '';
+                final mediaStr =
+                    result is String ? result : result?.toString() ?? '';
                 _addActivity('[TTS] gateway audio result: $mediaStr');
                 if (mediaStr.startsWith('MEDIA:')) {
-                  final relativePath = mediaStr.substring('MEDIA:/tmp/openclaw/'.length);
-                  final audioUrl = 'http://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}/__openclaw__/media/$relativePath';
+                  final relativePath =
+                      mediaStr.substring('MEDIA:/tmp/openclaw/'.length);
+                  final audioUrl =
+                      'http://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}/__openclaw__/media/$relativePath';
                   _addActivity('[TTS] serving audio at $audioUrl');
-                  
+
                   // Primary: route through unified TtsService facade
                   TtsService().speakUrl(audioUrl);
-                  
+
                   // Optional: trigger UI callback if any
                   onGatewayTtsAudio?.call(audioUrl);
                   // Don't forward tts tool result to the chat stream — it's audio, not display text.
@@ -2680,19 +2906,26 @@ PARAMETER num_batch 512
               }
 
               if (!chunkController.isClosed) {
-                chunkController.add('\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
+                chunkController.add(
+                    '\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
               }
             } else if (stream == 'lifecycle') {
-              final phase = (innerData?['phase'] ?? payload?['phase'] ?? frame['phase']) as String?;
+              final phase = (innerData?['phase'] ??
+                  payload?['phase'] ??
+                  frame['phase']) as String?;
               if (phase == 'start' && !runStarted) {
                 // For queued messages the ACK runId differs from the actual run ID in events.
                 // Capture the real run ID from the first phase=start we see after our ACK.
                 if (agentRun != null) activeRunId = agentRun;
                 runStarted = true;
               } else if (phase == 'error') {
-                if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
-                final rawError = (innerData?['error'] ?? payload?['error'] ?? frame['error'])
-                    ?.toString() ?? 'Unknown API error';
+                if (activeRunId != null &&
+                    agentRun != null &&
+                    agentRun != activeRunId) return;
+                final rawError =
+                    (innerData?['error'] ?? payload?['error'] ?? frame['error'])
+                            ?.toString() ??
+                        'Unknown API error';
                 final String error;
                 if (rawError.toLowerCase().contains('does not support tools')) {
                   error = 'This model does not support tool use. '
@@ -2711,26 +2944,35 @@ PARAMETER num_batch 512
               // Real provider errors surface through stream=lifecycle phase=error.
               final reason = (payload?['reason'] ?? frame['reason']) as String?;
               if (reason == 'seq gap') return;
-              if (activeRunId != null && agentRun != null && agentRun != activeRunId) return;
-              final rawErr = (innerData?['error'] ?? payload?['error'] ?? payload?['reason']
-                  ?? frame['reason'] ?? frame['error'])?.toString() ?? '';
+              if (activeRunId != null &&
+                  agentRun != null &&
+                  agentRun != activeRunId) return;
+              final rawErr = (innerData?['error'] ??
+                          payload?['error'] ??
+                          payload?['reason'] ??
+                          frame['reason'] ??
+                          frame['error'])
+                      ?.toString() ??
+                  '';
               // Auth errors from cloud Ollama models — surface as actionable guidance.
-              final isAuthError = reason == 'auth'
-                  || rawErr.toLowerCase().contains('auth')
-                  || rawErr.toLowerCase().contains('surface_error');
+              final isAuthError = reason == 'auth' ||
+                  rawErr.toLowerCase().contains('auth') ||
+                  rawErr.toLowerCase().contains('surface_error');
               if (isAuthError) {
                 const authMsg = 'Cloud model sign-in required.\n\n'
                     'Go to Local LLM → Cloud Models and tap "Sign in to Ollama", '
                     'or run `ollama signin` in the Terminal tab.\n\n'
                     'Once signed in, tap Refresh on the auth status card and try again.';
-                _addActivity('[CHAT] ✗ Cloud auth required (ollama signin needed)');
+                _addActivity(
+                    '[CHAT] ✗ Cloud auth required (ollama signin needed)');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $authMsg');
                   chunkController.close();
                 }
                 return;
               }
-              final error = rawErr.isNotEmpty ? rawErr
+              final error = rawErr.isNotEmpty
+                  ? rawErr
                   : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
               _addActivity('[CHAT] ✗ $error');
               if (!chunkController.isClosed) {
@@ -2769,7 +3011,7 @@ PARAMETER num_batch 512
       if (isLocalOllama) {
         _addActivity('[CHAT] ✗ Timed out after 600 s');
         yield '[Error] Ollama timed out (600 s). The model runner may have crashed — '
-              'check hub logs for OOM errors.';
+            'check hub logs for OOM errors.';
       } else {
         yield '[Error] Gateway chat timed out after 90 seconds.';
       }
@@ -2782,18 +3024,20 @@ PARAMETER num_batch 512
   }
 
   /// Invoke a generic RPC method on the gateway.
-  Future<Map<String, dynamic>> invoke(String method, [Map<String, dynamic>? params]) async {
-    if (_connection == null || _connection!.state != GatewayConnectionState.connected) {
+  Future<Map<String, dynamic>> invoke(String method,
+      [Map<String, dynamic>? params]) async {
+    if (_connection == null ||
+        _connection!.state != GatewayConnectionState.connected) {
       // Need token to connect
       String? token;
       try {
         token = await retrieveTokenFromConfig();
       } catch (_) {}
-      
+
       if (token == null || token.isEmpty) {
         throw Exception('Gateway not connected and no auth token available.');
       }
-      
+
       _connection ??= GatewayConnection();
       final ok = await _connection!.connect(token);
       if (!ok) throw Exception('Failed to connect to gateway.');
@@ -2806,22 +3050,27 @@ PARAMETER num_batch 512
       'id': requestId,
     });
 
-    final frame = await responseStream.firstWhere(
-      (f) => f['type'] == 'res' || f['type'] == 'error',
-    ).timeout(const Duration(seconds: 30));
+    final frame = await responseStream
+        .firstWhere(
+          (f) => f['type'] == 'res' || f['type'] == 'error',
+        )
+        .timeout(const Duration(seconds: 30));
     return frame;
   }
 
   /// HTTP fallback: POST to /v1/chat/completions with STREAMING support.
-  /// 
+  ///
   /// Used for specific model overrides (like Local LLM) where the WS RPC
   /// parameters are too rigid. Now supports real-time text deltas.
-  Stream<String> sendMessageHttp(String message, {
+  Stream<String> sendMessageHttp(
+    String message, {
     String? model,
     String? token,
     List<Map<String, dynamic>>? conversationHistory,
-    String? directUrl, // if set, bypass the gateway and POST directly to this URL
-    Map<String, dynamic>? ollamaOptions, // Ollama-specific inference options (e.g. num_ctx)
+    String?
+        directUrl, // if set, bypass the gateway and POST directly to this URL
+    Map<String, dynamic>?
+        ollamaOptions, // Ollama-specific inference options (e.g. num_ctx)
   }) async* {
     model = await _resolveModel(model);
 
@@ -2837,9 +3086,15 @@ PARAMETER num_batch 512
       }
     }
 
-    final messages = conversationHistory != null && conversationHistory.isNotEmpty
-        ? [...conversationHistory, {'role': 'user', 'content': message}]
-        : [{'role': 'user', 'content': message}];
+    final messages =
+        conversationHistory != null && conversationHistory.isNotEmpty
+            ? [
+                ...conversationHistory,
+                {'role': 'user', 'content': message}
+              ]
+            : [
+                {'role': 'user', 'content': message}
+              ];
 
     // Always use the actual model name. The old 'local-llm' override was for
     // llama-server, but that path exits early before reaching here. directUrl
@@ -2872,7 +3127,8 @@ PARAMETER num_batch 512
         _addActivity('[CHAT] → Sending to $effectiveModel');
       }
 
-      final streamedResponse = await client.send(request).timeout(timeoutDuration);
+      final streamedResponse =
+          await client.send(request).timeout(timeoutDuration);
 
       if (streamedResponse.statusCode != 200) {
         final body = await streamedResponse.stream.bytesToString();
@@ -2899,7 +3155,8 @@ PARAMETER num_batch 512
           .transform(const LineSplitter())) {
         if (chunk.isEmpty) continue;
         rawChunks++;
-        if (isDirectLlama && rawChunks <= 3) rawSamples.add(chunk.length > 120 ? chunk.substring(0, 120) : chunk);
+        if (isDirectLlama && rawChunks <= 3)
+          rawSamples.add(chunk.length > 120 ? chunk.substring(0, 120) : chunk);
 
         String? rawJson;
         if (chunk.startsWith('data: ')) {
@@ -2917,11 +3174,14 @@ PARAMETER num_batch 512
           final json = jsonDecode(rawJson) as Map<String, dynamic>;
 
           // OpenAI-compat streaming: choices[0].delta.content
-          final delta = (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
+          final delta =
+              (json['choices'] as List?)?[0]?['delta']?['content'] as String?;
           // OpenAI-compat non-streaming (single chunk): choices[0].message.content
-          final messageContent = (json['choices'] as List?)?[0]?['message']?['content'] as String?;
+          final messageContent =
+              (json['choices'] as List?)?[0]?['message']?['content'] as String?;
           // Ollama native NDJSON: message.content + done flag
-          final nativeContent = (json['message'] as Map?)?['content'] as String?;
+          final nativeContent =
+              (json['message'] as Map?)?['content'] as String?;
           final done = json['done'] as bool? ?? false;
 
           final token = (delta != null && delta.isNotEmpty)
@@ -2958,7 +3218,7 @@ PARAMETER num_batch 512
       if (isDirectLlama) {
         _addActivity('[CHAT] ✗ Timed out after 240 s');
         yield '[Error] Ollama timed out (240 s). '
-              'The device may be thermally throttled — try a shorter message or wait for it to cool.';
+            'The device may be thermally throttled — try a shorter message or wait for it to cool.';
       } else {
         yield '[Error] Gateway chat timed out.';
       }
@@ -2978,8 +3238,9 @@ PARAMETER num_batch 512
     String imageBase64, {
     String mimeType = 'image/jpeg',
   }) async* {
-    final effectivePrompt =
-        prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
+    final effectivePrompt = prompt.trim().isEmpty
+        ? 'Describe what you see in this image.'
+        : prompt.trim();
     final imageBytes = base64Decode(imageBase64);
     yield* LocalLlmService().analyseVideoFrames([imageBytes], effectivePrompt);
   }
@@ -3039,8 +3300,9 @@ PARAMETER num_batch 512
       return;
     }
 
-    final effectivePrompt =
-        prompt.trim().isEmpty ? 'Describe what is happening in this video.' : prompt.trim();
+    final effectivePrompt = prompt.trim().isEmpty
+        ? 'Describe what is happening in this video.'
+        : prompt.trim();
 
     try {
       final response = await http
@@ -3113,8 +3375,9 @@ PARAMETER num_batch 512
       return;
     }
 
-    final effectivePrompt =
-        prompt.trim().isEmpty ? 'Describe what you see in this image.' : prompt.trim();
+    final effectivePrompt = prompt.trim().isEmpty
+        ? 'Describe what you see in this image.'
+        : prompt.trim();
 
     try {
       final response = await http
@@ -3168,8 +3431,7 @@ PARAMETER num_batch 512
       yield '[Error] Cloud vision error: $e';
     }
   }
-  
-  
+
   /// Ensure agents.defaults.model.primary in openclaw.json matches the
   /// user-selected [model]. Returns a map of changed metadata if the
   /// config was updated, allowing for hot-sync via sessions.patch.
@@ -3181,26 +3443,26 @@ PARAMETER num_batch 512
 
     final Map<String, dynamic> changedMetadata = {};
     final config = await _readConfig();
-    
+
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
     config['agents']['defaults']['model'] ??= {};
-    
+
     final current = config['agents']['defaults']['model']['primary'] as String?;
     bool needsSync = false;
-    
+
     if (current != model) {
       config['agents']['defaults']['model']['primary'] = model;
       needsSync = true;
     }
-    
+
     if (needsSync) {
       await _writeConfig(config);
       _addActivity('[MODEL] syncToConfig: $model');
-      
+
       changedMetadata['primaryModel'] = model;
     }
-    
+
     return changedMetadata;
   }
 
@@ -3230,7 +3492,7 @@ PARAMETER num_batch 512
       }
       return 'openclaw';
     }
-    
+
     return m;
   }
 
@@ -3258,7 +3520,8 @@ PARAMETER num_batch 512
         notificationText: "Keeping AI agent alive in background",
         callback: () async {},
       );
-      _addActivity('[SYS] Foreground service started (better battery + stability)');
+      _addActivity(
+          '[SYS] Foreground service started (better battery + stability)');
     } catch (e) {
       _addActivity('[SYS] Foreground service not available: $e');
     }
@@ -3276,17 +3539,35 @@ PARAMETER num_batch 512
   /// We run this TWICE with a delay to ensure it survives any background touches
   /// by the 'onboard' wizard or internal gateway reloads.
   Future<void> hardenGatewayConfigViaCli() async {
+    try {
+      final config = await _readConfig();
+      final origins =
+          (config['gateway']?['controlUi']?['allowedOrigins'] as List?)
+                  ?.cast<String>() ??
+              [];
+
+      // ONLY apply the patch if '*' or 'n/a' is missing.
+      // This prevents the "infinite reload loop" where our patch triggers a reload
+      // which triggers another hardening sweep.
+      if (origins.contains('*') && origins.contains('n/a')) {
+        debugPrint(
+            '✅ Hardening already present. Skipping sweep to prevent reload loop.');
+        return;
+      }
+    } catch (_) {}
+
     // 1. Initial immediate sweep
     await _applyHardeningPatch();
-    
-    // 2. Secondary sweep after 2s to win any race conditions with the wizard/onboard
-    unawaited(Future.delayed(const Duration(seconds: 2), () => _applyHardeningPatch()));
+
+    // 2. Secondary sweep after 5s (longer delay to ensure gateway is fully settled)
+    unawaited(Future.delayed(
+        const Duration(seconds: 5), () => _applyHardeningPatch()));
   }
 
   Future<void> _applyHardeningPatch() async {
     // Fetch current token so we don't clobber it if the patch merge is shallow
     final currentToken = await retrieveTokenFromConfig();
-    
+
     final patchJson = '''
 {
   "gateway": {
@@ -3314,11 +3595,11 @@ PARAMETER num_batch 512
     try {
       await NativeBridge.runInProot(
         'cat > /tmp/harden.json << \'EOF\'\n' +
-        patchJson +
-        '\nEOF && ' +
-        'openclaw config patch --file /tmp/harden.json && ' +
-        'rm -f /tmp/harden.json && ' +
-        'openclaw reload',
+            patchJson +
+            '\nEOF && ' +
+            'openclaw config patch --file /tmp/harden.json && ' +
+            'rm -f /tmp/harden.json && ' +
+            'openclaw reload',
         timeout: 30,
       );
       debugPrint('✅ Hardening sweep (config patch) applied successfully');

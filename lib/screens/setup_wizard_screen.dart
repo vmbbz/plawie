@@ -40,19 +40,19 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   void initState() {
     super.initState();
     _loadPrefs();
-    
+
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: Curves.easeInOut,
       ),
     );
-    
+
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
@@ -62,10 +62,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         curve: Curves.easeOutCubic,
       ),
     );
-    
+
     _animationController.forward();
   }
-  
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -135,7 +135,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                           const SizedBox(height: 32),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.only(left: 14, right: 14),
+                              padding:
+                                  const EdgeInsets.only(left: 14, right: 14),
                               child: _buildSteps(state, theme, isDark),
                             ),
                           ),
@@ -160,7 +161,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
 
   Widget _buildPremiumHeader(bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -177,14 +178,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark 
+          color: isDark
               ? AppColors.statusGreen.withOpacity(0.3)
               : AppColors.lightBorder.withOpacity(0.5),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: isDark 
+            color: isDark
                 ? Colors.black.withOpacity(0.3)
                 : Colors.black.withOpacity(0.1),
             blurRadius: 20,
@@ -204,6 +205,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 animated: true,
                 showGlow: true,
                 isGatewayRunning: isRunning,
+                isInstalling: _started,
               );
             },
           ),
@@ -233,7 +235,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   AppConstants.appMotto,
                   style: TextStyle(
                     fontSize: 14,
-                    color: isDark 
+                    color: isDark
                         ? AppColors.inverseText.withOpacity(0.7)
                         : AppColors.darkBg.withOpacity(0.7),
                     fontStyle: FontStyle.italic,
@@ -251,12 +253,12 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark 
+        color: isDark
             ? AppColors.darkSurface.withOpacity(0.6)
             : Colors.white.withOpacity(0.8),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark 
+          color: isDark
               ? AppColors.darkBorder.withOpacity(0.2)
               : AppColors.lightBorder.withOpacity(0.3),
           width: 1,
@@ -276,7 +278,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   ? 'Setting up the environment. This may take several minutes.'
                   : 'This will download Ubuntu, Node.js, and Plawie into a self-contained environment.',
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: isDark 
+                color: isDark
                     ? AppColors.inverseText.withOpacity(0.9)
                     : AppColors.darkBg.withOpacity(0.8),
                 height: 1.4,
@@ -290,7 +292,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
 
   Widget _buildErrorSection(SetupState state, ThemeData theme) {
     final errorMessage = state.error ?? 'Unknown error occurred';
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -334,7 +336,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: const Text('Error message copied to clipboard'),
+                        content:
+                            const Text('Error message copied to clipboard'),
                         duration: const Duration(seconds: 2),
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -388,15 +391,15 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       return Container(
         width: double.infinity,
         height: 56,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.statusGreen,
-                AppColors.statusGreen.withOpacity(0.8),
-              ],
-            ),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.statusGreen,
+              AppColors.statusGreen.withOpacity(0.8),
+            ],
+          ),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Material(
@@ -418,7 +421,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 22),
+                  const Icon(Icons.arrow_forward_rounded,
+                      color: Colors.white, size: 22),
                 ],
               ),
             ),
@@ -432,7 +436,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         width: double.infinity,
         height: 56,
         decoration: BoxDecoration(
-          color: provider.isRunning 
+          color: provider.isRunning
               ? (isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurfaceAlt)
               : AppColors.statusGreen,
           borderRadius: BorderRadius.circular(16),
@@ -460,8 +464,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 children: [
                   Icon(
                     provider.isRunning ? Icons.hourglass_empty : Icons.download,
-                    color: provider.isRunning 
-                        ? (isDark ? AppColors.inverseText.withOpacity(0.5) : AppColors.darkBg.withOpacity(0.5))
+                    color: provider.isRunning
+                        ? (isDark
+                            ? AppColors.inverseText.withOpacity(0.5)
+                            : AppColors.darkBg.withOpacity(0.5))
                         : Colors.white,
                     size: 20,
                   ),
@@ -469,8 +475,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   Text(
                     _started ? 'Retry Setup' : 'Begin Setup',
                     style: TextStyle(
-                      color: provider.isRunning 
-                          ? (isDark ? AppColors.inverseText.withOpacity(0.5) : AppColors.darkBg.withOpacity(0.5))
+                      color: provider.isRunning
+                          ? (isDark
+                              ? AppColors.inverseText.withOpacity(0.5)
+                              : AppColors.darkBg.withOpacity(0.5))
                           : Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -583,7 +591,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     );
   }
 
-  Widget _buildPackageTile(ThemeData theme, OptionalPackage package, bool isDark) {
+  Widget _buildPackageTile(
+      ThemeData theme, OptionalPackage package, bool isDark) {
     final installed = _pkgStatuses[package.id] ?? false;
 
     return Container(
@@ -604,14 +613,14 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark 
+          color: isDark
               ? AppColors.darkBorder.withOpacity(0.3)
               : AppColors.lightBorder.withOpacity(0.4),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: isDark 
+            color: isDark
                 ? Colors.black.withOpacity(0.2)
                 : Colors.black.withOpacity(0.08),
             blurRadius: 12,
@@ -638,10 +647,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                           AppColors.statusGreen.withOpacity(0.1),
                         ]
                       : [
-                          isDark 
+                          isDark
                               ? AppColors.darkSurfaceAlt.withOpacity(0.8)
                               : const Color(0xFFF1F3F4),
-                          isDark 
+                          isDark
                               ? AppColors.darkSurfaceAlt.withOpacity(0.6)
                               : const Color(0xFFE8EAED),
                         ],
@@ -650,7 +659,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 border: Border.all(
                   color: installed
                       ? AppColors.statusGreen.withOpacity(0.3)
-                      : (isDark 
+                      : (isDark
                           ? AppColors.darkBorder.withOpacity(0.2)
                           : AppColors.lightBorder.withOpacity(0.3)),
                   width: 1,
@@ -658,9 +667,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
               ),
               child: Icon(
                 package.icon,
-                color: installed 
+                color: installed
                     ? AppColors.statusGreen
-                    : (isDark 
+                    : (isDark
                         ? AppColors.inverseText.withOpacity(0.7)
                         : AppColors.darkBg.withOpacity(0.7)),
                 size: 24,
@@ -680,7 +689,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                           package.name,
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: isDark ? AppColors.inverseText : AppColors.darkBg,
+                            color: isDark
+                                ? AppColors.inverseText
+                                : AppColors.darkBg,
                             fontSize: 15,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -688,7 +699,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                       ),
                       if (installed) ...[
                         const SizedBox(width: 8),
-                        Icon(Icons.check_circle, color: AppColors.statusGreen, size: 14),
+                        Icon(Icons.check_circle,
+                            color: AppColors.statusGreen, size: 14),
                       ],
                     ],
                   ),
@@ -696,7 +708,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   Text(
                     package.description,
                     style: TextStyle(
-                      color: isDark 
+                      color: isDark
                           ? AppColors.inverseText.withOpacity(0.6)
                           : AppColors.darkBg.withOpacity(0.6),
                       fontSize: 12,
@@ -709,7 +721,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   Text(
                     package.estimatedSize,
                     style: TextStyle(
-                      color: isDark 
+                      color: isDark
                           ? AppColors.statusGreen.withOpacity(0.7)
                           : AppColors.statusGreen,
                       fontSize: 10,
@@ -761,7 +773,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     borderRadius: BorderRadius.circular(10),
                     onTap: () => _installPackage(package),
                     child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       child: Text(
                         'Install',
                         style: TextStyle(
@@ -783,9 +796,11 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   Future<void> _goToApp(BuildContext context) async {
     final prefs = PreferencesService();
     await prefs.init();
-    
+
     // If we have a dashboard URL and API key configured, go straight to Dashboard
-    if (prefs.dashboardUrl != null && prefs.dashboardUrl!.isNotEmpty && prefs.apiKeyConfigured) {
+    if (prefs.dashboardUrl != null &&
+        prefs.dashboardUrl!.isNotEmpty &&
+        prefs.apiKeyConfigured) {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => DashboardScreen()),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../app.dart';
+import '../../../constants.dart';
 import '../../../models/clawhub_skill.dart';
 import '../../../services/clawhub_service.dart';
 
@@ -98,7 +99,8 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
       setState(() {
         if (result != null) {
           _skill = result;
-        } else if (widget.initialName != null || widget.initialDescription != null) {
+        } else if (widget.initialName != null ||
+            widget.initialDescription != null) {
           // API didn't find this slug (partner/custom skill not on ClawHub registry).
           // Synthesize a skill object from the hardcoded card data so the sheet
           // shows the correct name and description rather than an empty card.
@@ -134,15 +136,15 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final name        = _skill?.name        ?? widget.initialName        ?? widget.slug;
+    final name = _skill?.name ?? widget.initialName ?? widget.slug;
     final description = _skill?.description ?? widget.initialDescription ?? '';
-    final version     = _skill?.version ?? '';
-    final author      = _skill?.author ?? _skill?.ownerHandle ?? '';
-    final stars       = _skill?.stars;
-    final downloads   = _skill?.downloadCount;
-    final installs    = _skill?.currentInstalls;
+    final version = _skill?.version ?? '';
+    final author = _skill?.author ?? _skill?.ownerHandle ?? '';
+    final stars = _skill?.stars;
+    final downloads = _skill?.downloadCount;
+    final installs = _skill?.currentInstalls;
     final ownerAvatar = _skill?.ownerAvatarUrl;
-    final color       = widget.accentColor;
+    final color = widget.accentColor;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.52,
@@ -206,8 +208,8 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                           if (version.isNotEmpty)
                             _badge('v$version', Colors.white24, Colors.white54),
                           if (widget.isInstalled)
-                            _badge('ACTIVE', color.withValues(alpha: 0.15),
-                                color),
+                            _badge(
+                                'ACTIVE', color.withValues(alpha: 0.15), color),
                         ],
                       ),
                     ],
@@ -293,7 +295,9 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                       radius: 14,
                       backgroundColor: color.withValues(alpha: 0.15),
                       child: Text(
-                        author.substring(0, min(1, author.length)).toUpperCase(),
+                        author
+                            .substring(0, min(1, author.length))
+                            .toUpperCase(),
                         style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -337,18 +341,20 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
             // ── Slug copy row ──────────────────────────────────────────────
             GestureDetector(
               onTap: () {
-                Clipboard.setData(
-                    ClipboardData(text: 'openclaw skills install ${widget.slug}'));
+                Clipboard.setData(ClipboardData(
+                    text: 'openclaw skills install ${widget.slug}'));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Install command copied!')),
                 );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 child: Row(
                   children: [
@@ -452,7 +458,8 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                                 color: Colors.white,
                               ))
                           : const Icon(Icons.download_rounded, size: 16),
-                      label: Text(_installing ? 'Installing…' : widget.installLabel),
+                      label: Text(
+                          _installing ? 'Installing…' : widget.installLabel),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: color,
                         foregroundColor: Colors.white,

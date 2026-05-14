@@ -217,7 +217,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.all(32),
+                      padding: EdgeInsets.zero,
                       child: AnimatedBuilder(
                         animation: _pulseAnimation,
                         builder: (context, child) {
@@ -226,11 +226,18 @@ class _SplashScreenState extends State<SplashScreen>
                             child: child,
                           );
                         },
-                        child: Image.asset(
-                          'assets/ic_launcher.png',
-                          width: 100,
-                          height: 100,
-                          fit: BoxFit.contain,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: Transform.scale(
+                            scale: 1.5, // Zoom into the icon to crop internal 'safe zone' padding
+                            child: Image.asset(
+                              'assets/ic_launcher.png',
+                              width: 140, 
+                              height: 140,
+                              fit: BoxFit.cover,
+                              filterQuality: FilterQuality.high,
+                            ),
+                          ),
                         ),
                       ),
                     ),

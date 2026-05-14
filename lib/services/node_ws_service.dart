@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
+import 'dart:io';
 import '../constants.dart';
 import '../models/node_frame.dart';
 
@@ -25,7 +27,8 @@ class NodeWsService {
 
   // Fires when the gateway closes with 1008 (pairing required).
   final _pairingRequiredController = StreamController<String?>.broadcast();
-  Stream<String?> get pairingRequiredStream => _pairingRequiredController.stream;
+  Stream<String?> get pairingRequiredStream =>
+      _pairingRequiredController.stream;
 
   /// Returns true if the WebSocket hasn't received any data for over 90s,
   /// indicating the connection is likely stale.
@@ -48,7 +51,14 @@ class NodeWsService {
     if (_url == null) return;
 
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(_url!));
+      // FIX: Explicitly send Origin header to resolve 1008 'origin-mismatch' errors.
+      // We use IOWebSocketChannel directly to pass custom headers.
+      final socket = await WebSocket.connect(
+        _url!,
+        headers: {'Origin': 'http://127.0.0.1:18789'},
+      ).timeout(const Duration(seconds: 5));
+
+      _channel = IOWebSocketChannel(socket);
       _socketCompleter = Completer<void>();
       _handshakeCompleter = Completer<void>();
       _lastActivity = DateTime.now();
@@ -58,23 +68,26 @@ class NodeWsService {
           _lastActivity = DateTime.now();
           try {
             final frame = NodeFrame.decode(data as String);
-            
+
             // Handle handshake (hello-ok)
-            if (frame.type == 'hello-ok' || (frame.payload?['type'] == 'hello-ok')) {
-              if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
+            if (frame.type == 'hello-ok' ||
+                (frame.payload?['type'] == 'hello-ok')) {
+              if (_handshakeCompleter != null &&
+                  !_handshakeCompleter!.isCompleted) {
                 _handshakeCompleter!.complete();
               }
               _connected = true;
               _reconnectAttempt = 0;
               _startPing();
-              
+
               // hello-ok is the response to the initial 'connect' request.
               // Some gateway versions include the original request ID, others don't.
               final requestId = frame.id;
-              if (requestId != null && _pendingRequests.containsKey(requestId)) {
+              if (requestId != null &&
+                  _pendingRequests.containsKey(requestId)) {
                 _pendingRequests.remove(requestId)!.complete(frame);
               } else if (_pendingRequests.isNotEmpty) {
-                // Fallback: If we have exactly one pending request (the connect one), 
+                // Fallback: If we have exactly one pending request (the connect one),
                 // and we get hello-ok, it's likely the answer.
                 final firstKey = _pendingRequests.keys.first;
                 _pendingRequests.remove(firstKey)!.complete(frame);
@@ -98,26 +111,29 @@ class NodeWsService {
           // Capture close code AND reason BEFORE _handleDisconnect nulls the channel
           final closeCode = _channel?.closeCode;
           final closeReason = _channel?.closeReason ?? '';
+          
+          final requestIdMatch =
+              RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
+          final requestId = requestIdMatch?.group(1);
 
-          if (closeCode == 1008 && !_pairingRequiredController.isClosed) {
+          final pairingRequired = closeCode == 1008 &&
+              (requestId != null || closeReason.contains('pairing required'));
+          final policyRejected = closeCode == 1008 &&
+              !pairingRequired &&
+              (closeReason.contains('origin not allowed') ||
+                  closeReason.contains('origin-mismatch'));
+
+          if (pairingRequired && !_pairingRequiredController.isClosed) {
             // CRITICAL: Stop reconnect immediately and synchronously.
-            // _handleDisconnect() (called below) checks _shouldReconnect and
-            // schedules the next attempt. If we don't cancel here first,
-            // the timer fires before _handleNodePairingRequired can call
-            // ws.disconnect(), flooding the gateway with new connections that
-            // each create a fresh requestId, invalidating the one we're approving.
             _shouldReconnect = false;
             _reconnectTimer?.cancel();
-
-            // Extract requestId from the gateway's exact reason string
-            final requestIdMatch = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
-            final requestId = requestIdMatch?.group(1);
-
-          if (requestId != null) {
-              signalPairingRequired(requestId);
-            } else {
-              signalPairingRequired(null);
-            }
+            
+            signalPairingRequired(requestId);
+          } else if (policyRejected) {
+            _shouldReconnect = false;
+            _reconnectTimer?.cancel();
+            // Policy rejection (Origin mismatch) — do not signal pairing, just stop.
+            _frameController.add(NodeFrame.event('_policy_rejected'));
           }
 
           _handleDisconnect();
@@ -249,7 +265,7 @@ class NodeWsService {
 
   Future<void> disconnect() async {
     _shouldReconnect = false;
-    _pairingInProgress = false;  // reset so next connect() cycle can pair again
+    _pairingInProgress = false; // reset so next connect() cycle can pair again
     _reconnectTimer?.cancel();
     _pingTimer?.cancel();
     _subscription?.cancel();
@@ -272,7 +288,9 @@ class NodeWsService {
     _subscription?.cancel();
     _subscription = null;
     // Close the sink to abort any pending connect frame in flight.
-    try { _channel?.sink.close(); } catch (_) {}
+    try {
+      _channel?.sink.close();
+    } catch (_) {}
   }
 
   /// Emit a pairing-required signal exactly once. Subsequent calls are no-ops
