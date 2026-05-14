@@ -5,6 +5,7 @@ enum NodeStatus {
   challenging,
   pairing,
   paired,
+  warmingUp,
   error,
 }
 
@@ -73,6 +74,8 @@ class NodeState {
         return 'Pairing...';
       case NodeStatus.paired:
         return 'Paired';
+      case NodeStatus.warmingUp:
+        return 'Warming up...';
       case NodeStatus.error:
         return 'Error';
     }

@@ -64,10 +64,13 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       case NodeStatus.disconnected:
         text = 'Node reconnecting...';
         break;
+      case NodeStatus.warmingUp:
+        text = 'Node warming up...';
+        break;
       case NodeStatus.error:
         text = 'Node error — retrying';
         break;
-      default:
+      case NodeStatus.disabled:
         return;
     }
     try {

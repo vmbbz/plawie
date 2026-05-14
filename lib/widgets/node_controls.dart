@@ -131,6 +131,10 @@ class NodeControls extends StatelessWidget {
         color = AppColors.statusRed;
         label = 'Error';
         icon = Icons.error_outline;
+      case NodeStatus.warmingUp:
+        color = AppColors.statusAmber; // Same as connecting
+        label = 'Warming up';
+        icon = Icons.waves;
       case NodeStatus.disabled:
         color = AppColors.statusGrey;
         label = 'Disabled';

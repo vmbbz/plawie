@@ -403,11 +403,17 @@ class BootstrapService {
           subMessage: 'WebSocket • Node pairing • Health check');
 
       try {
-        await gateway.waitForStartup(timeout: const Duration(seconds: 60));
+        await gateway.waitForStartup(timeout: const Duration(seconds: 90));
+        
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Auto-approving node...', 99);
+        await _approveLocalNodeIfNeeded();
+
         _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100, 
             subMessage: 'System Online & Ready');
       } catch (e) {
-        _log('Gateway warmup timed out', error: e);
+        _log('Gateway warmup or approval timed out', error: e);
+        // Try approval one last time even if health check failed (might be slow)
+        await _approveLocalNodeIfNeeded().catchError((_) => null);
         _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100,
             subMessage: 'System starting in background');
       }
@@ -667,6 +673,7 @@ class BootstrapService {
       _log('Config repair failed (non-critical)', error: e);
     }
   }
+  
   /// Hardens the PRoot environment by ensuring a robust PATH and NODE_OPTIONS are always available.
   /// This appends permanent exports to /root/.bashrc.
   Future<void> _hardenEnvironment() async {
@@ -842,7 +849,30 @@ class BootstrapService {
     }
   }
 
-
-
+  Future<void> _approveLocalNodeIfNeeded() async {
+    try {
+      _log('Approving local Android node...');
+      // 1. Give the gateway a moment to register the pending request
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // 2. Use the Auditor's "Magic Bullet" logic: 
+      // Try to get specific ID via jq, then fallback to --latest variant.
+      await NativeBridge.runInProot(
+        'REQUEST_ID=\$(\$kOpenClawCommand devices list --json 2>/dev/null | jq -r ".pending[0].requestId // empty"); '
+        'if [ -n "\$REQUEST_ID" ]; then '
+        '  echo y | \$kOpenClawCommand devices approve "\$REQUEST_ID" || '
+        '  echo y | \$kOpenClawCommand device pair approve "\$REQUEST_ID" || '
+        '  echo y | \$kOpenClawCommand pair approve "\$REQUEST_ID"; '
+        'else '
+        '  echo y | \$kOpenClawCommand devices approve --latest || '
+        '  echo y | \$kOpenClawCommand device pair approve --latest || '
+        '  echo y | \$kOpenClawCommand pair approve --latest; '
+        'fi',
+        timeout: 20,
+      );
+      _log('✅ Local node proactive approval completed');
+    } catch (e) {
+      _log('Non-fatal: Proactive approval failed: $e');
+    }
+  }
 }
-

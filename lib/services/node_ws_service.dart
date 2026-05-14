@@ -17,6 +17,7 @@ class NodeWsService {
   bool _pairingInProgress = false;
   int _reconnectAttempt = 0;
   Timer? _reconnectTimer;
+  Duration? _nextReconnectDelayOverride;
   Timer? _pingTimer;
   String? _url;
   DateTime? _lastActivity;
@@ -29,6 +30,10 @@ class NodeWsService {
   final _pairingRequiredController = StreamController<String?>.broadcast();
   Stream<String?> get pairingRequiredStream =>
       _pairingRequiredController.stream;
+
+  // Fires when the gateway is busy or starting (1005 or startup-sidecars-pending).
+  final _warmingUpController = StreamController<void>.broadcast();
+  Stream<void> get warmingUpStream => _warmingUpController.stream;
 
   /// Returns true if the WebSocket hasn't received any data for over 90s,
   /// indicating the connection is likely stale.
@@ -122,6 +127,9 @@ class NodeWsService {
               !pairingRequired &&
               (closeReason.contains('origin not allowed') ||
                   closeReason.contains('origin-mismatch'));
+          final warmingUp = closeReason.contains('startup-sidecars-pending') || 
+                            closeReason.contains('gateway starting') ||
+                            closeCode == 1005;
 
           if (pairingRequired && !_pairingRequiredController.isClosed) {
             // CRITICAL: Stop reconnect immediately and synchronously.
@@ -134,6 +142,12 @@ class NodeWsService {
             _reconnectTimer?.cancel();
             // Policy rejection (Origin mismatch) — do not signal pairing, just stop.
             _frameController.add(NodeFrame.event('_policy_rejected'));
+          } else if (warmingUp) {
+            // Gateway is busy/starting. Slow down reconnect.
+            _nextReconnectDelayOverride = const Duration(seconds: 15);
+            if (!_warmingUpController.isClosed) {
+              _warmingUpController.add(null);
+            }
           }
 
           _handleDisconnect();
@@ -204,12 +218,19 @@ class NodeWsService {
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
-    final delayMs = min(
-      (AppConstants.wsReconnectBaseMs *
-              pow(AppConstants.wsReconnectMultiplier, _reconnectAttempt))
-          .round(),
-      AppConstants.wsReconnectCapMs,
-    );
+    int delayMs;
+    
+    if (_nextReconnectDelayOverride != null) {
+      delayMs = _nextReconnectDelayOverride!.inMilliseconds;
+      _nextReconnectDelayOverride = null; // Clear after use
+    } else {
+      delayMs = min(
+        (AppConstants.wsReconnectBaseMs *
+                pow(AppConstants.wsReconnectMultiplier, _reconnectAttempt))
+            .round(),
+        AppConstants.wsReconnectCapMs,
+      );
+    }
     _reconnectAttempt++;
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () async {
       if (_shouldReconnect) {
