@@ -384,6 +384,27 @@ class BootstrapService {
         timeout: 60,
       ).catchError((_) => '');
 
+      // Bake API credentials collected in SetupFlowScreen BEFORE the gateway starts.
+      // This eliminates the post-start reload that used to disrupt node pairing.
+      final setupPrefs = PreferencesService();
+      await setupPrefs.init();
+      final pendingProvider = setupPrefs.pendingProvider;
+      final pendingApiKey = setupPrefs.pendingApiKey;
+      if (pendingProvider != null && pendingApiKey != null && pendingApiKey.isNotEmpty) {
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.83, 'Configuring API credentials...', 88,
+            subMessage: 'Baking ${pendingProvider.replaceAll('_API_KEY', '')} key into gateway config');
+        final credGateway = GatewayService();
+        await credGateway.configureApiKey(pendingProvider, pendingApiKey);
+        try {
+          await credGateway.persistModel(credGateway.getModelForProvider(pendingProvider));
+        } catch (_) {}
+        setupPrefs.pendingProvider = null;
+        setupPrefs.pendingApiKey = null;
+        setupPrefs.apiKeyConfigured = true;
+        setupPrefs.apiProvider = pendingProvider;
+        _log('[SETUP] API credentials baked into config before gateway start.');
+      }
+
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85, 'Applying industrial config hardening...', 90,
           subMessage: 'Zero-restart security sweep');
 

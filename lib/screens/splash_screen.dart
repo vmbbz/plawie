@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:ui';
 import '../constants.dart';
 import '../app.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
-import '../widgets/avatar_logo.dart';
-import 'setup_wizard_screen.dart';
 import 'dashboard_screen.dart';
-import 'onboarding_screen.dart';
 import 'setup_flow_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -127,16 +122,13 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         );
       } else {
-        Widget targetScreen;
-        if (bootstrapOk) {
-          targetScreen = const OnboardingScreen(isFirstRun: true);
-        } else {
-          targetScreen = const SetupWizardScreen();
-        }
-            
+        // Not fully configured — show SetupFlowScreen to collect provider/key/name
+        // before installation begins. SetupFlowScreen navigates to SetupWizardScreen
+        // after saving prefs, so credentials are baked into the gateway before first start.
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const SetupFlowScreen(),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return SlideTransition(
                 position: Tween<Offset>(

@@ -192,4 +192,28 @@ class PreferencesService {
 
   bool get isSkillsEquippedNotified => _p.getBool('skills_equipped_notified') ?? false;
   Future<void> setSkillsEquippedNotified(bool value) => _p.setBool('skills_equipped_notified', value);
+
+  // ── Pre-install setup (provider/key collected before rootfs is ready) ────────
+
+  /// Provider chosen in SetupFlowScreen before installation begins.
+  /// Consumed by bootstrap_service and cleared after baking into gateway config.
+  String? get pendingProvider => _p.getString('pending_provider');
+  set pendingProvider(String? value) {
+    if (value != null) {
+      _p.setString('pending_provider', value);
+    } else {
+      _p.remove('pending_provider');
+    }
+  }
+
+  /// API key entered in SetupFlowScreen before installation begins.
+  /// Consumed by bootstrap_service and cleared after baking into gateway config.
+  String? get pendingApiKey => _p.getString('pending_api_key');
+  set pendingApiKey(String? value) {
+    if (value != null) {
+      _p.setString('pending_api_key', value);
+    } else {
+      _p.remove('pending_api_key');
+    }
+  }
 }

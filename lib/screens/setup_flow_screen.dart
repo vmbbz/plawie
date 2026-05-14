@@ -1,18 +1,18 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app.dart';
 import '../constants.dart';
-import '../providers/gateway_provider.dart';
-import '../models/gateway_state.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
-import 'dashboard_screen.dart';
+import 'setup_wizard_screen.dart';
 
-/// Modern Material 3 setup wizard — replaces the old terminal onboarding.
-/// 5 steps: Choose Provider → Enter API Key → Name Agent → Settings → Launch
+/// Pre-install info collector — shown BEFORE SetupWizardScreen.
+/// Collects provider, API key, agent name, and settings, then saves them to
+/// prefs so BootstrapService can bake credentials into the gateway config
+/// before the first start (no post-start reload needed).
+///
+/// Steps: Choose Provider → Enter API Key → Name Agent → Settings → Start
 class SetupFlowScreen extends StatefulWidget {
   const SetupFlowScreen({super.key});
 
@@ -26,21 +26,15 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   bool _isProcessing = false;
   String? _error;
 
-  // Step 1: Provider
+  // Step 0: Provider
   String? _selectedProvider;
 
-  // Step 2: API Key
+  // Step 1: API Key
   final _apiKeyController = TextEditingController();
   bool _apiKeyObscured = true;
 
-  // Step 3: Agent Name
+  // Step 2: Agent Name
   final _agentNameController = TextEditingController(text: 'Plawie');
-
-  // Step 5: Launch status
-  String _launchStatus = '';
-  String? _launchSubStatus;
-  double _launchProgress = 0.0;
-  bool _launchComplete = false;
 
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
@@ -148,109 +142,71 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       case 2:
         return _agentNameController.text.trim().isNotEmpty;
       case 3:
-        return true; // Settings always valid
-      case 4:
-        return _launchComplete;
+        return true;
       default:
         return false;
     }
   }
-  Future<void> _launchGateway() async {
-    setState(() {
-      _isProcessing = true;
-      _error = null;
-      _launchStatus = 'Saving API key...';
-      _launchSubStatus = 'Encrypting credentials';
-      _launchProgress = 0.2;
-    });
 
+  /// Saves credentials to prefs and navigates to SetupWizardScreen.
+  /// BootstrapService reads these prefs and bakes them into the gateway config
+  /// BEFORE the first start, so no post-start reload is ever needed.
+  Future<void> _startInstallation() async {
+    setState(() => _isProcessing = true);
     try {
-      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-
-      setState(() {
-        _launchStatus = 'Configuring API credentials...';
-        _launchSubStatus = 'Writing openclaw.json';
-        _launchProgress = 0.35;
-      });
-
-      await gatewayProvider.configureAndStart(
-        provider: _selectedProvider!,
-        apiKey: _apiKeyController.text.trim(),
-        agentName: _agentNameController.text.trim(),
-      );
-
-      setState(() {
-        _launchStatus = 'Seeding workspace...';
-        _launchSubStatus = 'Initializing ClawHub skills';
-        _launchProgress = 0.6;
-      });
-
-      // Give CLI side-effects time to settle
-      await Future.delayed(const Duration(seconds: 3));
-
-      setState(() {
-        _launchStatus = 'Verifying setup...';
-        _launchSubStatus = 'Running doctor --fix';
-        _launchProgress = 0.8;
-      });
-
-      // Run openclaw doctor as a post-onboard health check (non-blocking — failure is fine here)
-      try {
-        await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && openclaw doctor --non-interactive 2>&1 | tail -5 || true',
-          timeout: 15,
-        );
-      } catch (_) {
-        // doctor failures are non-fatal during setup
-      }
-
-      await Future.delayed(const Duration(seconds: 1));
-
-      setState(() {
-        _launchProgress = 1.0;
-        _launchStatus = 'Gateway is running!';
-        _launchSubStatus = 'System Online';
-        _launchComplete = true;
-        _isProcessing = false;
-      });
-
       final prefs = PreferencesService();
       await prefs.init();
-      prefs.agentName = _agentNameController.text.trim();
-      prefs.apiKeyConfigured = true;
-      prefs.setupComplete = true;
-      prefs.isFirstRun = false;
-      prefs.autoStartGateway = true;
 
+      if (_selectedProvider != null) {
+        prefs.pendingProvider = _selectedProvider;
+        prefs.apiProvider = _selectedProvider;
+      }
+      final key = _apiKeyController.text.trim();
+      if (key.isNotEmpty && _selectedProvider != 'OLLAMA_CLOUD') {
+        prefs.pendingApiKey = key;
+      }
+      prefs.agentName = _agentNameController.text.trim();
+      prefs.isFirstRun = false;
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const SetupWizardScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(1.0, 0.0),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOutCubic,
+              )),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
     } catch (e) {
       setState(() {
         _isProcessing = false;
-        _error = 'Setup failed: \$e';
-        _launchStatus = 'Failed';
+        _error = 'Failed to save settings: $e';
       });
     }
   }
 
-
-  void _goToDashboard() {
+  /// Skip provider setup — start installation without pre-configured credentials.
+  /// User can configure their API key later from Settings.
+  void _skipToInstallation() {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const DashboardScreen(),
+            const SetupWizardScreen(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(1.0, 0.0),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeInOutCubic,
-            )),
-            child: child,
-          );
+          return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: const Duration(milliseconds: 500),
+        transitionDuration: const Duration(milliseconds: 300),
       ),
     );
   }
@@ -264,28 +220,19 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             _buildHeader(theme, isDark),
-
-            // Step indicator
             _buildStepIndicator(theme, isDark),
-
             const SizedBox(height: 8),
-
-            // Content
             Expanded(
               child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: _buildStepContent(theme, isDark),
               ),
             ),
-
-            // Error banner
             if (_error != null)
               Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 color: theme.colorScheme.error.withAlpha(25),
                 child: Row(
                   children: [
@@ -302,8 +249,6 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   ],
                 ),
               ),
-
-            // Bottom navigation
             _buildBottomNav(theme, isDark),
           ],
         ),
@@ -316,37 +261,27 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
       child: Row(
         children: [
-          // Glass logo container
           Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              color: isDark 
-                ? Colors.white.withOpacity(0.08)
-                : Colors.black.withOpacity(0.05),
+              color: isDark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.05),
               border: Border.all(
-                color: isDark 
-                  ? Colors.white.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.1),
+                color: isDark
+                    ? Colors.white.withOpacity(0.15)
+                    : Colors.black.withOpacity(0.1),
                 width: 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: isDark 
-                    ? Colors.black.withOpacity(0.2)
-                    : Colors.black.withOpacity(0.08),
+                  color: isDark
+                      ? Colors.black.withOpacity(0.2)
+                      : Colors.black.withOpacity(0.08),
                   blurRadius: 15,
                   offset: const Offset(0, 8),
-                  spreadRadius: 0,
-                ),
-                BoxShadow(
-                  color: isDark 
-                    ? Colors.white.withOpacity(0.1)
-                    : Colors.white.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                  spreadRadius: -3,
                 ),
               ],
             ),
@@ -386,21 +321,20 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               ],
             ),
           ),
-          // Skip button (only before launch)
-          if (_currentStep < 4)
+          if (_currentStep < 3)
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                color: Colors.transparent,
                 border: Border.all(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(50),
                   width: 1,
                 ),
               ),
               child: TextButton(
-                onPressed: _goToDashboard,
+                onPressed: _isProcessing ? null : _skipToInstallation,
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 ),
                 child: Text(
                   'Skip',
@@ -421,14 +355,13 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     'Enter your API key',
     'Name your agent',
     'Quick settings',
-    'Launching gateway',
   ];
 
   Widget _buildStepIndicator(ThemeData theme, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: Row(
-        children: List.generate(5, (index) {
+        children: List.generate(4, (index) {
           final isActive = index == _currentStep;
           final isPast = index < _currentStep;
           return Expanded(
@@ -462,14 +395,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         return _buildAgentNameStep(theme, isDark);
       case 3:
         return _buildSettingsStep(theme, isDark);
-      case 4:
-        return _buildLaunchStep(theme, isDark);
       default:
         return const SizedBox.shrink();
     }
   }
 
-  // ─── Step 1: Choose Provider ──────────────────────────────────────
+  // ─── Step 0: Choose Provider ──────────────────────────────────────
 
   Widget _buildProviderStep(ThemeData theme, bool isDark) {
     return ListView(
@@ -483,14 +414,20 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             fontWeight: FontWeight.w600,
           ),
         ),
+        const SizedBox(height: 6),
+        Text(
+          'Your credentials are baked into the gateway before it starts — no post-install reload.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 20),
         ..._providers.map((p) => _buildProviderCard(p, theme, isDark)),
       ],
     );
   }
 
-  Widget _buildProviderCard(
-      _ProviderInfo provider, ThemeData theme, bool isDark) {
+  Widget _buildProviderCard(_ProviderInfo provider, ThemeData theme, bool isDark) {
     final isSelected = _selectedProvider == provider.id;
     return GestureDetector(
       onTap: () => setState(() => _selectedProvider = provider.id),
@@ -515,50 +452,30 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
           boxShadow: [
             BoxShadow(
-              color: isDark 
-                ? Colors.black.withOpacity(0.2)
-                : Colors.black.withOpacity(0.08),
+              color: isDark
+                  ? Colors.black.withOpacity(0.2)
+                  : Colors.black.withOpacity(0.08),
               blurRadius: 20,
               offset: const Offset(0, 10),
-              spreadRadius: 0,
-            ),
-            BoxShadow(
-              color: isDark 
-                ? Colors.white.withOpacity(0.1)
-                : Colors.white.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-              spreadRadius: -3,
             ),
           ],
         ),
         child: Row(
           children: [
-            // Glass provider icon
             Container(
               width: 48,
               height: 48,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: isDark 
-                  ? Colors.white.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.05),
+                color: isDark
+                    ? Colors.white.withOpacity(0.08)
+                    : Colors.black.withOpacity(0.05),
                 border: Border.all(
-                  color: isDark 
-                    ? Colors.white.withOpacity(0.15)
-                    : Colors.black.withOpacity(0.1),
+                  color: isDark
+                      ? Colors.white.withOpacity(0.15)
+                      : Colors.black.withOpacity(0.1),
                   width: 1,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: isDark 
-                      ? Colors.black.withOpacity(0.15)
-                      : Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                    spreadRadius: 0,
-                  ),
-                ],
               ),
               child: Icon(provider.icon, color: provider.color, size: 24),
             ),
@@ -583,32 +500,32 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ],
               ),
             ),
-            // Glass selection indicator
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: 24,
               height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isSelected 
-                  ? provider.color 
-                  : (isDark
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.black.withOpacity(0.05)),
+                color: isSelected
+                    ? provider.color
+                    : (isDark
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.black.withOpacity(0.05)),
                 border: Border.all(
                   color: isSelected
                       ? provider.color
                       : theme.colorScheme.onSurfaceVariant.withAlpha(80),
                   width: 2,
                 ),
-                boxShadow: isSelected ? [
-                  BoxShadow(
-                    color: provider.color.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                    spreadRadius: 0,
-                  ),
-                ] : null,
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: provider.color.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        )
+                      ]
+                    : null,
               ),
               child: isSelected
                   ? const Icon(Icons.check, size: 16, color: Colors.white)
@@ -620,7 +537,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     );
   }
 
-  // ─── Step 2: API Key Input ────────────────────────────────────────
+  // ─── Step 1: API Key ──────────────────────────────────────────────
 
   Widget _buildApiKeyStep(ThemeData theme, bool isDark) {
     final provider = _activeProvider;
@@ -629,38 +546,19 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       children: [
-        // Glass provider badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            color: isDark 
-              ? Colors.white.withOpacity(0.08)
-              : Colors.black.withOpacity(0.05),
+            color: isDark
+                ? Colors.white.withOpacity(0.08)
+                : Colors.black.withOpacity(0.05),
             border: Border.all(
-              color: isDark 
-                ? Colors.white.withOpacity(0.15)
-                : Colors.black.withOpacity(0.1),
+              color: isDark
+                  ? Colors.white.withOpacity(0.15)
+                  : Colors.black.withOpacity(0.1),
               width: 1,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark 
-                  ? Colors.black.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.05),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-                spreadRadius: 0,
-              ),
-              BoxShadow(
-                color: isDark 
-                  ? Colors.white.withOpacity(0.1)
-                  : Colors.white.withOpacity(0.3),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-                spreadRadius: -3,
-              ),
-            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -710,7 +608,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Plawie will seamlessly use your free ollama.com account once you sign in from the Local LLM settings. You can proceed without extra configuration.',
+                  'Plawie will use your free ollama.com account once you sign in from Local LLM settings.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -723,51 +621,28 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         ] else ...[
           Text(
             'Enter your ${provider.name} API key',
-            style: GoogleFonts.outfit(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
+            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
-            'Your key is stored locally on your device and never shared.',
+            'Stored locally on your device and baked directly into the gateway config — never sent anywhere.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 24),
-
-          // Glass text field
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              color: isDark 
-                ? Colors.white.withOpacity(0.08)
-                : Colors.black.withOpacity(0.05),
+              color: isDark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.05),
               border: Border.all(
-                color: isDark 
-                  ? Colors.white.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.1),
+                color: isDark
+                    ? Colors.white.withOpacity(0.15)
+                    : Colors.black.withOpacity(0.1),
                 width: 1,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: isDark 
-                    ? Colors.black.withOpacity(0.2)
-                    : Colors.black.withOpacity(0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                  spreadRadius: 0,
-                ),
-                BoxShadow(
-                  color: isDark 
-                    ? Colors.white.withOpacity(0.1)
-                    : Colors.white.withOpacity(0.3),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
-                  spreadRadius: -3,
-                ),
-              ],
             ),
             child: TextField(
               controller: _apiKeyController,
@@ -776,7 +651,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               enableSuggestions: false,
               onChanged: (_) => setState(() {}),
               style: TextStyle(
-                fontFamily: 'monospace', 
+                fontFamily: 'monospace',
                 fontSize: 14,
                 color: isDark ? Colors.white : Colors.black,
               ),
@@ -796,68 +671,40 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   ),
                   child: Icon(Icons.key, color: AppColors.statusGreen, size: 20),
                 ),
-                suffixIcon: Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: isDark 
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.black.withOpacity(0.05),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _apiKeyObscured ? Icons.visibility_off : Icons.visibility,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  child: IconButton(
-                    icon: Icon(
-                      _apiKeyObscured ? Icons.visibility_off : Icons.visibility,
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    onPressed: () =>
-                        setState(() => _apiKeyObscured = !_apiKeyObscured),
-                  ),
+                  onPressed: () =>
+                      setState(() => _apiKeyObscured = !_apiKeyObscured),
                 ),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          // Glass key format hint
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              color: isDark 
-                ? Colors.white.withOpacity(0.06)
-                : Colors.black.withOpacity(0.03),
+              color: isDark
+                  ? Colors.white.withOpacity(0.06)
+                  : Colors.black.withOpacity(0.03),
               border: Border.all(
-                color: isDark 
-                  ? Colors.white.withOpacity(0.12)
-                  : Colors.black.withOpacity(0.08),
+                color: isDark
+                    ? Colors.white.withOpacity(0.12)
+                    : Colors.black.withOpacity(0.08),
                 width: 1,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: isDark 
-                    ? Colors.black.withOpacity(0.15)
-                    : Colors.black.withOpacity(0.05),
-                  blurRadius: 15,
-                  offset: const Offset(0, 8),
-                  spreadRadius: 0,
-                ),
-              ],
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: isDark 
-                      ? Colors.white.withOpacity(0.08)
-                      : Colors.black.withOpacity(0.05),
-                  ),
-                  child: Icon(Icons.info_outline,
-                      size: 16, color: theme.colorScheme.onSurfaceVariant),
-                ),
+                Icon(Icons.info_outline,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -871,38 +718,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          // Help text for where to find key
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Where to find your key',
-                  style: GoogleFonts.outfit(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '1. Sign in to your ${provider.name} console\n'
-                  '2. Navigate to API Keys section\n'
-                  '3. Create a new key and paste it here',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ],
     );
   }
 
-  // ─── Step 3: Agent Name ───────────────────────────────────────────
+  // ─── Step 2: Agent Name ───────────────────────────────────────────
 
   Widget _buildAgentNameStep(ThemeData theme, bool isDark) {
     return ListView(
@@ -910,10 +731,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       children: [
         Text(
           'What should your AI agent be called?',
-          style: GoogleFonts.outfit(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         Text(
@@ -927,24 +745,25 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           controller: _agentNameController,
           onChanged: (_) => setState(() {}),
           textCapitalization: TextCapitalization.words,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          style: theme.textTheme.headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w600),
           decoration: InputDecoration(
             hintText: 'e.g. Plawie, Jarvis, Nova...',
-            prefixIcon: const Icon(Icons.smart_toy_outlined, size: 22, color: AppColors.statusGreen),
+            prefixIcon: const Icon(Icons.smart_toy_outlined,
+                size: 22, color: AppColors.statusGreen),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: theme.colorScheme.outline.withAlpha(80)),
+              borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.statusGreen, width: 1.5),
+              borderSide:
+                  const BorderSide(color: AppColors.statusGreen, width: 1.5),
             ),
           ),
         ),
         const SizedBox(height: 24),
-        // Suggestion chips
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -976,7 +795,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                         : theme.colorScheme.outline.withAlpha(40),
                     width: _agentNameController.text == name ? 1.2 : 1,
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
@@ -988,7 +808,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     );
   }
 
-  // ─── Step 4: Settings ─────────────────────────────────────────────
+  // ─── Step 3: Settings ─────────────────────────────────────────────
 
   Widget _buildSettingsStep(ThemeData theme, bool isDark) {
     return ListView(
@@ -996,10 +816,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       children: [
         Text(
           'Final touches',
-          style: GoogleFonts.outfit(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         Text(
@@ -1043,44 +860,34 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           value: true,
           onChanged: (_) {},
         ),
-        const SizedBox(height: 12),
-        _buildSettingTile(
-          theme: theme,
-          isDark: isDark,
-          icon: Icons.settings_input_component,
-          title: 'Daemon Persistence',
-          subtitle: 'Keep gateway running in background',
-          value: false,
-          onChanged: (_) {},
-        ),
         const SizedBox(height: 24),
-        // Summary card
+        // Pre-install summary card
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.statusGreen.withAlpha(isDark ? 15 : 10),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: AppColors.statusGreen.withAlpha(60),
-            ),
+            border: Border.all(color: AppColors.statusGreen.withAlpha(60)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.check_circle,
+                  const Icon(Icons.rocket_launch,
                       color: AppColors.statusGreen, size: 16),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppColors.statusGreen.withAlpha(25),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.statusGreen.withAlpha(60)),
+                      border: Border.all(
+                          color: AppColors.statusGreen.withAlpha(60)),
                     ),
                     child: Text(
-                      'READY TO LAUNCH',
+                      'READY TO INSTALL',
                       style: GoogleFonts.outfit(
                         fontWeight: FontWeight.w700,
                         fontSize: 10,
@@ -1092,12 +899,17 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ],
               ),
               const SizedBox(height: 10),
-              _buildSummaryRow(
-                theme, '${_activeProvider?.name}'),
-              _buildSummaryRow(
-                theme, 'Agent: ${_agentNameController.text.trim()}'),
-              _buildSummaryRow(
-                theme, 'Gateway: 127.0.0.1:18789 (auto-configured)'),
+              _buildSummaryRow(theme, '${_activeProvider?.name ?? 'No provider selected'}'),
+              _buildSummaryRow(theme, 'Agent: ${_agentNameController.text.trim()}'),
+              _buildSummaryRow(theme, 'Gateway: 127.0.0.1:18789 (auto-configured)'),
+              const SizedBox(height: 8),
+              Text(
+                'Credentials will be baked into the gateway config before it starts — no reload, no disruption.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.statusGreen.withOpacity(0.8),
+                  fontSize: 11,
+                ),
+              ),
             ],
           ),
         ),
@@ -1138,13 +950,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color:
-            isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(5),
+        color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(5),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withAlpha(12)
-              : Colors.black.withAlpha(8),
+          color: isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
         ),
       ),
       child: Row(
@@ -1176,131 +985,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             )
           else
             Switch(
-              value: value, 
+              value: value,
               onChanged: onChanged,
               activeColor: AppColors.statusGreen,
               activeTrackColor: AppColors.statusGreen.withOpacity(0.3),
             ),
         ],
-      ),
-    );
-  }
-
-  // ─── Step 5: Launch ───────────────────────────────────────────────
-
-  Widget _buildLaunchStep(ThemeData theme, bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Animated icon
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              child: _launchComplete
-                  ? Container(
-                      key: const ValueKey('done'),
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.statusGreen,
-                            AppColors.statusGreen.withOpacity(0.7),
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.statusGreen.withAlpha(80),
-                            blurRadius: 30,
-                            spreadRadius: 5,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.check_rounded,
-                          color: Colors.black, size: 40),
-                    )
-                  : Container(
-                      key: const ValueKey('loading'),
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isDark
-                            ? Colors.white.withAlpha(8)
-                            : Colors.black.withAlpha(5),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.statusGreen),
-                        ),
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              _launchComplete ? 'You\'re all set!' : 'Setting up...',
-              style: GoogleFonts.outfit(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildStatusBadge(_launchStatus, AppColors.statusGreen),
-            if (_launchSubStatus != null) ...[
-              const SizedBox(height: 8),
-                Text(
-                  _launchSubStatus!,
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    fontStyle: FontStyle.normal,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-            ],
-            const SizedBox(height: 24),
-            // Progress bar
-            if (!_launchComplete)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: _launchProgress,
-                  minHeight: 4,
-                  backgroundColor: isDark
-                      ? Colors.white.withAlpha(15)
-                      : Colors.black.withAlpha(10),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                      AppColors.statusGreen),
-                ),
-              ),
-            if (_launchComplete) ...[
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _goToDashboard,
-                icon: const Icon(Icons.dashboard_outlined, size: 20, color: Colors.white),
-                label: Text('Open Dashboard', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.statusGreen,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shadowColor: Colors.transparent,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 28, vertical: 14),
-                  textStyle: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -1321,10 +1011,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       ),
       child: Row(
         children: [
-          // Back button
-          if (_currentStep > 0 && _currentStep < 4)
+          if (_currentStep > 0)
             TextButton.icon(
-              onPressed: _prevStep,
+              onPressed: _isProcessing ? null : _prevStep,
               icon: const Icon(Icons.arrow_back, size: 18),
               label: const Text('Back'),
               style: TextButton.styleFrom(
@@ -1333,10 +1022,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             )
           else
             const SizedBox(width: 80),
-
           const Spacer(),
-
-          // Next / Launch button
           if (_currentStep < 3)
             FilledButton(
               onPressed: _canProceed ? _nextStep : null,
@@ -1354,21 +1040,30 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   Text('Continue',
                       style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
                   const SizedBox(width: 8),
-                  const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+                  const Icon(Icons.arrow_forward_rounded,
+                      size: 18, color: Colors.white),
                 ],
               ),
             )
-          else if (_currentStep == 3)
+          else
             FilledButton.icon(
-              onPressed: () {
-                _nextStep();
-                // Auto-launch after animation
-                Future.delayed(
-                    const Duration(milliseconds: 500), _launchGateway);
-              },
-              icon: const Icon(Icons.rocket_launch, size: 18, color: Colors.white),
-              label: Text('Launch Gateway',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+              onPressed: _isProcessing ? null : _startInstallation,
+              icon: _isProcessing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.download_rounded,
+                      size: 18, color: Colors.white),
+              label: Text(
+                _isProcessing ? 'Starting...' : 'Start Installation',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+              ),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.statusGreen,
                 foregroundColor: Colors.white,
@@ -1377,32 +1072,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               ),
-            )
-          else if (_currentStep == 4 && _launchComplete)
-            const SizedBox.shrink() // Dashboard button is in the launch step
-          else
-            const SizedBox.shrink(),
+            ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withAlpha(120), width: 1.2),
-      ),
-      child: Text(
-        text.toUpperCase(),
-        style: GoogleFonts.outfit(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: color,
-          letterSpacing: 1.2,
-        ),
       ),
     );
   }

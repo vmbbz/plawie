@@ -9,7 +9,6 @@ import '../models/setup_state.dart';
 import '../models/optional_package.dart';
 import '../providers/setup_provider.dart';
 import '../services/package_service.dart';
-import '../services/preferences_service.dart';
 import '../services/gateway_service.dart';
 import '../models/gateway_state.dart';
 import '../widgets/progress_step.dart';
@@ -17,7 +16,6 @@ import '../widgets/avatar_logo.dart';
 import '../widgets/glass_card.dart';
 import 'onboarding_screen.dart';
 import 'package_install_screen.dart';
-import 'setup_flow_screen.dart';
 import 'dashboard_screen.dart';
 
 class SetupWizardScreen extends StatefulWidget {
@@ -794,26 +792,15 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   }
 
   Future<void> _goToApp(BuildContext context) async {
-    final prefs = PreferencesService();
-    await prefs.init();
-
-    // If we have a dashboard URL and API key configured, go straight to Dashboard
-    if (prefs.dashboardUrl != null &&
-        prefs.dashboardUrl!.isNotEmpty &&
-        prefs.apiKeyConfigured) {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => DashboardScreen()),
-        );
-      }
-    } else {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const SetupFlowScreen(),
-          ),
-        );
-      }
+    // Credentials were baked into the gateway config during installation by
+    // BootstrapService (from pendingProvider/pendingApiKey prefs set in SetupFlowScreen).
+    // SetupFlowScreen always precedes SetupWizardScreen, so by the time we reach
+    // this point the gateway is running and the API key is already live — go straight
+    // to the dashboard without any intermediate setup screen.
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => DashboardScreen()),
+      );
     }
   }
 }
