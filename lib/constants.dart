@@ -45,9 +45,9 @@ class AppConstants {
   static const int maxAutoRestarts = 3;
 
   // Node constants
-  static const int wsReconnectBaseMs = 350;
+  static const int wsReconnectBaseMs = 2000;
   static const double wsReconnectMultiplier = 1.7;
-  static const int wsReconnectCapMs = 8000;
+  static const int wsReconnectCapMs = 15000; // Increased cap to 15s for stability
   static const String nodeRole = 'node';
   static const int pairingTimeoutMs = 300000;
 
