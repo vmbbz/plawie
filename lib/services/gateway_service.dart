@@ -3559,9 +3559,14 @@ PARAMETER num_batch 512
     // 1. Initial immediate sweep
     await _applyHardeningPatch();
 
-    // 2. Secondary sweep after 5s (longer delay to ensure gateway is fully settled)
-    unawaited(Future.delayed(
-        const Duration(seconds: 5), () => _applyHardeningPatch()));
+    // 2. Double-tap after 3s to ensure persistence
+    await Future.delayed(const Duration(seconds: 3));
+    await _applyHardeningPatch();
+
+    // 3. Final longer delay so node auto-approve doesn't timeout
+    await Future.delayed(const Duration(seconds: 8));
+
+    debugPrint('✅ Hardening + pairing grace period complete');
   }
 
   Future<void> _applyHardeningPatch() async {
@@ -3571,7 +3576,7 @@ PARAMETER num_batch 512
     final patchJson = '''
 {
   "gateway": {
-    ${currentToken != null ? '"auth": { "token": "$currentToken" },' : ''}
+    ${currentToken != null && currentToken.isNotEmpty ? '"auth": {"token": "$currentToken"},' : ''}
     "controlUi": {
       "allowedOrigins": ["*", "n/a", "http://127.0.0.1:18789", "http://localhost:18789"]
     },
@@ -3600,7 +3605,7 @@ PARAMETER num_batch 512
             'openclaw config patch --file /tmp/harden.json && ' +
             'rm -f /tmp/harden.json && ' +
             'openclaw reload',
-        timeout: 30,
+        timeout: 60,
       );
       debugPrint('✅ Hardening sweep (config patch) applied successfully');
       _addActivity('[SYS] Industrial-grade CLI hardening applied.');
