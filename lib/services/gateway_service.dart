@@ -41,7 +41,7 @@ PARAMETER stop ""
 PARAMETER stop ""
 PARAMETER num_ctx 1024
 PARAMETER num_gpu 0
-PARAMETER num_thread 1
+PARAMETER num_thread 4
 PARAMETER num_batch 512
 ''';
 
@@ -176,7 +176,7 @@ class GatewayService {
   /// falls back to a broken default format and generates 0 tokens.
   /// [modelName] is used to select the correct chat template and stop tokens.
   String _buildModelfileTemplate(String ggufPath, int contextSize,
-      {String modelName = '', int numThreads = 6}) {
+      {String modelName = '', int numThreads = 4}) {
     final name = modelName.toLowerCase();
 
     // Llama 3.x format
@@ -357,8 +357,9 @@ PARAMETER num_batch 512
       debugPrint('[GATEWAY] Self-healing error: $e');
     }
 
-    unawaited(attachOrStart(autoStart: prefs.autoStartGateway)
-        .then((_) => unawaited(_probeOllamaOnInit())));
+    // Gateway startup. No longer probes Ollama models on startup to prevent
+    // 20s+ event loop stalls that break Node pairing.
+    unawaited(attachOrStart(autoStart: prefs.autoStartGateway));
   }
 
   /// New Auto-Healing Logic: Detects critical failures in logs and attempts recovery.
@@ -688,7 +689,6 @@ PARAMETER num_batch 512
       _isStarting = false;
     }
   }
-
   Future<void> start() async {
     await attachOrStart(forceStart: true);
   }
@@ -697,29 +697,37 @@ PARAMETER num_batch 512
   /// Useful for setup wizards to prevent users from landing on a "Disconnected" screen.
   Future<void> waitForStartup(
       {Duration timeout = const Duration(seconds: 120)}) async {
-    if (_state.status == GatewayStatus.running) return;
+    final startTime = DateTime.now();
 
-    final completer = Completer<void>();
-    StreamSubscription? sub;
-    Timer? timeoutTimer;
-
-    sub = _stateController.stream.listen((state) {
-      if (state.status == GatewayStatus.running) {
-        timeoutTimer?.cancel();
-        sub?.cancel();
-        if (!completer.isCompleted) completer.complete();
+    // 1. Wait for GatewayStatus.running (process started)
+    while (_state.status != GatewayStatus.running) {
+      if (DateTime.now().difference(startTime) > timeout) {
+        throw TimeoutException(
+            'Gateway process failed to start after ${timeout.inSeconds}s');
       }
-    });
+      await Future.delayed(const Duration(seconds: 1));
+    }
 
-    timeoutTimer = Timer(timeout, () {
-      sub?.cancel();
-      if (!completer.isCompleted) {
-        completer.completeError(TimeoutException(
-            'Gateway warmup timed out after ${timeout.inSeconds}s'));
+    // 2. Wait for HTTP /health success (server listening)
+    final url = 'http://127.0.0.1:18789/health';
+    while (true) {
+      if (DateTime.now().difference(startTime) > timeout) {
+        throw TimeoutException(
+            'Gateway health check timed out after ${timeout.inSeconds}s');
       }
-    });
-
-    return completer.future;
+      try {
+        final resp = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 2));
+        if (resp.statusCode == 200) {
+          debugPrint('✅ Gateway health check passed');
+          return;
+        }
+      } catch (_) {
+        // Not listening yet
+      }
+      await Future.delayed(const Duration(seconds: 2));
+    }
   }
 
   void _subscribeLogs() {
@@ -3545,13 +3553,13 @@ PARAMETER num_batch 512
           (config['gateway']?['controlUi']?['allowedOrigins'] as List?)
                   ?.cast<String>() ??
               [];
+      final modelPrewarm = config['gateway']?['startup']?['modelPrewarm'] as bool? ?? true;
 
-      // ONLY apply the patch if '*' or 'n/a' is missing.
-      // This prevents the "infinite reload loop" where our patch triggers a reload
-      // which triggers another hardening sweep.
-      if (origins.contains('*') && origins.contains('n/a')) {
+      // ONLY apply the patch if '*' or 'n/a' is missing OR if prewarm isn't disabled.
+      // This prevents the "infinite reload loop" while ensuring new stability fixes apply.
+      if (origins.contains('*') && origins.contains('n/a') && !modelPrewarm) {
         debugPrint(
-            '✅ Hardening already present. Skipping sweep to prevent reload loop.');
+            '✅ Hardening (origins + prewarm) already present. Skipping sweep.');
         return;
       }
     } catch (_) {}
@@ -3587,7 +3595,18 @@ PARAMETER num_batch 512
     },
     "mode": "local",
     "bind": "loopback",
-    "port": 18789
+    "port": 18789,
+    "startup": {
+      "modelPrewarm": false
+    },
+    "sidecars": {
+      "model-prewarm": {
+        "enabled": false
+      }
+    }
+  },
+  "ollama": {
+    "num_thread": 4
   },
   "discovery": {
     "mdns": {

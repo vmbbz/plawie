@@ -58,15 +58,15 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
             final pulseValue = _pulseController.value;
             final scale = _isPressed ? 0.85 : (1.0 + (0.15 * pulseValue));
             
-            // Interaction colors: White translucent (glass)
-            final baseColor = Colors.white.withValues(alpha: _isPressed ? 0.8 : 0.15);
-            final borderColor = Colors.white.withValues(alpha: _isPressed ? 1.0 : 0.4);
+            // Interaction colors: Pure White Translucent (Glass)
+            // No more cyan 'energy' colors to keep it minimal and sharp.
+            final baseColor = Colors.white.withOpacity(_isPressed ? 0.9 : 0.2);
+            final borderColor = Colors.white.withOpacity(_isPressed ? 1.0 : 0.6);
             
-            // Holographic bloom (glow)
-            // Cyan holographic pulse when speaking or pressed
-            final energyColor = const Color(0xFF00FFFF).withValues(alpha: 0.6 + (0.4 * pulseValue));
-            final idleColor = Colors.white.withValues(alpha: 0.2 + (0.2 * pulseValue));
-            final glowColor = (widget.isSpeaking || _isPressed) ? energyColor : idleColor;
+            // Holographic bloom (glow) - purely white
+            final glowColor = Colors.white.withOpacity(
+              (widget.isSpeaking || _isPressed) ? 0.6 + (0.3 * pulseValue) : 0.15 + (0.1 * pulseValue)
+            );
 
             return Container(
               width: 30,
@@ -83,7 +83,7 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                       color: Colors.transparent,
                       boxShadow: [
                         BoxShadow(
-                          color: glowColor.withValues(alpha: glowColor.alpha * 0.5),
+                          color: glowColor.withOpacity(glowColor.opacity * 0.5),
                           blurRadius: (widget.isSpeaking || _isPressed ? 15 : 8) * scale,
                           spreadRadius: (widget.isSpeaking || _isPressed ? 2 : 0) * scale,
                         ),
@@ -91,9 +91,9 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                     ),
                   ),
                   
-                  // The "Glass" Node
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
                     width: 7 * scale,
                     height: 7 * scale,
                     decoration: BoxDecoration(
@@ -101,15 +101,16 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                       boxShadow: [
                         if (widget.isSpeaking || _isPressed)
                           BoxShadow(
-                            color: energyColor.withValues(alpha: 0.8),
-                            blurRadius: 4,
+                            color: Colors.white.withOpacity(0.5),
+                            blurRadius: 6,
+                            spreadRadius: 1,
                           ),
                       ],
                       border: Border.all(
                         color: borderColor,
                         width: 0.5, // Ultra-thin "sharp" edge
                       ),
-                      borderRadius: BorderRadius.zero, 
+                      borderRadius: BorderRadius.zero, // Glass sharp edge
                     ),
                   ),
                 ],

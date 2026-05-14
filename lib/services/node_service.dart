@@ -119,6 +119,10 @@ class NodeService {
       _pairingSubscription = null;
       _handleNodePairingRequired(requestId);
     });
+    _ws.warmingUpStream.listen((_) {
+      log('[NODE] Gateway is warming up. Entering grace period...');
+      _updateState(_state.copyWith(status: NodeStatus.warmingUp));
+    });
 
     try {
       _challengeCompleter = Completer<String?>();
@@ -311,6 +315,10 @@ class NodeService {
           code == 'DEVICE_NOT_PAIRED') {
         log('[NODE] Not paired or token invalid, gateway will close with 1008...');
         // Do nothing — await the 1008 close event to trigger _handleNodePairingRequired
+      } else if (code == 'UNAVAILABLE') {
+        log('[NODE] Gateway is warming up (UNAVAILABLE). Entering grace period...');
+        _updateState(_state.copyWith(status: NodeStatus.warmingUp));
+        // NodeWsService will trigger _disconnected on close, or we can force it
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
