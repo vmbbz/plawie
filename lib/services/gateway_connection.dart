@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
+import 'dart:io';
 import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import 'device_identity.dart';
@@ -56,7 +58,8 @@ class GatewayConnection {
   Stream<GatewayConnectionState> get stateStream => _stateNotifier.stream;
 
   // Pending request completers — keyed by request ID
-  final Map<String, StreamController<Map<String, dynamic>>> _pendingRequests = {};
+  final Map<String, StreamController<Map<String, dynamic>>> _pendingRequests =
+      {};
 
   // Global event stream for unsolicited events (chat, agent, etc.)
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
@@ -65,7 +68,8 @@ class GatewayConnection {
   // Fires when the gateway closes with 1008 (pairing required).
   // GatewayService subscribes and clears the stale device record via PRoot.
   final _pairingRequiredController = StreamController<String?>.broadcast();
-  Stream<String?> get pairingRequiredStream => _pairingRequiredController.stream;
+  Stream<String?> get pairingRequiredStream =>
+      _pairingRequiredController.stream;
 
   /// The device ID loaded by the identity module. Non-null after connect() is called.
   String? get deviceId => _identity.deviceId;
@@ -125,9 +129,14 @@ class GatewayConnection {
 
     try {
       final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
-      _channel = WebSocketChannel.connect(wsUri);
-      
-      await _channel!.ready.timeout(const Duration(seconds: 5));
+      // FIX: Explicitly send Origin header to resolve 1008 'origin-mismatch' errors.
+      // We use IOWebSocketChannel directly to pass custom headers.
+      final socket = await WebSocket.connect(
+        wsUri.toString(),
+        headers: {'Origin': 'http://127.0.0.1:18789'},
+      ).timeout(const Duration(seconds: 5));
+
+      _channel = IOWebSocketChannel(socket);
     } catch (e) {
       _updateState(GatewayConnectionState.disconnected);
       _scheduleReconnect();
@@ -148,7 +157,8 @@ class GatewayConnection {
         final closeReason = _channel?.closeReason ?? '';
         String? reqId;
         if (closeCode == 1008 && closeReason.contains('pairing required')) {
-          final m = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
+          final m =
+              RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
           reqId = m?.group(1);
         }
         final pairingRequired = closeCode == 1008 &&
@@ -198,11 +208,19 @@ class GatewayConnection {
 
   Future<void> _sendConnectFrame(String? nonce) async {
     final version = await OpenClawCommandService.detectOpenClawVersion();
-    
+
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
     const role = 'operator';
-    const scopes = ['operator.admin', 'operator.read', 'operator.write', 'chat', 'agent', 'system', 'operator'];
+    const scopes = [
+      'operator.admin',
+      'operator.read',
+      'operator.write',
+      'chat',
+      'agent',
+      'system',
+      'operator'
+    ];
 
     final deviceBlock = await _identity.buildDeviceBlock(
       clientId: clientId,
@@ -231,7 +249,8 @@ class GatewayConnection {
         'scopes': scopes,
         'auth': {
           'token': _token,
-          if (_deviceToken != null && _deviceToken!.isNotEmpty) 'deviceToken': _deviceToken,
+          if (_deviceToken != null && _deviceToken!.isNotEmpty)
+            'deviceToken': _deviceToken,
         },
         'locale': 'en-US',
         // caps/commands belong ONLY on the role=node connection (NodeService/NodeWsService).
@@ -262,8 +281,10 @@ class GatewayConnection {
           // Extract mainSessionKey from the payload
           final payload = frame['payload'] as Map<String, dynamic>?;
           final snapshot = payload?['snapshot'] as Map<String, dynamic>?;
-          final sessionDefaults = snapshot?['sessionDefaults'] as Map<String, dynamic>?;
-          mainSessionKey = sessionDefaults?['mainSessionKey'] as String? ?? 'main';
+          final sessionDefaults =
+              snapshot?['sessionDefaults'] as Map<String, dynamic>?;
+          mainSessionKey =
+              sessionDefaults?['mainSessionKey'] as String? ?? 'main';
 
           // Extract supported methods
           final features = payload?['features'] as Map<String, dynamic>?;
@@ -324,7 +345,8 @@ class GatewayConnection {
         if (event == 'connect.challenge') {
           final payload = frame['payload'] as Map<String, dynamic>?;
           final nonce = payload?['nonce'] as String?;
-          if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
+          if (_challengeCompleter != null &&
+              !_challengeCompleter!.isCompleted) {
             _challengeCompleter!.complete(nonce);
           }
           return;
@@ -404,7 +426,8 @@ class GatewayConnection {
     _cleanup();
     if (_handshakeCompleter != null && !_handshakeCompleter!.isCompleted) {
       _handshakeCompleter!.completeError(
-        StateError(pairingRequired ? 'Pairing required' : 'WebSocket disconnected'),
+        StateError(
+            pairingRequired ? 'Pairing required' : 'WebSocket disconnected'),
       );
     }
     if (pairingRequired && !_pairingRequiredController.isClosed) {
@@ -421,7 +444,9 @@ class GatewayConnection {
 
     _reconnectAttempts++;
     final delayMs = min(
-      (AppConstants.wsReconnectBaseMs * pow(AppConstants.wsReconnectMultiplier, _reconnectAttempts - 1)).toInt(),
+      (AppConstants.wsReconnectBaseMs *
+              pow(AppConstants.wsReconnectMultiplier, _reconnectAttempts - 1))
+          .toInt(),
       AppConstants.wsReconnectCapMs,
     );
 

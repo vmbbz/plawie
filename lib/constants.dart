@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String appName = 'Plawie';
@@ -84,7 +84,7 @@ class AppColors {
 
   // Light mode (premium white with metallic accents)
   static const Color lightBg = Color(0xFFFFFFFF); // Pure white
-  static const Color lightSurface = Color(0xFAFAFA); // Soft white
+  static const Color lightSurface = Color(0xFFFAFAFA); // Soft white
   static const Color lightSurfaceAlt = Color(0xFFF5F5F5); // Elevated surface
   static const Color lightBorder = Color(0xFFE0E0E0); // Subtle border
   static const Color lightMetallic = Color(0xFFF0F0F0); // Metallic sheen

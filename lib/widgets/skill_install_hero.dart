@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/skills_service.dart';
 import '../app.dart';
+import '../constants.dart';
 
 class SkillInstallHero extends StatefulWidget {
   final Skill skill;
@@ -22,12 +23,12 @@ class _SkillInstallHeroState extends State<SkillInstallHero> {
 
   Future<void> _handleInstall() async {
     setState(() => _isInstalling = true);
-    
+
     // Simulate some installation work (e.g. provisioning on-chain or network check)
     await Future.delayed(const Duration(seconds: 2));
-    
+
     await SkillsService().installSkill(widget.skill.id);
-    
+
     if (mounted) {
       widget.onInstalled();
     }
@@ -110,20 +111,24 @@ class _SkillInstallHeroState extends State<SkillInstallHero> {
   Widget _buildFeatureList() {
     final features = _getSkillFeatures();
     return Column(
-      children: features.map((f) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle_outline, color: AppColors.statusGreen, size: 18),
-            const SizedBox(width: 12),
-            Text(
-              f,
-              style: GoogleFonts.outfit(color: Colors.white60, fontSize: 14),
-            ),
-          ],
-        ),
-      )).toList(),
+      children: features
+          .map((f) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        color: AppColors.statusGreen, size: 18),
+                    const SizedBox(width: 12),
+                    Text(
+                      f,
+                      style: GoogleFonts.outfit(
+                          color: Colors.white60, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ))
+          .toList(),
     );
   }
 
@@ -163,26 +168,43 @@ class _SkillInstallHeroState extends State<SkillInstallHero> {
 
   IconData _getSkillIcon() {
     switch (widget.skill.id) {
-      case 'twilio-voice': return Icons.phone_android_outlined;
-      case 'agent-card': return Icons.credit_card_outlined;
-      case 'molt-launch': return Icons.rocket_launch_outlined;
-      case 'valeo-sentinel': return Icons.security_outlined;
-      default: return Icons.extension_outlined;
+      case 'twilio-voice':
+        return Icons.phone_android_outlined;
+      case 'agent-card':
+        return Icons.credit_card_outlined;
+      case 'molt-launch':
+        return Icons.rocket_launch_outlined;
+      case 'valeo-sentinel':
+        return Icons.security_outlined;
+      default:
+        return Icons.extension_outlined;
     }
   }
 
   List<String> _getSkillFeatures() {
     switch (widget.skill.id) {
       case 'twilio-voice':
-        return ['AI Voice Bridging', 'Conversation Relay', 'Dual-Channel Audio'];
+        return [
+          'AI Voice Bridging',
+          'Conversation Relay',
+          'Dual-Channel Audio'
+        ];
       case 'agent-card':
         return ['Virtual Visa/MC', 'Instant Issuance', 'Spend Controls'];
       case 'molt-launch':
         return ['Job Coordination', 'On-Chain Reputation', 'Automated Escrow'];
       case 'valeo-sentinel':
-        return ['Budget Enforcement', 'Compliance Auditing', 'Safe Spend Policies'];
+        return [
+          'Budget Enforcement',
+          'Compliance Auditing',
+          'Safe Spend Policies'
+        ];
       default:
-        return ['Native Integration', 'AI Tool Compatibility', 'Auto-Discovery'];
+        return [
+          'Native Integration',
+          'AI Tool Compatibility',
+          'Auto-Discovery'
+        ];
     }
   }
 }

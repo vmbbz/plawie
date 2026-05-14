@@ -17,132 +17,155 @@ class GatewayControls extends StatelessWidget {
     return Consumer<GatewayProvider>(
       builder: (context, provider, _) {
         final state = provider.state;
+        final isBooting = state.status == GatewayStatus.starting;
 
-        return ClipPath(
-          clipper: _GatewayCardClipper(),
-          child: GlassCard(
-            padding: const EdgeInsets.all(24),
-            borderRadius: 14,
-            blurStrength: 25,
-            accentColor: state.isRunning ? AppColors.statusGreen : (state.status == GatewayStatus.starting ? AppColors.statusAmber : null),
-            child: _DynamicGlow(
-              color: state.isRunning ? AppColors.statusGreen : (state.status == GatewayStatus.starting ? AppColors.statusAmber : Colors.transparent),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'GATEWAY',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.5,
-                          ),
-                        ),
-                      ),
-                      _statusBadge(state.status),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  if (state.isRunning) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.link_rounded, color: Colors.white38, size: 14),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: SelectableText(
-                              state.dashboardUrl ?? AppConstants.gatewayUrl,
-                              style: GoogleFonts.firaCode(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w400,
-                              ),
-                              maxLines: 1,
+        return _PulsingBorder(
+          enabled: isBooting,
+          color: AppColors.statusAmber,
+          child: ClipPath(
+            clipper: _GatewayCardClipper(),
+            child: GlassCard(
+              padding: const EdgeInsets.all(24),
+              borderRadius: 14,
+              blurStrength: 25,
+              innerTint: Colors.transparent,
+              accentColor: state.isRunning
+                  ? AppColors.statusGreen
+                  : (isBooting ? AppColors.statusAmber : null),
+              child: _DynamicGlow(
+                color: state.isRunning
+                    ? AppColors.statusGreen
+                    : (isBooting ? AppColors.statusAmber : Colors.transparent),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'GATEWAY',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 2.5,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
+                        ),
+                        _statusBadge(state.status),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    if (state.isRunning) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.link_rounded,
+                                color: Colors.white38, size: 14),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: SelectableText(
+                                state.dashboardUrl ?? AppConstants.gatewayUrl,
+                                style: GoogleFonts.firaCode(
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                maxLines: 1,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                final url = state.dashboardUrl ??
+                                    AppConstants.gatewayUrl;
+                                Clipboard.setData(ClipboardData(text: url));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('URL copied to clipboard'),
+                                    backgroundColor: AppColors.statusGreen,
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              child: Icon(Icons.copy_all_rounded,
+                                  size: 16,
+                                  color: Colors.white.withValues(alpha: 0.4)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (state.errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Text(
+                          state.errorMessage!,
+                          style: const TextStyle(
+                              color: AppColors.statusRed, fontSize: 12),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        if (state.isStopped ||
+                            state.status == GatewayStatus.error)
+                          Expanded(
+                            flex: 12,
+                            child: _buildControlBtn(
+                              onTap: () {
+                                HapticFeedback.mediumImpact();
+                                provider.start();
+                              },
+                              icon: Icons.play_arrow_rounded,
+                              label: 'START',
+                              color: state.status == GatewayStatus.error
+                                  ? AppColors.statusRed
+                                  : AppColors.statusGreen,
+                              isPrimary: true,
+                            ),
+                          ),
+                        if (state.isRunning || isBooting)
+                          Expanded(
+                            flex: 12,
+                            child: _buildControlBtn(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                provider.stop();
+                              },
+                              icon: isBooting
+                                  ? Icons.hourglass_empty_rounded
+                                  : Icons.stop_rounded,
+                              label: isBooting ? 'BOOTING' : 'STOP',
+                              color: isBooting
+                                  ? AppColors.statusAmber
+                                  : AppColors.statusRed.withValues(alpha: 0.8),
+                              isPrimary: true,
+                            ),
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 10,
+                          child: _buildControlBtn(
                             onTap: () {
                               HapticFeedback.selectionClick();
-                              final url = state.dashboardUrl ?? AppConstants.gatewayUrl;
-                              Clipboard.setData(ClipboardData(text: url));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('URL copied to clipboard'),
-                                  backgroundColor: AppColors.statusGreen,
-                                  duration: Duration(seconds: 2),
-                                ),
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const LogsScreen()),
                               );
                             },
-                            child: Icon(Icons.copy_all_rounded, size: 16, color: Colors.white.withValues(alpha: 0.4)),
+                            icon: Icons.analytics_outlined,
+                            label: 'LOGS',
+                            color: Colors.white38,
+                            isPrimary: false,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
                   ],
-                  if (state.errorMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(
-                        state.errorMessage!,
-                        style: const TextStyle(color: AppColors.statusRed, fontSize: 12),
-                      ),
-                    ),
-                  Row(
-                    children: [
-                      if (state.isStopped || state.status == GatewayStatus.error)
-                        Expanded(
-                          flex: 2,
-                          child: _buildControlBtn(
-                            onTap: () {
-                              HapticFeedback.mediumImpact();
-                              provider.start();
-                            },
-                            icon: Icons.play_arrow_rounded,
-                            label: 'START',
-                            color: state.status == GatewayStatus.error ? AppColors.statusRed : AppColors.statusGreen,
-                            isPrimary: true,
-                          ),
-                        ),
-                      if (state.isRunning || state.status == GatewayStatus.starting)
-                        Expanded(
-                          flex: 2,
-                          child: _buildControlBtn(
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              provider.stop();
-                            },
-                            icon: Icons.stop_rounded,
-                            label: 'STOP',
-                            color: AppColors.statusRed.withValues(alpha: 0.8),
-                            isPrimary: true,
-                          ),
-                        ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 1,
-                        child: _buildControlBtn(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const LogsScreen()),
-                            );
-                          },
-                          icon: Icons.analytics_outlined,
-                          label: 'LOGS',
-                          color: Colors.white38,
-                          isPrimary: false,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -193,7 +216,11 @@ class GatewayControls extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 9, letterSpacing: 1.5),
+            style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+                fontSize: 9,
+                letterSpacing: 1.5),
           ),
         ],
       ),
@@ -226,13 +253,16 @@ class _DynamicGlow extends StatefulWidget {
   State<_DynamicGlow> createState() => _DynamicGlowState();
 }
 
-class _DynamicGlowState extends State<_DynamicGlow> with SingleTickerProviderStateMixin {
+class _DynamicGlowState extends State<_DynamicGlow>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat(reverse: true);
+    _ctrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 4))
+          ..repeat(reverse: true);
   }
 
   @override
@@ -284,14 +314,16 @@ class _EpicButton extends StatefulWidget {
   State<_EpicButton> createState() => _EpicButtonState();
 }
 
-class _EpicButtonState extends State<_EpicButton> with SingleTickerProviderStateMixin {
+class _EpicButtonState extends State<_EpicButton>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 150));
     _scale = Tween<double>(begin: 1.0, end: 0.94).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic),
     );
@@ -316,26 +348,35 @@ class _EpicButtonState extends State<_EpicButton> with SingleTickerProviderState
           duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: widget.isPrimary ? widget.color : Colors.white.withValues(alpha: 0.05),
-            gradient: widget.isPrimary ? LinearGradient(
-              colors: [widget.color, widget.color.withValues(alpha: 0.85)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ) : null,
+            color: widget.isPrimary
+                ? widget.color
+                : Colors.white.withValues(alpha: 0.05),
+            gradient: widget.isPrimary
+                ? LinearGradient(
+                    colors: [
+                      widget.color,
+                      widget.color.withValues(alpha: 0.85)
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: widget.isPrimary 
-                  ? widget.color.withValues(alpha: 0.4) 
+              color: widget.isPrimary
+                  ? widget.color.withValues(alpha: 0.4)
                   : widget.color.withValues(alpha: 0.15),
               width: 1,
             ),
-            boxShadow: widget.isPrimary ? [
-              BoxShadow(
-                color: widget.color.withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ] : [],
+            boxShadow: widget.isPrimary
+                ? [
+                    BoxShadow(
+                      color: widget.color.withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
           ),
           alignment: Alignment.center,
           child: Row(
@@ -379,4 +420,55 @@ class _GatewayCardClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(_GatewayCardClipper old) => false;
+}
+
+class _PulsingBorder extends StatefulWidget {
+  final Widget child;
+  final bool enabled;
+  final Color color;
+  const _PulsingBorder(
+      {required this.child, required this.enabled, required this.color});
+
+  @override
+  State<_PulsingBorder> createState() => _PulsingBorderState();
+}
+
+class _PulsingBorderState extends State<_PulsingBorder>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: widget.color.withValues(alpha: 0.1 + 0.3 * _ctrl.value),
+              width: 1.5,
+            ),
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
 }
