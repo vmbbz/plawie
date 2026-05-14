@@ -710,7 +710,8 @@ PARAMETER num_batch 512
 
     // 2. Wait for HTTP /health success (server listening)
     final url = 'http://127.0.0.1:18789/health';
-    while (true) {
+    bool listening = false;
+    while (!listening) {
       if (DateTime.now().difference(startTime) > timeout) {
         throw TimeoutException(
             'Gateway health check timed out after ${timeout.inSeconds}s');
@@ -720,14 +721,22 @@ PARAMETER num_batch 512
             .get(Uri.parse(url))
             .timeout(const Duration(seconds: 2));
         if (resp.statusCode == 200) {
-          debugPrint('✅ Gateway health check passed');
-          return;
+          listening = true;
+          debugPrint('✅ Gateway port listening');
         }
-      } catch (_) {
-        // Not listening yet
-      }
-      await Future.delayed(const Duration(seconds: 2));
+      } catch (_) {}
+      if (!listening) await Future.delayed(const Duration(seconds: 1));
     }
+
+    // 3. Wait for "ready" state (all sidecars/channels started)
+    while (!_state.isReady) {
+      if (DateTime.now().difference(startTime) > timeout) {
+        throw TimeoutException(
+            'Gateway "ready" state timed out after ${timeout.inSeconds}s');
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    debugPrint('✅ Gateway is fully READY');
   }
 
   void _subscribeLogs() {
@@ -739,6 +748,16 @@ PARAMETER num_batch 512
           : [..._state.logs.sublist(_state.logs.length - 499), log];
 
       _handleGatewayAutoHeal(log);
+
+      // Detect "ready" signal to flip isReady flag
+      if (log.contains('[gateway] ready') || log.contains('http server listening')) {
+        _updateState(_state.copyWith(isReady: true));
+      }
+
+      // Detect restart signals to reset ready flag
+      if (log.contains('signal SIGUSR1 received') || log.contains('restarting')) {
+        _updateState(_state.copyWith(isReady: false));
+      }
 
       String? dashboardUrl;
       final cleanLog = _cleanForUrl(log);
@@ -3547,6 +3566,14 @@ PARAMETER num_batch 512
   /// We run this TWICE with a delay to ensure it survives any background touches
   /// by the 'onboard' wizard or internal gateway reloads.
   Future<void> hardenGatewayConfigViaCli() async {
+    // CRITICAL: Only run if gateway is NOT already running to prevent restart loops.
+    // The BootstrapService handles pre-start hardening now.
+    final alreadyRunning = await NativeBridge.isGatewayRunning();
+    if (alreadyRunning) {
+      debugPrint('ℹ️ Gateway already running — skipping post-start CLI hardening sweep.');
+      return;
+    }
+
     try {
       final config = await _readConfig();
       final origins =
@@ -3554,12 +3581,13 @@ PARAMETER num_batch 512
                   ?.cast<String>() ??
               [];
       final modelPrewarm = config['gateway']?['startup']?['modelPrewarm'] as bool? ?? true;
+      final mdnsOff = config['discovery']?['mdns']?['mode'] == 'off';
+      final sidecarsOff = config['gateway']?['sidecars']?['model-prewarm']?['enabled'] == false;
 
-      // ONLY apply the patch if '*' or 'n/a' is missing OR if prewarm isn't disabled.
-      // This prevents the "infinite reload loop" while ensuring new stability fixes apply.
-      if (origins.contains('*') && origins.contains('n/a') && !modelPrewarm) {
+      // ONLY apply the patch if critical stability fields are missing.
+      if (origins.contains('*') && origins.contains('n/a') && !modelPrewarm && mdnsOff && sidecarsOff) {
         debugPrint(
-            '✅ Hardening (origins + prewarm) already present. Skipping sweep.');
+            '✅ Hardening (origins + prewarm + mdns + sidecars) already present. Skipping sweep.');
         return;
       }
     } catch (_) {}
@@ -3622,8 +3650,7 @@ PARAMETER num_batch 512
             patchJson +
             '\nEOF && ' +
             'openclaw config patch --file /tmp/harden.json && ' +
-            'rm -f /tmp/harden.json && ' +
-            'openclaw reload',
+            'rm -f /tmp/harden.json', // Removed disruptive 'openclaw reload'
         timeout: 60,
       );
       debugPrint('✅ Hardening sweep (config patch) applied successfully');
