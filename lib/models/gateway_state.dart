@@ -26,6 +26,7 @@ class GatewayState {
   final double repairProgress;
   /// Current status message for the background repair.
   final String repairMessage;
+  final bool isReady;
 
   const GatewayState({
     this.status = GatewayStatus.stopped,
@@ -42,6 +43,7 @@ class GatewayState {
     this.isRepairing = false,
     this.repairProgress = 0.0,
     this.repairMessage = '',
+    this.isReady = false,
   });
 
   GatewayState copyWith({
@@ -65,6 +67,7 @@ class GatewayState {
     bool? isRepairing,
     double? repairProgress,
     String? repairMessage,
+    bool? isReady,
   }) {
     return GatewayState(
       status: status ?? this.status,
@@ -81,6 +84,7 @@ class GatewayState {
       isRepairing: isRepairing ?? this.isRepairing,
       repairProgress: repairProgress ?? this.repairProgress,
       repairMessage: repairMessage ?? this.repairMessage,
+      isReady: isReady ?? this.isReady,
     );
   }
 

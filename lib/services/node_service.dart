@@ -89,10 +89,12 @@ class NodeService {
       return;
     }
 
-    final isComplete = await NativeBridge.isBootstrapComplete();
-    if (!isComplete) {
-      log('[NODE] Bootstrap incomplete. Node connection deferred.');
-      return;
+    // STRONGER guard: wait for bootstrap OR gateway startup.
+    // We MUST allow the node to connect while bootstrap is still in progress
+    // so that the Gateway generates a pairing request for _approveLocalNodeIfNeeded to find.
+    while (!await NativeBridge.isBootstrapComplete() && !await NativeBridge.isGatewayRunning()) {
+      log('[NODE] Waiting for Gateway to start...');
+      await Future.delayed(const Duration(seconds: 2));
     }
 
     final prefs = PreferencesService();

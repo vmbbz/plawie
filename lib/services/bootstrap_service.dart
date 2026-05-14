@@ -383,17 +383,13 @@ class BootstrapService {
       ));
 
       await Future.delayed(const Duration(milliseconds: 800));
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85, 'Configuring API credentials...', 90,
-          subMessage: 'Running doctor --fix + security hardening');
+      _emitProgress(onProgress, SetupStep.hardening, 0.85, 'Applying industrial config hardening...', 90,
+          subMessage: 'Zero-restart security sweep');
 
-      await NativeBridge.runInProot('$kOpenClawCommand doctor --fix');
+      // CRITICAL: ALL config changes FIRST — before ANY gateway start
+      await _fullPreStartConfigHardening();
 
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.90, 'Applying final configuration...', 92,
-          subMessage: 'Token preservation + allowedOrigins + node pairing');
-
-      await GatewayService().hardenGatewayConfigViaCli();
-
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.93, 'Starting AI gateway...', 95,
+      _emitProgress(onProgress, SetupStep.startingGateway, 0.90, 'Starting AI gateway...', 92,
           subMessage: 'Plugins loading • Voice engine • Canvas');
 
       final gateway = GatewayService();
@@ -403,9 +399,9 @@ class BootstrapService {
           subMessage: 'WebSocket • Node pairing • Health check');
 
       try {
-        await gateway.waitForStartup(timeout: const Duration(seconds: 90));
+        await gateway.waitForStartup(timeout: const Duration(seconds: 180));
         
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Auto-approving node...', 99);
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Auto-approving local node...', 99);
         await _approveLocalNodeIfNeeded();
 
         _emitProgress(onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100, 
@@ -719,6 +715,47 @@ class BootstrapService {
     }
   }
 
+  /// NEW: Single, idempotent pre-start hardening (no reload after gateway starts)
+  Future<void> _fullPreStartConfigHardening() async {
+    try {
+      // 1. Core stability flags via CLI
+      await NativeBridge.runInProot(
+        'openclaw config set gateway.bind loopback && '
+        'openclaw config set gateway.port 18789 && '
+        'openclaw config set gateway.mode local && '
+        'openclaw config set gateway.startup.modelPrewarm false && '
+        'openclaw config set ollama.num_thread 4 && '
+        'openclaw config set discovery.mdns.mode off',
+        timeout: 30,
+      );
+
+      // 2. Complex structures via patch
+      final patchJson = '''
+{
+  "gateway": {
+    "controlUi": { "allowedOrigins": ["*", "n/a", "http://127.0.0.1:18789", "http://localhost:18789"] },
+    "nodes": { "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] } },
+    "startup": { "modelPrewarm": false }
+  },
+  "discovery": { "mdns": { "mode": "off" } }
+}
+''';
+      await NativeBridge.runInProot(
+        'cat > /tmp/prestart_harden.json << \'EOF\'\n$patchJson\nEOF && '
+        'openclaw config patch --file /tmp/prestart_harden.json && '
+        'rm -f /tmp/prestart_harden.json',
+        timeout: 30,
+      );
+
+      // 3. One final reload BEFORE gateway starts
+      await NativeBridge.runInProot('openclaw reload', timeout: 10);
+      await Future.delayed(const Duration(seconds: 2));
+      _log('[HARDEN] Pre-start config injection complete.');
+    } catch (e) {
+      _log('[HARDEN] Warning: Pre-start hardening failed (non-fatal)', error: e);
+    }
+  }
+
   Future<void> _hardenOpenClawConfig() async {
     try {
       final filesDir = await NativeBridge.getFilesDir();
@@ -754,6 +791,13 @@ class BootstrapService {
       config['gateway']['nodes']['pairing'] ??= {};
       config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];
 
+      config['gateway']['startup'] = {
+        'modelPrewarm': false
+      };
+      config['gateway']['sidecars'] = {
+        'model-prewarm': { 'enabled': false }
+      };
+      
       // 2. Default Agent configuration
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
@@ -768,12 +812,10 @@ class BootstrapService {
       ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
       ollama['apiKey'] ??= 'ollama-local';
       ollama['api'] ??= 'ollama';
-      ollama['models'] ??= []; // FIX: Prevents "expected array, received undefined" error
+      ollama['models'] ??= [];
       config['models']['providers']['ollama'] = ollama;
 
-      // 4. Hardened Google/Gemini (Prevents "expected string, received undefined" reload error)
-      config['models'] ??= {};
-      config['models']['providers'] ??= {};
+      // 4. Hardened Google/Gemini
       config['models']['providers']['google'] ??= <String, dynamic>{};
       final google = Map<String, dynamic>.from(config['models']['providers']['google'] as Map);
       google['baseUrl'] ??= 'https://generativelanguage.googleapis.com/v1beta';
@@ -781,13 +823,20 @@ class BootstrapService {
       google['models'] ??= [];
       config['models']['providers']['google'] = google;
 
-      // 5. GLOBAL ORIGIN ENFORCEMENT
-      config['gateway'] ??= {};
+      // 5. GLOBAL ORIGIN & DISCOVERY ENFORCEMENT
       config['gateway']['controlUi'] ??= {};
       config['gateway']['controlUi']['allowedOrigins'] = [
         '*',
         'n/a', 
         'http://127.0.0.1:18789',
+        'http://localhost:18789'
+      ];
+      config['discovery'] = {
+        'mdns': { 'mode': 'off' }
+      };
+
+      // 6. LOCAL-FIRST TTS HARDENING
+.0.1:18789',
         'http://localhost:18789'
       ];
 
