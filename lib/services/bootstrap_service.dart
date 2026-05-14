@@ -384,13 +384,13 @@ class BootstrapService {
         timeout: 60,
       ).catchError((_) => '');
 
-      _emitProgress(onProgress, SetupStep.hardening, 0.85, 'Applying industrial config hardening...', 90,
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85, 'Applying industrial config hardening...', 90,
           subMessage: 'Zero-restart security sweep');
 
       // CRITICAL: ALL config changes FIRST — before ANY gateway start
       await _fullPreStartConfigHardening();
 
-      _emitProgress(onProgress, SetupStep.startingGateway, 0.90, 'Starting AI gateway...', 92,
+      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.90, 'Starting AI gateway...', 92,
           subMessage: 'Plugins loading • Voice engine • Canvas');
 
       final gateway = GatewayService();

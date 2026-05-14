@@ -5,8 +5,6 @@ enum SetupStep {
   installingNode,
   installingOpenClaw,
   configuringBypass,
-  hardening,
-  startingGateway,
   cleanup,
   complete,
   error,
@@ -60,10 +58,6 @@ class SetupState {
         return 'Installing OpenClaw';
       case SetupStep.configuringBypass:
         return 'Configuring Bionic Bypass';
-      case SetupStep.hardening:
-        return 'Applying industrial hardening';
-      case SetupStep.startingGateway:
-        return 'Starting AI Gateway';
       case SetupStep.cleanup:
         return 'Cleaning up system...';
       case SetupStep.complete:
@@ -87,18 +81,14 @@ class SetupState {
         return 4;
       case SetupStep.configuringBypass:
         return 5;
-      case SetupStep.hardening:
-        return 6;
-      case SetupStep.startingGateway:
-        return 7;
       case SetupStep.cleanup:
-        return 8;
+        return 6;
       case SetupStep.complete:
-        return 9;
+        return 7;
       case SetupStep.error:
         return -1;
     }
   }
 
-  static const int totalSteps = 9;
+  static const int totalSteps = 7;
 }
