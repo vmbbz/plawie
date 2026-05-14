@@ -736,15 +736,34 @@ class BootstrapService {
         timeout: 30,
       );
 
-      // 2. Complex structures via patch
+      // 2. Complex structures via patch (Atomic write)
       final patchJson = '''
 {
   "gateway": {
-    "controlUi": { "allowedOrigins": ["*", "n/a", "http://127.0.0.1:18789", "http://localhost:18789"] },
+    "bind": "loopback",
+    "port": 18789,
+    "mode": "local",
+    "auth": { 
+      "methods": ["token", "unauthenticated-localhost"],
+      "unauthenticatedLocalhost": true
+    },
     "nodes": { "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] } },
-    "startup": { "modelPrewarm": false }
+    "startup": { "modelPrewarm": false, "updateCheck": false },
+    "sidecars": {
+      "browser": { "enabled": false }
+    }
   },
-  "discovery": { "mdns": { "mode": "off" } }
+  "discovery": { "mdns": { "mode": "off" } },
+  "models": {
+    "startup": { "modelPrewarm": false },
+    "providers": {
+      "ollama": {
+        "apiKey": "ollama-local",
+        "baseUrl": "http://127.0.0.1:11434"
+      }
+    }
+  },
+  "env": { "vars": {} }
 }
 ''';
       await NativeBridge.runInProot(
@@ -754,9 +773,10 @@ class BootstrapService {
         timeout: 30,
       );
 
-      // 3. One final reload BEFORE gateway starts
-      await NativeBridge.runInProot('openclaw reload', timeout: 10);
-      await Future.delayed(const Duration(seconds: 2));
+      // 3. DO NOT run 'openclaw reload' here anymore. 
+      // The gateway isn't started yet, so a reload is at best a no-op 
+      // and at worst a signal race.
+      await Future.delayed(const Duration(seconds: 1));
       _log('[HARDEN] Pre-start config injection complete.');
     } catch (e) {
       _log('[HARDEN] Warning: Pre-start hardening failed (non-fatal)', error: e);
