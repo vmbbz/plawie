@@ -144,7 +144,7 @@ class NodeWsService {
             _frameController.add(NodeFrame.event('_policy_rejected'));
           } else if (warmingUp) {
             // Gateway is busy/starting. Slow down reconnect.
-            _nextReconnectDelayOverride = const Duration(seconds: 8);
+            _nextReconnectDelayOverride = const Duration(seconds: 10);
             if (!_warmingUpController.isClosed) {
               _warmingUpController.add(null);
             }

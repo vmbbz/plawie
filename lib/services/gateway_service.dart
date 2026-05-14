@@ -3595,14 +3595,10 @@ PARAMETER num_batch 512
     // 1. Initial immediate sweep
     await _applyHardeningPatch();
 
-    // 2. Double-tap after 3s to ensure persistence
-    await Future.delayed(const Duration(seconds: 3));
-    await _applyHardeningPatch();
+    // 2. Short delay to ensure write is finished
+    await Future.delayed(const Duration(seconds: 2));
 
-    // 3. Final longer delay so node auto-approve doesn't timeout
-    await Future.delayed(const Duration(seconds: 8));
-
-    debugPrint('✅ Hardening + pairing grace period complete');
+    debugPrint('✅ Hardening sweep complete');
   }
 
   Future<void> _applyHardeningPatch() async {

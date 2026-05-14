@@ -401,6 +401,10 @@ class BootstrapService {
       try {
         await gateway.waitForStartup(timeout: const Duration(seconds: 180));
         
+        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.97, 'Stabilizing node handshake...', 98);
+        // CRITICAL: Wait 5s to ensure Node has attempted connection and generated a requestId
+        await Future.delayed(const Duration(seconds: 5));
+
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98, 'Auto-approving local node...', 99);
         await _approveLocalNodeIfNeeded();
 
@@ -718,14 +722,17 @@ class BootstrapService {
   /// NEW: Single, idempotent pre-start hardening (no reload after gateway starts)
   Future<void> _fullPreStartConfigHardening() async {
     try {
-      // 1. Core stability flags via CLI
+      // 1. Core stability flags + provider defaults via CLI
       await NativeBridge.runInProot(
         'openclaw config set gateway.bind loopback && '
         'openclaw config set gateway.port 18789 && '
         'openclaw config set gateway.mode local && '
         'openclaw config set gateway.startup.modelPrewarm false && '
         'openclaw config set ollama.num_thread 4 && '
-        'openclaw config set discovery.mdns.mode off',
+        'openclaw config set discovery.mdns.mode off && '
+        'openclaw config set models.providers.ollama.apiKey ollama-local && '
+        'openclaw config set models.providers.ollama.baseUrl http://127.0.0.1:11434 && '
+        'openclaw config set agents.defaults.model.primary google/gemini-3.1-pro-preview',
         timeout: 30,
       );
 
