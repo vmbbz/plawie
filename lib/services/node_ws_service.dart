@@ -56,7 +56,7 @@ class NodeWsService {
       final socket = await WebSocket.connect(
         _url!,
         headers: {'Origin': 'http://127.0.0.1:18789'},
-      ).timeout(const Duration(seconds: 20));
+      ).timeout(const Duration(seconds: 45)); // Increased for high-load PRoot stalls
 
       _channel = IOWebSocketChannel(socket);
       _socketCompleter = Completer<void>();
@@ -239,7 +239,7 @@ class NodeWsService {
     _pendingRequests[request.id!] = completer;
     _channel!.sink.add(request.encode());
 
-    final effectiveTimeout = timeout ?? const Duration(seconds: 15);
+    final effectiveTimeout = timeout ?? const Duration(seconds: 30); // Increased for gateway handshakes
     return completer.future.timeout(effectiveTimeout, onTimeout: () {
       _pendingRequests.remove(request.id);
       throw TimeoutException('Request timed out', effectiveTimeout);

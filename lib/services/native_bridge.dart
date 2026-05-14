@@ -90,7 +90,7 @@ class NativeBridge {
     return await runInProot(
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
       'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-      '(echo y | openclaw device pair approve $requestId 2>/dev/null || echo y | openclaw pair approve $requestId)',
+      '(echo y | openclaw devices approve $requestId 2>/dev/null || echo y | openclaw device pair approve $requestId 2>/dev/null || echo y | openclaw pair approve $requestId)',
       timeout: 120, // Increased for high-load PRoot environments
     );
   }
