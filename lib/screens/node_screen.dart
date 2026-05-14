@@ -127,33 +127,39 @@ class _NodeScreenState extends State<NodeScreen> {
                                 ),
 
                                 if (_isLocal) ...[
-                                  const SizedBox(height: 24),
-                                  _sectionLabel('TROUBLESHOOTING'),
+                                  const SizedBox(height: 32),
+                                  _sectionLabel('RESCUE MODE'),
                                   const SizedBox(height: 12),
                                   Container(
-                                    padding: const EdgeInsets.all(16),
+                                    padding: const EdgeInsets.all(20),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.02),
+                                      color: Colors.redAccent.withValues(alpha: 0.05),
                                       borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.15)),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          'Having pairing issues?',
-                                          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.gpp_maybe_rounded, color: Colors.redAccent.withValues(alpha: 0.7), size: 18),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              'Handshake Recovery',
+                                              style: GoogleFonts.outfit(color: Colors.redAccent.withValues(alpha: 0.9), fontSize: 13, fontWeight: FontWeight.w700),
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: 8),
                                         Text(
-                                          'Refreshing the token can resolve persistent "Invalid Token" errors by forcing a new handshake.',
-                                          style: TextStyle(color: Colors.white38, fontSize: 11),
+                                          'If the node is stuck in a pairing loop or reporting invalid credentials, regenerating the token will reset the secure channel. All active sessions will be terminated.',
+                                          style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
                                         ),
-                                        const SizedBox(height: 16),
+                                        const SizedBox(height: 20),
                                         _primaryBtn(
-                                          'REFRESH GATEWAY TOKEN', 
-                                          Icons.refresh_rounded, 
-                                          AppColors.statusAmber.withValues(alpha: 0.8), 
+                                          'REGENERATE AUTH TOKEN', 
+                                          Icons.security_update_warning_rounded, 
+                                          Colors.redAccent.withValues(alpha: 0.8), 
                                           () => _showRefreshWarning(context, provider)
                                         ),
                                       ],

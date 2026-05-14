@@ -235,20 +235,26 @@
 
                     const box = new THREE.Box3().setFromObject(vrm.scene);
                     const size = box.getSize(new THREE.Vector3());
-                    const center = box.getCenter(new THREE.Vector3());
-                    vrm.scene.position.sub(center);
+                    
+                    // Normalize height: Scale model so it is roughly 1.8 units tall (to top of box)
+                    // This ensures Germini and Boruto have the same visual weight.
+                    const targetHeight = 1.6;
+                    const scaleFactor = targetHeight / size.y;
+                    vrm.scene.scale.set(scaleFactor, scaleFactor, scaleFactor);
                     vrm.scene.updateMatrixWorld(true);
 
+                    // Re-measure after scaling
+                    const newBox = new THREE.Box3().setFromObject(vrm.scene);
+                    const newSize = newBox.getSize(new THREE.Vector3());
                     const head = vrm.humanoid.getNormalizedBoneNode('head');
                     const headPos = new THREE.Vector3();
                     if (head) head.getWorldPosition(headPos);
 
-                    const trueHeight = head ? (headPos.y + (size.y / 2)) * 1.1 : size.y;
                     avatarMetrics = {
-                        height: trueHeight,
-                        width: size.x,
-                        centerX: -0.15,
-                        headY: head ? headPos.y : 1.45,
+                        height: newSize.y,
+                        width: newSize.x,
+                        centerX: 0.0, // Face camera straight
+                        headY: head ? headPos.y : 1.6,
                     };
 
                     if (vrm.expressionManager) {
@@ -533,7 +539,7 @@
         };
 
         // ── Camera framing ────────────────────────────────────────────────────
-        let avatarMetrics = { height: 1.5, width: 0.8, centerX: -0.15, headY: 1.45 };
+        let avatarMetrics = { height: 1.8, width: 0.8, centerX: 0.0, headY: 1.6 };
         let userZoomOffset = 0;
         let initialPinchDistance = 0;
 
@@ -559,20 +565,26 @@
                 return;
             }
 
-            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.5;
-            const PAN_Y_OFFSET = isOverlay ? 0.5 : 0.15;
+            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.25; // Slightly wider to fit full body
+            const PAN_Y_OFFSET = isOverlay ? -0.5 : 0.15; // Positive looks higher, pushing model down
             const tanFov = Math.tan((camera.fov * Math.PI) / 360);
-            let distHeight = avatarMetrics.height / (2 * tanFov);
+            
+            // For a model standing at Y=0 with height H, its center is at H/2.
+            const modelCenterY = avatarMetrics.height / 2;
+            
+            let distHeight = (avatarMetrics.height / (2 * tanFov)) / ZOOM_FACTOR;
             let distWidth = 0;
-            const containerAspect = camera.aspect;
-            if (containerAspect < 0.6) {
-                distWidth = avatarMetrics.width / (2 * tanFov * containerAspect);
+            if (camera.aspect < 0.6) {
+                distWidth = (avatarMetrics.width / (2 * tanFov * camera.aspect)) / ZOOM_FACTOR;
             }
-            let baseDist = Math.max(distHeight, distWidth) / ZOOM_FACTOR;
-            targetCameraZ = baseDist + userZoomOffset;
-            const frameCenterY = (baseDist * tanFov) - (avatarMetrics.height * (isOverlay ? 0.4 : 0.5)) - PAN_Y_OFFSET;
-            avatarMetrics.centerY = frameCenterY;
-            const cameraY = frameCenterY + 0.35;
+            
+            targetCameraZ = Math.max(distHeight, distWidth) + userZoomOffset;
+            
+            // Position camera to look at the center of the model, but shifted by PAN_Y_OFFSET
+            // Looking ABOVE the center pushes the model DOWN.
+            const frameCenterY = modelCenterY + PAN_Y_OFFSET;
+            const cameraY = frameCenterY + 0.05; // Maintain a slight downward tilt
+            
             camera.position.set(avatarMetrics.centerX, cameraY, targetCameraZ);
             camera.lookAt(avatarMetrics.centerX, frameCenterY, 0);
         }
