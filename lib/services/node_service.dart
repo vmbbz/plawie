@@ -446,7 +446,7 @@ class NodeService {
     await _ws.disconnect();
     _pairingResolveAttempted = false;
     unawaited(Future.delayed(
-      const Duration(milliseconds: 3000),
+      const Duration(milliseconds: 5000), // More breathing room
       () => connect(),
     ));
   }

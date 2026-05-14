@@ -85,11 +85,13 @@ class NativeBridge {
   }
 
   static Future<String> approveDevice(String requestId) async {
+    // We try 'device pair approve' (v3 protocol) first.
+    // If that fails (older versions don't have the 'device' namespace), we fallback to 'pair approve'.
     return await runInProot(
       'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
       'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-      'echo y | openclaw device pair approve $requestId && (openclaw reload 2>/dev/null || true)',
-      timeout: 60,
+      '(echo y | openclaw device pair approve $requestId 2>/dev/null || echo y | openclaw pair approve $requestId)',
+      timeout: 120, // Increased for high-load PRoot environments
     );
   }
 

@@ -2837,12 +2837,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.statusGreen.withValues(alpha: 0.15),
-                      blurRadius: 30,
-                      spreadRadius: 5,
+                      color: Colors.cyanAccent.withValues(alpha: 0.1),
+                      blurRadius: 40,
+                      spreadRadius: 10,
                     ),
                   ],
                 ),
@@ -2851,7 +2851,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.psychology_alt, color: AppColors.statusGreen, size: 20),
+                        const Icon(Icons.psychology_alt, color: Colors.cyanAccent, size: 20),
                         const SizedBox(width: 12),
                         Text(
                           'VOICE PERSONA',
@@ -2887,10 +2887,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
-                              color: isSelected ? AppColors.statusGreen : Colors.white.withValues(alpha: 0.05),
+                              color: isSelected ? Colors.cyanAccent.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.05),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: isSelected ? AppColors.statusGreen : Colors.white10,
+                                color: isSelected ? Colors.cyanAccent : Colors.white10,
                                 width: 1,
                               ),
                             ),
@@ -2899,7 +2899,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                               style: GoogleFonts.outfit(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w900,
-                                color: isSelected ? Colors.black : Colors.white70,
+                                color: isSelected ? Colors.cyanAccent : Colors.white70,
                                 letterSpacing: 1.0,
                               ),
                             ),
@@ -2927,13 +2927,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         const Spacer(),
                         Text(
                           '${PreferencesService().ttsSpeed.toStringAsFixed(1)}X',
-                          style: GoogleFonts.outfit(color: AppColors.statusGreen, fontSize: 12, fontWeight: FontWeight.bold),
+                          style: GoogleFonts.outfit(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: AppColors.statusGreen,
+                        activeTrackColor: Colors.cyanAccent,
                         inactiveTrackColor: Colors.white10,
                         thumbColor: Colors.white,
                         trackHeight: 2,
