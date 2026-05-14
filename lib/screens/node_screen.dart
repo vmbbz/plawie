@@ -121,14 +121,45 @@ class _NodeScreenState extends State<NodeScreen> {
                                             },
                                           ),
                                         ),
-                                      ] else if (state.status == NodeStatus.error ||
-                                          (state.logs.isNotEmpty && state.logs.last.contains('TOKEN_INVALID'))) ...[
-                                        const SizedBox(height: 12),
-                                        _primaryBtn('REFRESH LOCAL TOKEN', Icons.refresh_rounded, AppColors.statusAmber, () => provider.refreshToken()),
                                       ],
                                     ],
                                   ),
                                 ),
+
+                                if (_isLocal) ...[
+                                  const SizedBox(height: 24),
+                                  _sectionLabel('TROUBLESHOOTING'),
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.02),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Having pairing issues?',
+                                          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Refreshing the token can resolve persistent "Invalid Token" errors by forcing a new handshake.',
+                                          style: TextStyle(color: Colors.white38, fontSize: 11),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _primaryBtn(
+                                          'REFRESH GATEWAY TOKEN', 
+                                          Icons.refresh_rounded, 
+                                          AppColors.statusAmber.withValues(alpha: 0.8), 
+                                          () => _showRefreshWarning(context, provider)
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
 
                                 if (state.pairingCode != null) ...[
                                   const SizedBox(height: 20),
@@ -247,6 +278,55 @@ class _NodeScreenState extends State<NodeScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  void _showRefreshWarning(BuildContext context, NodeProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: AppColors.statusAmber.withValues(alpha: 0.2)),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: AppColors.statusAmber),
+              const SizedBox(width: 12),
+              Text('Security Warning', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          content: Text(
+            'Refreshing the gateway token will invalidate all current connections to this gateway. \n\nOnly proceed if the node is stuck or you are seeing "Invalid Token" errors.',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('CANCEL', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.w600)),
+            ),
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  provider.refreshToken();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.statusAmber,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: const Text('REFRESH', style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

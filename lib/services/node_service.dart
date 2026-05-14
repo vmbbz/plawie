@@ -413,12 +413,29 @@ class NodeService {
 
     if (requestId != null && requestId.isNotEmpty) {
       log('[NODE] Pairing required (1008) — auto-approving device $requestId...');
-      try {
-        await NativeBridge.approveDevice(requestId);
-        await Future.delayed(const Duration(milliseconds: 2000));
-        log('[NODE] Device approved successfully');
-      } catch (e) {
-        log('[NODE] Auto-approve failed: $e');
+      
+      bool approved = false;
+      int attempts = 0;
+      while (!approved && attempts < 3) {
+        attempts++;
+        try {
+          await NativeBridge.approveDevice(requestId);
+          approved = true;
+          log('[NODE] Device approved successfully on attempt $attempts');
+        } catch (e) {
+          log('[NODE] Auto-approve attempt $attempts failed: $e');
+          if (attempts < 3) {
+            final delay = 2000 * attempts;
+            log('[NODE] Retrying approval in ${delay}ms...');
+            await Future.delayed(Duration(milliseconds: delay));
+          }
+        }
+      }
+
+      if (!approved) {
+        log('[NODE] Auto-approval failed after $attempts attempts. Manual intervention may be needed.');
+      } else {
+        await Future.delayed(const Duration(milliseconds: 3000));
       }
     } else {
       // If no requestId was provided, we can't auto-approve.
@@ -429,7 +446,7 @@ class NodeService {
     await _ws.disconnect();
     _pairingResolveAttempted = false;
     unawaited(Future.delayed(
-      const Duration(milliseconds: 1500),
+      const Duration(milliseconds: 3000),
       () => connect(),
     ));
   }

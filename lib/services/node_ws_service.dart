@@ -56,7 +56,7 @@ class NodeWsService {
       final socket = await WebSocket.connect(
         _url!,
         headers: {'Origin': 'http://127.0.0.1:18789'},
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 20));
 
       _channel = IOWebSocketChannel(socket);
       _socketCompleter = Completer<void>();
