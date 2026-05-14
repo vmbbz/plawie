@@ -121,28 +121,34 @@ class NodeControls extends StatelessWidget {
         color = AppColors.statusGreen;
         label = 'Paired';
         icon = Icons.check_circle_outline;
+        break;
       case NodeStatus.connecting:
       case NodeStatus.challenging:
       case NodeStatus.pairing:
         color = AppColors.statusAmber;
         label = 'Connecting';
         icon = Icons.hourglass_top;
+        break;
       case NodeStatus.error:
         color = AppColors.statusRed;
         label = 'Error';
         icon = Icons.error_outline;
+        break;
       case NodeStatus.warmingUp:
-        color = AppColors.statusAmber; // Same as connecting
+        color = AppColors.statusAmber;
         label = 'Warming up';
         icon = Icons.waves;
+        break;
       case NodeStatus.disabled:
         color = AppColors.statusGrey;
         label = 'Disabled';
         icon = Icons.circle_outlined;
+        break;
       case NodeStatus.disconnected:
         color = AppColors.statusGrey;
         label = 'Disconnected';
         icon = Icons.link_off;
+        break;
     }
 
     return Container(
