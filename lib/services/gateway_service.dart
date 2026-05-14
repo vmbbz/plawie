@@ -728,11 +728,19 @@ PARAMETER num_batch 512
       if (!listening) await Future.delayed(const Duration(seconds: 1));
     }
 
-    // 3. Wait for "ready" state (all sidecars/channels started)
+    // 3. Wait for "ready" state (all sidecars/channels started).
+    // Uses a 30s sub-deadline: if HTTP /health already passed (step 2) but the
+    // "ready" log signal was missed (e.g. ANSI codes prevented string match),
+    // we break rather than spinning for the full 180s timeout.
+    final readyDeadline = DateTime.now().add(const Duration(seconds: 30));
     while (!_state.isReady) {
+      if (DateTime.now().isAfter(readyDeadline)) {
+        debugPrint('[GATEWAY] Ready signal sub-timeout — HTTP health confirmed, proceeding.');
+        break;
+      }
       if (DateTime.now().difference(startTime) > timeout) {
         throw TimeoutException(
-            'Gateway "ready" state timed out after ${timeout.inSeconds}s');
+            'Gateway startup timed out after ${timeout.inSeconds}s');
       }
       await Future.delayed(const Duration(milliseconds: 500));
     }
@@ -749,8 +757,14 @@ PARAMETER num_batch 512
 
       _handleGatewayAutoHeal(log);
 
-      // Detect "ready" signal to flip isReady flag
-      if (log.contains('[gateway] ready') || log.contains('http server listening')) {
+      // Detect "ready" signal to flip isReady flag.
+      // Strip ANSI codes first: gateway logs like "[36m[gateway][39m [36mready[39m"
+      // prevent a direct contains('[gateway] ready') match.
+      final strippedLog = log.replaceAll(AppConstants.ansiEscape, '');
+      if (strippedLog.contains('[gateway] ready') ||
+          strippedLog.contains('gateway ready') ||
+          log.contains('http server listening') ||
+          strippedLog.contains('http server listening')) {
         _updateState(_state.copyWith(isReady: true));
       }
 
@@ -935,10 +949,11 @@ PARAMETER num_batch 512
     ];
     config['gateway']['mode'] = 'local';
 
-    // FIX: Ensure allowedOrigins is present and contains 'n/a'
+    // Ensure allowedOrigins includes wildcard + n/a for Dart WebSocket (origin=n/a)
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
-      'n/a',
+      '*',   // wildcard — required for hardenGatewayConfigViaCli skip-check to work
+      'n/a', // Dart/Flutter WebSocket sends origin=n/a
       'http://127.0.0.1:18789',
       'http://localhost:18789'
     ];
@@ -947,15 +962,6 @@ PARAMETER num_batch 512
     // Prevent eth0 ENODEV errors with valid network binding
     config['gateway']['bind'] = 'loopback'; // Use proper OpenClaw enum value
     config['gateway']['port'] = AppConstants.gatewayPort; // Force port 18789
-
-    // FIX: GitHub issue #9358 solution for origin=n/a WebSocket rejections
-    // Dart WebSocket sends origin=n/a, not app://localhost
-    config['gateway']['controlUi'] ??= {};
-    config['gateway']['controlUi']['allowedOrigins'] = [
-      'n/a', // Critical: Allow origin=n/a from Dart/Flutter WebSocket
-      'http://127.0.0.1:18789',
-      'http://localhost:18789'
-    ];
 
     // DISCOVERY FIX: Disable mDNS/Bonjour using official schema
     config['discovery'] ??= {};
@@ -1903,10 +1909,11 @@ PARAMETER num_batch 512
       'models': prov['models'] ?? defaultModels,
     };
 
-    // REINFORCE: origin=n/a fix must survive every write
+    // REINFORCE: origin=n/a fix must survive every write (keep "*" for harden skip-check)
     config['gateway'] ??= {};
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
+      '*',
       'n/a',
       'http://127.0.0.1:18789',
       'http://localhost:18789'
@@ -3566,13 +3573,8 @@ PARAMETER num_batch 512
   /// We run this TWICE with a delay to ensure it survives any background touches
   /// by the 'onboard' wizard or internal gateway reloads.
   Future<void> hardenGatewayConfigViaCli() async {
-    // CRITICAL: Only run if gateway is NOT already running to prevent restart loops.
-    // The BootstrapService handles pre-start hardening now.
-    final alreadyRunning = await NativeBridge.isGatewayRunning();
-    if (alreadyRunning) {
-      debugPrint('ℹ️ Gateway already running — skipping post-start CLI hardening sweep.');
-      return;
-    }
+    // The BootstrapService handles pre-start hardening now, but we perform 
+    // a defensive check here to ensure the active gateway is always hardened.
 
     try {
       final config = await _readConfig();
@@ -3580,14 +3582,13 @@ PARAMETER num_batch 512
           (config['gateway']?['controlUi']?['allowedOrigins'] as List?)
                   ?.cast<String>() ??
               [];
-      final modelPrewarm = config['gateway']?['startup']?['modelPrewarm'] as bool? ?? true;
       final mdnsOff = config['discovery']?['mdns']?['mode'] == 'off';
-      final sidecarsOff = config['gateway']?['sidecars']?['model-prewarm']?['enabled'] == false;
 
-      // ONLY apply the patch if critical stability fields are missing.
-      if (origins.contains('*') && origins.contains('n/a') && !modelPrewarm && mdnsOff && sidecarsOff) {
-        debugPrint(
-            '✅ Hardening (origins + prewarm + mdns + sidecars) already present. Skipping sweep.');
+      // Skip if the two fields we can reliably verify are already correct.
+      // Previously checked sidecarsOff (gateway.sidecars.model-prewarm.enabled)
+      // which is never written → always false → always triggered a reload.
+      if (origins.contains('*') && origins.contains('n/a') && mdnsOff) {
+        debugPrint('✅ Hardening already present. Skipping reload.');
         return;
       }
     } catch (_) {}
@@ -3619,15 +3620,7 @@ PARAMETER num_batch 512
     },
     "mode": "local",
     "bind": "loopback",
-    "port": 18789,
-    "startup": {
-      "modelPrewarm": false
-    },
-    "sidecars": {
-      "model-prewarm": {
-        "enabled": false
-      }
-    }
+    "port": 18789
   },
   "ollama": {
     "num_thread": 4
@@ -3641,16 +3634,26 @@ PARAMETER num_batch 512
 ''';
 
     try {
+      final alreadyRunning = await NativeBridge.isGatewayRunning();
+      
       await NativeBridge.runInProot(
         'cat > /tmp/harden.json << \'EOF\'\n' +
             patchJson +
             '\nEOF && ' +
             'openclaw config patch --file /tmp/harden.json && ' +
-            'rm -f /tmp/harden.json', // Removed disruptive 'openclaw reload'
+            'rm -f /tmp/harden.json' + 
+            (alreadyRunning ? ' && openclaw reload 2>/dev/null' : ''), 
         timeout: 60,
       );
-      debugPrint('✅ Hardening sweep (config patch) applied successfully');
-      _addActivity('[SYS] Industrial-grade CLI hardening applied.');
+      
+      if (alreadyRunning) {
+        // Short grace period for the gateway to process the SIGUSR1 (reload) 
+        // and for WebSocket listeners to recover.
+        await Future.delayed(const Duration(milliseconds: 1500));
+      }
+      
+      debugPrint('✅ Hardening sweep (config patch${alreadyRunning ? ' + reload' : ''}) applied successfully');
+      _addActivity('[SYS] Industrial-grade CLI hardening applied${alreadyRunning ? ' and reloaded' : ''}.');
     } catch (e) {
       debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }

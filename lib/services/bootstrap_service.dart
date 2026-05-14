@@ -11,6 +11,7 @@ import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'gateway_service.dart';
+import 'stability_model.dart';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -376,13 +377,13 @@ class BootstrapService {
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.80, 'Running industrial onboard...', 85, 
           subMessage: 'Hardware validation • SecretRef syncing');
 
-      // Full onboard (your engineers' CLI — untouched)
-      unawaited(NativeBridge.runInProot(
-        '$kOpenClawCommand onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
+      // Full onboard — AWAITED so it cannot race with config hardening below.
+      // catchError makes it non-fatal; hardening overwrites any onboard defaults.
+      await NativeBridge.runInProot(
+        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
         timeout: 60,
-      ));
+      ).catchError((_) => '');
 
-      await Future.delayed(const Duration(milliseconds: 800));
       _emitProgress(onProgress, SetupStep.hardening, 0.85, 'Applying industrial config hardening...', 90,
           subMessage: 'Zero-restart security sweep');
 
@@ -664,7 +665,7 @@ class BootstrapService {
       // Ensure gateway is in correct mode
       config['gateway'] ??= {};
       if (config['gateway'] is Map) {
-        (config['gateway'] as Map)['mode'] = 'full';
+        (config['gateway'] as Map)['mode'] = 'local';
       }
 
       await configFile.writeAsString(const JsonEncoder.withIndent('  ').convert(config));
@@ -818,12 +819,6 @@ class BootstrapService {
       config['gateway']['nodes']['pairing'] ??= {};
       config['gateway']['nodes']['pairing']['autoApproveCidrs'] = ['127.0.0.1/32'];
 
-      config['gateway']['startup'] = {
-        'modelPrewarm': false
-      };
-      config['gateway']['sidecars'] = {
-        'model-prewarm': { 'enabled': false }
-      };
       
       // 2. Default Agent configuration
       config['agents'] ??= {};
@@ -868,14 +863,14 @@ class BootstrapService {
       config['messages']['tts']['provider'] ??= 'sherpa-onnx';
       config['messages']['tts']['auto'] ??= 'inbound';
       config['messages']['tts']['personas'] ??= {
-        'default': { 'provider': 'sherpa-onnx', 'voice': 'en_US-lessac-high' },
-        'friendly': { 'provider': 'sherpa-onnx', 'voice': 'en_US-amy-low' },
-        'warm': { 'provider': 'sherpa-onnx', 'voice': 'en_US-kathleen-low' },
-        'professional': { 'provider': 'sherpa-onnx', 'voice': 'en_US-lessac-medium' },
-        'authoritative': { 'provider': 'sherpa-onnx', 'voice': 'en_US-ryan-high' },
-        'casual': { 'provider': 'sherpa-onnx', 'voice': 'en_US-lessac-low' },
-        'enthusiastic': { 'provider': 'sherpa-onnx', 'voice': 'en_US-amy-medium' },
-        'whispering': { 'provider': 'sherpa-onnx', 'voice': 'en_US-kathleen-low' },
+        'default': { 'provider': 'sherpa-onnx', 'model': 'en_US-lessac-high' },
+        'friendly': { 'provider': 'sherpa-onnx', 'model': 'en_US-amy-low' },
+        'warm': { 'provider': 'sherpa-onnx', 'model': 'en_US-kathleen-low' },
+        'professional': { 'provider': 'sherpa-onnx', 'model': 'en_US-lessac-medium' },
+        'authoritative': { 'provider': 'sherpa-onnx', 'model': 'en_US-ryan-high' },
+        'casual': { 'provider': 'sherpa-onnx', 'model': 'en_US-lessac-low' },
+        'enthusiastic': { 'provider': 'sherpa-onnx', 'model': 'en_US-amy-medium' },
+        'whispering': { 'provider': 'sherpa-onnx', 'model': 'en_US-kathleen-low' },
       };
 
       await configFile.writeAsString(jsonEncode(config));
@@ -922,28 +917,31 @@ class BootstrapService {
 
   Future<void> _approveLocalNodeIfNeeded() async {
     try {
-      _log('Approving local Android node...');
-      // 1. Give the gateway a moment to register the pending request
-      await Future.delayed(const Duration(seconds: 3));
-      
-      // 2. Use the Auditor's "Magic Bullet" logic: 
-      // Try to get specific ID via jq, then fallback to --latest variant.
-      await NativeBridge.runInProot(
-        'REQUEST_ID=\$(\$kOpenClawCommand devices list --json 2>/dev/null | jq -r ".pending[0].requestId // empty"); '
+      // Give the gateway a moment to register any pending pairing request (PRoot δ1).
+      await Future.delayed(Duration(milliseconds: StabilityModel.injectDelay));
+
+      // CLI approval only — no surgical injection, no openclaw reload here.
+      // Surgical injection + reload belongs to the 1008 fallback path in
+      // NativeBridge.approveDevice() / NodeService._handleNodePairingRequired().
+      // Running a reload in the proactive path kicks an already-paired WebSocket.
+      final cliResult = await NativeBridge.runInProot(
+        'REQUEST_ID=\$(openclaw devices list --json 2>/dev/null | jq -r ".pending[0].requestId // empty"); '
         'if [ -n "\$REQUEST_ID" ]; then '
-        '  echo y | \$kOpenClawCommand devices approve "\$REQUEST_ID" || '
-        '  echo y | \$kOpenClawCommand device pair approve "\$REQUEST_ID" || '
-        '  echo y | \$kOpenClawCommand pair approve "\$REQUEST_ID"; '
+        '  echo y | openclaw devices approve "\$REQUEST_ID" || '
+        '  echo y | openclaw device pair approve "\$REQUEST_ID"; '
         'else '
-        '  echo y | \$kOpenClawCommand devices approve --latest || '
-        '  echo y | \$kOpenClawCommand device pair approve --latest || '
-        '  echo y | \$kOpenClawCommand pair approve --latest; '
+        '  echo "no_pending"; '
         'fi',
         timeout: 20,
-      );
-      _log('✅ Local node proactive approval completed');
+      ).catchError((_) => 'no_pending');
+
+      if (cliResult.contains('approved') || cliResult.contains('success')) {
+        _log('✅ Local node approved via CLI');
+      } else {
+        _log('ℹ️ No pending approval request — autoApproveCidrs handled pairing (or node not yet connected)');
+      }
     } catch (e) {
-      _log('Non-fatal: Proactive approval failed: $e');
+      _log('Non-fatal: Proactive approval check failed: $e');
     }
   }
 }

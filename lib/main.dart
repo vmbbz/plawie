@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'services/agent_skill_server.dart';
 import 'services/skills_service.dart';
+import 'services/native_bridge.dart';
 
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  NativeBridge.init();
 
   runApp(const PlawieApp());
 

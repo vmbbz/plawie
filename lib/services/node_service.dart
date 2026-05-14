@@ -8,6 +8,7 @@ import '../models/node_state.dart';
 import 'native_bridge.dart';
 import 'device_identity.dart';
 import 'node_ws_service.dart';
+import 'stability_model.dart';
 import 'preferences_service.dart';
 import 'openclaw_service.dart';
 
@@ -81,6 +82,21 @@ class NodeService {
       log('[NODE] Warning: Device identity not initialized');
     }
 
+    // ── Network Change Resilience ──
+    NativeBridge.onNetworkChanged.listen((isConnected) {
+      if (isConnected) {
+        log('[NODE] Network restored. Checking connection...');
+        if (_state.status == NodeStatus.disconnected || _state.status == NodeStatus.error) {
+          log('[NODE] Triggering proactive reconnect...');
+          connect();
+        }
+      } else {
+        log('[NODE] Network lost.');
+        if (_state.status == NodeStatus.paired || _state.status == NodeStatus.connecting) {
+          _updateState(_state.copyWith(status: NodeStatus.disconnected));
+        }
+      }
+    });
   }
 
   Future<void> connect({String? host, int? port}) async {
@@ -418,47 +434,38 @@ class NodeService {
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
-    clearCachedToken();
+    
+    // CRITICAL: Stop the WebSocket's internal auto-reconnect timer while we heal
     _ws.haltReconnect();
+    clearCachedToken();
 
-    if (requestId != null && requestId.isNotEmpty) {
-      log('[NODE] Pairing required (1008) — auto-approving device $requestId...');
-      
-      bool approved = false;
-      int attempts = 0;
-      while (!approved && attempts < 3) {
-        attempts++;
-        try {
-          await NativeBridge.approveDevice(requestId);
-          approved = true;
-          log('[NODE] Device approved successfully on attempt $attempts');
-        } catch (e) {
-          log('[NODE] Auto-approve attempt $attempts failed: $e');
-          if (attempts < 3) {
-            final delay = 2000 * attempts;
-            log('[NODE] Retrying approval in ${delay}ms...');
-            await Future.delayed(Duration(milliseconds: delay));
-          }
-        }
-      }
-
-      if (!approved) {
-        log('[NODE] Auto-approval failed after $attempts attempts. Manual intervention may be needed.');
-      } else {
-        await Future.delayed(const Duration(milliseconds: 3000));
-      }
-    } else {
-      // If no requestId was provided, we can't auto-approve.
-      // Do NOT clear records here unless we are sure they are corrupted.
-      log('[NODE] Pairing required but no requestId provided. Manual approval may be needed.');
+    log('[NODE] Pairing required (1008) — triggering proactive approval sequence...');
+    
+    bool approved = false;
+    try {
+      // 1. Try the Native Bridge approval (which now includes the surgical fallback)
+      // If we have a requestId from the close frame, we pass it, but the surgical
+      // injection will use the DeviceIdentity anyway if the CLI fails.
+      await NativeBridge.approveDevice(requestId ?? 'latest');
+      approved = true;
+      log('[NODE] Proactive approval sequence completed');
+    } catch (e) {
+      log('[NODE] Proactive approval failed: $e');
     }
+
+    // 2. Refresh the gateway token. Manual injection or CLI approval might have 
+    // triggered a gateway reload which can sometimes cycle the token.
+    _gatewayAuthToken = await _readGatewayToken();
+    
+    // 3. Graceful cooldown: give the gateway time to finish reloading its 
+    // internal device storage before we try to connect again. (δ3 + δ_ws)
+    await Future.delayed(StabilityModel.pairingHealDuration);
 
     await _ws.disconnect();
     _pairingResolveAttempted = false;
-    unawaited(Future.delayed(
-      const Duration(milliseconds: 5000), // More breathing room
-      () => connect(),
-    ));
+    
+    log('[NODE] Cooldown finished. Attempting fresh connection...');
+    unawaited(connect());
   }
 
   Future<void> _clearNodeDeviceRecord() async {

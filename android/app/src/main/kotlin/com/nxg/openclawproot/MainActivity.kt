@@ -34,6 +34,11 @@ import android.media.projection.MediaProjectionManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
+import android.app.AlarmManager
+import android.os.SystemClock
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -58,6 +63,21 @@ class MainActivity : FlutterActivity() {
 
     // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
     private var hotwordEventSink: EventChannel.EventSink? = null
+    private var methodChannel: MethodChannel? = null
+
+    // Network Callback to notify Flutter of connectivity changes
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            runOnUiThread {
+                methodChannel?.invokeMethod("onNetworkChanged", true)
+            }
+        }
+        override fun onLost(network: Network) {
+            runOnUiThread {
+                methodChannel?.invokeMethod("onNetworkChanged", false)
+            }
+        }
+    }
 
     // BroadcastReceiver that relays HotwordService detections to Flutter via EventChannel
     private val wakeWordReceiver = object : BroadcastReceiver() {
@@ -136,7 +156,9 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).let { channel ->
+            methodChannel = channel
+            channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getProotPath" -> {
                     result.success(processManager.getProotPath())
@@ -651,10 +673,13 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+        }
 
         createUrlNotificationChannel()
         requestNotificationPermission()
+        registerNetworkCallback()
         HeartbeatWorker.schedule(this) // PROD UPGRADE: Background heartbeat watchdog
+        scheduleExactAlarm()           // DOZE FIX: AlarmManager fallback
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
@@ -870,7 +895,45 @@ class MainActivity : FlutterActivity() {
         return listOf(micAction)
     }
 
+    private fun registerNetworkCallback() {
+        try {
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val request = NetworkRequest.Builder().build()
+            connectivityManager.registerNetworkCallback(request, networkCallback)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to register network callback", e)
+        }
+    }
+
+    private fun scheduleExactAlarm() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, BootReceiver::class.java).apply {
+                action = "com.nxg.openclawproot.ALARM_HEARTBEAT"
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                this, 100, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // Trigger every 30 minutes, even in Doze mode
+            val triggerAt = SystemClock.elapsedRealtime() + 30 * 60 * 1000L
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            }
+            Log.i("MainActivity", "Scheduled 30-minute exact alarm for Doze mode.")
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Could not schedule exact alarm: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
+        try {
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
         try { unregisterReceiver(pipMicReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(wakeWordReceiver) } catch (_: Exception) {}
         hotwordEventSink = null
