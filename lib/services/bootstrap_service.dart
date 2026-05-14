@@ -842,11 +842,6 @@ class BootstrapService {
         'mdns': { 'mode': 'off' }
       };
 
-      // 6. LOCAL-FIRST TTS HARDENING
-.0.1:18789',
-        'http://localhost:18789'
-      ];
-
       // 6. LOCAL-FIRST TTS HARDENING (Offline voice support)
       config['messages'] ??= {};
       config['messages']['tts'] ??= {};
