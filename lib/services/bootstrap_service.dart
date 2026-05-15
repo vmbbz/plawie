@@ -772,13 +772,24 @@ class BootstrapService {
     "bind": "loopback",
     "port": 18789,
     "mode": "local",
-    "nodes": { "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] } },
+    "nodes": {
+      "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] },
+      "denyCommands": [],
+      "allowCommands": [
+        "camera.snap","camera.clip","camera.list",
+        "canvas.navigate","canvas.eval","canvas.snapshot",
+        "flash.on","flash.off","flash.toggle","flash.status",
+        "location.get","screen.record","sensor.read","sensor.list","haptic.vibrate"
+      ]
+    },
     "startup": { "modelPrewarm": false, "updateCheck": false },
-    "sidecars": {
-      "browser": { "enabled": false }
-    }
+    "sidecars": { "browser": { "enabled": false } },
+    "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
   },
-  "discovery": { "mdns": { "mode": "off" } },
+  "discovery": {
+    "mdns": { "mode": "off" },
+    "wideArea": { "enabled": false }
+  },
   "models": {
     "startup": { "modelPrewarm": false },
     "providers": {
