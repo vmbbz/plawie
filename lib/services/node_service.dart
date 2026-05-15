@@ -8,7 +8,6 @@ import '../models/node_state.dart';
 import 'native_bridge.dart';
 import 'device_identity.dart';
 import 'node_ws_service.dart';
-import 'stability_model.dart';
 import 'preferences_service.dart';
 import 'openclaw_service.dart';
 
@@ -430,42 +429,144 @@ class NodeService {
   }
 
   /// Called when the gateway closes the WebSocket with 1008 (pairing required).
-  /// This means the device is known to the gateway but not approved yet.
+  /// Primary: approve via direct Dart WebSocket operator connection (zero PRoot, no race).
+  /// Fallback: CLI device remove + filesystem clear so next connect is treated as new.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
-    
-    // CRITICAL: Stop the WebSocket's internal auto-reconnect timer while we heal
-    _ws.haltReconnect();
+
+    _ws.haltReconnect(); // Freeze reconnect — requestId stays valid
     clearCachedToken();
 
-    log('[NODE] Pairing required (1008) — triggering proactive approval sequence...');
-    
+    log('[NODE] Pairing required (1008) — requestId=${requestId ?? 'none'}');
+
     bool approved = false;
-    try {
-      // 1. Try the Native Bridge approval (which now includes the surgical fallback)
-      // If we have a requestId from the close frame, we pass it, but the surgical
-      // injection will use the DeviceIdentity anyway if the CLI fails.
-      await NativeBridge.approveDevice(requestId ?? 'latest');
-      approved = true;
-      log('[NODE] Proactive approval sequence completed');
-    } catch (e) {
-      log('[NODE] Proactive approval failed: $e');
+    if (requestId != null && requestId.isNotEmpty) {
+      _gatewayAuthToken ??= await _readGatewayToken();
+      if (_gatewayAuthToken != null) {
+        approved = await _approveViaNativeDartWs(requestId, _gatewayAuthToken!);
+      } else {
+        log('[NODE] No gateway token — cannot perform direct WS approval');
+      }
     }
 
-    // 2. Refresh the gateway token. Manual injection or CLI approval might have 
-    // triggered a gateway reload which can sometimes cycle the token.
-    _gatewayAuthToken = await _readGatewayToken();
-    
-    // 3. Graceful cooldown: give the gateway time to finish reloading its 
-    // internal device storage before we try to connect again. (δ3 + δ_ws)
-    await Future.delayed(StabilityModel.pairingHealDuration);
+    if (!approved) {
+      // CLI remove updates the in-memory device store; filesystem clear is belt-and-suspenders.
+      log('[NODE] Direct approval unavailable — removing device record via CLI...');
+      final deviceId = _identity.deviceId ?? '';
+      if (deviceId.isNotEmpty) {
+        try { await NativeBridge.removeDevice(deviceId); } catch (_) {}
+      }
+      await _clearNodeDeviceRecord();
+    }
 
-    await _ws.disconnect();
+    await Future.delayed(const Duration(milliseconds: 1500));
+    await _ws.disconnect(); // Resets _pairingInProgress so next connect() can pair again
     _pairingResolveAttempted = false;
-    
-    log('[NODE] Cooldown finished. Attempting fresh connection...');
+
+    log('[NODE] Reconnecting after pairing resolution...');
     unawaited(connect());
+  }
+
+  /// Opens a raw operator WebSocket to the gateway and approves the pending
+  /// device pairing request by requestId. Auth=token bypasses device pairing —
+  /// no PRoot required. haltReconnect() must be called before this.
+  Future<bool> _approveViaNativeDartWs(String requestId, String token) async {
+    log('[NODE] Direct WS approval — requestId=$requestId');
+    WebSocket? ws;
+    StreamSubscription? sub;
+    Timer? challengeTimer;
+    try {
+      ws = await WebSocket.connect(
+        'ws://127.0.0.1:18789',
+        headers: {'Origin': 'http://127.0.0.1:18789'},
+      ).timeout(const Duration(seconds: 10));
+
+      final connectFrame = NodeFrame.request('connect', {
+        'minProtocol': 3,
+        'maxProtocol': 3,
+        'client': {
+          'id': 'mobile-autoap',
+          'displayName': 'Plawie',
+          'version': '1.0.0',
+          'platform': 'android',
+          'deviceFamily': 'Android',
+          'mode': 'operator',
+        },
+        'role': 'operator',
+        'scopes': ['operator.pairing'],
+        'auth': {'token': token},
+        'locale': 'en-US',
+      });
+
+      bool connectSent = false;
+      bool helloReceived = false;
+      String? approveFrameId;
+      final done = Completer<bool>();
+
+      void sendConnect() {
+        final liveWs = ws;
+        if (connectSent || liveWs == null) return;
+        connectSent = true;
+        liveWs.add(connectFrame.encode());
+        log('[NODE] Operator connect frame sent');
+      }
+
+      challengeTimer = Timer(const Duration(milliseconds: 500), sendConnect);
+
+      sub = ws.listen(
+        (data) {
+          if (data is! String || done.isCompleted) return;
+          try {
+            final json = jsonDecode(data) as Map<String, dynamic>;
+            final type = json['type'] as String? ?? '';
+            final event = json['event'] as String? ?? '';
+            final frameId = json['id'] as String?;
+            final ok = json['ok'] as bool?;
+
+            if (type == 'event' && event == 'connect.challenge' && !connectSent) {
+              challengeTimer?.cancel();
+              sendConnect();
+              return;
+            }
+
+            if (!helloReceived && (type == 'hello-ok' ||
+                (type == 'res' && frameId == connectFrame.id && ok == true))) {
+              helloReceived = true;
+              final approveFrame = NodeFrame.request('device.pair.approve', {'requestId': requestId});
+              approveFrameId = approveFrame.id;
+              ws!.add(approveFrame.encode());
+              log('[NODE] device.pair.approve sent');
+              return;
+            }
+
+            if (helloReceived && type == 'res' &&
+                (frameId == approveFrameId || approveFrameId == null)) {
+              done.complete(ok == true);
+              return;
+            }
+
+            if (ok == false && !done.isCompleted) done.complete(false);
+          } catch (_) {}
+        },
+        onError: (_) { if (!done.isCompleted) done.complete(false); },
+        onDone: ()  { if (!done.isCompleted) done.complete(false); },
+      );
+
+      final result = await done.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () { log('[NODE] Direct WS approval timed out'); return false; },
+      );
+      log('[NODE] Direct WS approval: ${result ? "SUCCESS" : "FAILED"}');
+      return result;
+    } catch (e) {
+      log('[NODE] Direct WS approval error: $e');
+      return false;
+    } finally {
+      challengeTimer?.cancel();
+      await sub?.cancel();
+      try { ws?.close(1000); } catch (_) {}
+    }
   }
 
   Future<void> _clearNodeDeviceRecord() async {

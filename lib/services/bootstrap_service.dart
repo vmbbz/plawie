@@ -11,7 +11,6 @@ import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'gateway_service.dart';
-import 'stability_model.dart';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -754,21 +753,21 @@ class BootstrapService {
         'openclaw config set discovery.mdns.mode off && '
         'openclaw config set models.providers.ollama.apiKey ollama-local && '
         'openclaw config set models.providers.ollama.baseUrl http://127.0.0.1:11434 && '
-        'openclaw config set agents.defaults.model.primary google/gemini-3.1-pro-preview',
+        'openclaw config set agents.defaults.model.primary google/gemini-3.1-pro-preview && '
+        'openclaw config set gateway.auth.unauthenticatedLocalhost true',
         timeout: 30,
       );
 
-      // 2. Complex structures via patch (Atomic write)
+      // 2. Complex structures via patch (Atomic write).
+      // NOTE: gateway.auth is intentionally omitted — patching it as an object
+      // shallow-replaces the entire auth section and wipes gateway.auth.token.
+      // auth.unauthenticatedLocalhost is set individually via CLI above.
       final patchJson = '''
 {
   "gateway": {
     "bind": "loopback",
     "port": 18789,
     "mode": "local",
-    "auth": { 
-      "methods": ["token", "unauthenticated-localhost"],
-      "unauthenticatedLocalhost": true
-    },
     "nodes": { "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] } },
     "startup": { "modelPrewarm": false, "updateCheck": false },
     "sidecars": {
@@ -937,32 +936,8 @@ class BootstrapService {
   }
 
   Future<void> _approveLocalNodeIfNeeded() async {
-    try {
-      // Give the gateway a moment to register any pending pairing request (PRoot δ1).
-      await Future.delayed(Duration(milliseconds: StabilityModel.injectDelay));
-
-      // CLI approval only — no surgical injection, no openclaw reload here.
-      // Surgical injection + reload belongs to the 1008 fallback path in
-      // NativeBridge.approveDevice() / NodeService._handleNodePairingRequired().
-      // Running a reload in the proactive path kicks an already-paired WebSocket.
-      final cliResult = await NativeBridge.runInProot(
-        'REQUEST_ID=\$(openclaw devices list --json 2>/dev/null | jq -r ".pending[0].requestId // empty"); '
-        'if [ -n "\$REQUEST_ID" ]; then '
-        '  echo y | openclaw devices approve "\$REQUEST_ID" || '
-        '  echo y | openclaw device pair approve "\$REQUEST_ID"; '
-        'else '
-        '  echo "no_pending"; '
-        'fi',
-        timeout: 20,
-      ).catchError((_) => 'no_pending');
-
-      if (cliResult.contains('approved') || cliResult.contains('success')) {
-        _log('✅ Local node approved via CLI');
-      } else {
-        _log('ℹ️ No pending approval request — autoApproveCidrs handled pairing (or node not yet connected)');
-      }
-    } catch (e) {
-      _log('Non-fatal: Proactive approval check failed: $e');
-    }
+    // Node pairing is handled automatically by NodeService._handleNodePairingRequired()
+    // via direct Dart WS operator approval. No action needed here.
+    _log('[SETUP] Node pairing is self-healing via direct WS approval');
   }
 }

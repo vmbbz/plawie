@@ -88,34 +88,11 @@ class NativeBridge {
   }
 
   static Future<String> approveDevice(String requestId) async {
-    // 1. Try official CLI methods (v2 and v3 protocols)
-    // We use a complex shell sequence to catch all possible command variants in OpenClaw 2.0.
-    final cliCommand = 'REQUEST_ID="$requestId"; '
-        'if [ "$requestId" = "latest" ]; then '
-        '  REQUEST_ID=\$(openclaw devices list --json 2>/dev/null | jq -r ".pending[0].requestId // empty"); '
-        'fi; '
-        'if [ -n "\$REQUEST_ID" ]; then '
-        '  echo y | openclaw devices approve "\$REQUEST_ID" || '
-        '  echo y | openclaw device pair approve "\$REQUEST_ID" || '
-        '  echo y | openclaw pair approve "\$REQUEST_ID"; '
-        'else '
-        '  echo y | openclaw devices approve --latest || '
-        '  echo y | openclaw device pair approve --latest || '
-        '  echo y | openclaw pair approve --latest; '
-        'fi';
-
-    try {
-      final result = await runInProot(cliCommand, timeout: 30);
-      if (result.contains('approved') || result.contains('success')) {
-        return result;
-      }
-    } catch (_) {
-      // Fall through to surgical injection
-    }
-
-    // 2. INDUSTRIAL FALLBACK: Surgical Filesystem Injection
-    // Directly inject the device into the gateway's authorized list.
-    // This survives even if the CLI is completely broken.
+    // Surgical Filesystem Injection — does NOT depend on requestId timing.
+    // Directly upserts the device into the gateway's authorized list with the
+    // correct role (operator, matching what autoApproveCidrs grants).
+    // CLI-based approval is skipped: by the time the CLI connects through PRoot
+    // (~5–10s), the node has cycled to a new requestId → unknown requestId errors.
     final identity = DeviceIdentity.instance;
     final deviceId = identity.deviceId;
     final publicKey = identity.publicKeyBase64Url;
@@ -129,27 +106,28 @@ class NativeBridge {
       'publicKey': publicKey,
       'name': 'OpenClaw Mobile',
       'pairedAt': DateTime.now().toIso8601String(),
-      'roles': ['node'],
-      'scopes': ['node.device', 'node.proxy']
+      'roles': ['operator'],
+      'scopes': ['node.device', 'node.proxy', 'operator.admin'],
     };
     final deviceJsonStr = jsonEncode(deviceJson);
 
-    return await runInProot('''
+    final result = await runInProot('''
       STORAGE_DIR="/root/.openclaw/storage"
       DEVICES_FILE="\$STORAGE_DIR/devices.json"
       mkdir -p "\$STORAGE_DIR"
-      
+
       if [ ! -f "\$DEVICES_FILE" ]; then
         echo '{"devices": [$deviceJsonStr]}' > "\$DEVICES_FILE"
       else
         TMP_FILE=\$(mktemp)
         jq --argjson newDev '$deviceJsonStr' '.devices |= (map(select(.id != \$newDev.id)) + [\$newDev])' "\$DEVICES_FILE" > "\$TMP_FILE" && mv "\$TMP_FILE" "\$DEVICES_FILE"
       fi
-      
-      # Ensure gateway picks up the change
+
       openclaw reload 2>/dev/null || true
       echo "Surgical injection successful"
     ''', timeout: 60);
+
+    return result;
   }
 
   static Future<String> removeDevice(String deviceId) async {
