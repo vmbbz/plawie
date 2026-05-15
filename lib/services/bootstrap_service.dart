@@ -783,7 +783,10 @@ class BootstrapService {
       ]
     },
     "startup": { "modelPrewarm": false, "updateCheck": false },
-    "sidecars": { "browser": { "enabled": false } },
+    "sidecars": {
+      "browser": { "enabled": false },
+      "model-prewarm": { "enabled": false }
+    },
     "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
   },
   "discovery": {

@@ -482,21 +482,19 @@ class NodeService {
         headers: {'Origin': 'http://127.0.0.1:18789'},
       ).timeout(const Duration(seconds: 10));
 
+      // Connect as CLI mode — gateway schema only accepts 'cli'/'backend' for client.mode;
+      // 'operator' and free-form client.id values are rejected with 1008 invalid params.
+      // CLI mode has device.pair.approve permission, same as the openclaw CLI binary.
       final connectFrame = NodeFrame.request('connect', {
         'minProtocol': 3,
         'maxProtocol': 3,
         'client': {
-          'id': 'mobile-autoap',
-          'displayName': 'Plawie',
-          'version': '1.0.0',
-          'platform': 'android',
-          'deviceFamily': 'Android',
-          'mode': 'operator',
+          'id': 'cli',
+          'version': '2026.5.4',
+          'platform': 'linux',
+          'mode': 'cli',
         },
-        'role': 'operator',
-        'scopes': ['operator.pairing'],
         'auth': {'token': token},
-        'locale': 'en-US',
       });
 
       bool connectSent = false;
