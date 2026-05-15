@@ -383,6 +383,10 @@ class BootstrapService {
         timeout: 60,
       ).catchError((_) => '');
 
+      // Re-harden after onboard: openclaw onboard writes its own defaults which may
+      // include messages.tts.personas.*.model — a key the gateway schema rejects.
+      await _hardenOpenClawConfig();
+
       // Bake API credentials collected in SetupFlowScreen BEFORE the gateway starts.
       // This eliminates the post-start reload that used to disrupt node pairing.
       final setupPrefs = PreferencesService();
@@ -877,21 +881,15 @@ class BootstrapService {
         'mdns': { 'mode': 'off' }
       };
 
-      // 6. LOCAL-FIRST TTS HARDENING (Offline voice support)
-      config['messages'] ??= {};
-      config['messages']['tts'] ??= {};
-      config['messages']['tts']['provider'] ??= 'sherpa-onnx';
-      config['messages']['tts']['auto'] ??= 'inbound';
-      config['messages']['tts']['personas'] ??= {
-        'default': { 'provider': 'sherpa-onnx', 'model': 'en_US-lessac-high' },
-        'friendly': { 'provider': 'sherpa-onnx', 'model': 'en_US-amy-low' },
-        'warm': { 'provider': 'sherpa-onnx', 'model': 'en_US-kathleen-low' },
-        'professional': { 'provider': 'sherpa-onnx', 'model': 'en_US-lessac-medium' },
-        'authoritative': { 'provider': 'sherpa-onnx', 'model': 'en_US-ryan-high' },
-        'casual': { 'provider': 'sherpa-onnx', 'model': 'en_US-lessac-low' },
-        'enthusiastic': { 'provider': 'sherpa-onnx', 'model': 'en_US-amy-medium' },
-        'whispering': { 'provider': 'sherpa-onnx', 'model': 'en_US-kathleen-low' },
-      };
+      // Remove invalid TTS persona "model" keys — gateway schema rejects them.
+      // Personas written by older versions of this code used "model" which is
+      // not a recognized field; the gateway refuses to start if they're present.
+      final existingPersonas = (config['messages'] as Map?)?['tts']?['personas'];
+      if (existingPersonas is Map) {
+        for (final p in existingPersonas.values) {
+          if (p is Map) (p as Map<String, dynamic>).remove('model');
+        }
+      }
 
       await configFile.writeAsString(jsonEncode(config));
       _log('[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');

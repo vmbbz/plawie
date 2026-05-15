@@ -1055,6 +1055,15 @@ PARAMETER num_batch 512
     // The gateway rejects it with "Unrecognized keys" and breaks config hot-reload.
     // Device skills are registered via skills.register RPC at connect time instead.
 
+    // Remove invalid TTS persona "model" keys — gateway schema rejects them.
+    // openclaw onboard writes these defaults; must be stripped before gateway reads config.
+    final ttsPersonas = (config['messages'] as Map?)?['tts']?['personas'];
+    if (ttsPersonas is Map) {
+      for (final p in ttsPersonas.values) {
+        if (p is Map) (p as Map<String, dynamic>).remove('model');
+      }
+    }
+
     await _writeConfig(config);
   }
 
