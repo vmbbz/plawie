@@ -56,6 +56,23 @@ The public gateway auth token does not grant `operator.pairing` in any mode.
 
 ---
 
+### Approach 6 — No-scopes connect + `pending.json` deletion (commit 569f8e1)
+**What:** On 1008: clear `prefs.nodeDeviceToken`, delete `/root/.openclaw/devices/pending.json` via PRoot, reconnect without `scopes` field in the connect frame.  
+**Why it failed:**
+`pending.json` deletion confirmed working (log: `Pending device list cleared`). Scopes correctly omitted. But `autoApproveCidrs` still never fired.
+
+Root cause: `autoApproveCidrs` only fires for **completely unknown** devices — not in `paired.json` AND not in `pending.json`. Our device was written into `paired.json` during bootstrap by `NativeBridge.approveDevice()`. Clearing only `pending.json` was insufficient; the gateway still sees the device as "known" and skips the auto-approve path.
+
+```
+[NODE] Pending device list cleared
+[NODE] Reconnecting — expecting autoApproveCidrs to fire...
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] Connect response ok=false payload=null        ← autoApproveCidrs never fires
+[NODE] Not paired or token invalid, gateway will close with 1008...
+```
+
+---
+
 ## The Actual Root Causes
 
 ### Root Cause A — `autoApproveCidrs` is blocked by our scopes request
@@ -77,26 +94,39 @@ Every injection attempt targeted `/root/.openclaw/storage/devices.json` — a fi
 
 `openclaw reload` (SIGUSR1) is a soft config reload. It re-reads `openclaw.json` but does NOT re-read `devices/paired.json`. The in-memory approved device map is only populated on **cold start**. This means filesystem injection requires a full gateway restart to take effect.
 
+### Root Cause D — Device in `paired.json` blocks `autoApproveCidrs`
+
+`autoApproveCidrs` only fires for **completely unknown** devices (not present in `paired.json` OR `pending.json`). Our device was written into `paired.json` during bootstrap via surgical injection. On returning sessions:
+1. Gateway cold-starts → reads `paired.json` → device record loaded into memory (no `deviceToken` — was never issued by a live gateway session).
+2. Dart node connects with no deviceToken → gateway sees device as "known but unactivated" → creates pending entry → 1008.
+3. `autoApproveCidrs` skips because the device is already in the approved store.
+
+The bootstrap injection writes the device but never produces a gateway-issued `deviceToken`. The gateway therefore can never complete the handshake via the normal reconnect path.
+
 ---
 
-## The Fix
+## The Definitive Fix
 
-### Fix 1 — Remove `scopes` from the pairing connect frame
+### Strategy: Surgical injection + full gateway restart
 
-When connecting without a `deviceToken` (fresh/re-pair), omit the `scopes` field. This allows `autoApproveCidrs` to fire for `role: node` requests from `127.0.0.1`.
+`autoApproveCidrs` is unreliable for our use case (device already known to gateway). The guaranteed path is:
+1. Write device into `devices/paired.json` with correct operator roles (already fixed in commit 569f8e1).
+2. Delete `pending.json` to clear any stale in-flight entries.
+3. **Full gateway restart** (`stopGateway` + `startGateway`) so the process cold-reads the updated `paired.json` into memory.
+4. Reconnect — device is in memory, no pending check needed → immediate `hello-ok`.
 
-After approval, the gateway issues a `deviceToken`. On subsequent connects (with the token), scopes are re-included and the gateway grants them because the device is already in `paired.json`.
+This eliminates all dependency on `autoApproveCidrs` and `openclaw reload`.
 
-### Fix 2 — Clear `pending.json` and `deviceToken` on 1008
+### Changes required
 
-On 1008:
-1. Clear `prefs.nodeDeviceToken` — forces the no-scopes reconnect path.
-2. Delete `/root/.openclaw/devices/pending.json` via PRoot — removes the stale pending entry so the device is treated as "fresh" on reconnect.
-3. Reconnect — autoApproveCidrs fires → `hello-ok` → paired!
+**`lib/services/node_service.dart` — `_handleNodePairingRequired()`**
 
-### Fix 3 — Fix `NativeBridge.approveDevice()` path (belt-and-suspenders)
-
-Update the target from `storage/devices.json` → `devices/paired.json`. Remove the `openclaw reload` call (useless and potentially harmful). This path is used by bootstrap on first install as an extra guarantee.
+Replace the `pending.json`-only deletion with:
+1. `NativeBridge.approveDevice('')` → writes device to `devices/paired.json`
+2. `rm -f /root/.openclaw/devices/pending.json`
+3. `stopGateway()` → brief pause → `startGateway()`
+4. Poll `isGatewayRunning()` until true (max 60s)
+5. `connect()` → device found in gateway memory → `hello-ok`
 
 ---
 
@@ -109,3 +139,4 @@ Update the target from `storage/devices.json` → `devices/paired.json`. Remove 
 | Writing to `storage/devices.json` | Wrong file — gateway ignores it for pairing |
 | Writing to `devices/paired.json` + soft reload | Same: reload doesn't re-read the file |
 | Waiting for `autoApproveCidrs` while sending `scopes` | Docs: autoApproveCidrs blocked when ANY scopes are requested |
+| Clearing `pending.json` only + no-scopes reconnect | `autoApproveCidrs` skips devices already in `paired.json` — not truly unknown |
