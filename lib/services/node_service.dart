@@ -10,6 +10,7 @@ import 'device_identity.dart';
 import 'node_ws_service.dart';
 import 'preferences_service.dart';
 import 'openclaw_service.dart';
+import 'stability_model.dart';
 
 class NodeService {
   static final NodeService _instance = NodeService._internal();
@@ -429,8 +430,8 @@ class NodeService {
   }
 
   /// Called when the gateway closes the WebSocket with 1008 (pairing required).
-  /// Primary: approve via direct Dart WS using operator role + operator.pairing scope.
-  /// Fallback: clear device record so the next connect treats it as new.
+  /// Uses NativeBridge.approveDevice() — surgical filesystem injection via PRoot jq
+  /// that upserts the device into devices.json with role=operator, then reloads.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
@@ -439,185 +440,21 @@ class NodeService {
     clearCachedToken();
 
     log('[NODE] Pairing required (1008) — requestId=${requestId ?? 'none'}');
+    log('[NODE] Approving device via surgical filesystem injection...');
 
-    bool approved = false;
-    if (requestId != null && requestId.isNotEmpty) {
-      _gatewayAuthToken ??= await _readGatewayToken();
-      if (_gatewayAuthToken != null) {
-        approved = await _approveViaNativeDartWs(requestId, _gatewayAuthToken!);
-      } else {
-        log('[NODE] No gateway token — cannot perform WS approval');
-      }
+    try {
+      await NativeBridge.approveDevice(requestId ?? 'direct');
+      log('[NODE] Device approved — waiting for gateway reload to settle...');
+    } catch (e) {
+      log('[NODE] approveDevice error (non-fatal): $e');
     }
 
-    if (!approved) {
-      // WS approval failed or no requestId — clear the stale record and pre-write.
-      // Gateway soft-reload won't clear pending state, so we reset for the next cycle.
-      await _clearNodeDeviceRecord();
-      await _preWriteDeviceToApprovedList();
-    }
-
-    await Future.delayed(const Duration(milliseconds: 1500));
+    await Future.delayed(StabilityModel.pairingHealDuration);
     await _ws.disconnect();
     _pairingResolveAttempted = false;
 
     log('[NODE] Reconnecting after pairing resolution...');
     unawaited(connect());
-  }
-
-  /// Opens a raw WebSocket to the gateway using backend mode (gateway-client).
-  /// Backend mode carries the full operator scope set including operator.pairing.
-  /// Sends device.pair.approve with the pending requestId.
-  Future<bool> _approveViaNativeDartWs(String requestId, String token) async {
-    log('[NODE] Direct WS approval — requestId=$requestId');
-    WebSocket? ws;
-    StreamSubscription? sub;
-    Timer? challengeTimer;
-    try {
-      ws = await WebSocket.connect(
-        'ws://127.0.0.1:18789',
-        headers: {'Origin': 'http://127.0.0.1:18789'},
-      ).timeout(const Duration(seconds: 10));
-
-      // mode=backend with id=gateway-client is the gateway's own internal mode.
-      // It carries the full operator scope set including operator.pairing, unlike
-      // mode=cli which has a fixed reduced scope regardless of requested scopes.
-      final connectFrame = NodeFrame.request('connect', {
-        'minProtocol': 3,
-        'maxProtocol': 3,
-        'client': {
-          'id': 'gateway-client',
-          'mode': 'backend',
-          'version': '2026.5.4',
-          'platform': 'linux',
-        },
-        'auth': {'token': token},
-      });
-
-      bool connectSent = false;
-      bool helloReceived = false;
-      String? approveFrameId;
-      final done = Completer<bool>();
-
-      void sendConnect() {
-        final liveWs = ws;
-        if (connectSent || liveWs == null) return;
-        connectSent = true;
-        liveWs.add(connectFrame.encode());
-        log('[NODE] Backend connect frame sent');
-      }
-
-      challengeTimer = Timer(const Duration(milliseconds: 500), sendConnect);
-
-      sub = ws.listen(
-        (data) {
-          if (data is! String || done.isCompleted) return;
-          try {
-            final msg = jsonDecode(data) as Map<String, dynamic>;
-            final type = msg['type'] as String? ?? '';
-            final event = msg['event'] as String? ?? '';
-            final frameId = msg['id'] as String?;
-            final ok = msg['ok'] as bool?;
-
-            if (type == 'event' && event == 'connect.challenge' && !connectSent) {
-              challengeTimer?.cancel();
-              sendConnect();
-              return;
-            }
-
-            if (!helloReceived && (type == 'hello-ok' ||
-                (type == 'res' && frameId == connectFrame.id && ok == true))) {
-              helloReceived = true;
-              final approveFrame = NodeFrame.request('device.pair.approve', {'requestId': requestId});
-              approveFrameId = approveFrame.id;
-              ws!.add(approveFrame.encode());
-              log('[NODE] device.pair.approve sent');
-              return;
-            }
-
-            if (helloReceived && type == 'res' &&
-                (frameId == approveFrameId || approveFrameId == null)) {
-              done.complete(ok == true);
-              return;
-            }
-
-            if (ok == false && !done.isCompleted) done.complete(false);
-          } catch (_) {}
-        },
-        onError: (_) { if (!done.isCompleted) done.complete(false); },
-        onDone: ()  { if (!done.isCompleted) done.complete(false); },
-      );
-
-      final result = await done.future.timeout(
-        const Duration(seconds: 15),
-        onTimeout: () { log('[NODE] Direct WS approval timed out'); return false; },
-      );
-      log('[NODE] Direct WS approval: ${result ? "SUCCESS" : "FAILED"}');
-      return result;
-    } catch (e) {
-      log('[NODE] Direct WS approval error: $e');
-      return false;
-    } finally {
-      challengeTimer?.cancel();
-      await sub?.cancel();
-      try { ws?.close(1000); } catch (_) {}
-    }
-  }
-
-  Future<void> _preWriteDeviceToApprovedList() async {
-    try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final devicesFile = File('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices.json');
-      await devicesFile.parent.create(recursive: true);
-
-      final deviceEntry = {
-        'id': _identity.deviceId ?? '',
-        'publicKey': _identity.publicKeyBase64Url ?? '',
-        'name': 'OpenClaw Mobile',
-        'pairedAt': DateTime.now().toIso8601String(),
-        'roles': ['operator'],
-        'scopes': ['node.device', 'node.proxy', 'operator.admin'],
-      };
-
-      Map<String, dynamic> store = {'devices': []};
-      if (devicesFile.existsSync()) {
-        try { store = jsonDecode(await devicesFile.readAsString()) as Map<String, dynamic>; } catch (_) {}
-      }
-      final devices = List<dynamic>.from(store['devices'] as List? ?? []);
-      devices.removeWhere((d) => d is Map && d['id'] == (_identity.deviceId ?? ''));
-      devices.add(deviceEntry);
-      store['devices'] = devices;
-      await devicesFile.writeAsString(jsonEncode(store));
-
-      final id = _identity.deviceId ?? '';
-      log('[NODE] Device pre-written to approved list (id=${id.length > 8 ? '${id.substring(0, 8)}...' : id})');
-    } catch (e) {
-      log('[NODE] Could not pre-write device (non-fatal): $e');
-    }
-  }
-
-  Future<void> _clearNodeDeviceRecord() async {
-    log('[NODE] Pairing required (1008) — clearing stale device record via filesystem...');
-    try {
-      final filesDir = await NativeBridge.getFilesDir();
-      
-      final devicesDir = Directory('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices');
-      if (devicesDir.existsSync()) {
-        devicesDir.deleteSync(recursive: true);
-      }
-      final devicesFile = File('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices.json');
-      if (devicesFile.existsSync()) {
-        devicesFile.deleteSync();
-      }
-
-      log('[NODE] Device record cleared — will re-pair on next connect');
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.nodeDeviceToken = null;
-      _gatewayAuthToken = null;
-    } catch (e) {
-      log('[NODE] Could not clear device record: $e');
-    }
   }
 
   Future<void> disconnect() async {
