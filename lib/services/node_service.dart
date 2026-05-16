@@ -482,9 +482,10 @@ class NodeService {
         headers: {'Origin': 'http://127.0.0.1:18789'},
       ).timeout(const Duration(seconds: 10));
 
-      // Connect as CLI mode — gateway schema only accepts 'cli'/'backend' for client.mode;
-      // 'operator' and free-form client.id values are rejected with 1008 invalid params.
-      // CLI mode has device.pair.approve permission, same as the openclaw CLI binary.
+      // Connect as cli/cli — the only client.id+mode values that pass gateway schema validation.
+      // 'operator' mode and free-form ids are rejected (invalid params 1008).
+      // Scopes are top-level params accepted alongside cli/cli and are required:
+      // device.pair.approve enforces the operator.pairing scope regardless of mode.
       final connectFrame = NodeFrame.request('connect', {
         'minProtocol': 3,
         'maxProtocol': 3,
@@ -494,6 +495,7 @@ class NodeService {
           'platform': 'linux',
           'mode': 'cli',
         },
+        'scopes': ['operator.pairing'],
         'auth': {'token': token},
       });
 

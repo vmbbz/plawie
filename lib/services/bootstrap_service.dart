@@ -753,6 +753,7 @@ class BootstrapService {
         'openclaw config set gateway.port 18789 && '
         'openclaw config set gateway.mode local && '
         'openclaw config set gateway.startup.modelPrewarm false && '
+        'openclaw config set models.startup.modelPrewarm false && '
         'openclaw config set ollama.num_thread 4 && '
         'openclaw config set discovery.mdns.mode off && '
         'openclaw config set models.providers.ollama.apiKey ollama-local && '
@@ -785,7 +786,8 @@ class BootstrapService {
     "startup": { "modelPrewarm": false, "updateCheck": false },
     "sidecars": {
       "browser": { "enabled": false },
-      "model-prewarm": { "enabled": false }
+      "model-prewarm": { "enabled": false },
+      "modelPrewarm": { "enabled": false }
     },
     "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
   },
