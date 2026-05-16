@@ -260,7 +260,11 @@ class NodeService {
     const clientId = 'node-host';
     const clientMode = 'node';
     const role = AppConstants.nodeRole;
-    const scopes = <String>['node.device'];
+    // autoApproveCidrs fires ONLY for role:node with NO requested scopes.
+    // Omit scopes on fresh pairing (no deviceToken) so autoApprove triggers.
+    // When the device is already approved (has deviceToken), include scopes normally.
+    final hasDeviceToken = deviceToken != null && deviceToken.isNotEmpty;
+    final scopes = hasDeviceToken ? const <String>['node.device'] : const <String>[];
     final signedAtMs = DateTime.now().millisecondsSinceEpoch;
 
     // Build the structured payload the gateway verifies:
@@ -293,7 +297,7 @@ class NodeService {
         'mode': clientMode,
       },
       'role': role,
-      'scopes': scopes,
+      if (scopes.isNotEmpty) 'scopes': scopes,
       'device': {
         'id': _identity.deviceId ?? '',
         'publicKey': _identity.publicKeyBase64Url ?? '',
@@ -430,8 +434,14 @@ class NodeService {
   }
 
   /// Called when the gateway closes the WebSocket with 1008 (pairing required).
-  /// Uses NativeBridge.approveDevice() — surgical filesystem injection via PRoot jq
-  /// that upserts the device into devices.json with role=operator, then reloads.
+  ///
+  /// Root cause: autoApproveCidrs (which handles localhost devices) only fires
+  /// for role:node requests with NO requested scopes, AND only for fresh/unknown
+  /// devices. Our prior connect had scopes → blocked autoApprove. Stale pending
+  /// entry → device not "fresh".
+  ///
+  /// Fix: clear deviceToken (forces no-scopes reconnect) + delete pending.json
+  /// (makes device fresh). On reconnect, autoApproveCidrs fires from 127.0.0.1.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
@@ -439,21 +449,31 @@ class NodeService {
     _ws.haltReconnect();
     clearCachedToken();
 
-    log('[NODE] Pairing required (1008) — requestId=${requestId ?? 'none'}');
-    log('[NODE] Approving device via surgical filesystem injection...');
+    log('[NODE] Pairing required (1008) — resetting pairing state...');
 
+    // Clear stored deviceToken so _sendConnect sends no scopes (autoApproveCidrs requirement).
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.nodeDeviceToken = null;
+
+    // Delete pending.json so the device is "fresh" — autoApproveCidrs only
+    // fires for unknown devices, not ones already in the pending list.
     try {
-      await NativeBridge.approveDevice(requestId ?? 'direct');
-      log('[NODE] Device approved — waiting for gateway reload to settle...');
+      await NativeBridge.runInProot(
+        'rm -f /root/.openclaw/devices/pending.json',
+        timeout: 15,
+      );
+      log('[NODE] Pending device list cleared');
     } catch (e) {
-      log('[NODE] approveDevice error (non-fatal): $e');
+      log('[NODE] Could not clear pending list (non-fatal): $e');
     }
 
     await Future.delayed(StabilityModel.pairingHealDuration);
     await _ws.disconnect();
     _pairingResolveAttempted = false;
 
-    log('[NODE] Reconnecting after pairing resolution...');
+    // Reconnect: no deviceToken → no scopes → autoApproveCidrs fires from 127.0.0.1
+    log('[NODE] Reconnecting — expecting autoApproveCidrs to fire...');
     unawaited(connect());
   }
 

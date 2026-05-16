@@ -112,18 +112,17 @@ class NativeBridge {
     final deviceJsonStr = jsonEncode(deviceJson);
 
     final result = await runInProot('''
-      STORAGE_DIR="/root/.openclaw/storage"
-      DEVICES_FILE="\$STORAGE_DIR/devices.json"
-      mkdir -p "\$STORAGE_DIR"
+      DEVICES_DIR="/root/.openclaw/devices"
+      PAIRED_FILE="\$DEVICES_DIR/paired.json"
+      mkdir -p "\$DEVICES_DIR"
 
-      if [ ! -f "\$DEVICES_FILE" ]; then
-        echo '{"devices": [$deviceJsonStr]}' > "\$DEVICES_FILE"
+      if [ ! -f "\$PAIRED_FILE" ]; then
+        echo '{"devices": [$deviceJsonStr]}' > "\$PAIRED_FILE"
       else
         TMP_FILE=\$(mktemp)
-        jq --argjson newDev '$deviceJsonStr' '.devices |= (map(select(.id != \$newDev.id)) + [\$newDev])' "\$DEVICES_FILE" > "\$TMP_FILE" && mv "\$TMP_FILE" "\$DEVICES_FILE"
+        jq --argjson newDev '$deviceJsonStr' '.devices |= (map(select(.id != \$newDev.id)) + [\$newDev])' "\$PAIRED_FILE" > "\$TMP_FILE" && mv "\$TMP_FILE" "\$PAIRED_FILE"
       fi
 
-      openclaw reload 2>/dev/null || true
       echo "Surgical injection successful"
     ''', timeout: 60);
 
