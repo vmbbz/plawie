@@ -9,7 +9,6 @@ import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
 import '../models/agent_info.dart';
-import 'package:clawa/services/bootstrap_service.dart';
 import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
@@ -46,6 +45,11 @@ PARAMETER num_batch 512
 ''';
 
 class GatewayService {
+  static const List<String> localControlUiAllowedOrigins = <String>[
+    'http://127.0.0.1:18789',
+    'http://localhost:18789',
+  ];
+
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
   GatewayService._internal();
@@ -884,6 +888,8 @@ PARAMETER num_batch 512
       final dir = Directory(file.parent.path);
       if (!await dir.exists()) await dir.create(recursive: true);
 
+      _applyExplicitAuthMode(config);
+      _syncLocalGatewayRemoteCredentials(config);
       await file.writeAsString(jsonEncode(config));
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
@@ -951,14 +957,18 @@ PARAMETER num_batch 512
     ];
     config['gateway']['mode'] = 'local';
 
-    // Ensure allowedOrigins includes wildcard + n/a for Dart WebSocket (origin=n/a)
+    // Keep Control UI origins explicit and loopback-only.
+    // Our WS clients set Origin: http://127.0.0.1:18789, so wildcard entries
+    // are unnecessary and broader than the current docs recommend.
     config['gateway']['controlUi'] ??= {};
-    config['gateway']['controlUi']['allowedOrigins'] = [
-      '*', // wildcard — required for hardenGatewayConfigViaCli skip-check to work
-      'n/a', // Dart/Flutter WebSocket sends origin=n/a
-      'http://127.0.0.1:18789',
-      'http://localhost:18789'
-    ];
+    config['gateway']['controlUi']['allowedOrigins'] =
+        localControlUiAllowedOrigins;
+    (config['gateway']['controlUi'] as Map).remove(
+      'dangerouslyAllowHostHeaderOriginFallback',
+    );
+    config['gateway']['auth'] ??= {};
+    (config['gateway']['auth'] as Map).remove('unauthenticatedLocalhost');
+    _applyExplicitAuthMode(config);
 
     // ENODEV FIX: Use official OpenClaw config schema
     // Prevent eth0 ENODEV errors with valid network binding
@@ -1067,6 +1077,60 @@ PARAMETER num_batch 512
     }
 
     await _writeConfig(config);
+  }
+
+  void _applyExplicitAuthMode(Map<String, dynamic> config) {
+    config['gateway'] ??= {};
+    final gateway = config['gateway'];
+    if (gateway is! Map) return;
+
+    final auth = gateway['auth'];
+    if (auth is! Map) return;
+
+    final token = auth['token'];
+    final password = auth['password'];
+    final currentMode = auth['mode'];
+
+    if (currentMode is String && currentMode.isNotEmpty) return;
+
+    if (token is String && token.isNotEmpty) {
+      auth['mode'] = 'token';
+      return;
+    }
+    if (password is String && password.isNotEmpty) {
+      auth['mode'] = 'password';
+    }
+  }
+
+  void _syncLocalGatewayRemoteCredentials(Map<String, dynamic> config) {
+    config['gateway'] ??= {};
+    final gateway = config['gateway'];
+    if (gateway is! Map) return;
+
+    final mode = gateway['mode'];
+    if (mode is String && mode.isNotEmpty && mode != 'local') return;
+
+    gateway['auth'] ??= {};
+    final auth = gateway['auth'];
+    if (auth is! Map) return;
+
+    gateway['remote'] ??= {};
+    final remote = gateway['remote'];
+    if (remote is! Map) return;
+
+    final token = auth['token'];
+    if (token is String && token.isNotEmpty) {
+      remote['token'] = token;
+    } else {
+      remote.remove('token');
+    }
+
+    final password = auth['password'];
+    if (password is String && password.isNotEmpty) {
+      remote['password'] = password;
+    } else {
+      remote.remove('password');
+    }
   }
 
   /// Register Ollama as the gateway provider and optionally set it as primary.
@@ -1920,15 +1984,17 @@ PARAMETER num_batch 512
       'models': prov['models'] ?? defaultModels,
     };
 
-    // REINFORCE: origin=n/a fix must survive every write (keep "*" for harden skip-check)
+    // Keep the local Control UI origin list explicit and minimal.
     config['gateway'] ??= {};
     config['gateway']['controlUi'] ??= {};
-    config['gateway']['controlUi']['allowedOrigins'] = [
-      '*',
-      'n/a',
-      'http://127.0.0.1:18789',
-      'http://localhost:18789'
-    ];
+    config['gateway']['controlUi']['allowedOrigins'] =
+        localControlUiAllowedOrigins;
+    (config['gateway']['controlUi'] as Map).remove(
+      'dangerouslyAllowHostHeaderOriginFallback',
+    );
+    config['gateway']['auth'] ??= {};
+    (config['gateway']['auth'] as Map).remove('unauthenticatedLocalhost');
+    _applyExplicitAuthMode(config);
 
     await _writeConfig(config);
     _addActivity('[Gateway] Fast-path API key config complete.');
@@ -2313,10 +2379,26 @@ PARAMETER num_batch 512
     if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
       throw Exception('Invalid pairing request id: $requestId');
     }
-    await NativeBridge.runInProot(
-      'openclaw devices approve $safeRequestId --json',
-      timeout: 40,
-    );
+    try {
+      await NativeBridge.runInProot(
+        'openclaw devices approve $safeRequestId --json',
+        timeout: 40,
+      );
+    } catch (e) {
+      final token = await retrieveTokenFromConfig(force: true);
+      if (token == null || token.isEmpty) rethrow;
+      _addActivity(
+          '[INFO] Plain operator approval failed; retrying with explicit local gateway auth');
+      final localGatewayUrl =
+          'ws://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}';
+      await NativeBridge.runInProot(
+        'openclaw devices approve $safeRequestId '
+        '--url ${NativeBridge.shellQuote(localGatewayUrl)} '
+        '--token ${NativeBridge.shellQuote(token)} '
+        '--json',
+        timeout: 40,
+      );
+    }
   }
 
   Future<void> _checkHealth() async {
@@ -3605,11 +3687,28 @@ PARAMETER num_batch 512
                   ?.cast<String>() ??
               [];
       final mdnsOff = config['discovery']?['mdns']?['mode'] == 'off';
+      final authMode = config['gateway']?['auth']?['mode'];
+      final authToken = config['gateway']?['auth']?['token'];
+      final authPassword = config['gateway']?['auth']?['password'];
+      final remoteToken = config['gateway']?['remote']?['token'];
+      final remotePassword = config['gateway']?['remote']?['password'];
+      final hasLoopbackOrigins =
+          localControlUiAllowedOrigins.every(origins.contains);
+      final remoteCredentialsAligned = ((authToken is! String ||
+              authToken.isEmpty ||
+              remoteToken == authToken) &&
+          (authPassword is! String ||
+              authPassword.isEmpty ||
+              remotePassword == authPassword));
 
       // Skip if the two fields we can reliably verify are already correct.
       // Previously checked sidecarsOff (gateway.sidecars.model-prewarm.enabled)
       // which is never written → always false → always triggered a reload.
-      if (origins.contains('*') && origins.contains('n/a') && mdnsOff) {
+      if (hasLoopbackOrigins &&
+          !origins.contains('*') &&
+          mdnsOff &&
+          remoteCredentialsAligned &&
+          (authMode == null || authMode == 'token' || authMode == 'password')) {
         debugPrint('✅ Hardening already present. Skipping reload.');
         return;
       }
@@ -3625,15 +3724,47 @@ PARAMETER num_batch 512
   }
 
   Future<void> _applyHardeningPatch() async {
-    // Fetch current token so we don't clobber it if the patch merge is shallow
-    final currentToken = await retrieveTokenFromConfig();
+    final currentConfig = await _readConfig();
+    _applyExplicitAuthMode(currentConfig);
+    _syncLocalGatewayRemoteCredentials(currentConfig);
+    final gatewayAuth =
+        currentConfig['gateway']?['auth'] as Map<String, dynamic>?;
+    final gatewayRemote =
+        currentConfig['gateway']?['remote'] as Map<String, dynamic>?;
+    final authPatch = <String, dynamic>{};
+    final remotePatch = <String, dynamic>{};
+    final currentToken = gatewayAuth?['token'];
+    final currentPassword = gatewayAuth?['password'];
+    final currentMode = gatewayAuth?['mode'];
+    if (currentToken is String && currentToken.isNotEmpty) {
+      authPatch['token'] = currentToken;
+    }
+    if (currentPassword is String && currentPassword.isNotEmpty) {
+      authPatch['password'] = currentPassword;
+    }
+    if (currentMode is String && currentMode.isNotEmpty) {
+      authPatch['mode'] = currentMode;
+    } else if (authPatch.containsKey('token')) {
+      authPatch['mode'] = 'token';
+    } else if (authPatch.containsKey('password')) {
+      authPatch['mode'] = 'password';
+    }
+    final remoteToken = gatewayRemote?['token'];
+    final remotePassword = gatewayRemote?['password'];
+    if (remoteToken is String && remoteToken.isNotEmpty) {
+      remotePatch['token'] = remoteToken;
+    }
+    if (remotePassword is String && remotePassword.isNotEmpty) {
+      remotePatch['password'] = remotePassword;
+    }
 
     final patchJson = '''
 {
   "gateway": {
-    ${currentToken != null && currentToken.isNotEmpty ? '"auth": {"token": "$currentToken"},' : ''}
+    ${authPatch.isNotEmpty ? '"auth": ${jsonEncode(authPatch)},' : ''}
+    ${remotePatch.isNotEmpty ? '"remote": ${jsonEncode(remotePatch)},' : ''}
     "controlUi": {
-      "allowedOrigins": ["*", "n/a", "http://127.0.0.1:18789", "http://localhost:18789"]
+      "allowedOrigins": ${jsonEncode(localControlUiAllowedOrigins)}
     },
     "nodes": {
       "pairing": {
@@ -3657,14 +3788,16 @@ PARAMETER num_batch 512
 
     try {
       final alreadyRunning = await NativeBridge.isGatewayRunning();
+      final reloadSuffix =
+          alreadyRunning ? ' && openclaw reload 2>/dev/null' : '';
 
       await NativeBridge.runInProot(
-        'cat > /tmp/harden.json << \'EOF\'\n' +
-            patchJson +
-            '\nEOF && ' +
-            'openclaw config patch --file /tmp/harden.json && ' +
-            'rm -f /tmp/harden.json' +
-            (alreadyRunning ? ' && openclaw reload 2>/dev/null' : ''),
+        'cat > /tmp/harden.json << \'EOF\'\n'
+        '$patchJson\n'
+        'EOF && '
+        'openclaw config patch --file /tmp/harden.json && '
+        'rm -f /tmp/harden.json'
+        '$reloadSuffix',
         timeout: 60,
       );
 

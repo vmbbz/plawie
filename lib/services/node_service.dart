@@ -512,58 +512,91 @@ class NodeService {
 
   Future<String?> _approveNodeViaDevicePairing(String requestId) async {
     log('[NODE] Pairing required (1008) — approving request $requestId via OpenClaw CLI...');
-    String output = '';
-
+    _gatewayAuthToken ??= await _readGatewayToken();
     try {
-      output = await NativeBridge.runInProot(
-        'openclaw devices approve $requestId --json',
-        timeout: 40,
-      );
-    } catch (_) {
-      // Fallback for older gateway builds that are stricter about explicit args.
-      output = await NativeBridge.runInProot(
+      await NativeBridge.runInProot(
+          'openclaw devices approve $requestId --json',
+          timeout: 40);
+    } catch (e) {
+      // Fallback for builds that require explicit gateway endpoint/auth args.
+      final gatewayToken = _gatewayAuthToken;
+      if (gatewayToken == null || gatewayToken.isEmpty) rethrow;
+      final gatewayUrl =
+          'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
+      log('[NODE] Plain CLI approval failed; retrying with explicit gateway URL/token. Error: $e');
+      await NativeBridge.runInProot(
         'openclaw devices approve $requestId '
-        '--url http://127.0.0.1:18789 '
-        '--token "\$(openclaw config get gateway.auth.token 2>/dev/null)" '
+        '--url ${NativeBridge.shellQuote(gatewayUrl)} '
+        '--token ${NativeBridge.shellQuote(gatewayToken)} '
         '--json',
         timeout: 40,
       );
     }
 
-    final parsed = _extractTokenFromApprovalOutput(output);
-    return parsed;
+    return _readApprovedNodeTokenFromStore();
   }
 
-  String? _extractTokenFromApprovalOutput(String raw) {
-    final text = raw.trim();
-    if (text.isEmpty) return null;
+  Future<String?> _readApprovedNodeTokenFromStore() async {
+    final pairedStoreToken = await _readApprovedNodeTokenFromPairedStore();
+    if (pairedStoreToken != null && pairedStoreToken.isNotEmpty) {
+      return pairedStoreToken;
+    }
+    return _readApprovedNodeTokenFromNodeStore();
+  }
 
-    // Try full JSON first.
+  Future<String?> _readApprovedNodeTokenFromPairedStore() async {
     try {
-      final dynamic decoded = jsonDecode(text);
-      if (decoded is Map<String, dynamic>) {
-        final direct = decoded['token'] as String?;
-        if (direct != null && direct.isNotEmpty) return direct;
-        final payload = decoded['payload'];
-        if (payload is Map<String, dynamic>) {
-          final payloadToken = payload['token'] as String?;
-          if (payloadToken != null && payloadToken.isNotEmpty) {
-            return payloadToken;
-          }
-          final auth = payload['auth'];
-          if (auth is Map<String, dynamic>) {
-            final authToken =
-                auth['deviceToken'] as String? ?? auth['token'] as String?;
-            if (authToken != null && authToken.isNotEmpty) return authToken;
-          }
+      final filesDir = await NativeBridge.getFilesDir();
+      final pairedPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/paired.json';
+      final pairedFile = File(pairedPath);
+      if (!await pairedFile.exists()) return null;
+
+      final decoded =
+          jsonDecode(await pairedFile.readAsString()) as Map<String, dynamic>;
+      final nodeId = _identity.deviceId ?? '';
+      final record = decoded[nodeId];
+      if (record is! Map) return null;
+
+      final token = record['token'] as String?;
+      return token != null && token.isNotEmpty ? token : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _readApprovedNodeTokenFromNodeStore() async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final nodePath = '$filesDir/rootfs/ubuntu/root/.openclaw/node.json';
+      final nodeFile = File(nodePath);
+      if (!await nodeFile.exists()) return null;
+
+      final decoded =
+          jsonDecode(await nodeFile.readAsString()) as Map<String, dynamic>;
+      final directToken = decoded['token'];
+      if (directToken is String && directToken.isNotEmpty) {
+        return directToken;
+      }
+
+      final deviceToken = decoded['deviceToken'];
+      if (deviceToken is String && deviceToken.isNotEmpty) {
+        return deviceToken;
+      }
+
+      final gateway = decoded['gateway'];
+      if (gateway is Map) {
+        final nestedToken = gateway['token'];
+        if (nestedToken is String && nestedToken.isNotEmpty) {
+          return nestedToken;
+        }
+        final nestedDeviceToken = gateway['deviceToken'];
+        if (nestedDeviceToken is String && nestedDeviceToken.isNotEmpty) {
+          return nestedDeviceToken;
         }
       }
     } catch (_) {}
-
-    // Fallback for mixed log output around JSON payloads.
-    final tokenMatch =
-        RegExp(r'"(?:deviceToken|token)"\s*:\s*"([^"]+)"').firstMatch(text);
-    return tokenMatch?.group(1);
+    return null;
   }
 
   Future<void> disconnect() async {

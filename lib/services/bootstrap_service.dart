@@ -9,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
-import 'skills_service.dart';
 import 'gateway_service.dart';
 
 class BootstrapService {
@@ -810,21 +809,25 @@ class BootstrapService {
         'openclaw config set discovery.mdns.mode off && '
         'openclaw config set models.providers.ollama.apiKey ollama-local && '
         'openclaw config set models.providers.ollama.baseUrl http://127.0.0.1:11434 && '
-        'openclaw config set agents.defaults.model.primary google/gemini-3.1-pro-preview && '
-        'openclaw config set gateway.auth.unauthenticatedLocalhost true',
+        'openclaw config set agents.defaults.model.primary google/gemini-3.1-pro-preview',
         timeout: 30,
       );
 
       // 2. Complex structures via patch (Atomic write).
-      // NOTE: gateway.auth is intentionally omitted — patching it as an object
-      // shallow-replaces the entire auth section and wipes gateway.auth.token.
-      // auth.unauthenticatedLocalhost is set individually via CLI above.
+      final existingConfig = await _readExistingOpenClawConfig();
+      final authPatch = _buildSharedSecretAuthPatch(existingConfig);
+      final remotePatch = _buildLocalGatewayRemotePatch(existingConfig);
       final patchJson = '''
 {
   "gateway": {
     "bind": "loopback",
     "port": 18789,
     "mode": "local",
+    ${authPatch != null ? '"auth": ${jsonEncode(authPatch)},' : ''}
+    ${remotePatch != null ? '"remote": ${jsonEncode(remotePatch)},' : ''}
+    "controlUi": {
+      "allowedOrigins": ${jsonEncode(GatewayService.localControlUiAllowedOrigins)}
+    },
     "nodes": {
       "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] },
       "denyCommands": [],
@@ -902,12 +905,15 @@ class BootstrapService {
       config['gateway']['bind'] = 'loopback';
       config['gateway']['port'] = AppConstants.gatewayPort;
       config['gateway']['controlUi'] ??= {};
-      config['gateway']['controlUi']['allowedOrigins'] = [
-        '*',
-        'n/a',
-        'http://127.0.0.1:18789',
-        'http://localhost:18789'
-      ];
+      config['gateway']['controlUi']['allowedOrigins'] =
+          GatewayService.localControlUiAllowedOrigins;
+      (config['gateway']['controlUi'] as Map).remove(
+        'dangerouslyAllowHostHeaderOriginFallback',
+      );
+      config['gateway']['auth'] ??= {};
+      (config['gateway']['auth'] as Map).remove('unauthenticatedLocalhost');
+      _applyExplicitAuthMode(config);
+      _syncLocalGatewayRemoteCredentials(config);
 
       // Fix autoApprove path to match official OpenClaw 2.0 strict schema
       config['gateway']['nodes'] ??= {};
@@ -945,12 +951,11 @@ class BootstrapService {
 
       // 5. GLOBAL ORIGIN & DISCOVERY ENFORCEMENT
       config['gateway']['controlUi'] ??= {};
-      config['gateway']['controlUi']['allowedOrigins'] = [
-        '*',
-        'n/a',
-        'http://127.0.0.1:18789',
-        'http://localhost:18789'
-      ];
+      config['gateway']['controlUi']['allowedOrigins'] =
+          GatewayService.localControlUiAllowedOrigins;
+      (config['gateway']['controlUi'] as Map).remove(
+        'dangerouslyAllowHostHeaderOriginFallback',
+      );
       config['discovery'] = {
         'mdns': {'mode': 'off'}
       };
@@ -1015,5 +1020,109 @@ class BootstrapService {
   Future<void> _approveLocalNodeIfNeeded() async {
     _log(
         '[SETUP] Node pairing is handled by live requestId approval on first connect');
+  }
+
+  Future<Map<String, dynamic>> _readExistingOpenClawConfig() async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final configPath = '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json';
+      final file = File(configPath);
+      if (!await file.exists()) return <String, dynamic>{};
+      return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  Map<String, dynamic>? _buildSharedSecretAuthPatch(
+      Map<String, dynamic> config) {
+    final auth = config['gateway']?['auth'];
+    if (auth is! Map) return null;
+
+    final patch = <String, dynamic>{};
+    final token = auth['token'];
+    final password = auth['password'];
+    final mode = auth['mode'];
+
+    if (token is String && token.isNotEmpty) patch['token'] = token;
+    if (password is String && password.isNotEmpty) patch['password'] = password;
+
+    if (mode is String && mode.isNotEmpty) {
+      patch['mode'] = mode;
+    } else if (patch.containsKey('token')) {
+      patch['mode'] = 'token';
+    } else if (patch.containsKey('password')) {
+      patch['mode'] = 'password';
+    }
+
+    return patch.isEmpty ? null : patch;
+  }
+
+  Map<String, dynamic>? _buildLocalGatewayRemotePatch(
+      Map<String, dynamic> config) {
+    final gateway = config['gateway'];
+    if (gateway is! Map) return null;
+
+    final mode = gateway['mode'];
+    if (mode is String && mode.isNotEmpty && mode != 'local') return null;
+
+    final auth = gateway['auth'];
+    if (auth is! Map) return null;
+
+    final patch = <String, dynamic>{};
+    final token = auth['token'];
+    final password = auth['password'];
+
+    if (token is String && token.isNotEmpty) patch['token'] = token;
+    if (password is String && password.isNotEmpty) patch['password'] = password;
+
+    return patch.isEmpty ? null : patch;
+  }
+
+  void _applyExplicitAuthMode(Map<String, dynamic> config) {
+    final auth = config['gateway']?['auth'];
+    if (auth is! Map) return;
+
+    final mode = auth['mode'];
+    if (mode is String && mode.isNotEmpty) return;
+
+    final token = auth['token'];
+    final password = auth['password'];
+    if (token is String && token.isNotEmpty) {
+      auth['mode'] = 'token';
+    } else if (password is String && password.isNotEmpty) {
+      auth['mode'] = 'password';
+    }
+  }
+
+  void _syncLocalGatewayRemoteCredentials(Map<String, dynamic> config) {
+    config['gateway'] ??= {};
+    final gateway = config['gateway'];
+    if (gateway is! Map) return;
+
+    final mode = gateway['mode'];
+    if (mode is String && mode.isNotEmpty && mode != 'local') return;
+
+    gateway['auth'] ??= {};
+    final auth = gateway['auth'];
+    if (auth is! Map) return;
+
+    gateway['remote'] ??= {};
+    final remote = gateway['remote'];
+    if (remote is! Map) return;
+
+    final token = auth['token'];
+    if (token is String && token.isNotEmpty) {
+      remote['token'] = token;
+    } else {
+      remote.remove('token');
+    }
+
+    final password = auth['password'];
+    if (password is String && password.isNotEmpty) {
+      remote['password'] = password;
+    } else {
+      remote.remove('password');
+    }
   }
 }

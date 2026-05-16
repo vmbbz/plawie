@@ -93,6 +93,10 @@ class NativeBridge {
     return await _channel.invokeMethod('startGateway');
   }
 
+  static String shellQuote(String value) {
+    return "'${value.replaceAll("'", "'\"'\"'")}'";
+  }
+
   static Future<String> approveDevice(String requestId) async {
     final safeRequestId = requestId.trim();
     if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
