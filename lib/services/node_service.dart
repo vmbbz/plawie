@@ -429,9 +429,8 @@ class NodeService {
   }
 
   /// Called when the gateway closes the WebSocket with 1008 (pairing required).
-  /// Writes our device directly to devices.json with operator role, then triggers
-  /// a full gateway restart (openclaw reload). Gateway reads the pre-approved device
-  /// on startup — bypasses the pairing/scope mechanism entirely.
+  /// Primary: approve via direct Dart WS using operator role + operator.pairing scope.
+  /// Fallback: clear device record so the next connect treats it as new.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
@@ -439,26 +438,131 @@ class NodeService {
     _ws.haltReconnect();
     clearCachedToken();
 
-    log('[NODE] Pairing required (1008) — pre-writing device and reloading gateway...');
+    log('[NODE] Pairing required (1008) — requestId=${requestId ?? 'none'}');
 
-    // Clear stale record first (resets nodeDeviceToken too), then pre-write fresh entry.
-    await _clearNodeDeviceRecord();
-    await _preWriteDeviceToApprovedList();
+    bool approved = false;
+    if (requestId != null && requestId.isNotEmpty) {
+      _gatewayAuthToken ??= await _readGatewayToken();
+      if (_gatewayAuthToken != null) {
+        approved = await _approveViaNativeDartWs(requestId, _gatewayAuthToken!);
+      } else {
+        log('[NODE] No gateway token — cannot perform WS approval');
+      }
+    }
 
-    // Full gateway restart (SIGUSR1) clears in-memory pending state and reads the
-    // freshly written devices.json — device is pre-approved on next connect.
-    try {
-      await NativeBridge.runInProot('openclaw reload 2>/dev/null || true', timeout: 15);
-    } catch (_) {}
+    if (!approved) {
+      // WS approval failed or no requestId — clear the stale record and pre-write.
+      // Gateway soft-reload won't clear pending state, so we reset for the next cycle.
+      await _clearNodeDeviceRecord();
+      await _preWriteDeviceToApprovedList();
+    }
 
-    // Established-install restart takes ~15–30s. Wait before reconnecting.
-    await Future.delayed(const Duration(seconds: 30));
-
+    await Future.delayed(const Duration(milliseconds: 1500));
     await _ws.disconnect();
     _pairingResolveAttempted = false;
 
-    log('[NODE] Reconnecting — device should be pre-approved...');
+    log('[NODE] Reconnecting after pairing resolution...');
     unawaited(connect());
+  }
+
+  /// Opens a raw WebSocket to the gateway using cli/operator credentials.
+  /// Sends device.pair.approve with the pending requestId.
+  Future<bool> _approveViaNativeDartWs(String requestId, String token) async {
+    log('[NODE] Direct WS approval — requestId=$requestId');
+    WebSocket? ws;
+    StreamSubscription? sub;
+    Timer? challengeTimer;
+    try {
+      ws = await WebSocket.connect(
+        'ws://127.0.0.1:18789',
+        headers: {'Origin': 'http://127.0.0.1:18789'},
+      ).timeout(const Duration(seconds: 10));
+
+      // role=operator at the top level (sibling of client/auth) is required alongside
+      // scopes=['operator.pairing'] — this is the standard connect frame shape.
+      // cli/cli is the only client.id+mode that passes gateway schema validation.
+      final connectFrame = NodeFrame.request('connect', {
+        'minProtocol': 3,
+        'maxProtocol': 3,
+        'client': {
+          'id': 'cli',
+          'mode': 'cli',
+          'version': '2026.5.4',
+          'platform': 'linux',
+        },
+        'role': 'operator',
+        'scopes': ['operator.pairing'],
+        'auth': {'token': token},
+      });
+
+      bool connectSent = false;
+      bool helloReceived = false;
+      String? approveFrameId;
+      final done = Completer<bool>();
+
+      void sendConnect() {
+        final liveWs = ws;
+        if (connectSent || liveWs == null) return;
+        connectSent = true;
+        liveWs.add(connectFrame.encode());
+        log('[NODE] Operator connect frame sent');
+      }
+
+      challengeTimer = Timer(const Duration(milliseconds: 500), sendConnect);
+
+      sub = ws.listen(
+        (data) {
+          if (data is! String || done.isCompleted) return;
+          try {
+            final msg = jsonDecode(data) as Map<String, dynamic>;
+            final type = msg['type'] as String? ?? '';
+            final event = msg['event'] as String? ?? '';
+            final frameId = msg['id'] as String?;
+            final ok = msg['ok'] as bool?;
+
+            if (type == 'event' && event == 'connect.challenge' && !connectSent) {
+              challengeTimer?.cancel();
+              sendConnect();
+              return;
+            }
+
+            if (!helloReceived && (type == 'hello-ok' ||
+                (type == 'res' && frameId == connectFrame.id && ok == true))) {
+              helloReceived = true;
+              final approveFrame = NodeFrame.request('device.pair.approve', {'requestId': requestId});
+              approveFrameId = approveFrame.id;
+              ws!.add(approveFrame.encode());
+              log('[NODE] device.pair.approve sent');
+              return;
+            }
+
+            if (helloReceived && type == 'res' &&
+                (frameId == approveFrameId || approveFrameId == null)) {
+              done.complete(ok == true);
+              return;
+            }
+
+            if (ok == false && !done.isCompleted) done.complete(false);
+          } catch (_) {}
+        },
+        onError: (_) { if (!done.isCompleted) done.complete(false); },
+        onDone: ()  { if (!done.isCompleted) done.complete(false); },
+      );
+
+      final result = await done.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () { log('[NODE] Direct WS approval timed out'); return false; },
+      );
+      log('[NODE] Direct WS approval: ${result ? "SUCCESS" : "FAILED"}');
+      return result;
+    } catch (e) {
+      log('[NODE] Direct WS approval error: $e');
+      return false;
+    } finally {
+      challengeTimer?.cancel();
+      await sub?.cancel();
+      try { ws?.close(1000); } catch (_) {}
+    }
   }
 
   Future<void> _preWriteDeviceToApprovedList() async {
