@@ -465,7 +465,8 @@ class NodeService {
     unawaited(connect());
   }
 
-  /// Opens a raw WebSocket to the gateway using cli/operator credentials.
+  /// Opens a raw WebSocket to the gateway using backend mode (gateway-client).
+  /// Backend mode carries the full operator scope set including operator.pairing.
   /// Sends device.pair.approve with the pending requestId.
   Future<bool> _approveViaNativeDartWs(String requestId, String token) async {
     log('[NODE] Direct WS approval — requestId=$requestId');
@@ -478,20 +479,18 @@ class NodeService {
         headers: {'Origin': 'http://127.0.0.1:18789'},
       ).timeout(const Duration(seconds: 10));
 
-      // role=operator at the top level (sibling of client/auth) is required alongside
-      // scopes=['operator.pairing'] — this is the standard connect frame shape.
-      // cli/cli is the only client.id+mode that passes gateway schema validation.
+      // mode=backend with id=gateway-client is the gateway's own internal mode.
+      // It carries the full operator scope set including operator.pairing, unlike
+      // mode=cli which has a fixed reduced scope regardless of requested scopes.
       final connectFrame = NodeFrame.request('connect', {
         'minProtocol': 3,
         'maxProtocol': 3,
         'client': {
-          'id': 'cli',
-          'mode': 'cli',
+          'id': 'gateway-client',
+          'mode': 'backend',
           'version': '2026.5.4',
           'platform': 'linux',
         },
-        'role': 'operator',
-        'scopes': ['operator.pairing'],
         'auth': {'token': token},
       });
 
@@ -505,7 +504,7 @@ class NodeService {
         if (connectSent || liveWs == null) return;
         connectSent = true;
         liveWs.add(connectFrame.encode());
-        log('[NODE] Operator connect frame sent');
+        log('[NODE] Backend connect frame sent');
       }
 
       challengeTimer = Timer(const Duration(milliseconds: 500), sendConnect);
