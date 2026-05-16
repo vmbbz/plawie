@@ -20,6 +20,7 @@ class NodeWsService {
   Duration? _nextReconnectDelayOverride;
   Timer? _pingTimer;
   String? _url;
+  String? _connectRequestId;
   DateTime? _lastActivity;
 
   Stream<NodeFrame> get frameStream => _frameController.stream;
@@ -61,7 +62,8 @@ class NodeWsService {
       final socket = await WebSocket.connect(
         _url!,
         headers: {'Origin': 'http://127.0.0.1:18789'},
-      ).timeout(const Duration(seconds: 45)); // Increased for high-load PRoot stalls
+      ).timeout(
+          const Duration(seconds: 45)); // Increased for high-load PRoot stalls
 
       _channel = IOWebSocketChannel(socket);
       _socketCompleter = Completer<void>();
@@ -74,7 +76,7 @@ class NodeWsService {
           try {
             final frame = NodeFrame.decode(data as String);
 
-            // Handle handshake (hello-ok)
+            // Legacy compatibility: some older gateways emit a synthetic hello-ok.
             if (frame.type == 'hello-ok' ||
                 (frame.payload?['type'] == 'hello-ok')) {
               if (_handshakeCompleter != null &&
@@ -102,6 +104,25 @@ class NodeWsService {
 
             // Match pending request/response
             if (frame.isResponse && frame.id != null) {
+              if (frame.id == _connectRequestId) {
+                _connectRequestId = null;
+                if (frame.isOk) {
+                  if (_handshakeCompleter != null &&
+                      !_handshakeCompleter!.isCompleted) {
+                    _handshakeCompleter!.complete();
+                  }
+                  _connected = true;
+                  _reconnectAttempt = 0;
+                  _startPing();
+                } else {
+                  if (_handshakeCompleter != null &&
+                      !_handshakeCompleter!.isCompleted) {
+                    final message = frame.error?['message']?.toString() ??
+                        'connect rejected';
+                    _handshakeCompleter!.completeError(StateError(message));
+                  }
+                }
+              }
               final completer = _pendingRequests.remove(frame.id);
               if (completer != null) {
                 completer.complete(frame);
@@ -116,7 +137,7 @@ class NodeWsService {
           // Capture close code AND reason BEFORE _handleDisconnect nulls the channel
           final closeCode = _channel?.closeCode;
           final closeReason = _channel?.closeReason ?? '';
-          
+
           final requestIdMatch =
               RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
           final requestId = requestIdMatch?.group(1);
@@ -127,15 +148,15 @@ class NodeWsService {
               !pairingRequired &&
               (closeReason.contains('origin not allowed') ||
                   closeReason.contains('origin-mismatch'));
-          final warmingUp = closeReason.contains('startup-sidecars-pending') || 
-                            closeReason.contains('gateway starting') ||
-                            closeCode == 1005;
+          final warmingUp = closeReason.contains('startup-sidecars-pending') ||
+              closeReason.contains('gateway starting') ||
+              closeCode == 1005;
 
           if (pairingRequired && !_pairingRequiredController.isClosed) {
             // CRITICAL: Stop reconnect immediately and synchronously.
             _shouldReconnect = false;
             _reconnectTimer?.cancel();
-            
+
             signalPairingRequired(requestId);
           } else if (policyRejected) {
             _shouldReconnect = false;
@@ -199,6 +220,7 @@ class NodeWsService {
   void _handleDisconnect() {
     if (_channel == null) return;
     _connected = false;
+    _connectRequestId = null;
     _pingTimer?.cancel();
     _subscription?.cancel();
     _channel = null;
@@ -219,7 +241,7 @@ class NodeWsService {
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
     int delayMs;
-    
+
     if (_nextReconnectDelayOverride != null) {
       delayMs = _nextReconnectDelayOverride!.inMilliseconds;
       _nextReconnectDelayOverride = null; // Clear after use
@@ -256,11 +278,15 @@ class NodeWsService {
     if (_channel == null) {
       throw StateError('WebSocket not connected');
     }
+    if (request.type == 'req' && request.method == 'connect') {
+      _connectRequestId = request.id;
+    }
     final completer = Completer<NodeFrame>();
     _pendingRequests[request.id!] = completer;
     _channel!.sink.add(request.encode());
 
-    final effectiveTimeout = timeout ?? const Duration(seconds: 30); // Increased for gateway handshakes
+    final effectiveTimeout = timeout ??
+        const Duration(seconds: 30); // Increased for gateway handshakes
     return completer.future.timeout(effectiveTimeout, onTimeout: () {
       _pendingRequests.remove(request.id);
       throw TimeoutException('Request timed out', effectiveTimeout);

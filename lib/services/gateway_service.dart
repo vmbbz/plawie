@@ -689,6 +689,7 @@ PARAMETER num_batch 512
       _isStarting = false;
     }
   }
+
   Future<void> start() async {
     await attachOrStart(forceStart: true);
   }
@@ -717,9 +718,8 @@ PARAMETER num_batch 512
             'Gateway health check timed out after ${timeout.inSeconds}s');
       }
       try {
-        final resp = await http
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 2));
+        final resp =
+            await http.get(Uri.parse(url)).timeout(const Duration(seconds: 2));
         if (resp.statusCode == 200) {
           listening = true;
           debugPrint('✅ Gateway port listening');
@@ -735,7 +735,8 @@ PARAMETER num_batch 512
     final readyDeadline = DateTime.now().add(const Duration(seconds: 30));
     while (!_state.isReady) {
       if (DateTime.now().isAfter(readyDeadline)) {
-        debugPrint('[GATEWAY] Ready signal sub-timeout — HTTP health confirmed, proceeding.');
+        debugPrint(
+            '[GATEWAY] Ready signal sub-timeout — HTTP health confirmed, proceeding.');
         break;
       }
       if (DateTime.now().difference(startTime) > timeout) {
@@ -769,7 +770,8 @@ PARAMETER num_batch 512
       }
 
       // Detect restart signals to reset ready flag
-      if (log.contains('signal SIGUSR1 received') || log.contains('restarting')) {
+      if (log.contains('signal SIGUSR1 received') ||
+          log.contains('restarting')) {
         _updateState(_state.copyWith(isReady: false));
       }
 
@@ -952,7 +954,7 @@ PARAMETER num_batch 512
     // Ensure allowedOrigins includes wildcard + n/a for Dart WebSocket (origin=n/a)
     config['gateway']['controlUi'] ??= {};
     config['gateway']['controlUi']['allowedOrigins'] = [
-      '*',   // wildcard — required for hardenGatewayConfigViaCli skip-check to work
+      '*', // wildcard — required for hardenGatewayConfigViaCli skip-check to work
       'n/a', // Dart/Flutter WebSocket sends origin=n/a
       'http://127.0.0.1:18789',
       'http://localhost:18789'
@@ -2268,7 +2270,7 @@ PARAMETER num_batch 512
       _addActivity(
           '[INFO] Pairing required (1008) — auto-approving operator $requestId...');
       try {
-        await NativeBridge.approveDevice(requestId);
+        await _approveOperatorPairingRequest(requestId);
         await Future.delayed(const Duration(milliseconds: 1500));
         _addActivity('[INFO] Operator device approved successfully');
       } catch (e) {
@@ -2304,6 +2306,17 @@ PARAMETER num_batch 512
     } catch (e) {
       _addActivity('[WARN] Could not clear operator device record: $e');
     }
+  }
+
+  Future<void> _approveOperatorPairingRequest(String requestId) async {
+    final safeRequestId = requestId.trim();
+    if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
+      throw Exception('Invalid pairing request id: $requestId');
+    }
+    await NativeBridge.runInProot(
+      'openclaw devices approve $safeRequestId --json',
+      timeout: 40,
+    );
   }
 
   Future<void> _checkHealth() async {
@@ -3582,7 +3595,7 @@ PARAMETER num_batch 512
   /// We run this TWICE with a delay to ensure it survives any background touches
   /// by the 'onboard' wizard or internal gateway reloads.
   Future<void> hardenGatewayConfigViaCli() async {
-    // The BootstrapService handles pre-start hardening now, but we perform 
+    // The BootstrapService handles pre-start hardening now, but we perform
     // a defensive check here to ensure the active gateway is always hardened.
 
     try {
@@ -3644,25 +3657,27 @@ PARAMETER num_batch 512
 
     try {
       final alreadyRunning = await NativeBridge.isGatewayRunning();
-      
+
       await NativeBridge.runInProot(
         'cat > /tmp/harden.json << \'EOF\'\n' +
             patchJson +
             '\nEOF && ' +
             'openclaw config patch --file /tmp/harden.json && ' +
-            'rm -f /tmp/harden.json' + 
-            (alreadyRunning ? ' && openclaw reload 2>/dev/null' : ''), 
+            'rm -f /tmp/harden.json' +
+            (alreadyRunning ? ' && openclaw reload 2>/dev/null' : ''),
         timeout: 60,
       );
-      
+
       if (alreadyRunning) {
-        // Short grace period for the gateway to process the SIGUSR1 (reload) 
+        // Short grace period for the gateway to process the SIGUSR1 (reload)
         // and for WebSocket listeners to recover.
         await Future.delayed(const Duration(milliseconds: 1500));
       }
-      
-      debugPrint('✅ Hardening sweep (config patch${alreadyRunning ? ' + reload' : ''}) applied successfully');
-      _addActivity('[SYS] Industrial-grade CLI hardening applied${alreadyRunning ? ' and reloaded' : ''}.');
+
+      debugPrint(
+          '✅ Hardening sweep (config patch${alreadyRunning ? ' + reload' : ''}) applied successfully');
+      _addActivity(
+          '[SYS] Industrial-grade CLI hardening applied${alreadyRunning ? ' and reloaded' : ''}.');
     } catch (e) {
       debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }

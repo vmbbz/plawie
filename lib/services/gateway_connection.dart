@@ -214,6 +214,7 @@ class GatewayConnection {
     const role = 'operator';
     const scopes = [
       'operator.admin',
+      'operator.pairing',
       'operator.read',
       'operator.write',
       'chat',

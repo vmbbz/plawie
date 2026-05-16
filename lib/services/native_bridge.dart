@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
-import 'device_identity.dart';
-import 'dart:convert';
 import '../constants/openclaw_paths.dart';
 
 class NativeBridge {
   static const _channel = MethodChannel('com.nxg.openclawproot/native');
-  static const _eventChannel = EventChannel('com.nxg.openclawproot/gateway_logs');
+  static const _eventChannel =
+      EventChannel('com.nxg.openclawproot/gateway_logs');
 
   static Future<String> getProotPath() async {
     return await _channel.invokeMethod('getProotPath');
@@ -30,7 +29,8 @@ class NativeBridge {
   }
 
   static Future<bool> isBootstrapComplete() async {
-    final nativeOk = await _channel.invokeMethod('isBootstrapComplete') ?? false;
+    final nativeOk =
+        await _channel.invokeMethod('isBootstrapComplete') ?? false;
     final prefs = PreferencesService();
     await prefs.init();
     return nativeOk || prefs.setupComplete;
@@ -52,28 +52,34 @@ class NativeBridge {
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
-                    'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
-    return await _channel.invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
+    final withEnv =
+        'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
+    return await _channel
+        .invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
   }
 
   /// Execute a command in the persistent shell (one PRoot process reused across calls).
   /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
-  static Future<String> executeInShell(String command, {int timeoutMs = 30000}) async {
+  static Future<String> executeInShell(String command,
+      {int timeoutMs = 30000}) async {
     final sanitized = _applyAbsoluteBypass(command);
-    final withEnv = 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
-                    'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
-    return await _channel.invokeMethod('executeInShell', {'command': withEnv, 'timeoutMs': timeoutMs});
+    final withEnv =
+        'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
+    return await _channel.invokeMethod(
+        'executeInShell', {'command': withEnv, 'timeoutMs': timeoutMs});
   }
 
   static String _applyAbsoluteBypass(String cmd) {
     if (!cmd.contains('openclaw')) return cmd;
-    
-    // Replace naked 'openclaw' command but NOT if it's already part of a path 
+
+    // Replace naked 'openclaw' command but NOT if it's already part of a path
     // or the .js entry point itself.
     // (?<![/\.]) matches only if NOT preceded by / or .
     // (?!\.js) matches only if NOT followed by .js
-    return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?!\.js)'), (match) {
+    return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?!\.js)'),
+        (match) {
       return kOpenClawCommand;
     });
   }
@@ -88,45 +94,14 @@ class NativeBridge {
   }
 
   static Future<String> approveDevice(String requestId) async {
-    // Surgical Filesystem Injection — does NOT depend on requestId timing.
-    // Directly upserts the device into the gateway's authorized list with the
-    // correct role (operator, matching what autoApproveCidrs grants).
-    // CLI-based approval is skipped: by the time the CLI connects through PRoot
-    // (~5–10s), the node has cycled to a new requestId → unknown requestId errors.
-    final identity = DeviceIdentity.instance;
-    final deviceId = identity.deviceId;
-    final publicKey = identity.publicKeyBase64Url;
-
-    if (deviceId == null || publicKey == null) {
-      throw Exception('Cannot approve device: Identity not initialized');
+    final safeRequestId = requestId.trim();
+    if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
+      throw Exception('Invalid pairing request id: $requestId');
     }
-
-    final deviceJson = {
-      'id': deviceId,
-      'publicKey': publicKey,
-      'name': 'OpenClaw Mobile',
-      'pairedAt': DateTime.now().toIso8601String(),
-      'roles': ['operator'],
-      'scopes': ['node.device', 'node.proxy', 'operator.admin'],
-    };
-    final deviceJsonStr = jsonEncode(deviceJson);
-
-    final result = await runInProot('''
-      DEVICES_DIR="/root/.openclaw/devices"
-      PAIRED_FILE="\$DEVICES_DIR/paired.json"
-      mkdir -p "\$DEVICES_DIR"
-
-      if [ ! -f "\$PAIRED_FILE" ]; then
-        echo '{"devices": [$deviceJsonStr]}' > "\$PAIRED_FILE"
-      else
-        TMP_FILE=\$(mktemp)
-        jq --argjson newDev '$deviceJsonStr' '.devices |= (map(select(.id != \$newDev.id)) + [\$newDev])' "\$PAIRED_FILE" > "\$TMP_FILE" && mv "\$TMP_FILE" "\$PAIRED_FILE"
-      fi
-
-      echo "Surgical injection successful"
-    ''', timeout: 60);
-
-    return result;
+    return await runInProot(
+      'openclaw devices approve $safeRequestId --json',
+      timeout: 40,
+    );
   }
 
   static Future<String> removeDevice(String deviceId) async {
@@ -166,11 +141,13 @@ class NativeBridge {
   }
 
   static Future<bool> extractNodeTarball(String tarPath) async {
-    return await _channel.invokeMethod('extractNodeTarball', {'tarPath': tarPath});
+    return await _channel
+        .invokeMethod('extractNodeTarball', {'tarPath': tarPath});
   }
 
   static Future<bool> createBinWrappers(String packageName) async {
-    return await _channel.invokeMethod('createBinWrappers', {'packageName': packageName});
+    return await _channel
+        .invokeMethod('createBinWrappers', {'packageName': packageName});
   }
 
   static Future<bool> startTerminalService() async {
@@ -214,31 +191,39 @@ class NativeBridge {
   }
 
   static Future<bool> updateNodeNotification(String text) async {
-    return await _channel.invokeMethod('updateNodeNotification', {'text': text});
+    return await _channel
+        .invokeMethod('updateNodeNotification', {'text': text});
   }
 
   static Future<bool> startSetupService() async {
     return await _channel.invokeMethod('startSetupService');
   }
 
-  static Future<bool> updateSetupNotification(String text, {int progress = -1}) async {
-    return await _channel.invokeMethod('updateSetupNotification', {'text': text, 'progress': progress});
+  static Future<bool> updateSetupNotification(String text,
+      {int progress = -1}) async {
+    return await _channel.invokeMethod(
+        'updateSetupNotification', {'text': text, 'progress': progress});
   }
 
   static Future<bool> stopSetupService() async {
     return await _channel.invokeMethod('stopSetupService');
   }
 
-  static Future<bool> showUrlNotification(String url, {String title = 'URL Detected'}) async {
-    return await _channel.invokeMethod('showUrlNotification', {'url': url, 'title': title});
+  static Future<bool> showUrlNotification(String url,
+      {String title = 'URL Detected'}) async {
+    return await _channel
+        .invokeMethod('showUrlNotification', {'url': url, 'title': title});
   }
 
   static Stream<String> get gatewayLogStream {
-    return _eventChannel.receiveBroadcastStream().map((event) => event.toString());
+    return _eventChannel
+        .receiveBroadcastStream()
+        .map((event) => event.toString());
   }
 
   static Future<String?> requestScreenCapture(int durationMs) async {
-    return await _channel.invokeMethod('requestScreenCapture', {'durationMs': durationMs});
+    return await _channel
+        .invokeMethod('requestScreenCapture', {'durationMs': durationMs});
   }
 
   static Future<bool> stopScreenCapture() async {
@@ -284,13 +269,16 @@ class NativeBridge {
   }
 
   static Future<bool> installOllama(String tempPath) async {
-    return await _channel.invokeMethod<bool>('installOllama', {'tempPath': tempPath}) ?? false;
+    return await _channel
+            .invokeMethod<bool>('installOllama', {'tempPath': tempPath}) ??
+        false;
   }
 
   // ── Wake Word "Plawie" ─────────────────────────────────────────────────────
 
   static const _hotwordChannel = MethodChannel('com.nxg.openclawproot/hotword');
-  static const _hotwordEventChannel = EventChannel('com.nxg.openclawproot/hotword_events');
+  static const _hotwordEventChannel =
+      EventChannel('com.nxg.openclawproot/hotword_events');
 
   static Future<bool> startHotword() async {
     return await _hotwordChannel.invokeMethod<bool>('startHotword') ?? false;
@@ -301,11 +289,14 @@ class NativeBridge {
   }
 
   static Future<bool> setHotwordMode(String mode) async {
-    return await _hotwordChannel.invokeMethod<bool>('setHotwordMode', {'mode': mode}) ?? false;
+    return await _hotwordChannel
+            .invokeMethod<bool>('setHotwordMode', {'mode': mode}) ??
+        false;
   }
 
   static Future<bool> isHotwordRunning() async {
-    return await _hotwordChannel.invokeMethod<bool>('isHotwordRunning') ?? false;
+    return await _hotwordChannel.invokeMethod<bool>('isHotwordRunning') ??
+        false;
   }
 
   static Stream<String> get hotwordEvents => _hotwordEventChannel
@@ -320,7 +311,8 @@ class NativeBridge {
   }
 
   static Future<bool> requestStoragePermission() async {
-    return await _channel.invokeMethod<bool>('requestStoragePermission') ?? false;
+    return await _channel.invokeMethod<bool>('requestStoragePermission') ??
+        false;
   }
 
   // ── Network Change Callback ──────────────────────────────────────────────
