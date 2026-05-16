@@ -11,6 +11,7 @@ import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'gateway_service.dart';
+import 'device_identity.dart';
 
 class BootstrapService {
   final Dio _dio = Dio(BaseOptions(
@@ -814,9 +815,9 @@ class BootstrapService {
         timeout: 30,
       );
 
-      // 3. DO NOT run 'openclaw reload' here anymore. 
-      // The gateway isn't started yet, so a reload is at best a no-op 
-      // and at worst a signal race.
+      // 3. Pre-write device to devices.json so gateway starts with it pre-approved.
+      //    No reload needed — gateway reads this file on startup before node connects.
+      await _preWriteLocalDeviceToApprovedList();
       await Future.delayed(const Duration(seconds: 1));
       _log('[HARDEN] Pre-start config injection complete.');
     } catch (e) {
@@ -950,8 +951,45 @@ class BootstrapService {
   }
 
   Future<void> _approveLocalNodeIfNeeded() async {
-    // Node pairing is handled automatically by NodeService._handleNodePairingRequired()
-    // via direct Dart WS operator approval. No action needed here.
-    _log('[SETUP] Node pairing is self-healing via direct WS approval');
+    _log('[SETUP] Node pairing handled via pre-written devices.json — no action needed');
+  }
+
+  /// Writes our device directly to storage/devices.json before the gateway starts.
+  /// Gateway reads this on startup so the node is pre-approved — no pairing needed.
+  Future<void> _preWriteLocalDeviceToApprovedList() async {
+    try {
+      final identity = DeviceIdentity.instance;
+      await identity.init(); // idempotent — loads existing keys or generates new ones
+      if (identity.deviceId == null) {
+        _log('[SETUP] Device identity not ready — skipping pre-write');
+        return;
+      }
+
+      final filesDir = await NativeBridge.getFilesDir();
+      final devicesFile = File('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices.json');
+      await devicesFile.parent.create(recursive: true);
+
+      final deviceEntry = {
+        'id': identity.deviceId!,
+        'publicKey': identity.publicKeyBase64Url ?? '',
+        'name': 'OpenClaw Mobile',
+        'pairedAt': DateTime.now().toIso8601String(),
+        'roles': ['operator'],
+        'scopes': ['node.device', 'node.proxy', 'operator.admin'],
+      };
+
+      Map<String, dynamic> store = {'devices': []};
+      if (devicesFile.existsSync()) {
+        try { store = jsonDecode(await devicesFile.readAsString()) as Map<String, dynamic>; } catch (_) {}
+      }
+      final devices = List<dynamic>.from(store['devices'] as List? ?? []);
+      devices.removeWhere((d) => d is Map && d['id'] == identity.deviceId);
+      devices.add(deviceEntry);
+      store['devices'] = devices;
+      await devicesFile.writeAsString(jsonEncode(store));
+      _log('[SETUP] Device pre-written to approved list in storage/devices.json');
+    } catch (e) {
+      _log('[SETUP] Pre-write failed (non-fatal): $e');
+    }
   }
 }

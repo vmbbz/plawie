@@ -429,143 +429,67 @@ class NodeService {
   }
 
   /// Called when the gateway closes the WebSocket with 1008 (pairing required).
-  /// Primary: approve via direct Dart WebSocket operator connection (zero PRoot, no race).
-  /// Fallback: CLI device remove + filesystem clear so next connect is treated as new.
+  /// Writes our device directly to devices.json with operator role, then triggers
+  /// a full gateway restart (openclaw reload). Gateway reads the pre-approved device
+  /// on startup — bypasses the pairing/scope mechanism entirely.
   Future<void> _handleNodePairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
 
-    _ws.haltReconnect(); // Freeze reconnect — requestId stays valid
+    _ws.haltReconnect();
     clearCachedToken();
 
-    log('[NODE] Pairing required (1008) — requestId=${requestId ?? 'none'}');
+    log('[NODE] Pairing required (1008) — pre-writing device and reloading gateway...');
 
-    bool approved = false;
-    if (requestId != null && requestId.isNotEmpty) {
-      _gatewayAuthToken ??= await _readGatewayToken();
-      if (_gatewayAuthToken != null) {
-        approved = await _approveViaNativeDartWs(requestId, _gatewayAuthToken!);
-      } else {
-        log('[NODE] No gateway token — cannot perform direct WS approval');
-      }
-    }
+    // Clear stale record first (resets nodeDeviceToken too), then pre-write fresh entry.
+    await _clearNodeDeviceRecord();
+    await _preWriteDeviceToApprovedList();
 
-    if (!approved) {
-      // CLI remove updates the in-memory device store; filesystem clear is belt-and-suspenders.
-      log('[NODE] Direct approval unavailable — removing device record via CLI...');
-      final deviceId = _identity.deviceId ?? '';
-      if (deviceId.isNotEmpty) {
-        try { await NativeBridge.removeDevice(deviceId); } catch (_) {}
-      }
-      await _clearNodeDeviceRecord();
-    }
+    // Full gateway restart (SIGUSR1) clears in-memory pending state and reads the
+    // freshly written devices.json — device is pre-approved on next connect.
+    try {
+      await NativeBridge.runInProot('openclaw reload 2>/dev/null || true', timeout: 15);
+    } catch (_) {}
 
-    await Future.delayed(const Duration(milliseconds: 1500));
-    await _ws.disconnect(); // Resets _pairingInProgress so next connect() can pair again
+    // Established-install restart takes ~15–30s. Wait before reconnecting.
+    await Future.delayed(const Duration(seconds: 30));
+
+    await _ws.disconnect();
     _pairingResolveAttempted = false;
 
-    log('[NODE] Reconnecting after pairing resolution...');
+    log('[NODE] Reconnecting — device should be pre-approved...');
     unawaited(connect());
   }
 
-  /// Opens a raw operator WebSocket to the gateway and approves the pending
-  /// device pairing request by requestId. Auth=token bypasses device pairing —
-  /// no PRoot required. haltReconnect() must be called before this.
-  Future<bool> _approveViaNativeDartWs(String requestId, String token) async {
-    log('[NODE] Direct WS approval — requestId=$requestId');
-    WebSocket? ws;
-    StreamSubscription? sub;
-    Timer? challengeTimer;
+  Future<void> _preWriteDeviceToApprovedList() async {
     try {
-      ws = await WebSocket.connect(
-        'ws://127.0.0.1:18789',
-        headers: {'Origin': 'http://127.0.0.1:18789'},
-      ).timeout(const Duration(seconds: 10));
+      final filesDir = await NativeBridge.getFilesDir();
+      final devicesFile = File('$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices.json');
+      await devicesFile.parent.create(recursive: true);
 
-      // Connect as cli/cli — the only client.id+mode values that pass gateway schema validation.
-      // 'operator' mode and free-form ids are rejected (invalid params 1008).
-      // Scopes are top-level params accepted alongside cli/cli and are required:
-      // device.pair.approve enforces the operator.pairing scope regardless of mode.
-      final connectFrame = NodeFrame.request('connect', {
-        'minProtocol': 3,
-        'maxProtocol': 3,
-        'client': {
-          'id': 'cli',
-          'version': '2026.5.4',
-          'platform': 'linux',
-          'mode': 'cli',
-        },
-        'scopes': ['operator.pairing'],
-        'auth': {'token': token},
-      });
+      final deviceEntry = {
+        'id': _identity.deviceId ?? '',
+        'publicKey': _identity.publicKeyBase64Url ?? '',
+        'name': 'OpenClaw Mobile',
+        'pairedAt': DateTime.now().toIso8601String(),
+        'roles': ['operator'],
+        'scopes': ['node.device', 'node.proxy', 'operator.admin'],
+      };
 
-      bool connectSent = false;
-      bool helloReceived = false;
-      String? approveFrameId;
-      final done = Completer<bool>();
-
-      void sendConnect() {
-        final liveWs = ws;
-        if (connectSent || liveWs == null) return;
-        connectSent = true;
-        liveWs.add(connectFrame.encode());
-        log('[NODE] Operator connect frame sent');
+      Map<String, dynamic> store = {'devices': []};
+      if (devicesFile.existsSync()) {
+        try { store = jsonDecode(await devicesFile.readAsString()) as Map<String, dynamic>; } catch (_) {}
       }
+      final devices = List<dynamic>.from(store['devices'] as List? ?? []);
+      devices.removeWhere((d) => d is Map && d['id'] == (_identity.deviceId ?? ''));
+      devices.add(deviceEntry);
+      store['devices'] = devices;
+      await devicesFile.writeAsString(jsonEncode(store));
 
-      challengeTimer = Timer(const Duration(milliseconds: 500), sendConnect);
-
-      sub = ws.listen(
-        (data) {
-          if (data is! String || done.isCompleted) return;
-          try {
-            final json = jsonDecode(data) as Map<String, dynamic>;
-            final type = json['type'] as String? ?? '';
-            final event = json['event'] as String? ?? '';
-            final frameId = json['id'] as String?;
-            final ok = json['ok'] as bool?;
-
-            if (type == 'event' && event == 'connect.challenge' && !connectSent) {
-              challengeTimer?.cancel();
-              sendConnect();
-              return;
-            }
-
-            if (!helloReceived && (type == 'hello-ok' ||
-                (type == 'res' && frameId == connectFrame.id && ok == true))) {
-              helloReceived = true;
-              final approveFrame = NodeFrame.request('device.pair.approve', {'requestId': requestId});
-              approveFrameId = approveFrame.id;
-              ws!.add(approveFrame.encode());
-              log('[NODE] device.pair.approve sent');
-              return;
-            }
-
-            if (helloReceived && type == 'res' &&
-                (frameId == approveFrameId || approveFrameId == null)) {
-              done.complete(ok == true);
-              return;
-            }
-
-            if (ok == false && !done.isCompleted) done.complete(false);
-          } catch (_) {}
-        },
-        onError: (_) { if (!done.isCompleted) done.complete(false); },
-        onDone: ()  { if (!done.isCompleted) done.complete(false); },
-      );
-
-      final result = await done.future.timeout(
-        const Duration(seconds: 15),
-        onTimeout: () { log('[NODE] Direct WS approval timed out'); return false; },
-      );
-      log('[NODE] Direct WS approval: ${result ? "SUCCESS" : "FAILED"}');
-      return result;
+      final id = _identity.deviceId ?? '';
+      log('[NODE] Device pre-written to approved list (id=${id.length > 8 ? '${id.substring(0, 8)}...' : id})');
     } catch (e) {
-      log('[NODE] Direct WS approval error: $e');
-      return false;
-    } finally {
-      challengeTimer?.cancel();
-      await sub?.cancel();
-      try { ws?.close(1000); } catch (_) {}
+      log('[NODE] Could not pre-write device (non-fatal): $e');
     }
   }
 
