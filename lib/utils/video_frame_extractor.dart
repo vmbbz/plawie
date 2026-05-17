@@ -7,8 +7,8 @@ import '../services/native_bridge.dart';
 ///
 /// Strategy:
 ///   1. Write the MP4 to a host path that is mapped into PRoot.
-///   2. Run: ffmpeg -i <input> -vf fps=<fps> <output_pattern> -y
-///   3. Read back the JPEG files and return as List<Uint8List>.
+///   2. Run: `ffmpeg -i INPUT -vf fps=FPS OUTPUT_PATTERN -y`
+///   3. Read back the JPEG files and return as `List&lt;Uint8List&gt;`.
 ///   4. Clean up temp files.
 ///
 /// Requires ffmpeg to be installed in PRoot: `apt-get install -y ffmpeg`

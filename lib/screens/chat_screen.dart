@@ -1625,7 +1625,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       ],
     ).then((value) {
       if (value == null) return;
-      
+      if (!context.mounted) return;
+
       if (value == 'setup_local_llm') {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const LocalLlmScreen(),
@@ -1834,8 +1835,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               final name = controller.text.trim();
               if (name.isNotEmpty) {
                 await _persistence.renameSession(session.id, name);
-                setState(() {});
+                if (mounted) setState(() {});
               }
+              if (!ctx.mounted) return;
               Navigator.pop(ctx);
             },
             child: const Text('Save'),
@@ -1984,11 +1986,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 try {
                   await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('PiP not supported: $e')),
-                    );
-                  }
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('PiP not supported: $e')),
+                  );
                 }
               }
             },
@@ -2095,7 +2096,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               curve: Curves.easeOutCubic,
               alignment: Alignment.bottomCenter, // Ensure centering
               transform: Matrix4.identity()
-                ..scale(MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0),
+                ..scaleByDouble(
+                    MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0,
+                    MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0,
+                    1.0,
+                    1.0,
+                  ),
               transformAlignment: Alignment.bottomCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
@@ -2790,7 +2796,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         return GestureDetector(
                           onTap: () async {
                             await TtsService().setVoicePersona(p);
-                            if (mounted) setState(() {});
+                            if (!context.mounted) return;
+                            setState(() {});
                             Navigator.pop(context);
                           },
                           child: AnimatedContainer(

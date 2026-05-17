@@ -478,13 +478,12 @@ class _AgentBasePageState extends State<AgentBasePage>
                     'amount': amt,
                   },
                 );
-                if (mounted) {
-                  if (result.success) {
-                    _showResult(context,
-                        token == 'eth' ? 'send_eth' : 'send_usdc', result.data);
-                  } else {
-                    setState(() => _error = result.error);
-                  }
+                if (!context.mounted) return;
+                if (result.success) {
+                  _showResult(context,
+                      token == 'eth' ? 'send_eth' : 'send_usdc', result.data);
+                } else {
+                  setState(() => _error = result.error);
                 }
               } finally {
                 if (mounted) setState(() => _loading = false);
@@ -523,12 +522,11 @@ class _AgentBasePageState extends State<AgentBasePage>
                   'base-chain',
                   parameters: {'action': 'resolve_basename', 'name': name},
                 );
-                if (mounted) {
-                  if (result.success) {
-                    _showResult(context, 'resolve_basename', result.data);
-                  } else {
-                    setState(() => _error = result.error);
-                  }
+                if (!context.mounted) return;
+                if (result.success) {
+                  _showResult(context, 'resolve_basename', result.data);
+                } else {
+                  setState(() => _error = result.error);
                 }
               } finally {
                 if (mounted) setState(() => _loading = false);

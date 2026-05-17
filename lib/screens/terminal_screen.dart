@@ -142,10 +142,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: RawKeyboardListener(
+                              child: KeyboardListener(
                                 focusNode: FocusNode(),
-                                onKey: (event) {
-                                  if (event is RawKeyDownEvent) {
+                                onKeyEvent: (event) {
+                                  if (event is KeyDownEvent) {
                                     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
                                       _navigateHistory(1);
                                     } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {

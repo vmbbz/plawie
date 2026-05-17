@@ -93,6 +93,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
       }
     } catch (e) {
       setState(() => _discoverResults = []);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("ClawHub connection issue. Try again later.")));
     } finally {
       setState(() => _isSearching = false);
@@ -102,6 +103,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
   void _showSkillProfile(Map<String, dynamic> skill) async {
     final profile = await _skills.getSkillProfile(skill['id'] ?? skill['slug'] ?? '');
 
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -188,6 +190,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
                       onPressed: () async {
                         await _skills.installSkill(skill['slug'] ?? skill['id']);
                         await _skills.ensureAgentAwareness();
+                        if (!context.mounted) return;
                         Navigator.pop(context);
                         setState(() {});
                       },
@@ -205,6 +208,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
                       onPressed: () async {
                         await _skills.uninstallSkill(skill['slug'] ?? skill['id']);
                         await _skills.ensureAgentAwareness();
+                        if (!context.mounted) return;
                         Navigator.pop(context);
                         setState(() {});
                       },
@@ -391,6 +395,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
           onPressed: () async {
             await _skills.installSkill(skill['slug'] ?? skill['id']);
             await _skills.ensureAgentAwareness();
+            if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Skill equipped! Plawie is ready."), behavior: SnackBarBehavior.floating));
           },
           style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
@@ -411,6 +416,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
         }
         if (success) {
           await _skills.ensureAgentAwareness();
+          if (!mounted) return;
           setState(() => skill['installed'] = !isInstalled);
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${skill['name']} ${isInstalled ? 'removed' : 'equipped'}!'), backgroundColor: isInstalled ? Colors.redAccent : Colors.greenAccent, behavior: SnackBarBehavior.floating));
         }

@@ -130,11 +130,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       
       if (validateResult.contains('Invalid')) {
         _writeLog('\n⚠️ Configuration auto-fixed. Start may fail.');
-        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text('Config auto-fixed – please restart if issues persist')),
-           );
-        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Config auto-fixed – please restart if issues persist')),
+        );
       }
 
       final configCheck = await NativeBridge.runInProot(

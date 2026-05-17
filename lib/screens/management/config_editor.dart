@@ -53,7 +53,7 @@ class _ConfigEditorState extends State<ConfigEditor> {
       // Using config.patch for safer partial updates if supported, 
       // but here we send the whole block for config.set as a fallback concept.
       final result = await provider.invoke('config.set', _config);
-      
+      if (!mounted) return;
       if (result['ok'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Configuration saved successfully!')),
@@ -64,6 +64,7 @@ class _ConfigEditorState extends State<ConfigEditor> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving: $e')),
       );

@@ -577,7 +577,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     );
                     final gw = context.read<GatewayProvider>();
                     final healthy = await gw.checkHealth();
-                    if (!mounted) return;
+                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     showDialog(
                       context: context,
@@ -669,6 +669,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       builder: (ctx) => const Center(child: CircularProgressIndicator()),
                     );
                     final results = await DiagnosticService.runGatewayDiagnostics();
+                    if (!context.mounted) return;
                     Navigator.pop(context); // close progress
                     showDialog(
                       context: context,
@@ -852,18 +853,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Select Avatar'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(avatars.length, (i) => RadioListTile<String>(
-            title: Text(labels[i]),
-            value: avatars[i],
-            groupValue: _selectedAvatar,
-            onChanged: (val) {
-              setState(() => _selectedAvatar = val!);
-              _prefs.selectedAvatar = val!;
-              Navigator.pop(ctx);
-            },
-          )),
+        content: RadioGroup<String>(
+          groupValue: _selectedAvatar,
+          onChanged: (val) {
+            if (val == null) return;
+            setState(() => _selectedAvatar = val);
+            _prefs.selectedAvatar = val;
+            Navigator.pop(ctx);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(avatars.length, (i) => RadioListTile<String>(
+              title: Text(labels[i]),
+              value: avatars[i],
+            )),
+          ),
         ),
       ),
     );
@@ -956,14 +960,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 try {
                   final gw = context.read<GatewayProvider>();
                   await gw.configureApiKey(selectedProvider, key);
+                  if (!context.mounted) return;
                   _prefs.apiProvider = selectedProvider;
                   _prefs.apiKeyConfigured = true;
                   setState(() {});
-                  
+
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('API key updated! OpenClaw will hot-reload the config.')),
                   );
                 } catch (e) {
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to update key: $e')),
                   );
@@ -1021,69 +1027,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
       try {
         final gw = context.read<GatewayProvider>();
         await gw.persistModel(val);
+        if (!context.mounted) return;
         _prefs.configuredModel = val;
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Model set to $label. OpenClaw will hot-reload.')),
         );
       } catch (e) {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed: $e')),
         );
       }
     }
 
+    final valueToLabel = <String, String>{
+      for (var i = 0; i < cloudModels.length; i++) cloudModels[i]: cloudLabels[i],
+      if (localModelId != null) localModelId: localLabel!,
+    };
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Select Model'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Local LLM option — only shown when llama-server is running
-              if (llmReady && localModelId != null) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
-                  child: Text('ON-DEVICE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.statusGreen.withValues(alpha: 0.8))),
-                ),
-                RadioListTile<String>(
-                  title: Text(localLabel!),
-                  subtitle: const Text('No API key · No internet · Private', style: TextStyle(fontSize: 11)),
-                  value: localModelId,
-                  groupValue: current,
-                  activeColor: AppColors.statusGreen,
-                  onChanged: (val) async {
-                    Navigator.pop(ctx);
-                    await switchModel(val!, _getModelLabel(val));
-                  },
-                ),
-                const Divider(),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
-                  child: Text('CLOUD', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: Colors.white38)),
-                ),
-              ],
-              ...List.generate(cloudModels.length, (i) => RadioListTile<String>(
-                title: Text(cloudLabels[i]),
-                subtitle: Text(cloudModels[i], style: const TextStyle(fontSize: 11)),
-                value: cloudModels[i],
-                groupValue: current,
-                onChanged: (val) async {
-                  Navigator.pop(ctx);
-                  await switchModel(val!, cloudLabels[i]);
-                },
-              )),
-              if (!llmReady)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    'Start Local LLM from Agent Skills to unlock free on-device inference.',
-                    style: TextStyle(fontSize: 11, color: Colors.white38),
+        content: RadioGroup<String>(
+          groupValue: current,
+          onChanged: (val) async {
+            if (val == null) return;
+            Navigator.pop(ctx);
+            await switchModel(val, valueToLabel[val] ?? _getModelLabel(val));
+          },
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Local LLM option — only shown when llama-server is running
+                if (llmReady && localModelId != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+                    child: Text('ON-DEVICE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.statusGreen.withValues(alpha: 0.8))),
                   ),
-                ),
-            ],
+                  RadioListTile<String>(
+                    title: Text(localLabel!),
+                    subtitle: const Text('No API key · No internet · Private', style: TextStyle(fontSize: 11)),
+                    value: localModelId,
+                  ),
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
+                    child: Text('CLOUD', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: Colors.white38)),
+                  ),
+                ],
+                ...List.generate(cloudModels.length, (i) => RadioListTile<String>(
+                  title: Text(cloudLabels[i]),
+                  subtitle: Text(cloudModels[i], style: const TextStyle(fontSize: 11)),
+                  value: cloudModels[i],
+                )),
+                if (!llmReady)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      'Start Local LLM from Agent Skills to unlock free on-device inference.',
+                      style: TextStyle(fontSize: 11, color: Colors.white38),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

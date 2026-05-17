@@ -38,7 +38,7 @@ class ChatSession {
 ///
 /// Storage layout:
 ///   chat_sessions.json     — list of ChatSession metadata
-///   chat_<sessionId>.json  — messages for each session
+///   chat_`<sessionId>`.json  — messages for each session
 ///   chat_history.json      — legacy single-session file (migrated on first use)
 class ChatPersistenceService {
   static final ChatPersistenceService _instance = ChatPersistenceService._internal();
