@@ -223,13 +223,13 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       };
 
       // Log device registration (simplified approach)
-      print('Device capabilities registered: ${deviceInfo['capabilities']}');
+      debugPrint('Device capabilities registered: ${deviceInfo['capabilities']}');
 
       // The capabilities are already registered in _registerCapabilities()
       // This is just for logging/debugging purposes
     } catch (e) {
       // Device registration failed - continue with gateway connection
-      print('Device node registration failed: $e');
+      debugPrint('Device node registration failed: $e');
     }
   }
 

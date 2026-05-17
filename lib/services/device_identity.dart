@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Manages a persistent Ed25519 device identity for OpenClaw Gateway Protocol v3.
@@ -50,7 +50,7 @@ class DeviceIdentity {
         );
         return;
       } catch (e) {
-        print('Device Identity Load Error: $e');
+        debugPrint('Device Identity Load Error: $e');
         // Fall through to generate new keys if corrupted
       }
     }

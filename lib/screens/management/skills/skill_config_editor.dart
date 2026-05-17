@@ -181,7 +181,7 @@ system_prompt: |
 
 # Optional: restrict which gateway tools this skill can invoke
 # tools:
-#   - ${id}.command_name
+#   - $id.command_name
 ''';
 
   @override

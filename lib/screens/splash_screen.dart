@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants.dart';
 import '../app.dart';
@@ -190,19 +190,19 @@ class _SplashScreenState extends State<SplashScreen>
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
                         color: isDark 
-                          ? Colors.white.withOpacity(0.08)
-                          : Colors.black.withOpacity(0.05),
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.05),
                         border: Border.all(
                           color: isDark 
-                            ? AppColors.statusGreen.withOpacity(0.3)
-                            : Colors.black.withOpacity(0.1),
+                            ? AppColors.statusGreen.withValues(alpha: 0.3)
+                            : Colors.black.withValues(alpha: 0.1),
                           width: 1,
                         ),
                         boxShadow: [
                           BoxShadow(
                             color: isDark 
-                              ? Colors.black.withOpacity(0.3)
-                              : Colors.black.withOpacity(0.1),
+                              ? Colors.black.withValues(alpha: 0.3)
+                              : Colors.black.withValues(alpha: 0.1),
                             blurRadius: 30,
                             offset: const Offset(0, 15),
                             spreadRadius: 0,
@@ -239,12 +239,12 @@ class _SplashScreenState extends State<SplashScreen>
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
                         color: isDark 
-                          ? Colors.white.withOpacity(0.08)
-                          : Colors.black.withOpacity(0.05),
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.05),
                         border: Border.all(
                           color: isDark 
-                            ? Colors.white.withOpacity(0.15)
-                            : Colors.black.withOpacity(0.1),
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.black.withValues(alpha: 0.1),
                           width: 1,
                         ),
                       ),
@@ -273,12 +273,12 @@ class _SplashScreenState extends State<SplashScreen>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           color: isDark 
-                            ? Colors.white.withOpacity(0.06)
-                            : Colors.black.withOpacity(0.03),
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.03),
                           border: Border.all(
                             color: isDark 
-                              ? Colors.white.withOpacity(0.12)
-                              : Colors.black.withOpacity(0.08),
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.08),
                             width: 1,
                           ),
                         ),
@@ -302,12 +302,12 @@ class _SplashScreenState extends State<SplashScreen>
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
                         color: isDark 
-                          ? Colors.white.withOpacity(0.08)
-                          : Colors.black.withOpacity(0.05),
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.05),
                         border: Border.all(
                           color: isDark 
-                            ? Colors.white.withOpacity(0.15)
-                            : Colors.black.withOpacity(0.1),
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.black.withValues(alpha: 0.1),
                           width: 1,
                         ),
                       ),
@@ -330,12 +330,12 @@ class _SplashScreenState extends State<SplashScreen>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
                           color: isDark 
-                            ? Colors.white.withOpacity(0.06)
-                            : Colors.black.withOpacity(0.03),
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.03),
                           border: Border.all(
                             color: isDark 
-                              ? Colors.white.withOpacity(0.12)
-                              : Colors.black.withOpacity(0.08),
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.08),
                             width: 1,
                           ),
                         ),
@@ -396,21 +396,21 @@ class _SplashScreenState extends State<SplashScreen>
             gradient: RadialGradient(
               colors: isDark
                 ? [
-                    AppColors.statusGreen.withOpacity(opacity * 0.4),
-                    AppColors.statusGreen.withOpacity(opacity * 0.1),
+                    AppColors.statusGreen.withValues(alpha: opacity * 0.4),
+                    AppColors.statusGreen.withValues(alpha: opacity * 0.1),
                     Colors.transparent,
                   ]
                 : [
-                    Colors.black.withOpacity(opacity * 0.2),
-                    Colors.black.withOpacity(opacity * 0.05),
+                    Colors.black.withValues(alpha: opacity * 0.2),
+                    Colors.black.withValues(alpha: opacity * 0.05),
                     Colors.transparent,
                   ],
             ),
             boxShadow: [
               BoxShadow(
                 color: isDark 
-                  ? AppColors.statusGreen.withOpacity(opacity * 0.3)
-                  : Colors.black.withOpacity(opacity * 0.1),
+                  ? AppColors.statusGreen.withValues(alpha: opacity * 0.3)
+                  : Colors.black.withValues(alpha: opacity * 0.1),
                 blurRadius: 20,
                 spreadRadius: 5,
               ),

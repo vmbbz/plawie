@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/chat_message.dart';
@@ -207,7 +208,7 @@ class ChatPersistenceService {
       session.updatedAt = DateTime.now();
       await _saveIndex();
     } catch (e) {
-      print('Error saving messages: $e');
+      debugPrint('Error saving messages: $e');
     }
   }
 }

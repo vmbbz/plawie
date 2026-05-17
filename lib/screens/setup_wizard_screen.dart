@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import 'dart:ui';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -14,7 +13,6 @@ import '../models/gateway_state.dart';
 import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
 import '../widgets/glass_card.dart';
-import 'onboarding_screen.dart';
 import 'package_install_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -28,7 +26,6 @@ class SetupWizardScreen extends StatefulWidget {
 class _SetupWizardScreenState extends State<SetupWizardScreen>
     with SingleTickerProviderStateMixin {
   bool _started = false;
-  bool _didAutoNavigate = false;
   Map<String, bool> _pkgStatuses = {};
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -94,9 +91,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -166,26 +160,26 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           end: Alignment.bottomRight,
           colors: isDark
               ? [
-                  AppColors.darkSurface.withOpacity(0.8),
-                  AppColors.darkSurfaceAlt.withOpacity(0.6),
+                  AppColors.darkSurface.withValues(alpha: 0.8),
+                  AppColors.darkSurfaceAlt.withValues(alpha: 0.6),
                 ]
               : [
-                  Colors.white.withOpacity(0.9),
-                  const Color(0xFFF8F9FA).withOpacity(0.8),
+                  Colors.white.withValues(alpha: 0.9),
+                  const Color(0xFFF8F9FA).withValues(alpha: 0.8),
                 ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
-              ? AppColors.statusGreen.withOpacity(0.3)
-              : AppColors.lightBorder.withOpacity(0.5),
+              ? AppColors.statusGreen.withValues(alpha: 0.3)
+              : AppColors.lightBorder.withValues(alpha: 0.5),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withOpacity(0.3)
-                : Colors.black.withOpacity(0.1),
+                ? Colors.black.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -216,7 +210,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   shaderCallback: (bounds) => LinearGradient(
                     colors: isDark
                         ? [Colors.white, AppColors.statusGreen]
-                        : [AppColors.darkBg, AppColors.darkBg.withOpacity(0.8)],
+                        : [AppColors.darkBg, AppColors.darkBg.withValues(alpha: 0.8)],
                   ).createShader(bounds),
                   child: Text(
                     'Setup Plawie',
@@ -234,8 +228,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark
-                        ? AppColors.inverseText.withOpacity(0.7)
-                        : AppColors.darkBg.withOpacity(0.7),
+                        ? AppColors.inverseText.withValues(alpha: 0.7)
+                        : AppColors.darkBg.withValues(alpha: 0.7),
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -252,13 +246,13 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: isDark
-            ? AppColors.darkSurface.withOpacity(0.6)
-            : Colors.white.withOpacity(0.8),
+            ? AppColors.darkSurface.withValues(alpha: 0.6)
+            : Colors.white.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark
-              ? AppColors.darkBorder.withOpacity(0.2)
-              : AppColors.lightBorder.withOpacity(0.3),
+              ? AppColors.darkBorder.withValues(alpha: 0.2)
+              : AppColors.lightBorder.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -277,8 +271,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   : 'This will download Ubuntu, Node.js, and Plawie into a self-contained environment.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: isDark
-                    ? AppColors.inverseText.withOpacity(0.9)
-                    : AppColors.darkBg.withOpacity(0.8),
+                    ? AppColors.inverseText.withValues(alpha: 0.9)
+                    : AppColors.darkBg.withValues(alpha: 0.8),
                 height: 1.4,
               ),
             ),
@@ -298,13 +292,13 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            theme.colorScheme.errorContainer.withOpacity(0.8),
-            theme.colorScheme.errorContainer.withOpacity(0.6),
+            theme.colorScheme.errorContainer.withValues(alpha: 0.8),
+            theme.colorScheme.errorContainer.withValues(alpha: 0.6),
           ],
         ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: theme.colorScheme.error.withOpacity(0.3),
+          color: theme.colorScheme.error.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -355,10 +349,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           Container(
             constraints: const BoxConstraints(maxHeight: 120),
             decoration: BoxDecoration(
-              color: theme.colorScheme.error.withOpacity(0.1),
+              color: theme.colorScheme.error.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: theme.colorScheme.error.withOpacity(0.2),
+                color: theme.colorScheme.error.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
@@ -395,7 +389,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
             end: Alignment.bottomRight,
             colors: [
               AppColors.statusGreen,
-              AppColors.statusGreen.withOpacity(0.8),
+              AppColors.statusGreen.withValues(alpha: 0.8),
             ],
           ),
           borderRadius: BorderRadius.circular(16),
@@ -441,7 +435,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           border: Border.all(
             color: provider.isRunning
                 ? (isDark ? AppColors.darkBorder : AppColors.lightBorder)
-                : AppColors.statusGreen.withOpacity(0.5),
+                : AppColors.statusGreen.withValues(alpha: 0.5),
             width: 1.5,
           ),
         ),
@@ -464,8 +458,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     provider.isRunning ? Icons.hourglass_empty : Icons.download,
                     color: provider.isRunning
                         ? (isDark
-                            ? AppColors.inverseText.withOpacity(0.5)
-                            : AppColors.darkBg.withOpacity(0.5))
+                            ? AppColors.inverseText.withValues(alpha: 0.5)
+                            : AppColors.darkBg.withValues(alpha: 0.5))
                         : Colors.white,
                     size: 20,
                   ),
@@ -475,8 +469,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     style: TextStyle(
                       color: provider.isRunning
                           ? (isDark
-                              ? AppColors.inverseText.withOpacity(0.5)
-                              : AppColors.darkBg.withOpacity(0.5))
+                              ? AppColors.inverseText.withValues(alpha: 0.5)
+                              : AppColors.darkBg.withValues(alpha: 0.5))
                           : Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -491,55 +485,6 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     }
 
     return const SizedBox.shrink();
-  }
-
-  Widget _buildStorageInfo(ThemeData theme) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.storage_outlined,
-              size: 16,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Requires ~500MB of storage and an internet connection',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFooter(ThemeData theme) {
-    return Center(
-      child: ShaderMask(
-        shaderCallback: (bounds) => LinearGradient(
-          colors: [
-            AppColors.statusGreen.withOpacity(0.8),
-            AppColors.statusGreen.withOpacity(0.4),
-          ],
-        ).createShader(bounds),
-        child: Text(
-          AppConstants.appMotto,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: AppColors.statusGreen,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildSteps(SetupState state, ThemeData theme, bool isDark) {
@@ -601,26 +546,26 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           end: Alignment.bottomRight,
           colors: isDark
               ? [
-                  AppColors.darkSurface.withOpacity(0.8),
-                  AppColors.darkSurfaceAlt.withOpacity(0.6),
+                  AppColors.darkSurface.withValues(alpha: 0.8),
+                  AppColors.darkSurfaceAlt.withValues(alpha: 0.6),
                 ]
               : [
-                  Colors.white.withOpacity(0.9),
-                  const Color(0xFFF8F9FA).withOpacity(0.8),
+                  Colors.white.withValues(alpha: 0.9),
+                  const Color(0xFFF8F9FA).withValues(alpha: 0.8),
                 ],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark
-              ? AppColors.darkBorder.withOpacity(0.3)
-              : AppColors.lightBorder.withOpacity(0.4),
+              ? AppColors.darkBorder.withValues(alpha: 0.3)
+              : AppColors.lightBorder.withValues(alpha: 0.4),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withOpacity(0.2)
-                : Colors.black.withOpacity(0.08),
+                ? Colors.black.withValues(alpha: 0.2)
+                : Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -641,25 +586,25 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   end: Alignment.bottomRight,
                   colors: installed
                       ? [
-                          AppColors.statusGreen.withOpacity(0.2),
-                          AppColors.statusGreen.withOpacity(0.1),
+                          AppColors.statusGreen.withValues(alpha: 0.2),
+                          AppColors.statusGreen.withValues(alpha: 0.1),
                         ]
                       : [
                           isDark
-                              ? AppColors.darkSurfaceAlt.withOpacity(0.8)
+                              ? AppColors.darkSurfaceAlt.withValues(alpha: 0.8)
                               : const Color(0xFFF1F3F4),
                           isDark
-                              ? AppColors.darkSurfaceAlt.withOpacity(0.6)
+                              ? AppColors.darkSurfaceAlt.withValues(alpha: 0.6)
                               : const Color(0xFFE8EAED),
                         ],
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: installed
-                      ? AppColors.statusGreen.withOpacity(0.3)
+                      ? AppColors.statusGreen.withValues(alpha: 0.3)
                       : (isDark
-                          ? AppColors.darkBorder.withOpacity(0.2)
-                          : AppColors.lightBorder.withOpacity(0.3)),
+                          ? AppColors.darkBorder.withValues(alpha: 0.2)
+                          : AppColors.lightBorder.withValues(alpha: 0.3)),
                   width: 1,
                 ),
               ),
@@ -668,8 +613,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 color: installed
                     ? AppColors.statusGreen
                     : (isDark
-                        ? AppColors.inverseText.withOpacity(0.7)
-                        : AppColors.darkBg.withOpacity(0.7)),
+                        ? AppColors.inverseText.withValues(alpha: 0.7)
+                        : AppColors.darkBg.withValues(alpha: 0.7)),
                 size: 24,
               ),
             ),
@@ -707,8 +652,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     package.description,
                     style: TextStyle(
                       color: isDark
-                          ? AppColors.inverseText.withOpacity(0.6)
-                          : AppColors.darkBg.withOpacity(0.6),
+                          ? AppColors.inverseText.withValues(alpha: 0.6)
+                          : AppColors.darkBg.withValues(alpha: 0.6),
                       fontSize: 12,
                       height: 1.2,
                     ),
@@ -720,7 +665,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     package.estimatedSize,
                     style: TextStyle(
                       color: isDark
-                          ? AppColors.statusGreen.withOpacity(0.7)
+                          ? AppColors.statusGreen.withValues(alpha: 0.7)
                           : AppColors.statusGreen,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
@@ -736,7 +681,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.statusGreen.withOpacity(0.1),
+                  color: AppColors.statusGreen.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -753,13 +698,13 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     end: Alignment.bottomRight,
                     colors: [
                       AppColors.statusGreen,
-                      AppColors.statusGreen.withOpacity(0.8),
+                      AppColors.statusGreen.withValues(alpha: 0.8),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(10),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.statusGreen.withOpacity(0.3),
+                      color: AppColors.statusGreen.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 3),
                     ),

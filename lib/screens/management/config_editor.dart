@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../providers/gateway_provider.dart';
-import '../../app.dart';
 import '../../widgets/json_editor.dart';
 import 'package:provider/provider.dart';
 

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 export 'constants.dart';
 import 'constants.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -94,7 +94,7 @@ class PlawieApp extends StatelessWidget {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.inverseText.withOpacity(0.7),
+          foregroundColor: AppColors.inverseText.withValues(alpha: 0.7),
           side: const BorderSide(color: AppColors.darkBorder),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),

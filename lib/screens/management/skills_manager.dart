@@ -1314,7 +1314,6 @@ class _ToolsTabState extends State<_ToolsTab> {
   // Loaded once at init; updated immediately on toggle (optimistic UI).
   Set<String> _enabledTools = {};
   bool _loading = true;
-  bool _isResetting = false;
 
   @override
   void initState() {
@@ -1342,45 +1341,6 @@ class _ToolsTabState extends State<_ToolsTab> {
     }
     setState(() => _enabledTools = newSet);
     await OpenClawCommandService.saveToolsAllow(newSet.toList()..sort());
-  }
-
-  Future<void> _hardResetConfig() async {
-    setState(() => _isResetting = true);
-
-    try {
-      // ← THIS IS THE FIX: delete the stale config + force clean regeneration
-      await GatewayService().invoke('exec', {
-        'command': 'rm -f ~/.openclaw/openclaw.json && openclaw config reset --force'
-      });
-
-      await Future.delayed(const Duration(milliseconds: 1200)); // give gateway time to settle
-
-      // Re-register everything fresh
-      await GatewayService().reregisterSkills();
-      
-      setState(() => _enabledTools.clear()); // clear old state
-      await _loadEnabled(); // force reload
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Full config reset — all tools now available and togglable'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Hard reset error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reset failed — try again or clear app data')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isResetting = false);
-      }
-    }
   }
 
   _ToolMeta _metaFor(String toolId) {

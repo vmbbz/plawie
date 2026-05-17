@@ -236,7 +236,6 @@ I continuously improve from our interactions while maintaining your privacy pref
   }) async {
     if (_database == null) throw Exception('Database not initialized');
 
-    final keywords = _extractKeywords(query);
     final conditions = <String>[];
     final args = <dynamic>[];
 
@@ -269,13 +268,6 @@ I continuously improve from our interactions while maintaining your privacy pref
     ''', [...args, '%$query%', limit]);
 
     return results.map((row) => Memory.fromDatabaseRow(row)).toList();
-  }
-
-  /// Extract keywords from query
-  List<String> _extractKeywords(String query) {
-    // Simple keyword extraction - can be enhanced with NLP
-    final words = query.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '').split(' ');
-    return words.where((word) => word.length > 2).toList();
   }
 
   /// Get recent memories

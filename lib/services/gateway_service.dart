@@ -20,30 +20,6 @@ import 'node_service.dart';
 import 'tts_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
-/// Simple mobile-friendly template for Qwen2.5 models.
-/// Stripped down to avoid template processing overhead on mobile.
-///
-/// CRITICAL: num_ctx 4096 is enforced via Modelfile template
-/// No longer writes contextWindow to openclaw.json (causes schema errors)
-const _kQwen25OllamaTemplate = '''
-TEMPLATE """{{- if .System }}
-{{ .System }}
-{{ end }}
-{{- if .Prompt }}
-{{ .Prompt }}
-{{ end }}
-{{- if .Tools }}
-{{ .Tools }}
-{{ end }}
-"""
-PARAMETER stop ""
-PARAMETER stop ""
-PARAMETER num_ctx 1024
-PARAMETER num_gpu 0
-PARAMETER num_thread 4
-PARAMETER num_batch 512
-''';
-
 class GatewayService {
   static const List<String> localControlUiAllowedOrigins = <String>[
     'http://127.0.0.1:18789',
@@ -482,24 +458,6 @@ PARAMETER num_batch 512
     }
   }
 
-  /// Called once at init for local-model sessions. Cloud-first users should not
-  /// pay an Ollama PRoot probe/sync cost just because the gateway started.
-  Future<void> _probeOllamaOnInit() async {
-    try {
-      if (!await _configuredModelNeedsLocalOllama()) return;
-      final running = await NativeBridge.isOllamaRunning();
-      if (!running) return;
-      _updateState(_state.copyWith(
-        isOllamaRunning: true,
-        logs: [
-          ..._state.logs,
-          '[INFO] Ollama Hub already running — syncing models...'
-        ],
-      ));
-      await syncLocalModelsWithOllama();
-    } catch (_) {}
-  }
-
   Future<bool> _isGatewayHealthy() async {
     // Quick health check without full reload
     try {
@@ -541,8 +499,9 @@ PARAMETER num_batch 512
     }
 
     if (alreadyRunning) {
-      if (_state.status == GatewayStatus.running)
+      if (_state.status == GatewayStatus.running) {
         return; // Already fully attached
+      }
 
       debugPrint('[GATEWAY] Process detected — attaching...');
       _updateState(_state.copyWith(
@@ -581,7 +540,8 @@ PARAMETER num_batch 512
       _addActivity(
           '[INFO] Gateway token confirmed; waiting for HTTP readiness...');
 
-      _consecutiveFailures = 0; // gateway intentionally restarted — start fresh
+      _consecutiveFailures = 0;
+      _httpWaitingSince = null; // clear so elapsed time is accurate for this boot
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -680,7 +640,8 @@ PARAMETER num_batch 512
       // Force token re-acquisition after hardening (which may have triggered a reload)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
-      _consecutiveFailures = 0; // fresh gateway start — clear any stale probe failures
+      _consecutiveFailures = 0;
+      _httpWaitingSince = null; // clear so elapsed time is accurate for this boot
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -838,9 +799,9 @@ PARAMETER num_batch 512
     return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
-  /// Recursively casts a Map<dynamic,dynamic> (as returned by jsonDecode)
-  /// to Map<String,dynamic>. Required because jsonDecode on Android/Dart
-  /// returns Map<dynamic,dynamic> even when all keys are strings.
+  /// Recursively casts a `Map<dynamic,dynamic>` (as returned by jsonDecode)
+  /// to `Map<String,dynamic>`. Required because jsonDecode on Android/Dart
+  /// returns `Map<dynamic,dynamic>` even when all keys are strings.
   Map<String, dynamic> _deepCastMap(Map<dynamic, dynamic> raw) {
     return raw.map((k, v) {
       if (v is Map) return MapEntry(k.toString(), _deepCastMap(v));
@@ -3034,8 +2995,9 @@ PARAMETER num_batch 512
             if ((state == 'final' || state == 'aborted' || state == 'error') &&
                 (runStarted || !firstToken)) {
               if (!chunkController.isClosed) {
-                if (isOllama)
+                if (isOllama) {
                   _addActivity('[CHAT] ✓ Hub stream finished (state: $state)');
+                }
                 chunkController.close();
               }
             }
@@ -3054,7 +3016,9 @@ PARAMETER num_batch 512
               // Filter text from runs other than ours (activeRunId updated from phase=start)
               if (activeRunId != null &&
                   agentRun != null &&
-                  agentRun != activeRunId) return;
+                  agentRun != activeRunId) {
+                return;
+              }
               final text = (innerData?['text'] ??
                   payload?['text'] ??
                   frame['text']) as String?;
@@ -3068,7 +3032,9 @@ PARAMETER num_batch 512
             } else if (stream == 'tool_use') {
               if (activeRunId != null &&
                   agentRun != null &&
-                  agentRun != activeRunId) return;
+                  agentRun != activeRunId) {
+                return;
+              }
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -3081,7 +3047,9 @@ PARAMETER num_batch 512
             } else if (stream == 'tool_result') {
               if (activeRunId != null &&
                   agentRun != null &&
-                  agentRun != activeRunId) return;
+                  agentRun != activeRunId) {
+                return;
+              }
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -3132,7 +3100,9 @@ PARAMETER num_batch 512
               } else if (phase == 'error') {
                 if (activeRunId != null &&
                     agentRun != null &&
-                    agentRun != activeRunId) return;
+                    agentRun != activeRunId) {
+                  return;
+                }
                 final rawError =
                     (innerData?['error'] ?? payload?['error'] ?? frame['error'])
                             ?.toString() ??
@@ -3157,7 +3127,9 @@ PARAMETER num_batch 512
               if (reason == 'seq gap') return;
               if (activeRunId != null &&
                   agentRun != null &&
-                  agentRun != activeRunId) return;
+                  agentRun != activeRunId) {
+                return;
+              }
               final rawErr = (innerData?['error'] ??
                           payload?['error'] ??
                           payload?['reason'] ??
@@ -3366,8 +3338,9 @@ PARAMETER num_batch 512
           .transform(const LineSplitter())) {
         if (chunk.isEmpty) continue;
         rawChunks++;
-        if (isDirectLlama && rawChunks <= 3)
+        if (isDirectLlama && rawChunks <= 3) {
           rawSamples.add(chunk.length > 120 ? chunk.substring(0, 120) : chunk);
+        }
 
         String? rawJson;
         if (chunk.startsWith('data: ')) {
@@ -3678,7 +3651,7 @@ PARAMETER num_batch 512
   }
 
   /// Resolves the intended model ID, falling back to preferences then openclaw.json defaults.
-  /// Also normalizes cloud/agent IDs into the required 'openclaw' or 'openclaw/<agentId>' format.
+  /// Also normalizes cloud/agent IDs into the required `'openclaw'` or `'openclaw/<agentId>'` format.
   Future<String> _resolveModel(String? model) async {
     String m = model ?? '';
     if (m.isEmpty) {

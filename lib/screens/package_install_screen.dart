@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,7 +8,6 @@ import '../models/optional_package.dart';
 import '../services/native_bridge.dart';
 import '../services/terminal_service.dart';
 import '../services/openclaw_service.dart';
-import '../app.dart';
 import '../widgets/glass_card.dart';
 
 class PackageInstallScreen extends StatefulWidget {

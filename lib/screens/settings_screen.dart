@@ -48,7 +48,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _ttsEngine = 'kokoro';
   double _ttsSpeed = 1.2;
   bool _continuousMode = false;
-  int _kokoroVoiceSid = 1;
 
   int _silenceTimeout = 5;
 
@@ -696,7 +695,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isThreeLine: true,
                 ),
                 const ListTile(
-                  title: const Text('License'),
+                  title: Text('License'),
                   subtitle: Text(AppConstants.license),
                   leading: Icon(Icons.description),
                 ),
@@ -919,7 +918,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: selectedProvider,
+                initialValue: selectedProvider,
                 decoration: const InputDecoration(labelText: 'Provider'),
                 items: providers.map((p) => DropdownMenuItem(
                   value: p,

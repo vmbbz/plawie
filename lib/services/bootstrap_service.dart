@@ -769,32 +769,6 @@ class BootstrapService {
     }
   }
 
-  /// Enables watch mode for skills in openclaw.json to ensure immediate awareness of new files.
-  Future<void> _enableSkillsWatchMode() async {
-    _log('👀 Enabling skills watch mode in openclaw.json...');
-    try {
-      final rootfsDir = await getRootfsDirectory();
-      final configFile = File('$rootfsDir/root/.openclaw/openclaw.json');
-
-      if (!await configFile.exists()) return;
-
-      String content = await configFile.readAsString();
-      Map<String, dynamic> config = json.decode(content);
-
-      config['skills'] ??= {};
-      final skills = config['skills'] as Map<String, dynamic>;
-      skills['load'] ??= {};
-      final load = skills['load'] as Map<String, dynamic>;
-      load['watch'] = true;
-
-      await configFile
-          .writeAsString(const JsonEncoder.withIndent('  ').convert(config));
-      _log('✅ Skills watch mode enabled');
-    } catch (e) {
-      _log('Failed to enable skills watch mode (non-critical)', error: e);
-    }
-  }
-
   /// NEW: Single, idempotent pre-start hardening (no reload after gateway starts)
   Future<void> _fullPreStartConfigHardening() async {
     try {

@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import '../app.dart';
+﻿import 'package:flutter/material.dart';
 
 /// A sci-fi holographic dot that floats above the avatar's head.
 /// It features a sharp, glass-like 2D aesthetic and reacts to interactions.
@@ -60,11 +59,11 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
             
             // Interaction colors: Pure White Translucent (Glass)
             // No more cyan 'energy' colors to keep it minimal and sharp.
-            final baseColor = Colors.white.withOpacity(_isPressed ? 0.9 : 0.2);
-            final borderColor = Colors.white.withOpacity(_isPressed ? 1.0 : 0.6);
+            final baseColor = Colors.white.withValues(alpha: _isPressed ? 0.9 : 0.2);
+            final borderColor = Colors.white.withValues(alpha: _isPressed ? 1.0 : 0.6);
             
             // Holographic bloom (glow) - purely white
-            final glowColor = Colors.white.withOpacity(
+            final glowColor = Colors.white.withValues(alpha: 
               (widget.isSpeaking || _isPressed) ? 0.6 + (0.3 * pulseValue) : 0.15 + (0.1 * pulseValue)
             );
 
@@ -83,7 +82,7 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                       color: Colors.transparent,
                       boxShadow: [
                         BoxShadow(
-                          color: glowColor.withOpacity(glowColor.opacity * 0.5),
+                          color: glowColor.withValues(alpha: glowColor.a * 0.5),
                           blurRadius: (widget.isSpeaking || _isPressed ? 15 : 8) * scale,
                           spreadRadius: (widget.isSpeaking || _isPressed ? 2 : 0) * scale,
                         ),
@@ -101,7 +100,7 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                       boxShadow: [
                         if (widget.isSpeaking || _isPressed)
                           BoxShadow(
-                            color: Colors.white.withOpacity(0.5),
+                            color: Colors.white.withValues(alpha: 0.5),
                             blurRadius: 6,
                             spreadRadius: 1,
                           ),

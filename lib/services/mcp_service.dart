@@ -143,7 +143,7 @@ class MCPService {
       
       // Create tool with security checks
       final tool = MCPTool(
-        id: '${serverUrl}_${name}',
+        id: '${serverUrl}_$name',
         name: name,
         description: sanitizedDescription,
         serverUrl: serverUrl,
@@ -176,7 +176,7 @@ class MCPService {
     
     // Truncate if too long
     if (s.length > 2000) {
-      s = s.substring(0, 2000) + '...';
+      s = '${s.substring(0, 2000)}...';
     }
     
     return s.trim();

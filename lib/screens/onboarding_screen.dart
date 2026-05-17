@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -9,7 +8,6 @@ import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
 import '../widgets/glass_card.dart';
 import '../app.dart';
-import 'dashboard_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final bool isFirstRun;
@@ -118,75 +116,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           _error = 'Failed to load onboarding: $e';
         });
       }
-    }
-  }
-
-  Future<void> _executeCommand(String command) async {
-    try {
-      _writeLog('> $command');
-      
-      final result = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $command',
-        timeout: 30
-      );
-      
-      _writeLog(result);
-      
-      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-      final lowercaseCommand = command.toLowerCase();
-
-      if (lowercaseCommand.contains('api-key')) {
-        _writeLog('\n🔑 Syncing API key to agent profiles...');
-        
-        String? key;
-        String? provider;
-        
-        if (lowercaseCommand.contains('--claude-api-key')) {
-          provider = 'anthropic';
-          final match = RegExp(r'--claude-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
-          key = match?.group(1);
-        } else if (lowercaseCommand.contains('--gemini-api-key')) {
-          provider = 'google';
-          final match = RegExp(r'--gemini-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
-          key = match?.group(1);
-        } else if (lowercaseCommand.contains('--openai-api-key')) {
-          provider = 'openai';
-          final match = RegExp(r'--openai-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
-          key = match?.group(1);
-        } else if (lowercaseCommand.contains('--groq-api-key')) {
-          provider = 'groq';
-          final match = RegExp(r'--groq-api-key\s+["' "'" r']?([^"' "'" r'\s]+)["' "'" r']?').firstMatch(command);
-          key = match?.group(1);
-        }
-
-        if (provider != null && key != null && key.isNotEmpty) {
-          await _processProviderSetup(provider, key);
-        }
-      }
-      
-      if (lowercaseCommand.contains('api-key') || 
-          lowercaseCommand.contains('binding')) {
-        _writeLog('\n✓ Configuration command executed');
-        
-        if (lowercaseCommand.contains('binding')) {
-          final bindingMatch = RegExp(r'--binding\s+([^\s]+)').firstMatch(command);
-          if (bindingMatch != null) {
-            final bindingAddress = bindingMatch.group(1);
-            _writeLog('\n🔄 Syncing WebSocket connection to $bindingAddress');
-            
-            final prefs = PreferencesService();
-            await prefs.init();
-            prefs.nodeGatewayHost = bindingAddress;
-            
-            _writeLog('\n✅ WebSocket will connect to $bindingAddress');
-          }
-        }
-        
-        _writeLog('\n🚀 Starting OpenClaw services...');
-        await _startOpenClawServices();
-      }
-    } catch (e) {
-      _writeLog('\n✗ Command failed: $e');
     }
   }
 
@@ -337,20 +266,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
      } catch (e) {
        _writeLog('\n✗ Setup failed: $e');
      }
-  }
-
-  Future<void> _goToDashboard() async {
-    final navigator = Navigator.of(context);
-    final prefs = PreferencesService();
-    await prefs.init();
-    prefs.setupComplete = true;
-    prefs.isFirstRun = false;
-
-    if (mounted) {
-      navigator.pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
-      );
-    }
   }
 
   @override

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app.dart';
@@ -267,19 +267,19 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               color: isDark
-                  ? Colors.white.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.05),
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.05),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.15)
-                    : Colors.black.withOpacity(0.1),
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : Colors.black.withValues(alpha: 0.1),
                 width: 1,
               ),
               boxShadow: [
                 BoxShadow(
                   color: isDark
-                      ? Colors.black.withOpacity(0.2)
-                      : Colors.black.withOpacity(0.08),
+                      ? Colors.black.withValues(alpha: 0.2)
+                      : Colors.black.withValues(alpha: 0.08),
                   blurRadius: 15,
                   offset: const Offset(0, 8),
                 ),
@@ -453,8 +453,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           boxShadow: [
             BoxShadow(
               color: isDark
-                  ? Colors.black.withOpacity(0.2)
-                  : Colors.black.withOpacity(0.08),
+                  ? Colors.black.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: 0.08),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -468,12 +468,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: isDark
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.05),
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.05),
                 border: Border.all(
                   color: isDark
-                      ? Colors.white.withOpacity(0.15)
-                      : Colors.black.withOpacity(0.1),
+                      ? Colors.white.withValues(alpha: 0.15)
+                      : Colors.black.withValues(alpha: 0.1),
                   width: 1,
                 ),
               ),
@@ -509,8 +509,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 color: isSelected
                     ? provider.color
                     : (isDark
-                        ? Colors.white.withOpacity(0.08)
-                        : Colors.black.withOpacity(0.05)),
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.05)),
                 border: Border.all(
                   color: isSelected
                       ? provider.color
@@ -520,7 +520,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
-                          color: provider.color.withOpacity(0.3),
+                          color: provider.color.withValues(alpha: 0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         )
@@ -551,12 +551,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             color: isDark
-                ? Colors.white.withOpacity(0.08)
-                : Colors.black.withOpacity(0.05),
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.05),
             border: Border.all(
               color: isDark
-                  ? Colors.white.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.1),
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : Colors.black.withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -635,12 +635,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               color: isDark
-                  ? Colors.white.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.05),
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.05),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.15)
-                    : Colors.black.withOpacity(0.1),
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : Colors.black.withValues(alpha: 0.1),
                 width: 1,
               ),
             ),
@@ -692,12 +692,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               color: isDark
-                  ? Colors.white.withOpacity(0.06)
-                  : Colors.black.withOpacity(0.03),
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.03),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.12)
-                    : Colors.black.withOpacity(0.08),
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : Colors.black.withValues(alpha: 0.08),
                 width: 1,
               ),
             ),
@@ -787,7 +787,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     setState(() {});
                   },
                   backgroundColor: _agentNameController.text == name
-                      ? AppColors.statusGreen.withOpacity(0.08)
+                      ? AppColors.statusGreen.withValues(alpha: 0.08)
                       : Colors.transparent,
                   side: BorderSide(
                     color: _agentNameController.text == name
@@ -899,14 +899,14 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ],
               ),
               const SizedBox(height: 10),
-              _buildSummaryRow(theme, '${_activeProvider?.name ?? 'No provider selected'}'),
+              _buildSummaryRow(theme, _activeProvider?.name ?? 'No provider selected'),
               _buildSummaryRow(theme, 'Agent: ${_agentNameController.text.trim()}'),
               _buildSummaryRow(theme, 'Gateway: 127.0.0.1:18789 (auto-configured)'),
               const SizedBox(height: 8),
               Text(
                 'Credentials will be baked into the gateway config before it starts — no reload, no disruption.',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.statusGreen.withOpacity(0.8),
+                  color: AppColors.statusGreen.withValues(alpha: 0.8),
                   fontSize: 11,
                 ),
               ),
@@ -987,8 +987,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: AppColors.statusGreen,
-              activeTrackColor: AppColors.statusGreen.withOpacity(0.3),
+              activeThumbColor: AppColors.statusGreen,
+              activeTrackColor: AppColors.statusGreen.withValues(alpha: 0.3),
             ),
         ],
       ),

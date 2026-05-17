@@ -1,4 +1,4 @@
-import 'dart:ui';
+﻿import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:clawa/widgets/glass_card.dart'; // Ensure GlassCard and NebulaBg are imported
@@ -15,9 +15,7 @@ class StatusDashboard extends StatefulWidget {
 }
 
 class _StatusDashboardState extends State<StatusDashboard> {
-  bool _isBatteryOptimized = false;
   bool _nodeRunning = false;
-  bool _gatewayRunning = false;
 
   @override
   void initState() {
@@ -26,24 +24,17 @@ class _StatusDashboardState extends State<StatusDashboard> {
   }
 
   Future<void> _refreshSystemStatus() async {
-    final optimized = await NativeBridge.isBatteryOptimized();
     final node = await NativeBridge.isNodeServiceRunning();
-    final gateway = await NativeBridge.isGatewayRunning();
 
     if (mounted) {
       setState(() {
-        _isBatteryOptimized = optimized;
         _nodeRunning = node;
-        _gatewayRunning = gateway;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: Colors.black, // Dark base for NebulaBg
       body: Stack(
@@ -141,7 +132,7 @@ class _StatusDashboardState extends State<StatusDashboard> {
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
         fontWeight: FontWeight.w800,
         letterSpacing: 1.5,
-        color: AppColors.statusGrey.withOpacity(0.8),
+        color: AppColors.statusGrey.withValues(alpha: 0.8),
       ),
     );
   }
@@ -196,92 +187,4 @@ class _StatusDashboardState extends State<StatusDashboard> {
     );
   }
 
-  Widget _buildStabilityConfig(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          _buildInfoRow(
-            'Sticky Foreground',
-            'Service restarts if OS kills app',
-            true,
-            Icons.anchor_rounded,
-          ),
-          const Divider(height: 32),
-          _buildActionRow(
-            'Keep-Alive WakeLock',
-            'Prevents CPU sleep deep-states',
-            Icons.bolt_rounded,
-            () => NativeBridge.acquirePartialWakeLock(),
-          ),
-          const Divider(height: 32),
-          _buildActionRow(
-            'Battery Optimization',
-            _isBatteryOptimized ? 'RESTRICTED (Tap to fix)' : 'UNRESTRICTED',
-            Icons.battery_saver_rounded,
-            () => NativeBridge.requestBatteryOptimization(),
-            statusColor: _isBatteryOptimized ? Colors.orangeAccent : AppColors.statusGreen,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPersistenceInfo(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          _buildInfoRow('Database Sync', 'Automatic on skill change', true, Icons.save_rounded),
-          const Divider(height: 32),
-          _buildInfoRow('Session Files', '/root/.openclaw/session.json', true, Icons.folder_zip_rounded),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String title, String subtitle, bool isActive, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: AppColors.statusGrey),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-              Text(subtitle, style: TextStyle(fontSize: 11, color: AppColors.statusGrey)),
-            ],
-          ),
-        ),
-        if (isActive) Icon(Icons.check_circle_rounded, color: AppColors.statusGreen, size: 18),
-      ],
-    );
-  }
-
-  Widget _buildActionRow(String title, String subtitle, IconData icon, VoidCallback onTap, {Color? statusColor}) {
-    return InkWell(
-      onTap: () {
-        onTap();
-        Future.delayed(const Duration(seconds: 1), _refreshSystemStatus);
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: statusColor ?? AppColors.statusGrey),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                Text(subtitle, style: TextStyle(fontSize: 11, color: statusColor ?? AppColors.statusGrey)),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right_rounded, color: AppColors.statusGrey),
-        ],
-      ),
-    );
-  }
 }

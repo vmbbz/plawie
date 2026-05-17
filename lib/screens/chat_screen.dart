@@ -5,7 +5,6 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
-import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../services/tts_service.dart';
 import '../services/native_bridge.dart';
 import '../services/video_capture_service.dart';
@@ -24,7 +23,6 @@ import 'dart:ui';
 import '../models/chat_message.dart';
 import '../services/chat_persistence_service.dart';
 import '../widgets/chat_bubble.dart';
-import '../main.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
@@ -37,7 +35,6 @@ import '../services/capabilities/canvas_capability.dart';
 import '../services/hologram_service.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -95,7 +92,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isRecordingVideo = false;
 
   // Static cloud model list — augmented at runtime with gateway agents
-  List<String> _availableModels = [
+  final List<String> _availableModels = [
     'google/gemini-3.1-pro-preview',
     'anthropic/claude-opus-4.6',
     'openai/gpt-4o',
@@ -124,7 +121,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     'default_avatar.vrm',
   ];
   
-  bool _isDownloadingTts = false;
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
   // Auto-sync model when local LLM starts/stops
@@ -403,7 +399,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   Offset _headPosition = Offset.zero;
-  bool _isTtsMenuOpen = false;
 
   void _addDiagnosticLog(String log) {
     if (!mounted) return;
@@ -1075,49 +1070,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   // FIX: Decoupled cinematic effect from typing to prevent zoom jumps 
   bool get _isCinematic => _isGenerating || _isListening;
 
-  void _nextAvatar() {
-    int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
-    if (currentIndex == -1) currentIndex = 0;
-    int nextIndex = (currentIndex + 1) % _availableAvatars.length;
-    setState(() {
-      _selectedAvatar = _availableAvatars[nextIndex];
-      _isReady = false;
-    });
-    PreferencesService().selectedAvatar = _selectedAvatar;
-    _syncOverlayState();
-    _addDiagnosticLog('Swapped and persisted avatar: $_selectedAvatar');
-  }
-
-  void _prevAvatar() {
-    int currentIndex = _availableAvatars.indexOf(_selectedAvatar);
-    if (currentIndex == -1) currentIndex = 0;
-    int prevIndex = (currentIndex - 1 + _availableAvatars.length) % _availableAvatars.length;
-    setState(() {
-      _selectedAvatar = _availableAvatars[prevIndex];
-      _isReady = false;
-    });
-    PreferencesService().selectedAvatar = _selectedAvatar;
-    _syncOverlayState();
-    _addDiagnosticLog('Swapped and persisted avatar: $_selectedAvatar');
-  }
-
-  void _nextModel() {
-    int currentIndex = _availableModels.indexOf(_selectedModel);
-    int nextIndex = (currentIndex + 1) % _availableModels.length;
-    final nextModel = _availableModels[nextIndex];
-    setState(() => _selectedModel = nextModel);
-    PreferencesService().configuredModel = nextModel;
-    _addDiagnosticLog('Swapped and persisted AI model: $nextModel');
-  }
-
-  void _prevModel() {
-    int currentIndex = _availableModels.indexOf(_selectedModel);
-    int prevIndex = (currentIndex - 1 + _availableModels.length) % _availableModels.length;
-    setState(() => _selectedModel = _availableModels[prevIndex]);
-    PreferencesService().configuredModel = _availableModels[prevIndex];
-    _addDiagnosticLog('Swapped and persisted AI model: $_availableModels[prevIndex]');
-  }
-
   void _showEditNameDialog() {
     final controller = TextEditingController(text: _agentName);
     showDialog(
@@ -1558,7 +1510,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
             ...cloudHub.map((model) {
               final isSelected = model == _selectedModel;
-              final displayName = '☁ ' + model.split('/').last.replaceAll(':cloud', '').toUpperCase();
+              final displayName = '☁ ${model.split('/').last.replaceAll(':cloud', '').toUpperCase()}';
               return PopupMenuItem<dynamic>(
                 value: 'model:$model',
                 height: 44,
@@ -2537,8 +2489,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                                         child: Row(
                                                           children: [
                                                             Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                                            const SizedBox(width: 12),
-                                                            const Text('Clear Attachment', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                                            SizedBox(width: 12),
+                                                            Text('Clear Attachment', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
                                                           ],
                                                         ),
                                                       ),
@@ -2678,48 +2630,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               isSpeaking: TtsService().isSpeaking,
               onTap: () => _showHolographicTtsMenu(context),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFloatingChip(String label, VoidCallback onNext, VoidCallback onPrev) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 10,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: onPrev,
-            child: const Icon(Icons.chevron_left, color: Colors.white70, size: 18),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onNext,
-            child: const Icon(Icons.chevron_right, color: Colors.white70, size: 18),
-          ),
         ],
       ),
     );

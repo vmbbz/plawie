@@ -1,4 +1,4 @@
-// lib/pages/agent_skills_page.dart
+﻿// lib/pages/agent_skills_page.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/skills_service.dart';
@@ -112,7 +112,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
           color: const Color(0xFF0F0F1A),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
           boxShadow: [
-            BoxShadow(color: Colors.cyan.withOpacity(0.4), blurRadius: 40, spreadRadius: 10),
+            BoxShadow(color: Colors.cyan.withValues(alpha: 0.4), blurRadius: 40, spreadRadius: 10),
           ],
         ),
         child: Column(
@@ -169,7 +169,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.1))),
+                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
                       child: Text(
                         profile['examples'] ?? "Plawie, help me with this skill!",
                         style: const TextStyle(fontSize: 16, color: Colors.cyanAccent, fontStyle: FontStyle.italic),
@@ -250,7 +250,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [const Color(0xFF1E293B).withOpacity(0.5), const Color(0xFF0F172A)],
+            colors: [const Color(0xFF1E293B).withValues(alpha: 0.5), const Color(0xFF0F172A)],
           ),
         ),
         child: TabBarView(
@@ -293,14 +293,14 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: "Search ClawHub (e.g. github, camera)",
-              hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
               prefixIcon: const Icon(Icons.search, color: Colors.cyanAccent),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.send_rounded, color: Colors.cyanAccent),
                 onPressed: () => _performClawHubSearch(_searchController.text),
               ),
               filled: true,
-              fillColor: Colors.white.withOpacity(0.05),
+              fillColor: Colors.white.withValues(alpha: 0.05),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
             ),
             onSubmitted: _performClawHubSearch,
@@ -325,9 +325,9 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.explore_outlined, size: 64, color: Colors.white.withOpacity(0.1)),
+                  Icon(Icons.explore_outlined, size: 64, color: Colors.white.withValues(alpha: 0.1)),
                   const SizedBox(height: 16),
-                  Text("Explore community skills on ClawHub", style: TextStyle(color: Colors.white.withOpacity(0.3))),
+                  Text("Explore community skills on ClawHub", style: TextStyle(color: Colors.white.withValues(alpha: 0.3))),
                 ],
               ),
             ),
@@ -340,7 +340,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: accentColor.withOpacity(isInstalled ? 0.2 : 0.05), blurRadius: 15, offset: const Offset(0, 8))],
+        boxShadow: [BoxShadow(color: accentColor.withValues(alpha: isInstalled ? 0.2 : 0.05), blurRadius: 15, offset: const Offset(0, 8))],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -354,13 +354,13 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
                 children: [
                   Container(
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: accentColor.withOpacity(0.1), shape: BoxShape.circle, border: Border.all(color: accentColor.withOpacity(isInstalled ? 0.5 : 0.1), width: 2)),
+                    decoration: BoxDecoration(color: accentColor.withValues(alpha: 0.1), shape: BoxShape.circle, border: Border.all(color: accentColor.withValues(alpha: isInstalled ? 0.5 : 0.1), width: 2)),
                     child: Icon(skill['icon'] ?? Icons.auto_awesome, size: 32, color: isInstalled ? accentColor : Colors.grey),
                   ),
                   const SizedBox(height: 12),
                   Text(skill['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 6),
-                  Expanded(child: Text(skill['desc'], style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, height: 1.3), textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis)),
+                  Expanded(child: Text(skill['desc'], style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, height: 1.3), textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis)),
                   const SizedBox(height: 12),
                   _buildEquipButton(skill, isInstalled, accentColor),
                 ],
@@ -382,11 +382,11 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
         onTap: () => _showSkillProfile(skill),
         leading: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: Colors.cyanAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.auto_awesome, color: Colors.cyanAccent),
         ),
         title: Text(skill['name'] ?? skill['slug'] ?? 'Unknown', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        subtitle: Text(skill['description'] ?? skill['summary'] ?? 'ClawHub Community Skill', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(skill['description'] ?? skill['summary'] ?? 'ClawHub Community Skill', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: ElevatedButton(
           onPressed: () async {
             await _skills.installSkill(skill['slug'] ?? skill['id']);
@@ -417,7 +417,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage> with SingleTickerProv
       },
       child: Container(
         width: double.infinity, height: 36,
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: isInstalled ? LinearGradient(colors: [Colors.redAccent, Colors.red.shade800]) : LinearGradient(colors: [accentColor, accentColor.withOpacity(0.7)])),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: isInstalled ? LinearGradient(colors: [Colors.redAccent, Colors.red.shade800]) : LinearGradient(colors: [accentColor, accentColor.withValues(alpha: 0.7)])),
         child: Center(child: Text(isInstalled ? 'Uninstall' : 'Equip Skill', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
       ),
     );
