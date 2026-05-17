@@ -45,23 +45,13 @@ class NodeControls extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (state.pairingCode != null) ...[
+                if (state.status == NodeStatus.pairing) ...[
                   const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Text(
-                        'Pairing code: ',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      SelectableText(
-                        state.pairingCode!,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    'Awaiting gateway approval...',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
                 if (state.errorMessage != null)
