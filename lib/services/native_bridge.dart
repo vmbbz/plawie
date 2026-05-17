@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import '../constants/openclaw_paths.dart';
@@ -95,6 +96,110 @@ class NativeBridge {
 
   static String shellQuote(String value) {
     return "'${value.replaceAll("'", "'\"'\"'")}'";
+  }
+
+  static String? extractPendingDeviceRequestId(
+    String output, {
+    String? requestedId,
+    String? deviceId,
+    String? role,
+  }) {
+    final uuidPattern =
+        RegExp(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}');
+    if (requestedId != null &&
+        requestedId.isNotEmpty &&
+        output.contains(requestedId)) {
+      return requestedId;
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(output);
+    } catch (_) {
+      final jsonStart = output.indexOf(RegExp(r'[\{\[]'));
+      if (jsonStart >= 0) {
+        try {
+          decoded = jsonDecode(output.substring(jsonStart));
+        } catch (_) {}
+      }
+    }
+
+    if (decoded != null) {
+      final candidates = <Map<String, dynamic>>[];
+
+      void visit(Object? value) {
+        if (value is Map) {
+          final map = value.map((key, val) => MapEntry('$key', val));
+          if (_requestIdFromMap(map) != null) candidates.add(map);
+          for (final child in map.values) {
+            visit(child);
+          }
+        } else if (value is List) {
+          for (final child in value) {
+            visit(child);
+          }
+        }
+      }
+
+      visit(decoded);
+
+      String? pick(bool Function(Map<String, dynamic>) matches) {
+        for (final candidate in candidates.reversed) {
+          if (matches(candidate)) return _requestIdFromMap(candidate);
+        }
+        return null;
+      }
+
+      final exact = pick((candidate) =>
+          requestedId != null && _requestIdFromMap(candidate) == requestedId);
+      if (exact != null) return exact;
+
+      final roleDevice = pick((candidate) =>
+          _mapHasValue(candidate, role) && _mapHasValue(candidate, deviceId));
+      if (roleDevice != null) return roleDevice;
+
+      final byDevice = pick((candidate) => _mapHasValue(candidate, deviceId));
+      if (byDevice != null) return byDevice;
+
+      final byRole = pick((candidate) => _mapHasValue(candidate, role));
+      if (byRole != null) return byRole;
+
+      final any = pick((_) => true);
+      if (any != null) return any;
+    }
+
+    final matches = uuidPattern.allMatches(output).map((m) => m.group(0)!);
+    return matches.isEmpty ? null : matches.last;
+  }
+
+  static String? _requestIdFromMap(Map<String, dynamic> map) {
+    const keys = [
+      'requestId',
+      'requestID',
+      'request_id',
+      'pairingRequestId',
+      'pairing_request_id',
+      'id',
+    ];
+    final uuidPattern = RegExp(
+        r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
+    for (final key in keys) {
+      final value = map[key];
+      if (value is String && uuidPattern.hasMatch(value)) return value;
+    }
+    return null;
+  }
+
+  static bool _mapHasValue(Map<String, dynamic> map, String? needle) {
+    if (needle == null || needle.isEmpty) return false;
+    bool walk(Object? value) {
+      if (value is String) return value == needle;
+      if (value is Map) return value.values.any(walk);
+      if (value is List) return value.any(walk);
+      return false;
+    }
+
+    return walk(map);
   }
 
   static Future<String> approveDevice(String requestId) async {

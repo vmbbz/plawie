@@ -2329,14 +2329,17 @@ PARAMETER num_batch 512
   Future<void> _handleOperatorPairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
-    final deviceId = _connection?.deviceId ?? '';
+    final pairingConnection = _connection;
+    final deviceId = pairingConnection?.deviceId ?? '';
+    pairingConnection?.disconnect();
+    _connection = null;
     await clearDeviceToken();
 
     if (requestId != null && requestId.isNotEmpty) {
       _addActivity(
           '[INFO] Pairing required (1008) — auto-approving operator $requestId...');
       try {
-        await _approveOperatorPairingRequest(requestId);
+        await _approveOperatorPairingRequest(requestId, deviceId: deviceId);
         await Future.delayed(const Duration(milliseconds: 1500));
         _addActivity('[INFO] Operator device approved successfully');
       } catch (e) {
@@ -2347,7 +2350,7 @@ PARAMETER num_batch 512
       await _clearOperatorDeviceRecord(deviceId);
     }
 
-    _connection?.dispose();
+    pairingConnection?.dispose();
     _connection = null;
     _pairingResolveAttempted = false;
     unawaited(Future.delayed(
@@ -2374,30 +2377,74 @@ PARAMETER num_batch 512
     }
   }
 
-  Future<void> _approveOperatorPairingRequest(String requestId) async {
+  Future<void> _approveOperatorPairingRequest(String requestId,
+      {String? deviceId}) async {
     final safeRequestId = requestId.trim();
     if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
       throw Exception('Invalid pairing request id: $requestId');
     }
+    final token = await retrieveTokenFromConfig(force: true);
+    final localGatewayUrl =
+        'ws://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}';
+    final resolvedRequestId = await _resolvePendingDeviceRequestId(
+          fallbackRequestId: safeRequestId,
+          deviceId: deviceId,
+          role: 'operator',
+          gatewayUrl: localGatewayUrl,
+          token: token,
+        ) ??
+        safeRequestId;
     try {
       await NativeBridge.runInProot(
-        'openclaw devices approve $safeRequestId --json',
+        'openclaw devices approve $resolvedRequestId --json',
         timeout: 40,
       );
     } catch (e) {
-      final token = await retrieveTokenFromConfig(force: true);
       if (token == null || token.isEmpty) rethrow;
       _addActivity(
           '[INFO] Plain operator approval failed; retrying with explicit local gateway auth');
-      final localGatewayUrl =
-          'ws://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}';
+      final retryRequestId = await _resolvePendingDeviceRequestId(
+            fallbackRequestId: safeRequestId,
+            deviceId: deviceId,
+            role: 'operator',
+            gatewayUrl: localGatewayUrl,
+            token: token,
+          ) ??
+          resolvedRequestId;
       await NativeBridge.runInProot(
-        'openclaw devices approve $safeRequestId '
+        'openclaw devices approve $retryRequestId '
         '--url ${NativeBridge.shellQuote(localGatewayUrl)} '
         '--token ${NativeBridge.shellQuote(token)} '
         '--json',
         timeout: 40,
       );
+    }
+  }
+
+  Future<String?> _resolvePendingDeviceRequestId({
+    required String fallbackRequestId,
+    required String? gatewayUrl,
+    required String? token,
+    String? deviceId,
+    String? role,
+  }) async {
+    try {
+      final explicitArgs = token != null && token.isNotEmpty
+          ? ' --url ${NativeBridge.shellQuote(gatewayUrl ?? 'ws://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}')}'
+              ' --token ${NativeBridge.shellQuote(token)}'
+          : '';
+      final output = await NativeBridge.runInProot(
+        'openclaw devices list --json$explicitArgs',
+        timeout: 20,
+      );
+      return NativeBridge.extractPendingDeviceRequestId(
+        output,
+        requestedId: fallbackRequestId,
+        deviceId: deviceId,
+        role: role,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -2461,6 +2508,10 @@ PARAMETER num_batch 512
         if (token == null || token.isEmpty) {
           // Actively probe for token in background so it's ready before the next tick
           unawaited(fetchAuthenticatedDashboardUrl(force: true));
+          return;
+        }
+
+        if (_pairingResolveAttempted) {
           return;
         }
 

@@ -513,19 +513,31 @@ class NodeService {
   Future<String?> _approveNodeViaDevicePairing(String requestId) async {
     log('[NODE] Pairing required (1008) — approving request $requestId via OpenClaw CLI...');
     _gatewayAuthToken ??= await _readGatewayToken();
+    final gatewayUrl =
+        'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
+    final requestIdToApprove = await _resolvePendingDeviceRequestId(
+          fallbackRequestId: requestId,
+          gatewayUrl: gatewayUrl,
+          token: _gatewayAuthToken,
+        ) ??
+        requestId;
     try {
       await NativeBridge.runInProot(
-          'openclaw devices approve $requestId --json',
+          'openclaw devices approve $requestIdToApprove --json',
           timeout: 40);
     } catch (e) {
       // Fallback for builds that require explicit gateway endpoint/auth args.
       final gatewayToken = _gatewayAuthToken;
       if (gatewayToken == null || gatewayToken.isEmpty) rethrow;
-      final gatewayUrl =
-          'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
+      final retryRequestId = await _resolvePendingDeviceRequestId(
+            fallbackRequestId: requestId,
+            gatewayUrl: gatewayUrl,
+            token: gatewayToken,
+          ) ??
+          requestIdToApprove;
       log('[NODE] Plain CLI approval failed; retrying with explicit gateway URL/token. Error: $e');
       await NativeBridge.runInProot(
-        'openclaw devices approve $requestId '
+        'openclaw devices approve $retryRequestId '
         '--url ${NativeBridge.shellQuote(gatewayUrl)} '
         '--token ${NativeBridge.shellQuote(gatewayToken)} '
         '--json',
@@ -534,6 +546,31 @@ class NodeService {
     }
 
     return _readApprovedNodeTokenFromStore();
+  }
+
+  Future<String?> _resolvePendingDeviceRequestId({
+    required String fallbackRequestId,
+    required String gatewayUrl,
+    required String? token,
+  }) async {
+    try {
+      final explicitArgs = token != null && token.isNotEmpty
+          ? ' --url ${NativeBridge.shellQuote(gatewayUrl)}'
+              ' --token ${NativeBridge.shellQuote(token)}'
+          : '';
+      final output = await NativeBridge.runInProot(
+        'openclaw devices list --json$explicitArgs',
+        timeout: 20,
+      );
+      return NativeBridge.extractPendingDeviceRequestId(
+        output,
+        requestedId: fallbackRequestId,
+        deviceId: _identity.deviceId,
+        role: AppConstants.nodeRole,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> _readApprovedNodeTokenFromStore() async {

@@ -323,6 +323,18 @@ class GatewayConnection {
             } else if (errorRaw != null) {
               msg = errorRaw.toString();
             }
+            final requestId = _extractPairingRequestId(frame) ??
+                _extractPairingRequestId(msg);
+            final errorCode =
+                errorRaw is Map ? errorRaw['code']?.toString() : null;
+            final isPairingRequired =
+                _isPairingRequired(msg, requestId, errorCode);
+            if (isPairingRequired) {
+              _pairingRequiredDuringConnect = true;
+              if (!_pairingRequiredController.isClosed) {
+                _pairingRequiredController.add(requestId);
+              }
+            }
             _handshakeCompleter!.completeError(Exception(msg));
           }
         }
@@ -380,6 +392,18 @@ class GatewayConnection {
           } else if (payloadRaw != null) {
             msg = payloadRaw.toString();
           }
+          final requestId =
+              _extractPairingRequestId(frame) ?? _extractPairingRequestId(msg);
+          final errorCode =
+              payloadRaw is Map ? payloadRaw['code']?.toString() : null;
+          final isPairingRequired =
+              _isPairingRequired(msg, requestId, errorCode);
+          if (isPairingRequired) {
+            _pairingRequiredDuringConnect = true;
+            if (!_pairingRequiredController.isClosed) {
+              _pairingRequiredController.add(requestId);
+            }
+          }
           _handshakeCompleter!.completeError(Exception(msg));
           _connectRequestId = null;
         }
@@ -401,6 +425,41 @@ class GatewayConnection {
       // Pong
       if (type == 'pong') return;
     } catch (_) {}
+  }
+
+  bool _isPairingRequired(String message, String? requestId, String? code) {
+    if (requestId != null && requestId.isNotEmpty) return true;
+    final lowerMessage = message.toLowerCase();
+    final upperCode = code?.toUpperCase() ?? '';
+    return lowerMessage.contains('pairing required') ||
+        lowerMessage.contains('not paired') ||
+        lowerMessage.contains('not approved') ||
+        upperCode == 'NOT_PAIRED' ||
+        upperCode == 'DEVICE_NOT_PAIRED' ||
+        upperCode == 'TOKEN_INVALID';
+  }
+
+  String? _extractPairingRequestId(Object? value) {
+    if (value is String) {
+      final match = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(value) ??
+          RegExp(r'"requestId"\s*:\s*"([a-f0-9-]+)"').firstMatch(value);
+      return match?.group(1);
+    }
+    if (value is Map) {
+      final direct = value['requestId'];
+      if (direct is String && direct.isNotEmpty) return direct;
+      for (final child in value.values) {
+        final match = _extractPairingRequestId(child);
+        if (match != null) return match;
+      }
+    }
+    if (value is List) {
+      for (final child in value) {
+        final match = _extractPairingRequestId(child);
+        if (match != null) return match;
+      }
+    }
+    return null;
   }
 
   void _onDisconnect({
