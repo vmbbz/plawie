@@ -58,7 +58,10 @@ class NodeState {
   bool get isPaired => status == NodeStatus.paired;
   bool get isDisabled => status == NodeStatus.disabled;
   bool get isConnecting =>
-      status == NodeStatus.connecting || status == NodeStatus.challenging;
+      status == NodeStatus.connecting ||
+      status == NodeStatus.challenging ||
+      status == NodeStatus.pairing ||
+      status == NodeStatus.warmingUp;
 
   String get statusText {
     switch (status) {

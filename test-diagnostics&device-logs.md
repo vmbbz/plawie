@@ -1,1017 +1,360 @@
-Gmail	Cosy <cosychiruka@gmail.com>
-(no subject)
-Cosy <cosychiruka@gmail.com>	Sun, May 17, 2026 at 1:45 AM
-To: Cosy <cosychiruka@gmail.com>
-[90m2026-05-16T23:30:31.046+00:00 [39m [36m[gateway] [39m [33mstartup model warmup timed out after 5000ms; continuing without waiting [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:30:32.428+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41414 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41414->127.0.0.1:18789 conn=971d1865…17de [39m
+Breakthrough in 200 ok health check and temporary device connection which then fails
+Inbox
+Cosy <cosychiruka@gmail.com>
+	
+7:00 PM (22 minutes ago)
+	
+	
+to me
+[INFO] Gateway process detected, attaching...
+[DEBUG] Probing gateway config for auth token...
+[INFO] Gateway auth token acquired from config.
+[90m2026-05-17T16:51:49.156+00:00 [39m [36m[gateway] [39m [36mloading configuration… [39m
+[90m2026-05-17T16:51:50.349+00:00 [39m [36m[gateway] [39m [36mresolving authentication… [39m
+[90m2026-05-17T16:51:50.439+00:00 [39m [36m[gateway] [39m [36mstarting... [39m
+[90m2026-05-17T16:52:11.844+00:00 [39m [36m[gateway] [39m [36mstarting HTTP server... [39m
+[90m2026-05-17T16:52:13.494+00:00 [39m [32m[health-monitor] [39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s) [39m
+[90m2026-05-17T16:52:13.790+00:00 [39m [35m[canvas] [39m [36mhost mounted at http://127.0.0.1:18789/__openclaw__/canvas/ (root /root/.openclaw/canvas) [39m
+[90m2026-05-17T16:52:15.965+00:00 [39m [35m[plugins] [39m [90mloading browser from /usr/local/lib/node_modules/openclaw/dist/extensions/browser/index.js [39m
+[90m2026-05-17T16:52:16.077+00:00 [39m [35m[plugins] [39m [90mloading device-pair from /usr/local/lib/node_modules/openclaw/dist/extensions/device-pair/index.js [39m
+Registered plugin command: /pair (plugin: device-pair)
+[90m2026-05-17T16:52:16.606+00:00 [39m [35m[plugins] [39m [90mloading file-transfer from /usr/local/lib/node_modules/openclaw/dist/extensions/file-transfer/index.js [39m
+[90m2026-05-17T16:52:16.722+00:00 [39m [35m[plugins] [39m [90mloading memory-core from /usr/local/lib/node_modules/openclaw/dist/extensions/memory-core/index.js [39m
+Registered plugin command: /dreaming (plugin: memory-core)
+[90m2026-05-17T16:52:21.712+00:00 [39m [35m[plugins] [39m [90mloading phone-control from /usr/local/lib/node_modules/openclaw/dist/extensions/phone-control/index.js [39m
+Registered plugin command: /phone (plugin: phone-control)
+[90m2026-05-17T16:52:21.769+00:00 [39m [35m[plugins] [39m [90mloading talk-voice from /usr/local/lib/node_modules/openclaw/dist/extensions/talk-voice/index.js [39m
+Registered plugin command: /voice (plugin: talk-voice)
+[90m2026-05-17T16:52:21.808+00:00 [39m [35m[plugins] [39m [90mloaded 6 plugin(s) (6 attempted) in 5853.0ms [39m
+[90m2026-05-17T16:52:21.884+00:00 [39m [36m[gateway] [39m [36magent model: google/gemini-3.1-pro-preview (thinking=medium, fast=off) [39m
+[90m2026-05-17T16:52:21.892+00:00 [39m [36m[gateway] [39m [36mhttp server listening (6 plugins: browser, device-pair, file-transfer, memory-core, phone-control, talk-voice; 31.4s) [39m
+[90m2026-05-17T16:52:21.902+00:00 [39m [36m[gateway] [39m [36mlog file: /tmp/openclaw/openclaw-2026-05-17.log [39m
+[90m2026-05-17T16:52:22.808+00:00 [39m [36m[gateway] [39m [36mstarting channels and sidecars... [39m
+[90m2026-05-17T16:52:32.205+00:00 [39m [36m[fetch-timeout] [39m [33mfetch timeout after 2500ms (elapsed 9179ms) timer delayed 6679ms, likely event-loop starvation operation=fetchWithTimeout url=https://registry.npmjs.org/openclaw/latest [39m
+[90m2026-05-17T16:52:32.222+00:00 [39m [36m[gateway] [39m [33mstartup model warmup timed out after 5000ms; continuing without waiting [39m
+[90m2026-05-17T16:52:36.150+00:00 [39m [36m[browser/server] [39m [36mBrowser control listening on http://127.0.0.1:18791/ (auth=token) [39m
+[90m2026-05-17T16:52:36.169+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay,event_loop_utilization interval=30s eventLoopDelayP99Ms=6866.1 eventLoopDelayMaxMs=7944 eventLoopUtilization=0.996 cpuCoreRatio=0.513 active=0 waiting=0 queued=0 phase=sidecars.plugin-services recentPhases=sidecars.gmail-model:0ms,sidecars.internal-hooks:0ms,sidecars.channel-start:1ms,sidecars.channels:6ms,post-attach.update-check:67ms,sidecars.model-prewarm:9410ms [39m
+[90m2026-05-17T16:52:36.172+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:52:36.232+00:00 [39m [36m[gateway] [39m [36mready [39m
+[90m2026-05-17T16:52:36.248+00:00 [39m [36m[heartbeat] [39m [36mstarted [39m
+[90m2026-05-17T16:52:36.487+00:00 [39m [35m[plugins] [39m [90m[hooks] running gateway_start (1 handlers) [39m
 [INFO] Connecting WebSocket...
 [WARN] WebSocket disconnected
 [WARN] WebSocket disconnected
-[90m2026-05-16T23:30:41.097+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52674 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52674->127.0.0.1:18789 conn=43378671…850e [39m
-[90m2026-05-16T23:30:41.120+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=971d1865-b44f-45e2-8899-22a0e81417de peer=127.0.0.1:41414->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:30:41.128+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=8682 handshake=pending lastFrameType=req lastFrameMethod=connect lastFrameId=fb6e4620-9242-4133-9117-363ab6e13a63 endpoint=127.0.0.1:41414->127.0.0.1:18789 conn=971d1865…17de [39m
+[90m2026-05-17T16:52:38.310+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49210 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49210->127.0.0.1:18789 conn=a3b9cddc…e866 [39m
 [WARN] WebSocket connect failed — will retry on next health tick
 [WARN] WebSocket disconnected
-[90m2026-05-16T23:30:43.941+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=43378671-db28-4612-b29b-93786934850e peer=127.0.0.1:52674->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:30:43.949+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=2834 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f88777d4-8bf8-4b08-88ad-a6503140944f endpoint=127.0.0.1:52674->127.0.0.1:18789 conn=43378671…850e [39m
-[90m2026-05-16T23:30:46.325+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay,event_loop_utilization interval=30s eventLoopDelayP99Ms=4915.7 eventLoopDelayMaxMs=7520.4 eventLoopUtilization=0.997 cpuCoreRatio=0.588 active=0 waiting=0 queued=0 phase=post-ready.maintenance recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms [39m
-[90m2026-05-16T23:30:46.328+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
 [WARN] WebSocket disconnected
+[90m2026-05-17T16:52:45.782+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a3b9cddc-d83c-48ae-9519-741dde70e866 peer=127.0.0.1:49210->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-17T16:52:45.789+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=7467 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2d476aca-0a4c-42e8-89f0-839f8e434a62 endpoint=127.0.0.1:49210->127.0.0.1:18789 [39m
+[90m2026-05-17T16:52:48.544+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34752 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34752->127.0.0.1:18789 conn=10123970…9eb9 [39m
+[90m2026-05-17T16:52:49.324+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=10123970-8821-4943-9bf3-33cbc56f9eb9 peer=127.0.0.1:34752->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 6ddf09f7-dbe7-49ea-bcee-f1b314d52f94) [39m
+[90m2026-05-17T16:52:49.337+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 6ddf09f7-dbe7-49ea-bcee-f1b314d52f94) durationMs=755 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c21d5a8d-e337-419b-9a89-daaaf8843e45 endpoint=127.0.0.1:34752->127.0.0.1:18789 [39m
+[90m2026-05-17T16:53:00.490+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56480 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56480->127.0.0.1:18789 conn=8710b400…1d8e [39m
+[90m2026-05-17T16:53:00.684+00:00 [39m [36m[gateway] [39m [36mdevice pairing auto-approved device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 role=operator [39m
+[90m2026-05-17T16:53:00.727+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:53:00.742+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:53:05.686+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=3 [39m
+[90m2026-05-17T16:53:05.703+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56496 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56496->127.0.0.1:18789 conn=83a3a14b…b9bb [39m
+[90m2026-05-17T16:53:06.409+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:53:06.876+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:53:06.883+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:53:11.940+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=2 presenceVersion=1 healthVersion=4 [39m
+[90m2026-05-17T16:53:11.948+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=2 [39m
+[90m2026-05-17T16:53:11.962+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=11489 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=be49c413-4097-4078-8d7a-2f3d8b9920db endpoint=127.0.0.1:56480->127.0.0.1:18789 conn=8710b400…1d8e [39m
+[90m2026-05-17T16:53:11.971+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 6274ms id=be49c413…20db [39m
+[90m2026-05-17T16:53:11.988+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 28ms conn=83a3a14b…b9bb id=35af0f74…de0f [39m
+[90m2026-05-17T16:53:12.001+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6296 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=35af0f74-8c3b-4ab9-9d53-fc84fb12de0f endpoint=127.0.0.1:56496->127.0.0.1:18789 [39m
+[90m2026-05-17T16:53:25.803+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52248 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52248->127.0.0.1:18789 conn=3a5e01be…8448 [39m
+[90m2026-05-17T16:53:25.935+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:53:25.947+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:53:30.976+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=5 [39m
+[90m2026-05-17T16:53:31.005+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52262 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52262->127.0.0.1:18789 conn=03d2dd0a…cb11 [39m
+[90m2026-05-17T16:53:31.019+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 23ms conn=3a5e01be…8448 id=b6e45b07…17d7 [39m
+[90m2026-05-17T16:53:31.038+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5248 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=b6e45b07-a5e7-4474-b736-efc7b2f717d7 endpoint=127.0.0.1:52248->127.0.0.1:18789 [39m
+[90m2026-05-17T16:53:31.097+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52266 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52266->127.0.0.1:18789 conn=3e9d9f7b…264b [39m
+[90m2026-05-17T16:53:31.260+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=03d2dd0a…cb11 [39m
+[90m2026-05-17T16:53:31.269+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:53:36.772+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=6 [39m
+[90m2026-05-17T16:53:36.778+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:53:36.802+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=3e9d9f7b…264b [39m
+[90m2026-05-17T16:53:36.810+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:53:42.911+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=2 presenceVersion=1 healthVersion=7 [39m
+[90m2026-05-17T16:53:48.624+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=2 presenceVersion=1 healthVersion=8 [39m
+[90m2026-05-17T16:53:48.638+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=2 [39m
+[90m2026-05-17T16:53:48.646+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 11859ms conn=03d2dd0a…cb11 id=af8b3a32…8e85 [39m
+[90m2026-05-17T16:53:48.655+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=17562 handshake=connected lastFrameType=req lastFrameMethod=connect lastFrameId=af1046b2-83d4-4b64-a167-0d4c9d25f706 endpoint=127.0.0.1:52266->127.0.0.1:18789 conn=3e9d9f7b…264b [39m
+[90m2026-05-17T16:53:48.663+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=17660 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=af8b3a32-d4ff-4113-9e99-d57235a48e85 endpoint=127.0.0.1:52262->127.0.0.1:18789 conn=03d2dd0a…cb11 [39m
+[90m2026-05-17T16:53:48.678+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49334 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49334->127.0.0.1:18789 conn=73eba81b…0ffb [39m
+[90m2026-05-17T16:53:48.698+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=73eba81b-e180-4c76-a8d9-93424b060ffb peer=127.0.0.1:49334->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=n/a code=1006 reason=n/a [39m
+[90m2026-05-17T16:53:48.716+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=15 handshake=pending endpoint=127.0.0.1:49334->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:01.847+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46590 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46590->127.0.0.1:18789 conn=0a7f398f…daac [39m
+[90m2026-05-17T16:54:01.934+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:54:01.948+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:54:06.882+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=9 [39m
+[90m2026-05-17T16:54:06.886+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:54:06.900+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46604 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46604->127.0.0.1:18789 conn=e0b97d49…fbc1 [39m
+[90m2026-05-17T16:54:06.917+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 22ms conn=0a7f398f…daac id=921e3d79…b083 [39m
+[90m2026-05-17T16:54:06.939+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5107 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=921e3d79-e667-4628-8ff8-f27e102db083 endpoint=127.0.0.1:46590->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:07.033+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=e0b97d49…fbc1 [39m
+[90m2026-05-17T16:54:07.041+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:54:12.158+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=10 [39m
+[90m2026-05-17T16:54:12.185+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 16ms id=dc0c2d05…bf82 [39m
+[90m2026-05-17T16:54:12.201+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5298 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=dc0c2d05-c7e8-4c9c-9b7d-c5129d67bf82 endpoint=127.0.0.1:46604->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:21.725+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57382 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57382->127.0.0.1:18789 conn=e93967f1…944d [39m
+[90m2026-05-17T16:54:21.815+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:54:21.824+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:54:26.993+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=11 [39m
+[90m2026-05-17T16:54:27.013+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42138 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42138->127.0.0.1:18789 conn=91f4d07f…7ae5 [39m
+[90m2026-05-17T16:54:27.025+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 23ms conn=e93967f1…944d id=880d7ce3…3c59 [39m
+[90m2026-05-17T16:54:27.038+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5315 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=880d7ce3-a1cc-40d5-83e6-9002c74f3c59 endpoint=127.0.0.1:57382->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:27.056+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42146 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42146->127.0.0.1:18789 conn=a76ca222…230d [39m
+[90m2026-05-17T16:54:27.078+00:00 [39m [36m[gateway] [39m [33msecurity audit: device access upgrade requested reason=scope-upgrade device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 ip=unknown-ip auth=token roleFrom=operator roleTo=operator scopesFrom=operator.pairing scopesTo=operator.admin client=cli conn=a76ca222-684f-4f95-8311-18585706230d [39m
+[90m2026-05-17T16:54:27.127+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=91f4d07f…7ae5 [39m
+[90m2026-05-17T16:54:27.137+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:54:33.003+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=12 [39m
+[90m2026-05-17T16:54:33.019+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 5ms id=4d2b3330…4d47 [39m
+[90m2026-05-17T16:54:33.046+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6029 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=4d2b3330-b510-41bf-8ec5-a0d29f654d47 endpoint=127.0.0.1:42138->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:33.068+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42150 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42150->127.0.0.1:18789 conn=058ce9ab…c508 [39m
+[90m2026-05-17T16:54:33.090+00:00 [39m [36m[gateway] [39m [33msecurity audit: device access upgrade requested reason=scope-upgrade device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 ip=unknown-ip auth=token roleFrom=operator roleTo=operator scopesFrom=operator.pairing scopesTo=operator.admin client=cli conn=058ce9ab-f43e-4d61-bb2b-5f97e981c508 [39m
+[90m2026-05-17T16:54:33.111+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a76ca222-684f-4f95-8311-18585706230d peer=127.0.0.1:42146->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=n/a code=1008 reason=connect failed [39m
+[90m2026-05-17T16:54:33.118+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=connect failed durationMs=6047 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=475f2797-ad45-48b3-9e32-697013a62b14 endpoint=127.0.0.1:42146->127.0.0.1:18789 conn=a76ca222…230d [39m
+[90m2026-05-17T16:54:33.232+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=058ce9ab-f43e-4d61-bb2b-5f97e981c508 peer=127.0.0.1:42150->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=n/a code=1008 reason=pairing required: device is asking for more scopes than currently approved (requestId: 9ed0ba4c-cab8-432a-a678-114afaade [39m
+[90m2026-05-17T16:54:33.241+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is asking for more scopes than currently approved (requestId: 9ed0ba4c-cab8-432a-a678-114afaade durationMs=152 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f2768d9a-be12-4d4a-9317-47993750145b endpoint=127.0.0.1:42150->127.0.0.1:18789 conn=058ce9ab…c508 [39m
+[90m2026-05-17T16:54:33.361+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42156 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42156->127.0.0.1:18789 conn=3d503dd0…ca99 [39m
+[90m2026-05-17T16:54:34.210+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3d503dd0-6796-486a-8966-1dcdcd99ca99 peer=127.0.0.1:42156->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: aba4b7f1-e68b-4630-a828-a6ec1fe74c25) [39m
+[90m2026-05-17T16:54:34.226+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: aba4b7f1-e68b-4630-a828-a6ec1fe74c25) durationMs=799 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6f4fbf78-f4b1-4a48-bc14-77ec9214c7b3 endpoint=127.0.0.1:42156->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:36.888+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=39.5 eventLoopDelayMaxMs=5888.8 eventLoopUtilization=0.576 cpuCoreRatio=0.244 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:76ms,sidecars.main-session-recovery:208ms,sidecars.session-locks:235ms,post-ready.maintenance:2872ms [39m
+[90m2026-05-17T16:54:36.892+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:54:49.676+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55972 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55972->127.0.0.1:18789 conn=839b8d6f…9498 [39m
+[90m2026-05-17T16:54:49.738+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:54:49.747+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:54:55.049+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=14 [39m
+[90m2026-05-17T16:54:55.067+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55986 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55986->127.0.0.1:18789 conn=ae22b29f…60dc [39m
+[90m2026-05-17T16:54:55.086+00:00 [39m [36m[ws] [39m [36m⇄ res ✗ device.pair.remove 27ms errorCode=INVALID_REQUEST errorMessage=unknown deviceId conn=839b8d6f…9498 id=ed30cece…32c7 [39m
+[90m2026-05-17T16:54:55.106+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5432 handshake=connected lastFrameType=req lastFrameMethod=device.pair.remove lastFrameId=ed30cece-e120-407f-bac9-abc3822032c7 endpoint=127.0.0.1:55972->127.0.0.1:18789 [39m
+[90m2026-05-17T16:54:55.154+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=ae22b29f…60dc [39m
+[90m2026-05-17T16:54:55.164+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:55:00.275+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=15 [39m
+[90m2026-05-17T16:55:00.293+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 6ms id=21d08b6a…6165 [39m
+[90m2026-05-17T16:55:00.306+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5240 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=21d08b6a-2827-48b7-8cf9-ea22b2fe6165 endpoint=127.0.0.1:55986->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:06.888+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:55:10.059+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55802 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55802->127.0.0.1:18789 conn=3d15167a…242a [39m
+[90m2026-05-17T16:55:10.253+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:55:10.277+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:55:16.416+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=16 [39m
+[90m2026-05-17T16:55:16.438+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 8ms id=de89aee0…9bc0 [39m
+[90m2026-05-17T16:55:16.450+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6401 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=de89aee0-22af-4170-8b38-ae85ae009bc0 endpoint=127.0.0.1:55802->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:16.469+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49918 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49918->127.0.0.1:18789 conn=6bcca407…95a9 [39m
+[90m2026-05-17T16:55:16.514+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:55:16.521+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[WARN] WebSocket disconnected
+[90m2026-05-17T16:55:21.551+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=17 [39m
+[90m2026-05-17T16:55:21.560+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
+[90m2026-05-17T16:55:21.575+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49934 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49934->127.0.0.1:18789 conn=817f279b…aa0a [39m
+[90m2026-05-17T16:55:21.613+00:00 [39m [36m[gateway] [39m [36mdevice pairing removed device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 [39m
+[90m2026-05-17T16:55:21.620+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.remove 51ms conn=6bcca407…95a9 id=c423459c…39b6 [39m
+[90m2026-05-17T16:55:21.633+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5162 handshake=connected lastFrameType=req lastFrameMethod=device.pair.remove lastFrameId=c423459c-2db4-4b94-8952-66737c3339b6 endpoint=127.0.0.1:49918->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:21.718+00:00 [39m [36m[gateway] [39m [36mdevice pairing auto-approved device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 role=operator [39m
+[90m2026-05-17T16:55:21.730+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=817f279b…aa0a [39m
+[90m2026-05-17T16:55:21.739+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:55:26.853+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=18 [39m
+[90m2026-05-17T16:55:26.880+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 17ms id=141c5782…f2b0 [39m
+[90m2026-05-17T16:55:26.892+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5319 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=141c5782-da90-4f83-bb7a-ba813314f2b0 endpoint=127.0.0.1:49934->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:26.913+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32870 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32870->127.0.0.1:18789 conn=d829dc6b…4cc6 [39m
+[90m2026-05-17T16:55:26.933+00:00 [39m [36m[gateway] [39m [33msecurity audit: device access upgrade requested reason=scope-upgrade device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 ip=unknown-ip auth=token roleFrom=operator roleTo=operator scopesFrom=operator.pairing scopesTo=operator.admin client=cli conn=d829dc6b-9320-4696-9d0e-ce82ef4d4cc6 [39m
+[90m2026-05-17T16:55:27.053+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d829dc6b-9320-4696-9d0e-ce82ef4d4cc6 peer=127.0.0.1:32870->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=n/a code=1008 reason=connect failed [39m
+[90m2026-05-17T16:55:27.062+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=connect failed durationMs=128 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=789e69e2-4b9a-48c3-8fc0-dca1d8beddd3 endpoint=127.0.0.1:32870->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:36.897+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
 [INFO] Connecting WebSocket...
 [WARN] WebSocket disconnected
 [WARN] WebSocket disconnected
+[90m2026-05-17T16:55:37.732+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41916 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41916->127.0.0.1:18789 conn=1d3d4110…39ba [39m
 [WARN] WebSocket connect failed — will retry on next health tick
 [WARN] WebSocket disconnected
-[90m2026-05-16T23:30:55.686+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56470 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56470->127.0.0.1:18789 conn=ab9d1db4…24c8 [39m
-[90m2026-05-16T23:30:56.524+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ab9d1db4-a925-4ac0-a81d-b4f5f64724c8 peer=127.0.0.1:56470->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:30:56.542+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=784 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b946823a-10e8-4e7a-9e1a-c5123bd7b1f6 endpoint=127.0.0.1:56470->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
 [WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:10.668+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34718 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34718->127.0.0.1:18789 conn=d6a7676a…8364 [39m
-[90m2026-05-16T23:31:11.473+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d6a7676a-d72e-4494-8ffa-e291cdfc8364 peer=127.0.0.1:34718->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:31:11.488+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=768 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=dafdec4f-9113-4d4c-b522-f3b9cc88be7c endpoint=127.0.0.1:34718->127.0.0.1:18789 [39m
-[90m2026-05-16T23:31:16.342+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:25.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34732 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34732->127.0.0.1:18789 conn=c870e9d5…56a4 [39m
-[90m2026-05-16T23:31:26.495+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c870e9d5-5edf-4d1e-885b-132517f756a4 peer=127.0.0.1:34732->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:31:26.515+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=775 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f9e75956-bb31-4db4-8fc2-1f766e3b7410 endpoint=127.0.0.1:34732->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:40.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55914 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55914->127.0.0.1:18789 conn=ce362417…110a [39m
-[90m2026-05-16T23:31:41.487+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ce362417-b54d-4d42-80c5-a4d94257110a peer=127.0.0.1:55914->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:31:41.506+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=742 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e46eb41b-b9ff-4634-9582-80f27a2156ab endpoint=127.0.0.1:55914->127.0.0.1:18789 [39m
-[90m2026-05-16T23:31:46.341+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:55.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51550 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51550->127.0.0.1:18789 conn=5cdbac9f…16a3 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:56.538+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5cdbac9f-ffaf-4658-873c-6655762d16a3 peer=127.0.0.1:51550->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:31:56.557+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=811 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b57cc220-7179-4228-99a5-31d76dfcc7e1 endpoint=127.0.0.1:51550->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:10.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=54060 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:54060->127.0.0.1:18789 conn=4df8d7d4…ce76 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:11.648+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4df8d7d4-91ca-4d31-9e3c-01335030ce76 peer=127.0.0.1:54060->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:32:11.679+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=890 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d57ec1d8-e950-4e47-98ba-9db0754b2a67 endpoint=127.0.0.1:54060->127.0.0.1:18789 [39m
-[90m2026-05-16T23:32:16.347+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:25.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=43792 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:43792->127.0.0.1:18789 conn=cdb43099…27d5 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:26.568+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=cdb43099-5fe2-470c-b890-9b51ab2a27d5 peer=127.0.0.1:43792->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:32:26.600+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=810 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=63811777-4550-43d1-bf0e-6ea076b108e8 endpoint=127.0.0.1:43792->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:40.695+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56870 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56870->127.0.0.1:18789 conn=805895f1…48ed [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:41.606+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=805895f1-3f92-48f5-a46c-bb98ce1b48ed peer=127.0.0.1:56870->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:32:41.622+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=865 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9df02421-8f0a-4158-bfcc-6a9ad3715409 endpoint=127.0.0.1:56870->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:55.672+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51068 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51068->127.0.0.1:18789 conn=117eb2e6…4b94 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:56.483+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=117eb2e6-5a97-449b-b41a-5bfeff764b94 peer=127.0.0.1:51068->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:32:56.498+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=762 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7db722e1-0d14-470a-bff8-2a5d4de90f93 endpoint=127.0.0.1:51068->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:10.680+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33610 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33610->127.0.0.1:18789 conn=c5db2742…ef6a [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:11.461+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c5db2742-c3da-49df-b860-4b4c7afbef6a peer=127.0.0.1:33610->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:11.476+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=737 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d01835b6-0b0b-4033-ba41-61b1c84eab1a endpoint=127.0.0.1:33610->127.0.0.1:18789 [39m
-[90m2026-05-16T23:33:16.347+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=29 eventLoopDelayMaxMs=5612 eventLoopUtilization=0.272 cpuCoreRatio=0.219 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:33:16.366+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:25.699+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39456 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39456->127.0.0.1:18789 conn=846595b1…b9df [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:26.561+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=846595b1-7443-4859-b00b-2d297c4db9df peer=127.0.0.1:39456->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:26.588+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=778 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=5375ac77-9c6f-40c8-86f1-4f17e6b1b90c endpoint=127.0.0.1:39456->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:40.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55108 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55108->127.0.0.1:18789 conn=bc28f32c…2e6b [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:41.477+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bc28f32c-50bb-4eb1-8499-7db531c12e6b peer=127.0.0.1:55108->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:41.493+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=738 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=448c7e5e-9f7f-4ed7-a5f4-4243df5d8e21 endpoint=127.0.0.1:55108->127.0.0.1:18789 [39m
-[90m2026-05-16T23:33:46.348+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:55.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32924 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32924->127.0.0.1:18789 conn=0c17e1e8…1408 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:56.481+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0c17e1e8-0f8d-4d8a-aa07-a814cbc41408 peer=127.0.0.1:32924->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:56.504+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=759 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4c1a0ee0-c0a1-4382-acd0-d191ea09c7b1 endpoint=127.0.0.1:32924->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:10.677+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41772 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41772->127.0.0.1:18789 conn=4568a3c6…6716 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:11.536+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4568a3c6-dc5b-4233-9c8d-2b92bf4a6716 peer=127.0.0.1:41772->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:11.570+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=786 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=93d879b7-d9da-444a-b8fd-8dfb536fbb84 endpoint=127.0.0.1:41772->127.0.0.1:18789 [39m
-[90m2026-05-16T23:34:16.357+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:25.685+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60710 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60710->127.0.0.1:18789 conn=5713fc04…b800 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:26.499+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5713fc04-dfed-4d1d-857f-e93e6acdb800 peer=127.0.0.1:60710->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:26.516+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=774 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=da10ea84-d75c-4e68-8b55-13b3fc39f28d endpoint=127.0.0.1:60710->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:40.681+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=59074 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:59074->127.0.0.1:18789 conn=b5c62532…d8dd [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:41.617+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b5c62532-e9af-4d43-8d29-eb93d892d8dd peer=127.0.0.1:59074->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:41.648+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=812 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c9b5b2bb-d591-4862-b08e-0715aa215fa9 endpoint=127.0.0.1:59074->127.0.0.1:18789 [39m
-[90m2026-05-16T23:34:46.365+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:55.705+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40968 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40968->127.0.0.1:18789 conn=e90fa2e1…6691 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:56.497+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e90fa2e1-6a32-4f9c-bc49-3ae442d36691 peer=127.0.0.1:40968->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:56.512+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=783 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a81f8100-3dc4-4ad6-951e-77f24c7e0f43 endpoint=127.0.0.1:40968->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:10.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55898 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55898->127.0.0.1:18789 conn=ecebf67b…e913 [39m
-[90m2026-05-16T23:35:11.394+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ecebf67b-b361-4c1d-840b-5b0c62bde913 peer=127.0.0.1:55898->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:35:11.406+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=689 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=56737f3f-76c0-4494-ac9e-16a13db2ac03 endpoint=127.0.0.1:55898->127.0.0.1:18789 [39m
-[90m2026-05-16T23:35:16.365+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=29.6 eventLoopDelayMaxMs=5268 eventLoopUtilization=0.262 cpuCoreRatio=0.208 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:35:16.381+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:25.663+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40342 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40342->127.0.0.1:18789 conn=f4238681…f39c [39m
-[90m2026-05-16T23:35:26.425+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f4238681-5ad4-4a1c-bd32-d72ee24ef39c peer=127.0.0.1:40342->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:35:26.445+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=699 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e9fe2239-bdcf-475f-93fd-c93d3c178a71 endpoint=127.0.0.1:40342->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:40.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40298 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40298->127.0.0.1:18789 conn=4fca426f…5321 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:41.997+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4fca426f-c6af-4a15-a121-3c8f62b25321 peer=127.0.0.1:40298->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:35:42.013+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=1253 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f32fd221-a655-4ab0-a719-a00a54fc63e5 endpoint=127.0.0.1:40298->127.0.0.1:18789 [39m
-[90m2026-05-16T23:35:46.362+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:10.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33706 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33706->127.0.0.1:18789 conn=abb1b27c…092d [39m
-[90m2026-05-16T23:36:11.597+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=abb1b27c-983c-45a2-8e39-64835901092d peer=127.0.0.1:33706->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:11.629+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=830 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=521f1adc-c8eb-45b8-ba52-13cca73f76ed endpoint=127.0.0.1:33706->127.0.0.1:18789 [39m
-[90m2026-05-16T23:36:16.366+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:25.677+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40424 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40424->127.0.0.1:18789 conn=9826b9bb…5dee [39m
-[90m2026-05-16T23:36:26.513+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9826b9bb-9e65-4938-902d-149bb6b25dee peer=127.0.0.1:40424->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:26.543+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=747 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d708bd1c-59f7-4877-b543-f9692bda63e7 endpoint=127.0.0.1:40424->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:40.673+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55766 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55766->127.0.0.1:18789 conn=8c6a1478…4d6f [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:41.521+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8c6a1478-01fb-4bbd-a11a-d0fa4bd94d6f peer=127.0.0.1:55766->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:41.546+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=767 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d7323e70-567d-4bf7-be0d-79076a4335ec endpoint=127.0.0.1:55766->127.0.0.1:18789 [39m
-[90m2026-05-16T23:36:46.369+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:57.197+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36478 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36478->127.0.0.1:18789 conn=91ea72f2…6642 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:58.008+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=91ea72f2-8865-4bb7-8f16-7154100c6642 peer=127.0.0.1:36478->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:58.023+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=751 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0fdadff2-58c5-4f60-a20c-c61f21daf051 endpoint=127.0.0.1:36478->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:10.681+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45806 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45806->127.0.0.1:18789 conn=3d2e9d06…fd87 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:11.596+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3d2e9d06-8c72-4160-b61d-cc648bbffd87 peer=127.0.0.1:45806->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:37:11.628+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=810 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4a4b526b-ba26-44c1-90b8-e3ab132b98ad endpoint=127.0.0.1:45806->127.0.0.1:18789 [39m
-[90m2026-05-16T23:37:16.371+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=28.3 eventLoopDelayMaxMs=10779.4 eventLoopUtilization=0.432 cpuCoreRatio=0.287 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:37:16.388+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:25.692+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57766 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57766->127.0.0.1:18789 conn=33a3e24d…0a7b [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:26.627+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=33a3e24d-a574-4d87-b6c5-b435b1690a7b peer=127.0.0.1:57766->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:37:26.646+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=870 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=08109dfa-2c29-4595-85a4-5c3f7b759e32 endpoint=127.0.0.1:57766->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:40.704+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46960 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46960->127.0.0.1:18789 conn=dcfceadd…b932 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:41.560+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=dcfceadd-7703-4dcb-9ce2-8dca337fb932 peer=127.0.0.1:46960->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:37:41.583+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=778 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8d9b696e-ca28-479a-bdad-5fb537d09f46 endpoint=127.0.0.1:46960->127.0.0.1:18789 [39m
-[90m2026-05-16T23:37:46.374+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:55.666+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47134 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47134->127.0.0.1:18789 conn=100551dc…159b [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:56.530+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=100551dc-1808-469b-ad0c-99b7905c159b peer=127.0.0.1:47134->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:37:56.569+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=736 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=78046355-ef03-4b92-b2dd-0c4d090ae665 endpoint=127.0.0.1:47134->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:10.685+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42226 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42226->127.0.0.1:18789 conn=63667de0…9ba7 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:11.555+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=63667de0-f87c-43a5-9ef7-bfb9de0a9ba7 peer=127.0.0.1:42226->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:11.569+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=811 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=395c0fc8-d23d-4a2f-a94a-93a1a23c2562 endpoint=127.0.0.1:42226->127.0.0.1:18789 [39m
-[90m2026-05-16T23:38:16.374+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:25.676+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57414 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57414->127.0.0.1:18789 conn=236d8d03…bb2a [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:26.547+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=236d8d03-1b40-482f-9c7a-400f8211bb2a peer=127.0.0.1:57414->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:26.571+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=807 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=27c3d756-6894-408a-a85c-f90f107d338a endpoint=127.0.0.1:57414->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:40.675+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53784 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53784->127.0.0.1:18789 conn=e18b2f31…0363 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:41.548+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e18b2f31-c9e8-4dee-9c6d-3a2150e70363 peer=127.0.0.1:53784->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:41.580+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=767 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2c814fd2-12c8-4278-a9cb-76420e979325 endpoint=127.0.0.1:53784->127.0.0.1:18789 [39m
-[90m2026-05-16T23:38:46.381+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:55.682+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39650 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39650->127.0.0.1:18789 conn=41a7d781…c80a [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:56.567+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=41a7d781-1655-4888-9cdb-2c20bf75c80a peer=127.0.0.1:39650->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:56.585+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=840 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=150e03c0-f218-4d89-ada5-c2a46d00932c endpoint=127.0.0.1:39650->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:10.657+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60850 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60850->127.0.0.1:18789 conn=7cb33185…9633 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:11.574+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7cb33185-a62d-46ee-814b-afe8b0309633 peer=127.0.0.1:60850->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:11.594+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=859 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9e5f2733-b551-4040-9d20-33124910c8c4 endpoint=127.0.0.1:60850->127.0.0.1:18789 [39m
-[90m2026-05-16T23:39:16.381+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=26.9 eventLoopDelayMaxMs=4622.1 eventLoopUtilization=0.245 cpuCoreRatio=0.201 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:39:16.397+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:25.683+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45882 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45882->127.0.0.1:18789 conn=43f179b4…1b37 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:26.585+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=43f179b4-afeb-49c7-9faf-8ba2f40d1b37 peer=127.0.0.1:45882->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:26.616+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=804 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=39377277-5c41-4c78-8abb-8a965372e7d5 endpoint=127.0.0.1:45882->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:40.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52050 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52050->127.0.0.1:18789 conn=de21d7c9…29e3 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:41.571+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=de21d7c9-8655-43ea-b84c-9ed50a4529e3 peer=127.0.0.1:52050->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:41.600+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=772 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2f1b6864-b03c-4dd5-9add-c7994a1340ef endpoint=127.0.0.1:52050->127.0.0.1:18789 [39m
-[90m2026-05-16T23:39:46.376+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:55.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42356 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42356->127.0.0.1:18789 conn=dd87dd91…318d [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:56.489+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=dd87dd91-372e-41c2-93e0-5d0f3e3a318d peer=127.0.0.1:42356->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:56.503+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=749 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=354bc0aa-f3a2-477e-8a30-652bd84300d5 endpoint=127.0.0.1:42356->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:10.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46876 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46876->127.0.0.1:18789 conn=bc17f569…951e [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:11.592+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bc17f569-79ca-4a6e-a057-12f81cca951e peer=127.0.0.1:46876->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:40:11.623+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=805 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c7be8419-c991-480e-94aa-4f5fcc6ac7c2 endpoint=127.0.0.1:46876->127.0.0.1:18789 [39m
-[90m2026-05-16T23:40:16.385+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:25.698+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=59292 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:59292->127.0.0.1:18789 conn=cd92d2b5…a03c [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:26.587+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=cd92d2b5-2a23-420c-9e83-35b15380a03c peer=127.0.0.1:59292->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:40:26.618+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=816 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fbeba5c8-8a6f-4952-addd-cdfd1ebdda1d endpoint=127.0.0.1:59292->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:40.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58454 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58454->127.0.0.1:18789 conn=8a51a931…0513 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:42.087+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8a51a931-377f-4f84-b1c6-b520ed740513 peer=127.0.0.1:58454->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:40:42.116+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=1333 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6660fee3-9188-4863-84cf-0b9b9595d31e endpoint=127.0.0.1:58454->127.0.0.1:18789 [39m
-[90m2026-05-16T23:40:46.390+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:10.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41434 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41434->127.0.0.1:18789 conn=552c4394…c93d [39m
-[90m2026-05-16T23:41:11.542+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=552c4394-6cd0-41fd-8bdc-dc4d592fc93d peer=127.0.0.1:41434->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:11.575+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=761 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=615a5edb-24b4-4ed7-b280-faa5a162a0c3 endpoint=127.0.0.1:41434->127.0.0.1:18789 [39m
-[90m2026-05-16T23:41:16.394+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=30.9 eventLoopDelayMaxMs=16693.3 eventLoopUtilization=0.608 cpuCoreRatio=0.345 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:41:16.408+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:25.686+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51908 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51908->127.0.0.1:18789 conn=05dc8766…7dd5 [39m
-[90m2026-05-16T23:41:26.612+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=05dc8766-e9ae-475b-85b6-755bd8017dd5 peer=127.0.0.1:51908->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:26.650+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=853 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0694c176-2f31-4977-b896-418829a10a8d endpoint=127.0.0.1:51908->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:40.691+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36666 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36666->127.0.0.1:18789 conn=159673a8…cdf2 [39m
-[90m2026-05-16T23:41:41.587+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=159673a8-f2e7-43f3-b858-8a082e51cdf2 peer=127.0.0.1:36666->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:41.619+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=821 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=5ebacea6-6e23-4b59-8402-9d532c3190c8 endpoint=127.0.0.1:36666->127.0.0.1:18789 [39m
-[90m2026-05-16T23:41:46.397+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:55.682+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=43018 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:43018->127.0.0.1:18789 conn=25eadff3…a908 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:56.589+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=25eadff3-8e0d-4e78-85c1-55c0b1f6a908 peer=127.0.0.1:43018->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:56.615+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=797 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c7a0f01f-9b50-45a8-96dd-4e4776610e54 endpoint=127.0.0.1:43018->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:10.680+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33558 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33558->127.0.0.1:18789 conn=e3726dd2…c439 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:11.454+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e3726dd2-aafa-4ded-81fa-253ff1f4c439 peer=127.0.0.1:33558->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:42:11.482+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=728 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e75c3d85-c4d5-4b19-b743-f392e758a8f3 endpoint=127.0.0.1:33558->127.0.0.1:18789 [39m
-[90m2026-05-16T23:42:16.400+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:25.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45510 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45510->127.0.0.1:18789 conn=df3cb8d1…bfba [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:26.521+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=df3cb8d1-5114-4b6e-8931-ce339166bfba peer=127.0.0.1:45510->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:42:26.544+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=790 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=39fbf1f6-1b0f-48a6-9d4e-b69ccb35486c endpoint=127.0.0.1:45510->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:40.693+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46472 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46472->127.0.0.1:18789 conn=d5171b10…1bbb [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:41.563+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d5171b10-7e97-4c89-8c90-166c62031bbb peer=127.0.0.1:46472->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:42:41.589+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=800 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a62b812c-c908-488f-bf50-48be1b1fd3f2 endpoint=127.0.0.1:46472->127.0.0.1:18789 [39m
-[90m2026-05-16T23:42:46.403+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:55.678+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35056 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35056->127.0.0.1:18789 conn=968b21be…fd1f [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:56.670+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=968b21be-609e-4991-b153-e312d3effd1f peer=127.0.0.1:35056->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:42:56.696+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=877 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7cb39c92-7ad5-4b2a-9f1b-2f40d7d1d181 endpoint=127.0.0.1:35056->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:10.694+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51218 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51218->127.0.0.1:18789 conn=bc39215d…0a1e [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:11.534+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bc39215d-7be6-4fcc-af8f-e39501230a1e peer=127.0.0.1:51218->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:43:11.560+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=816 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4be0e68b-e7c8-4f54-acc4-f4528aefde3d endpoint=127.0.0.1:51218->127.0.0.1:18789 [39m
-[90m2026-05-16T23:43:16.392+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=36.1 eventLoopDelayMaxMs=4634.7 eventLoopUtilization=0.252 cpuCoreRatio=0.204 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:43:16.403+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-16T23:43:19.651+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46590 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46590->127.0.0.1:18789 conn=c47ee2de…71f2 [39m
-[90m2026-05-16T23:43:20.742+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c47ee2de-8fc6-4ee6-8701-8ab7588471f2 peer=127.0.0.1:46590->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 24674646-1faf-42e2-910b-318c9748f71d) [39m
-[90m2026-05-16T23:43:20.809+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 24674646-1faf-42e2-910b-318c9748f71d) durationMs=977 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0fbe11d9-7c93-4038-812a-c146729ea510 endpoint=127.0.0.1:46590->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:25.636+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46606 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46606->127.0.0.1:18789 conn=9fa8936a…36d6 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:26.326+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9fa8936a-e097-45bf-9e31-8db7dcd936d6 peer=127.0.0.1:46606->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 11f4e941-205d-4027-b955-9db57f05e915) [39m
-[90m2026-05-16T23:43:26.340+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 11f4e941-205d-4027-b955-9db57f05e915) durationMs=672 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=31d35122-3db3-44e4-b28b-339530085eaa endpoint=127.0.0.1:46606->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:40.648+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44836 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44836->127.0.0.1:18789 conn=223cb1ab…8bb1 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:42.013+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=223cb1ab-14c5-4358-bdf7-43d359888bb1 peer=127.0.0.1:44836->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 436313bf-07ad-4048-987c-7a3c653a4b26) [39m
-[90m2026-05-16T23:43:42.055+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 436313bf-07ad-4048-987c-7a3c653a4b26) durationMs=1288 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a640acf9-d627-4386-9f59-254f5a0a2035 endpoint=127.0.0.1:44836->127.0.0.1:18789 [39m
-[90m2026-05-16T23:43:44.837+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44848 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44848->127.0.0.1:18789 conn=4198632d…655e [39m
-[90m2026-05-16T23:43:44.924+00:00 [39m [36m[gateway] [39m [36mdevice pairing auto-approved device=c8dc204c760877b016210f331677d4eb8107cef9d0b7283b237c3cac671727e1 role=operator [39m
-[90m2026-05-16T23:43:44.945+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
-[90m2026-05-16T23:43:44.957+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
-[90m2026-05-16T23:43:51.365+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=15 [39m
-[90m2026-05-16T23:43:51.373+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:55.625+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=16 [39m
-[90m2026-05-16T23:43:55.645+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=10817 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=b0876893-e02d-431d-815b-2f9108ea6a2b endpoint=127.0.0.1:44848->127.0.0.1:18789 [39m
-[90m2026-05-16T23:43:55.657+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35336 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35336->127.0.0.1:18789 conn=ad5d99ec…86c9 [39m
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:56.305+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35350 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35350->127.0.0.1:18789 conn=a4018b29…441c [39m
-[90m2026-05-16T23:43:57.514+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 1879ms conn=4198632d…655e id=b0876893…6a2b [39m
-[90m2026-05-16T23:43:57.552+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=ad5d99ec…86c9 [39m
-[90m2026-05-16T23:43:57.562+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:02.345+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=17 [39m
-[90m2026-05-16T23:44:02.373+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a4018b29-6ac3-40e0-85fb-69ae8beb441c peer=127.0.0.1:35350->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 042e6c89-bb5d-445b-bbb8-efcfc0275a39) [39m
-[90m2026-05-16T23:44:02.381+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 042e6c89-bb5d-445b-bbb8-efcfc0275a39) durationMs=6062 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4d511fa4-b6a9-4281-b290-81ca87446d3b endpoint=127.0.0.1:35350->127.0.0.1:18789 conn=a4018b29…441c [39m
-[90m2026-05-16T23:44:02.392+00:00 [39m [36m[ws] [39m [36m⇄ res ✗ device.pair.approve 35ms errorCode=INVALID_REQUEST errorMessage=unknown requestId conn=ad5d99ec…86c9 id=1478ee7a…9953 [39m
-[90m2026-05-16T23:44:02.411+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6754 handshake=connected lastFrameType=req lastFrameMethod=device.pair.approve lastFrameId=1478ee7a-60e6-4e96-b77f-e7b7aedd9953 endpoint=127.0.0.1:35336->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:10.661+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35624 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35624->127.0.0.1:18789 conn=1c260b22…62c4 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:11.494+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1c260b22-7b87-480d-9e1f-cf7d285b62c4 peer=127.0.0.1:35624->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 87befdd1-c003-40f7-bb16-3fd5032ca5f7) [39m
-[90m2026-05-16T23:44:11.512+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 87befdd1-c003-40f7-bb16-3fd5032ca5f7) durationMs=784 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=310ab66a-a08c-430d-8665-50cdf61f7505 endpoint=127.0.0.1:35624->127.0.0.1:18789 [39m
-[90m2026-05-16T23:44:21.382+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:25.667+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36436 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36436->127.0.0.1:18789 conn=d59f64a9…c422 [39m
-[90m2026-05-16T23:44:26.034+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36450 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36450->127.0.0.1:18789 conn=9fbf2cd0…7fa4 [39m
-[90m2026-05-16T23:44:26.116+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
-[90m2026-05-16T23:44:26.133+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:33.776+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=18 [39m
-[90m2026-05-16T23:44:33.792+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
-[90m2026-05-16T23:44:33.823+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 16ms id=c7978750…9916 [39m
-[90m2026-05-16T23:44:33.848+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=7827 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=c7978750-c92c-43b2-ae70-30f49ee99916 endpoint=127.0.0.1:36450->127.0.0.1:18789 [39m
-[90m2026-05-16T23:44:33.867+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56394 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56394->127.0.0.1:18789 conn=0a744670…2b9b [39m
-[90m2026-05-16T23:44:33.969+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d59f64a9-639d-45b0-b9b2-b1e23dc6c422 peer=127.0.0.1:36436->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:44:33.988+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=8289 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b1d94681-ee4f-4446-a86a-7281fa5bb9f5 endpoint=127.0.0.1:36436->127.0.0.1:18789 conn=d59f64a9…c422 [39m
-[90m2026-05-16T23:44:34.076+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=0a744670…2b9b [39m
-[90m2026-05-16T23:44:34.099+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:55:38.518+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1d3d4110-2c62-407e-8abb-be38913d39ba peer=127.0.0.1:41916->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-17T16:55:38.526+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=765 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=253b9a1a-06f3-451c-950f-3de9e22b87fc endpoint=127.0.0.1:41916->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:49.164+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33528 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33528->127.0.0.1:18789 conn=ac780599…6d09 [39m
+[90m2026-05-17T16:55:49.248+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:55:49.258+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:55:54.446+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=20 [39m
+[90m2026-05-17T16:55:54.454+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
+[90m2026-05-17T16:55:54.479+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33548 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33548->127.0.0.1:18789 conn=0ec94a8a…0b97 [39m
+[90m2026-05-17T16:55:54.488+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 24ms conn=ac780599…6d09 id=b6a6c2cd…63ee [39m
+[90m2026-05-17T16:55:54.501+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5338 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=b6a6c2cd-ee71-422b-9b38-f41a785163ee endpoint=127.0.0.1:33528->127.0.0.1:18789 [39m
+[90m2026-05-17T16:55:54.607+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=0ec94a8a…0b97 [39m
+[90m2026-05-17T16:55:54.616+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:55:59.779+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=21 [39m
+[90m2026-05-17T16:55:59.794+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 4ms id=d91cc485…031c [39m
+[90m2026-05-17T16:55:59.808+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5326 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=d91cc485-ee62-4b9a-a835-8f42da25031c endpoint=127.0.0.1:33548->127.0.0.1:18789 [39m
+[90m2026-05-17T16:56:06.891+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:56:09.618+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60238 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60238->127.0.0.1:18789 conn=e83abfa9…3de6 [39m
+[90m2026-05-17T16:56:09.715+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:56:09.725+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:56:14.728+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=22 [39m
+[90m2026-05-17T16:56:14.745+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 5ms id=2c6b1d0a…a9b9 [39m
+[90m2026-05-17T16:56:14.758+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5139 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=2c6b1d0a-277a-4bac-90e6-43986765a9b9 endpoint=127.0.0.1:60238->127.0.0.1:18789 [39m
+[90m2026-05-17T16:56:14.772+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60248 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60248->127.0.0.1:18789 conn=9fd0c7e3…7d6d [39m
+[90m2026-05-17T16:56:14.790+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60254 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60254->127.0.0.1:18789 conn=0ebc414e…b8c7 [39m
+[90m2026-05-17T16:56:14.800+00:00 [39m [36m[gateway] [39m [33msecurity audit: device access upgrade requested reason=scope-upgrade device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 ip=unknown-ip auth=token roleFrom=operator roleTo=operator scopesFrom=operator.pairing scopesTo=operator.admin client=cli conn=9fd0c7e3-fb92-4cec-aa4b-993bdb967d6d [39m
+[90m2026-05-17T16:56:14.872+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
+[90m2026-05-17T16:56:14.880+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:56:19.870+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=23 [39m
+[90m2026-05-17T16:56:19.927+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9fd0c7e3-fb92-4cec-aa4b-993bdb967d6d peer=127.0.0.1:60248->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=n/a code=1008 reason=connect failed [39m
+[90m2026-05-17T16:56:19.942+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=connect failed durationMs=5119 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b0c3fb9f-2a88-4eeb-9b46-3e2ba1a99d74 endpoint=127.0.0.1:60248->127.0.0.1:18789 conn=9fd0c7e3…7d6d [39m
+[90m2026-05-17T16:56:19.988+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 81ms conn=0ebc414e…b8c7 id=fd7877da…365b [39m
+[90m2026-05-17T16:56:20.002+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=5210 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=fd7877da-d4da-489a-8d99-0360f716365b endpoint=127.0.0.1:60254->127.0.0.1:18789 [39m
+[90m2026-05-17T16:56:20.043+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34224 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34224->127.0.0.1:18789 conn=7cded90c…2058 [39m
+[90m2026-05-17T16:56:20.059+00:00 [39m [36m[gateway] [39m [33msecurity audit: device access upgrade requested reason=scope-upgrade device=cc570e52e705c4a9062884ba750712901e805a6b0c58cf1769ef2aac767c33b0 ip=unknown-ip auth=token roleFrom=operator roleTo=operator scopesFrom=operator.pairing scopesTo=operator.admin client=cli conn=7cded90c-f9b3-4c67-9d55-1a526af42058 [39m
+[90m2026-05-17T16:56:20.117+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34226 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34226->127.0.0.1:18789 conn=15f1af80…2507 [39m
+[90m2026-05-17T16:56:20.150+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7cded90c-f9b3-4c67-9d55-1a526af42058 peer=127.0.0.1:34224->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=n/a host=127.0.0.1:18789 ua=n/a code=1008 reason=connect failed [39m
+[90m2026-05-17T16:56:20.157+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=connect failed durationMs=97 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e6161dd7-c1e6-4495-8f05-87273a93a3a5 endpoint=127.0.0.1:34224->127.0.0.1:18789 conn=7cded90c…2058 [39m
+[90m2026-05-17T16:56:20.788+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=15f1af80-939f-4e16-9d46-33550a3b2507 peer=127.0.0.1:34226->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 803688e4-7937-44c2-9db8-340ef624ffa2) [39m
+[90m2026-05-17T16:56:20.797+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 803688e4-7937-44c2-9db8-340ef624ffa2) durationMs=664 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=044c904b-cfbb-4232-9840-287076d379f5 endpoint=127.0.0.1:34226->127.0.0.1:18789 conn=15f1af80…2507 [39m
+[90m2026-05-17T16:56:36.804+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41660 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41660->127.0.0.1:18789 conn=a62445aa…18bc [39m
+[90m2026-05-17T16:56:36.873+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41674 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41674->127.0.0.1:18789 conn=568aff0e…0282 [39m
+[90m2026-05-17T16:56:36.903+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=36.8 eventLoopDelayMaxMs=5033.2 eventLoopUtilization=0.372 cpuCoreRatio=0.165 active=0 waiting=0 queued=0 recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:76ms,sidecars.main-session-recovery:208ms,sidecars.session-locks:235ms,post-ready.maintenance:2872ms [39m
+[90m2026-05-17T16:56:36.906+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:56:36.970+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=a62445aa…18bc [39m
+[90m2026-05-17T16:56:36.989+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:56:42.480+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=24 [39m
+[90m2026-05-17T16:56:42.509+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=568aff0e…0282 [39m
+[90m2026-05-17T16:56:42.516+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:56:47.742+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=2 presenceVersion=1 healthVersion=25 [39m
+[90m2026-05-17T16:56:54.919+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=2 presenceVersion=1 healthVersion=26 [39m
+[90m2026-05-17T16:56:54.930+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 12438ms conn=a62445aa…18bc id=f4886d95…eeac [39m
+[90m2026-05-17T16:56:54.940+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=18080 handshake=connected lastFrameType=req lastFrameMethod=connect lastFrameId=3ea673cf-6777-44bb-a01a-f2f125df1121 endpoint=127.0.0.1:41674->127.0.0.1:18789 conn=568aff0e…0282 [39m
+[90m2026-05-17T16:56:54.948+00:00 [39m [36m[ws] [39m [36m→ close code=1006 durationMs=18166 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=f4886d95-995e-4c23-8c5b-547ebc18eeac endpoint=127.0.0.1:41660->127.0.0.1:18789 conn=a62445aa…18bc [39m
+[90m2026-05-17T16:57:04.298+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49214 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49214->127.0.0.1:18789 conn=87ec5025…771c [39m
+[90m2026-05-17T16:57:04.328+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49220 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49220->127.0.0.1:18789 conn=f326a0e6…9cd6 [39m
+[90m2026-05-17T16:57:04.413+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=87ec5025…771c [39m
+[90m2026-05-17T16:57:04.420+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:57:09.459+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=27 [39m
+[90m2026-05-17T16:57:09.465+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-17T16:57:09.484+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=f326a0e6…9cd6 [39m
+[90m2026-05-17T16:57:09.489+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=155 events=25 presence=1 stateVersion=1 [39m
+[90m2026-05-17T16:57:14.661+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=2 presenceVersion=1 healthVersion=28 [39m
 
 
 
 
 
 
-===================================================================================================================================================
-
-GATEWAY  LOGS FOLLOW IN FULL::
 
 
 
+======================================================================
 
-[90m2026-05-16T23:30:31.046+00:00 [39m [36m[gateway] [39m [33mstartup model warmup timed out after 5000ms; continuing without waiting [39m
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:30:32.428+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41414 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41414->127.0.0.1:18789 conn=971d1865…17de [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:30:41.097+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52674 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52674->127.0.0.1:18789 conn=43378671…850e [39m
-[90m2026-05-16T23:30:41.120+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=971d1865-b44f-45e2-8899-22a0e81417de peer=127.0.0.1:41414->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:30:41.128+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=8682 handshake=pending lastFrameType=req lastFrameMethod=connect lastFrameId=fb6e4620-9242-4133-9117-363ab6e13a63 endpoint=127.0.0.1:41414->127.0.0.1:18789 conn=971d1865…17de [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:30:43.941+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=43378671-db28-4612-b29b-93786934850e peer=127.0.0.1:52674->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:30:43.949+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=2834 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f88777d4-8bf8-4b08-88ad-a6503140944f endpoint=127.0.0.1:52674->127.0.0.1:18789 conn=43378671…850e [39m
-[90m2026-05-16T23:30:46.325+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay,event_loop_utilization interval=30s eventLoopDelayP99Ms=4915.7 eventLoopDelayMaxMs=7520.4 eventLoopUtilization=0.997 cpuCoreRatio=0.588 active=0 waiting=0 queued=0 phase=post-ready.maintenance recentPhases=sidecars.restart-sentinel:1ms,post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms [39m
-[90m2026-05-16T23:30:46.328+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[WARN] WebSocket disconnected
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:30:55.686+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56470 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56470->127.0.0.1:18789 conn=ab9d1db4…24c8 [39m
-[90m2026-05-16T23:30:56.524+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ab9d1db4-a925-4ac0-a81d-b4f5f64724c8 peer=127.0.0.1:56470->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:30:56.542+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=784 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b946823a-10e8-4e7a-9e1a-c5123bd7b1f6 endpoint=127.0.0.1:56470->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:10.668+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34718 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34718->127.0.0.1:18789 conn=d6a7676a…8364 [39m
-[90m2026-05-16T23:31:11.473+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d6a7676a-d72e-4494-8ffa-e291cdfc8364 peer=127.0.0.1:34718->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:31:11.488+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=768 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=dafdec4f-9113-4d4c-b522-f3b9cc88be7c endpoint=127.0.0.1:34718->127.0.0.1:18789 [39m
-[90m2026-05-16T23:31:16.342+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:25.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34732 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34732->127.0.0.1:18789 conn=c870e9d5…56a4 [39m
-[90m2026-05-16T23:31:26.495+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c870e9d5-5edf-4d1e-885b-132517f756a4 peer=127.0.0.1:34732->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:31:26.515+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=775 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f9e75956-bb31-4db4-8fc2-1f766e3b7410 endpoint=127.0.0.1:34732->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:40.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55914 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55914->127.0.0.1:18789 conn=ce362417…110a [39m
-[90m2026-05-16T23:31:41.487+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ce362417-b54d-4d42-80c5-a4d94257110a peer=127.0.0.1:55914->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:31:41.506+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=742 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e46eb41b-b9ff-4634-9582-80f27a2156ab endpoint=127.0.0.1:55914->127.0.0.1:18789 [39m
-[90m2026-05-16T23:31:46.341+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:55.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51550 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51550->127.0.0.1:18789 conn=5cdbac9f…16a3 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:31:56.538+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5cdbac9f-ffaf-4658-873c-6655762d16a3 peer=127.0.0.1:51550->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:31:56.557+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=811 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b57cc220-7179-4228-99a5-31d76dfcc7e1 endpoint=127.0.0.1:51550->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:10.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=54060 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:54060->127.0.0.1:18789 conn=4df8d7d4…ce76 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:11.648+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4df8d7d4-91ca-4d31-9e3c-01335030ce76 peer=127.0.0.1:54060->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:32:11.679+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=890 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d57ec1d8-e950-4e47-98ba-9db0754b2a67 endpoint=127.0.0.1:54060->127.0.0.1:18789 [39m
-[90m2026-05-16T23:32:16.347+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:25.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=43792 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:43792->127.0.0.1:18789 conn=cdb43099…27d5 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:26.568+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=cdb43099-5fe2-470c-b890-9b51ab2a27d5 peer=127.0.0.1:43792->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:32:26.600+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=810 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=63811777-4550-43d1-bf0e-6ea076b108e8 endpoint=127.0.0.1:43792->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:40.695+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56870 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56870->127.0.0.1:18789 conn=805895f1…48ed [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:41.606+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=805895f1-3f92-48f5-a46c-bb98ce1b48ed peer=127.0.0.1:56870->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:32:41.622+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=865 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9df02421-8f0a-4158-bfcc-6a9ad3715409 endpoint=127.0.0.1:56870->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:55.672+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51068 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51068->127.0.0.1:18789 conn=117eb2e6…4b94 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:32:56.483+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=117eb2e6-5a97-449b-b41a-5bfeff764b94 peer=127.0.0.1:51068->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:32:56.498+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=762 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7db722e1-0d14-470a-bff8-2a5d4de90f93 endpoint=127.0.0.1:51068->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:10.680+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33610 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33610->127.0.0.1:18789 conn=c5db2742…ef6a [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:11.461+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c5db2742-c3da-49df-b860-4b4c7afbef6a peer=127.0.0.1:33610->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:11.476+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=737 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d01835b6-0b0b-4033-ba41-61b1c84eab1a endpoint=127.0.0.1:33610->127.0.0.1:18789 [39m
-[90m2026-05-16T23:33:16.347+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=29 eventLoopDelayMaxMs=5612 eventLoopUtilization=0.272 cpuCoreRatio=0.219 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:33:16.366+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:25.699+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39456 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39456->127.0.0.1:18789 conn=846595b1…b9df [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:26.561+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=846595b1-7443-4859-b00b-2d297c4db9df peer=127.0.0.1:39456->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:26.588+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=778 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=5375ac77-9c6f-40c8-86f1-4f17e6b1b90c endpoint=127.0.0.1:39456->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:40.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55108 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55108->127.0.0.1:18789 conn=bc28f32c…2e6b [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:41.477+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bc28f32c-50bb-4eb1-8499-7db531c12e6b peer=127.0.0.1:55108->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:41.493+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=738 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=448c7e5e-9f7f-4ed7-a5f4-4243df5d8e21 endpoint=127.0.0.1:55108->127.0.0.1:18789 [39m
-[90m2026-05-16T23:33:46.348+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:55.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32924 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32924->127.0.0.1:18789 conn=0c17e1e8…1408 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:33:56.481+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0c17e1e8-0f8d-4d8a-aa07-a814cbc41408 peer=127.0.0.1:32924->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:33:56.504+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=759 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4c1a0ee0-c0a1-4382-acd0-d191ea09c7b1 endpoint=127.0.0.1:32924->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:10.677+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41772 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41772->127.0.0.1:18789 conn=4568a3c6…6716 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:11.536+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4568a3c6-dc5b-4233-9c8d-2b92bf4a6716 peer=127.0.0.1:41772->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:11.570+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=786 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=93d879b7-d9da-444a-b8fd-8dfb536fbb84 endpoint=127.0.0.1:41772->127.0.0.1:18789 [39m
-[90m2026-05-16T23:34:16.357+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:25.685+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60710 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60710->127.0.0.1:18789 conn=5713fc04…b800 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:26.499+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=5713fc04-dfed-4d1d-857f-e93e6acdb800 peer=127.0.0.1:60710->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:26.516+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=774 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=da10ea84-d75c-4e68-8b55-13b3fc39f28d endpoint=127.0.0.1:60710->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:40.681+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=59074 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:59074->127.0.0.1:18789 conn=b5c62532…d8dd [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:41.617+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=b5c62532-e9af-4d43-8d29-eb93d892d8dd peer=127.0.0.1:59074->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:41.648+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=812 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c9b5b2bb-d591-4862-b08e-0715aa215fa9 endpoint=127.0.0.1:59074->127.0.0.1:18789 [39m
-[90m2026-05-16T23:34:46.365+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:55.705+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40968 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40968->127.0.0.1:18789 conn=e90fa2e1…6691 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:34:56.497+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e90fa2e1-6a32-4f9c-bc49-3ae442d36691 peer=127.0.0.1:40968->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:34:56.512+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=783 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a81f8100-3dc4-4ad6-951e-77f24c7e0f43 endpoint=127.0.0.1:40968->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:10.671+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55898 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55898->127.0.0.1:18789 conn=ecebf67b…e913 [39m
-[90m2026-05-16T23:35:11.394+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=ecebf67b-b361-4c1d-840b-5b0c62bde913 peer=127.0.0.1:55898->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:35:11.406+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=689 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=56737f3f-76c0-4494-ac9e-16a13db2ac03 endpoint=127.0.0.1:55898->127.0.0.1:18789 [39m
-[90m2026-05-16T23:35:16.365+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=29.6 eventLoopDelayMaxMs=5268 eventLoopUtilization=0.262 cpuCoreRatio=0.208 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:35:16.381+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:25.663+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40342 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40342->127.0.0.1:18789 conn=f4238681…f39c [39m
-[90m2026-05-16T23:35:26.425+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f4238681-5ad4-4a1c-bd32-d72ee24ef39c peer=127.0.0.1:40342->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) [39m
-[90m2026-05-16T23:35:26.445+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 8fc8cff2-8c7d-425d-8947-35ac448c3b01) durationMs=699 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e9fe2239-bdcf-475f-93fd-c93d3c178a71 endpoint=127.0.0.1:40342->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:40.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40298 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40298->127.0.0.1:18789 conn=4fca426f…5321 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:35:41.997+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=4fca426f-c6af-4a15-a121-3c8f62b25321 peer=127.0.0.1:40298->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:35:42.013+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=1253 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f32fd221-a655-4ab0-a719-a00a54fc63e5 endpoint=127.0.0.1:40298->127.0.0.1:18789 [39m
-[90m2026-05-16T23:35:46.362+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:10.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33706 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33706->127.0.0.1:18789 conn=abb1b27c…092d [39m
-[90m2026-05-16T23:36:11.597+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=abb1b27c-983c-45a2-8e39-64835901092d peer=127.0.0.1:33706->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:11.629+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=830 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=521f1adc-c8eb-45b8-ba52-13cca73f76ed endpoint=127.0.0.1:33706->127.0.0.1:18789 [39m
-[90m2026-05-16T23:36:16.366+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:25.677+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40424 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40424->127.0.0.1:18789 conn=9826b9bb…5dee [39m
-[90m2026-05-16T23:36:26.513+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9826b9bb-9e65-4938-902d-149bb6b25dee peer=127.0.0.1:40424->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:26.543+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=747 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d708bd1c-59f7-4877-b543-f9692bda63e7 endpoint=127.0.0.1:40424->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:40.673+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55766 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55766->127.0.0.1:18789 conn=8c6a1478…4d6f [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:41.521+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8c6a1478-01fb-4bbd-a11a-d0fa4bd94d6f peer=127.0.0.1:55766->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:41.546+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=767 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=d7323e70-567d-4bf7-be0d-79076a4335ec endpoint=127.0.0.1:55766->127.0.0.1:18789 [39m
-[90m2026-05-16T23:36:46.369+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:57.197+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36478 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36478->127.0.0.1:18789 conn=91ea72f2…6642 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:36:58.008+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=91ea72f2-8865-4bb7-8f16-7154100c6642 peer=127.0.0.1:36478->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:36:58.023+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=751 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0fdadff2-58c5-4f60-a20c-c61f21daf051 endpoint=127.0.0.1:36478->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:10.681+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45806 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45806->127.0.0.1:18789 conn=3d2e9d06…fd87 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:11.596+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3d2e9d06-8c72-4160-b61d-cc648bbffd87 peer=127.0.0.1:45806->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:37:11.628+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=810 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4a4b526b-ba26-44c1-90b8-e3ab132b98ad endpoint=127.0.0.1:45806->127.0.0.1:18789 [39m
-[90m2026-05-16T23:37:16.371+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=28.3 eventLoopDelayMaxMs=10779.4 eventLoopUtilization=0.432 cpuCoreRatio=0.287 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:37:16.388+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:25.692+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57766 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57766->127.0.0.1:18789 conn=33a3e24d…0a7b [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:26.627+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=33a3e24d-a574-4d87-b6c5-b435b1690a7b peer=127.0.0.1:57766->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:37:26.646+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=870 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=08109dfa-2c29-4595-85a4-5c3f7b759e32 endpoint=127.0.0.1:57766->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:40.704+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46960 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46960->127.0.0.1:18789 conn=dcfceadd…b932 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:41.560+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=dcfceadd-7703-4dcb-9ce2-8dca337fb932 peer=127.0.0.1:46960->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:37:41.583+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=778 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=8d9b696e-ca28-479a-bdad-5fb537d09f46 endpoint=127.0.0.1:46960->127.0.0.1:18789 [39m
-[90m2026-05-16T23:37:46.374+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:55.666+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47134 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47134->127.0.0.1:18789 conn=100551dc…159b [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:37:56.530+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=100551dc-1808-469b-ad0c-99b7905c159b peer=127.0.0.1:47134->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:37:56.569+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=736 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=78046355-ef03-4b92-b2dd-0c4d090ae665 endpoint=127.0.0.1:47134->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:10.685+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42226 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42226->127.0.0.1:18789 conn=63667de0…9ba7 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:11.555+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=63667de0-f87c-43a5-9ef7-bfb9de0a9ba7 peer=127.0.0.1:42226->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:11.569+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=811 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=395c0fc8-d23d-4a2f-a94a-93a1a23c2562 endpoint=127.0.0.1:42226->127.0.0.1:18789 [39m
-[90m2026-05-16T23:38:16.374+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:25.676+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=57414 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:57414->127.0.0.1:18789 conn=236d8d03…bb2a [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:26.547+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=236d8d03-1b40-482f-9c7a-400f8211bb2a peer=127.0.0.1:57414->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:26.571+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=807 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=27c3d756-6894-408a-a85c-f90f107d338a endpoint=127.0.0.1:57414->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:40.675+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=53784 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:53784->127.0.0.1:18789 conn=e18b2f31…0363 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:41.548+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e18b2f31-c9e8-4dee-9c6d-3a2150e70363 peer=127.0.0.1:53784->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:41.580+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=767 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2c814fd2-12c8-4278-a9cb-76420e979325 endpoint=127.0.0.1:53784->127.0.0.1:18789 [39m
-[90m2026-05-16T23:38:46.381+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:55.682+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39650 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39650->127.0.0.1:18789 conn=41a7d781…c80a [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:38:56.567+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=41a7d781-1655-4888-9cdb-2c20bf75c80a peer=127.0.0.1:39650->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:38:56.585+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=840 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=150e03c0-f218-4d89-ada5-c2a46d00932c endpoint=127.0.0.1:39650->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:10.657+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=60850 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:60850->127.0.0.1:18789 conn=7cb33185…9633 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:11.574+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=7cb33185-a62d-46ee-814b-afe8b0309633 peer=127.0.0.1:60850->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:11.594+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=859 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9e5f2733-b551-4040-9d20-33124910c8c4 endpoint=127.0.0.1:60850->127.0.0.1:18789 [39m
-[90m2026-05-16T23:39:16.381+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=26.9 eventLoopDelayMaxMs=4622.1 eventLoopUtilization=0.245 cpuCoreRatio=0.201 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:39:16.397+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:25.683+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45882 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45882->127.0.0.1:18789 conn=43f179b4…1b37 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:26.585+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=43f179b4-afeb-49c7-9faf-8ba2f40d1b37 peer=127.0.0.1:45882->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:26.616+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=804 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=39377277-5c41-4c78-8abb-8a965372e7d5 endpoint=127.0.0.1:45882->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:40.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52050 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52050->127.0.0.1:18789 conn=de21d7c9…29e3 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:41.571+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=de21d7c9-8655-43ea-b84c-9ed50a4529e3 peer=127.0.0.1:52050->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:41.600+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=772 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=2f1b6864-b03c-4dd5-9add-c7994a1340ef endpoint=127.0.0.1:52050->127.0.0.1:18789 [39m
-[90m2026-05-16T23:39:46.376+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:55.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42356 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42356->127.0.0.1:18789 conn=dd87dd91…318d [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:39:56.489+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=dd87dd91-372e-41c2-93e0-5d0f3e3a318d peer=127.0.0.1:42356->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:39:56.503+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=749 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=354bc0aa-f3a2-477e-8a30-652bd84300d5 endpoint=127.0.0.1:42356->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:10.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46876 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46876->127.0.0.1:18789 conn=bc17f569…951e [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:11.592+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bc17f569-79ca-4a6e-a057-12f81cca951e peer=127.0.0.1:46876->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:40:11.623+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=805 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c7be8419-c991-480e-94aa-4f5fcc6ac7c2 endpoint=127.0.0.1:46876->127.0.0.1:18789 [39m
-[90m2026-05-16T23:40:16.385+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:25.698+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=59292 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:59292->127.0.0.1:18789 conn=cd92d2b5…a03c [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:26.587+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=cd92d2b5-2a23-420c-9e83-35b15380a03c peer=127.0.0.1:59292->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) [39m
-[90m2026-05-16T23:40:26.618+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 9220cf0b-1359-452a-80f0-1c6668df1272) durationMs=816 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fbeba5c8-8a6f-4952-addd-cdfd1ebdda1d endpoint=127.0.0.1:59292->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:40.689+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58454 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58454->127.0.0.1:18789 conn=8a51a931…0513 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:40:42.087+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8a51a931-377f-4f84-b1c6-b520ed740513 peer=127.0.0.1:58454->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:40:42.116+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=1333 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6660fee3-9188-4863-84cf-0b9b9595d31e endpoint=127.0.0.1:58454->127.0.0.1:18789 [39m
-[90m2026-05-16T23:40:46.390+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:10.690+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=41434 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:41434->127.0.0.1:18789 conn=552c4394…c93d [39m
-[90m2026-05-16T23:41:11.542+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=552c4394-6cd0-41fd-8bdc-dc4d592fc93d peer=127.0.0.1:41434->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:11.575+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=761 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=615a5edb-24b4-4ed7-b280-faa5a162a0c3 endpoint=127.0.0.1:41434->127.0.0.1:18789 [39m
-[90m2026-05-16T23:41:16.394+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=30.9 eventLoopDelayMaxMs=16693.3 eventLoopUtilization=0.608 cpuCoreRatio=0.345 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:41:16.408+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:25.686+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51908 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51908->127.0.0.1:18789 conn=05dc8766…7dd5 [39m
-[90m2026-05-16T23:41:26.612+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=05dc8766-e9ae-475b-85b6-755bd8017dd5 peer=127.0.0.1:51908->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:26.650+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=853 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0694c176-2f31-4977-b896-418829a10a8d endpoint=127.0.0.1:51908->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:40.691+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36666 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36666->127.0.0.1:18789 conn=159673a8…cdf2 [39m
-[90m2026-05-16T23:41:41.587+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=159673a8-f2e7-43f3-b858-8a082e51cdf2 peer=127.0.0.1:36666->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:41.619+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=821 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=5ebacea6-6e23-4b59-8402-9d532c3190c8 endpoint=127.0.0.1:36666->127.0.0.1:18789 [39m
-[90m2026-05-16T23:41:46.397+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:55.682+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=43018 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:43018->127.0.0.1:18789 conn=25eadff3…a908 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:41:56.589+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=25eadff3-8e0d-4e78-85c1-55c0b1f6a908 peer=127.0.0.1:43018->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:41:56.615+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=797 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c7a0f01f-9b50-45a8-96dd-4e4776610e54 endpoint=127.0.0.1:43018->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:10.680+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33558 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33558->127.0.0.1:18789 conn=e3726dd2…c439 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:11.454+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e3726dd2-aafa-4ded-81fa-253ff1f4c439 peer=127.0.0.1:33558->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:42:11.482+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=728 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e75c3d85-c4d5-4b19-b743-f392e758a8f3 endpoint=127.0.0.1:33558->127.0.0.1:18789 [39m
-[90m2026-05-16T23:42:16.400+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:25.684+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=45510 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:45510->127.0.0.1:18789 conn=df3cb8d1…bfba [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:26.521+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=df3cb8d1-5114-4b6e-8931-ce339166bfba peer=127.0.0.1:45510->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:42:26.544+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=790 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=39fbf1f6-1b0f-48a6-9d4e-b69ccb35486c endpoint=127.0.0.1:45510->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:40.693+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46472 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46472->127.0.0.1:18789 conn=d5171b10…1bbb [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:41.563+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d5171b10-7e97-4c89-8c90-166c62031bbb peer=127.0.0.1:46472->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) [39m
-[90m2026-05-16T23:42:41.589+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: d2e9f7da-9308-4af6-b277-4afdc729404c) durationMs=800 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a62b812c-c908-488f-bf50-48be1b1fd3f2 endpoint=127.0.0.1:46472->127.0.0.1:18789 [39m
-[90m2026-05-16T23:42:46.403+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:55.678+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35056 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35056->127.0.0.1:18789 conn=968b21be…fd1f [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:42:56.670+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=968b21be-609e-4991-b153-e312d3effd1f peer=127.0.0.1:35056->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:42:56.696+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=877 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7cb39c92-7ad5-4b2a-9f1b-2f40d7d1d181 endpoint=127.0.0.1:35056->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:10.694+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=51218 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:51218->127.0.0.1:18789 conn=bc39215d…0a1e [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:11.534+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=bc39215d-7be6-4fcc-af8f-e39501230a1e peer=127.0.0.1:51218->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:43:11.560+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=816 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4be0e68b-e7c8-4f54-acc4-f4528aefde3d endpoint=127.0.0.1:51218->127.0.0.1:18789 [39m
-[90m2026-05-16T23:43:16.392+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=36.1 eventLoopDelayMaxMs=4634.7 eventLoopUtilization=0.252 cpuCoreRatio=0.204 active=0 waiting=0 queued=0 recentPhases=post-attach.update-sentinel:1ms,sidecars.subagent-recovery:200ms,sidecars.main-session-recovery:200ms,sidecars.session-locks:306ms,sidecars.model-prewarm:6279ms,post-ready.maintenance:2021ms [39m
-[90m2026-05-16T23:43:16.403+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[90m2026-05-16T23:43:19.651+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46590 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46590->127.0.0.1:18789 conn=c47ee2de…71f2 [39m
-[90m2026-05-16T23:43:20.742+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c47ee2de-8fc6-4ee6-8701-8ab7588471f2 peer=127.0.0.1:46590->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 24674646-1faf-42e2-910b-318c9748f71d) [39m
-[90m2026-05-16T23:43:20.809+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 24674646-1faf-42e2-910b-318c9748f71d) durationMs=977 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0fbe11d9-7c93-4038-812a-c146729ea510 endpoint=127.0.0.1:46590->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:25.636+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46606 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46606->127.0.0.1:18789 conn=9fa8936a…36d6 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:26.326+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=9fa8936a-e097-45bf-9e31-8db7dcd936d6 peer=127.0.0.1:46606->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 11f4e941-205d-4027-b955-9db57f05e915) [39m
-[90m2026-05-16T23:43:26.340+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 11f4e941-205d-4027-b955-9db57f05e915) durationMs=672 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=31d35122-3db3-44e4-b28b-339530085eaa endpoint=127.0.0.1:46606->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:40.648+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44836 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44836->127.0.0.1:18789 conn=223cb1ab…8bb1 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:42.013+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=223cb1ab-14c5-4358-bdf7-43d359888bb1 peer=127.0.0.1:44836->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 436313bf-07ad-4048-987c-7a3c653a4b26) [39m
-[90m2026-05-16T23:43:42.055+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 436313bf-07ad-4048-987c-7a3c653a4b26) durationMs=1288 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a640acf9-d627-4386-9f59-254f5a0a2035 endpoint=127.0.0.1:44836->127.0.0.1:18789 [39m
-[90m2026-05-16T23:43:44.837+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44848 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44848->127.0.0.1:18789 conn=4198632d…655e [39m
-[90m2026-05-16T23:43:44.924+00:00 [39m [36m[gateway] [39m [36mdevice pairing auto-approved device=c8dc204c760877b016210f331677d4eb8107cef9d0b7283b237c3cac671727e1 role=operator [39m
-[90m2026-05-16T23:43:44.945+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
-[90m2026-05-16T23:43:44.957+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
-[90m2026-05-16T23:43:51.365+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=15 [39m
-[90m2026-05-16T23:43:51.373+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:55.625+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=16 [39m
-[90m2026-05-16T23:43:55.645+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=10817 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=b0876893-e02d-431d-815b-2f9108ea6a2b endpoint=127.0.0.1:44848->127.0.0.1:18789 [39m
-[90m2026-05-16T23:43:55.657+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35336 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35336->127.0.0.1:18789 conn=ad5d99ec…86c9 [39m
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:43:56.305+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35350 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35350->127.0.0.1:18789 conn=a4018b29…441c [39m
-[90m2026-05-16T23:43:57.514+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 1879ms conn=4198632d…655e id=b0876893…6a2b [39m
-[90m2026-05-16T23:43:57.552+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=ad5d99ec…86c9 [39m
-[90m2026-05-16T23:43:57.562+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:02.345+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=17 [39m
-[90m2026-05-16T23:44:02.373+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a4018b29-6ac3-40e0-85fb-69ae8beb441c peer=127.0.0.1:35350->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 042e6c89-bb5d-445b-bbb8-efcfc0275a39) [39m
-[90m2026-05-16T23:44:02.381+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 042e6c89-bb5d-445b-bbb8-efcfc0275a39) durationMs=6062 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4d511fa4-b6a9-4281-b290-81ca87446d3b endpoint=127.0.0.1:35350->127.0.0.1:18789 conn=a4018b29…441c [39m
-[90m2026-05-16T23:44:02.392+00:00 [39m [36m[ws] [39m [36m⇄ res ✗ device.pair.approve 35ms errorCode=INVALID_REQUEST errorMessage=unknown requestId conn=ad5d99ec…86c9 id=1478ee7a…9953 [39m
-[90m2026-05-16T23:44:02.411+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=6754 handshake=connected lastFrameType=req lastFrameMethod=device.pair.approve lastFrameId=1478ee7a-60e6-4e96-b77f-e7b7aedd9953 endpoint=127.0.0.1:35336->127.0.0.1:18789 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:10.661+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35624 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35624->127.0.0.1:18789 conn=1c260b22…62c4 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:11.494+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1c260b22-7b87-480d-9e1f-cf7d285b62c4 peer=127.0.0.1:35624->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1008 reason=pairing required: device is not approved yet (requestId: 87befdd1-c003-40f7-bb16-3fd5032ca5f7) [39m
-[90m2026-05-16T23:44:11.512+00:00 [39m [36m[ws] [39m [36m→ close code=1008 reason=pairing required: device is not approved yet (requestId: 87befdd1-c003-40f7-bb16-3fd5032ca5f7) durationMs=784 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=310ab66a-a08c-430d-8665-50cdf61f7505 endpoint=127.0.0.1:35624->127.0.0.1:18789 [39m
-[90m2026-05-16T23:44:21.382+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
-[INFO] Connecting WebSocket...
-[WARN] WebSocket disconnected
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:25.667+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36436 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36436->127.0.0.1:18789 conn=d59f64a9…c422 [39m
-[90m2026-05-16T23:44:26.034+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=36450 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:36450->127.0.0.1:18789 conn=9fbf2cd0…7fa4 [39m
-[90m2026-05-16T23:44:26.116+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token [39m
-[90m2026-05-16T23:44:26.133+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
-[WARN] WebSocket connect failed — will retry on next health tick
-[WARN] WebSocket disconnected
-[90m2026-05-16T23:44:33.776+00:00 [39m [36m[ws] [39m [36m→ event health seq=per-client clients=1 presenceVersion=1 healthVersion=18 [39m
-[90m2026-05-16T23:44:33.792+00:00 [39m [36m[ws] [39m [36m→ event tick seq=per-client clients=1 [39m
-[90m2026-05-16T23:44:33.823+00:00 [39m [36m[ws] [39m [36m⇄ res ✓ device.pair.list 16ms id=c7978750…9916 [39m
-[90m2026-05-16T23:44:33.848+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=7827 handshake=connected lastFrameType=req lastFrameMethod=device.pair.list lastFrameId=c7978750-c92c-43b2-ae70-30f49ee99916 endpoint=127.0.0.1:36450->127.0.0.1:18789 [39m
-[90m2026-05-16T23:44:33.867+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=56394 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:56394->127.0.0.1:18789 conn=0a744670…2b9b [39m
-[90m2026-05-16T23:44:33.969+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d59f64a9-639d-45b0-b9b2-b1e23dc6c422 peer=127.0.0.1:36436->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
-[90m2026-05-16T23:44:33.988+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=8289 cause=pairing-required handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b1d94681-ee4f-4446-a86a-7281fa5bb9f5 endpoint=127.0.0.1:36436->127.0.0.1:18789 conn=d59f64a9…c422 [39m
-[90m2026-05-16T23:44:34.076+00:00 [39m [36m[ws] [39m [36m← connect client=cli version=2026.5.4 mode=cli clientId=cli platform=linux auth=token conn=0a744670…2b9b [39m
-[90m2026-05-16T23:44:34.099+00:00 [39m [36m[ws] [39m [36m→ hello-ok methods=154 events=25 presence=1 stateVersion=1 [39m
+
+
+Node logs in full. Do not when Gateway starts it takes over 4 mins whilst just showing auth token acquired before it actually started any logs after. Device is disabled, I had to manually enable it after I saw logs start to move in the Gateway logs or just before::::
+
+
+
+
+
+
+
+  🦞 LOBSTER-24f0...8646
+  =====================
+
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] Connection failed: SocketException: Connection refused (OS Error: Connection refused, errno = 111), address = 127.0.0.1, port = 35706
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] Connection failed: SocketException: Connection refused (OS Error: Connection refused, errno = 111), address = 127.0.0.1, port = 37366
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] Connection failed: SocketException: Connection refused (OS Error: Connection refused, errno = 111), address = 127.0.0.1, port = 35482
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] Connection failed: SocketException: Connection refused (OS Error: Connection refused, errno = 111), address = 127.0.0.1, port = 44108
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] WebSocket connected, awaiting challenge...
+[NODE] Challenge received
+[NODE] Gateway token read from openclaw.json
+[NODE] No cached node device token — using first-time pairing path
+[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
+[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
+[NODE] Connect frame platform=android
+[NODE] Connect response ok=false payload=null
+[NODE] Not paired or token invalid, gateway will close with 1008...
+[NODE] Disconnected, will retry in 5s...
+[NODE] Pairing required (1008) — approving request 6ddf09f7-dbe7-49ea-bcee-f1b314d52f94 via OpenClaw CLI...
+[NODE] Gateway token read from openclaw.json
+[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)
+[NODE] Plain CLI approval failed; retrying with explicit gateway URL/token. Error: PlatformException(PROOT_ERROR, Command failed (exit code 1): [openclaw] Failed to start CLI: GatewayTransportError: gateway timeout after 10000ms
+Gateway target: ws://127.0.0.1:18789
+Source: local loopback
+Config: /root/.openclaw/openclaw.json
+Bind: loopback
+    at createGatewayTimeoutTransportError (file:///usr/local/lib/node_modules/openclaw/dist/call-DBcRF6-K.js:249:9)
+    at Timeout.<anonymous> (file:///usr/local/lib/node_modules/openclaw/dist/call-DBcRF6-K.js:333:9)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7)
+, null, null)
+[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)
+[NODE] Pairing approval failed: PlatformException(PROOT_ERROR, Command failed (exit code 1): gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: 9ed0ba4c-cab8-432a-a678-114afaade640)
+[openclaw] Failed to start CLI: GatewayTransportError: gateway closed (1008): pairing required: device is asking for more scopes than currently approved (requestId: 9ed0ba4c-cab8-432a-a678-114afaade
+Gateway target: ws://127.0.0.1:18789
+Source: cli --url
+Config: /root/.openclaw/openclaw.json
+    at createGatewayCloseTransportError (file:///usr/local/lib/node_modules/openclaw/dist/call-DBcRF6-K.js:240:9)
+    at Object.onClose (file:///usr/local/lib/node_modules/openclaw/dist/call-DBcRF6-K.js:324:10)
+    at WebSocket.<anonymous> (file:///usr/local/lib/node_modules/openclaw/dist/client-CJNH0Xdy.js:347:24)
+    at WebSocket.emit (node:events:518:28)
+    at WebSocket.emitClose (/usr/local/lib/node_modules/openclaw/node_modules/ws/lib/websocket.js:273:10)
+    at Socket.socketOnClose (/usr/local/lib/node_modules/openclaw/node_modules/ws/lib/websocket.js:1346:15)
+    at Socket.emit (node:events:518:28)
+    at TCP.<anonymous> (node:net:351:12)
+, null, null)
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] WebSocket connected, awaiting challenge...
+[NODE] Challenge received
+[NODE] No cached node device token — using first-time pairing path
+[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
+[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
+[NODE] Connect frame platform=android
+[NODE] Connect response ok=false payload=null
+[NODE] Not paired or token invalid, gateway will close with 1008...
+[NODE] Disconnected, will retry in 5s...
+[NODE] Pairing required (1008) — approving request aba4b7f1-e68b-4630-a828-a6ec1fe74c25 via OpenClaw CLI...
+[NODE] Gateway token read from openclaw.json
+[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)
+[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)
+[NODE] Plain CLI approval failed; retrying with explicit gateway URL/token. Error: PlatformException(PROOT_ERROR, Command failed (exit code 1): gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: 3e3f5e13-7f1a-490f-889f-098a00634964)
+[openclaw] Failed to start CLI: Error: invalid scope for requested roles: agent
+    at approvePairingWithFallback (file:///usr/local/lib/node_modules/openclaw/dist/devices-cli-4iFIdM7C.js:153:46)
+    at async Command.<anonymous> (file:///usr/local/lib/node_modules/openclaw/dist/devices-cli-4iFIdM7C.js:519:18)
+    at async Command.parseAsync (/usr/local/lib/node_modules/openclaw/node_modules/commander/lib/command.js:1122:5)
+    at async Object.measure (file:///usr/local/lib/node_modules/openclaw/dist/cli/run-main.js:109:12)
+    at async runCli (file:///usr/local/lib/node_modules/openclaw/dist/cli/run-main.js:457:5)
+    at async runMainOrRootHelp (file:///usr/local/lib/node_modules/openclaw/dist/entry.js:411:3)
+    at async file:///usr/local/lib/node_modules/openclaw/dist/entry.js:381:55
+, null, null)
+[NODE] Pairing approval failed: PlatformException(PROOT_ERROR, Command failed (exit code 1): gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: 3e3f5e13-7f1a-490f-889f-098a00634964)
+[openclaw] Failed to start CLI: GatewayTransportError: gateway closed (1008): pairing required: device is asking for more scopes than currently approved (requestId: 3e3f5e13-7f1a-490f-889f-098a00634
+Gateway target: ws://127.0.0.1:18789
+Source: cli --url
+Config: /root/.openclaw/openclaw.json
+    at createGatewayCloseTransportError (file:///usr/local/lib/node_modules/openclaw/dist/call-DBcRF6-K.js:240:9)
+    at Object.onClose (file:///usr/local/lib/node_modules/openclaw/dist/call-DBcRF6-K.js:324:10)
+    at WebSocket.<anonymous> (file:///usr/local/lib/node_modules/openclaw/dist/client-CJNH0Xdy.js:347:24)
+    at WebSocket.emit (node:events:518:28)
+    at WebSocket.emitClose (/usr/local/lib/node_modules/openclaw/node_modules/ws/lib/websocket.js:273:10)
+    at Socket.socketOnClose (/usr/local/lib/node_modules/openclaw/node_modules/ws/lib/websocket.js:1346:15)
+    at Socket.emit (node:events:518:28)
+    at TCP.<anonymous> (node:net:351:12)
+, null, null)
+[NODE] Connecting to 127.0.0.1:18789...
+[NODE] WebSocket connected, awaiting challenge...
+[NODE] Challenge received
+[NODE] No cached node device token — using first-time pairing path
+[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
+[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
+[NODE] Connect frame platform=android
+[NODE] Connect response ok=false payload=null
+[NODE] Not paired or token invalid, gateway will close with 1008...
+[NODE] Disconnected, will retry in 5s...
+[NODE] Pairing required (1008) — approving request 803688e4-7937-44c2-9db8-340ef624ffa2 via OpenClaw CLI...
+[NODE] Gateway token read from openclaw.json
+[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)
+[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)

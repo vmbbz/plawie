@@ -577,10 +577,8 @@ PARAMETER num_batch 512
       // Now re-probe the fresh token (after the possible reload/restart)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
-      // Token confirmed → gateway process is alive and config-readable.
-      // Set running now so NodeProvider fires _checkAutoConnect() immediately
-      // without waiting for the operator WS to be established.
-      _updateState(_state.copyWith(status: GatewayStatus.running));
+      _addActivity(
+          '[INFO] Gateway token confirmed; waiting for HTTP readiness...');
 
       _subscribeLogs();
       _startHealthCheck();
@@ -2400,6 +2398,7 @@ PARAMETER num_batch 512
         timeout: 40,
       );
     } catch (e) {
+      if (_isPairingApprovalBlockedError(e)) rethrow;
       if (token == null || token.isEmpty) rethrow;
       _addActivity(
           '[INFO] Plain operator approval failed; retrying with explicit local gateway auth');
@@ -2419,6 +2418,14 @@ PARAMETER num_batch 512
         timeout: 40,
       );
     }
+  }
+
+  bool _isPairingApprovalBlockedError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('scope upgrade pending approval') ||
+        message.contains(
+            'device is asking for more scopes than currently approved') ||
+        message.contains('invalid scope for requested roles');
   }
 
   Future<String?> _resolvePendingDeviceRequestId({
@@ -2467,28 +2474,6 @@ PARAMETER num_batch 512
 
       if (response.statusCode < 500) {
         _consecutiveFailures = 0; // Success — reset failure counter
-        // Mark gateway as running on first successful probe
-        if (_state.status != GatewayStatus.running) {
-          _updateState(_state.copyWith(
-            status: GatewayStatus.running,
-            startedAt: _state.startedAt ?? DateTime.now(),
-            logs: [..._state.logs, '[INFO] Gateway is healthy'],
-          ));
-          // Eagerly warm the dashboard auth token in the background so that
-          // opening WebDashboardScreen feels instant (token is already cached).
-          unawaited(fetchAuthenticatedDashboardUrl(force: false)
-              .catchError((_) => null));
-          // After gateway (re)start, only re-probe Ollama when the selected
-          // model is local. Cloud/default users should not hit the hub path.
-          if (!_state.isOllamaRunning) {
-            unawaited(Future(() async {
-              if (await _configuredModelNeedsLocalOllama() &&
-                  await checkOllamaHealth()) {
-                unawaited(syncLocalModelsWithOllama());
-              }
-            }));
-          }
-        }
 
         // ── 2. Single token retrieval (with timeout) ─────────────────────
         String? token;
@@ -2509,6 +2494,30 @@ PARAMETER num_batch 512
           // Actively probe for token in background so it's ready before the next tick
           unawaited(fetchAuthenticatedDashboardUrl(force: true));
           return;
+        }
+
+        // Mark running only after both checks pass: config token is readable
+        // and the HTTP listener is answering. A token alone is not readiness.
+        if (_state.status != GatewayStatus.running) {
+          _updateState(_state.copyWith(
+            status: GatewayStatus.running,
+            startedAt: _state.startedAt ?? DateTime.now(),
+            logs: [..._state.logs, '[INFO] Gateway is healthy'],
+          ));
+          // Eagerly warm the dashboard auth token in the background so that
+          // opening WebDashboardScreen feels instant (token is already cached).
+          unawaited(fetchAuthenticatedDashboardUrl(force: false)
+              .catchError((_) => null));
+          // After gateway (re)start, only re-probe Ollama when the selected
+          // model is local. Cloud/default users should not hit the hub path.
+          if (!_state.isOllamaRunning) {
+            unawaited(Future(() async {
+              if (await _configuredModelNeedsLocalOllama() &&
+                  await checkOllamaHealth()) {
+                unawaited(syncLocalModelsWithOllama());
+              }
+            }));
+          }
         }
 
         if (_pairingResolveAttempted) {

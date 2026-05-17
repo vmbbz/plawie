@@ -14,7 +14,9 @@ import 'openclaw_service.dart';
 class NodeService {
   static final NodeService _instance = NodeService._internal();
   factory NodeService() => _instance;
-  NodeService._internal();
+  NodeService._internal() {
+    _ws.onReconnectReady = _handleSocketReconnectReady;
+  }
 
   final DeviceIdentity _identity = DeviceIdentity.instance;
   final NodeWsService _ws = NodeWsService();
@@ -24,12 +26,15 @@ class NodeService {
   StreamSubscription? _warmingUpSubscription;
   bool _pairingResolveAttempted = false;
   bool _connectInFlight = false;
+  DateTime? _pairingRetryNotBefore;
+  int _pairingApprovalFailureCount = 0;
 
   NodeState _state = const NodeState();
   final Map<String, Future<NodeFrame> Function(String, Map<String, dynamic>)>
       _capabilityHandlers = {};
   String? _gatewayAuthToken;
   Completer<String?>? _challengeCompleter;
+  String? _pendingChallengeNonce;
   static final _requestIdPattern = RegExp(r'^[a-f0-9-]{16,}$');
 
   Stream<NodeState> get stateStream => _stateController.stream;
@@ -112,6 +117,16 @@ class NodeService {
       log('[NODE] Pairing in progress — skipping duplicate connect (pairingResolveAttempted=true)');
       return;
     }
+    final retryAt = _pairingRetryNotBefore;
+    if (retryAt != null) {
+      final now = DateTime.now();
+      if (now.isBefore(retryAt)) {
+        final waitSeconds = retryAt.difference(now).inSeconds;
+        log('[NODE] Pairing approval backoff active — retry in ${waitSeconds}s');
+        return;
+      }
+      _pairingRetryNotBefore = null;
+    }
     _connectInFlight = true;
     try {
       // STRONGER guard: wait for bootstrap OR gateway startup.
@@ -139,21 +154,7 @@ class NodeService {
       ));
       log('[NODE] Connecting to $targetHost:$targetPort...');
 
-      _frameSubscription?.cancel();
-      _frameSubscription = _ws.frameStream.listen(_onFrame);
-      _pairingSubscription?.cancel();
-      _pairingSubscription = _ws.pairingRequiredStream.listen((requestId) {
-        // One-shot: cancel immediately so subsequent 1008 closes on stray
-        // reconnect attempts don't trigger a second concurrent approval flow.
-        _pairingSubscription?.cancel();
-        _pairingSubscription = null;
-        _handleNodePairingRequired(requestId);
-      });
-      _warmingUpSubscription?.cancel();
-      _warmingUpSubscription = _ws.warmingUpStream.listen((_) {
-        log('[NODE] Gateway is warming up. Entering grace period...');
-        _updateState(_state.copyWith(status: NodeStatus.warmingUp));
-      });
+      _attachWsListeners();
 
       _challengeCompleter = Completer<String?>();
       await _ws.connect(targetHost, targetPort);
@@ -163,15 +164,8 @@ class NodeService {
       // The gateway sends connect.challenge proactively on connection open.
       // For localhost trusted devices it may skip the challenge — 800ms timeout then proceed.
       // Sending nonce: '' causes INVALID_REQUEST (schema requires min 1 char when present).
-      String challengeNonce;
-      try {
-        challengeNonce = await _challengeCompleter!.future
-                .timeout(const Duration(milliseconds: 3000)) ??
-            '';
-      } catch (_) {
-        challengeNonce =
-            ''; // No challenge within timeout — send without nonce field
-      }
+      final challengeNonce =
+          await _awaitChallengeNonce(const Duration(milliseconds: 3000));
       await _sendConnect(challengeNonce);
     } catch (e) {
       _updateState(_state.copyWith(
@@ -179,6 +173,72 @@ class NodeService {
         errorMessage: 'Connection failed: $e',
       ));
       log('[NODE] Connection failed: $e');
+    } finally {
+      _connectInFlight = false;
+    }
+  }
+
+  void _attachWsListeners() {
+    _frameSubscription?.cancel();
+    _frameSubscription = _ws.frameStream.listen(_onFrame);
+    _pairingSubscription?.cancel();
+    _pairingSubscription = _ws.pairingRequiredStream.listen((requestId) {
+      // One-shot: cancel immediately so subsequent 1008 closes on stray
+      // reconnect attempts don't trigger a second concurrent approval flow.
+      _pairingSubscription?.cancel();
+      _pairingSubscription = null;
+      _handleNodePairingRequired(requestId);
+    });
+    _warmingUpSubscription?.cancel();
+    _warmingUpSubscription = _ws.warmingUpStream.listen((_) {
+      log('[NODE] Gateway is warming up. Entering grace period...');
+      _updateState(_state.copyWith(status: NodeStatus.warmingUp));
+    });
+  }
+
+  Future<String> _awaitChallengeNonce(Duration timeout) async {
+    final pendingNonce = _pendingChallengeNonce;
+    if (pendingNonce != null) {
+      _pendingChallengeNonce = null;
+      _challengeCompleter = null;
+      return pendingNonce;
+    }
+
+    _challengeCompleter ??= Completer<String?>();
+    try {
+      return await _challengeCompleter!.future.timeout(timeout) ?? '';
+    } catch (_) {
+      return '';
+    } finally {
+      _pendingChallengeNonce = null;
+      _challengeCompleter = null;
+    }
+  }
+
+  Future<void> _handleSocketReconnectReady() async {
+    if (_state.status == NodeStatus.disabled ||
+        _pairingResolveAttempted ||
+        _connectInFlight) {
+      return;
+    }
+
+    final retryAt = _pairingRetryNotBefore;
+    if (retryAt != null && DateTime.now().isBefore(retryAt)) return;
+
+    _connectInFlight = true;
+    try {
+      _updateState(_state.copyWith(status: NodeStatus.connecting));
+      log('[NODE] WebSocket reconnected, completing handshake...');
+      _challengeCompleter = Completer<String?>();
+      final challengeNonce =
+          await _awaitChallengeNonce(const Duration(milliseconds: 800));
+      await _sendConnect(challengeNonce);
+    } catch (e) {
+      _updateState(_state.copyWith(
+        status: NodeStatus.error,
+        errorMessage: 'Reconnect handshake failed: $e',
+      ));
+      log('[NODE] Reconnect handshake failed: $e');
     } finally {
       _connectInFlight = false;
     }
@@ -198,19 +258,13 @@ class NodeService {
             status: NodeStatus.disconnected,
             clearConnectedAt: true,
           ));
-          log('[NODE] Disconnected, will retry in 5s...');
-          Future.delayed(const Duration(seconds: 5), () {
-            if (_state.status == NodeStatus.disconnected &&
-                !_connectInFlight &&
-                !_pairingResolveAttempted) {
-              connect();
-            }
-          });
+          log('[NODE] Disconnected; reconnect delegated to socket backoff/watchdog');
         }
         break;
 
       case 'connect.challenge':
         final nonce = frame.payload?['nonce'] as String?;
+        _pendingChallengeNonce = nonce ?? '';
         if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
           _challengeCompleter!.complete(nonce ?? '');
         }
@@ -393,6 +447,8 @@ class NodeService {
   }
 
   void _onConnected(NodeFrame frame) {
+    _pairingRetryNotBefore = null;
+    _pairingApprovalFailureCount = 0;
     _updateState(_state.copyWith(
       status: NodeStatus.paired,
       connectedAt: DateTime.now(),
@@ -491,6 +547,7 @@ class NodeService {
     // Reusing stale auth details keeps superseding pending request IDs.
     prefs.nodeDeviceToken = null;
 
+    var approved = false;
     try {
       if (requestId == null ||
           requestId.isEmpty ||
@@ -507,14 +564,45 @@ class NodeService {
         } else {
           log('[NODE] Device approved; token will be learned on next successful connect');
         }
+        approved = true;
+        _pairingApprovalFailureCount = 0;
+        _pairingRetryNotBefore = null;
       }
     } catch (e) {
+      _pairingApprovalFailureCount++;
+      final blocked = _isPairingApprovalBlockedError(e);
+      final exhausted = _pairingApprovalFailureCount >= 3;
       log('[NODE] Pairing approval failed: $e');
+      _updateState(_state.copyWith(
+        status: NodeStatus.error,
+        errorMessage: blocked
+            ? 'Pairing approval blocked by operator scope upgrade. Repair operator approval before retrying.'
+            : 'Pairing approval failed: $e',
+      ));
+      if (blocked || exhausted) {
+        _pairingRetryNotBefore = DateTime.now().add(const Duration(minutes: 5));
+        log(blocked
+            ? '[NODE] Pairing approval blocked; suppressing automatic retries'
+            : '[NODE] Pairing approval failed repeatedly; suppressing automatic retries');
+      }
     }
 
     await _ws.disconnect();
     _pairingResolveAttempted = false;
-    unawaited(connect());
+    if (approved) {
+      _attachWsListeners();
+      _ws.resumeReconnect(delayMs: 1500);
+      return;
+    }
+
+    if (_pairingRetryNotBefore == null) {
+      final retryDelaySeconds = _pairingApprovalFailureCount == 1 ? 30 : 60;
+      _pairingRetryNotBefore =
+          DateTime.now().add(Duration(seconds: retryDelaySeconds));
+      log('[NODE] Pairing approval will retry in ${retryDelaySeconds}s');
+      _attachWsListeners();
+      _ws.resumeReconnect(delayMs: retryDelaySeconds * 1000);
+    }
   }
 
   Future<String?> _approveNodeViaDevicePairing(String requestId) async {
@@ -522,29 +610,19 @@ class NodeService {
     _gatewayAuthToken ??= await _readGatewayToken();
     final gatewayUrl =
         'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
-    final requestIdToApprove = await _resolvePendingDeviceRequestId(
-          fallbackRequestId: requestId,
-          gatewayUrl: gatewayUrl,
-          token: _gatewayAuthToken,
-        ) ??
-        requestId;
+    final requestIdToApprove = requestId.trim();
     try {
       await NativeBridge.runInProot(
           'openclaw devices approve $requestIdToApprove --json',
           timeout: 40);
     } catch (e) {
+      if (_isPairingApprovalBlockedError(e)) rethrow;
       // Fallback for builds that require explicit gateway endpoint/auth args.
       final gatewayToken = _gatewayAuthToken;
       if (gatewayToken == null || gatewayToken.isEmpty) rethrow;
-      final retryRequestId = await _resolvePendingDeviceRequestId(
-            fallbackRequestId: requestId,
-            gatewayUrl: gatewayUrl,
-            token: gatewayToken,
-          ) ??
-          requestIdToApprove;
       log('[NODE] Plain CLI approval failed; retrying with explicit gateway URL/token. Error: $e');
       await NativeBridge.runInProot(
-        'openclaw devices approve $retryRequestId '
+        'openclaw devices approve $requestIdToApprove '
         '--url ${NativeBridge.shellQuote(gatewayUrl)} '
         '--token ${NativeBridge.shellQuote(gatewayToken)} '
         '--json',
@@ -555,29 +633,12 @@ class NodeService {
     return _readApprovedNodeTokenFromStore();
   }
 
-  Future<String?> _resolvePendingDeviceRequestId({
-    required String fallbackRequestId,
-    required String gatewayUrl,
-    required String? token,
-  }) async {
-    try {
-      final explicitArgs = token != null && token.isNotEmpty
-          ? ' --url ${NativeBridge.shellQuote(gatewayUrl)}'
-              ' --token ${NativeBridge.shellQuote(token)}'
-          : '';
-      final output = await NativeBridge.runInProot(
-        'openclaw devices list --json$explicitArgs',
-        timeout: 20,
-      );
-      return NativeBridge.extractPendingDeviceRequestId(
-        output,
-        requestedId: fallbackRequestId,
-        deviceId: _identity.deviceId,
-        role: AppConstants.nodeRole,
-      );
-    } catch (_) {
-      return null;
-    }
+  bool _isPairingApprovalBlockedError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('scope upgrade pending approval') ||
+        message.contains(
+            'device is asking for more scopes than currently approved') ||
+        message.contains('invalid scope for requested roles');
   }
 
   Future<String?> _readApprovedNodeTokenFromStore() async {

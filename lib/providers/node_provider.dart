@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../app.dart';
 import '../services/native_bridge.dart';
 import '../services/node_service.dart';
 import '../services/preferences_service.dart';
@@ -105,7 +103,8 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       // WebSocket went stale while in background — force reconnect
       await _nodeService.disconnect();
       await _nodeService.connect();
-    } else if (!_state.isPaired && !_state.isConnecting) {
+    } else if (_state.status == NodeStatus.disconnected ||
+        _state.status == NodeStatus.warmingUp) {
       // Connection dropped while in background
       await _nodeService.connect();
     }
@@ -130,37 +129,51 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   void _registerCapabilities() {
     _nodeService.registerCapability(
       _cameraCapability.name,
-      _cameraCapability.commands.map((c) => '${_cameraCapability.name}.$c').toList(),
+      _cameraCapability.commands
+          .map((c) => '${_cameraCapability.name}.$c')
+          .toList(),
       (cmd, params) => _cameraCapability.handleWithPermission(cmd, params),
     );
     _nodeService.registerCapability(
       _canvasCapability.name,
-      _canvasCapability.commands.map((c) => '${_canvasCapability.name}.$c').toList(),
+      _canvasCapability.commands
+          .map((c) => '${_canvasCapability.name}.$c')
+          .toList(),
       (cmd, params) => _canvasCapability.handle(cmd, params),
     );
     _nodeService.registerCapability(
       _locationCapability.name,
-      _locationCapability.commands.map((c) => '${_locationCapability.name}.$c').toList(),
+      _locationCapability.commands
+          .map((c) => '${_locationCapability.name}.$c')
+          .toList(),
       (cmd, params) => _locationCapability.handleWithPermission(cmd, params),
     );
     _nodeService.registerCapability(
       _screenCapability.name,
-      _screenCapability.commands.map((c) => '${_screenCapability.name}.$c').toList(),
+      _screenCapability.commands
+          .map((c) => '${_screenCapability.name}.$c')
+          .toList(),
       (cmd, params) => _screenCapability.handle(cmd, params),
     );
     _nodeService.registerCapability(
       _flashCapability.name,
-      _flashCapability.commands.map((c) => '${_flashCapability.name}.$c').toList(),
+      _flashCapability.commands
+          .map((c) => '${_flashCapability.name}.$c')
+          .toList(),
       (cmd, params) => _flashCapability.handleWithPermission(cmd, params),
     );
     _nodeService.registerCapability(
       _vibrationCapability.name,
-      _vibrationCapability.commands.map((c) => '${_vibrationCapability.name}.$c').toList(),
+      _vibrationCapability.commands
+          .map((c) => '${_vibrationCapability.name}.$c')
+          .toList(),
       (cmd, params) => _vibrationCapability.handle(cmd, params),
     );
     _nodeService.registerCapability(
       _sensorCapability.name,
-      _sensorCapability.commands.map((c) => '${_sensorCapability.name}.$c').toList(),
+      _sensorCapability.commands
+          .map((c) => '${_sensorCapability.name}.$c')
+          .toList(),
       (cmd, params) => _sensorCapability.handleWithPermission(cmd, params),
     );
   }
@@ -177,10 +190,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Connection is triggered via onGatewayStateUpdate once the gateway
       // is confirmed to be running, or by the watchdog.
       _startWatchdog();
-      
+
       // REGISTER DEVICE NODES
       await _registerDeviceNodes();
-      
+
       _startWatchdog();
     }
   }
@@ -190,7 +203,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Get device info using existing methods
       final arch = await NativeBridge.getArch();
       final filesDir = await NativeBridge.getFilesDir();
-      
+
       // Create simple device info for logging
       final deviceInfo = {
         'deviceId': filesDir.hashCode.toString(),
@@ -198,18 +211,22 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
         'platform': Platform.isAndroid ? 'android' : 'ios',
         'arch': arch,
         'capabilities': [
-          'camera.snap', 'camera.clip', 'camera.list',
-          'location.get', 'sensor.read', 'sensor.list',
-          'screen.record', 'haptic.vibrate',
+          'camera.snap',
+          'camera.clip',
+          'camera.list',
+          'location.get',
+          'sensor.read',
+          'sensor.list',
+          'screen.record',
+          'haptic.vibrate',
         ],
       };
-      
+
       // Log device registration (simplified approach)
       print('Device capabilities registered: ${deviceInfo['capabilities']}');
-      
+
       // The capabilities are already registered in _registerCapabilities()
       // This is just for logging/debugging purposes
-      
     } catch (e) {
       // Device registration failed - continue with gateway connection
       print('Device node registration failed: $e');
@@ -291,8 +308,9 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       } catch (_) {}
 
-      if (!_state.isPaired && !_state.isConnecting &&
-          (_lastGatewayState?.isRunning ?? false)) {
+      final shouldReconnect = _state.status == NodeStatus.disconnected ||
+          _state.status == NodeStatus.warmingUp;
+      if (shouldReconnect && (_lastGatewayState?.isRunning ?? false)) {
         // Connection dropped and gateway is up — reconnect
         _nodeService.connect();
       } else if (_state.isPaired && _nodeService.isConnectionStale) {
@@ -313,7 +331,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     prefs.nodeEnabled = true;
     await _requestNodePermissions();
     await _requestBatteryOptimization();
-    
+
     // Ensure latest compatibility shims are deployed
     try {
       await NativeBridge.installBionicBypass();

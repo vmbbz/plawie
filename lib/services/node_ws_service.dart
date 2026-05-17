@@ -26,6 +26,7 @@ class NodeWsService {
   Stream<NodeFrame> get frameStream => _frameController.stream;
   bool get isConnected => _connected;
   bool get isPairingInProgress => _pairingInProgress;
+  Future<void> Function()? onReconnectReady;
 
   // Fires when the gateway closes with 1008 (pairing required).
   final _pairingRequiredController = StreamController<String?>.broadcast();
@@ -53,7 +54,7 @@ class NodeWsService {
   Completer<void>? _socketCompleter;
   Completer<void>? _handshakeCompleter;
 
-  Future<void> _doConnect() async {
+  Future<void> _doConnect({bool notifyReady = false}) async {
     if (_url == null) return;
 
     try {
@@ -179,6 +180,12 @@ class NodeWsService {
       if (!_socketCompleter!.isCompleted) {
         _socketCompleter!.complete();
       }
+      if (notifyReady) {
+        final callback = onReconnectReady;
+        if (callback != null) {
+          unawaited(callback());
+        }
+      }
     } catch (_) {
       _handleDisconnect();
       rethrow;
@@ -257,7 +264,7 @@ class NodeWsService {
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () async {
       if (_shouldReconnect) {
         try {
-          await _doConnect();
+          await _doConnect(notifyReady: true);
         } catch (_) {
           // Exceptions are handled inside _doConnect, but if it throws synchronously
           // we don't want it to crash the timer.
@@ -362,7 +369,7 @@ class NodeWsService {
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () async {
       if (_shouldReconnect) {
         try {
-          await _doConnect();
+          await _doConnect(notifyReady: true);
         } catch (_) {}
       }
     });
