@@ -1,5 +1,8 @@
 # Node Pairing — Complete Investigation Notes
 
+> Historical investigation log.
+> Current production contract and boot/pairing architecture live in `PAIRING_DEBUG.md` (updated 2026-05-17).
+
 ## CRITICAL FACTS (do not lose these)
 
 ### Gateway source: `node-pairing-D65FHqV_.js`

@@ -4,6 +4,9 @@
 
 **Written:** 2026-05-08 | **Status:** Production-validated
 
+> Current canonical architecture: see `PAIRING_DEBUG.md` in the repository root (updated 2026-05-17).
+> This document remains valuable as incident history and deep debugging context.
+
 ---
 
 ## Background

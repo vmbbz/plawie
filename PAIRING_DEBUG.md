@@ -1,142 +1,221 @@
-# OpenClaw Node Pairing — Full Investigation & Root Cause
+# OpenClaw Android Pairing & Boot Architecture (Current Production)
 
-## The Problem
+**Status:** Canonical as-built flow (updated 2026-05-17)
 
-Returning users (gateway already installed) get stuck in an infinite 1008 "pairing required" loop after the app is reopened. The Dart node WebSocket never reaches `[NODE] Paired and connected`.
-
----
-
-## Approaches Tried & Results
-
-### Approach 1 — CLI `openclaw devices list` + `approve` (commit d35f338)
-**What:** After 1008, wait ~3.75s, run `openclaw devices list` via PRoot CLI, then `openclaw devices approve <requestId>`.  
-**Why it failed:** PRoot startup alone takes 5–10s. By then the Dart node has reconnected and generated a **new** requestId. `device.pair.approve` rejects the stale ID: `INVALID_REQUEST errorMessage=unknown requestId`.
+This document is the source of truth for how pairing and gateway boot work in the current Android app.
+It reflects the live implementation in `BootstrapService`, `GatewayService`, `GatewayConnection`, `NodeService`, and `NodeWsService`.
 
 ---
 
-### Approach 2 — WS Approval via `mode=cli` (commit aab7a9d → 821179a)
-**What:** Open a second WebSocket as `mode=cli`, authenticate with the gateway token, call `device.pair.approve` directly.  
-**Why it failed:** `mode=cli` has a **fixed, reduced scope set** that excludes `operator.pairing`. Adding `role: 'operator'` or `scopes: ['operator.pairing']` at the top level of the connect frame is ignored.
+## What Was The Blocking Issue?
 
-```
-← connect client=cli mode=cli auth=token
-→ hello-ok methods=155
-⇄ res ✗ device.pair.approve 1ms errorCode=INVALID_REQUEST errorMessage=missing scope: operator.pairing
-```
+The blocker was a pairing/auth contract drift across startup and reconnect paths:
 
----
+- some reconnect attempts were approving the wrong pending request,
+- some flows were retrying without explicit gateway auth context,
+- local gateway auth and remote credentials could drift,
+- and stale/invalid node tokens stayed in the reconnect path after 1008 closures.
 
-### Approach 3 — Pre-write `storage/devices.json` + `openclaw reload` (commit 66d1342)
-**What:** Write the approved device record to `$filesDir/rootfs/ubuntu/root/.openclaw/storage/devices.json` via Dart `File.writeAsString()`, then call `openclaw reload`.  
-**Why it failed (two reasons):**
-1. **Wrong file.** Device pairing state lives in `~/.openclaw/devices/paired.json`, NOT `storage/devices.json`. The gateway ignores our write entirely.
-2. **`openclaw reload` is a soft config hot-reload (SIGUSR1)**. It does NOT re-read the device pairing store. The in-memory pending device list survives unchanged.
+The shipped fix aligns all pairing paths to one requestId-driven approval contract and keeps local gateway auth synchronized before normal runtime traffic.
 
 ---
 
-### Approach 4 — WS Approval via `mode=backend` (commit 2518732)
-**What:** Connect as `mode=backend` / `id=gateway-client` — the mode the gateway's own internal process uses. Expected to carry full operator scope including `operator.pairing`.  
-**Why it failed:** The gateway's own internal backend connections use a **different internal token** (not the public `gateway.auth.token`). When we connect with the user-facing token in backend mode:
+## Mermaid: Actual Boot + Pairing Flow
 
-```
-← connect client=gateway-client mode=backend auth=token
-→ hello-ok methods=155
-⇄ res ✗ device.pair.approve 0ms errorCode=INVALID_REQUEST errorMessage=missing scope: operator.pairing
-```
+```mermaid
+flowchart TD
+    A[App Launch] --> B[BootstrapService.runFullSetup]
+    B --> C[_fullPreStartConfigHardening]
+    C --> D[Patch openclaw.json + CLI config set]
+    D --> E[_syncLocalGatewayRemoteCredentials]
+    E --> F[gateway.remote.token/password <- gateway.auth.* in local mode]
+    F --> G[Remove permissive auth/origin fallback flags]
+    G --> H[GatewayService.attachOrStart]
 
-The public gateway auth token does not grant `operator.pairing` in any mode.
+    H --> I[GatewayService.hardenGatewayConfigViaCli]
+    I --> J[openclaw config patch + optional reload]
 
----
+    J --> K[NodeService.connect]
+    K --> L{prefs.nodeDeviceToken exists?}
 
-### Approach 5 — `NativeBridge.approveDevice()` surgical injection + reload (commit 94ec09e)
-**What:** Use PRoot jq to upsert device into `/root/.openclaw/storage/devices.json`, then `openclaw reload`.  
-**Why it failed (same as Approach 3):**
-1. **Wrong file** — correct path is `devices/paired.json`, not `storage/devices.json`.
-2. **Soft reload** — does not re-read the devices store.
+    L -- No --> M[Send v3 connect frame as node-host platform=android]
+    M --> N[Gateway may close 1008 pairing required + requestId]
+    N --> O[_handleNodePairingRequired(requestId)]
+    O --> P[openclaw devices approve requestId --json]
+    P --> Q{plain approve failed?}
+    Q -- Yes --> R[Retry approve with --url ws://127.0.0.1:18789 --token <gatewayAuthToken> --json]
+    Q -- No --> S[Read approved token from nodes/paired.json or node.json]
+    R --> S
+    S --> T[Save prefs.nodeDeviceToken]
+    T --> U[disconnect + reconnect]
 
----
+    L -- Yes --> V[Send auth.deviceToken on connect]
+    V --> W[Gateway hello-ok]
 
-### Approach 6 — No-scopes connect + `pending.json` deletion (commit 569f8e1)
-**What:** On 1008: clear `prefs.nodeDeviceToken`, delete `/root/.openclaw/devices/pending.json` via PRoot, reconnect without `scopes` field in the connect frame.  
-**Why it failed:**
-`pending.json` deletion confirmed working (log: `Pending device list cleared`). Scopes correctly omitted. But `autoApproveCidrs` still never fired.
-
-Root cause: `autoApproveCidrs` only fires for **completely unknown** devices — not in `paired.json` AND not in `pending.json`. Our device was written into `paired.json` during bootstrap by `NativeBridge.approveDevice()`. Clearing only `pending.json` was insufficient; the gateway still sees the device as "known" and skips the auto-approve path.
-
-```
-[NODE] Pending device list cleared
-[NODE] Reconnecting — expecting autoApproveCidrs to fire...
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] Connect response ok=false payload=null        ← autoApproveCidrs never fires
-[NODE] Not paired or token invalid, gateway will close with 1008...
+    U --> W
 ```
 
 ---
 
-## The Actual Root Causes
+## Production Contract (What Must Always Stay True)
 
-### Root Cause A — `autoApproveCidrs` is blocked by our scopes request
+### 1) Pre-start hardening is mandatory
 
-From the official OpenClaw docs:
-> "This only applies to fresh `role: node` pairing requests with **no requested scopes**."
+`BootstrapService` runs pre-start hardening before normal gateway runtime traffic:
 
-Our `_sendConnect()` always sends `'scopes': ['node.device']` in the connect frame. This permanently disqualifies us from `autoApproveCidrs`, even from `127.0.0.1/32`.
+- forces `gateway.bind=loopback`, `gateway.port=18789`, `gateway.mode=local`
+- sets loopback-only control UI origins
+- enforces node pairing defaults (`autoApproveCidrs=[127.0.0.1/32]`)
+- removes dangerous permissive switches
+- applies patch atomically via `openclaw config patch`
 
-### Root Cause B — Filesystem injection targets the wrong path
+### 2) Auth mode and local remote credentials must remain aligned
 
-Device approval state lives at:
-- `/root/.openclaw/devices/pending.json` — in-flight requests
-- `/root/.openclaw/devices/paired.json` — approved devices (read on cold start)
+Both bootstrap and runtime hardening call `_syncLocalGatewayRemoteCredentials`:
 
-Every injection attempt targeted `/root/.openclaw/storage/devices.json` — a file the gateway does not consult for pairing decisions.
+- if local mode and `gateway.auth.token` exists, set `gateway.remote.token` to match
+- if local mode and `gateway.auth.password` exists, set `gateway.remote.password` to match
+- remove remote credentials when matching auth source is absent
 
-### Root Cause C — `openclaw reload` does not flush device state
+This prevents local CLI/device approval calls from drifting away from active gateway auth state.
 
-`openclaw reload` (SIGUSR1) is a soft config reload. It re-reads `openclaw.json` but does NOT re-read `devices/paired.json`. The in-memory approved device map is only populated on **cold start**. This means filesystem injection requires a full gateway restart to take effect.
+### 3) Pairing is requestId-driven
 
-### Root Cause D — Device in `paired.json` blocks `autoApproveCidrs`
+When the node path gets a 1008 close with pairing-required context:
 
-`autoApproveCidrs` only fires for **completely unknown** devices (not present in `paired.json` OR `pending.json`). Our device was written into `paired.json` during bootstrap via surgical injection. On returning sessions:
-1. Gateway cold-starts → reads `paired.json` → device record loaded into memory (no `deviceToken` — was never issued by a live gateway session).
-2. Dart node connects with no deviceToken → gateway sees device as "known but unactivated" → creates pending entry → 1008.
-3. `autoApproveCidrs` skips because the device is already in the approved store.
+- extract `requestId`
+- clear stale cached node token
+- approve the exact pending request via CLI
+- if plain approve fails, retry with explicit `--url` and `--token`
+- persist the new approved token
+- reconnect cleanly
 
-The bootstrap injection writes the device but never produces a gateway-issued `deviceToken`. The gateway therefore can never complete the handshake via the normal reconnect path.
+### 4) Token persistence strategy
 
----
+Node token sources in priority order:
 
-## The Definitive Fix
+1. `prefs.nodeDeviceToken` (runtime cache)
+2. `~/.openclaw/nodes/paired.json`
+3. `~/.openclaw/node.json`
 
-### Strategy: Surgical injection + full gateway restart
-
-`autoApproveCidrs` is unreliable for our use case (device already known to gateway). The guaranteed path is:
-1. Write device into `devices/paired.json` with correct operator roles (already fixed in commit 569f8e1).
-2. Delete `pending.json` to clear any stale in-flight entries.
-3. **Full gateway restart** (`stopGateway` + `startGateway`) so the process cold-reads the updated `paired.json` into memory.
-4. Reconnect — device is in memory, no pending check needed → immediate `hello-ok`.
-
-This eliminates all dependency on `autoApproveCidrs` and `openclaw reload`.
-
-### Changes required
-
-**`lib/services/node_service.dart` — `_handleNodePairingRequired()`**
-
-Replace the `pending.json`-only deletion with:
-1. `NativeBridge.approveDevice('')` → writes device to `devices/paired.json`
-2. `rm -f /root/.openclaw/devices/pending.json`
-3. `stopGateway()` → brief pause → `startGateway()`
-4. Poll `isGatewayRunning()` until true (max 60s)
-5. `connect()` → device found in gateway memory → `hello-ok`
+The reconnect path always uses `auth.deviceToken` when available.
 
 ---
 
-## What Does NOT Work (ruled out definitively)
+## Runtime Sequence Details
 
-| Approach | Why Dead |
-|----------|----------|
-| Any WS mode (`cli`, `backend`, `operator`) calling `device.pair.approve` | `operator.pairing` scope requires the gateway's own internal token — impossible externally |
-| Filesystem write + `openclaw reload` | Reload is soft; does not flush devices store |
-| Writing to `storage/devices.json` | Wrong file — gateway ignores it for pairing |
-| Writing to `devices/paired.json` + soft reload | Same: reload doesn't re-read the file |
-| Waiting for `autoApproveCidrs` while sending `scopes` | Docs: autoApproveCidrs blocked when ANY scopes are requested |
-| Clearing `pending.json` only + no-scopes reconnect | `autoApproveCidrs` skips devices already in `paired.json` — not truly unknown |
+### Bootstrap stage
+
+`BootstrapService.runFullSetup`:
+
+- performs base setup/install
+- executes `openclaw onboard --non-interactive` (non-fatal)
+- re-hardens config after onboard
+- runs `_fullPreStartConfigHardening`
+- starts gateway with `GatewayService.attachOrStart`
+
+### Gateway stage
+
+`GatewayService.attachOrStart` + `_configureGateway` + `hardenGatewayConfigViaCli`:
+
+- reasserts local bind + port + origin policy
+- removes `unauthenticatedLocalhost`
+- removes dangerous host-header origin fallback
+- applies a hardening patch and reload when already running
+
+### Node stage
+
+`NodeService.connect`:
+
+- opens websocket to `ws://127.0.0.1:18789`
+- sends protocol v3 connect as:
+  - `client.id = node-host`
+  - `client.mode = node`
+  - `platform = android`
+- includes `auth.deviceToken` only when cached
+- on first-time path, omits scopes to allow fresh pairing behavior
+
+`NodeService._handleNodePairingRequired`:
+
+- one-shot guard (`_pairingResolveAttempted`)
+- clears cached token before approval
+- approves requestId through CLI
+- falls back to explicit `--url` + `--token` when needed
+- stores approved token
+- disconnects and reconnects
+
+### Operator stage (separate from node pairing)
+
+`GatewayConnection` maintains a separate operator WebSocket session (`client.id=openclaw-control-ui`).
+If operator pairing is required, `GatewayService` handles it via the same requestId-driven CLI approval pattern and then reconnects the control plane.
+
+---
+
+## Files That Define This Contract
+
+- `lib/services/bootstrap_service.dart`
+- `lib/services/gateway_service.dart`
+- `lib/services/gateway_connection.dart`
+- `lib/services/node_service.dart`
+- `lib/services/node_ws_service.dart`
+- `lib/services/native_bridge.dart`
+- `lib/services/preferences_service.dart`
+
+---
+
+## State Stores (Authoritative Paths)
+
+- `~/.openclaw/openclaw.json`: gateway and model configuration
+- `~/.openclaw/nodes/paired.json`: node pairing approvals/tokens
+- `~/.openclaw/node.json`: node identity/token fallback store
+- shared preferences key `node_device_token`: runtime token cache used for reconnect
+
+---
+
+## Known Good Log Signatures
+
+Node flow signals:
+
+- `[NODE] No cached node device token — using first-time pairing path`
+- gateway close reason contains `pairing required` with `requestId`
+- `[NODE] Device approved; received new node token (...)`
+- `[NODE] Paired and connected`
+
+Gateway flow signals:
+
+- `device pairing auto-approved ... role=operator` (when auto-approval path applies)
+- `hello-ok` after reconnect
+- no repeated `INVALID_REQUEST errorMessage=unknown requestId` loops
+
+---
+
+## Quick Triage Checklist (When 1008 Reappears)
+
+1. Confirm 1008 reason includes `pairing required` and requestId.
+2. Confirm `openclaw devices approve <requestId> --json` succeeds.
+3. If plain approval fails, verify explicit retry with `--url` and `--token` is executed.
+4. Verify `prefs.nodeDeviceToken` is updated after approval.
+5. Verify approved token exists in `~/.openclaw/nodes/paired.json` (or `node.json`).
+6. Verify `gateway.remote.token` matches `gateway.auth.token` in local mode.
+7. Verify permissive fallback flags are absent from active config.
+
+---
+
+## Recovery Commands (Manual Emergency Use)
+
+Run inside PRoot shell:
+
+```bash
+openclaw devices list --json
+openclaw devices approve <requestId> --json
+openclaw devices approve <requestId> --url ws://127.0.0.1:18789 --token <gatewayToken> --json
+```
+
+Use explicit `--url` and `--token` when plain approval fails due active auth context mismatch.
+
+---
+
+## Notes For New Android Developers
+
+If you are debugging pairing, do not bypass this contract with ad-hoc JSON edits or alternate approval routes.
+Use the requestId-driven flow and keep auth synchronization in place; that is the path validated by production logs and the current implementation.
