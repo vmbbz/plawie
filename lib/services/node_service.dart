@@ -595,14 +595,19 @@ class NodeService {
       return;
     }
 
-    if (_pairingRetryNotBefore == null) {
-      final retryDelaySeconds = _pairingApprovalFailureCount == 1 ? 30 : 60;
-      _pairingRetryNotBefore =
-          DateTime.now().add(Duration(seconds: retryDelaySeconds));
-      log('[NODE] Pairing approval will retry in ${retryDelaySeconds}s');
-      _attachWsListeners();
-      _ws.resumeReconnect(delayMs: retryDelaySeconds * 1000);
-    }
+    // Always schedule a reconnect — covers every failure path:
+    // blocked/exhausted → _pairingRetryNotBefore already set to 5 min
+    // transient 1st/2nd failure → null here, set it now
+    _pairingRetryNotBefore ??= DateTime.now().add(
+      Duration(seconds: _pairingApprovalFailureCount == 1 ? 30 : 60),
+    );
+    final retryMs = _pairingRetryNotBefore!
+        .difference(DateTime.now())
+        .inMilliseconds
+        .clamp(5000, 5 * 60 * 1000);
+    log('[NODE] Pairing will retry in ${(retryMs / 1000).round()}s');
+    _attachWsListeners();
+    _ws.resumeReconnect(delayMs: retryMs);
   }
 
   Future<String?> _approveNodeViaDevicePairing(String requestId) async {
