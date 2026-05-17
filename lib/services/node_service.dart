@@ -198,7 +198,14 @@ class NodeService {
             status: NodeStatus.disconnected,
             clearConnectedAt: true,
           ));
-          log('[NODE] Disconnected, will retry...');
+          log('[NODE] Disconnected, will retry in 5s...');
+          Future.delayed(const Duration(seconds: 5), () {
+            if (_state.status == NodeStatus.disconnected &&
+                !_connectInFlight &&
+                !_pairingResolveAttempted) {
+              connect();
+            }
+          });
         }
         break;
 

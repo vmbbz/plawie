@@ -560,13 +560,8 @@ PARAMETER num_batch 512
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
-
-        await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js --max-old-space-size=256" && '
-          'openclaw reload 2>/dev/null || true',
-          timeout: 10,
-        );
+        // Reload omitted — hardenGatewayConfigViaCli() below runs config patch + reload.
+        // A redundant reload here extends warmup by 10s with no benefit.
       } catch (_) {}
 
       // Wipe the cache so we don't use a stale token from a previous run
@@ -581,6 +576,11 @@ PARAMETER num_batch 512
 
       // Now re-probe the fresh token (after the possible reload/restart)
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
+
+      // Token confirmed → gateway process is alive and config-readable.
+      // Set running now so NodeProvider fires _checkAutoConnect() immediately
+      // without waiting for the operator WS to be established.
+      _updateState(_state.copyWith(status: GatewayStatus.running));
 
       _subscribeLogs();
       _startHealthCheck();
