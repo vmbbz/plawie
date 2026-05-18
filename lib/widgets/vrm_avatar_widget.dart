@@ -28,7 +28,7 @@ class VrmAvatarWidget extends StatefulWidget {
     super.key,
     this.isThinking = false,
     this.speechIntensity = 0.0,
-    this.avatarFileName = 'default_avatar.vrm',
+    this.avatarFileName = 'gemini.vrm',
     this.isCinematic = false,
     this.glowIntensity = 0.0,
     this.gesture,

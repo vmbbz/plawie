@@ -18,6 +18,7 @@ import '../services/storage_service.dart';
 import '../widgets/glass_card.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
+import 'vrm_store_screen.dart';
 import 'management/local_llm_screen.dart';
 import '../services/voice_model_service.dart';
 import '../services/voice_persona_service.dart';
@@ -846,8 +847,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _changeAvatar(BuildContext context) {
-    final avatars = ['gemini.vrm', 'boruto.vrm', 'default_avatar.vrm'];
-    final labels = ['Gemini (Default)', 'Boruto', 'Plawie'];
+    final avatars = ['gemini.vrm', 'boruto.vrm'];
+    final labels = ['Gemini (Default)', 'Boruto'];
 
     showDialog(
       context: context,
@@ -869,6 +870,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             )),
           ),
         ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.store_rounded, size: 16),
+            label: const Text('Get More Avatars'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const VrmStoreScreen()),
+              ).then((_) {
+                // Refresh equipped avatar after returning from the store
+                setState(() => _selectedAvatar = _prefs.selectedAvatar);
+              });
+            },
+          ),
+        ],
       ),
     );
   }

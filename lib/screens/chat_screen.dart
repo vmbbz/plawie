@@ -76,7 +76,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   bool _isTtsSpeaking = false;
   final List<String> _ttsQueue = [];
   
-  String _selectedAvatar = 'default_avatar.vrm';
+  String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
   String _selectedModel = 'google/gemini-3.1-pro-preview';
   // Cloud model to fall back to when a local model (NDK or Ollama) stops.
@@ -118,7 +118,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   final List<String> _availableAvatars = [
     'gemini.vrm',
     'boruto.vrm',
-    'default_avatar.vrm',
   ];
   
   // Wake word subscription

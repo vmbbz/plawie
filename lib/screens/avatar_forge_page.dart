@@ -16,11 +16,10 @@ class AvatarForgePage extends StatefulWidget {
 class _AvatarForgePageState extends State<AvatarForgePage>
     with SingleTickerProviderStateMixin {
   final List<String> _myAvatars = [
-    'default_avatar.vrm',
     'gemini.vrm',
     'boruto.vrm',
   ];
-  String _equippedAvatar = 'default_avatar.vrm';
+  String _equippedAvatar = 'gemini.vrm';
   late AnimationController _glowController;
 
   @override

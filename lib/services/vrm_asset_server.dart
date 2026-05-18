@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// Lightweight local HTTP server that serves Flutter assets from `assets/vrm/`.
 ///
@@ -8,6 +9,10 @@ import 'package:flutter/services.dart';
 /// support `fetch()` or ES module `import()` — only the initial HTML load works.
 /// By serving from `http://127.0.0.1:PORT/`, all JS imports, VRM file loads,
 /// and VRMA animation fetches work normally via standard HTTP.
+///
+/// For `.vrm` requests the server first checks `<documents>/vrm_cache/` so that
+/// VRMs downloaded via [VrmDownloadService] are automatically served without any
+/// change to [VrmAvatarWidget] or the avatar HTML/JS layer.
 class VrmAssetServer {
   static final VrmAssetServer _instance = VrmAssetServer._internal();
   factory VrmAssetServer() => _instance;
@@ -38,20 +43,37 @@ class VrmAssetServer {
     if (path.startsWith('/')) path = path.substring(1);
     if (path.isEmpty) path = 'avatar_scene.html';
 
-    // Map to Flutter asset path
-    final assetPath = 'assets/vrm/$path';
+    final mimeType = _mimeTypeFor(path);
 
+    // For VRM files, check the local download cache first so users get their
+    // downloaded cloud avatars without any changes to the WebView/JS layer.
+    if (path.endsWith('.vrm')) {
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        final local = File('${docs.path}/vrm_cache/$path');
+        if (await local.exists()) {
+          final bytes = await local.readAsBytes();
+          request.response.statusCode = 200;
+          request.response.headers.set('Content-Type', mimeType);
+          request.response.headers.set('Content-Length', bytes.length.toString());
+          request.response.headers.set('Access-Control-Allow-Origin', '*');
+          request.response.headers.set('Cache-Control', 'no-cache');
+          request.response.add(bytes);
+          await request.response.close();
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // Fall back to bundled Flutter assets
+    final assetPath = 'assets/vrm/$path';
     try {
       final data = await rootBundle.load(assetPath);
       final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 
-      // Determine MIME type
-      final mimeType = _mimeTypeFor(path);
-
       request.response.statusCode = 200;
       request.response.headers.set('Content-Type', mimeType);
       request.response.headers.set('Content-Length', bytes.length.toString());
-      // Allow CORS for module imports
       request.response.headers.set('Access-Control-Allow-Origin', '*');
       request.response.headers.set('Cache-Control', 'no-cache');
       request.response.add(bytes);
