@@ -22,11 +22,17 @@ class NodeWsService {
   String? _url;
   String? _connectRequestId;
   DateTime? _lastActivity;
+  int? _lastCloseCode;
+  String? _lastCloseReason;
+  DateTime? _lastDisconnectAt;
 
   Stream<NodeFrame> get frameStream => _frameController.stream;
   bool get isConnected => _connected;
   bool get isPairingInProgress => _pairingInProgress;
   Future<void> Function()? onReconnectReady;
+  int? get lastCloseCode => _lastCloseCode;
+  String? get lastCloseReason => _lastCloseReason;
+  DateTime? get lastDisconnectAt => _lastDisconnectAt;
 
   // Fires when the gateway closes with 1008 (pairing required).
   final _pairingRequiredController = StreamController<String?>.broadcast();
@@ -133,7 +139,9 @@ class NodeWsService {
             _frameController.add(frame);
           } catch (_) {}
         },
-        onError: (_) => _handleDisconnect(),
+        onError: (error) => _handleDisconnect(
+          closeReason: 'socket-error: $error',
+        ),
         onDone: () {
           // Capture close code AND reason BEFORE _handleDisconnect nulls the channel
           final closeCode = _channel?.closeCode;
@@ -173,7 +181,7 @@ class NodeWsService {
             }
           }
 
-          _handleDisconnect();
+          _handleDisconnect(closeCode: closeCode, closeReason: closeReason);
         },
       );
 
@@ -188,7 +196,7 @@ class NodeWsService {
         }
       }
     } catch (_) {
-      _handleDisconnect();
+      _handleDisconnect(closeReason: 'connect-failed');
       rethrow;
     }
   }
@@ -225,8 +233,11 @@ class NodeWsService {
     });
   }
 
-  void _handleDisconnect() {
+  void _handleDisconnect({int? closeCode, String? closeReason}) {
     if (_channel == null) return;
+    _lastCloseCode = closeCode;
+    _lastCloseReason = closeReason;
+    _lastDisconnectAt = DateTime.now();
     _connected = false;
     _connectRequestId = null;
     _pingTimer?.cancel();
@@ -239,7 +250,12 @@ class NodeWsService {
     }
     _pendingRequests.clear();
 
-    _frameController.add(NodeFrame.event('_disconnected'));
+    _frameController.add(NodeFrame.event('_disconnected', {
+      if (closeCode != null) 'closeCode': closeCode,
+      if (closeReason != null && closeReason.isNotEmpty)
+        'closeReason': closeReason,
+      if (_lastDisconnectAt != null) 'at': _lastDisconnectAt!.toIso8601String(),
+    }));
 
     if (_shouldReconnect) {
       _scheduleReconnect();

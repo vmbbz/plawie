@@ -22,7 +22,7 @@ import java.net.URL
  * Features (inspired by SeekerClaw's architecture):
  * - START_STICKY: OS restarts service if killed
  * - Partial wake lock: prevents CPU from sleeping
- * - Watchdog: health-checks gateway every 30s, auto-restarts after 2 failures
+ * - Watchdog: health-checks gateway every 30s; only restarts on sustained failure
  * - Notification: shows gateway status with uptime chronometer
  */
 class PlawieForegroundService : Service() {
@@ -37,8 +37,10 @@ class PlawieForegroundService : Service() {
         
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds
-        private const val HEALTH_TIMEOUT_MS = 20_000        // 20s — gateway may respond slowly during Ollama inference
-        private const val MAX_CONSECUTIVE_FAILURES = 3       // 3 failures before restart — avoids false positives during heavy CPU load
+        private const val HEALTH_TIMEOUT_MS = 30_000         // 30s — tolerate heavy model/plugin load
+        private const val MAX_CONSECUTIVE_HTTP_FAILURES = 8  // ~4 minutes of HTTP misses before restart
+        private const val MAX_CONSECUTIVE_PROCESS_DOWN = 2   // Fast restart when process is truly dead
+        private const val STARTUP_GRACE_MS = 180_000L        // 3 min grace after start/restart
         private const val MAX_RESTARTS_PER_HOUR = 3          // Cap restarts to avoid loops
         private const val GATEWAY_PORT = 18789
 
@@ -90,7 +92,8 @@ class PlawieForegroundService : Service() {
 
     // Watchdog state
     private val handler = Handler(Looper.getMainLooper())
-    private var consecutiveFailures = 0
+    private var consecutiveHttpFailures = 0
+    private var consecutiveProcessDown = 0
     private val restartTimestamps = mutableListOf<Long>()
     private var watchdogActive = false
     private lateinit var processManager: ProcessManager
@@ -170,18 +173,46 @@ class PlawieForegroundService : Service() {
                     if (!watchdogActive) return@post
                     
                     if (healthy) {
-                        if (consecutiveFailures > 0) {
-                            Log.i(TAG, "Gateway recovered after $consecutiveFailures failures")
+                        if (consecutiveHttpFailures > 0 || consecutiveProcessDown > 0) {
+                            Log.i(
+                                TAG,
+                                "Gateway recovered (httpFailures=$consecutiveHttpFailures, processDown=$consecutiveProcessDown)"
+                            )
                         }
-                        consecutiveFailures = 0
+                        consecutiveHttpFailures = 0
+                        consecutiveProcessDown = 0
                         updateNotification("Gateway running")
                     } else {
-                        consecutiveFailures++
-                        Log.w(TAG, "Watchdog: health check failed ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES)")
-                        updateNotification("Gateway check failed ($consecutiveFailures)")
-                        
-                        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                            attemptRestart()
+                        val uptimeMs = System.currentTimeMillis() - startTime
+                        val processAlive = processManager.isGatewayRunning()
+                        if (processAlive) {
+                            consecutiveProcessDown = 0
+                            consecutiveHttpFailures++
+                            Log.w(
+                                TAG,
+                                "Watchdog: HTTP health miss while process alive " +
+                                    "($consecutiveHttpFailures/$MAX_CONSECUTIVE_HTTP_FAILURES)"
+                            )
+                            updateNotification("Gateway busy ($consecutiveHttpFailures)")
+
+                            if (uptimeMs >= STARTUP_GRACE_MS &&
+                                consecutiveHttpFailures >= MAX_CONSECUTIVE_HTTP_FAILURES
+                            ) {
+                                attemptRestart("http_unresponsive")
+                            }
+                        } else {
+                            consecutiveHttpFailures = 0
+                            consecutiveProcessDown++
+                            Log.w(
+                                TAG,
+                                "Watchdog: gateway process missing " +
+                                    "($consecutiveProcessDown/$MAX_CONSECUTIVE_PROCESS_DOWN)"
+                            )
+                            updateNotification("Gateway process missing ($consecutiveProcessDown)")
+
+                            if (consecutiveProcessDown >= MAX_CONSECUTIVE_PROCESS_DOWN) {
+                                attemptRestart("process_missing")
+                            }
                         }
                     }
                     
@@ -195,7 +226,8 @@ class PlawieForegroundService : Service() {
     private fun startWatchdog() {
         if (watchdogActive) return
         watchdogActive = true
-        consecutiveFailures = 0
+        consecutiveHttpFailures = 0
+        consecutiveProcessDown = 0
         // First check after a delay to let gateway finish starting
         handler.postDelayed(watchdogRunnable, WATCHDOG_INTERVAL_MS)
         Log.i(TAG, "Watchdog started (${WATCHDOG_INTERVAL_MS / 1000}s interval)")
@@ -230,7 +262,7 @@ class PlawieForegroundService : Service() {
     /**
      * Restart the gateway process, with rate limiting to avoid crash loops.
      */
-    private fun attemptRestart() {
+    private fun attemptRestart(reason: String = "unknown") {
         val now = System.currentTimeMillis()
         
         // Prune timestamps older than 1 hour
@@ -242,9 +274,14 @@ class PlawieForegroundService : Service() {
             return
         }
         
-        Log.i(TAG, "Watchdog: restarting gateway (attempt ${restartTimestamps.size + 1}/$MAX_RESTARTS_PER_HOUR)")
+        Log.i(
+            TAG,
+            "Watchdog: restarting gateway ($reason) " +
+                "(attempt ${restartTimestamps.size + 1}/$MAX_RESTARTS_PER_HOUR)"
+        )
         updateNotification("Restarting gateway...")
-        consecutiveFailures = 0
+        consecutiveHttpFailures = 0
+        consecutiveProcessDown = 0
         restartTimestamps.add(now)
         
         Thread {

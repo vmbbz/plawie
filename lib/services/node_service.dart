@@ -263,11 +263,14 @@ class NodeService {
     switch (frame.event) {
       case '_disconnected':
         if (_state.status != NodeStatus.disabled) {
+          final closeCode = frame.payload?['closeCode'];
+          final closeReason =
+              frame.payload?['closeReason']?.toString() ?? 'unknown';
           _updateState(_state.copyWith(
             status: NodeStatus.disconnected,
             clearConnectedAt: true,
           ));
-          log('[NODE] Disconnected; reconnect delegated to socket backoff/watchdog');
+          log('[NODE] Disconnected (closeCode=${closeCode ?? 'n/a'} reason=$closeReason); reconnect delegated to socket backoff/watchdog');
         }
         break;
 

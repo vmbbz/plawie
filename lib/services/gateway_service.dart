@@ -64,6 +64,16 @@ class GatewayService {
   // Failure tracking for proactive auto-healing
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
+  DateTime? _lastHardeningSweepAt;
+  DateTime? _gatewaySettleUntil;
+  DateTime? _lastProcessValidationAt;
+  DateTime? _lastDisconnectContextAt;
+  int _consecutiveProcessValidationMisses = 0;
+  bool _processValidationInFlight = false;
+  static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
+  static const Duration _gatewaySettleWindow = Duration(seconds: 90);
+  static const Duration _processValidationInterval = Duration(seconds: 90);
+  static const Duration _disconnectContextCooldown = Duration(seconds: 20);
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -295,20 +305,72 @@ PARAMETER num_batch 512
   /// List of methods supported by the current gateway connection.
   List<String> get supportedMethods => _connection?.supportedMethods ?? [];
 
+  bool get _isInGatewaySettleWindow {
+    final settleUntil = _gatewaySettleUntil;
+    return settleUntil != null && DateTime.now().isBefore(settleUntil);
+  }
+
+  void _markGatewaySettleWindow() {
+    _gatewaySettleUntil = DateTime.now().add(_gatewaySettleWindow);
+  }
+
+  Future<void> _runRuntimeHardeningSweep() async {
+    if (_isInGatewaySettleWindow) return;
+    final lastSweep = _lastHardeningSweepAt;
+    if (lastSweep != null &&
+        DateTime.now().difference(lastSweep) < _runtimeHardeningCooldown) {
+      return;
+    }
+    await hardenGatewayConfigViaCli(
+      allowReload: false,
+      reason: 'runtime-health-check',
+    );
+  }
+
+  Future<void> _logGatewayDisconnectContext() async {
+    final now = DateTime.now();
+    final last = _lastDisconnectContextAt;
+    if (last != null && now.difference(last) < _disconnectContextCooldown) {
+      return;
+    }
+    _lastDisconnectContextAt = now;
+    try {
+      final running = await NativeBridge.isGatewayRunning();
+      final contextMessage = running
+          ? '[HEALTH] WS dropped but gateway process is alive (likely temporary overload/reload).'
+          : '[HEALTH] WS dropped and gateway process is down.';
+      _updateState(_state.copyWith(logs: [..._state.logs, contextMessage]));
+    } catch (_) {}
+  }
+
   /// Validate gateway process health before marking as healthy
   Future<void> _validateGatewayProcess() async {
+    final now = DateTime.now();
+    if (_processValidationInFlight) return;
+    if (_lastProcessValidationAt != null &&
+        now.difference(_lastProcessValidationAt!) <
+            _processValidationInterval) {
+      return;
+    }
+    _processValidationInFlight = true;
+    _lastProcessValidationAt = now;
     try {
-      final result = await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && pgrep -f openclaw || echo "not_running"',
-          timeout: 5);
-      if (result.trim() == 'not_running') {
-        _addActivity('[HEALTH] Gateway process not found - marking as stopped');
-        _updateState(_state.copyWith(status: GatewayStatus.stopped));
+      final running = await NativeBridge.isGatewayRunning();
+      if (!running) {
+        _consecutiveProcessValidationMisses++;
+        if (_consecutiveProcessValidationMisses >= 2 &&
+            _state.status == GatewayStatus.running) {
+          _addActivity(
+              '[HEALTH] Gateway process missing on repeated checks; marking stopped');
+          _updateState(_state.copyWith(status: GatewayStatus.stopped));
+        }
       } else {
-        _addActivity('[HEALTH] Gateway process validated and running');
+        _consecutiveProcessValidationMisses = 0;
       }
     } catch (_) {
-      _addActivity('[HEALTH] Could not validate gateway process');
+      // Non-fatal: process validation is a secondary safety net.
+    } finally {
+      _processValidationInFlight = false;
     }
   }
 
@@ -492,10 +554,11 @@ PARAMETER num_batch 512
       // FAST PATH: already healthy → skip config write + doctor + reload
       _subscribeLogs();
       _startHealthCheck();
+      _markGatewaySettleWindow();
       unawaited(_checkHealth());
       unawaited(
           fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
-      await hardenGatewayConfigViaCli(); // AWAITED: source of truth
+      unawaited(_runRuntimeHardeningSweep());
       return;
     }
 
@@ -521,8 +584,8 @@ PARAMETER num_batch 512
           'openclaw doctor --fix 2>/dev/null || true',
           timeout: 10,
         );
-        // Reload omitted — hardenGatewayConfigViaCli() below runs config patch + reload.
-        // A redundant reload here extends warmup by 10s with no benefit.
+        // Reload intentionally omitted to avoid self-induced disconnect cycles
+        // while we're simply attaching to an already running process.
       } catch (_) {}
 
       // Wipe the cache so we don't use a stale token from a previous run
@@ -533,9 +596,12 @@ PARAMETER num_batch 512
       NodeService().clearCachedToken();
 
       // Apply hardening BEFORE we start polling/connecting
-      await hardenGatewayConfigViaCli();
+      await hardenGatewayConfigViaCli(
+        allowReload: false,
+        reason: 'attach-existing',
+      );
 
-      // Now re-probe the fresh token (after the possible reload/restart)
+      // Re-probe token after hardening to avoid stale cache.
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
       _addActivity(
@@ -544,6 +610,7 @@ PARAMETER num_batch 512
       _consecutiveFailures = 0;
       _httpWaitingSince =
           null; // clear so elapsed time is accurate for this boot
+      _markGatewaySettleWindow();
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -637,14 +704,19 @@ PARAMETER num_batch 512
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
-      await hardenGatewayConfigViaCli(); // ensure origins are correct BEFORE connect
+      await hardenGatewayConfigViaCli(
+        allowReload: false,
+        reason: 'post-start',
+      ); // ensure origins are correct BEFORE connect
 
-      // Force token re-acquisition after hardening (which may have triggered a reload)
+      // Force token re-acquisition after hardening so the connection never
+      // uses stale auth from a previous process.
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
       _consecutiveFailures = 0;
       _httpWaitingSince =
           null; // clear so elapsed time is accurate for this boot
+      _markGatewaySettleWindow();
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -2254,11 +2326,15 @@ PARAMETER num_batch 512
       _connection!.stateStream.listen((wsState) {
         final connected = wsState == GatewayConnectionState.connected;
         if (connected) _pairingResolveAttempted = false; // Reset on success
+        final closeCode = _connection?.lastCloseCode;
+        final closeReasonRaw = (_connection?.lastCloseReason ?? '').trim();
+        final closeReason = closeReasonRaw.isEmpty ? 'unknown' : closeReasonRaw;
         if (!connected) {
           _sessionCleanedThisConnection =
               false; // Allow cleanup on next reconnect
           _rpcDiscoveryDone =
               false; // Bug 1 fix: Reset RPC discovery flag on WS disconnect
+          unawaited(_logGatewayDisconnectContext());
         }
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
@@ -2267,7 +2343,10 @@ PARAMETER num_batch 512
                   ..._state.logs,
                   '[INFO] WebSocket connected (session: ${_connection?.mainSessionKey ?? 'pending'})'
                 ]
-              : [..._state.logs, '[WARN] WebSocket disconnected'],
+              : [
+                  ..._state.logs,
+                  '[WARN] WebSocket disconnected (closeCode=${closeCode ?? 'n/a'} reason=$closeReason)'
+                ],
         ));
       });
       // Listen for 1008 pairing required events from the gateway
@@ -2470,7 +2549,7 @@ PARAMETER num_batch 512
               null; // HTTP is up — clear the startup wait tracker
           _updateState(_state.copyWith(
             status: GatewayStatus.running,
-            startedAt: _state.startedAt ?? DateTime.now(),
+            startedAt: DateTime.now(),
             logs: [..._state.logs, '[INFO] Gateway is healthy'],
           ));
           // Eagerly warm the dashboard auth token in the background so that
@@ -3723,9 +3802,11 @@ PARAMETER num_batch 512
   }
 
   /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
-  /// We run this TWICE with a delay to ensure it survives any background touches
-  /// by the 'onboard' wizard or internal gateway reloads.
-  Future<void> hardenGatewayConfigViaCli() async {
+  /// with optional runtime reload.
+  Future<void> hardenGatewayConfigViaCli({
+    bool allowReload = true,
+    String reason = 'runtime',
+  }) async {
     // The BootstrapService handles pre-start hardening now, but we perform
     // a defensive check here to ensure the active gateway is always hardened.
 
@@ -3763,16 +3844,27 @@ PARAMETER num_batch 512
       }
     } catch (_) {}
 
+    // Runtime sweeps should not run too frequently.
+    if (reason == 'runtime-health-check') {
+      final lastSweep = _lastHardeningSweepAt;
+      if (lastSweep != null &&
+          DateTime.now().difference(lastSweep) < _runtimeHardeningCooldown) {
+        return;
+      }
+    }
+
     // 1. Initial immediate sweep
-    await _applyHardeningPatch();
+    await _applyHardeningPatch(allowReload: allowReload);
 
     // 2. Short delay to ensure write is finished
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(milliseconds: 600));
+    _lastHardeningSweepAt = DateTime.now();
 
-    debugPrint('✅ Hardening sweep complete');
+    debugPrint(
+        '✅ Hardening sweep complete (reason=$reason, reload=${allowReload ? 'on' : 'off'})');
   }
 
-  Future<void> _applyHardeningPatch() async {
+  Future<void> _applyHardeningPatch({required bool allowReload}) async {
     final currentConfig = await _readConfig();
     _applyExplicitAuthMode(currentConfig);
     _syncLocalGatewayRemoteCredentials(currentConfig);
@@ -3837,8 +3929,10 @@ PARAMETER num_batch 512
 
     try {
       final alreadyRunning = await NativeBridge.isGatewayRunning();
+      final shouldReload =
+          allowReload && alreadyRunning && !_isInGatewaySettleWindow;
       final reloadSuffix =
-          alreadyRunning ? ' && openclaw reload 2>/dev/null' : '';
+          shouldReload ? ' && openclaw reload 2>/dev/null' : '';
 
       await NativeBridge.runInProot(
         'cat > /tmp/harden.json << \'EOF\'\n'
@@ -3850,16 +3944,16 @@ PARAMETER num_batch 512
         timeout: 60,
       );
 
-      if (alreadyRunning) {
+      if (shouldReload) {
         // Short grace period for the gateway to process the SIGUSR1 (reload)
         // and for WebSocket listeners to recover.
         await Future.delayed(const Duration(milliseconds: 1500));
       }
 
       debugPrint(
-          '✅ Hardening sweep (config patch${alreadyRunning ? ' + reload' : ''}) applied successfully');
+          '✅ Hardening sweep (config patch${shouldReload ? ' + reload' : ''}) applied successfully');
       _addActivity(
-          '[SYS] Industrial-grade CLI hardening applied${alreadyRunning ? ' and reloaded' : ''}.');
+          '[SYS] Industrial-grade CLI hardening applied${shouldReload ? ' and reloaded' : ''}.');
     } catch (e) {
       debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }

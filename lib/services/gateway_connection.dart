@@ -87,6 +87,13 @@ class GatewayConnection {
   bool _policyRejectedDuringConnect = false;
   bool _protocolMismatchDuringConnect = false;
   int _preferredProtocol = _defaultWsProtocol;
+  int? _lastCloseCode;
+  String? _lastCloseReason;
+  DateTime? _lastDisconnectAt;
+
+  int? get lastCloseCode => _lastCloseCode;
+  String? get lastCloseReason => _lastCloseReason;
+  DateTime? get lastDisconnectAt => _lastDisconnectAt;
 
   Future<bool>? _connectFuture;
 
@@ -160,7 +167,9 @@ class GatewayConnection {
     // Listen for frames
     _subscription = _channel!.stream.listen(
       _onFrame,
-      onError: (_) => _onDisconnect(),
+      onError: (error) => _onDisconnect(
+        closeReason: 'socket-error: $error',
+      ),
       onDone: () {
         // Capture the close code BEFORE _cleanup() nulls _channel.
         final closeCode = _channel?.closeCode;
@@ -186,6 +195,8 @@ class GatewayConnection {
           policyRejected: policyRejected,
           protocolMismatch: protocolMismatch,
           requestId: reqId,
+          closeCode: closeCode,
+          closeReason: closeReason,
         );
       },
     );
@@ -495,7 +506,12 @@ class GatewayConnection {
     bool policyRejected = false,
     bool protocolMismatch = false,
     String? requestId,
+    int? closeCode,
+    String? closeReason,
   }) {
+    _lastCloseCode = closeCode;
+    _lastCloseReason = closeReason;
+    _lastDisconnectAt = DateTime.now();
     if (pairingRequired) {
       _pairingRequiredDuringConnect = true;
     }
