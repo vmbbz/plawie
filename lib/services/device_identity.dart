@@ -8,15 +8,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// On first launch, generates an Ed25519 key pair and persists it.
 /// Provides signing and device metadata for the connect frame's `device` block.
 class DeviceIdentity {
-  static final DeviceIdentity _instance = DeviceIdentity._internal();
-  factory DeviceIdentity() => _instance;
-  static DeviceIdentity get instance => _instance;
-  DeviceIdentity._internal();
+  static final DeviceIdentity _operatorInstance = DeviceIdentity._internal();
+  static final DeviceIdentity _nodeInstance = DeviceIdentity._internal('node');
+
+  /// Legacy/default identity is kept as the operator identity so existing
+  /// operator pairings survive app upgrades.
+  static DeviceIdentity get operator => _operatorInstance;
+  static DeviceIdentity get node => _nodeInstance;
+
+  factory DeviceIdentity() => _operatorInstance;
+  static DeviceIdentity get instance => _operatorInstance;
+  DeviceIdentity._internal([this._namespace = '']);
 
   static const _prefPrivateKey = 'openclaw_device_ed25519_private';
   static const _prefPublicKey = 'openclaw_device_ed25519_public';
   static const _prefDeviceId = 'openclaw_device_id';
 
+  final String _namespace;
   final _algorithm = Ed25519();
 
   String? _deviceId;
@@ -26,23 +34,29 @@ class DeviceIdentity {
   String? get deviceId => _deviceId;
   String? get publicKeyBase64Url => _publicKeyBase64Url;
 
+  String _key(String base) => _namespace.isEmpty ? base : '${base}_$_namespace';
+
   /// Load existing identity from SharedPreferences, or generate a new one.
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final existingPrivate = prefs.getString(_prefPrivateKey);
-    final existingPublic = prefs.getString(_prefPublicKey);
-    final existingDeviceId = prefs.getString(_prefDeviceId);
+    final existingPrivate = prefs.getString(_key(_prefPrivateKey));
+    final existingPublic = prefs.getString(_key(_prefPublicKey));
+    final existingDeviceId = prefs.getString(_key(_prefDeviceId));
 
-    if (existingPrivate != null && existingPublic != null && existingDeviceId != null) {
+    if (existingPrivate != null &&
+        existingPublic != null &&
+        existingDeviceId != null) {
       // Restore existing keys (pad safely to prevent FormatException: Invalid length)
-      String padBase64(String s) => s.padRight(s.length + (4 - s.length % 4) % 4, '=');
-      
+      String padBase64(String s) =>
+          s.padRight(s.length + (4 - s.length % 4) % 4, '=');
+
       try {
         _deviceId = existingDeviceId;
         _publicKeyBase64Url = existingPublic;
         final privateBytes = base64Url.decode(padBase64(existingPrivate));
         final publicBytes = base64Url.decode(padBase64(existingPublic));
-        final publicKey = SimplePublicKey(publicBytes, type: KeyPairType.ed25519);
+        final publicKey =
+            SimplePublicKey(publicBytes, type: KeyPairType.ed25519);
         _keyPair = SimpleKeyPairData(
           privateBytes,
           publicKey: publicKey,
@@ -50,7 +64,7 @@ class DeviceIdentity {
         );
         return;
       } catch (e) {
-        debugPrint('Device Identity Load Error: $e');
+        debugPrint('Device Identity Load Error ($_namespace): $e');
         // Fall through to generate new keys if corrupted
       }
     }
@@ -69,17 +83,19 @@ class DeviceIdentity {
     // Device ID = hex SHA-256 of raw public key
     final sha256 = Sha256();
     final hash = await sha256.hash(publicKeyBytes);
-    _deviceId = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    _deviceId =
+        hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
     // Extract and persist private key bytes
     final extractedData = await _keyPair!.extractPrivateKeyBytes();
     final privateKeyBytes = Uint8List.fromList(extractedData);
-    final privateKeyBase64Url = base64Url.encode(privateKeyBytes).replaceAll('=', '');
+    final privateKeyBase64Url =
+        base64Url.encode(privateKeyBytes).replaceAll('=', '');
 
     // Save to SharedPreferences
-    await prefs.setString(_prefPrivateKey, privateKeyBase64Url);
-    await prefs.setString(_prefPublicKey, _publicKeyBase64Url!);
-    await prefs.setString(_prefDeviceId, _deviceId!);
+    await prefs.setString(_key(_prefPrivateKey), privateKeyBase64Url);
+    await prefs.setString(_key(_prefPublicKey), _publicKeyBase64Url!);
+    await prefs.setString(_key(_prefDeviceId), _deviceId!);
   }
 
   /// Build the v1/v2 auth payload string that gets signed.

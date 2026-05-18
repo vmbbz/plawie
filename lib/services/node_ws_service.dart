@@ -139,8 +139,9 @@ class NodeWsService {
           final closeCode = _channel?.closeCode;
           final closeReason = _channel?.closeReason ?? '';
 
-          final requestIdMatch =
-              RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
+          final requestIdMatch = RegExp(
+                  r'requestId:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})')
+              .firstMatch(closeReason);
           final requestId = requestIdMatch?.group(1);
 
           final pairingRequired = closeCode == 1008 &&

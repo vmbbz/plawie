@@ -26,6 +26,7 @@ class BootstrapManager(
     private val homeDir get() = "$filesDir/home"
     private val configDir get() = "$filesDir/config"
     private val libDir get() = "$filesDir/lib"
+    private val forceLiveOpenClawInstall = true
 
     fun setupDirectories() {
         listOf(rootfsDir, tmpDir, homeDir, configDir, "$homeDir/.openclaw", libDir).forEach {
@@ -1724,13 +1725,18 @@ os.networkInterfaces = () => ({});
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
         val packageJson = File(pkgDir, "package.json")
         
-        if (packageJson.exists()) {
+        if (packageJson.exists() && !forceLiveOpenClawInstall) {
             Log.i("BootstrapManager", "OpenClaw already present in rootfs")
             return
         }
 
-        // 1. Try pre-bundled fast path first
-        preBundleOpenClawIfNeeded()
+        if (forceLiveOpenClawInstall) {
+            Log.i("BootstrapManager", "Pre-bundled OpenClaw disabled; installing latest official package")
+            fallbackToNpmInstall()
+        } else {
+            // 1. Try pre-bundled fast path first
+            preBundleOpenClawIfNeeded()
+        }
 
         // 2. Final verification with fallback to live npm
         // Use existing pkgDir and packageJson
@@ -1757,6 +1763,11 @@ os.networkInterfaces = () => ({});
     }
 
     private fun preBundleOpenClawIfNeeded() {
+        if (forceLiveOpenClawInstall) {
+            Log.i("BootstrapManager", "Skipping pre-bundled OpenClaw assets for latest gateway compatibility")
+            return
+        }
+
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
         if (pkgDir.exists()) return
 
@@ -1817,6 +1828,9 @@ os.networkInterfaces = () => ({});
 
     private fun fallbackToNpmInstall() {
         Log.i("BootstrapManager", "Performing industrial-grade live fallback install via npm...")
-        runInProot("npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --silent")
+        processManager.runInProotSync(
+            "npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --silent",
+            1800
+        )
     }
 }

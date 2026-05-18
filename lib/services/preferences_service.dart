@@ -11,6 +11,7 @@ class PreferencesService {
   static const _keyDashboardUrl = 'dashboard_url';
   static const _keyNodeEnabled = 'node_enabled';
   static const _keyNodeDeviceToken = 'node_device_token';
+  static const _keyNodeIdentityDeviceId = 'node_identity_device_id';
   static const _keyNodeGatewayHost = 'node_gateway_host';
   static const _keyNodeGatewayPort = 'node_gateway_port';
   static const _keyNodePublicKey = 'node_ed25519_public';
@@ -26,7 +27,8 @@ class PreferencesService {
 
   SharedPreferences get _p {
     if (_prefs == null) {
-      throw StateError('PreferencesService not initialized. Call init() first.');
+      throw StateError(
+          'PreferencesService not initialized. Call init() first.');
     }
     return _prefs!;
   }
@@ -61,6 +63,15 @@ class PreferencesService {
     }
   }
 
+  String? get nodeIdentityDeviceId => _p.getString(_keyNodeIdentityDeviceId);
+  set nodeIdentityDeviceId(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyNodeIdentityDeviceId, value);
+    } else {
+      _p.remove(_keyNodeIdentityDeviceId);
+    }
+  }
+
   String? get nodeGatewayHost => _p.getString(_keyNodeGatewayHost);
   set nodeGatewayHost(String? value) {
     if (value != null) {
@@ -88,6 +99,7 @@ class PreferencesService {
     final val = _p.getInt(_keyNodeGatewayPort);
     return val;
   }
+
   set nodeGatewayPort(int? value) {
     if (value != null) {
       _p.setInt(_keyNodeGatewayPort, value);
@@ -129,7 +141,8 @@ class PreferencesService {
   }
 
   /// Skill Enablement Persistence
-  bool isSkillEnabled(String skillId) => _p.getBool('skill_enabled_$skillId') ?? false;
+  bool isSkillEnabled(String skillId) =>
+      _p.getBool('skill_enabled_$skillId') ?? false;
 
   /// Like [isSkillEnabled] but with a caller-specified default.
   /// Core device skills (avatar-control, tts-voice, device-node) pass
@@ -137,7 +150,8 @@ class PreferencesService {
   bool isSkillEnabledOrDefault(String skillId, {bool defaultValue = false}) =>
       _p.getBool('skill_enabled_$skillId') ?? defaultValue;
 
-  Future<void> setSkillEnabled(String skillId, bool enabled) => _p.setBool('skill_enabled_$skillId', enabled);
+  Future<void> setSkillEnabled(String skillId, bool enabled) =>
+      _p.setBool('skill_enabled_$skillId', enabled);
 
   // ── Voice & Speech ──────────────────────────────────────────────────────────
 
@@ -151,11 +165,14 @@ class PreferencesService {
 
   /// Silence timeout in seconds before auto-submitting (1–15)
   int get silenceTimeoutSeconds => _p.getInt('silence_timeout_seconds') ?? 5;
-  set silenceTimeoutSeconds(int value) => _p.setInt('silence_timeout_seconds', value);
+  set silenceTimeoutSeconds(int value) =>
+      _p.setInt('silence_timeout_seconds', value);
 
   /// Current voice persona name (provider-agnostic)
-  String get currentTtsPersona => _p.getString('current_tts_persona') ?? 'default';
-  set currentTtsPersona(String value) => _p.setString('current_tts_persona', value);
+  String get currentTtsPersona =>
+      _p.getString('current_tts_persona') ?? 'default';
+  set currentTtsPersona(String value) =>
+      _p.setString('current_tts_persona', value);
 
   // ── Wake Word ───────────────────────────────────────────────────────────────
 
@@ -170,8 +187,10 @@ class PreferencesService {
   set ttsEngine(String value) => _p.setString('tts_engine', value);
 
   /// Currently active offline voice model ID (e.g. 'en_US-lessac-high')
-  String get offlineVoiceModel => _p.getString('offline_voice_model') ?? 'en_US-lessac-high';
-  set offlineVoiceModel(String value) => _p.setString('offline_voice_model', value);
+  String get offlineVoiceModel =>
+      _p.getString('offline_voice_model') ?? 'en_US-lessac-high';
+  set offlineVoiceModel(String value) =>
+      _p.setString('offline_voice_model', value);
 
   // ── Local LLM ───────────────────────────────────────────────────────────────
 
@@ -190,8 +209,10 @@ class PreferencesService {
     }
   }
 
-  bool get isSkillsEquippedNotified => _p.getBool('skills_equipped_notified') ?? false;
-  Future<void> setSkillsEquippedNotified(bool value) => _p.setBool('skills_equipped_notified', value);
+  bool get isSkillsEquippedNotified =>
+      _p.getBool('skills_equipped_notified') ?? false;
+  Future<void> setSkillsEquippedNotified(bool value) =>
+      _p.setBool('skills_equipped_notified', value);
 
   // ── Pre-install setup (provider/key collected before rootfs is ready) ────────
 

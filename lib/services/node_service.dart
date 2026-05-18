@@ -18,7 +18,7 @@ class NodeService {
     _ws.onReconnectReady = _handleSocketReconnectReady;
   }
 
-  final DeviceIdentity _identity = DeviceIdentity.instance;
+  final DeviceIdentity _identity = DeviceIdentity.node;
   final NodeWsService _ws = NodeWsService();
   final _stateController = StreamController<NodeState>.broadcast();
   StreamSubscription? _frameSubscription;
@@ -35,7 +35,8 @@ class NodeService {
   String? _gatewayAuthToken;
   Completer<String?>? _challengeCompleter;
   String? _pendingChallengeNonce;
-  static final _requestIdPattern = RegExp(r'^[a-f0-9-]{16,}$');
+  static final _uuidPattern =
+      RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
 
   Stream<NodeState> get stateStream => _stateController.stream;
   NodeState get state => _state;
@@ -70,11 +71,17 @@ class NodeService {
 
   Future<void> init() async {
     await _identity.init();
+    final prefs = PreferencesService();
+    await prefs.init();
     // Reset pairing state on each fresh init — the singleton persists across
     // gateway restarts and a stale _pairingResolveAttempted=true would silently
     // block all subsequent connect() calls.
     _pairingResolveAttempted = false;
     final deviceId = _identity.deviceId ?? '';
+    if (prefs.nodeIdentityDeviceId != deviceId) {
+      prefs.nodeDeviceToken = null;
+      prefs.nodeIdentityDeviceId = deviceId;
+    }
     _updateState(_state.copyWith(deviceId: deviceId));
     final displayId = deviceId.length > 8
         ? '${deviceId.substring(0, 4)}...${deviceId.substring(deviceId.length - 4)}'
@@ -549,25 +556,27 @@ class NodeService {
 
     var approved = false;
     try {
-      if (requestId == null ||
-          requestId.isEmpty ||
-          !_requestIdPattern.hasMatch(requestId)) {
-        log('[NODE] Pairing required but no valid requestId was provided');
-      } else {
-        final approvedToken = await _approveNodeViaDevicePairing(requestId);
-        if (approvedToken != null && approvedToken.isNotEmpty) {
-          prefs.nodeDeviceToken = approvedToken;
-          final preview = approvedToken.length > 8
-              ? '${approvedToken.substring(0, 8)}...'
-              : approvedToken;
-          log('[NODE] Device approved; received new node token ($preview)');
-        } else {
-          log('[NODE] Device approved; token will be learned on next successful connect');
-        }
-        approved = true;
-        _pairingApprovalFailureCount = 0;
-        _pairingRetryNotBefore = null;
+      final hasValidRequestId = requestId != null &&
+          requestId.isNotEmpty &&
+          _uuidPattern.hasMatch(requestId);
+      if (!hasValidRequestId) {
+        log('[NODE] Pairing required but no valid requestId was provided; resolving latest pending node request');
       }
+
+      final approvedToken = await _approveNodeViaDevicePairing(
+          hasValidRequestId ? requestId : null);
+      if (approvedToken != null && approvedToken.isNotEmpty) {
+        prefs.nodeDeviceToken = approvedToken;
+        final preview = approvedToken.length > 8
+            ? '${approvedToken.substring(0, 8)}...'
+            : approvedToken;
+        log('[NODE] Device approved; received new node token ($preview)');
+      } else {
+        log('[NODE] Device approved; token will be learned on next successful connect');
+      }
+      approved = true;
+      _pairingApprovalFailureCount = 0;
+      _pairingRetryNotBefore = null;
     } catch (e) {
       _pairingApprovalFailureCount++;
       final blocked = _isPairingApprovalBlockedError(e);
@@ -610,12 +619,15 @@ class NodeService {
     _ws.resumeReconnect(delayMs: retryMs);
   }
 
-  Future<String?> _approveNodeViaDevicePairing(String requestId) async {
-    log('[NODE] Pairing required (1008) — approving request $requestId via OpenClaw CLI...');
+  Future<String?> _approveNodeViaDevicePairing(String? requestId) async {
+    final requestLabel = requestId == null || requestId.isEmpty
+        ? 'latest pending node request'
+        : requestId;
+    log('[NODE] Pairing required (1008) — approving $requestLabel via OpenClaw CLI...');
     _gatewayAuthToken ??= await _readGatewayToken();
     final gatewayUrl =
         'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
-    var requestIdToApprove = requestId.trim();
+    var requestIdToApprove = requestId?.trim() ?? '';
     final gatewayToken = _gatewayAuthToken;
 
     // Pending request IDs can be superseded when the node retries connect.
@@ -627,6 +639,10 @@ class NodeService {
           token: gatewayToken,
         ) ??
         requestIdToApprove;
+    if (requestIdToApprove.isEmpty ||
+        !_uuidPattern.hasMatch(requestIdToApprove)) {
+      throw StateError('No valid pending node pairing request found');
+    }
 
     // Prefer explicit URL/token first so approval does not depend on a stale
     // local CLI session scope.
@@ -732,11 +748,98 @@ class NodeService {
   }
 
   Future<String?> _readApprovedNodeTokenFromStore() async {
+    final deviceStoreToken = await _readApprovedNodeTokenFromDeviceStore();
+    if (deviceStoreToken != null && deviceStoreToken.isNotEmpty) {
+      return deviceStoreToken;
+    }
+
     final pairedStoreToken = await _readApprovedNodeTokenFromPairedStore();
     if (pairedStoreToken != null && pairedStoreToken.isNotEmpty) {
       return pairedStoreToken;
     }
     return _readApprovedNodeTokenFromNodeStore();
+  }
+
+  Future<String?> _readApprovedNodeTokenFromDeviceStore() async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final pairedPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/devices/paired.json';
+      final pairedFile = File(pairedPath);
+      if (!await pairedFile.exists()) return null;
+
+      final decoded = jsonDecode(await pairedFile.readAsString());
+      final nodeId = _identity.deviceId ?? '';
+      return _findTokenForDevice(decoded, nodeId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _findTokenForDevice(Object? value, String deviceId) {
+    if (deviceId.isEmpty) return null;
+    if (value is Map) {
+      final map = value.map((key, val) => MapEntry('$key', val));
+      if (map.containsKey(deviceId)) {
+        final token = _findAnyToken(map[deviceId]);
+        if (token != null) return token;
+      }
+
+      final mentionsDevice = _containsStringValue(map, deviceId);
+      final mentionsNodeRole = _containsStringValue(map, AppConstants.nodeRole);
+      if (mentionsDevice && mentionsNodeRole) {
+        final token = _tokenFromMap(map);
+        if (token != null) return token;
+      }
+
+      for (final child in map.values) {
+        final token = _findTokenForDevice(child, deviceId);
+        if (token != null) return token;
+      }
+    } else if (value is List) {
+      for (final child in value) {
+        final token = _findTokenForDevice(child, deviceId);
+        if (token != null) return token;
+      }
+    }
+    return null;
+  }
+
+  String? _tokenFromMap(Map<String, dynamic> map) {
+    const tokenKeys = ['token', 'deviceToken', 'authToken', 'bearerToken'];
+    for (final key in tokenKeys) {
+      final value = map[key];
+      if (value is String && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  String? _findAnyToken(Object? value) {
+    if (value is Map) {
+      final map = value.map((key, val) => MapEntry('$key', val));
+      final direct = _tokenFromMap(map);
+      if (direct != null) return direct;
+      for (final child in map.values) {
+        final token = _findAnyToken(child);
+        if (token != null) return token;
+      }
+    } else if (value is List) {
+      for (final child in value) {
+        final token = _findAnyToken(child);
+        if (token != null) return token;
+      }
+    }
+    return null;
+  }
+
+  bool _containsStringValue(Object? value, String needle) {
+    if (needle.isEmpty) return false;
+    if (value is String) return value == needle;
+    if (value is Map) {
+      return value.values.any((v) => _containsStringValue(v, needle));
+    }
+    if (value is List) return value.any((v) => _containsStringValue(v, needle));
+    return false;
   }
 
   Future<String?> _readApprovedNodeTokenFromPairedStore() async {

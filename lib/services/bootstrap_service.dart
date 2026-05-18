@@ -12,6 +12,8 @@ import '../constants/openclaw_paths.dart';
 import 'gateway_service.dart';
 
 class BootstrapService {
+  static const bool _forceLiveOpenClawInstall = true;
+
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 30),
     receiveTimeout: const Duration(minutes: 10), // Rootfs can be large
@@ -380,10 +382,16 @@ class BootstrapService {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.65,
             'Installing OpenClaw core...', 80);
 
-        bool success = await _extractPrebundledOpenClaw(onProgress);
+        bool success = false;
+        if (_forceLiveOpenClawInstall) {
+          _log(
+              '[SETUP] Pre-bundled OpenClaw disabled; installing latest from npm.');
+        } else {
+          success = await _extractPrebundledOpenClaw(onProgress);
+        }
 
         if (!success) {
-          _log('ℹ️ Pre-bundled OpenClaw not found, falling back to npm...');
+          _log('ℹ️ Installing OpenClaw from npm...');
           await _installMinimalBuildTools();
           await _ensureOpenClawPackageExists();
           await _purgeBuildTools();
@@ -570,19 +578,22 @@ class BootstrapService {
     final openclawDir =
         Directory('$rootfsDir/usr/local/lib/node_modules/openclaw');
 
-    if (await openclawDir.exists()) {
+    final exists = await openclawDir.exists();
+    if (exists && !_forceLiveOpenClawInstall) {
       _log('✅ OpenClaw already present (pre-bundled or previously installed)');
       return;
     }
 
-    _log('🚨 Installing OpenClaw (this may take 30-60s)...');
+    _log(exists
+        ? '⬆️ Updating OpenClaw to latest official package...'
+        : '🚨 Installing OpenClaw (this may take 30-60s)...');
 
     try {
       // 1. Install with minimal flags
       await NativeBridge.runInProot(
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
-        timeout: 600,
+        '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production',
+        timeout: 1800,
       );
 
       // 2. AGGRESSIVE CLEANUP (Save ~300-400 MB)
@@ -612,6 +623,12 @@ class BootstrapService {
   /// This bypasses the need for a 10-minute 'npm install' on the user's device.
   Future<bool> _extractPrebundledOpenClaw(
       Function(SetupState) onProgress) async {
+    if (_forceLiveOpenClawInstall) {
+      _log(
+          '📦 Pre-bundled OpenClaw assets are disabled for latest gateway compatibility.');
+      return false;
+    }
+
     _log('📦 Checking for pre-bundled OpenClaw assets...');
     try {
       final rootfsDir = await getRootfsDirectory();

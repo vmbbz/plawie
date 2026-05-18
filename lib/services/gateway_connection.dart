@@ -37,7 +37,7 @@ class GatewayConnection {
 
   static const _prefDeviceToken = 'openclaw_operator_device_token';
 
-  final DeviceIdentity _identity = DeviceIdentity.instance;
+  final DeviceIdentity _identity = DeviceIdentity.operator;
   bool _identityLoaded = false;
   String? _deviceToken;
 
@@ -157,8 +157,9 @@ class GatewayConnection {
         final closeReason = _channel?.closeReason ?? '';
         String? reqId;
         if (closeCode == 1008 && closeReason.contains('pairing required')) {
-          final m =
-              RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(closeReason);
+          final m = RegExp(
+                  r'requestId:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})')
+              .firstMatch(closeReason);
           reqId = m?.group(1);
         }
         final pairingRequired = closeCode == 1008 &&
@@ -441,8 +442,11 @@ class GatewayConnection {
 
   String? _extractPairingRequestId(Object? value) {
     if (value is String) {
-      final match = RegExp(r'requestId:\s*([a-f0-9-]+)').firstMatch(value) ??
-          RegExp(r'"requestId"\s*:\s*"([a-f0-9-]+)"').firstMatch(value);
+      final match = RegExp(
+                  r'requestId:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})')
+              .firstMatch(value) ??
+          RegExp(r'"requestId"\s*:\s*"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"')
+              .firstMatch(value);
       return match?.group(1);
     }
     if (value is Map) {

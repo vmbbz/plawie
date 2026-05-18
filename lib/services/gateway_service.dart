@@ -36,7 +36,8 @@ class GatewayService {
   bool _healthCheckInFlight = false;
   bool _rpcDiscoveryDone =
       false; // RPC discovery runs once after first WS connect
-  DateTime? _httpWaitingSince; // set when HTTP probe first fails during starting
+  DateTime?
+      _httpWaitingSince; // set when HTTP probe first fails during starting
   final _stateController = StreamController<GatewayState>.broadcast();
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
@@ -541,7 +542,8 @@ PARAMETER num_batch 512
           '[INFO] Gateway token confirmed; waiting for HTTP readiness...');
 
       _consecutiveFailures = 0;
-      _httpWaitingSince = null; // clear so elapsed time is accurate for this boot
+      _httpWaitingSince =
+          null; // clear so elapsed time is accurate for this boot
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -641,7 +643,8 @@ PARAMETER num_batch 512
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
       _consecutiveFailures = 0;
-      _httpWaitingSince = null; // clear so elapsed time is accurate for this boot
+      _httpWaitingSince =
+          null; // clear so elapsed time is accurate for this boot
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
@@ -2392,7 +2395,6 @@ PARAMETER num_batch 512
         message.contains('invalid scope for requested roles');
   }
 
-
   Future<String?> _resolvePendingDeviceRequestId({
     required String fallbackRequestId,
     required String? gatewayUrl,
@@ -2464,7 +2466,8 @@ PARAMETER num_batch 512
         // Mark running only after both checks pass: config token is readable
         // and the HTTP listener is answering. A token alone is not readiness.
         if (_state.status != GatewayStatus.running) {
-          _httpWaitingSince = null; // HTTP is up — clear the startup wait tracker
+          _httpWaitingSince =
+              null; // HTTP is up — clear the startup wait tracker
           _updateState(_state.copyWith(
             status: GatewayStatus.running,
             startedAt: _state.startedAt ?? DateTime.now(),
@@ -2600,8 +2603,7 @@ PARAMETER num_batch 512
         // Its own health-monitor declares startup-grace: 60s, so we match that
         // before firing auto-heal. No new timer: this runs on the existing 15s tick.
         _httpWaitingSince ??= DateTime.now();
-        final elapsed =
-            DateTime.now().difference(_httpWaitingSince!).inSeconds;
+        final elapsed = DateTime.now().difference(_httpWaitingSince!).inSeconds;
         _addActivity('[INFO] Gateway starting up... (${elapsed}s)');
         if (elapsed > 60 && !_isAutoHealingInProgress) {
           _triggerPassiveAutoHeal();
