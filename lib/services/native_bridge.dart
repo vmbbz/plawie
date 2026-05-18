@@ -58,12 +58,34 @@ class NativeBridge {
   }
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
+    return _runInProotInternal(command, timeout: timeout, allowRepair: true);
+  }
+
+  static Future<String> _runInProotInternal(
+    String command, {
+    required int timeout,
+    required bool allowRepair,
+  }) async {
     final sanitized = _applyAbsoluteBypass(command);
     final withEnv =
         'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
-    return await _channel
-        .invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
+    try {
+      return await _channel
+          .invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
+    } on PlatformException catch (e) {
+      if (allowRepair && _shouldRepairOpenClawCommand(command, e.message)) {
+        try {
+          await ensureOpenClawReady();
+        } catch (_) {}
+        return _runInProotInternal(
+          command,
+          timeout: timeout,
+          allowRepair: false,
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Execute a command in the persistent shell (one PRoot process reused across calls).
@@ -90,6 +112,19 @@ class NativeBridge {
         (match) {
       return kOpenClawCommand;
     });
+  }
+
+  static bool _shouldRepairOpenClawCommand(
+      String command, String? errorMessage) {
+    if (errorMessage == null || errorMessage.isEmpty) return false;
+    final hasCliInvocation =
+        RegExp(r'(?<![/\.])\bopenclaw\b(?![\.@-])').hasMatch(command);
+    if (!hasCliInvocation) return false;
+    final lower = errorMessage.toLowerCase();
+    return (lower.contains('command not found') &&
+            lower.contains('openclaw')) ||
+        (lower.contains('/usr/local/bin/openclaw') &&
+            lower.contains('no such file or directory'));
   }
 
   /// Destroy the persistent shell process (called when terminal screen closes).

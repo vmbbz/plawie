@@ -464,7 +464,22 @@ class ProcessManager(
         // Redirect stdout/stderr to gateway.log so the log streaming thread
         // can pick up output (including the dashboard token URL).
         val pathExport = "export PATH=\$PATH:/usr/local/bin:/usr/bin"
-        val gatewayCmd = "$pathExport && mkdir -p /root/.openclaw && openclaw gateway --verbose --allow-unconfigured --bind loopback > /root/.openclaw/gateway.log 2>&1"
+        val gatewayCmd = """
+$pathExport && mkdir -p /root/.openclaw && (
+if [ -x /usr/local/bin/openclaw ]; then
+  /usr/local/bin/openclaw gateway --verbose --allow-unconfigured --bind loopback
+elif [ -f /usr/local/lib/node_modules/openclaw/openclaw.mjs ]; then
+  /usr/local/bin/node /usr/local/lib/node_modules/openclaw/openclaw.mjs gateway --verbose --allow-unconfigured --bind loopback
+elif [ -f /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs ]; then
+  /usr/local/bin/node /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs gateway --verbose --allow-unconfigured --bind loopback
+elif [ -f /usr/local/lib/node_modules/openclaw/bin/openclaw.js ]; then
+  /usr/local/bin/node /usr/local/lib/node_modules/openclaw/bin/openclaw.js gateway --verbose --allow-unconfigured --bind loopback
+else
+  echo "openclaw launcher not found" >&2
+  exit 127
+fi
+) > /root/.openclaw/gateway.log 2>&1
+""".trimIndent()
         
         return try {
             android.util.Log.i("ProcessManager", "Starting gateway (output → gateway.log)")
@@ -486,7 +501,7 @@ class ProcessManager(
     fun stopGateway(): Boolean {
         // Original approach: Kill openclaw gateway process directly
         return try {
-            val stopCmd = "pkill -f 'openclaw gateway' || true"
+            val stopCmd = "pkill -f 'openclaw.*gateway' || true"
             val fullCmd = buildGatewayCommand(stopCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
@@ -503,7 +518,7 @@ class ProcessManager(
     fun isGatewayRunning(): Boolean {
         // Original approach: Check if openclaw gateway process is running
         return try {
-            val checkCmd = "pgrep -f 'openclaw gateway' > /dev/null 2>&1"
+            val checkCmd = "pgrep -f 'openclaw.*gateway' > /dev/null 2>&1"
             val fullCmd = buildGatewayCommand(checkCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
