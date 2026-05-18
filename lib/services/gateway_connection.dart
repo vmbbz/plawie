@@ -21,6 +21,10 @@ import 'openclaw_service.dart';
 enum GatewayConnectionState { disconnected, connecting, handshaking, connected }
 
 class GatewayConnection {
+  static const _prefWsProtocol = 'openclaw_operator_ws_protocol';
+  static const _defaultWsProtocol = 4;
+  static const _protocolCandidates = <int>[4, 5, 6, 3];
+
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _pingTimer;
@@ -81,6 +85,8 @@ class GatewayConnection {
   Completer<String?>? _challengeCompleter;
   bool _pairingRequiredDuringConnect = false;
   bool _policyRejectedDuringConnect = false;
+  bool _protocolMismatchDuringConnect = false;
+  int _preferredProtocol = _defaultWsProtocol;
 
   Future<bool>? _connectFuture;
 
@@ -110,6 +116,9 @@ class GatewayConnection {
       // scope-upgrade audit on reconnect, preventing pairing-required loops.
       final prefs = await SharedPreferences.getInstance();
       _deviceToken = prefs.getString(_prefDeviceToken);
+      final storedProtocol =
+          prefs.getInt(_prefWsProtocol) ?? AppConstants.wsProtocolMaxVersion;
+      _preferredProtocol = _sanitizeProtocol(storedProtocol);
     }
 
     _connectFuture = _doConnect();
@@ -126,6 +135,7 @@ class GatewayConnection {
     _cleanup();
     _pairingRequiredDuringConnect = false;
     _policyRejectedDuringConnect = false;
+    _protocolMismatchDuringConnect = false;
 
     try {
       final wsUri = Uri.parse(AppConstants.gatewayWsUrl);
@@ -168,9 +178,13 @@ class GatewayConnection {
             !pairingRequired &&
             (closeReason.contains('origin not allowed') ||
                 closeReason.contains('origin-mismatch'));
+        final protocolMismatch = closeReason.toLowerCase().contains(
+              'protocol mismatch',
+            );
         _onDisconnect(
           pairingRequired: pairingRequired,
           policyRejected: policyRejected,
+          protocolMismatch: protocolMismatch,
           requestId: reqId,
         );
       },
@@ -195,7 +209,9 @@ class GatewayConnection {
     } catch (_) {
       _updateState(GatewayConnectionState.disconnected);
       _cleanup();
-      if (!_pairingRequiredDuringConnect && !_policyRejectedDuringConnect) {
+      if (!_pairingRequiredDuringConnect &&
+          !_policyRejectedDuringConnect &&
+          !_protocolMismatchDuringConnect) {
         _scheduleReconnect();
       }
       return false;
@@ -209,6 +225,7 @@ class GatewayConnection {
 
   Future<void> _sendConnectFrame(String? nonce) async {
     final version = await OpenClawCommandService.detectOpenClawVersion();
+    final connectProtocol = _preferredProtocol;
 
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
@@ -239,8 +256,8 @@ class GatewayConnection {
       'id': _connectRequestId,
       'method': 'connect',
       'params': {
-        'minProtocol': AppConstants.wsProtocolMinVersion,
-        'maxProtocol': AppConstants.wsProtocolMaxVersion,
+        'minProtocol': connectProtocol,
+        'maxProtocol': connectProtocol,
         'client': {
           'id': clientId,
           'version': version,
@@ -325,6 +342,9 @@ class GatewayConnection {
             String msg = 'connect rejected';
             if (errorRaw is Map) {
               msg = errorRaw['message']?.toString() ?? 'connect rejected';
+              _handleProtocolMismatch(
+                Map<String, dynamic>.from(errorRaw),
+              );
             } else if (errorRaw != null) {
               msg = errorRaw.toString();
             }
@@ -473,6 +493,7 @@ class GatewayConnection {
   void _onDisconnect({
     bool pairingRequired = false,
     bool policyRejected = false,
+    bool protocolMismatch = false,
     String? requestId,
   }) {
     if (pairingRequired) {
@@ -480,6 +501,13 @@ class GatewayConnection {
     }
     if (policyRejected) {
       _policyRejectedDuringConnect = true;
+    }
+    if (protocolMismatch) {
+      if (!_protocolMismatchDuringConnect) {
+        _advanceProtocolFallback();
+      } else {
+        _protocolMismatchDuringConnect = true;
+      }
     }
     _updateState(GatewayConnectionState.disconnected);
     // Error all in-flight requests immediately so callers fail fast
@@ -503,20 +531,30 @@ class GatewayConnection {
       return;
     }
     if (policyRejected) return;
+    if (protocolMismatch || _protocolMismatchDuringConnect) {
+      _scheduleReconnect(fastRetry: true);
+      return;
+    }
     _scheduleReconnect();
   }
 
-  void _scheduleReconnect() {
+  void _scheduleReconnect({bool fastRetry = false}) {
     if (_token == null) return;
     if (_reconnectAttempts >= _maxReconnectAttempts) return;
 
-    _reconnectAttempts++;
-    final delayMs = min(
-      (AppConstants.wsReconnectBaseMs *
-              pow(AppConstants.wsReconnectMultiplier, _reconnectAttempts - 1))
-          .toInt(),
-      AppConstants.wsReconnectCapMs,
-    );
+    int delayMs;
+    if (fastRetry) {
+      _reconnectAttempts = 0;
+      delayMs = 350;
+    } else {
+      _reconnectAttempts++;
+      delayMs = min(
+        (AppConstants.wsReconnectBaseMs *
+                pow(AppConstants.wsReconnectMultiplier, _reconnectAttempts - 1))
+            .toInt(),
+        AppConstants.wsReconnectCapMs,
+      );
+    }
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
@@ -525,6 +563,75 @@ class GatewayConnection {
       // _cleanup() in the second _doConnect() tears down the first one's channel.
       if (_connectFuture == null) _doConnect();
     });
+  }
+
+  int _sanitizeProtocol(int value) {
+    if (value <= 0) return _defaultWsProtocol;
+    if (value > 16) return _defaultWsProtocol;
+    return value;
+  }
+
+  int _extractExpectedProtocol(Map<String, dynamic> error) {
+    final details = error['details'];
+    if (details is Map) {
+      final expected = details['expectedProtocol'] ??
+          details['protocol'] ??
+          details['serverProtocol'];
+      if (expected is int) return _sanitizeProtocol(expected);
+      if (expected is num) return _sanitizeProtocol(expected.toInt());
+      if (expected is String) {
+        final parsed = int.tryParse(expected);
+        if (parsed != null) return _sanitizeProtocol(parsed);
+      }
+    }
+    return -1;
+  }
+
+  void _persistPreferredProtocol() {
+    final protocol = _preferredProtocol;
+    unawaited(SharedPreferences.getInstance().then(
+      (prefs) => prefs.setInt(_prefWsProtocol, protocol),
+    ));
+  }
+
+  void _handleProtocolMismatch(Map<String, dynamic> error) {
+    final code = error['code']?.toString().toUpperCase();
+    final message = error['message']?.toString().toLowerCase() ?? '';
+    final isMismatch = message.contains('protocol mismatch') ||
+        (code == 'INVALID_REQUEST' && message.contains('protocol'));
+    if (!isMismatch) return;
+
+    final expected = _extractExpectedProtocol(error);
+    if (expected > 0 && expected != _preferredProtocol) {
+      _preferredProtocol = expected;
+      _persistPreferredProtocol();
+      _protocolMismatchDuringConnect = true;
+      return;
+    }
+
+    _advanceProtocolFallback();
+  }
+
+  void _advanceProtocolFallback() {
+    final current = _sanitizeProtocol(_preferredProtocol);
+    final ordered = <int>[];
+    final seen = <int>{};
+    for (final candidate in _protocolCandidates) {
+      final p = _sanitizeProtocol(candidate);
+      if (seen.add(p)) ordered.add(p);
+    }
+    if (!seen.contains(current)) {
+      ordered.insert(0, current);
+      seen.add(current);
+    }
+
+    final idx = ordered.indexOf(current);
+    final next = ordered[(idx + 1) % ordered.length];
+    if (next != _preferredProtocol) {
+      _preferredProtocol = next;
+      _persistPreferredProtocol();
+    }
+    _protocolMismatchDuringConnect = true;
   }
 
   // Pre-encoded ping frame — allocated once, reused every 30s.

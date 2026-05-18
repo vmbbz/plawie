@@ -1,609 +1,174 @@
- 🦞 LOBSTER-8372...7b07
-  =====================
-
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] Gateway token read from openclaw.json
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-
-
-
-
-
-
-
-
-========================================================================================
-
-
-
-
-  🦞 LOBSTER-8372...7b07
-  =====================
-
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] Gateway token read from openclaw.json
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] Connecting to 127.0.0.1:18789...
-[NODE] WebSocket connected, awaiting challenge...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
-[NODE] WebSocket reconnected, completing handshake...
-[NODE] Challenge received
-[NODE] No cached node device token — using first-time pairing path
-[NODE] Declaring 15 commands: [camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame caps=[camera, canvas, location, screen, flash, haptic, sensor] commands=[camera.snap, camera.clip, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, sensor.list]
-[NODE] Connect frame platform=android
-[NODE] Connect response ok=false payload=null
-[NODE] Connect error: INVALID_REQUEST - protocol mismatch
-[NODE] Disconnected; reconnect delegated to socket backoff/watchdog
+Cosy <cosychiruka@gmail.com>
+	
+10:37 PM (0 minutes ago)
+	
+	
+to me
+[INFO] Gateway process detected, attaching...
+[DEBUG] Probing gateway config for auth token...
+[INFO] Gateway auth token acquired from config.
+[90m2026-05-18T20:23:21.806+00:00 [39m [36m[gateway] [39m [36mloading configuration… [39m
+[90m2026-05-18T20:23:23.114+00:00 [39m [36m[gateway] [39m [36mresolving authentication… [39m
+[90m2026-05-18T20:23:23.203+00:00 [39m [36m[gateway] [39m [36mstarting... [39m
+[90m2026-05-18T20:24:00.138+00:00 [39m [36m[gateway] [39m [36mstarting HTTP server... [39m
+[90m2026-05-18T20:24:00.368+00:00 [39m [32m[health-monitor] [39m [36mstarted (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s) [39m
+[90m2026-05-18T20:24:02.459+00:00 [39m [35m[plugins] [39m [90mloading browser from /usr/local/lib/node_modules/openclaw/dist/extensions/browser/index.js [39m
+[90m2026-05-18T20:24:02.544+00:00 [39m [35m[plugins] [39m [90mloading canvas from /usr/local/lib/node_modules/openclaw/dist/extensions/canvas/index.js [39m
+[90m2026-05-18T20:24:03.077+00:00 [39m [35m[plugins] [39m [90mloading device-pair from /usr/local/lib/node_modules/openclaw/dist/extensions/device-pair/index.js [39m
+2026-05-18T20:24:03.102+00:00 Registered plugin command: /pair (plugin: device-pair)
+[90m2026-05-18T20:24:03.130+00:00 [39m [35m[plugins] [39m [90mloading file-transfer from /usr/local/lib/node_modules/openclaw/dist/extensions/file-transfer/index.js [39m
+[90m2026-05-18T20:24:03.234+00:00 [39m [35m[plugins] [39m [90mloading memory-core from /usr/local/lib/node_modules/openclaw/dist/extensions/memory-core/index.js [39m
+2026-05-18T20:24:03.723+00:00 Registered plugin command: /dreaming (plugin: memory-core)
+[90m2026-05-18T20:24:03.739+00:00 [39m [35m[plugins] [39m [90mloading phone-control from /usr/local/lib/node_modules/openclaw/dist/extensions/phone-control/index.js [39m
+2026-05-18T20:24:03.766+00:00 Registered plugin command: /phone (plugin: phone-control)
+[90m2026-05-18T20:24:03.783+00:00 [39m [35m[plugins] [39m [90mloading talk-voice from /usr/local/lib/node_modules/openclaw/dist/extensions/talk-voice/index.js [39m
+2026-05-18T20:24:03.835+00:00 Registered plugin command: /voice (plugin: talk-voice)
+[90m2026-05-18T20:24:03.848+00:00 [39m [35m[plugins] [39m [90mloaded 7 plugin(s) (7 attempted) in 1402.8ms [39m
+[90m2026-05-18T20:24:03.897+00:00 [39m [36m[gateway] [39m [36magent model: google/gemini-3.1-pro-preview (thinking=medium, fast=off) [39m
+[90m2026-05-18T20:24:03.909+00:00 [39m [36m[gateway] [39m [36mhttp server listening (7 plugins: browser, canvas, device-pair, file-transfer, memory-core, phone-control, talk-voice; 40.7s) [39m
+[90m2026-05-18T20:24:03.919+00:00 [39m [36m[gateway] [39m [36mlog file: /tmp/openclaw/openclaw-2026-05-18.log [39m
+[90m2026-05-18T20:24:04.885+00:00 [39m [36m[gateway] [39m [36mstarting channels and sidecars... [39m
+[90m2026-05-18T20:24:06.755+00:00 [39m [36m[browser/server] [39m [36mBrowser control listening on http://127.0.0.1:18791/ (auth=token) [39m
+[90m2026-05-18T20:24:07.053+00:00 [39m [36m[gateway] [39m [36mready [39m
+[90m2026-05-18T20:24:07.080+00:00 [39m [36m[heartbeat] [39m [36mstarted [39m
+[90m2026-05-18T20:24:07.315+00:00 [39m [35m[plugins] [39m [90m[hooks] running gateway_start (1 handlers) [39m
+[90m2026-05-18T20:24:07.375+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48190 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48190->127.0.0.1:18789 conn=d4a9dd00…164f [39m
+[90m2026-05-18T20:24:11.736+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=d4a9dd00-3805-4bdf-b188-b0cd02a7164f remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:24:11.751+00:00 [39m [36m[gateway] [39m [33mstartup model warmup timed out after 5000ms; continuing without waiting [39m
+[90m2026-05-18T20:24:11.896+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=d4a9dd00-3805-4bdf-b188-b0cd02a7164f peer=127.0.0.1:48190->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:24:11.909+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=4500 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=862751bc-5e20-4530-a525-b999e3ccb0fc endpoint=127.0.0.1:48190->127.0.0.1:18789 [39m
+[90m2026-05-18T20:24:20.506+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47490 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47490->127.0.0.1:18789 conn=34713a22…d80e [39m
+[90m2026-05-18T20:24:20.990+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=34713a22-5546-4a16-9c95-d5a86b9ed80e remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:24:21.077+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=34713a22-5546-4a16-9c95-d5a86b9ed80e peer=127.0.0.1:47490->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:24:21.092+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=533 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=42f37b38-8f6b-4023-a246-6f5cad538b6d endpoint=127.0.0.1:47490->127.0.0.1:18789 [39m
+[90m2026-05-18T20:24:35.447+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40798 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40798->127.0.0.1:18789 conn=c0bc389e…3cc7 [39m
+[90m2026-05-18T20:24:36.045+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=c0bc389e-5f99-4a75-8b3c-cb29c39d3cc7 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:24:36.108+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c0bc389e-5f99-4a75-8b3c-cb29c39d3cc7 peer=127.0.0.1:40798->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:24:36.123+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=625 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=035e0f04-a5df-460d-8051-9a0be5a4f398 endpoint=127.0.0.1:40798->127.0.0.1:18789 [39m
+[90m2026-05-18T20:24:50.479+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=59946 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:59946->127.0.0.1:18789 conn=8d3efd72…b0a8 [39m
+[90m2026-05-18T20:24:51.006+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=8d3efd72-161e-4dab-9b31-74ad6769b0a8 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:24:51.065+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8d3efd72-161e-4dab-9b31-74ad6769b0a8 peer=127.0.0.1:59946->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:24:51.076+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=563 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=1fbf16c6-f6bc-4914-a771-887279d4d203 endpoint=127.0.0.1:59946->127.0.0.1:18789 [39m
+[90m2026-05-18T20:25:05.523+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=54704 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:54704->127.0.0.1:18789 conn=c97d7047…6811 [39m
+[90m2026-05-18T20:25:07.459+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=c97d7047-335a-412e-bf3d-078894446811 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:25:07.557+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=c97d7047-335a-412e-bf3d-078894446811 peer=127.0.0.1:54704->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:25:07.575+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=2017 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=352ec389-2ac6-4a9c-b81f-878ef128952b endpoint=127.0.0.1:54704->127.0.0.1:18789 [39m
+[90m2026-05-18T20:25:20.525+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=40202 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:40202->127.0.0.1:18789 conn=35ef68a4…f34c [39m
+[90m2026-05-18T20:25:21.131+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=35ef68a4-429f-413b-a106-9a0fcde7f34c remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:25:21.183+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=35ef68a4-429f-413b-a106-9a0fcde7f34c peer=127.0.0.1:40202->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:25:21.200+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=651 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7f81005e-239b-4275-a008-aed750045cf0 endpoint=127.0.0.1:40202->127.0.0.1:18789 [39m
+[90m2026-05-18T20:25:25.031+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=29.2 eventLoopDelayMaxMs=1720.7 eventLoopUtilization=0.113 cpuCoreRatio=0.054 active=0 waiting=0 queued=0 recentPhases=sidecars.main-session-recovery:33ms,sidecars.restart-sentinel:140ms,sidecars.session-locks:163ms,post-attach.update-sentinel:53ms,post-ready.maintenance:638ms,sidecars.model-prewarm:6864ms [39m
+[90m2026-05-18T20:25:25.040+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:25:35.475+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35876 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35876->127.0.0.1:18789 conn=23339056…e83b [39m
+[90m2026-05-18T20:25:36.063+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=23339056-45d4-4914-abc3-04a6867be83b remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:25:36.135+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=23339056-45d4-4914-abc3-04a6867be83b peer=127.0.0.1:35876->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:25:36.151+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=622 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=60886ff1-2aac-4e81-9acd-d2860000fd40 endpoint=127.0.0.1:35876->127.0.0.1:18789 [39m
+[90m2026-05-18T20:25:50.459+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58814 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58814->127.0.0.1:18789 conn=e91c83a4…59fb [39m
+[90m2026-05-18T20:25:51.049+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=e91c83a4-f2f1-4819-9f8a-8556d6c959fb remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:25:51.093+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e91c83a4-f2f1-4819-9f8a-8556d6c959fb peer=127.0.0.1:58814->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:25:51.107+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=615 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fe65cbb9-9a5b-4a91-88cd-913524d4e021 endpoint=127.0.0.1:58814->127.0.0.1:18789 [39m
+[90m2026-05-18T20:25:55.033+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:26:05.461+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46056 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46056->127.0.0.1:18789 conn=f10b8bab…fe83 [39m
+[90m2026-05-18T20:26:06.093+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=f10b8bab-1ac0-4137-90e7-f54a5461fe83 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:26:06.153+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f10b8bab-1ac0-4137-90e7-f54a5461fe83 peer=127.0.0.1:46056->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:26:06.169+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=671 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=0b82bdc7-da0d-400f-90a2-7553ac1f8c62 endpoint=127.0.0.1:46056->127.0.0.1:18789 [39m
+[90m2026-05-18T20:26:20.466+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=46050 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:46050->127.0.0.1:18789 conn=1b6b6317…1f4a [39m
+[90m2026-05-18T20:26:21.040+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=1b6b6317-d409-4f50-8617-a5d8bd161f4a remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:26:21.115+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=1b6b6317-d409-4f50-8617-a5d8bd161f4a peer=127.0.0.1:46050->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:26:21.136+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=610 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b3e222a6-ba66-47d0-93f0-a51eb920856b endpoint=127.0.0.1:46050->127.0.0.1:18789 [39m
+[90m2026-05-18T20:26:25.041+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:26:35.482+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38332 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38332->127.0.0.1:18789 conn=65e0cd14…bd2b [39m
+[90m2026-05-18T20:26:36.034+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=65e0cd14-40b7-44c2-b81f-945e0f8bbd2b remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:26:36.116+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=65e0cd14-40b7-44c2-b81f-945e0f8bbd2b peer=127.0.0.1:38332->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:26:36.131+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=598 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a0e98c48-2795-42b4-b53f-7dd2938a6b3a endpoint=127.0.0.1:38332->127.0.0.1:18789 [39m
+[90m2026-05-18T20:26:50.476+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39084 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39084->127.0.0.1:18789 conn=57660d61…6926 [39m
+[90m2026-05-18T20:26:51.019+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=57660d61-af67-49aa-a3eb-1b1a80ff6926 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:26:51.096+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=57660d61-af67-49aa-a3eb-1b1a80ff6926 peer=127.0.0.1:39084->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:26:51.116+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=581 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=9896b137-af46-4c16-9c56-246a4974f471 endpoint=127.0.0.1:39084->127.0.0.1:18789 [39m
+[90m2026-05-18T20:26:55.036+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:27:05.476+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=39266 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:39266->127.0.0.1:18789 conn=973cc5c4…9ee5 [39m
+[90m2026-05-18T20:27:06.025+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=973cc5c4-ae70-4c99-8e3b-a19a482d9ee5 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:27:06.104+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=973cc5c4-ae70-4c99-8e3b-a19a482d9ee5 peer=127.0.0.1:39266->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:27:06.123+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=589 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=f945c02f-6731-4446-babd-2ca644ecce41 endpoint=127.0.0.1:39266->127.0.0.1:18789 [39m
+[90m2026-05-18T20:27:20.480+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38462 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38462->127.0.0.1:18789 conn=e3d5e565…84e3 [39m
+[90m2026-05-18T20:27:21.027+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=e3d5e565-3f2e-43f3-9c08-57bb643f84e3 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:27:21.086+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e3d5e565-3f2e-43f3-9c08-57bb643f84e3 peer=127.0.0.1:38462->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:27:21.102+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=580 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=fb0b7e0a-b31e-4dea-80b3-c7d22219e849 endpoint=127.0.0.1:38462->127.0.0.1:18789 [39m
+[90m2026-05-18T20:27:25.041+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=26.3 eventLoopDelayMaxMs=2146.4 eventLoopUtilization=0.135 cpuCoreRatio=0.085 active=0 waiting=0 queued=0 recentPhases=sidecars.main-session-recovery:33ms,sidecars.restart-sentinel:140ms,sidecars.session-locks:163ms,post-attach.update-sentinel:53ms,post-ready.maintenance:638ms,sidecars.model-prewarm:6864ms [39m
+[90m2026-05-18T20:27:25.054+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:27:35.477+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=38302 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:38302->127.0.0.1:18789 conn=727d28c7…b063 [39m
+[90m2026-05-18T20:27:36.031+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=727d28c7-b33d-4f02-b727-7ed73563b063 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:27:36.136+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=727d28c7-b33d-4f02-b727-7ed73563b063 peer=127.0.0.1:38302->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:27:36.154+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=595 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a3616ac5-f142-4162-a52b-75ffeb2d8e7b endpoint=127.0.0.1:38302->127.0.0.1:18789 [39m
+[90m2026-05-18T20:27:50.474+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=35258 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:35258->127.0.0.1:18789 conn=845cf5cf…4b58 [39m
+[90m2026-05-18T20:27:50.988+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=845cf5cf-74c2-4bd9-b4e0-91af03c84b58 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:27:51.047+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=845cf5cf-74c2-4bd9-b4e0-91af03c84b58 peer=127.0.0.1:35258->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:27:51.061+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=553 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=b689a203-d547-42bb-b2db-36349702e5dd endpoint=127.0.0.1:35258->127.0.0.1:18789 [39m
+[90m2026-05-18T20:27:55.039+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:28:05.474+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58482 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58482->127.0.0.1:18789 conn=8a7c51e5…0187 [39m
+[90m2026-05-18T20:28:06.020+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=8a7c51e5-3c10-4a38-9995-3c8da7ea0187 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:28:06.117+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=8a7c51e5-3c10-4a38-9995-3c8da7ea0187 peer=127.0.0.1:58482->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:28:06.136+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=583 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=28d8ba71-4247-45bd-8b8c-388d293d1ac4 endpoint=127.0.0.1:58482->127.0.0.1:18789 [39m
+[90m2026-05-18T20:28:20.484+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=33958 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:33958->127.0.0.1:18789 conn=a70cbcb7…435c [39m
+[90m2026-05-18T20:28:21.022+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=a70cbcb7-9663-446c-80b9-0e32cf65435c remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:28:21.076+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=a70cbcb7-9663-446c-80b9-0e32cf65435c peer=127.0.0.1:33958->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:28:21.091+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=575 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e2b0ac5d-c0b5-412c-bd1b-61b8f272dfa5 endpoint=127.0.0.1:33958->127.0.0.1:18789 [39m
+[90m2026-05-18T20:28:25.045+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:28:35.464+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=47134 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:47134->127.0.0.1:18789 conn=82dd5005…536a [39m
+[90m2026-05-18T20:28:35.971+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=82dd5005-f309-401c-8249-41dd7a20536a remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:28:36.050+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=82dd5005-f309-401c-8249-41dd7a20536a peer=127.0.0.1:47134->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:28:36.064+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=541 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ec5d6880-a062-4bd4-a364-ffc6ca10966c endpoint=127.0.0.1:47134->127.0.0.1:18789 [39m
+[90m2026-05-18T20:28:50.514+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=48058 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:48058->127.0.0.1:18789 conn=2ecd54b7…db6f [39m
+[90m2026-05-18T20:28:51.095+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=2ecd54b7-142d-4673-8d75-ec5f796fdb6f remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:28:51.188+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=2ecd54b7-142d-4673-8d75-ec5f796fdb6f peer=127.0.0.1:48058->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:28:51.205+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=619 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a8d7e793-1a94-4bd7-a655-268e6247248e endpoint=127.0.0.1:48058->127.0.0.1:18789 [39m
+[90m2026-05-18T20:28:55.037+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:29:05.480+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=55012 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:55012->127.0.0.1:18789 conn=864df294…e95c [39m
+[90m2026-05-18T20:29:06.022+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=864df294-1572-4ee1-8f4b-3990581fe95c remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:29:06.090+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=864df294-1572-4ee1-8f4b-3990581fe95c peer=127.0.0.1:55012->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:29:06.103+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=588 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=4e411902-3e53-41b2-9b4b-d9db0416df8e endpoint=127.0.0.1:55012->127.0.0.1:18789 [39m
+[90m2026-05-18T20:29:20.468+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=32982 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:32982->127.0.0.1:18789 conn=95aa3ad6…80c3 [39m
+[90m2026-05-18T20:29:21.035+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=95aa3ad6-ac7e-41ee-b904-9f34ab6f80c3 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:29:21.104+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=95aa3ad6-ac7e-41ee-b904-9f34ab6f80c3 peer=127.0.0.1:32982->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:29:21.120+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=595 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=04bb7ec0-66f5-46b6-ad28-5fe3a2810516 endpoint=127.0.0.1:32982->127.0.0.1:18789 [39m
+[90m2026-05-18T20:29:25.035+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=24.9 eventLoopDelayMaxMs=2195.7 eventLoopUtilization=0.151 cpuCoreRatio=0.085 active=0 waiting=0 queued=0 recentPhases=sidecars.main-session-recovery:33ms,sidecars.restart-sentinel:140ms,sidecars.session-locks:163ms,post-attach.update-sentinel:53ms,post-ready.maintenance:638ms,sidecars.model-prewarm:6864ms [39m
+[90m2026-05-18T20:29:25.041+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:29:35.485+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=34508 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:34508->127.0.0.1:18789 conn=99fae5e9…af5a [39m
+[90m2026-05-18T20:29:36.064+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=99fae5e9-e1c1-49c6-ad04-885270c4af5a remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:29:36.191+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=99fae5e9-e1c1-49c6-ad04-885270c4af5a peer=127.0.0.1:34508->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:29:36.211+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=623 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=95bf1f4c-b24c-493a-9795-55901a0c89e4 endpoint=127.0.0.1:34508->127.0.0.1:18789 [39m
+[90m2026-05-18T20:29:50.473+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=54842 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:54842->127.0.0.1:18789 conn=e24831a2…6cb1 [39m
+[90m2026-05-18T20:29:50.989+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=e24831a2-b10f-4058-80ad-120bc8bd6cb1 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:29:51.089+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=e24831a2-b10f-4058-80ad-120bc8bd6cb1 peer=127.0.0.1:54842->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:29:51.111+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=554 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=ad957c24-5ef3-4b0c-81a7-be23d2875759 endpoint=127.0.0.1:54842->127.0.0.1:18789 [39m
+[90m2026-05-18T20:29:55.039+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:30:05.471+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=49714 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:49714->127.0.0.1:18789 conn=eda25ea4…b9ef [39m
+[90m2026-05-18T20:30:06.111+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=eda25ea4-cb40-40ab-bcfe-54d359d1b9ef remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:30:06.203+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=eda25ea4-cb40-40ab-bcfe-54d359d1b9ef peer=127.0.0.1:49714->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:30:06.215+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=675 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=e2bb4255-c013-4cc1-ba2e-058b671d92ee endpoint=127.0.0.1:49714->127.0.0.1:18789 [39m
+[90m2026-05-18T20:30:20.502+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=52222 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:52222->127.0.0.1:18789 conn=3f6ee63b…a239 [39m
+[90m2026-05-18T20:30:21.877+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=3f6ee63b-34cf-4915-a73c-ef2628cca239 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:30:21.935+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=3f6ee63b-34cf-4915-a73c-ef2628cca239 peer=127.0.0.1:52222->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:30:21.950+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=1415 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=c99a8e4d-1598-49e8-b519-9ad3e1b3ac25 endpoint=127.0.0.1:52222->127.0.0.1:18789 [39m
+[90m2026-05-18T20:30:25.044+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:30:35.501+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=54542 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:54542->127.0.0.1:18789 conn=da9bc98b…9b44 [39m
+[90m2026-05-18T20:30:36.062+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=da9bc98b-1ac5-4d3b-9733-5c0279649b44 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:30:36.146+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=da9bc98b-1ac5-4d3b-9733-5c0279649b44 peer=127.0.0.1:54542->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:30:36.168+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=603 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=a702c879-d9dc-4443-ae61-b41c50b92907 endpoint=127.0.0.1:54542->127.0.0.1:18789 [39m
+[90m2026-05-18T20:30:50.481+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=58202 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:58202->127.0.0.1:18789 conn=2ca15534…6d31 [39m
+[90m2026-05-18T20:30:51.028+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=2ca15534-d73b-4cac-bc6d-198db1f26d31 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:30:51.106+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=2ca15534-d73b-4cac-bc6d-198db1f26d31 peer=127.0.0.1:58202->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:30:51.122+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=584 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=6c9cf9c4-d32b-43cb-8597-5efd4082edb2 endpoint=127.0.0.1:58202->127.0.0.1:18789 [39m
+[90m2026-05-18T20:30:55.036+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:31:05.471+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=44354 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:44354->127.0.0.1:18789 conn=0978c767…4469 [39m
+[90m2026-05-18T20:31:06.046+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=0978c767-7bb4-4e73-b53d-1752e4ec4469 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:31:06.104+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=0978c767-7bb4-4e73-b53d-1752e4ec4469 peer=127.0.0.1:44354->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1005 reason=n/a [39m
+[90m2026-05-18T20:31:06.116+00:00 [39m [36m[ws] [39m [36m→ close code=1005 durationMs=607 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=5faaef81-986e-467d-a0a3-9f454fad78f4 endpoint=127.0.0.1:44354->127.0.0.1:18789 [39m
+[90m2026-05-18T20:31:20.458+00:00 [39m [36m[ws] [39m [36m← open remoteAddr=127.0.0.1 remotePort=42790 localAddr=127.0.0.1 localPort=18789 endpoint=127.0.0.1:42790->127.0.0.1:18789 conn=f66c394c…c5a8 [39m
+[90m2026-05-18T20:31:21.015+00:00 [39m [36m[ws] [39m [33mprotocol mismatch conn=f66c394c-e144-40ad-9298-e2f29ac8c5a8 remote=127.0.0.1 client=openclaw-control-ui ui v2026.5.12 [39m
+[90m2026-05-18T20:31:21.078+00:00 [39m [36m[ws] [39m [33mclosed before connect conn=f66c394c-e144-40ad-9298-e2f29ac8c5a8 peer=127.0.0.1:42790->127.0.0.1:18789 remote=127.0.0.1 fwd=n/a origin=http://127.0.0.1:18789 host=127.0.0.1:18789 ua=Dart/3.10 (dart:io) code=1002 reason=protocol mismatch [39m
+[90m2026-05-18T20:31:21.089+00:00 [39m [36m[ws] [39m [36m→ close code=1002 reason=protocol mismatch durationMs=589 cause=protocol-mismatch handshake=failed lastFrameType=req lastFrameMethod=connect lastFrameId=7ce51882-2f76-4ec7-bbe2-ed03a34e963a endpoint=127.0.0.1:42790->127.0.0.1:18789 [39m
+[90m2026-05-18T20:31:25.046+00:00 [39m [31m[diagnostic] [39m [90mliveness warning: reasons=event_loop_delay interval=30s eventLoopDelayP99Ms=26.1 eventLoopDelayMaxMs=2747.3 eventLoopUtilization=0.145 cpuCoreRatio=0.073 active=0 waiting=0 queued=0 recentPhases=sidecars.main-session-recovery:33ms,sidecars.restart-sentinel:140ms,sidecars.session-locks:163ms,post-attach.update-sentinel:53ms,post-ready.maintenance:638ms,sidecars.model-prewarm:6864ms [39m
+[90m2026-05-18T20:31:25.055+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:31:55.038+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m
+[90m2026-05-18T20:32:25.039+00:00 [39m [31m[diagnostic] [39m [90mheartbeat: webhooks=0/0/0 active=0 waiting=0 queued=0 [39m

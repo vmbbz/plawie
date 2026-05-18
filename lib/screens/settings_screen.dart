@@ -68,51 +68,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
-  Future<void> _loadSettings() async {
-    await _prefs.init();
-    _autoStart = _prefs.autoStartGateway;
-    _nodeEnabled = _prefs.nodeEnabled;
-    _selectedAvatar = _prefs.selectedAvatar;
-    _ttsSpeed = _prefs.ttsSpeed;
-    _continuousMode = _prefs.continuousMode;
-    _silenceTimeout = _prefs.silenceTimeoutSeconds;
-    final storedEngine = _prefs.ttsEngine;
-    _ttsEngine = ['gateway', 'offline'].contains(storedEngine) ? storedEngine : 'gateway';
-    _wakeWordMode = _prefs.wakeWordMode;
-    _hotwordRunning = await NativeBridge.isHotwordRunning();
-    _hasFullStorageAccess = await _storageService.updateStatus();
-
-    // Check offline model statuses
-    for (var m in _voiceModelService.availableModels) {
-      _modelStatus[m.id] = await _voiceModelService.isModelDownloaded(m.id);
+  Future<T> _safeCall<T>(
+    Future<T> future,
+    T fallback, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    try {
+      return await future.timeout(timeout);
+    } catch (_) {
+      return fallback;
     }
+  }
+
+  Future<void> _loadSettings() async {
+    bool autoStart = _autoStart;
+    bool nodeEnabled = _nodeEnabled;
+    bool batteryOptimized = _batteryOptimized;
+    String arch = _arch;
+    String prootPath = _prootPath;
+    Map<String, dynamic> status = _status;
+    bool goInstalled = _goInstalled;
+    bool brewInstalled = _brewInstalled;
+    String selectedAvatar = _selectedAvatar;
+    bool hasFullStorageAccess = _hasFullStorageAccess;
+    String ttsEngine = _ttsEngine;
+    double ttsSpeed = _ttsSpeed;
+    bool continuousMode = _continuousMode;
+    int silenceTimeout = _silenceTimeout;
+    String wakeWordMode = _wakeWordMode;
+    bool hotwordRunning = _hotwordRunning;
 
     try {
-      final arch = await NativeBridge.getArch();
-      final prootPath = await NativeBridge.getProotPath();
-      final status = await NativeBridge.getBootstrapStatus();
-      final batteryOptimized = await NativeBridge.isBatteryOptimized();
+      await _safeCall(_prefs.init(), null);
+      autoStart = _prefs.autoStartGateway;
+      nodeEnabled = _prefs.nodeEnabled;
+      selectedAvatar = _prefs.selectedAvatar;
+      ttsSpeed = _prefs.ttsSpeed;
+      continuousMode = _prefs.continuousMode;
+      silenceTimeout = _prefs.silenceTimeoutSeconds;
+      final storedEngine = _prefs.ttsEngine;
+      ttsEngine = ['gateway', 'offline'].contains(storedEngine)
+          ? storedEngine
+          : 'gateway';
+      wakeWordMode = _prefs.wakeWordMode;
+
+      hotwordRunning = await _safeCall(NativeBridge.isHotwordRunning(), false);
+      hasFullStorageAccess =
+          await _safeCall(_storageService.updateStatus(), false);
+
+      // Check offline model statuses without blocking the whole page.
+      for (var m in _voiceModelService.availableModels) {
+        _modelStatus[m.id] = await _safeCall(
+          _voiceModelService.isModelDownloaded(m.id),
+          false,
+        );
+      }
+
+      arch = await _safeCall(NativeBridge.getArch(), '');
+      prootPath = await _safeCall(NativeBridge.getProotPath(), '');
+      status = await _safeCall(
+          NativeBridge.getBootstrapStatus(), <String, dynamic>{});
+      batteryOptimized =
+          await _safeCall(NativeBridge.isBatteryOptimized(), true);
 
       // Check optional package statuses
-      final filesDir = await NativeBridge.getFilesDir();
+      final filesDir = await _safeCall(NativeBridge.getFilesDir(), '');
       final rootfs = '$filesDir/rootfs/ubuntu';
-      final goInstalled = File('$rootfs/usr/bin/go').existsSync();
-      final brewInstalled =
+      goInstalled = File('$rootfs/usr/bin/go').existsSync();
+      brewInstalled =
           File('$rootfs/home/linuxbrew/.linuxbrew/bin/brew').existsSync();
-
-      setState(() {
-        _batteryOptimized = batteryOptimized;
-        _arch = arch;
-        _prootPath = prootPath;
-        _status = status;
-        _goInstalled = goInstalled;
-        _brewInstalled = brewInstalled;
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
+    } catch (_) {
+      // Keep defaults and render what we have.
+    } finally {
+      if (mounted) {
+        setState(() {
+          _autoStart = autoStart;
+          _nodeEnabled = nodeEnabled;
+          _batteryOptimized = batteryOptimized;
+          _arch = arch;
+          _prootPath = prootPath;
+          _status = status;
+          _goInstalled = goInstalled;
+          _brewInstalled = brewInstalled;
+          _selectedAvatar = selectedAvatar;
+          _hasFullStorageAccess = hasFullStorageAccess;
+          _ttsEngine = ttsEngine;
+          _ttsSpeed = ttsSpeed;
+          _continuousMode = continuousMode;
+          _silenceTimeout = silenceTimeout;
+          _wakeWordMode = wakeWordMode;
+          _hotwordRunning = hotwordRunning;
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -133,7 +181,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildAppBar(context),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0, vertical: 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -144,591 +193,716 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   sliver: SliverList.list(
                     children: [
-                _sectionHeader(theme, 'GENERAL'),
-                SwitchListTile(
-                  title: const Text('Auto-start gateway'),
-                  subtitle: const Text('Start the gateway when the app opens'),
-                  value: _autoStart,
-                  onChanged: (value) {
-                    setState(() => _autoStart = value);
-                    _prefs.autoStartGateway = value;
-                  },
-                ),
-                ListTile(
-                  title: const Text('Battery Optimization'),
-                  subtitle: Text(_batteryOptimized
-                      ? 'Optimized (may kill background sessions)'
-                      : 'Unrestricted (recommended)'),
-                  leading: const Icon(Icons.battery_alert),
-                  trailing: _batteryOptimized
-                      ? const Icon(Icons.warning, color: AppColors.statusAmber)
-                      : const Icon(Icons.check_circle, color: AppColors.statusGreen),
-                  onTap: () async {
-                    await NativeBridge.requestBatteryOptimization();
-                    // Refresh status after returning from settings
-                    final optimized = await NativeBridge.isBatteryOptimized();
-                    setState(() => _batteryOptimized = optimized);
-                  },
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'STORAGE & FILES'),
-                ListTile(
-                  title: const Text('All Files Access (Pro)'),
-                  subtitle: Text(_hasFullStorageAccess
-                      ? 'Granted — /sdcard mounted to PRoot'
-                      : 'Disabled — PRoot is sandboxed'),
-                  leading: Icon(
-                    Icons.folder_shared,
-                    color: _hasFullStorageAccess ? AppColors.statusGreen : Colors.white38,
-                  ),
-                  trailing: _hasFullStorageAccess
-                      ? const Icon(Icons.check_circle, color: AppColors.statusGreen)
-                      : const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    if (!_hasFullStorageAccess) {
-                      _showStoragePermissionDialog(context);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Phone storage is mounted at /root/sdcard inside PRoot')),
-                      );
-                    }
-                  },
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'NODE'),
-                SwitchListTile(
-                  title: const Text('Enable Node'),
-                  subtitle: const Text('Provide device capabilities to the gateway'),
-                  value: _nodeEnabled,
-                  onChanged: (value) {
-                    setState(() => _nodeEnabled = value);
-                    _prefs.nodeEnabled = value;
-                    final nodeProvider = context.read<NodeProvider>();
-                    if (value) {
-                      nodeProvider.enable();
-                    } else {
-                      nodeProvider.disable();
-                    }
-                  },
-                ),
-                ListTile(
-                  title: const Text('Node Configuration'),
-                  subtitle: const Text('Connection, pairing, and capabilities'),
-                  leading: const Icon(Icons.devices),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const NodeScreen()),
-                  ),
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'API KEYS & MODEL'),
-                ListTile(
-                  title: const Text('Current Provider'),
-                  subtitle: Text(_getProviderLabel(_prefs.configuredModel ?? 'google/gemini-3.1-pro-preview')),
-                  leading: const Icon(Icons.key),
-                  trailing: const Icon(Icons.edit, size: 18),
-                  onTap: () => _showUpdateApiKeyDialog(context),
-                ),
-                ListTile(
-                  title: const Text('Active Model'),
-                  subtitle: Text(_getModelLabel(_prefs.configuredModel ?? 'google/gemini-3.1-pro-preview')),
-                  leading: const Icon(Icons.psychology),
-                  trailing: const Icon(Icons.swap_horiz, size: 18),
-                  onTap: () => _showChangeModelDialog(context),
-                ),
-                // Local LLM shortcut — shows live server status
-                StreamBuilder<LocalLlmState>(
-                  stream: LocalLlmService().stateStream,
-                  initialData: LocalLlmService().state,
-                  builder: (context, snap) {
-                    final llmState = snap.data ?? const LocalLlmState();
-                    final isReady = llmState.status == LocalLlmStatus.ready;
-                    final statusLabel = switch (llmState.status) {
-                      LocalLlmStatus.ready => 'Running · ${llmState.activeModelId?.split('-').take(3).join('-') ?? ''}',
-                      LocalLlmStatus.starting => 'Starting...',
-                      LocalLlmStatus.downloading => 'Downloading model',
-                      LocalLlmStatus.installing => 'Compiling llama-server',
-                      LocalLlmStatus.error => 'Error — tap to fix',
-                      LocalLlmStatus.idle => 'Offline — tap to set up',
-                    };
-                    return ListTile(
-                      title: const Text('Local LLM'),
-                      subtitle: Text(statusLabel),
-                      leading: Icon(
-                        Icons.memory_rounded,
-                        color: isReady ? AppColors.statusGreen : Colors.white38,
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (isReady)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.statusGreen.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: AppColors.statusGreen.withValues(alpha: 0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Text(
-                                _prefs.configuredModel?.startsWith('local-llm/') == true ? 'ACTIVE' : 'READY',
-                                style: const TextStyle(color: AppColors.statusGreen, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-                              ),
-                            ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right, color: Colors.white24),
-                        ],
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LocalLlmScreen()),
-                      ),
-                    );
-                  },
-                ),
-                _sectionHeader(theme, 'AVATAR'),
-                ListTile(
-                  title: const Text('Selected Avatar'),
-                  subtitle: Text(_prefs.selectedAvatar.split('.').first.toUpperCase()),
-                  onTap: () => _changeAvatar(context),
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'TTS ENGINE & MODELS'),
-                ListTile(
-                  title: const Text('TTS Engine'),
-                  subtitle: Text(_ttsEngine == 'offline' ? 'Offline (Sherpa-ONNX)' : 'Cloud (Gateway Default)'),
-                  leading: Icon(
-                    Icons.settings_voice,
-                    color: _ttsEngine == 'offline' ? AppColors.statusGreen : Colors.white38,
-                  ),
-                  trailing: DropdownButton<String>(
-                    value: _ttsEngine,
-                    dropdownColor: Colors.grey[900],
-                    underline: const SizedBox(),
-                    items: const [
-                      DropdownMenuItem(value: 'gateway', child: Text('Cloud')),
-                      DropdownMenuItem(value: 'offline', child: Text('Offline')),
-                    ],
-                    onChanged: (v) async {
-                      if (v == null) return;
-                      setState(() => _ttsEngine = v);
-                      await _voicePersonaService.setTtsEngine(v);
-                    },
-                  ),
-                ),
-                if (_ttsEngine == 'offline') ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text(
-                      'Manage Offline Voices',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white54),
-                    ),
-                  ),
-                  ..._voiceModelService.availableModels.map((model) {
-                    final isDownloaded = _modelStatus[model.id] ?? false;
-                    final progress = _downloadProgress[model.id];
-                    final isActive = _prefs.offlineVoiceModel == model.id;
-
-                    return ListTile(
-                      title: Text(model.name),
-                      subtitle: Text(model.description, style: const TextStyle(fontSize: 12)),
-                      leading: Icon(
-                        isActive ? Icons.check_circle : Icons.record_voice_over,
-                        color: isActive ? AppColors.statusGreen : Colors.white24,
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (progress != null && progress < 1.0)
-                            SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(value: progress, strokeWidth: 2),
-                            )
-                          else if (isDownloaded)
-                            IconButton(
-                              icon: Icon(isActive ? Icons.star : Icons.star_border, 
-                                   color: isActive ? AppColors.statusAmber : Colors.white38),
-                              onPressed: () async {
-                                await _voicePersonaService.applyOfflineModel(model.id);
-                                setState(() {});
-                              },
-                            )
-                          else
-                            IconButton(
-                              icon: const Icon(Icons.download),
-                              onPressed: () async {
-                                setState(() => _downloadProgress[model.id] = 0.1);
-                                await _voiceModelService.downloadModel(model, (p) {
-                                  setState(() => _downloadProgress[model.id] = p);
-                                });
-                                final downloaded = await _voiceModelService.isModelDownloaded(model.id);
-                                setState(() {
-                                  _modelStatus[model.id] = downloaded;
-                                  _downloadProgress.remove(model.id);
-                                });
-                              },
-                            ),
-                          if (isDownloaded && !isActive)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: AppColors.statusRed, size: 18),
-                              onPressed: () async {
-                                await _voiceModelService.deleteModel(model.id);
-                                final downloaded = await _voiceModelService.isModelDownloaded(model.id);
-                                setState(() => _modelStatus[model.id] = downloaded);
-                              },
-                            ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-                const Divider(),
-                _sectionHeader(theme, 'VOICE & SPEECH'),
-                ListTile(
-                  title: const Text('Voice Persona'),
-                  subtitle: Text(TtsService().currentPersona.toUpperCase()),
-                  leading: const Icon(Icons.psychology_alt),
-                  trailing: const Icon(Icons.swap_horiz, size: 18),
-                  onTap: () => _showPersonaPicker(context),
-                ),
-                // Speed slider
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Speech Speed', style: TextStyle(fontSize: 14)),
-                          Text('${_ttsSpeed.toStringAsFixed(1)}×',
-                              style: const TextStyle(fontSize: 14, color: Colors.white54)),
-                        ],
-                      ),
-                      Slider(
-                        value: _ttsSpeed,
-                        min: 0.5,
-                        max: 2.0,
-                        divisions: 15,
-                        onChanged: (v) {
-                          setState(() => _ttsSpeed = v);
-                          _prefs.ttsSpeed = v;
+                      _sectionHeader(theme, 'GENERAL'),
+                      SwitchListTile(
+                        title: const Text('Auto-start gateway'),
+                        subtitle:
+                            const Text('Start the gateway when the app opens'),
+                        value: _autoStart,
+                        onChanged: (value) {
+                          setState(() => _autoStart = value);
+                          _prefs.autoStartGateway = value;
                         },
                       ),
-                    ],
-                  ),
-                ),
-                SwitchListTile(
-                  title: const Text('Continuous Mode'),
-                  subtitle: const Text('Auto-restart mic after each response'),
-                  value: _continuousMode,
-                  onChanged: (v) {
-                    setState(() => _continuousMode = v);
-                    _prefs.continuousMode = v;
-                  },
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Silence Timeout', style: TextStyle(fontSize: 14)),
-                          Text('${_silenceTimeout}s',
-                              style: const TextStyle(fontSize: 14, color: Colors.white54)),
-                        ],
-                      ),
-                      Slider(
-                        value: _silenceTimeout.toDouble(),
-                        min: 1,
-                        max: 15,
-                        divisions: 14,
-                        onChanged: (v) {
-                          setState(() => _silenceTimeout = v.round());
-                          _prefs.silenceTimeoutSeconds = v.round();
+                      ListTile(
+                        title: const Text('Battery Optimization'),
+                        subtitle: Text(_batteryOptimized
+                            ? 'Optimized (may kill background sessions)'
+                            : 'Unrestricted (recommended)'),
+                        leading: const Icon(Icons.battery_alert),
+                        trailing: _batteryOptimized
+                            ? const Icon(Icons.warning,
+                                color: AppColors.statusAmber)
+                            : const Icon(Icons.check_circle,
+                                color: AppColors.statusGreen),
+                        onTap: () async {
+                          await NativeBridge.requestBatteryOptimization();
+                          // Refresh status after returning from settings
+                          final optimized =
+                              await NativeBridge.isBatteryOptimized();
+                          setState(() => _batteryOptimized = optimized);
                         },
                       ),
-                      Text('How long to wait after you stop speaking before submitting',
-                          style: TextStyle(fontSize: 11, color: Colors.white38)),
-                    ],
-                  ),
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'WAKE WORD'),
-                // Status tile — shows running/idle
-                ListTile(
-                  leading: Icon(
-                    Icons.hearing,
-                    color: _hotwordRunning ? AppColors.statusGreen : Colors.white38,
-                  ),
-                  title: const Text('Wake Word "Plawie"'),
-                  subtitle: Text(_hotwordRunning
-                      ? 'Listening · mode: $_wakeWordMode'
-                      : 'Off — say "Plawie" to activate hands-free'),
-                  trailing: _hotwordRunning
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.statusGreen.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
-                          ),
-                          child: const Text('ACTIVE',
-                              style: TextStyle(color: AppColors.statusGreen, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                        )
-                      : null,
-                ),
-                // Mode picker
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Mode', style: TextStyle(fontSize: 14)),
-                      DropdownButton<String>(
-                        value: _wakeWordMode,
-                        dropdownColor: Colors.grey[900],
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'off',        child: Text('Off')),
-                          DropdownMenuItem(value: 'foreground', child: Text('Foreground only')),
-                          DropdownMenuItem(value: 'always',     child: Text('Always on')),
-                        ],
-                        onChanged: (v) async {
-                          if (v == null) return;
-                          setState(() => _wakeWordMode = v);
-                          _prefs.wakeWordMode = v;
-                          await NativeBridge.setHotwordMode(v);
-                          if (v == 'off') {
-                            await NativeBridge.stopHotword();
-                          } else {
-                            await NativeBridge.startHotword();
-                          }
-                          final running = await NativeBridge.isHotwordRunning();
-                          if (mounted) setState(() => _hotwordRunning = running);
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'SYSTEM INFO'),
-                ListTile(
-                  title: const Text('Architecture'),
-                  subtitle: Text(_arch),
-                  leading: const Icon(Icons.memory),
-                ),
-                ListTile(
-                  title: const Text('PRoot path'),
-                  subtitle: Text(_prootPath),
-                  leading: const Icon(Icons.folder),
-                ),
-                ListTile(
-                  title: const Text('Rootfs'),
-                  subtitle: Text(_status['rootfsExists'] == true
-                      ? 'Installed'
-                      : 'Not installed'),
-                  leading: const Icon(Icons.storage),
-                ),
-                ListTile(
-                  title: const Text('Node.js'),
-                  subtitle: Text(_status['nodeInstalled'] == true
-                      ? 'Installed'
-                      : 'Not installed'),
-                  leading: const Icon(Icons.code),
-                ),
-                ListTile(
-                  title: const Text('OpenClaw Gateway'),
-                  subtitle: Text(_status['openclawInstalled'] == true
-                      ? 'Installed'
-                      : 'Not installed'),
-                  leading: const Icon(Icons.cloud),
-                ),
-                ListTile(
-                  title: const Text('Go (Golang)'),
-                  subtitle: Text(_goInstalled
-                      ? 'Installed'
-                      : 'Not installed'),
-                  leading: const Icon(Icons.integration_instructions),
-                ),
-                ListTile(
-                  title: const Text('Homebrew'),
-                  subtitle: Text(_brewInstalled
-                      ? 'Installed'
-                      : 'Not installed'),
-                  leading: const Icon(Icons.science),
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'MAINTENANCE'),
-                ListTile(
-                  title: const Text('Test Gateway Connection'),
-                  subtitle: const Text('Check if the gateway is reachable'),
-                  leading: const Icon(Icons.wifi_tethering),
-                  onTap: () async {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Testing connection...')),
-                    );
-                    final gw = context.read<GatewayProvider>();
-                    final healthy = await gw.checkHealth();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        icon: Icon(
-                          healthy ? Icons.check_circle : Icons.error,
-                          color: healthy ? AppColors.statusGreen : AppColors.statusRed,
-                          size: 48,
+                      const Divider(),
+                      _sectionHeader(theme, 'STORAGE & FILES'),
+                      ListTile(
+                        title: const Text('All Files Access (Pro)'),
+                        subtitle: Text(_hasFullStorageAccess
+                            ? 'Granted — /sdcard mounted to PRoot'
+                            : 'Disabled — PRoot is sandboxed'),
+                        leading: Icon(
+                          Icons.folder_shared,
+                          color: _hasFullStorageAccess
+                              ? AppColors.statusGreen
+                              : Colors.white38,
                         ),
-                        title: Text(healthy ? 'Gateway Connected' : 'Connection Failed'),
-                        content: Text(healthy
-                          ? 'Gateway is healthy and responding at ${AppConstants.gatewayUrl}'
-                          : 'Cannot reach the gateway at ${AppConstants.gatewayUrl}.\nMake sure it is running.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('OK'),
-                          ),
-                          ListTile(
-                            title: const Text('Open official documentation'),
-                            subtitle: const Text('View setup guide and usage docs', style: TextStyle(fontSize: 12)),
-                            trailing: const Icon(Icons.open_in_new_rounded, size: 18, color: Colors.white38),
-                            onTap: () => launchUrl(
-                              Uri.parse('https://openclaw.ai/docs'),
-                              mode: LaunchMode.externalApplication,
-                            ),
-                          ),
-                        ],
+                        trailing: _hasFullStorageAccess
+                            ? const Icon(Icons.check_circle,
+                                color: AppColors.statusGreen)
+                            : const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          if (!_hasFullStorageAccess) {
+                            _showStoragePermissionDialog(context);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Phone storage is mounted at /root/sdcard inside PRoot')),
+                            );
+                          }
+                        },
                       ),
-                    );
-                  },
-                ),
-                ListTile(
-                  title: const Text('Re-run setup'),
-                  subtitle: const Text('Reinstall or repair the environment'),
-                  leading: const Icon(Icons.build),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => const SetupWizardScreen(),
-                    ),
-                  ),
-                ),
-                Consumer<GatewayProvider>(
-                  builder: (context, provider, _) {
-                    final repairing = provider.state.isRepairing;
-                    return ListTile(
-                      title: const Text('Repair Gateway Installation'),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            repairing ? provider.state.repairMessage : 'Fix SyntaxError or corrupted library files',
-                            style: TextStyle(
-                              color: repairing ? AppColors.statusAmber : Colors.white54,
-                              fontSize: 12,
+                      const Divider(),
+                      _sectionHeader(theme, 'NODE'),
+                      SwitchListTile(
+                        title: const Text('Enable Node'),
+                        subtitle: const Text(
+                            'Provide device capabilities to the gateway'),
+                        value: _nodeEnabled,
+                        onChanged: (value) {
+                          setState(() => _nodeEnabled = value);
+                          _prefs.nodeEnabled = value;
+                          final nodeProvider = context.read<NodeProvider>();
+                          if (value) {
+                            nodeProvider.enable();
+                          } else {
+                            nodeProvider.disable();
+                          }
+                        },
+                      ),
+                      ListTile(
+                        title: const Text('Node Configuration'),
+                        subtitle:
+                            const Text('Connection, pairing, and capabilities'),
+                        leading: const Icon(Icons.devices),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const NodeScreen()),
+                        ),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'API KEYS & MODEL'),
+                      ListTile(
+                        title: const Text('Current Provider'),
+                        subtitle: Text(_getProviderLabel(
+                            _prefs.configuredModel ??
+                                'google/gemini-3.1-pro-preview')),
+                        leading: const Icon(Icons.key),
+                        trailing: const Icon(Icons.edit, size: 18),
+                        onTap: () => _showUpdateApiKeyDialog(context),
+                      ),
+                      ListTile(
+                        title: const Text('Active Model'),
+                        subtitle: Text(_getModelLabel(_prefs.configuredModel ??
+                            'google/gemini-3.1-pro-preview')),
+                        leading: const Icon(Icons.psychology),
+                        trailing: const Icon(Icons.swap_horiz, size: 18),
+                        onTap: () => _showChangeModelDialog(context),
+                      ),
+                      // Local LLM shortcut — shows live server status
+                      StreamBuilder<LocalLlmState>(
+                        stream: LocalLlmService().stateStream,
+                        initialData: LocalLlmService().state,
+                        builder: (context, snap) {
+                          final llmState = snap.data ?? const LocalLlmState();
+                          final isReady =
+                              llmState.status == LocalLlmStatus.ready;
+                          final statusLabel = switch (llmState.status) {
+                            LocalLlmStatus.ready =>
+                              'Running · ${llmState.activeModelId?.split('-').take(3).join('-') ?? ''}',
+                            LocalLlmStatus.starting => 'Starting...',
+                            LocalLlmStatus.downloading => 'Downloading model',
+                            LocalLlmStatus.installing =>
+                              'Compiling llama-server',
+                            LocalLlmStatus.error => 'Error — tap to fix',
+                            LocalLlmStatus.idle => 'Offline — tap to set up',
+                          };
+                          return ListTile(
+                            title: const Text('Local LLM'),
+                            subtitle: Text(statusLabel),
+                            leading: Icon(
+                              Icons.memory_rounded,
+                              color: isReady
+                                  ? AppColors.statusGreen
+                                  : Colors.white38,
                             ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isReady)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.statusGreen
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.statusGreen
+                                            .withValues(alpha: 0.3),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _prefs.configuredModel
+                                                  ?.startsWith('local-llm/') ==
+                                              true
+                                          ? 'ACTIVE'
+                                          : 'READY',
+                                      style: const TextStyle(
+                                          color: AppColors.statusGreen,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.5),
+                                    ),
+                                  ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.chevron_right,
+                                    color: Colors.white24),
+                              ],
+                            ),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const LocalLlmScreen()),
+                            ),
+                          );
+                        },
+                      ),
+                      _sectionHeader(theme, 'AVATAR'),
+                      ListTile(
+                        title: const Text('Selected Avatar'),
+                        subtitle: Text(_prefs.selectedAvatar
+                            .split('.')
+                            .first
+                            .toUpperCase()),
+                        onTap: () => _changeAvatar(context),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'TTS ENGINE & MODELS'),
+                      ListTile(
+                        title: const Text('TTS Engine'),
+                        subtitle: Text(_ttsEngine == 'offline'
+                            ? 'Offline (Sherpa-ONNX)'
+                            : 'Cloud (Gateway Default)'),
+                        leading: Icon(
+                          Icons.settings_voice,
+                          color: _ttsEngine == 'offline'
+                              ? AppColors.statusGreen
+                              : Colors.white38,
+                        ),
+                        trailing: DropdownButton<String>(
+                          value: _ttsEngine,
+                          dropdownColor: Colors.grey[900],
+                          underline: const SizedBox(),
+                          items: const [
+                            DropdownMenuItem(
+                                value: 'gateway', child: Text('Cloud')),
+                            DropdownMenuItem(
+                                value: 'offline', child: Text('Offline')),
+                          ],
+                          onChanged: (v) async {
+                            if (v == null) return;
+                            setState(() => _ttsEngine = v);
+                            await _voicePersonaService.setTtsEngine(v);
+                          },
+                        ),
+                      ),
+                      if (_ttsEngine == 'offline') ...[
+                        const Padding(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Text(
+                            'Manage Offline Voices',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white54),
                           ),
-                          if (repairing) ...[
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: provider.state.repairProgress,
-                                backgroundColor: Colors.white10,
-                                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.statusAmber),
-                                minHeight: 2,
-                              ),
+                        ),
+                        ..._voiceModelService.availableModels.map((model) {
+                          final isDownloaded = _modelStatus[model.id] ?? false;
+                          final progress = _downloadProgress[model.id];
+                          final isActive = _prefs.offlineVoiceModel == model.id;
+
+                          return ListTile(
+                            title: Text(model.name),
+                            subtitle: Text(model.description,
+                                style: const TextStyle(fontSize: 12)),
+                            leading: Icon(
+                              isActive
+                                  ? Icons.check_circle
+                                  : Icons.record_voice_over,
+                              color: isActive
+                                  ? AppColors.statusGreen
+                                  : Colors.white24,
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (progress != null && progress < 1.0)
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                        value: progress, strokeWidth: 2),
+                                  )
+                                else if (isDownloaded)
+                                  IconButton(
+                                    icon: Icon(
+                                        isActive
+                                            ? Icons.star
+                                            : Icons.star_border,
+                                        color: isActive
+                                            ? AppColors.statusAmber
+                                            : Colors.white38),
+                                    onPressed: () async {
+                                      await _voicePersonaService
+                                          .applyOfflineModel(model.id);
+                                      setState(() {});
+                                    },
+                                  )
+                                else
+                                  IconButton(
+                                    icon: const Icon(Icons.download),
+                                    onPressed: () async {
+                                      setState(() =>
+                                          _downloadProgress[model.id] = 0.1);
+                                      await _voiceModelService
+                                          .downloadModel(model, (p) {
+                                        setState(() =>
+                                            _downloadProgress[model.id] = p);
+                                      });
+                                      final downloaded =
+                                          await _voiceModelService
+                                              .isModelDownloaded(model.id);
+                                      setState(() {
+                                        _modelStatus[model.id] = downloaded;
+                                        _downloadProgress.remove(model.id);
+                                      });
+                                    },
+                                  ),
+                                if (isDownloaded && !isActive)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        color: AppColors.statusRed, size: 18),
+                                    onPressed: () async {
+                                      await _voiceModelService
+                                          .deleteModel(model.id);
+                                      final downloaded =
+                                          await _voiceModelService
+                                              .isModelDownloaded(model.id);
+                                      setState(() =>
+                                          _modelStatus[model.id] = downloaded);
+                                    },
+                                  ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                      const Divider(),
+                      _sectionHeader(theme, 'VOICE & SPEECH'),
+                      ListTile(
+                        title: const Text('Voice Persona'),
+                        subtitle:
+                            Text(TtsService().currentPersona.toUpperCase()),
+                        leading: const Icon(Icons.psychology_alt),
+                        trailing: const Icon(Icons.swap_horiz, size: 18),
+                        onTap: () => _showPersonaPicker(context),
+                      ),
+                      // Speed slider
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Speech Speed',
+                                    style: TextStyle(fontSize: 14)),
+                                Text('${_ttsSpeed.toStringAsFixed(1)}×',
+                                    style: const TextStyle(
+                                        fontSize: 14, color: Colors.white54)),
+                              ],
+                            ),
+                            Slider(
+                              value: _ttsSpeed,
+                              min: 0.5,
+                              max: 2.0,
+                              divisions: 15,
+                              onChanged: (v) {
+                                setState(() => _ttsSpeed = v);
+                                _prefs.ttsSpeed = v;
+                              },
                             ),
                           ],
-                        ],
-                      ),
-                      leading: Icon(
-                        Icons.build_circle,
-                        color: repairing ? AppColors.statusAmber : Colors.white38,
-                      ),
-                      onTap: repairing ? null : () => _showRepairDialog(context),
-                    );
-                  },
-                ),
-                ListTile(
-                  title: const Text('Run Gateway Diagnostics'),
-                  subtitle: const Text('Check tmux, openclaw, session and logs'),
-                  leading: const Icon(Icons.bug_report),
-                  onTap: () async {
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (ctx) => const Center(child: CircularProgressIndicator()),
-                    );
-                    final results = await DiagnosticService.runGatewayDiagnostics();
-                    if (!context.mounted) return;
-                    Navigator.pop(context); // close progress
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Diagnostics'),
-                        content: SingleChildScrollView(
-                          child: SelectableText(results.entries.map((e) => '${e.key}:\n${e.value}').join('\n\n')),
                         ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-                        ],
                       ),
-                    );
-                  },
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'ABOUT'),
-                const ListTile(
-                  title: Text('Plawie'),
-                  subtitle: Text(
-                    'OpenClaw in your Pocket\nVersion ${AppConstants.version}',
-                  ),
-                  leading: Icon(Icons.info_outline),
-                  isThreeLine: true,
-                ),
-                const ListTile(
-                  title: Text('License'),
-                  subtitle: Text(AppConstants.license),
-                  leading: Icon(Icons.description),
-                ),
-                const Divider(),
-                _sectionHeader(theme, 'SUPPORT'),
-                ListTile(
-                  title: const Text('Documentation'),
-                  subtitle: const Text('View setup guide and usage docs'),
-                  leading: const Icon(Icons.book),
-                  trailing: const Icon(Icons.open_in_new, size: 18),
-                  onTap: () => launchUrl(
-                    Uri.parse('https://github.com/vmbbz/plawie'),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                ),
-                ListTile(
-                  title: const Text('Community'),
-                  subtitle: const Text('Join our Discord community'),
-                  leading: const Icon(Icons.people),
-                  trailing: const Icon(Icons.open_in_new, size: 18),
-                  onTap: () => launchUrl(
-                    Uri.parse('https://discord.gg/openclaw'),
-                        mode: LaunchMode.externalApplication,
+                      SwitchListTile(
+                        title: const Text('Continuous Mode'),
+                        subtitle:
+                            const Text('Auto-restart mic after each response'),
+                        value: _continuousMode,
+                        onChanged: (v) {
+                          setState(() => _continuousMode = v);
+                          _prefs.continuousMode = v;
+                        },
                       ),
-                    ),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Silence Timeout',
+                                    style: TextStyle(fontSize: 14)),
+                                Text('${_silenceTimeout}s',
+                                    style: const TextStyle(
+                                        fontSize: 14, color: Colors.white54)),
+                              ],
+                            ),
+                            Slider(
+                              value: _silenceTimeout.toDouble(),
+                              min: 1,
+                              max: 15,
+                              divisions: 14,
+                              onChanged: (v) {
+                                setState(() => _silenceTimeout = v.round());
+                                _prefs.silenceTimeoutSeconds = v.round();
+                              },
+                            ),
+                            Text(
+                                'How long to wait after you stop speaking before submitting',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.white38)),
+                          ],
+                        ),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'WAKE WORD'),
+                      // Status tile — shows running/idle
+                      ListTile(
+                        leading: Icon(
+                          Icons.hearing,
+                          color: _hotwordRunning
+                              ? AppColors.statusGreen
+                              : Colors.white38,
+                        ),
+                        title: const Text('Wake Word "Plawie"'),
+                        subtitle: Text(_hotwordRunning
+                            ? 'Listening · mode: $_wakeWordMode'
+                            : 'Off — say "Plawie" to activate hands-free'),
+                        trailing: _hotwordRunning
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.statusGreen
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: AppColors.statusGreen
+                                          .withValues(alpha: 0.3)),
+                                ),
+                                child: const Text('ACTIVE',
+                                    style: TextStyle(
+                                        color: AppColors.statusGreen,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.5)),
+                              )
+                            : null,
+                      ),
+                      // Mode picker
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Mode', style: TextStyle(fontSize: 14)),
+                            DropdownButton<String>(
+                              value: _wakeWordMode,
+                              dropdownColor: Colors.grey[900],
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 14),
+                              underline: const SizedBox(),
+                              items: const [
+                                DropdownMenuItem(
+                                    value: 'off', child: Text('Off')),
+                                DropdownMenuItem(
+                                    value: 'foreground',
+                                    child: Text('Foreground only')),
+                                DropdownMenuItem(
+                                    value: 'always', child: Text('Always on')),
+                              ],
+                              onChanged: (v) async {
+                                if (v == null) return;
+                                setState(() => _wakeWordMode = v);
+                                _prefs.wakeWordMode = v;
+                                await NativeBridge.setHotwordMode(v);
+                                if (v == 'off') {
+                                  await NativeBridge.stopHotword();
+                                } else {
+                                  await NativeBridge.startHotword();
+                                }
+                                final running =
+                                    await NativeBridge.isHotwordRunning();
+                                if (mounted) {
+                                  setState(() => _hotwordRunning = running);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'SYSTEM INFO'),
+                      ListTile(
+                        title: const Text('Architecture'),
+                        subtitle: Text(_arch),
+                        leading: const Icon(Icons.memory),
+                      ),
+                      ListTile(
+                        title: const Text('PRoot path'),
+                        subtitle: Text(_prootPath),
+                        leading: const Icon(Icons.folder),
+                      ),
+                      ListTile(
+                        title: const Text('Rootfs'),
+                        subtitle: Text(_status['rootfsExists'] == true
+                            ? 'Installed'
+                            : 'Not installed'),
+                        leading: const Icon(Icons.storage),
+                      ),
+                      ListTile(
+                        title: const Text('Node.js'),
+                        subtitle: Text(_status['nodeInstalled'] == true
+                            ? 'Installed'
+                            : 'Not installed'),
+                        leading: const Icon(Icons.code),
+                      ),
+                      ListTile(
+                        title: const Text('OpenClaw Gateway'),
+                        subtitle: Text(_status['openclawInstalled'] == true
+                            ? 'Installed'
+                            : 'Not installed'),
+                        leading: const Icon(Icons.cloud),
+                      ),
+                      ListTile(
+                        title: const Text('Go (Golang)'),
+                        subtitle:
+                            Text(_goInstalled ? 'Installed' : 'Not installed'),
+                        leading: const Icon(Icons.integration_instructions),
+                      ),
+                      ListTile(
+                        title: const Text('Homebrew'),
+                        subtitle: Text(
+                            _brewInstalled ? 'Installed' : 'Not installed'),
+                        leading: const Icon(Icons.science),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'MAINTENANCE'),
+                      ListTile(
+                        title: const Text('Test Gateway Connection'),
+                        subtitle:
+                            const Text('Check if the gateway is reachable'),
+                        leading: const Icon(Icons.wifi_tethering),
+                        onTap: () async {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Testing connection...')),
+                          );
+                          final gw = context.read<GatewayProvider>();
+                          final healthy = await gw.checkHealth();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              icon: Icon(
+                                healthy ? Icons.check_circle : Icons.error,
+                                color: healthy
+                                    ? AppColors.statusGreen
+                                    : AppColors.statusRed,
+                                size: 48,
+                              ),
+                              title: Text(healthy
+                                  ? 'Gateway Connected'
+                                  : 'Connection Failed'),
+                              content: Text(healthy
+                                  ? 'Gateway is healthy and responding at ${AppConstants.gatewayUrl}'
+                                  : 'Cannot reach the gateway at ${AppConstants.gatewayUrl}.\nMake sure it is running.'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('OK'),
+                                ),
+                                ListTile(
+                                  title:
+                                      const Text('Open official documentation'),
+                                  subtitle: const Text(
+                                      'View setup guide and usage docs',
+                                      style: TextStyle(fontSize: 12)),
+                                  trailing: const Icon(
+                                      Icons.open_in_new_rounded,
+                                      size: 18,
+                                      color: Colors.white38),
+                                  onTap: () => launchUrl(
+                                    Uri.parse('https://openclaw.ai/docs'),
+                                    mode: LaunchMode.externalApplication,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      ListTile(
+                        title: const Text('Re-run setup'),
+                        subtitle:
+                            const Text('Reinstall or repair the environment'),
+                        leading: const Icon(Icons.build),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => const SetupWizardScreen(),
+                          ),
+                        ),
+                      ),
+                      Consumer<GatewayProvider>(
+                        builder: (context, provider, _) {
+                          final repairing = provider.state.isRepairing;
+                          return ListTile(
+                            title: const Text('Repair Gateway Installation'),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  repairing
+                                      ? provider.state.repairMessage
+                                      : 'Fix SyntaxError or corrupted library files',
+                                  style: TextStyle(
+                                    color: repairing
+                                        ? AppColors.statusAmber
+                                        : Colors.white54,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                if (repairing) ...[
+                                  const SizedBox(height: 8),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: provider.state.repairProgress,
+                                      backgroundColor: Colors.white10,
+                                      valueColor:
+                                          const AlwaysStoppedAnimation<Color>(
+                                              AppColors.statusAmber),
+                                      minHeight: 2,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            leading: Icon(
+                              Icons.build_circle,
+                              color: repairing
+                                  ? AppColors.statusAmber
+                                  : Colors.white38,
+                            ),
+                            onTap: repairing
+                                ? null
+                                : () => _showRepairDialog(context),
+                          );
+                        },
+                      ),
+                      ListTile(
+                        title: const Text('Run Gateway Diagnostics'),
+                        subtitle: const Text(
+                            'Check tmux, openclaw, session and logs'),
+                        leading: const Icon(Icons.bug_report),
+                        onTap: () async {
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (ctx) => const Center(
+                                child: CircularProgressIndicator()),
+                          );
+                          final results =
+                              await DiagnosticService.runGatewayDiagnostics();
+                          if (!context.mounted) return;
+                          Navigator.pop(context); // close progress
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Diagnostics'),
+                              content: SingleChildScrollView(
+                                child: SelectableText(results.entries
+                                    .map((e) => '${e.key}:\n${e.value}')
+                                    .join('\n\n')),
+                              ),
+                              actions: [
+                                TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('Close')),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'ABOUT'),
+                      const ListTile(
+                        title: Text('Plawie'),
+                        subtitle: Text(
+                          'OpenClaw in your Pocket\nVersion ${AppConstants.version}',
+                        ),
+                        leading: Icon(Icons.info_outline),
+                        isThreeLine: true,
+                      ),
+                      const ListTile(
+                        title: Text('License'),
+                        subtitle: Text(AppConstants.license),
+                        leading: Icon(Icons.description),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'SUPPORT'),
+                      ListTile(
+                        title: const Text('Documentation'),
+                        subtitle: const Text('View setup guide and usage docs'),
+                        leading: const Icon(Icons.book),
+                        trailing: const Icon(Icons.open_in_new, size: 18),
+                        onTap: () => launchUrl(
+                          Uri.parse('https://github.com/vmbbz/plawie'),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('Community'),
+                        subtitle: const Text('Join our Discord community'),
+                        leading: const Icon(Icons.people),
+                        trailing: const Icon(Icons.open_in_new, size: 18),
+                        onTap: () => launchUrl(
+                          Uri.parse('https://discord.gg/openclaw'),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );
@@ -747,9 +921,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Row(
               children: [
                 Icon(
-                  isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                  isSelected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
                   size: 20,
-                  color: isSelected ? Theme.of(ctx).colorScheme.primary : Colors.white38,
+                  color: isSelected
+                      ? Theme.of(ctx).colorScheme.primary
+                      : Colors.white38,
                 ),
                 const SizedBox(width: 12),
                 Text(p[0].toUpperCase() + p.substring(1)),
@@ -838,7 +1016,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showRepairDialog(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Background repair started. Check the Dashboard for status.'),
+        content:
+            Text('Background repair started. Check the Dashboard for status.'),
         backgroundColor: AppColors.statusAmber,
         duration: Duration(seconds: 5),
       ),
@@ -865,10 +1044,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: List.generate(avatars.length, (i) => RadioListTile<String>(
-              title: Text(labels[i]),
-              value: avatars[i],
-            )),
+            children: List.generate(
+                avatars.length,
+                (i) => RadioListTile<String>(
+                      title: Text(labels[i]),
+                      value: avatars[i],
+                    )),
           ),
         ),
         actions: [
@@ -942,10 +1123,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               DropdownButtonFormField<String>(
                 initialValue: selectedProvider,
                 decoration: const InputDecoration(labelText: 'Provider'),
-                items: providers.map((p) => DropdownMenuItem(
-                  value: p,
-                  child: Text(p[0].toUpperCase() + p.substring(1)),
-                )).toList(),
+                items: providers
+                    .map((p) => DropdownMenuItem(
+                          value: p,
+                          child: Text(p[0].toUpperCase() + p.substring(1)),
+                        ))
+                    .toList(),
                 onChanged: (v) => setDialogState(() => selectedProvider = v!),
               ),
               const SizedBox(height: 12),
@@ -969,12 +1152,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final key = keyController.text.trim();
                 if (key.isEmpty) return;
                 Navigator.pop(ctx);
-                
+
                 // Show progress
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Updating API key...')),
                 );
-                
+
                 try {
                   final gw = context.read<GatewayProvider>();
                   await gw.configureApiKey(selectedProvider, key);
@@ -984,7 +1167,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {});
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('API key updated! OpenClaw will hot-reload the config.')),
+                    const SnackBar(
+                        content: Text(
+                            'API key updated! OpenClaw will hot-reload the config.')),
                   );
                 } catch (e) {
                   if (!context.mounted) return;
@@ -1049,7 +1234,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _prefs.configuredModel = val;
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Model set to $label. OpenClaw will hot-reload.')),
+          SnackBar(
+              content: Text('Model set to $label. OpenClaw will hot-reload.')),
         );
       } catch (e) {
         if (!context.mounted) return;
@@ -1060,7 +1246,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     final valueToLabel = <String, String>{
-      for (var i = 0; i < cloudModels.length; i++) cloudModels[i]: cloudLabels[i],
+      for (var i = 0; i < cloudModels.length; i++)
+        cloudModels[i]: cloudLabels[i],
       if (localModelId != null) localModelId: localLabel!,
     };
 
@@ -1084,24 +1271,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (llmReady && localModelId != null) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
-                    child: Text('ON-DEVICE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.statusGreen.withValues(alpha: 0.8))),
+                    child: Text('ON-DEVICE',
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                            color:
+                                AppColors.statusGreen.withValues(alpha: 0.8))),
                   ),
                   RadioListTile<String>(
                     title: Text(localLabel!),
-                    subtitle: const Text('No API key · No internet · Private', style: TextStyle(fontSize: 11)),
+                    subtitle: const Text('No API key · No internet · Private',
+                        style: TextStyle(fontSize: 11)),
                     value: localModelId,
                   ),
                   const Divider(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
-                    child: Text('CLOUD', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: Colors.white38)),
+                    child: Text('CLOUD',
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                            color: Colors.white38)),
                   ),
                 ],
-                ...List.generate(cloudModels.length, (i) => RadioListTile<String>(
-                  title: Text(cloudLabels[i]),
-                  subtitle: Text(cloudModels[i], style: const TextStyle(fontSize: 11)),
-                  value: cloudModels[i],
-                )),
+                ...List.generate(
+                    cloudModels.length,
+                    (i) => RadioListTile<String>(
+                          title: Text(cloudLabels[i]),
+                          subtitle: Text(cloudModels[i],
+                              style: const TextStyle(fontSize: 11)),
+                          value: cloudModels[i],
+                        )),
                 if (!llmReady)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -1137,11 +1339,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        title: Text('All Files Access', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text('All Files Access',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.folder_shared, size: 48, color: AppColors.statusAmber),
+            const Icon(Icons.folder_shared,
+                size: 48, color: AppColors.statusAmber),
             const SizedBox(height: 16),
             Text(
               _storageService.permissionReason,

@@ -457,11 +457,8 @@ class NodeService {
             log('[NODE] Gateway expects protocol v$expectedProtocol; will retry with that version.');
           }
         } else {
-          // No protocol hint in details; flip between known stable versions.
-          final fallback =
-              _preferredConnectProtocol == AppConstants.wsProtocolMaxVersion
-                  ? AppConstants.wsProtocolMinVersion
-                  : AppConstants.wsProtocolMaxVersion;
+          // No protocol hint in details; rotate through modern protocol candidates.
+          final fallback = _nextProtocolCandidate(_preferredConnectProtocol);
           if (fallback > 0 && fallback != _preferredConnectProtocol) {
             _preferredConnectProtocol = fallback;
             log('[NODE] Protocol mismatch without details; falling back to protocol v$fallback on reconnect.');
@@ -506,6 +503,18 @@ class NodeService {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
     return null;
+  }
+
+  int _nextProtocolCandidate(int current) {
+    final base = AppConstants.wsProtocolMaxVersion;
+    final candidates = <int>{base, base + 1, base + 2}
+        .where((v) => v > 0 && v <= 16)
+        .toList()
+      ..sort();
+    if (candidates.isEmpty) return base;
+    final idx = candidates.indexOf(current);
+    if (idx == -1) return candidates.first;
+    return candidates[(idx + 1) % candidates.length];
   }
 
   void _onConnected(NodeFrame frame) {
