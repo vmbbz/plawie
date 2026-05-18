@@ -24,7 +24,7 @@ class AppConstants {
 
   // Node.js binary tarball — downloaded directly by Flutter, extracted by Java.
   // Bypasses curl/gpg/NodeSource which fail inside proot.
-  static const String nodeVersion = '22.16.0';
+  static const String nodeVersion = '22.22.2';
   static const String nodeBaseUrl =
       'https://nodejs.org/dist/v$nodeVersion/node-v$nodeVersion-linux-';
 
@@ -47,7 +47,8 @@ class AppConstants {
   // Node constants
   static const int wsReconnectBaseMs = 2000;
   static const double wsReconnectMultiplier = 1.7;
-  static const int wsReconnectCapMs = 15000; // Increased cap to 15s for stability
+  static const int wsReconnectCapMs =
+      15000; // Increased cap to 15s for stability
   static const String nodeRole = 'node';
   static const int pairingTimeoutMs = 300000;
 
@@ -73,7 +74,7 @@ class AppColors {
   AppColors._();
 
   // Premium metallic palette - Black & White with grey accents
-  
+
   // Dark mode (premium black with metallic accents)
   static const Color darkBg = Color(0xFF000000); // Pure black
   static const Color darkSurface = Color(0xFF0A0A0A); // Slightly lifted black
@@ -97,8 +98,10 @@ class AppColors {
   static const Color statusGrey = Color(0xFF757575); // Neutral grey
 
   // Text hierarchy
-  static const Color primaryText = Color(0xFF000000); // Pure black for light mode
+  static const Color primaryText =
+      Color(0xFF000000); // Pure black for light mode
   static const Color secondaryText = Color(0xFF666666); // Muted text
   static const Color mutedText = Color(0xFF999999); // Subtle text
-  static const Color inverseText = Color(0xFFFFFFFF); // Pure white for dark mode
+  static const Color inverseText =
+      Color(0xFFFFFFFF); // Pure white for dark mode
 }

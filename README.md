@@ -110,7 +110,7 @@ We run a complete local Unix environment inside Android using PRoot. Inside this
 
 **Specifications:**
 - **OS Layer**: Hardened Ubuntu 24.04 (PRoot Sandbox)
-- **Runtime**: Node.js v22.16.0 LTS (High-Performance AI Gateway)
+- **Runtime**: Node.js v22.22.2 LTS (High-Performance AI Gateway)
 - **Bootstrap**: Parallel Multi-Threaded Engine (<40s Setup)
 - **Footprint**: Ephemeral Build Lifecycle (Saves 800MB+ storage)
 

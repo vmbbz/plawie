@@ -43,7 +43,7 @@ We've optimized the disk footprint to keep your phone lean.
 | Component | Status | Purpose |
 | :--- | :---: | :--- |
 | **PRoot Ubuntu 24.04** | `HARDENED` | Standardized execution layer |
-| **Node.js v22.16.0** | `STABLE` | High-performance gateway engine |
+| **Node.js v22.22.2** | `STABLE` | High-performance gateway engine |
 | **Foreground Service** | `PERSISTENT` | Zero-drop background execution |
 | **Storage Bridge** | `OPT-IN` | Granular SAF /sdcard access |
 

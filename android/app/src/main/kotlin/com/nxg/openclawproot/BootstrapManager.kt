@@ -27,6 +27,7 @@ class BootstrapManager(
     private val configDir get() = "$filesDir/config"
     private val libDir get() = "$filesDir/lib"
     private val forceLiveOpenClawInstall = true
+    private val minimumNodeVersion = listOf(22, 22, 2)
 
     fun setupDirectories() {
         listOf(rootfsDir, tmpDir, homeDir, configDir, "$homeDir/.openclaw", libDir).forEach {
@@ -54,6 +55,7 @@ class BootstrapManager(
         val binBash = File("$rootfsDir/bin/bash")
         val bypass = File("$rootfsDir/root/.openclaw/bionic-bypass.js")
         val node = File("$rootfsDir/usr/local/bin/node")
+        val nodeMeetsMinimum = isInstalledNodeAtLeastMinimum()
         val openclawBin = File("$rootfsDir/usr/local/bin/openclaw")
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
         val entryPointExists = pkgDir.exists() && (
@@ -65,7 +67,7 @@ class BootstrapManager(
         )
 
         return rootfs.exists() && binBash.exists() && bypass.exists()
-            && node.exists() && openclawBin.exists() 
+            && node.exists() && nodeMeetsMinimum && openclawBin.exists()
             && pkgDir.exists() && entryPointExists
     }
 
@@ -73,6 +75,8 @@ class BootstrapManager(
         val rootfsExists = File(rootfsDir).exists()
         val binBashExists = File("$rootfsDir/bin/bash").exists()
         val nodeExists = File("$rootfsDir/usr/local/bin/node").exists()
+        val nodeVersion = readInstalledNodeVersion()
+        val nodeMeetsMinimum = isNodeVersionAtLeast(nodeVersion, minimumNodeVersion)
         val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists()
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
         val openclawPkgExists = File(pkgDir, "package.json").exists()
@@ -86,18 +90,62 @@ class BootstrapManager(
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
         
         val complete = rootfsExists && binBashExists && bypassExists
-                && nodeExists && openclawBinExists && openclawPkgExists && entryPointExists
+                && nodeExists && nodeMeetsMinimum && openclawBinExists && openclawPkgExists && entryPointExists
 
         return mapOf(
             "rootfsExists" to rootfsExists,
             "binBashExists" to binBashExists,
             "nodeInstalled" to nodeExists,
+            "nodeVersion" to nodeVersion,
+            "nodeMeetsMinimum" to nodeMeetsMinimum,
             "openclawInstalled" to openclawPkgExists,
             "openclawEntryPointExists" to entryPointExists,
             "openclawBinExists" to openclawBinExists,
             "bypassInstalled" to bypassExists,
             "complete" to complete
         )
+    }
+
+    private fun isInstalledNodeAtLeastMinimum(): Boolean {
+        return isNodeVersionAtLeast(readInstalledNodeVersion(), minimumNodeVersion)
+    }
+
+    private fun readInstalledNodeVersion(): String {
+        val versionHeader = File("$rootfsDir/usr/local/include/node/node_version.h")
+        if (!versionHeader.exists()) return "0.0.0"
+
+        return try {
+            val content = versionHeader.readText()
+            val major = Regex("""#define\s+NODE_MAJOR_VERSION\s+(\d+)""")
+                .find(content)?.groupValues?.get(1)?.toIntOrNull()
+            val minor = Regex("""#define\s+NODE_MINOR_VERSION\s+(\d+)""")
+                .find(content)?.groupValues?.get(1)?.toIntOrNull()
+            val patch = Regex("""#define\s+NODE_PATCH_VERSION\s+(\d+)""")
+                .find(content)?.groupValues?.get(1)?.toIntOrNull()
+
+            if (major == null || minor == null || patch == null) {
+                "0.0.0"
+            } else {
+                "v$major.$minor.$patch"
+            }
+        } catch (_: Exception) {
+            "0.0.0"
+        }
+    }
+
+    private fun isNodeVersionAtLeast(version: String, minimum: List<Int>): Boolean {
+        val match = Regex("""v?(\d+)\.(\d+)\.(\d+)""").find(version) ?: return false
+        val current = listOf(
+            match.groupValues[1].toInt(),
+            match.groupValues[2].toInt(),
+            match.groupValues[3].toInt()
+        )
+
+        for (i in minimum.indices) {
+            if (current[i] > minimum[i]) return true
+            if (current[i] < minimum[i]) return false
+        }
+        return true
     }
 
     fun extractRootfs(tarPath: String) {
@@ -1237,6 +1285,9 @@ function _makeFakeSyncResult(code) {
 
 const _origSpawn = _cp.spawn;
 _cp.spawn = function(cmd, args, options) {
+  if (args && !Array.isArray(args)) { options = args; args = []; }
+  if (!Array.isArray(args)) args = [];
+  if (!options) options = {};
   try {
     const child = _origSpawn.call(_cp, cmd, args, options);
     child.on('error', (err) => {
@@ -1255,6 +1306,9 @@ _cp.spawn = function(cmd, args, options) {
 };
 const _origSpawnSync = _cp.spawnSync;
 _cp.spawnSync = function(cmd, args, options) {
+  if (args && !Array.isArray(args)) { options = args; args = []; }
+  if (!Array.isArray(args)) args = [];
+  if (!options) options = {};
   try {
     const r = _origSpawnSync.call(_cp, cmd, args, options);
     if (r.error && _shouldMock(r.error.code, cmd)) {
@@ -1272,7 +1326,11 @@ _cp.spawnSync = function(cmd, args, options) {
 const _origExecFile = _cp.execFile;
 _cp.execFile = function(file, args, options, cb) {
   if (typeof args === 'function') { cb = args; args = []; options = {}; }
+  else if (args && !Array.isArray(args)) { cb = options; options = args; args = []; }
   if (typeof options === 'function') { cb = options; options = {}; }
+  if (!Array.isArray(args)) args = [];
+  if (!options) options = {};
+  if (cb !== undefined && typeof cb !== 'function') cb = undefined;
   try { return _origExecFile.call(_cp, file, args, options, cb); }
   catch(e) {
     if (_shouldMock(e.code, file)) {
@@ -1285,6 +1343,9 @@ _cp.execFile = function(file, args, options, cb) {
 };
 const _origExecFileSync = _cp.execFileSync;
 _cp.execFileSync = function(file, args, options) {
+  if (args && !Array.isArray(args)) { options = args; args = []; }
+  if (!Array.isArray(args)) args = [];
+  if (!options) options = {};
   try { return _origExecFileSync.call(_cp, file, args, options); }
   catch(e) {
     if (_shouldMock(e.code, file)) {
@@ -1829,7 +1890,7 @@ os.networkInterfaces = () => ({});
     private fun fallbackToNpmInstall() {
         Log.i("BootstrapManager", "Performing industrial-grade live fallback install via npm...")
         processManager.runInProotSync(
-            "npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --silent",
+            "unset NODE_OPTIONS; env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --omit=dev --silent",
             1800
         )
     }

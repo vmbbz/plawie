@@ -13,6 +13,9 @@ import 'gateway_service.dart';
 
 class BootstrapService {
   static const bool _forceLiveOpenClawInstall = true;
+  static const String _latestOpenClawInstallCommand = 'unset NODE_OPTIONS; '
+      'env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@latest '
+      '--prefix /usr/local --no-audit --no-fund --omit=dev';
 
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 30),
@@ -298,9 +301,18 @@ class BootstrapService {
       // ---------------------------------------------------------
       // Step 3: Install Node.js & Fix Permissions
       // ---------------------------------------------------------
-      if (!nodeInstalled) {
-        _emitProgress(onProgress, SetupStep.installingNode, 0.40,
-            'Installing Node.js core...', 45);
+      final bool nodeUpgradeRequired =
+          !nodeInstalled || await checkNodeUpgradeRequired();
+
+      if (nodeUpgradeRequired) {
+        _emitProgress(
+            onProgress,
+            SetupStep.installingNode,
+            0.40,
+            nodeInstalled
+                ? 'Updating Node.js core...'
+                : 'Installing Node.js core...',
+            45);
 
         await NativeBridge.runInProot('''
           mkdir -p /root/.openclaw
@@ -528,21 +540,24 @@ class BootstrapService {
           subMessage: 'Purging global node_modules & apt cache');
 
       // 1. Force remove old installation and any stray files
-      await NativeBridge.runInProot('npm uninstall -g openclaw || true');
+      await NativeBridge.runInProot(
+          'unset NODE_OPTIONS; env -u NODE_OPTIONS /usr/local/bin/npm uninstall -g openclaw || true');
       await NativeBridge.runInProot(
           'rm -rf /usr/local/lib/node_modules/openclaw');
       await NativeBridge.runInProot('rm -f /usr/local/bin/openclaw');
-      await NativeBridge.runInProot('npm cache clean --force || true');
+      await NativeBridge.runInProot(
+          'unset NODE_OPTIONS; env -u NODE_OPTIONS /usr/local/bin/npm cache clean --force || true');
       await NativeBridge.runInProot('apt-get clean || true');
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3,
           'Reinstalling OpenClaw (latest)...', 85,
-          subMessage: 'Running npm install --production');
+          subMessage: 'Running npm install --omit=dev');
 
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
-        'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production && '
-        'cd /usr/local/lib/node_modules/openclaw && npm install --no-audit --no-fund 2>/dev/null || true',
+        '$_latestOpenClawInstallCommand && '
+        'cd /usr/local/lib/node_modules/openclaw && '
+        'env -u NODE_OPTIONS /usr/local/bin/npm install --no-audit --no-fund --omit=dev 2>/dev/null || true',
         timeout: 1800,
       );
 
@@ -591,8 +606,7 @@ class BootstrapService {
     try {
       // 1. Install with minimal flags
       await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '/usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --production',
+        _latestOpenClawInstallCommand,
         timeout: 1800,
       );
 
@@ -981,15 +995,39 @@ class BootstrapService {
 
   Future<bool> checkNodeUpgradeRequired() async {
     try {
-      final status = await NativeBridge.getBootstrapStatus();
-      final currentVersion = status['nodeVersion'] as String? ?? '0.0.0';
-      // If version is 18.x or lower, we definitely need 22.x
-      return currentVersion.startsWith('v18') ||
-          currentVersion.startsWith('v16') ||
-          currentVersion == '0.0.0';
+      final currentVersion = await NativeBridge.runInProot(
+        'unset NODE_OPTIONS; '
+        '/usr/local/bin/node --version 2>/dev/null || node --version 2>/dev/null || echo 0.0.0',
+        timeout: 10,
+      );
+      return !_isNodeVersionAtLeast(
+        currentVersion,
+        AppConstants.nodeVersion,
+      );
     } catch (_) {
       return true;
     }
+  }
+
+  bool _isNodeVersionAtLeast(String current, String required) {
+    final currentParts = _parseSemver(current);
+    final requiredParts = _parseSemver(required);
+
+    for (var i = 0; i < requiredParts.length; i++) {
+      if (currentParts[i] > requiredParts[i]) return true;
+      if (currentParts[i] < requiredParts[i]) return false;
+    }
+    return true;
+  }
+
+  List<int> _parseSemver(String value) {
+    final match = RegExp(r'v?(\d+)\.(\d+)\.(\d+)').firstMatch(value);
+    if (match == null) return const [0, 0, 0];
+    return [
+      int.parse(match.group(1)!),
+      int.parse(match.group(2)!),
+      int.parse(match.group(3)!),
+    ];
   }
 
   Future<void> _downloadWithRetry(

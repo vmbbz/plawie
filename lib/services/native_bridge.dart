@@ -34,6 +34,12 @@ class NativeBridge {
         await _channel.invokeMethod('isBootstrapComplete') ?? false;
     final prefs = PreferencesService();
     await prefs.init();
+    if (!nativeOk && prefs.setupComplete) {
+      try {
+        final status = await getBootstrapStatus();
+        if (status['nodeMeetsMinimum'] == false) return false;
+      } catch (_) {}
+    }
     return nativeOk || prefs.setupComplete;
   }
 
@@ -75,11 +81,12 @@ class NativeBridge {
   static String _applyAbsoluteBypass(String cmd) {
     if (!cmd.contains('openclaw')) return cmd;
 
-    // Replace naked 'openclaw' command but NOT if it's already part of a path
-    // or the .js entry point itself.
+    // Replace naked 'openclaw' commands only. Package specs such as
+    // openclaw@latest and asset names such as openclaw-node-modules.tar.gz
+    // must be left untouched during setup installs.
     // (?<![/\.]) matches only if NOT preceded by / or .
-    // (?!\.js) matches only if NOT followed by .js
-    return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?!\.js)'),
+    // (?![.@-]) avoids .js entry points, npm package specs, and filenames.
+    return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?![\.@-])'),
         (match) {
       return kOpenClawCommand;
     });
