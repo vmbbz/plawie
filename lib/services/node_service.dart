@@ -615,27 +615,112 @@ class NodeService {
     _gatewayAuthToken ??= await _readGatewayToken();
     final gatewayUrl =
         'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
-    final requestIdToApprove = requestId.trim();
+    var requestIdToApprove = requestId.trim();
+    final gatewayToken = _gatewayAuthToken;
+
+    // Pending request IDs can be superseded when the node retries connect.
+    // Resolve the latest pending request right before approval to avoid
+    // "unknown requestId" loops.
+    requestIdToApprove = await _resolvePendingNodeRequestId(
+          fallbackRequestId: requestIdToApprove,
+          gatewayUrl: gatewayUrl,
+          token: gatewayToken,
+        ) ??
+        requestIdToApprove;
+
+    // Prefer explicit URL/token first so approval does not depend on a stale
+    // local CLI session scope.
+    if (gatewayToken != null && gatewayToken.isNotEmpty) {
+      try {
+        await NativeBridge.runInProot(
+          'openclaw devices approve $requestIdToApprove '
+          '--url ${NativeBridge.shellQuote(gatewayUrl)} '
+          '--token ${NativeBridge.shellQuote(gatewayToken)} '
+          '--json',
+          timeout: 40,
+        );
+        return _readApprovedNodeTokenFromStore();
+      } catch (e) {
+        if (_isUnknownRequestIdError(e)) {
+          final refreshedId = await _resolvePendingNodeRequestId(
+            fallbackRequestId: requestIdToApprove,
+            gatewayUrl: gatewayUrl,
+            token: gatewayToken,
+          );
+          if (refreshedId != null && refreshedId != requestIdToApprove) {
+            requestIdToApprove = refreshedId;
+            await NativeBridge.runInProot(
+              'openclaw devices approve $requestIdToApprove '
+              '--url ${NativeBridge.shellQuote(gatewayUrl)} '
+              '--token ${NativeBridge.shellQuote(gatewayToken)} '
+              '--json',
+              timeout: 40,
+            );
+            return _readApprovedNodeTokenFromStore();
+          }
+        }
+        log('[NODE] Explicit approval failed ($e); retrying with local CLI session...');
+      }
+    }
+
+    // Fallback path: local CLI session, with one stale-request recovery attempt.
     try {
       await NativeBridge.runInProot(
-          'openclaw devices approve $requestIdToApprove --json',
-          timeout: 40);
-    } catch (e) {
-      if (_isPairingApprovalBlockedError(e)) rethrow;
-      // Fallback for builds that require explicit gateway endpoint/auth args.
-      final gatewayToken = _gatewayAuthToken;
-      if (gatewayToken == null || gatewayToken.isEmpty) rethrow;
-      log('[NODE] Plain CLI approval failed; retrying with explicit gateway URL/token. Error: $e');
-      await NativeBridge.runInProot(
-        'openclaw devices approve $requestIdToApprove '
-        '--url ${NativeBridge.shellQuote(gatewayUrl)} '
-        '--token ${NativeBridge.shellQuote(gatewayToken)} '
-        '--json',
+        'openclaw devices approve $requestIdToApprove --json',
         timeout: 40,
       );
+    } catch (e) {
+      if (_isUnknownRequestIdError(e)) {
+        final refreshedId = await _resolvePendingNodeRequestId(
+          fallbackRequestId: requestIdToApprove,
+          gatewayUrl: gatewayUrl,
+          token: gatewayToken,
+        );
+        if (refreshedId != null && refreshedId != requestIdToApprove) {
+          requestIdToApprove = refreshedId;
+          await NativeBridge.runInProot(
+            'openclaw devices approve $requestIdToApprove --json',
+            timeout: 40,
+          );
+        } else {
+          rethrow;
+        }
+      } else {
+        rethrow;
+      }
     }
 
     return _readApprovedNodeTokenFromStore();
+  }
+
+  Future<String?> _resolvePendingNodeRequestId({
+    required String fallbackRequestId,
+    required String gatewayUrl,
+    required String? token,
+  }) async {
+    try {
+      final explicitArgs = token != null && token.isNotEmpty
+          ? ' --url ${NativeBridge.shellQuote(gatewayUrl)}'
+              ' --token ${NativeBridge.shellQuote(token)}'
+          : '';
+      final output = await NativeBridge.runInProot(
+        'openclaw devices list --json$explicitArgs',
+        timeout: 20,
+      );
+      return NativeBridge.extractPendingDeviceRequestId(
+        output,
+        requestedId: fallbackRequestId,
+        deviceId: _identity.deviceId,
+        role: AppConstants.nodeRole,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isUnknownRequestIdError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('unknown requestid');
   }
 
   bool _isPairingApprovalBlockedError(Object error) {

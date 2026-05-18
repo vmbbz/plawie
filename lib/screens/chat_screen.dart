@@ -2243,54 +2243,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                   ),
                                 ),
 
-                              // --- QUICK MOOD CHIPS ---
-                              if (!_isChatCollapsed)
-                                Container(
-                                  height: 44,
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    itemCount: VoicePersonaService.commonPersonas.length,
-                                    itemBuilder: (context, i) {
-                                      final persona = VoicePersonaService.commonPersonas[i];
-                                      final isSelected = TtsService().currentPersona == persona;
-                                      return Padding(
-                                        padding: const EdgeInsets.only(right: 8),
-                                        child: ChoiceChip(
-                                          label: Text(
-                                            persona.toUpperCase(),
-                                            style: GoogleFonts.outfit(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w900,
-                                              letterSpacing: 1.0,
-                                              color: isSelected ? Colors.black : Colors.white70,
-                                            ),
-                                          ),
-                                          selected: isSelected,
-                                          onSelected: (val) async {
-                                            if (val) {
-                                              await TtsService().setVoicePersona(persona);
-                                              if (mounted) setState(() {});
-                                            }
-                                          },
-                                          selectedColor: AppColors.statusGreen,
-                                          backgroundColor: Colors.white.withValues(alpha: 0.05),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
-                                            side: BorderSide(
-                                              color: isSelected ? AppColors.statusGreen : Colors.white10,
-                                              width: 1,
-                                            ),
-                                          ),
-                                          showCheckmark: false,
-                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          visualDensity: VisualDensity.compact,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
+                              // Voice persona chips removed — accessible via the AuraDot orb above the avatar.
 
                             Container(
                               padding: EdgeInsets.symmetric(

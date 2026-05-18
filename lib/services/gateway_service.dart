@@ -1870,7 +1870,11 @@ PARAMETER num_batch 512
   }
 
   /// Write an API key (Direct I/O — avoids proot / node-e overhead)
-  Future<void> configureApiKey(String provider, String key) async {
+  Future<void> configureApiKey(
+    String provider,
+    String key, {
+    bool runBackgroundOnboard = true,
+  }) async {
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
 
@@ -1962,12 +1966,15 @@ PARAMETER num_batch 512
     _addActivity('[Gateway] Fast-path API key config complete.');
 
     // 2. Official 'onboard' CLI in background (for long-term integrity/SecretRefs)
-    // We do NOT await this, preventing the 5-minute UI deadlock.
-    unawaited(NativeBridge.runInProot(onboardCmd, timeout: 60).then((_) {
-      _addActivity('[Gateway] Background onboarding CLI complete.');
-    }).catchError((e) {
-      _addActivity('[Gateway] Background onboarding CLI failed: $e');
-    }));
+    // Optional: setup bootstrap can disable this to avoid post-start config churn.
+    if (runBackgroundOnboard) {
+      // We do NOT await this, preventing the 5-minute UI deadlock.
+      unawaited(NativeBridge.runInProot(onboardCmd, timeout: 60).then((_) {
+        _addActivity('[Gateway] Background onboarding CLI complete.');
+      }).catchError((e) {
+        _addActivity('[Gateway] Background onboarding CLI failed: $e');
+      }));
+    }
 
     // 2. Update agent auth-profiles.json
     try {
@@ -1995,13 +2002,16 @@ PARAMETER num_batch 512
       await _writeEnvFile(envKey, key);
     }
 
-    // 4. Trigger reload so the gateway picks up the new key
+    // 4. Trigger reload only when a gateway process is running.
     try {
-      await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw reload || openclaw gateway config apply',
-        timeout: 10,
-      );
+      final running = await NativeBridge.isGatewayRunning();
+      if (running) {
+        await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'openclaw reload || openclaw gateway config apply',
+          timeout: 10,
+        );
+      }
     } catch (_) {}
   }
 
@@ -2306,10 +2316,12 @@ PARAMETER num_batch 512
         _addActivity('[INFO] Operator device approved successfully');
       } catch (e) {
         _addActivity('[WARN] Operator auto-approve failed: $e');
-        await _clearOperatorDeviceRecord(deviceId);
+        _addActivity(
+            '[WARN] Keeping existing operator pairing record; skipping automatic remove/clear.');
       }
     } else {
-      await _clearOperatorDeviceRecord(deviceId);
+      _addActivity(
+          '[WARN] Pairing required without requestId; skipping automatic remove/clear.');
     }
 
     pairingConnection?.dispose();
@@ -2319,24 +2331,6 @@ PARAMETER num_batch 512
       const Duration(milliseconds: 750),
       () => _checkHealth(),
     ));
-  }
-
-  Future<void> _clearOperatorDeviceRecord(String deviceId) async {
-    _addActivity(
-        '[INFO] Pairing required — clearing stale operator device record...');
-    try {
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        '(openclaw devices remove $deviceId 2>/dev/null || openclaw devices clear --yes 2>/dev/null || true)',
-        timeout: 5,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(GatewayConnection.prefDeviceToken);
-      _addActivity(
-          '[INFO] Operator device record cleared — reconnecting fresh');
-    } catch (e) {
-      _addActivity('[WARN] Could not clear operator device record: $e');
-    }
   }
 
   Future<void> _approveOperatorPairingRequest(String requestId,
@@ -2362,10 +2356,16 @@ PARAMETER num_batch 512
         timeout: 40,
       );
     } catch (e) {
-      if (_isPairingApprovalBlockedError(e)) rethrow;
       if (token == null || token.isEmpty) rethrow;
-      _addActivity(
-          '[INFO] Plain operator approval failed; retrying with explicit local gateway auth');
+      // Scope-upgrade means CLI's stored session is under-scoped; admin token
+      // has operator.admin rights and can approve regardless.
+      if (_isPairingApprovalBlockedError(e)) {
+        _addActivity(
+            '[WARN] CLI session under-scoped for approval — retrying with admin token...');
+      } else {
+        _addActivity(
+            '[INFO] Operator approval failed ($e); retrying with explicit gateway auth...');
+      }
       final retryRequestId = await _resolvePendingDeviceRequestId(
             fallbackRequestId: safeRequestId,
             deviceId: deviceId,
@@ -2391,6 +2391,7 @@ PARAMETER num_batch 512
             'device is asking for more scopes than currently approved') ||
         message.contains('invalid scope for requested roles');
   }
+
 
   Future<String?> _resolvePendingDeviceRequestId({
     required String fallbackRequestId,

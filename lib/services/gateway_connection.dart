@@ -212,15 +212,15 @@ class GatewayConnection {
     const clientId = 'openclaw-control-ui';
     const clientMode = 'ui';
     const role = 'operator';
+    // Keep the operator handshake inside the documented operator scope namespace.
+    // Requesting non-operator scopes (e.g. "agent") causes INVALID_REQUEST on
+    // newer gateways, and requesting operator.admin by default creates noisy
+    // scope-upgrade loops for first-pair bootstrap sessions.
     const scopes = [
-      'operator.admin',
-      'operator.pairing',
+      'operator.approvals',
       'operator.read',
+      'operator.talk.secrets',
       'operator.write',
-      'chat',
-      'agent',
-      'system',
-      'operator'
     ];
 
     final deviceBlock = await _identity.buildDeviceBlock(

@@ -426,7 +426,11 @@ class BootstrapService {
             subMessage:
                 'Baking ${pendingProvider.replaceAll('_API_KEY', '')} key into gateway config');
         final credGateway = GatewayService();
-        await credGateway.configureApiKey(pendingProvider, pendingApiKey);
+        await credGateway.configureApiKey(
+          pendingProvider,
+          pendingApiKey,
+          runBackgroundOnboard: false,
+        );
         try {
           await credGateway
               .persistModel(credGateway.getModelForProvider(pendingProvider));
