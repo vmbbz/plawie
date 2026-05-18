@@ -239,8 +239,8 @@ class GatewayConnection {
       'id': _connectRequestId,
       'method': 'connect',
       'params': {
-        'minProtocol': 3,
-        'maxProtocol': 3,
+        'minProtocol': AppConstants.wsProtocolMinVersion,
+        'maxProtocol': AppConstants.wsProtocolMaxVersion,
         'client': {
           'id': clientId,
           'version': version,
@@ -255,6 +255,10 @@ class GatewayConnection {
             'deviceToken': _deviceToken,
         },
         'locale': 'en-US',
+        'userAgent': 'plawie-android/${AppConstants.version}',
+        'caps': const <String>[],
+        'commands': const <String>[],
+        'permissions': const <String, dynamic>{},
         // caps/commands belong ONLY on the role=node connection (NodeService/NodeWsService).
         // Declaring them on the operator role produces gateway warnings and is ignored.
       },

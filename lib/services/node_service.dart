@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../constants.dart';
+import '../constants/openclaw_paths.dart';
 import '../models/node_frame.dart';
 import '../models/node_state.dart';
 import 'native_bridge.dart';
@@ -26,6 +27,7 @@ class NodeService {
   StreamSubscription? _warmingUpSubscription;
   bool _pairingResolveAttempted = false;
   bool _connectInFlight = false;
+  int _preferredConnectProtocol = AppConstants.wsProtocolMaxVersion;
   DateTime? _pairingRetryNotBefore;
   int _pairingApprovalFailureCount = 0;
 
@@ -330,7 +332,7 @@ class NodeService {
     return null;
   }
 
-  /// Build and send the `connect` request per Gateway Protocol v3.
+  /// Build and send the `connect` request and adapt protocol version on mismatch.
   Future<void> _sendConnect(String nonce) async {
     final version = await OpenClawCommandService.detectOpenClawVersion();
 
@@ -383,9 +385,13 @@ class NodeService {
     final caps = commands.map((c) => c.split('.').first).toSet().toList();
     log('[NODE] Declaring ${commands.length} commands: $commands');
 
+    final connectProtocol = _preferredConnectProtocol > 0
+        ? _preferredConnectProtocol
+        : AppConstants.wsProtocolMaxVersion;
+
     final connectFrame = NodeFrame.request('connect', {
-      'minProtocol': 3,
-      'maxProtocol': 3,
+      'minProtocol': connectProtocol,
+      'maxProtocol': connectProtocol,
       'client': {
         'id': clientId,
         'displayName': 'OpenClaw Mobile',
@@ -396,6 +402,7 @@ class NodeService {
       },
       'role': role,
       if (scopes.isNotEmpty) 'scopes': scopes,
+      'permissions': <String, dynamic>{},
       'device': {
         'id': _identity.deviceId ?? '',
         'publicKey': _identity.publicKeyBase64Url ?? '',
@@ -411,20 +418,26 @@ class NodeService {
           'deviceToken': activeDeviceToken,
       },
       'locale': 'en-US',
+      'userAgent': 'plawie-android/${AppConstants.version}',
       // Include caps/commands for node registration
       'caps': caps,
       'commands': commands,
     });
 
-    log('[NODE] Connect frame caps=$caps commands=$commands');
+    log('[NODE] Connect frame protocol=v$connectProtocol caps=$caps commands=$commands');
     log('[NODE] Connect frame platform=android');
     final response = await _ws.sendRequest(connectFrame);
-    log('[NODE] Connect response ok=${response.isOk} payload=${response.payload}');
+    log('[NODE] Connect response ok=${response.isOk} payload=${response.payload} error=${response.error}');
 
     if (response.isOk) {
       // hello-ok
       final authPayload = response.payload?['auth'] as Map<String, dynamic>?;
       final deviceToken = authPayload?['deviceToken'] as String?;
+      final negotiatedProtocol =
+          _parseProtocolVersion(response.payload?['protocol']);
+      if (negotiatedProtocol != null && negotiatedProtocol > 0) {
+        _preferredConnectProtocol = negotiatedProtocol;
+      }
       if (deviceToken != null) {
         prefs.nodeDeviceToken = deviceToken;
       }
@@ -433,6 +446,28 @@ class NodeService {
       final errPayload = response.payload ?? response.error ?? {};
       final code = errPayload['code'] as String? ?? '';
       final message = errPayload['message'] as String? ?? 'Connect failed';
+      final details = errPayload['details'];
+
+      if (code == 'INVALID_REQUEST' &&
+          message.toLowerCase().contains('protocol mismatch')) {
+        final expectedProtocol = _extractExpectedProtocol(details);
+        if (expectedProtocol != null && expectedProtocol > 0) {
+          if (expectedProtocol != _preferredConnectProtocol) {
+            _preferredConnectProtocol = expectedProtocol;
+            log('[NODE] Gateway expects protocol v$expectedProtocol; will retry with that version.');
+          }
+        } else {
+          // No protocol hint in details; flip between known stable versions.
+          final fallback =
+              _preferredConnectProtocol == AppConstants.wsProtocolMaxVersion
+                  ? AppConstants.wsProtocolMinVersion
+                  : AppConstants.wsProtocolMaxVersion;
+          if (fallback > 0 && fallback != _preferredConnectProtocol) {
+            _preferredConnectProtocol = fallback;
+            log('[NODE] Protocol mismatch without details; falling back to protocol v$fallback on reconnect.');
+          }
+        }
+      }
 
       if (code == 'TOKEN_INVALID' ||
           code == 'NOT_PAIRED' ||
@@ -449,8 +484,28 @@ class NodeService {
           errorMessage: message,
         ));
         log('[NODE] Connect error: $code - $message');
+        if (details != null) {
+          log('[NODE] Connect error details: $details');
+        }
       }
     }
+  }
+
+  int? _extractExpectedProtocol(dynamic details) {
+    if (details is Map) {
+      final dynamic expected = details['expectedProtocol'] ??
+          details['protocol'] ??
+          details['serverProtocol'];
+      return _parseProtocolVersion(expected);
+    }
+    return _parseProtocolVersion(details);
+  }
+
+  int? _parseProtocolVersion(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 
   void _onConnected(NodeFrame frame) {
@@ -649,7 +704,7 @@ class NodeService {
     if (gatewayToken != null && gatewayToken.isNotEmpty) {
       try {
         await NativeBridge.runInProot(
-          'openclaw devices approve $requestIdToApprove '
+          '$kOpenClawCommand devices approve $requestIdToApprove '
           '--url ${NativeBridge.shellQuote(gatewayUrl)} '
           '--token ${NativeBridge.shellQuote(gatewayToken)} '
           '--json',
@@ -666,7 +721,7 @@ class NodeService {
           if (refreshedId != null && refreshedId != requestIdToApprove) {
             requestIdToApprove = refreshedId;
             await NativeBridge.runInProot(
-              'openclaw devices approve $requestIdToApprove '
+              '$kOpenClawCommand devices approve $requestIdToApprove '
               '--url ${NativeBridge.shellQuote(gatewayUrl)} '
               '--token ${NativeBridge.shellQuote(gatewayToken)} '
               '--json',
@@ -682,7 +737,7 @@ class NodeService {
     // Fallback path: local CLI session, with one stale-request recovery attempt.
     try {
       await NativeBridge.runInProot(
-        'openclaw devices approve $requestIdToApprove --json',
+        '$kOpenClawCommand devices approve $requestIdToApprove --json',
         timeout: 40,
       );
     } catch (e) {
@@ -695,7 +750,7 @@ class NodeService {
         if (refreshedId != null && refreshedId != requestIdToApprove) {
           requestIdToApprove = refreshedId;
           await NativeBridge.runInProot(
-            'openclaw devices approve $requestIdToApprove --json',
+            '$kOpenClawCommand devices approve $requestIdToApprove --json',
             timeout: 40,
           );
         } else {
@@ -720,7 +775,7 @@ class NodeService {
               ' --token ${NativeBridge.shellQuote(token)}'
           : '';
       final output = await NativeBridge.runInProot(
-        'openclaw devices list --json$explicitArgs',
+        '$kOpenClawCommand devices list --json$explicitArgs',
         timeout: 20,
       );
       return NativeBridge.extractPendingDeviceRequestId(

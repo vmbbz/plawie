@@ -51,6 +51,10 @@ class AppConstants {
       15000; // Increased cap to 15s for stability
   static const String nodeRole = 'node';
   static const int pairingTimeoutMs = 300000;
+  // Gateway WS protocol negotiation range. Keep min at 3 for legacy
+  // compatibility while allowing current v4 gateways.
+  static const int wsProtocolMinVersion = 3;
+  static const int wsProtocolMaxVersion = 4;
 
   static const String channelName = 'com.nxg.openclawproot/native';
   static const String eventChannelName = 'com.nxg.openclawproot/gateway_logs';

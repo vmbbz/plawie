@@ -46,7 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _storageService = StorageService();
 
   // Voice & Speech
-  String _ttsEngine = 'kokoro';
+  String _ttsEngine = 'gateway';
   double _ttsSpeed = 1.2;
   bool _continuousMode = false;
 
@@ -76,7 +76,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ttsSpeed = _prefs.ttsSpeed;
     _continuousMode = _prefs.continuousMode;
     _silenceTimeout = _prefs.silenceTimeoutSeconds;
-    _ttsEngine = _prefs.ttsEngine;
+    final storedEngine = _prefs.ttsEngine;
+    _ttsEngine = ['gateway', 'offline'].contains(storedEngine) ? storedEngine : 'gateway';
     _wakeWordMode = _prefs.wakeWordMode;
     _hotwordRunning = await NativeBridge.isHotwordRunning();
     _hasFullStorageAccess = await _storageService.updateStatus();
