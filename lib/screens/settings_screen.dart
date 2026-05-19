@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -115,13 +116,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       hotwordRunning = await _safeCall(NativeBridge.isHotwordRunning(), false);
       hasFullStorageAccess =
           await _safeCall(_storageService.updateStatus(), false);
-
-      // Check offline model statuses without blocking the whole page.
       for (var m in _voiceModelService.availableModels) {
-        _modelStatus[m.id] = await _safeCall(
-          _voiceModelService.isModelDownloaded(m.id),
-          false,
-        );
+        _modelStatus.putIfAbsent(m.id, () => false);
       }
 
       arch = await _safeCall(NativeBridge.getArch(), '');
@@ -160,7 +156,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _hotwordRunning = hotwordRunning;
           _loading = false;
         });
+        unawaited(_refreshVoiceModelStatusInBackground());
       }
+    }
+  }
+
+  Future<void> _refreshVoiceModelStatusInBackground() async {
+    for (final model in _voiceModelService.availableModels) {
+      final downloaded = await _safeCall(
+        _voiceModelService.isModelDownloaded(model.id),
+        false,
+      );
+      if (!mounted) return;
+      setState(() {
+        _modelStatus[model.id] = downloaded;
+      });
     }
   }
 

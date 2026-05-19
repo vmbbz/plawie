@@ -83,8 +83,6 @@ class GatewayConnection {
 
   Completer<void>? _handshakeCompleter;
   Completer<String?>? _challengeCompleter;
-  bool _pairingRequiredDuringConnect = false;
-  bool _policyRejectedDuringConnect = false;
   bool _protocolMismatchDuringConnect = false;
   int _preferredProtocol = _defaultWsProtocol;
   int? _lastCloseCode;
@@ -140,8 +138,6 @@ class GatewayConnection {
   Future<bool> _doConnect() async {
     _updateState(GatewayConnectionState.connecting);
     _cleanup();
-    _pairingRequiredDuringConnect = false;
-    _policyRejectedDuringConnect = false;
     _protocolMismatchDuringConnect = false;
 
     try {
@@ -155,8 +151,9 @@ class GatewayConnection {
 
       _channel = IOWebSocketChannel(socket);
     } catch (e) {
-      _updateState(GatewayConnectionState.disconnected);
-      _scheduleReconnect();
+      _onDisconnect(
+        closeReason: 'connect-failed: $e',
+      );
       return false;
     }
 
@@ -218,13 +215,9 @@ class GatewayConnection {
     try {
       await _handshakeCompleter!.future.timeout(const Duration(seconds: 15));
     } catch (_) {
-      _updateState(GatewayConnectionState.disconnected);
-      _cleanup();
-      if (!_pairingRequiredDuringConnect &&
-          !_policyRejectedDuringConnect &&
-          !_protocolMismatchDuringConnect) {
-        _scheduleReconnect();
-      }
+      _onDisconnect(
+        closeReason: 'handshake-timeout',
+      );
       return false;
     }
 
@@ -366,7 +359,6 @@ class GatewayConnection {
             final isPairingRequired =
                 _isPairingRequired(msg, requestId, errorCode);
             if (isPairingRequired) {
-              _pairingRequiredDuringConnect = true;
               if (!_pairingRequiredController.isClosed) {
                 _pairingRequiredController.add(requestId);
               }
@@ -435,7 +427,6 @@ class GatewayConnection {
           final isPairingRequired =
               _isPairingRequired(msg, requestId, errorCode);
           if (isPairingRequired) {
-            _pairingRequiredDuringConnect = true;
             if (!_pairingRequiredController.isClosed) {
               _pairingRequiredController.add(requestId);
             }
@@ -509,15 +500,13 @@ class GatewayConnection {
     int? closeCode,
     String? closeReason,
   }) {
+    final normalizedReason = (closeReason == null || closeReason.isEmpty)
+        ? 'socket-closed'
+        : closeReason;
+
     _lastCloseCode = closeCode;
-    _lastCloseReason = closeReason;
+    _lastCloseReason = normalizedReason;
     _lastDisconnectAt = DateTime.now();
-    if (pairingRequired) {
-      _pairingRequiredDuringConnect = true;
-    }
-    if (policyRejected) {
-      _policyRejectedDuringConnect = true;
-    }
     if (protocolMismatch) {
       if (!_protocolMismatchDuringConnect) {
         _advanceProtocolFallback();

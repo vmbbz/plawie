@@ -25,6 +25,7 @@ class NodeWsService {
   int? _lastCloseCode;
   String? _lastCloseReason;
   DateTime? _lastDisconnectAt;
+  bool _connectAttemptInFlight = false;
 
   Stream<NodeFrame> get frameStream => _frameController.stream;
   bool get isConnected => _connected;
@@ -54,6 +55,7 @@ class NodeWsService {
     _url = 'ws://$host:$port';
     _shouldReconnect = true;
     _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
     await _doConnect();
   }
 
@@ -62,6 +64,8 @@ class NodeWsService {
 
   Future<void> _doConnect({bool notifyReady = false}) async {
     if (_url == null) return;
+    if (_connectAttemptInFlight) return;
+    _connectAttemptInFlight = true;
 
     try {
       // FIX: Explicitly send Origin header to resolve 1008 'origin-mismatch' errors.
@@ -198,6 +202,8 @@ class NodeWsService {
     } catch (_) {
       _handleDisconnect(closeReason: 'connect-failed');
       rethrow;
+    } finally {
+      _connectAttemptInFlight = false;
     }
   }
 
@@ -227,16 +233,19 @@ class NodeWsService {
         try {
           _channel!.sink.add('{"type":"ping"}');
         } catch (_) {
-          _handleDisconnect();
+          _handleDisconnect(closeReason: 'ping-send-failed');
         }
       }
     });
   }
 
   void _handleDisconnect({int? closeCode, String? closeReason}) {
-    if (_channel == null) return;
+    final normalizedReason = (closeReason == null || closeReason.isEmpty)
+        ? 'socket-closed'
+        : closeReason;
+
     _lastCloseCode = closeCode;
-    _lastCloseReason = closeReason;
+    _lastCloseReason = normalizedReason;
     _lastDisconnectAt = DateTime.now();
     _connected = false;
     _connectRequestId = null;
@@ -252,8 +261,7 @@ class NodeWsService {
 
     _frameController.add(NodeFrame.event('_disconnected', {
       if (closeCode != null) 'closeCode': closeCode,
-      if (closeReason != null && closeReason.isNotEmpty)
-        'closeReason': closeReason,
+      'closeReason': normalizedReason,
       if (_lastDisconnectAt != null) 'at': _lastDisconnectAt!.toIso8601String(),
     }));
 

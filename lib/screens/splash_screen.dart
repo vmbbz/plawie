@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants.dart';
 import '../app.dart';
 import '../services/native_bridge.dart';
@@ -16,6 +17,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
+  static const _appStateVersionKey = 'plawie_app_state_version';
   String _status = 'Initializing...';
   late final AnimationController _fadeController;
   late final AnimationController _pulseController;
@@ -88,6 +90,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       final prefs = PreferencesService();
       await prefs.init();
+      await _runUpgradeStateMigration();
 
       bool bootstrapOk = false;
       try {
@@ -152,6 +155,17 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
+  Future<void> _runUpgradeStateMigration() async {
+    final storage = await SharedPreferences.getInstance();
+    final migratedVersion = storage.getString(_appStateVersionKey) ?? '';
+    if (migratedVersion == AppConstants.version) return;
+
+    // Reset stale handshake state on app upgrade to avoid protocol/nonce loops.
+    await storage.remove('node_device_token');
+    await storage.remove('openclaw_operator_ws_protocol');
+    await storage.remove('last_approved_request_id');
+    await storage.setString(_appStateVersionKey, AppConstants.version);
+  }
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -421,3 +435,4 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
+

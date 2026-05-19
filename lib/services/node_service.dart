@@ -36,7 +36,6 @@ class NodeService {
       _capabilityHandlers = {};
   String? _gatewayAuthToken;
   Completer<String?>? _challengeCompleter;
-  String? _pendingChallengeNonce;
   static final _uuidPattern =
       RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
 
@@ -165,6 +164,7 @@ class NodeService {
 
       _attachWsListeners();
 
+      _challengeCompleter = null;
       _challengeCompleter = Completer<String?>();
       await _ws.connect(targetHost, targetPort);
       log('[NODE] WebSocket connected, awaiting challenge...');
@@ -206,20 +206,13 @@ class NodeService {
   }
 
   Future<String> _awaitChallengeNonce(Duration timeout) async {
-    final pendingNonce = _pendingChallengeNonce;
-    if (pendingNonce != null) {
-      _pendingChallengeNonce = null;
-      _challengeCompleter = null;
-      return pendingNonce;
-    }
-
-    _challengeCompleter ??= Completer<String?>();
+    final completer = _challengeCompleter;
+    if (completer == null) return '';
     try {
-      return await _challengeCompleter!.future.timeout(timeout) ?? '';
+      return await completer.future.timeout(timeout) ?? '';
     } catch (_) {
       return '';
     } finally {
-      _pendingChallengeNonce = null;
       _challengeCompleter = null;
     }
   }
@@ -238,6 +231,7 @@ class NodeService {
     try {
       _updateState(_state.copyWith(status: NodeStatus.connecting));
       log('[NODE] WebSocket reconnected, completing handshake...');
+      _challengeCompleter = null;
       _challengeCompleter = Completer<String?>();
       final challengeNonce =
           await _awaitChallengeNonce(const Duration(milliseconds: 800));
@@ -262,6 +256,7 @@ class NodeService {
   Future<void> _handleEvent(NodeFrame frame) async {
     switch (frame.event) {
       case '_disconnected':
+        _challengeCompleter = null;
         if (_state.status != NodeStatus.disabled) {
           final closeCode = frame.payload?['closeCode'];
           final closeReason =
@@ -276,9 +271,12 @@ class NodeService {
 
       case 'connect.challenge':
         final nonce = frame.payload?['nonce'] as String?;
-        _pendingChallengeNonce = nonce ?? '';
         if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
           _challengeCompleter!.complete(nonce ?? '');
+        } else {
+          // Ignore stale challenge events from prior sockets to prevent nonce drift.
+          log('[NODE] Challenge received with no active handshake; ignoring stale nonce');
+          return;
         }
         _updateState(_state.copyWith(status: NodeStatus.challenging));
         log(nonce != null
@@ -352,14 +350,13 @@ class NodeService {
     const clientId = 'node-host';
     const clientMode = 'node';
     const role = AppConstants.nodeRole;
-    // autoApproveCidrs fires ONLY for role:node with NO requested scopes.
-    // Omit scopes on fresh pairing (no deviceToken) so autoApprove triggers.
-    // When the device is already approved (has deviceToken), include scopes normally.
+    // Keep node scopes stable and empty across first-pair + reconnect.
+    // OpenClaw supersedes pending requests when auth details (including scopes)
+    // change, so flipping scope sets between retries causes requestId churn.
     final activeDeviceToken = deviceToken;
     final hasDeviceToken =
         activeDeviceToken != null && activeDeviceToken.isNotEmpty;
-    final scopes =
-        hasDeviceToken ? const <String>['node.device'] : const <String>[];
+    const scopes = <String>[];
     if (hasDeviceToken) {
       final preview = activeDeviceToken.length > 8
           ? '${activeDeviceToken.substring(0, 8)}...'
@@ -664,6 +661,7 @@ class NodeService {
     }
 
     await _ws.disconnect();
+    _challengeCompleter = null;
     _pairingResolveAttempted = false;
     if (approved) {
       _attachWsListeners();

@@ -438,28 +438,38 @@ class BootstrapService {
       await setupPrefs.init();
       final pendingProvider = setupPrefs.pendingProvider;
       final pendingApiKey = setupPrefs.pendingApiKey;
-      if (pendingProvider != null &&
-          pendingApiKey != null &&
-          pendingApiKey.isNotEmpty) {
-        _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.83,
-            'Configuring API credentials...', 88,
-            subMessage:
-                'Baking ${pendingProvider.replaceAll('_API_KEY', '')} key into gateway config');
+      if (pendingProvider != null && pendingProvider.isNotEmpty) {
         final credGateway = GatewayService();
-        await credGateway.configureApiKey(
-          pendingProvider,
-          pendingApiKey,
-          runBackgroundOnboard: false,
-        );
+        final providerModel = credGateway.getModelForProvider(pendingProvider);
+        final hasApiKey = pendingApiKey != null && pendingApiKey.isNotEmpty;
+
+        if (hasApiKey) {
+          _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.83,
+              'Configuring API credentials...', 88,
+              subMessage:
+                  'Baking ${pendingProvider.replaceAll('_API_KEY', '')} key into gateway config');
+          await credGateway.configureApiKey(
+            pendingProvider,
+            pendingApiKey,
+            runBackgroundOnboard: false,
+          );
+          setupPrefs.pendingApiKey = null;
+          setupPrefs.apiKeyConfigured = true;
+          _log('[SETUP] API credentials baked into config before gateway start.');
+        } else {
+          _log(
+              '[SETUP] No API key supplied for $pendingProvider; applying model-only bootstrap defaults.');
+        }
+
         try {
-          await credGateway
-              .persistModel(credGateway.getModelForProvider(pendingProvider));
-        } catch (_) {}
+          await credGateway.persistModel(providerModel);
+          setupPrefs.configuredModel = providerModel;
+        } catch (e) {
+          _log('[SETUP] Failed to persist bootstrap model', error: e);
+        }
+
         setupPrefs.pendingProvider = null;
-        setupPrefs.pendingApiKey = null;
-        setupPrefs.apiKeyConfigured = true;
         setupPrefs.apiProvider = pendingProvider;
-        _log('[SETUP] API credentials baked into config before gateway start.');
       }
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85,
@@ -807,6 +817,12 @@ class BootstrapService {
   /// NEW: Single, idempotent pre-start hardening (no reload after gateway starts)
   Future<void> _fullPreStartConfigHardening() async {
     try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      final existingConfig = await _readExistingOpenClawConfig();
+      final preferredPrimaryModel =
+          _resolveBootstrapPrimaryModel(prefs, existingConfig);
+
       // 1. Core stability flags + provider defaults via CLI
       await NativeBridge.runInProot(
         'openclaw config set gateway.bind loopback && '
@@ -817,13 +833,11 @@ class BootstrapService {
         'openclaw config set ollama.num_thread 4 && '
         'openclaw config set discovery.mdns.mode off && '
         'openclaw config set models.providers.ollama.apiKey ollama-local && '
-        'openclaw config set models.providers.ollama.baseUrl http://127.0.0.1:11434 && '
-        'openclaw config set agents.defaults.model.primary google/gemini-3.1-pro-preview',
+        'openclaw config set models.providers.ollama.baseUrl http://127.0.0.1:11434',
         timeout: 30,
       );
 
       // 2. Complex structures via patch (Atomic write).
-      final existingConfig = await _readExistingOpenClawConfig();
       final authPatch = _buildSharedSecretAuthPatch(existingConfig);
       final remotePatch = _buildLocalGatewayRemotePatch(existingConfig);
       final patchJson = '''
@@ -868,6 +882,13 @@ class BootstrapService {
       }
     }
   },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": ${jsonEncode(preferredPrimaryModel)}
+      }
+    }
+  },
   "env": { "vars": {} }
 }
 ''';
@@ -881,8 +902,6 @@ class BootstrapService {
       // 3. Ensure node starts on first-pair path.
       // Device approval now follows the official requestId-driven CLI flow
       // (openclaw devices approve <requestId>) in NodeService.
-      final prefs = PreferencesService();
-      await prefs.init();
       prefs.nodeDeviceToken = null;
       _log('[HARDEN] Pre-start config injection complete.');
     } catch (e) {
@@ -935,7 +954,7 @@ class BootstrapService {
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
       config['agents']['defaults']['model']['primary'] ??=
-          'google/gemini-3.1-pro-preview';
+          'ollama/qwen2.5:0.5b';
 
       // 3. Hardened Ollama-first
       config['models'] ??= {};
@@ -1089,6 +1108,25 @@ class BootstrapService {
     }
 
     return patch.isEmpty ? null : patch;
+  }
+
+  String _resolveBootstrapPrimaryModel(
+      PreferencesService prefs, Map<String, dynamic> config) {
+    final configured = prefs.configuredModel;
+    if (configured != null && configured.isNotEmpty) return configured;
+
+    final pendingProvider = prefs.pendingProvider;
+    if (pendingProvider != null && pendingProvider.isNotEmpty) {
+      return GatewayService().getModelForProvider(pendingProvider);
+    }
+
+    final configPrimary =
+        config['agents']?['defaults']?['model']?['primary'] as String?;
+    if (configPrimary != null && configPrimary.isNotEmpty) {
+      return configPrimary;
+    }
+
+    return 'ollama/qwen2.5:0.5b';
   }
 
   Map<String, dynamic>? _buildLocalGatewayRemotePatch(

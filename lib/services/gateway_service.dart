@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -927,10 +928,50 @@ PARAMETER num_batch 512
 
       _applyExplicitAuthMode(config);
       _syncLocalGatewayRemoteCredentials(config);
-      await file.writeAsString(jsonEncode(config));
+      final nextSignature = _canonicalJsonSignature(config);
+
+      if (await file.exists()) {
+        try {
+          final existingRaw = await file.readAsString();
+          if (existingRaw.trim().isNotEmpty) {
+            final decoded = jsonDecode(existingRaw);
+            if (decoded is Map) {
+              final currentSignature = _canonicalJsonSignature(
+                _deepCastMap(decoded),
+              );
+              if (currentSignature == nextSignature) {
+                return;
+              }
+            }
+          }
+        } catch (_) {
+          // If parse/read fails, we still write the repaired config.
+        }
+      }
+
+      await file.writeAsString(nextSignature);
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
     }
+  }
+
+  String _canonicalJsonSignature(Map<String, dynamic> value) {
+    final normalized = _normalizeForStableCompare(value);
+    return jsonEncode(normalized);
+  }
+
+  dynamic _normalizeForStableCompare(dynamic value) {
+    if (value is Map) {
+      final sorted = SplayTreeMap<String, dynamic>();
+      value.forEach((key, child) {
+        sorted['$key'] = _normalizeForStableCompare(child);
+      });
+      return sorted;
+    }
+    if (value is List) {
+      return value.map(_normalizeForStableCompare).toList();
+    }
+    return value;
   }
 
   Future<void> _writeEnvFile(String key, String value) async {
@@ -1899,6 +1940,10 @@ PARAMETER num_batch 512
   /// Map a provider name to its default model string (provider/model).
   /// Public so GatewayProvider can call it during configureAndStart.
   String getModelForProvider(String provider) {
+    final raw = provider.toLowerCase();
+    if (raw.contains('ollama_cloud') || raw.contains('ollama cloud')) {
+      return 'ollama/qwen3-coder:480b-cloud';
+    }
     switch (_normalizeProvider(provider)) {
       case 'google':
         return 'google/gemini-3.1-pro-preview';
@@ -3746,7 +3791,7 @@ PARAMETER num_batch 512
       m = config['agents']?['defaults']?['model']?['primary'] as String? ?? '';
     }
     if (m.isEmpty) {
-      m = 'google/gemini-3.1-pro-preview';
+      m = 'ollama/qwen2.5:0.5b';
     }
 
     // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility
