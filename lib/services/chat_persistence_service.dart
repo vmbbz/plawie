@@ -11,27 +11,31 @@ class ChatSession {
   String title;
   final DateTime createdAt;
   DateTime updatedAt;
+  String? gatewaySessionKey;
 
   ChatSession({
     required this.id,
     required this.title,
     required this.createdAt,
     required this.updatedAt,
+    this.gatewaySessionKey,
   });
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-  };
+        'id': id,
+        'title': title,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+        'gatewaySessionKey': gatewaySessionKey,
+      };
 
   factory ChatSession.fromJson(Map<String, dynamic> json) => ChatSession(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    updatedAt: DateTime.parse(json['updatedAt'] as String),
-  );
+        id: json['id'] as String,
+        title: json['title'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        updatedAt: DateTime.parse(json['updatedAt'] as String),
+        gatewaySessionKey: json['gatewaySessionKey'] as String?,
+      );
 }
 
 /// Multi-session chat persistence.
@@ -41,7 +45,8 @@ class ChatSession {
 ///   chat_`<sessionId>`.json  — messages for each session
 ///   chat_history.json      — legacy single-session file (migrated on first use)
 class ChatPersistenceService {
-  static final ChatPersistenceService _instance = ChatPersistenceService._internal();
+  static final ChatPersistenceService _instance =
+      ChatPersistenceService._internal();
   factory ChatPersistenceService() => _instance;
   ChatPersistenceService._internal();
 
@@ -50,6 +55,13 @@ class ChatPersistenceService {
 
   List<ChatSession> get sessions => List.unmodifiable(_sessions);
   String? get activeSessionId => _activeSessionId;
+  ChatSession? get activeSession {
+    final id = _activeSessionId;
+    if (id == null) return null;
+    return _sessions.where((s) => s.id == id).firstOrNull;
+  }
+
+  String? get activeGatewaySessionKey => activeSession?.gatewaySessionKey;
 
   Future<Directory> get _dir async => await getApplicationDocumentsDirectory();
 
@@ -68,7 +80,8 @@ class ChatPersistenceService {
     final index = await _indexFile;
     if (await index.exists()) {
       try {
-        final data = jsonDecode(await index.readAsString()) as Map<String, dynamic>;
+        final data =
+            jsonDecode(await index.readAsString()) as Map<String, dynamic>;
         _sessions = (data['sessions'] as List)
             .map((j) => ChatSession.fromJson(j as Map<String, dynamic>))
             .toList();
@@ -96,7 +109,7 @@ class ChatPersistenceService {
         final contents = await legacyFile.readAsString();
         final List<dynamic> jsonList = jsonDecode(contents);
         final messages = jsonList.map((j) => ChatMessage.fromJson(j)).toList();
-        
+
         if (messages.isNotEmpty) {
           final session = ChatSession(
             id: const Uuid().v4(),
@@ -106,10 +119,11 @@ class ChatPersistenceService {
           );
           _sessions.add(session);
           _activeSessionId = session.id;
-          
+
           // Save messages to new session file
           final file = await _sessionFile(session.id);
-          await file.writeAsString(jsonEncode(messages.map((m) => m.toJson()).toList()));
+          await file.writeAsString(
+              jsonEncode(messages.map((m) => m.toJson()).toList()));
           await _saveIndex();
         }
       } catch (_) {}
@@ -160,7 +174,7 @@ class ChatPersistenceService {
     _sessions.removeWhere((s) => s.id == sessionId);
     final file = await _sessionFile(sessionId);
     if (await file.exists()) await file.delete();
-    
+
     if (_activeSessionId == sessionId) {
       if (_sessions.isEmpty) {
         await createSession();
@@ -175,6 +189,15 @@ class ChatPersistenceService {
   Future<void> renameSession(String sessionId, String newTitle) async {
     final session = _sessions.firstWhere((s) => s.id == sessionId);
     session.title = newTitle;
+    await _saveIndex();
+  }
+
+  /// Persist the bound gateway session key for the currently active local chat.
+  Future<void> setActiveGatewaySessionKey(String? key) async {
+    final session = activeSession;
+    if (session == null) return;
+    session.gatewaySessionKey = key;
+    session.updatedAt = DateTime.now();
     await _saveIndex();
   }
 
@@ -199,7 +222,7 @@ class ChatPersistenceService {
       final file = await _sessionFile(_activeSessionId!);
       final jsonList = messages.map((m) => m.toJson()).toList();
       await file.writeAsString(jsonEncode(jsonList));
-      
+
       // Auto-update title from first user message
       final session = _sessions.firstWhere((s) => s.id == _activeSessionId);
       if (session.title == 'New Chat') {

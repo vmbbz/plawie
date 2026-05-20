@@ -26,6 +26,7 @@ class NodeWsService {
   String? _lastCloseReason;
   DateTime? _lastDisconnectAt;
   bool _connectAttemptInFlight = false;
+  bool _disconnectInProgress = false;
 
   Stream<NodeFrame> get frameStream => _frameController.stream;
   bool get isConnected => _connected;
@@ -61,6 +62,19 @@ class NodeWsService {
 
   Completer<void>? _socketCompleter;
   Completer<void>? _handshakeCompleter;
+
+  void _resetConnectCompleters(Object error) {
+    final socket = _socketCompleter;
+    if (socket != null && !socket.isCompleted) {
+      socket.completeError(error);
+    }
+    final handshake = _handshakeCompleter;
+    if (handshake != null && !handshake.isCompleted) {
+      handshake.completeError(error);
+    }
+    _socketCompleter = null;
+    _handshakeCompleter = null;
+  }
 
   Future<void> _doConnect({bool notifyReady = false}) async {
     if (_url == null) return;
@@ -209,20 +223,26 @@ class NodeWsService {
 
   /// Wait for the socket to be connected (channel.ready).
   Future<void> waitForSocket() async {
-    if (_socketCompleter != null) {
-      await _socketCompleter!.future;
-    } else if (_channel == null) {
+    final completer = _socketCompleter;
+    if (completer == null) {
       throw StateError('WebSocket not connecting');
+    }
+    await completer.future;
+    if (_channel == null) {
+      throw StateError('WebSocket not connected');
     }
   }
 
   /// Wait for the connection to be fully handshaked (hello-ok received).
   Future<void> waitForReady() async {
     if (_connected) return;
-    if (_handshakeCompleter != null) {
-      await _handshakeCompleter!.future;
-    } else {
+    final completer = _handshakeCompleter;
+    if (completer == null) {
       throw StateError('WebSocket not handshaking');
+    }
+    await completer.future;
+    if (!_connected) {
+      throw StateError('WebSocket handshake not completed');
     }
   }
 
@@ -240,33 +260,41 @@ class NodeWsService {
   }
 
   void _handleDisconnect({int? closeCode, String? closeReason}) {
-    final normalizedReason = (closeReason == null || closeReason.isEmpty)
-        ? 'socket-closed'
-        : closeReason;
+    if (_disconnectInProgress) return;
+    _disconnectInProgress = true;
+    try {
+      final normalizedReason = (closeReason == null || closeReason.isEmpty)
+          ? 'socket-closed'
+          : closeReason;
 
-    _lastCloseCode = closeCode;
-    _lastCloseReason = normalizedReason;
-    _lastDisconnectAt = DateTime.now();
-    _connected = false;
-    _connectRequestId = null;
-    _pingTimer?.cancel();
-    _subscription?.cancel();
-    _channel = null;
+      _lastCloseCode = closeCode;
+      _lastCloseReason = normalizedReason;
+      _lastDisconnectAt = DateTime.now();
+      _connected = false;
+      _connectRequestId = null;
+      _pingTimer?.cancel();
+      _subscription?.cancel();
+      _channel = null;
 
-    // Fail all pending requests
-    for (final completer in _pendingRequests.values) {
-      completer.completeError('WebSocket disconnected');
-    }
-    _pendingRequests.clear();
+      // Fail all pending requests
+      for (final completer in _pendingRequests.values) {
+        completer.completeError('WebSocket disconnected');
+      }
+      _pendingRequests.clear();
+      _resetConnectCompleters(StateError('WebSocket disconnected'));
 
-    _frameController.add(NodeFrame.event('_disconnected', {
-      if (closeCode != null) 'closeCode': closeCode,
-      'closeReason': normalizedReason,
-      if (_lastDisconnectAt != null) 'at': _lastDisconnectAt!.toIso8601String(),
-    }));
+      _frameController.add(NodeFrame.event('_disconnected', {
+        if (closeCode != null) 'closeCode': closeCode,
+        'closeReason': normalizedReason,
+        if (_lastDisconnectAt != null)
+          'at': _lastDisconnectAt!.toIso8601String(),
+      }));
 
-    if (_shouldReconnect) {
-      _scheduleReconnect();
+      if (_shouldReconnect) {
+        _scheduleReconnect();
+      }
+    } finally {
+      _disconnectInProgress = false;
     }
   }
 
@@ -351,6 +379,7 @@ class NodeWsService {
     _connected = false;
     await _channel?.sink.close();
     _channel = null;
+    _resetConnectCompleters(StateError('Disconnected'));
 
     for (final completer in _pendingRequests.values) {
       completer.completeError('Disconnected');

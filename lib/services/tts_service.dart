@@ -4,12 +4,12 @@ import 'voice_persona_service.dart';
 
 /// Lean TTS facade — now 100% relies on OpenClaw Gateway TTS.
 /// The gateway handles text → MP3 generation and returns a playable URL.
-/// This class manages the centralized AudioPlaybackService to bridge 
+/// This class manages the centralized AudioPlaybackService to bridge
 /// gateway audio with UI hooks (like VRM lip-sync).
 class TtsService {
   static final TtsService _instance = TtsService._internal();
   factory TtsService() => _instance;
-  
+
   TtsService._internal() {
     _playback.onStart = () => onStart?.call();
     _playback.onComplete = () => onComplete?.call();
@@ -50,12 +50,19 @@ class TtsService {
     await _playback.playUrl(url);
   }
 
+  /// Play direct synthesized bytes from gateway talk.speak / tts.convert.
+  Future<void> speakBytes(Uint8List bytes) async {
+    debugPrint(
+        'TtsService: Playing gateway audio bytes (${bytes.length} bytes)');
+    await _playback.playBytes(bytes);
+  }
+
   Future<void> stop() async {
     await _playback.stop();
   }
 
   bool get isReady => true; // Gateway path is always ready
-  
+
   bool get isSpeaking => _playback.isPlaying;
 
   /// Deprecated: Local engines removed in v2.0-beta.1 cleanup

@@ -220,7 +220,17 @@ class BootstrapService {
 
   Future<void> runFullSetup(
       {required void Function(SetupState) onProgress}) async {
+    final setupFlowPrefs = PreferencesService();
+    await setupFlowPrefs.init();
+    setupFlowPrefs.setupInProgress = true;
     try {
+      // Pause any background gateway automation while setup rewrites config.
+      // Reusing the singleton ensures provider-owned timers/subscriptions are stopped too.
+      await GatewayService().stop().catchError((_) => null);
+      await GatewayService()
+          .clearDeviceToken(clearProtocol: true)
+          .catchError((_) => null);
+
       // Start foreground service to keep app alive during setup
       try {
         await NativeBridge.startSetupService();
@@ -455,7 +465,8 @@ class BootstrapService {
           );
           setupPrefs.pendingApiKey = null;
           setupPrefs.apiKeyConfigured = true;
-          _log('[SETUP] API credentials baked into config before gateway start.');
+          _log(
+              '[SETUP] API credentials baked into config before gateway start.');
         } else {
           _log(
               '[SETUP] No API key supplied for $pendingProvider; applying model-only bootstrap defaults.');
@@ -537,6 +548,8 @@ class BootstrapService {
         step: SetupStep.error,
         error: 'Setup failed: $e',
       ));
+    } finally {
+      setupFlowPrefs.setupInProgress = false;
     }
   }
 

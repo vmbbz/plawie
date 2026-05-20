@@ -26,6 +26,7 @@ class GatewayService {
     'http://127.0.0.1:18789',
     'http://localhost:18789',
   ];
+  static const String _mobileChatSessionPrefix = 'mobile:chat:';
 
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
@@ -305,6 +306,12 @@ PARAMETER num_batch 512
 
   /// List of methods supported by the current gateway connection.
   List<String> get supportedMethods => _connection?.supportedMethods ?? [];
+  Stream<Map<String, dynamic>> get gatewayEventStream =>
+      _connection?.eventStream ?? const Stream<Map<String, dynamic>>.empty();
+
+  /// True when the connected gateway explicitly advertises [method].
+  bool supportsMethod(String method) =>
+      (_connection?.supportedMethods ?? const <String>[]).contains(method);
 
   bool get _isInGatewaySettleWindow {
     final settleUntil = _gatewaySettleUntil;
@@ -342,6 +349,20 @@ PARAMETER num_batch 512
           : '[HEALTH] WS dropped and gateway process is down.';
       _updateState(_state.copyWith(logs: [..._state.logs, contextMessage]));
     } catch (_) {}
+  }
+
+  String _describeWsClose(int? closeCode, String closeReasonRaw) {
+    if (closeReasonRaw.isNotEmpty) return closeReasonRaw;
+    switch (closeCode) {
+      case 1005:
+        return 'no-status-received';
+      case 1006:
+        return 'abnormal-closure';
+      case 1008:
+        return 'policy-rejected';
+      default:
+        return 'unknown';
+    }
   }
 
   /// Validate gateway process health before marking as healthy
@@ -386,6 +407,12 @@ PARAMETER num_batch 512
 
     final prefs = PreferencesService();
     await prefs.init();
+    if (prefs.setupInProgress) {
+      _addActivity('[SYS] Setup in progress. Deferring gateway automation.');
+      return;
+    }
+
+    await _migrateLegacyOllamaCloudDefaults(prefs);
 
     // Initialize file directory early
     await getFilesDir();
@@ -405,6 +432,40 @@ PARAMETER num_batch 512
     // Gateway startup. No longer probes Ollama models on startup to prevent
     // 20s+ event loop stalls that break Node pairing.
     unawaited(attachOrStart(autoStart: prefs.autoStartGateway));
+  }
+
+  Future<void> _migrateLegacyOllamaCloudDefaults(
+      PreferencesService prefs) async {
+    final provider = (prefs.apiProvider ?? '').trim().toLowerCase();
+    final configuredModel = (prefs.configuredModel ?? '').trim();
+    final usesOllama = provider.contains('ollama');
+    final isLegacyCloudModel = configuredModel.startsWith('ollama/') &&
+        configuredModel.contains(':cloud');
+    if (!usesOllama || !isLegacyCloudModel) return;
+
+    const localFallback = 'ollama/qwen2.5:0.5b';
+    prefs.configuredModel = localFallback;
+    _addActivity(
+        '[MIGRATION] Legacy Ollama cloud model detected; switching default to $localFallback');
+
+    final running = await NativeBridge.isGatewayRunning();
+    if (running) return;
+
+    try {
+      final config = await _readConfig();
+      final primary = config['agents']?['defaults']?['model']?['primary'];
+      final isCloudPrimary = primary is String &&
+          primary.startsWith('ollama/') &&
+          primary.contains(':cloud');
+      if (!isCloudPrimary) return;
+      config['agents'] ??= {};
+      config['agents']['defaults'] ??= {};
+      config['agents']['defaults']['model'] ??= {};
+      config['agents']['defaults']['model']['primary'] = localFallback;
+      await _writeConfig(config);
+    } catch (_) {
+      // Best effort migration; prefs fallback still prevents cloud default selection.
+    }
   }
 
   /// New Auto-Healing Logic: Detects critical failures in logs and attempts recovery.
@@ -574,20 +635,9 @@ PARAMETER num_batch 512
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
-      try {
-        // Apply Plawie's local gateway overrides BEFORE doctor --fix
-        // This prevents config reload loops when openclaw reload detects our changes
-        await _configureGateway();
-
-        await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'openclaw doctor --fix 2>/dev/null || true',
-          timeout: 10,
-        );
-        // Reload intentionally omitted to avoid self-induced disconnect cycles
-        // while we're simply attaching to an already running process.
-      } catch (_) {}
+      // Attach path should be non-mutating.
+      // Running config/doctor writes while the gateway is already booting can
+      // trigger avoidable reload/restart churn during first handshake.
 
       // Wipe the cache so we don't use a stale token from a previous run
       _connection?.dispose();
@@ -1068,8 +1118,24 @@ PARAMETER num_batch 512
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
+    // Keep startup lean for mobile stability.
+    // Long startup sidecar tasks (especially model prewarm) correlate with
+    // event-loop delay spikes and websocket handshake timeouts in diagnostics.
+    config['gateway']['startup'] ??= {};
+    config['gateway']['startup']['modelPrewarm'] = false;
+    config['gateway']['startup']['updateCheck'] = false;
+    config['gateway']['sidecars'] ??= {};
+    config['gateway']['sidecars']['browser'] ??= <String, dynamic>{};
+    config['gateway']['sidecars']['browser']['enabled'] = false;
+    config['gateway']['sidecars']['model-prewarm'] ??= <String, dynamic>{};
+    config['gateway']['sidecars']['model-prewarm']['enabled'] = false;
+    config['gateway']['sidecars']['modelPrewarm'] ??= <String, dynamic>{};
+    config['gateway']['sidecars']['modelPrewarm']['enabled'] = false;
+
     // Ollama Default Provider — always ensure models array is present.
     config['models'] ??= {};
+    config['models']['startup'] ??= {};
+    config['models']['startup']['modelPrewarm'] = false;
     config['models']['providers'] ??= {};
     config['models']['providers']['ollama'] ??= <String, dynamic>{};
     final ollama = Map<String, dynamic>.from(
@@ -1942,7 +2008,10 @@ PARAMETER num_batch 512
   String getModelForProvider(String provider) {
     final raw = provider.toLowerCase();
     if (raw.contains('ollama_cloud') || raw.contains('ollama cloud')) {
-      return 'ollama/qwen3-coder:480b-cloud';
+      // Mobile setup is local-first: choosing Ollama in onboarding should be
+      // free/offline by default. Cloud-tagged Ollama models require separate
+      // Ollama account auth and produce noisy startup auth errors otherwise.
+      return 'ollama/qwen2.5:0.5b';
     }
     switch (_normalizeProvider(provider)) {
       case 'google':
@@ -2291,11 +2360,14 @@ PARAMETER num_batch 512
   /// Clear the operator device token from SharedPreferences and in-memory cache.
   /// Call this from the UI "Clear Cache" action so the next connect does a
   /// fresh identity handshake instead of reusing a potentially stale token.
-  Future<void> clearDeviceToken() async {
+  Future<void> clearDeviceToken({bool clearProtocol = false}) async {
     clearTokenCache();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(GatewayConnection.prefDeviceToken);
+      if (clearProtocol) {
+        await prefs.remove(GatewayConnection.prefWsProtocol);
+      }
     } catch (_) {}
   }
 
@@ -2370,16 +2442,22 @@ PARAMETER num_batch 512
       _connection = GatewayConnection();
       _connection!.stateStream.listen((wsState) {
         final connected = wsState == GatewayConnectionState.connected;
+        final disconnected = wsState == GatewayConnectionState.disconnected;
         if (connected) _pairingResolveAttempted = false; // Reset on success
         final closeCode = _connection?.lastCloseCode;
         final closeReasonRaw = (_connection?.lastCloseReason ?? '').trim();
-        final closeReason = closeReasonRaw.isEmpty ? 'unknown' : closeReasonRaw;
-        if (!connected) {
+        final closeReason = _describeWsClose(closeCode, closeReasonRaw);
+        if (disconnected) {
           _sessionCleanedThisConnection =
               false; // Allow cleanup on next reconnect
           _rpcDiscoveryDone =
               false; // Bug 1 fix: Reset RPC discovery flag on WS disconnect
           unawaited(_logGatewayDisconnectContext());
+        }
+        if (!connected && !disconnected) {
+          // Transitional state (connecting/handshaking) — not a real disconnect.
+          _updateState(_state.copyWith(isWebsocketConnected: false));
+          return;
         }
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
@@ -2821,6 +2899,14 @@ PARAMETER num_batch 512
     return false;
   }
 
+  String _resolveLocalOllamaFallbackModel() {
+    final available = _state.ollamaHubModels;
+    if (available.isNotEmpty) {
+      return 'ollama/${available.first}';
+    }
+    return 'ollama/qwen2.5:0.5b';
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local-llm/ → fllama NDK (on-device inference, no network, no gateway)
@@ -2834,6 +2920,7 @@ PARAMETER num_batch 512
     String message, {
     String? model,
     List<Map<String, dynamic>>? conversationHistory,
+    String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
 
@@ -2880,13 +2967,22 @@ PARAMETER num_batch 512
     // All other models (ollama/ and cloud) use WS chat.send → gateway.
     // If WS is unavailable, ollama/ falls back to direct :11434 so inference
     // still works; cloud falls back to HTTP gateway proxy.
-    final isOllama = model.startsWith('ollama/');
-    final isCloudOllama = isOllama && model.contains(':cloud');
-    final isLocalOllama = isOllama && !isCloudOllama;
-
+    var isOllama = model.startsWith('ollama/');
+    var isCloudOllama = isOllama && model.contains(':cloud');
     if (isCloudOllama) {
       _addActivity('[CHAT] ☁ Cloud Ollama model — routing via hub proxy.');
+      final signedIn = await checkOllamaCredentials();
+      if (!signedIn) {
+        final fallback = _resolveLocalOllamaFallbackModel();
+        _addActivity(
+            '[CHAT] Cloud Ollama requires sign-in; auto-falling back to local model $fallback');
+        model = fallback;
+        isOllama = true;
+        isCloudOllama = false;
+      }
     }
+    final isLocalOllama = isOllama && !isCloudOllama;
+
     // For local Ollama: proactively clear bloated session files so the gateway
     // doesn't forward a wall of stale history on every request.
     // Fire-and-forget — don't block the message on disk I/O.
@@ -3002,10 +3098,16 @@ PARAMETER num_batch 512
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
 
-    // Use agent ID as sessionKey if applicable, otherwise fallback to mainSessionKey
-    final sessionKey = model.startsWith('agent/')
-        ? model.substring(6)
-        : (_connection!.mainSessionKey ?? 'main');
+    // Session routing priority:
+    // 1) explicit sessionKey from caller (per-chat session binding)
+    // 2) agent/<id> model route
+    // 3) gateway main session default
+    final resolvedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : model.startsWith('agent/')
+                ? model.substring(6)
+                : (_connection!.mainSessionKey ?? 'main');
 
     // Cold-start (model not yet in RAM) gets 3 min; warm gets 2 min; cloud 90 s.
     // Local Ollama: extended timeout for cold-start model loading.
@@ -3016,7 +3118,7 @@ PARAMETER num_batch 512
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
       'params': {
-        'sessionKey': sessionKey,
+        'sessionKey': resolvedSessionKey,
         'message': message,
         'idempotencyKey': const Uuid().v4(),
         'timeoutMs': timeoutMs,
@@ -3366,6 +3468,170 @@ PARAMETER num_batch 512
         )
         .timeout(const Duration(seconds: 30));
     return frame;
+  }
+
+  Map<String, dynamic> _extractRpcPayload(Map<String, dynamic> frame) {
+    if (frame['type'] == 'error') {
+      final payload = frame['payload'];
+      if (payload is Map<String, dynamic>) {
+        final msg = payload['message']?.toString() ?? payload.toString();
+        throw Exception(msg);
+      }
+      throw Exception(payload?.toString() ?? 'Gateway RPC error');
+    }
+
+    final ok = frame['ok'] as bool? ?? false;
+    if (!ok) {
+      final error = frame['error'];
+      if (error is Map<String, dynamic>) {
+        final msg = error['message']?.toString() ?? error.toString();
+        throw Exception(msg);
+      }
+      throw Exception(error?.toString() ?? 'Gateway RPC rejected');
+    }
+
+    final payload = frame['payload'];
+    if (payload is Map<String, dynamic>) return payload;
+    return <String, dynamic>{};
+  }
+
+  String? _extractSessionKey(dynamic payload) {
+    if (payload is Map<String, dynamic>) {
+      final direct = payload['key'] ??
+          payload['sessionKey'] ??
+          payload['resolvedKey'] ??
+          payload['canonicalKey'];
+      if (direct is String && direct.isNotEmpty) return direct;
+
+      final session = payload['session'];
+      if (session is Map<String, dynamic>) {
+        final nested = session['key'] ?? session['sessionKey'];
+        if (nested is String && nested.isNotEmpty) return nested;
+      }
+    }
+    return null;
+  }
+
+  /// Resolve (or create) a stable gateway session key for one local chat thread.
+  Future<String> resolveOrCreateGatewaySessionKey({
+    required String localSessionId,
+    String? existingSessionKey,
+  }) async {
+    final existing = existingSessionKey?.trim() ?? '';
+    if (existing.isNotEmpty) return existing;
+
+    final candidateKey = '$_mobileChatSessionPrefix$localSessionId';
+    final advertisedMethods = _connection?.supportedMethods ?? const <String>[];
+    final canResolve = advertisedMethods.isEmpty ||
+        advertisedMethods.contains('sessions.resolve');
+    final canCreate = advertisedMethods.isEmpty ||
+        advertisedMethods.contains('sessions.create');
+
+    // Fast path: if this key already exists, reuse it.
+    if (canResolve) {
+      try {
+        final resolveFrame =
+            await invoke('sessions.resolve', {'key': candidateKey});
+        final resolvePayload = _extractRpcPayload(resolveFrame);
+        final resolvedKey = _extractSessionKey(resolvePayload);
+        if (resolvedKey != null && resolvedKey.isNotEmpty) {
+          return resolvedKey;
+        }
+      } catch (_) {
+        // Older gateways may not expose sessions.resolve; creation path below handles that.
+      }
+    }
+
+    // Preferred path: create a dedicated session per local chat thread.
+    if (!canCreate) {
+      return _connection?.mainSessionKey ?? 'main';
+    }
+    try {
+      final createFrame = await invoke('sessions.create', {
+        'key': candidateKey,
+        'label': 'Mobile chat',
+      });
+      final createPayload = _extractRpcPayload(createFrame);
+      return _extractSessionKey(createPayload) ?? candidateKey;
+    } catch (e) {
+      // Safe fallback: stay operational on older gateway builds.
+      _addActivity('[SESS] sessions.create failed for $candidateKey: $e');
+      return _connection?.mainSessionKey ?? 'main';
+    }
+  }
+
+  /// Synthesize speech through modern gateway Talk RPC (`talk.speak`).
+  /// Returns true when playback started; false means caller should use legacy fallback.
+  Future<bool> speakTextViaTalk(String text) async {
+    final input = text.trim();
+    if (input.isEmpty) return false;
+
+    try {
+      final frame = await invoke('talk.speak', {
+        'text': input,
+        'outputFormat': 'mp3',
+      });
+      final payload = _extractRpcPayload(frame);
+      final audioBase64 = payload['audioBase64'] as String?;
+      if (audioBase64 == null || audioBase64.isEmpty) return false;
+      final audioBytes = base64Decode(audioBase64);
+      await TtsService().speakBytes(audioBytes);
+      return true;
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      final unsupported = msg.contains('unknown method') ||
+          msg.contains('talk.speak unavailable') ||
+          msg.contains('method unavailable') ||
+          msg.contains('fallbackeligible');
+      if (!unsupported) {
+        _addActivity('[TTS] talk.speak failed: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> getTalkCatalog() async {
+    final frame = await invoke('talk.catalog', {});
+    return _extractRpcPayload(frame);
+  }
+
+  Future<Map<String, dynamic>> createTalkRealtimeRelaySession({
+    String? provider,
+    String? model,
+    String? voice,
+  }) async {
+    final frame = await invoke('talk.session.create', {
+      'mode': 'realtime',
+      'transport': 'gateway-relay',
+      'brain': 'agent-consult',
+      if (provider != null && provider.isNotEmpty) 'provider': provider,
+      if (model != null && model.isNotEmpty) 'model': model,
+      if (voice != null && voice.isNotEmpty) 'voice': voice,
+    });
+    return _extractRpcPayload(frame);
+  }
+
+  Future<void> appendTalkSessionAudio({
+    required String sessionId,
+    required String audioBase64,
+    double? timestamp,
+  }) async {
+    await invoke('talk.session.appendAudio', {
+      'sessionId': sessionId,
+      'audioBase64': audioBase64,
+      if (timestamp != null) 'timestamp': timestamp,
+    });
+  }
+
+  Future<void> cancelTalkSessionTurn(String sessionId, {String? reason}) async {
+    await invoke('talk.session.cancelTurn', {
+      'sessionId': sessionId,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+    });
+  }
+
+  Future<void> closeTalkSession(String sessionId) async {
+    await invoke('talk.session.close', {'sessionId': sessionId});
   }
 
   /// HTTP fallback: POST to /v1/chat/completions with STREAMING support.

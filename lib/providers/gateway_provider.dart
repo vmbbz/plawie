@@ -13,6 +13,8 @@ class GatewayProvider extends ChangeNotifier {
   GatewayState _state = const GatewayState();
 
   GatewayState get state => _state;
+  Stream<Map<String, dynamic>> get gatewayEventStream =>
+      _gatewayService.gatewayEventStream;
 
   /// The list of methods supported by the current gateway connection.
   List<String> get supportedMethods => _gatewayService.supportedMethods;
@@ -24,12 +26,16 @@ class GatewayProvider extends ChangeNotifier {
   List<Map<String, dynamic>>? get activeSkills => _state.activeSkills;
 
   /// Send a message to the OpenClaw gateway and stream the response.
-  Stream<String> sendMessage(String message, {
+  Stream<String> sendMessage(
+    String message, {
     String model = 'google/gemini-3.1-pro-preview',
     List<Map<String, dynamic>>? conversationHistory,
+    String? sessionKey,
   }) {
     return _gatewayService.sendMessage(message,
-        model: model, conversationHistory: conversationHistory);
+        model: model,
+        conversationHistory: conversationHistory,
+        sessionKey: sessionKey);
   }
 
   /// Send an image + optional text directly to the local vision model on :8081.
@@ -39,7 +45,8 @@ class GatewayProvider extends ChangeNotifier {
     String imageBase64, {
     String mimeType = 'image/jpeg',
   }) {
-    return _gatewayService.sendVisionMessage(prompt, imageBase64, mimeType: mimeType);
+    return _gatewayService.sendVisionMessage(prompt, imageBase64,
+        mimeType: mimeType);
   }
 
   /// Sends an image to the gateway for Gemini/GPT-4o cloud vision.
@@ -48,7 +55,8 @@ class GatewayProvider extends ChangeNotifier {
     String imageBase64, {
     String mimeType = 'image/jpeg',
   }) {
-    return _gatewayService.sendCloudImageMessage(prompt, imageBase64, mimeType: mimeType);
+    return _gatewayService.sendCloudImageMessage(prompt, imageBase64,
+        mimeType: mimeType);
   }
 
   /// Fetch available OpenClaw agents from the gateway at runtime.
@@ -127,9 +135,56 @@ class GatewayProvider extends ChangeNotifier {
   }
 
   /// Invoke a generic RPC method on the gateway.
-  Future<Map<String, dynamic>> invoke(String method, [Map<String, dynamic>? params]) {
+  Future<Map<String, dynamic>> invoke(String method,
+      [Map<String, dynamic>? params]) {
     return _gatewayService.invoke(method, params);
   }
+
+  Future<String> resolveOrCreateGatewaySessionKey({
+    required String localSessionId,
+    String? existingSessionKey,
+  }) {
+    return _gatewayService.resolveOrCreateGatewaySessionKey(
+      localSessionId: localSessionId,
+      existingSessionKey: existingSessionKey,
+    );
+  }
+
+  Future<bool> speakTextViaTalk(String text) =>
+      _gatewayService.speakTextViaTalk(text);
+
+  Future<Map<String, dynamic>> getTalkCatalog() =>
+      _gatewayService.getTalkCatalog();
+
+  Future<Map<String, dynamic>> createTalkRealtimeRelaySession({
+    String? provider,
+    String? model,
+    String? voice,
+  }) {
+    return _gatewayService.createTalkRealtimeRelaySession(
+      provider: provider,
+      model: model,
+      voice: voice,
+    );
+  }
+
+  Future<void> appendTalkSessionAudio({
+    required String sessionId,
+    required String audioBase64,
+    double? timestamp,
+  }) {
+    return _gatewayService.appendTalkSessionAudio(
+      sessionId: sessionId,
+      audioBase64: audioBase64,
+      timestamp: timestamp,
+    );
+  }
+
+  Future<void> cancelTalkSessionTurn(String sessionId, {String? reason}) =>
+      _gatewayService.cancelTalkSessionTurn(sessionId, reason: reason);
+
+  Future<void> closeTalkSession(String sessionId) =>
+      _gatewayService.closeTalkSession(sessionId);
 
   /// Force a WebSocket disconnection to trigger a fresh handshake on next send.
   void disconnectWebSocket() {
@@ -142,22 +197,23 @@ class GatewayProvider extends ChangeNotifier {
     _gatewayService.refreshRpcDiscovery();
   }
 
-
   /// Research and repair any gateway corruption programmatically in the background.
   void repairAndRestart() {
     if (_state.isRepairing) return;
-    
+
     // Fire and forget background repair
     unawaited(() async {
-      _gatewayService.setRepairing(true, message: 'Starting repair...', progress: 0.0);
+      _gatewayService.setRepairing(true,
+          message: 'Starting repair...', progress: 0.0);
       try {
         final bootstrap = BootstrapService();
         bool hasError = false;
-        
+
         await bootstrap.repairOpenClaw(onProgress: (state) {
           _gatewayService.addLog('[REPAIR] ${state.message}');
-          _gatewayService.setRepairing(true, 
-            message: state.message, 
+          _gatewayService.setRepairing(
+            true,
+            message: state.message,
             progress: state.progress,
           );
           if (state.step == SetupStep.error) {
@@ -167,7 +223,7 @@ class GatewayProvider extends ChangeNotifier {
 
         // Restart only if repair finished without error
         if (!hasError) {
-           await start();
+          await start();
         }
       } catch (e) {
         _gatewayService.addLog('[ERROR] Background repair failed: $e');

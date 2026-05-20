@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app.dart';
@@ -82,13 +82,13 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     ),
     _ProviderInfo(
       id: 'OLLAMA_CLOUD',
-      name: 'Ollama Cloud',
-      subtitle: 'Free · zero-config',
+      name: 'Ollama (Local)',
+      subtitle: 'Free · offline-first',
       icon: Icons.cloud_queue_rounded,
       color: Color(0xFFAB47BC),
       hint: '',
       prefix: '',
-      defaultModel: 'qwen3-coder:480b-cloud',
+      defaultModel: 'qwen2.5:0.5b',
     ),
   ];
 
@@ -158,8 +158,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       await prefs.init();
 
       if (_selectedProvider != null) {
-        prefs.pendingProvider = _selectedProvider;
-        prefs.apiProvider = _selectedProvider;
+        final normalizedProvider =
+            _selectedProvider == 'OLLAMA_CLOUD' ? 'ollama' : _selectedProvider;
+        prefs.pendingProvider = normalizedProvider;
+        prefs.apiProvider = normalizedProvider;
       }
       final key = _apiKeyController.text.trim();
       if (key.isNotEmpty && _selectedProvider != 'OLLAMA_CLOUD') {
@@ -232,7 +234,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             if (_error != null)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 color: theme.colorScheme.error.withAlpha(25),
                 child: Row(
                   children: [
@@ -427,7 +430,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     );
   }
 
-  Widget _buildProviderCard(_ProviderInfo provider, ThemeData theme, bool isDark) {
+  Widget _buildProviderCard(
+      _ProviderInfo provider, ThemeData theme, bool isDark) {
     final isSelected = _selectedProvider == provider.id;
     return GestureDetector(
       onTap: () => setState(() => _selectedProvider = provider.id),
@@ -608,7 +612,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Plawie will use your free ollama.com account once you sign in from Local LLM settings.',
+                  'Plawie starts in local/free Ollama mode by default. You can optionally sign in later for cloud models from Local LLM settings.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -621,7 +625,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         ] else ...[
           Text(
             'Enter your ${provider.name} API key',
-            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
+            style:
+                GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
@@ -669,7 +674,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     borderRadius: BorderRadius.circular(8),
                     color: AppColors.statusGreen.withAlpha(40),
                   ),
-                  child: Icon(Icons.key, color: AppColors.statusGreen, size: 20),
+                  child:
+                      Icon(Icons.key, color: AppColors.statusGreen, size: 20),
                 ),
                 suffixIcon: IconButton(
                   icon: Icon(
@@ -753,8 +759,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 size: 22, color: AppColors.statusGreen),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                  color: theme.colorScheme.outline.withAlpha(80)),
+              borderSide:
+                  BorderSide(color: theme.colorScheme.outline.withAlpha(80)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -899,9 +905,12 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ],
               ),
               const SizedBox(height: 10),
-              _buildSummaryRow(theme, _activeProvider?.name ?? 'No provider selected'),
-              _buildSummaryRow(theme, 'Agent: ${_agentNameController.text.trim()}'),
-              _buildSummaryRow(theme, 'Gateway: 127.0.0.1:18789 (auto-configured)'),
+              _buildSummaryRow(
+                  theme, _activeProvider?.name ?? 'No provider selected'),
+              _buildSummaryRow(
+                  theme, 'Agent: ${_agentNameController.text.trim()}'),
+              _buildSummaryRow(
+                  theme, 'Gateway: 127.0.0.1:18789 (auto-configured)'),
               const SizedBox(height: 8),
               Text(
                 'Credentials will be baked into the gateway config before it starts — no reload, no disruption.',
@@ -953,7 +962,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(5),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
+          color:
+              isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
         ),
       ),
       child: Row(
@@ -968,8 +978,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                     style: theme.textTheme.bodyMedium
                         ?.copyWith(fontWeight: FontWeight.w600)),
                 Text(subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant)),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               ],
             ),
           ),
@@ -1003,9 +1013,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: isDark
-                ? Colors.white.withAlpha(10)
-                : Colors.black.withAlpha(8),
+            color:
+                isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(8),
           ),
         ),
       ),
@@ -1054,8 +1063,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
                   : const Icon(Icons.download_rounded,

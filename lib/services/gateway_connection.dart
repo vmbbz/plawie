@@ -80,6 +80,7 @@ class GatewayConnection {
 
   /// Shared-prefs key — exposed so callers can purge the token on pairing recovery.
   static const prefDeviceToken = _prefDeviceToken;
+  static const prefWsProtocol = _prefWsProtocol;
 
   Completer<void>? _handshakeCompleter;
   Completer<String?>? _challengeCompleter;

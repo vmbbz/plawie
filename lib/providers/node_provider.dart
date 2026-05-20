@@ -99,12 +99,16 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     } catch (_) {}
 
-    if (_state.isPaired && _nodeService.isConnectionStale) {
+    if (_state.isPaired &&
+        _nodeService.isConnectionStale &&
+        !_state.isConnecting) {
       // WebSocket went stale while in background — force reconnect
       await _nodeService.disconnect();
       await _nodeService.connect();
-    } else if (_state.status == NodeStatus.disconnected ||
-        _state.status == NodeStatus.warmingUp) {
+    } else if ((_state.status == NodeStatus.disconnected ||
+            _state.status == NodeStatus.warmingUp ||
+            _state.status == NodeStatus.error) &&
+        !_state.isConnecting) {
       // Connection dropped while in background
       await _nodeService.connect();
     }
@@ -223,7 +227,8 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       };
 
       // Log device registration (simplified approach)
-      debugPrint('Device capabilities registered: ${deviceInfo['capabilities']}');
+      debugPrint(
+          'Device capabilities registered: ${deviceInfo['capabilities']}');
 
       // The capabilities are already registered in _registerCapabilities()
       // This is just for logging/debugging purposes
@@ -265,7 +270,11 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           await NativeBridge.startNodeService();
         }
       } catch (_) {}
-      await _nodeService.connect();
+      if (!_state.isConnecting &&
+          _state.status != NodeStatus.paired &&
+          _state.status != NodeStatus.pairing) {
+        await _nodeService.connect();
+      }
       _startWatchdog();
     }
   }
@@ -308,8 +317,11 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       } catch (_) {}
 
-      final shouldReconnect = _state.status == NodeStatus.disconnected ||
-          _state.status == NodeStatus.warmingUp;
+      final shouldReconnect = (_state.status == NodeStatus.disconnected ||
+              _state.status == NodeStatus.warmingUp ||
+              _state.status == NodeStatus.error) &&
+          !_state.isConnecting &&
+          _state.status != NodeStatus.pairing;
       if (shouldReconnect && (_lastGatewayState?.isRunning ?? false)) {
         // Connection dropped and gateway is up — reconnect
         _nodeService.connect();

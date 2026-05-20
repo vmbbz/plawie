@@ -27,6 +27,7 @@ class NodeService {
   StreamSubscription? _warmingUpSubscription;
   bool _pairingResolveAttempted = false;
   bool _connectInFlight = false;
+  bool _pendingReconnectHandshake = false;
   int _preferredConnectProtocol = AppConstants.wsProtocolMaxVersion;
   DateTime? _pairingRetryNotBefore;
   int _pairingApprovalFailureCount = 0;
@@ -117,6 +118,9 @@ class NodeService {
   }
 
   Future<void> connect({String? host, int? port}) async {
+    if (_state.status == NodeStatus.paired && _ws.isConnected) {
+      return;
+    }
     if (_connectInFlight) {
       log('[NODE] Connect already in progress — skipping duplicate request');
       return;
@@ -184,6 +188,7 @@ class NodeService {
       log('[NODE] Connection failed: $e');
     } finally {
       _connectInFlight = false;
+      _drainQueuedReconnectHandshake();
     }
   }
 
@@ -218,9 +223,11 @@ class NodeService {
   }
 
   Future<void> _handleSocketReconnectReady() async {
-    if (_state.status == NodeStatus.disabled ||
-        _pairingResolveAttempted ||
-        _connectInFlight) {
+    if (_state.status == NodeStatus.disabled || _pairingResolveAttempted) {
+      return;
+    }
+    if (_connectInFlight) {
+      _pendingReconnectHandshake = true;
       return;
     }
 
@@ -244,7 +251,15 @@ class NodeService {
       log('[NODE] Reconnect handshake failed: $e');
     } finally {
       _connectInFlight = false;
+      _drainQueuedReconnectHandshake();
     }
+  }
+
+  void _drainQueuedReconnectHandshake() {
+    if (!_pendingReconnectHandshake) return;
+    if (_connectInFlight || _pairingResolveAttempted) return;
+    _pendingReconnectHandshake = false;
+    unawaited(_handleSocketReconnectReady());
   }
 
   void _onFrame(NodeFrame frame) {
@@ -611,6 +626,7 @@ class NodeService {
 
     _ws.haltReconnect();
     clearCachedToken();
+    _pendingReconnectHandshake = false;
 
     final prefs = PreferencesService();
     await prefs.init();
@@ -963,6 +979,7 @@ class NodeService {
   }
 
   Future<void> disconnect() async {
+    _pendingReconnectHandshake = false;
     _frameSubscription?.cancel();
     _pairingSubscription?.cancel();
     _warmingUpSubscription?.cancel();

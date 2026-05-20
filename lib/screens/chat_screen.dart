@@ -45,13 +45,14 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _ChatScreenState extends State<ChatScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ScrollController _logScrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   final ChatPersistenceService _persistence = ChatPersistenceService();
-  
+
   // Scaffold key to allow opening the end drawer from anywhere (e.g. PopupMenu overlays)
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -59,23 +60,34 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   double _speechIntensity = 0.0;
   bool _isGenerating = false;
   bool _isReady = false;
-  
+
   // Diagnostics
   final List<String> _diagnosticLogs = [];
   bool _showDiagnostics = false;
-  
+
   // Voice Pipeline (Kokoro TTS / Local VITS)
   final TtsService _tts = TtsService();
   final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isListening = false;
+  bool _isTalkRelayCaptureActive = false;
   String? _currentGesture;
   String? _currentGestureMode;
+  String? _talkRelaySessionId;
+  bool _talkRelayReady = false;
+  bool _talkRelaySupported = false;
+  DateTime? _talkRelaySupportCheckedAt;
+  StreamSubscription<Uint8List>? _talkAudioStreamSub;
+  StreamSubscription<Map<String, dynamic>>? _talkEventSub;
+  Future<void> _talkAudioSendChain = Future<void>.value();
+  int? _talkAssistantMessageIndex;
+  String _talkAssistantTextBuffer = '';
 
   // Streaming TTS state
   String _ttsSentenceBuffer = '';
   bool _isTtsSpeaking = false;
   final List<String> _ttsQueue = [];
-  
+  String? _gatewaySessionKey;
+
   String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
   String _selectedModel = 'google/gemini-3.1-pro-preview';
@@ -84,11 +96,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   String _cloudFallbackModel = 'google/gemini-3.1-pro-preview';
 
   // Vision / image attachment state
-  String? _pendingImageBase64;   // base64 of photo waiting to be sent
-  bool _isTakingPhoto = false;   // true while camera shutter is in flight
+  String? _pendingImageBase64; // base64 of photo waiting to be sent
+  bool _isTakingPhoto = false; // true while camera shutter is in flight
 
   // Video attachment state
-  String? _pendingVideoBase64;   // base64 of recorded clip waiting to be sent
+  String? _pendingVideoBase64; // base64 of recorded clip waiting to be sent
   bool _isRecordingVideo = false;
 
   // Static cloud model list — augmented at runtime with gateway agents
@@ -119,7 +131,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     'gemini.vrm',
     'boruto.vrm',
   ];
-  
+
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
   // Auto-sync model when local LLM starts/stops
@@ -128,8 +140,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   // Ollama Hub model sync — surfaces 'ollama/*' models in the dropdown
   StreamSubscription<GatewayState>? _gatewaySub;
   // Transitional model-switching states
-  bool _isOllamaAutoStarting = false; // true while hub auto-starts on model selection
-  bool _ollamaStopFlash = false;      // true for 1.8 s after switching away from ollama/
+  bool _isOllamaAutoStarting =
+      false; // true while hub auto-starts on model selection
+  bool _ollamaStopFlash =
+      false; // true for 1.8 s after switching away from ollama/
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
 
@@ -160,7 +174,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     AgentSkillServer.instance.onGestureModeChanged = (mode) {
       if (mounted) setState(() => _currentGestureMode = mode);
     };
-    AgentSkillServer.instance.onEmotionSet = (_) {}; // handled by avatar_scene.html
+    AgentSkillServer.instance.onEmotionSet =
+        (_) {}; // handled by avatar_scene.html
     // When the AI calls camera.snap, store the result so we can show it inline in chat
     CameraCapability.onSnapTaken = (b64, mime) {
       _pendingAiSnapBase64 = b64;
@@ -176,7 +191,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     };
     CanvasCapability.onSnapshotTaken = (b64, mime) {
       _pendingAiSnapBase64 = b64;
-      HologramService.instance.show(HologramPayload.image(b64, label: 'Canvas Snapshot'));
+      HologramService.instance
+          .show(HologramPayload.image(b64, label: 'Canvas Snapshot'));
     };
     _glowController = AnimationController(
       vsync: this,
@@ -186,15 +202,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _localLlmSub = LocalLlmService().stateStream.listen((llmState) {
       if (!mounted) return;
       setState(() => _localLlmState = llmState);
-      
-      if (llmState.status == LocalLlmStatus.ready && llmState.activeModelId != null) {
+
+      if (llmState.status == LocalLlmStatus.ready &&
+          llmState.activeModelId != null) {
         final localModel = 'local-llm/${llmState.activeModelId}';
         if (_selectedModel != localModel) {
           setState(() => _selectedModel = localModel);
           PreferencesService().configuredModel = localModel;
         }
       } else if (llmState.status == LocalLlmStatus.idle &&
-                 _selectedModel.startsWith('local-llm/')) {
+          _selectedModel.startsWith('local-llm/')) {
         setState(() => _selectedModel = _cloudFallbackModel);
         PreferencesService().configuredModel = _cloudFallbackModel;
       }
@@ -206,7 +223,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       // If agent arena (or any other writer) changed prefs.configuredModel,
       // sync it to the UI — but only if Ollama is running for ollama/ models.
       final prefsModel = PreferencesService().configuredModel;
-      if (prefsModel != null && prefsModel.isNotEmpty &&
+      if (prefsModel != null &&
+          prefsModel.isNotEmpty &&
           prefsModel != _selectedModel) {
         final isOllama = prefsModel.startsWith('ollama/');
         if (!isOllama || gwState.isOllamaRunning) {
@@ -216,9 +234,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
       if (!gwState.isOllamaRunning) {
         // Ollama stopped/crashed — remove local hub models but keep :cloud models always.
-        final wasOnLocalHub = _selectedModel.startsWith('ollama/') && !_selectedModel.contains(':cloud');
+        final wasOnLocalHub = _selectedModel.startsWith('ollama/') &&
+            !_selectedModel.contains(':cloud');
         setState(() {
-          _availableModels.removeWhere((m) => m.startsWith('ollama/') && !m.contains(':cloud'));
+          _availableModels.removeWhere(
+              (m) => m.startsWith('ollama/') && !m.contains(':cloud'));
           _isOllamaAutoStarting = false;
           if (wasOnLocalHub) {
             _selectedModel = _cloudFallbackModel;
@@ -235,7 +255,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       // Ollama running — clear auto-starting flag, merge local hub + cloud models.
       setState(() {
         _isOllamaAutoStarting = false;
-        _availableModels.removeWhere((m) => m.startsWith('ollama/') && !m.contains(':cloud'));
+        _availableModels.removeWhere(
+            (m) => m.startsWith('ollama/') && !m.contains(':cloud'));
         if (gwState.ollamaHubModels.isNotEmpty) {
           _availableModels.addAll(
             gwState.ollamaHubModels
@@ -290,12 +311,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // Only set thinking state — gesture is handled by avatar_scene.html's
         // auto-gesture system. Forcing 'pose'/'ready' here conflicts with VRMA
         // clips already playing and causes the avatar to jump.
-        setState(() { _isThinking = true; });
-      } else if (event.type == SkillsEventType.executed || event.type == SkillsEventType.error) {
+        setState(() {
+          _isThinking = true;
+        });
+      } else if (event.type == SkillsEventType.executed ||
+          event.type == SkillsEventType.error) {
         _addDiagnosticLog('Skill finished: ${event.skillId}');
-        setState(() { _isThinking = false; });
+        setState(() {
+          _isThinking = false;
+        });
       } else if (event.type == SkillsEventType.toggled) {
-        _addDiagnosticLog('Skill toggled: ${event.skillId} — pushing updated catalog to gateway');
+        _addDiagnosticLog(
+            'Skill toggled: ${event.skillId} — pushing updated catalog to gateway');
         GatewayService().reregisterSkills();
       }
     });
@@ -304,6 +331,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   Future<void> _loadChatHistory() async {
     await _persistence.init();
     final history = await _persistence.loadMessages();
+    _gatewaySessionKey = _persistence.activeGatewaySessionKey;
     final prefs = PreferencesService();
     await prefs.init();
     _agentName = prefs.agentName;
@@ -314,7 +342,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         if (history.isNotEmpty) {
           _messages.addAll(history);
         } else {
-          _messages.add(ChatMessage(text: "Hello! I'm $_agentName, your fully local AI companion. How can I help you today?", isUser: false));
+          _messages.add(ChatMessage(
+              text:
+                  "Hello! I'm $_agentName, your fully local AI companion. How can I help you today?",
+              isUser: false));
         }
       });
       _scrollToBottom(instant: true);
@@ -340,7 +371,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     await _persistence.saveMessages(_messages);
   }
 
-
   void _loadPreferences() async {
     final prefs = PreferencesService();
     await prefs.init();
@@ -351,8 +381,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
         // Derive the cloud fallback from the onboarding-chosen provider.
         final provider = prefs.apiProvider;
-        if (provider != null && provider.isNotEmpty &&
-            provider != 'ollama' && !provider.startsWith('local')) {
+        if (provider != null &&
+            provider.isNotEmpty &&
+            provider != 'ollama' &&
+            !provider.startsWith('local')) {
           _cloudFallbackModel = GatewayService().getModelForProvider(provider);
         }
 
@@ -366,9 +398,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         // read the current snapshot so the dropdown is populated immediately.
         final gwState = GatewayService().state;
         if (gwState.ollamaHubModels.isNotEmpty) {
-          _availableModels.removeWhere((m) => m.startsWith('ollama/') && !m.contains(':cloud'));
+          _availableModels.removeWhere(
+              (m) => m.startsWith('ollama/') && !m.contains(':cloud'));
           _availableModels.addAll(
-            gwState.ollamaHubModels.where((m) => !m.endsWith(':cloud')).map((m) => 'ollama/$m'),
+            gwState.ollamaHubModels
+                .where((m) => !m.endsWith(':cloud'))
+                .map((m) => 'ollama/$m'),
           );
         } else if (gwState.isOllamaRunning) {
           // Ollama is running but ollamaHubModels is empty — this happens when
@@ -385,8 +420,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           final isOllama = configured.startsWith('ollama/');
           final isLocal = configured.startsWith('local-llm/');
           final isCloudOllama = isOllama && configured.contains(':cloud');
-          if (_availableModels.contains(configured) || isLocal ||
-              (isOllama && ollamaOk) || isCloudOllama) {
+          if (_availableModels.contains(configured) ||
+              isLocal ||
+              (isOllama && ollamaOk) ||
+              isCloudOllama) {
             _selectedModel = configured;
           } else if (isOllama && !ollamaOk && !isCloudOllama) {
             // Local hub model but Ollama not running — don't restore stale model.
@@ -402,7 +439,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   void _addDiagnosticLog(String log) {
     if (!mounted) return;
     setState(() {
-      _diagnosticLogs.add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
+      _diagnosticLogs
+          .add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
       if (_diagnosticLogs.length > 100) _diagnosticLogs.removeAt(0);
 
       // Auto-show diagnostics on first error - REMOVED for better UX
@@ -427,7 +465,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _tts.init();
     // Subscribe to wake word events from HotwordService (no-op if service not running)
     _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
-      if (event == 'wake_word_detected' && mounted && !_isGenerating && !_isListening) {
+      if (event == 'wake_word_detected' &&
+          mounted &&
+          !_isGenerating &&
+          !_isListening) {
         _addDiagnosticLog('Wake word "Plawie" detected — activating mic');
         _startListening();
       }
@@ -444,7 +485,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         setState(() => _speechIntensity = 0.8);
       }
     };
-    
+
     _tts.onComplete = () {
       if (mounted) {
         _isTtsSpeaking = false;
@@ -476,7 +517,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   String _sanitizeForTts(String text) {
     var t = text;
     // Think blocks (internal reasoning — never read aloud)
-    t = t.replaceAll(RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
+    t = t.replaceAll(
+        RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
     // Gesture/action tags
     t = t.replaceAll(RegExp(r'\(gesture:\s*\w+\)\s*'), '');
     // Code blocks → label only (don't read source code verbatim)
@@ -539,14 +581,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   void _enqueueTtsFromStream(String chunk) {
     _ttsSentenceBuffer += chunk;
-    
+
     // Split on sentence boundaries — including end-of-buffer punctuation with no trailing space
     final sentenceEnd = RegExp(r'[.!?]+\s+|[.!?]+$|[\n]+');
     while (sentenceEnd.hasMatch(_ttsSentenceBuffer)) {
       final match = sentenceEnd.firstMatch(_ttsSentenceBuffer)!;
       final sentence = _ttsSentenceBuffer.substring(0, match.end);
       _ttsSentenceBuffer = _ttsSentenceBuffer.substring(match.end);
-      
+
       final clean = _sanitizeForTts(sentence);
       if (clean.isNotEmpty) {
         _ttsQueue.add(clean);
@@ -560,7 +602,21 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _isTtsSpeaking = true;
     final sentence = _ttsQueue.removeAt(0);
     try {
-      await _tts.speak(sentence);
+      if (!mounted) {
+        _isTtsSpeaking = false;
+        return;
+      }
+      final gatewayProvider =
+          Provider.of<GatewayProvider>(context, listen: false);
+      final playedByTalk = await gatewayProvider.speakTextViaTalk(sentence);
+      if (!playedByTalk) {
+        // Legacy fallback path. If no playback started, release the queue immediately.
+        await _tts.speak(sentence);
+        if (!_tts.isSpeaking) {
+          _isTtsSpeaking = false;
+          _processNextTtsInQueue();
+        }
+      }
     } catch (_) {
       // Guarantee _isTtsSpeaking is cleared on error so queue isn't permanently jammed
       _isTtsSpeaking = false;
@@ -610,12 +666,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       if (cameras.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No camera available on this device.')),
+            const SnackBar(
+                content: Text('No camera available on this device.')),
           );
         }
         return;
       }
-      final controller = CameraController(cameras.first, ResolutionPreset.medium);
+      final controller =
+          CameraController(cameras.first, ResolutionPreset.medium);
       await controller.initialize();
       final file = await controller.takePicture();
       await controller.dispose();
@@ -645,11 +703,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     if (_isRecordingVideo) return;
     setState(() => _isRecordingVideo = true);
     try {
-      final bytes = await VideoCaptureService.recordClip(durationMs: durationMs);
+      final bytes =
+          await VideoCaptureService.recordClip(durationMs: durationMs);
       if (bytes == null || bytes.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Video capture failed. Check camera permissions.')),
+            const SnackBar(
+                content:
+                    Text('Video capture failed. Check camera permissions.')),
           );
         }
         return;
@@ -682,23 +743,35 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Video Duration', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Video Duration',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             ...options.entries.map((e) => ListTile(
-              title: Text(e.key, style: const TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(ctx, e.value),
-            )),
+                  title:
+                      Text(e.key, style: const TextStyle(color: Colors.white)),
+                  onTap: () => Navigator.pop(ctx, e.value),
+                )),
           ],
         ),
       ),
     );
-    if (chosen != null) await _recordVideo(durationMs: chosen);
+    if (chosen != null) {
+      await _recordVideo(durationMs: chosen);
+    }
   }
 
   // ---------------------------------------------------------------------------
 
   Future<void> _handleSubmit(String text) async {
-    if ((text.trim().isEmpty && _pendingImageBase64 == null && _pendingVideoBase64 == null) || _isGenerating) return;
+    if ((text.trim().isEmpty &&
+            _pendingImageBase64 == null &&
+            _pendingVideoBase64 == null) ||
+        _isGenerating) {
+      return;
+    }
 
     // Stop any in-progress TTS and clear the queue so the previous response
     // doesn't keep playing while the user has already sent a new message.
@@ -718,7 +791,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       _pendingImageBase64 = null;
       _pendingVideoBase64 = null;
       _messages.add(ChatMessage(
-        text: text.trim().isEmpty && videoBase64 != null ? '🎬 Video clip' : text,
+        text:
+            text.trim().isEmpty && videoBase64 != null ? '🎬 Video clip' : text,
         isUser: true,
         imageBase64: imageBase64,
         imageMimeType: imageBase64 != null ? 'image/jpeg' : null,
@@ -741,8 +815,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     // <think> block parser state — strips Qwen/DeepSeek reasoning tokens from the
     // main response and accumulates them separately for the collapsible Reasoning UI.
     // Uses a raw-buffer approach so tags split across chunks are handled correctly.
-    String rawBuffer = '';      // all tokens accumulated, including <think> tags
-    String thinkBuffer = '';    // text inside <think>…</think>
+    String rawBuffer = ''; // all tokens accumulated, including <think> tags
+    String thinkBuffer = ''; // text inside <think>…</think>
 
     /// Process one new chunk: appends to [rawBuffer], re-parses the full raw text,
     /// and returns only the visible (non-think) portion. Updates [thinkBuffer].
@@ -772,12 +846,33 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     }
 
     try {
-      final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+      final gatewayProvider =
+          Provider.of<GatewayProvider>(context, listen: false);
       final localLlm = LocalLlmService();
 
       // Route based on attachment type & model
       final Stream<String> stream;
       final isLocalModelSelected = _selectedModel.startsWith('local-llm/');
+      String? streamSessionKey = _gatewaySessionKey;
+
+      if (!isLocalModelSelected) {
+        final localSessionId = _persistence.activeSessionId;
+        if (localSessionId != null && localSessionId.isNotEmpty) {
+          final resolvedSessionKey =
+              await gatewayProvider.resolveOrCreateGatewaySessionKey(
+            localSessionId: localSessionId,
+            existingSessionKey: _gatewaySessionKey,
+          );
+          if (resolvedSessionKey.isNotEmpty &&
+              resolvedSessionKey != _gatewaySessionKey) {
+            _gatewaySessionKey = resolvedSessionKey;
+            await _persistence.setActiveGatewaySessionKey(resolvedSessionKey);
+            _addDiagnosticLog(
+                'Bound chat to gateway session: $resolvedSessionKey');
+          }
+          streamSessionKey = resolvedSessionKey;
+        }
+      }
 
       if (isLocalModelSelected) {
         // --- PATH A: Native Local LLM (fllama bypass) ---
@@ -787,20 +882,25 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             stream = () async* {
               yield 'Extracting video frames…';
               final mp4Bytes = base64Decode(videoBase64);
-              final frames = await VideoFrameExtractor.extractFrames(mp4Bytes, fps: 1, maxFrames: 8);
+              final frames = await VideoFrameExtractor.extractFrames(mp4Bytes,
+                  fps: 1, maxFrames: 8);
               if (frames.isEmpty) {
                 yield '⚠️ Could not extract frames. Make sure ffmpeg is installed in PRoot '
                     '(`apt-get install -y ffmpeg` in a terminal session).';
                 return;
               }
-              yield* localLlm.analyseVideoFrames(frames, text.trim().isEmpty ? 'Describe what is happening.' : text);
-            }().cast<String>();
+              yield* localLlm.analyseVideoFrames(frames,
+                  text.trim().isEmpty ? 'Describe what is happening.' : text);
+            }()
+                .cast<String>();
           } else {
-            stream = Stream.value('🎥 Video captured, but no local vision model is active. Please start a multimodal model like Qwen2-VL.');
+            stream = Stream.value(
+                '🎥 Video captured, but no local vision model is active. Please start a multimodal model like Qwen2-VL.');
           }
         } else if (imageBase64 != null) {
           if (localLlm.isVisionReady) {
-            _addDiagnosticLog('Local Vision path: local multimodal model active');
+            _addDiagnosticLog(
+                'Local Vision path: local multimodal model active');
             stream = gatewayProvider.sendVisionMessage(text, imageBase64);
           } else {
             stream = Stream.value(
@@ -821,14 +921,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   })
               .toList();
           stream = gatewayProvider.sendMessage(text,
-              model: _selectedModel, conversationHistory: conversationHistory);
+              model: _selectedModel,
+              conversationHistory: conversationHistory,
+              sessionKey: streamSessionKey);
         }
       } else {
         // --- PATH B: Cloud / Integrated Node Gateway ---
         if (videoBase64 != null) {
           _addDiagnosticLog('Cloud Video path: sending MP4 via gateway');
           stream = gatewayProvider.sendCloudVideoMessage(
-            text.trim().isEmpty ? 'Describe what is happening in this video.' : text,
+            text.trim().isEmpty
+                ? 'Describe what is happening in this video.'
+                : text,
             videoBase64,
           );
         } else if (imageBase64 != null) {
@@ -847,7 +951,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   })
               .toList();
           stream = gatewayProvider.sendMessage(text,
-              model: _selectedModel, conversationHistory: conversationHistory);
+              model: _selectedModel,
+              conversationHistory: conversationHistory,
+              sessionKey: streamSessionKey);
         }
       }
       await for (final chunk in stream) {
@@ -864,7 +970,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             final inputJson = inner.substring(colonIdx + 1);
             try {
               final input = jsonDecode(inputJson) as Map<String, dynamic>?;
-              toolEvents.add(ChatToolEvent(type: 'tool_use', name: name, input: input));
+              toolEvents.add(
+                  ChatToolEvent(type: 'tool_use', name: name, input: input));
             } catch (_) {
               toolEvents.add(ChatToolEvent(type: 'tool_use', name: name));
             }
@@ -885,7 +992,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           if (colonIdx != -1) {
             final name = inner.substring(0, colonIdx);
             final resultJson = inner.substring(colonIdx + 1);
-            toolEvents.add(ChatToolEvent(type: 'tool_result', name: name, result: resultJson));
+            toolEvents.add(ChatToolEvent(
+                type: 'tool_result', name: name, result: resultJson));
             setState(() {
               _messages.last = ChatMessage(
                 text: fullResponse,
@@ -899,7 +1007,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         }
 
         // Handle common API error patterns and OpenClaw error frames
-        if (chunk.contains('[Error]') || chunk.contains('rate limit reached') || chunk.contains('API error')) {
+        if (chunk.contains('[Error]') ||
+            chunk.contains('rate limit reached') ||
+            chunk.contains('API error')) {
           _addDiagnosticLog('Caught API Error in stream: $chunk');
           final errorMsg = chunk.replaceAll('[Error]', '').trim();
           setState(() {
@@ -914,12 +1024,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           });
           break; // Stop listening to this stream
         }
-        
+
         // Strip <think> blocks from visible text; thinkBuffer gets the reasoning.
         // parseThinkChunk re-parses rawBuffer each call so split-tag chunks work.
         final oldLen = fullResponse.length;
         fullResponse = parseThinkChunk(chunk);
-        
+
         if (fullResponse.length > oldLen) {
           _enqueueTtsFromStream(fullResponse.substring(oldLen));
         }
@@ -940,7 +1050,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             text: fullResponse,
             isUser: false,
             thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
-            toolEvents: toolEvents.isNotEmpty ? List.unmodifiable(toolEvents) : null,
+            toolEvents:
+                toolEvents.isNotEmpty ? List.unmodifiable(toolEvents) : null,
           );
         });
         _syncOverlayState();
@@ -969,7 +1080,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
         // Empty stream: model may still be loading, gateway unavailable, or provider error.
         if (fullResponse.trim().isEmpty) {
-          fullResponse = '⚠️ No response received. The model may still be loading — please try again in a moment.';
+          fullResponse =
+              '⚠️ No response received. The model may still be loading — please try again in a moment.';
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         }
 
@@ -985,10 +1097,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             imageMimeType: 'image/jpeg',
           );
           _pendingAiSnapBase64 = null;
-          HologramService.instance.show(HologramPayload.image(snapImage, label: 'Camera Snap'));
+          HologramService.instance
+              .show(HologramPayload.image(snapImage, label: 'Camera Snap'));
         }
       });
-      _addDiagnosticLog('Generation completed. Total length: ${fullResponse.length}');
+      _addDiagnosticLog(
+          'Generation completed. Total length: ${fullResponse.length}');
     }
     // Persist the completed assistant turn (including error fallback messages).
     // The earlier _saveChatHistory() at send-time only captures the user message;
@@ -1017,30 +1131,301 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<bool> _probeTalkRelaySupport(GatewayProvider gatewayProvider) async {
+    final now = DateTime.now();
+    final lastChecked = _talkRelaySupportCheckedAt;
+    if (lastChecked != null && now.difference(lastChecked).inSeconds < 45) {
+      return _talkRelaySupported;
+    }
+    _talkRelaySupportCheckedAt = now;
+
+    if (_selectedModel.startsWith('local-llm/')) {
+      _talkRelaySupported = false;
+      return false;
+    }
+
+    final methods = gatewayProvider.supportedMethods;
+    final requiredMethods = <String>{
+      'talk.session.create',
+      'talk.session.appendAudio',
+      'talk.session.close',
+    };
+    final supportsTalkMethods = requiredMethods.every(methods.contains);
+    if (!supportsTalkMethods) {
+      _talkRelaySupported = false;
+      return false;
+    }
+
+    try {
+      final catalog = await gatewayProvider.getTalkCatalog();
+      final realtime = catalog['realtime'];
+      String activeProvider = '';
+      bool anyConfigured = false;
+      if (realtime is Map) {
+        activeProvider = (realtime['activeProvider'] ?? '').toString().trim();
+        final providers = realtime['providers'];
+        if (providers is List) {
+          anyConfigured = providers.any((p) =>
+              p is Map &&
+              (p['configured'] == true || p['configured'] == 'true'));
+        }
+      }
+      _talkRelaySupported = activeProvider.isNotEmpty || anyConfigured;
+      if (_talkRelaySupported) {
+        _addDiagnosticLog(
+            'Talk relay available (provider=${activeProvider.isEmpty ? 'auto' : activeProvider}).');
+      } else {
+        _addDiagnosticLog(
+            'Talk relay unsupported: no configured realtime provider; using native talk fallback.');
+      }
+      return _talkRelaySupported;
+    } catch (e) {
+      _talkRelaySupported = false;
+      _addDiagnosticLog('Talk relay probe failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _ensureTalkRelaySession(GatewayProvider gatewayProvider) async {
+    if (_talkRelaySessionId != null &&
+        _talkRelaySessionId!.isNotEmpty &&
+        _talkEventSub != null) {
+      return true;
+    }
+    _talkRelaySessionId = null;
+    try {
+      final session = await gatewayProvider.createTalkRealtimeRelaySession();
+      final sessionId = (session['sessionId'] ??
+              session['relaySessionId'] ??
+              session['transcriptionSessionId'])
+          ?.toString();
+      if (sessionId == null || sessionId.isEmpty) {
+        _addDiagnosticLog('Talk relay create returned no session id.');
+        return false;
+      }
+      _talkRelaySessionId = sessionId;
+      _talkRelayReady = false;
+      _talkEventSub?.cancel();
+      _talkEventSub = gatewayProvider.gatewayEventStream.listen(
+        _handleTalkRelayEventFrame,
+        onError: (e) => _addDiagnosticLog('Talk relay event stream error: $e'),
+      );
+      _addDiagnosticLog('Talk relay session created: $sessionId');
+      return true;
+    } catch (e) {
+      _addDiagnosticLog('Talk relay create failed: $e');
+      return false;
+    }
+  }
+
+  void _handleTalkRelayEventFrame(Map<String, dynamic> frame) {
+    if (!mounted) return;
+    if (frame['type'] != 'event' || frame['event'] != 'talk.event') return;
+
+    final payloadRaw = frame['payload'];
+    if (payloadRaw is! Map) return;
+    final payload = Map<String, dynamic>.from(payloadRaw);
+    final relayId = (payload['relaySessionId'] ??
+            payload['sessionId'] ??
+            payload['transcriptionSessionId'])
+        ?.toString();
+    if (_talkRelaySessionId == null || relayId != _talkRelaySessionId) return;
+
+    final eventType = payload['type']?.toString() ?? '';
+    if (eventType == 'ready') {
+      _talkRelayReady = true;
+      _addDiagnosticLog('Talk relay ready.');
+      return;
+    }
+    if (eventType == 'error') {
+      final message = payload['message']?.toString() ?? 'unknown';
+      _talkRelayReady = false;
+      if (_isTalkRelayCaptureActive) {
+        unawaited(_stopTalkRelayCapture().then((_) {
+          if (!mounted) return;
+          setState(() => _isListening = false);
+          _syncOverlayState();
+        }));
+      }
+      _addDiagnosticLog('Talk relay error: $message');
+      return;
+    }
+    if (eventType == 'close') {
+      final reason = payload['reason']?.toString() ?? 'unknown';
+      _talkRelayReady = false;
+      if (_isTalkRelayCaptureActive) {
+        unawaited(_stopTalkRelayCapture().then((_) {
+          if (!mounted) return;
+          setState(() => _isListening = false);
+          _syncOverlayState();
+        }));
+      }
+      _talkRelaySessionId = null;
+      _talkAssistantMessageIndex = null;
+      _talkAssistantTextBuffer = '';
+      _addDiagnosticLog('Talk relay closed ($reason).');
+      return;
+    }
+    if (eventType != 'transcript') return;
+
+    final role = payload['role']?.toString() ?? '';
+    final text = payload['text']?.toString() ?? '';
+    final isFinal = payload['final'] == true;
+
+    if (role == 'user') {
+      if (isFinal && text.trim().isNotEmpty) {
+        setState(() {
+          _messages.add(ChatMessage(text: text.trim(), isUser: true));
+          _messages.add(ChatMessage(text: '', isUser: false));
+          _talkAssistantMessageIndex = _messages.length - 1;
+          _talkAssistantTextBuffer = '';
+          _isGenerating = true;
+          _isThinking = true;
+        });
+        _saveChatHistory();
+        _scrollToBottom();
+      }
+      return;
+    }
+
+    if (role == 'assistant') {
+      if (text.isNotEmpty) {
+        _talkAssistantTextBuffer += text;
+        _enqueueTtsFromStream(text);
+      }
+
+      setState(() {
+        _isThinking = false;
+        _isGenerating = true;
+        final idx = _talkAssistantMessageIndex;
+        if (idx != null && idx >= 0 && idx < _messages.length) {
+          _messages[idx] = ChatMessage(
+            text: _talkAssistantTextBuffer,
+            isUser: false,
+          );
+        } else if (_talkAssistantTextBuffer.isNotEmpty) {
+          _messages
+              .add(ChatMessage(text: _talkAssistantTextBuffer, isUser: false));
+          _talkAssistantMessageIndex = _messages.length - 1;
+        }
+      });
+      _scrollToBottom();
+
+      if (isFinal) {
+        _flushTtsQueue();
+        setState(() {
+          _isGenerating = false;
+          _isThinking = false;
+        });
+        _saveChatHistory();
+      }
+    }
+  }
+
+  Future<void> _forwardTalkAudioChunk(Uint8List chunk) async {
+    final sessionId = _talkRelaySessionId;
+    if (sessionId == null ||
+        sessionId.isEmpty ||
+        chunk.isEmpty ||
+        !_talkRelayReady ||
+        !mounted) {
+      return;
+    }
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+    final audioBase64 = base64Encode(chunk);
+    _talkAudioSendChain = _talkAudioSendChain.then((_) async {
+      await gatewayProvider.appendTalkSessionAudio(
+        sessionId: sessionId,
+        audioBase64: audioBase64,
+      );
+    }).catchError((e) {
+      _addDiagnosticLog('Talk relay appendAudio failed: $e');
+    });
+    await _talkAudioSendChain;
+  }
+
+  Future<void> _startTalkRelayCapture(GatewayProvider gatewayProvider) async {
+    final talkSupported = await _probeTalkRelaySupport(gatewayProvider);
+    if (!talkSupported) {
+      throw StateError('Talk relay unavailable on this gateway/runtime');
+    }
+    final hasSession = await _ensureTalkRelaySession(gatewayProvider);
+    if (!hasSession) {
+      throw StateError('Failed to create talk relay session');
+    }
+    final stream = await _audioRecorder.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 24000,
+        numChannels: 1,
+        echoCancel: true,
+        noiseSuppress: true,
+        autoGain: true,
+      ),
+    );
+    _talkAudioStreamSub?.cancel();
+    _talkAudioStreamSub = stream.listen(
+      (chunk) => unawaited(_forwardTalkAudioChunk(chunk)),
+      onError: (e) => _addDiagnosticLog('Talk relay mic stream error: $e'),
+    );
+    _isTalkRelayCaptureActive = true;
+  }
+
+  Future<void> _stopTalkRelayCapture() async {
+    await _audioRecorder.stop();
+    await _talkAudioStreamSub?.cancel();
+    _talkAudioStreamSub = null;
+    _isTalkRelayCaptureActive = false;
+  }
+
   /// Start recording — called when user begins holding the mic orb (hold-to-record UX).
   Future<void> _startListening() async {
     if (_isListening) return;
 
-    if (await _audioRecorder.hasPermission()) {
-      final tempDir = await getTemporaryDirectory();
-      final path = '${tempDir.path}/stt_recording.m4a';
-      
-      final config = RecordConfig(); // default 44.1kHz, AAC
-      
-      await _audioRecorder.start(config, path: path);
-      
+    if (!await _audioRecorder.hasPermission()) {
+      _addDiagnosticLog('Microphone permission denied.');
+      return;
+    }
+    if (!mounted) return;
+
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+    try {
+      await _startTalkRelayCapture(gatewayProvider);
       setState(() => _isListening = true);
       _syncOverlayState();
-      _addDiagnosticLog('Voice recording started.');
-    } else {
-      _addDiagnosticLog('Microphone permission denied.');
+      _addDiagnosticLog(
+          'Voice relay recording started (talk.session realtime).');
+      return;
+    } catch (e) {
+      _isTalkRelayCaptureActive = false;
+      _addDiagnosticLog(
+          'Talk relay capture unavailable, using fallback STT: $e');
     }
+
+    final tempDir = await getTemporaryDirectory();
+    final path = '${tempDir.path}/stt_recording.m4a';
+    const config = RecordConfig(); // default 44.1kHz, AAC
+    await _audioRecorder.start(config, path: path);
+    setState(() => _isListening = true);
+    _syncOverlayState();
+    _addDiagnosticLog('Voice recording started (fallback STT mode).');
   }
 
   /// Stop recording and transcribe — called when user releases the mic orb.
   Future<void> _stopListening() async {
     if (!_isListening) return;
-    
+
+    if (_isTalkRelayCaptureActive) {
+      await _stopTalkRelayCapture();
+      setState(() => _isListening = false);
+      _syncOverlayState();
+      _addDiagnosticLog(
+          'Voice relay recording stopped; waiting for transcript...');
+      return;
+    }
+
     final path = await _audioRecorder.stop();
     setState(() => _isListening = false);
     _syncOverlayState();
@@ -1066,7 +1451,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     }
   }
 
-  // FIX: Decoupled cinematic effect from typing to prevent zoom jumps 
+  // FIX: Decoupled cinematic effect from typing to prevent zoom jumps
   bool get _isCinematic => _isGenerating || _isListening;
 
   void _showEditNameDialog() {
@@ -1076,15 +1461,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Rename Agent', style: TextStyle(color: Colors.white)),
+        title:
+            const Text('Rename Agent', style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: 'Enter new name...',
             hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
-            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+            enabledBorder: UnderlineInputBorder(
+                borderSide:
+                    BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+            focusedBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.statusGreen)),
           ),
           autofocus: true,
           textCapitalization: TextCapitalization.words,
@@ -1092,7 +1481,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+            child: Text('Cancel',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
           ),
           ElevatedButton(
             onPressed: () {
@@ -1106,7 +1496,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.statusGreen,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             child: const Text('Save'),
           ),
@@ -1119,7 +1510,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     HapticFeedback.selectionClick();
     final RenderBox? button = context.findRenderObject() as RenderBox?;
     final position = button?.localToGlobal(Offset.zero) ?? Offset.zero;
-    
+
     showMenu<dynamic>(
       context: context,
       color: Colors.black.withValues(alpha: 0.7), // Deeper frosted alpha
@@ -1154,19 +1545,29 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       _showEditNameDialog();
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Colors.white.withValues(alpha: 0.1), Colors.white.withValues(alpha: 0.05)],
+                          colors: [
+                            Colors.white.withValues(alpha: 0.1),
+                            Colors.white.withValues(alpha: 0.05)
+                          ],
                         ),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1)),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.edit_note, color: Colors.white70, size: 14),
+                          Icon(Icons.edit_note,
+                              color: Colors.white70, size: 14),
                           SizedBox(width: 4),
-                          Text('EDIT', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                          Text('EDIT',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -1182,14 +1583,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15)),
                     ),
                     child: Center(
                       child: SvgPicture.asset(
                         'assets/app_icon_official.svg',
                         width: 18,
                         height: 18,
-                        colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                        colorFilter: const ColorFilter.mode(
+                            Colors.white, BlendMode.srcIn),
                       ),
                     ),
                   ),
@@ -1213,20 +1616,25 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         const SizedBox(height: 2),
                         Text(
                           _selectedModel.startsWith('local-llm/')
-                            ? 'LOCAL · ON-DEVICE'
-                            : (_selectedModel.startsWith('ollama/') && _selectedModel.contains(':cloud'))
-                              ? 'CLOUD · OLLAMA'
-                              : _selectedModel.startsWith('ollama/')
-                                ? 'LOCAL · HUB'
-                                : _selectedModel.split('/').last.toUpperCase(),
+                              ? 'LOCAL · ON-DEVICE'
+                              : (_selectedModel.startsWith('ollama/') &&
+                                      _selectedModel.contains(':cloud'))
+                                  ? 'CLOUD · OLLAMA'
+                                  : _selectedModel.startsWith('ollama/')
+                                      ? 'LOCAL · HUB'
+                                      : _selectedModel
+                                          .split('/')
+                                          .last
+                                          .toUpperCase(),
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
-                              ? const Color(0xFF00E5AA)
-                              : (_selectedModel.startsWith('ollama/') && _selectedModel.contains(':cloud'))
-                                ? const Color(0xFFAB47BC)
-                                : _selectedModel.startsWith('ollama/')
-                                  ? const Color(0xFF00C8FF)
-                                  : Colors.white.withValues(alpha: 0.4),
+                                ? const Color(0xFF00E5AA)
+                                : (_selectedModel.startsWith('ollama/') &&
+                                        _selectedModel.contains(':cloud'))
+                                    ? const Color(0xFFAB47BC)
+                                    : _selectedModel.startsWith('ollama/')
+                                        ? const Color(0xFF00C8FF)
+                                        : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.0,
@@ -1260,26 +1668,34 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           ),
         ),
         ..._availableAvatars.map((avatar) => PopupMenuItem<String>(
-          value: 'avatar:$avatar',
-          height: 36,
-          child: Row(
-            children: [
-              Icon(
-                avatar == _selectedAvatar ? Icons.check_circle : Icons.circle_outlined,
-                color: avatar == _selectedAvatar ? AppColors.statusGreen : Colors.white38,
-                size: 18,
+              value: 'avatar:$avatar',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(
+                    avatar == _selectedAvatar
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    color: avatar == _selectedAvatar
+                        ? AppColors.statusGreen
+                        : Colors.white38,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    avatar.split('.').first,
+                    style: TextStyle(
+                      color: avatar == _selectedAvatar
+                          ? Colors.white
+                          : Colors.white70,
+                      fontWeight: avatar == _selectedAvatar
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Text(
-                avatar.split('.').first,
-                style: TextStyle(
-                  color: avatar == _selectedAvatar ? Colors.white : Colors.white70,
-                  fontWeight: avatar == _selectedAvatar ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
-        )),
+            )),
 
         const PopupMenuDivider(),
         PopupMenuItem<String>(
@@ -1287,11 +1703,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           height: 36,
           child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded, color: Colors.purpleAccent.shade100, size: 18),
+              Icon(Icons.auto_awesome_rounded,
+                  color: Colors.purpleAccent.shade100, size: 18),
               const SizedBox(width: 10),
-              Text('Avatar Forge', style: TextStyle(color: Colors.purpleAccent.shade100, fontWeight: FontWeight.w600)),
+              Text('Avatar Forge',
+                  style: TextStyle(
+                      color: Colors.purpleAccent.shade100,
+                      fontWeight: FontWeight.w600)),
               const Spacer(),
-              const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 12),
+              const Icon(Icons.arrow_forward_ios,
+                  color: Colors.white38, size: 12),
             ],
           ),
         ),
@@ -1314,19 +1735,25 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         ),
         // --- INTELLIGENT LOCAL LLM ENTRY ---
         PopupMenuItem<String>(
-          value: _localLlmState.status == LocalLlmStatus.idle 
-              ? 'setup_local_llm' 
+          value: _localLlmState.status == LocalLlmStatus.idle
+              ? 'setup_local_llm'
               : 'model:local-llm/${_localLlmState.activeModelId ?? 'llama-server'}',
           height: 48,
           child: Row(
             children: [
               Icon(
-                _localLlmState.status == LocalLlmStatus.idle 
-                    ? Icons.install_mobile 
-                    : (_selectedModel.startsWith('local-llm/') ? Icons.memory_rounded : Icons.phone_android),
-                color: _selectedModel.startsWith('local-llm/') 
-                    ? const Color(0xFF00E5AA) 
-                    : (_localLlmState.status == LocalLlmStatus.starting ? Colors.amber : (_localLlmState.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white38)),
+                _localLlmState.status == LocalLlmStatus.idle
+                    ? Icons.install_mobile
+                    : (_selectedModel.startsWith('local-llm/')
+                        ? Icons.memory_rounded
+                        : Icons.phone_android),
+                color: _selectedModel.startsWith('local-llm/')
+                    ? const Color(0xFF00E5AA)
+                    : (_localLlmState.status == LocalLlmStatus.starting
+                        ? Colors.amber
+                        : (_localLlmState.status == LocalLlmStatus.idle
+                            ? AppColors.statusAmber
+                            : Colors.white38)),
                 size: 18,
               ),
               const SizedBox(width: 10),
@@ -1336,15 +1763,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _localLlmState.status == LocalLlmStatus.idle 
-                          ? 'Setup Local LLM' 
+                      _localLlmState.status == LocalLlmStatus.idle
+                          ? 'Setup Local LLM'
                           : (_localLlmState.activeModelId ?? 'Local LLM'),
                       style: TextStyle(
-                        color: _selectedModel.startsWith('local-llm/') 
-                            ? Colors.white 
-                            : (_localLlmState.status == LocalLlmStatus.idle ? AppColors.statusAmber : Colors.white70),
+                        color: _selectedModel.startsWith('local-llm/')
+                            ? Colors.white
+                            : (_localLlmState.status == LocalLlmStatus.idle
+                                ? AppColors.statusAmber
+                                : Colors.white70),
                         fontSize: 13,
-                        fontWeight: _selectedModel.startsWith('local-llm/') ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: _selectedModel.startsWith('local-llm/')
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                     Text(
@@ -1352,15 +1783,20 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           ? 'WAKING UP...'
                           : (_localLlmState.status == LocalLlmStatus.error
                               ? 'ERROR: CHECK SETUP'
-                              : (_localLlmState.status == LocalLlmStatus.idle 
-                                ? 'Download free model' 
-                                : (_selectedModel.startsWith('local-llm/') ? 'ACTIVE · ON-DEVICE' : 'ON-DEVICE (READY)'))),
+                              : (_localLlmState.status == LocalLlmStatus.idle
+                                  ? 'Download free model'
+                                  : (_selectedModel.startsWith('local-llm/')
+                                      ? 'ACTIVE · ON-DEVICE'
+                                      : 'ON-DEVICE (READY)'))),
                       style: TextStyle(
                         color: _localLlmState.status == LocalLlmStatus.starting
                             ? Colors.amber
-                            : (_selectedModel.startsWith('local-llm/') 
-                                ? const Color(0xFF00E5AA) 
-                                : (_localLlmState.status == LocalLlmStatus.idle ? AppColors.statusAmber.withValues(alpha: 0.6) : Colors.white38)),
+                            : (_selectedModel.startsWith('local-llm/')
+                                ? const Color(0xFF00E5AA)
+                                : (_localLlmState.status == LocalLlmStatus.idle
+                                    ? AppColors.statusAmber
+                                        .withValues(alpha: 0.6)
+                                    : Colors.white38)),
                         fontSize: 8,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
@@ -1370,7 +1806,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 ),
               ),
               if (_localLlmState.status == LocalLlmStatus.starting)
-                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
+                const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.amber))
               else if (_selectedModel.startsWith('local-llm/'))
                 const Icon(Icons.check, color: Color(0xFF00E5AA), size: 18),
             ],
@@ -1382,33 +1822,48 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           PopupMenuItem<void>(
             enabled: false,
             height: 20,
-            child: const Text('AGENTS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+            child: const Text('AGENTS',
+                style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5)),
           ),
           ..._dynamicAgents.map((agent) => PopupMenuItem<String>(
-            value: 'model:${agent.modelKey}',
-            height: 36,
-            child: Row(
-              children: [
-                Icon(
-                  agent.modelKey == _selectedModel ? Icons.check_circle : Icons.smart_toy_outlined,
-                  color: agent.modelKey == _selectedModel ? Colors.tealAccent : Colors.white38,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    agent.isDefault ? '${agent.name} (default)' : agent.name,
-                    style: TextStyle(
-                      color: agent.modelKey == _selectedModel ? Colors.white : Colors.white70,
-                      fontSize: 13,
-                      fontWeight: agent.modelKey == _selectedModel ? FontWeight.bold : FontWeight.normal,
+                value: 'model:${agent.modelKey}',
+                height: 36,
+                child: Row(
+                  children: [
+                    Icon(
+                      agent.modelKey == _selectedModel
+                          ? Icons.check_circle
+                          : Icons.smart_toy_outlined,
+                      color: agent.modelKey == _selectedModel
+                          ? Colors.tealAccent
+                          : Colors.white38,
+                      size: 18,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        agent.isDefault
+                            ? '${agent.name} (default)'
+                            : agent.name,
+                        style: TextStyle(
+                          color: agent.modelKey == _selectedModel
+                              ? Colors.white
+                              : Colors.white70,
+                          fontSize: 13,
+                          fontWeight: agent.modelKey == _selectedModel
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          )),
+              )),
         ],
         // ── LOCAL HUB section (on-device Ollama models) ───────────────────
         ...() {
@@ -1423,9 +1878,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               height: 20,
               child: Row(
                 children: [
-                  const Icon(Icons.lan_rounded, color: Color(0xFF00C8FF), size: 12),
+                  const Icon(Icons.lan_rounded,
+                      color: Color(0xFF00C8FF), size: 12),
                   const SizedBox(width: 6),
-                  const Text('LOCAL HUB', style: TextStyle(color: Color(0xFF00C8FF), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+                  const Text('LOCAL HUB',
+                      style: TextStyle(
+                          color: Color(0xFF00C8FF),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5)),
                 ],
               ),
             ),
@@ -1439,7 +1900,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   children: [
                     Icon(
                       isSelected ? Icons.check_circle : Icons.lan_rounded,
-                      color: isSelected ? const Color(0xFF00C8FF) : Colors.white38,
+                      color:
+                          isSelected ? const Color(0xFF00C8FF) : Colors.white38,
                       size: 18,
                     ),
                     const SizedBox(width: 10),
@@ -1453,14 +1915,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             style: TextStyle(
                               color: isSelected ? Colors.white : Colors.white70,
                               fontSize: 13,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             'LOCAL · HUB',
                             style: TextStyle(
-                              color: isSelected ? const Color(0xFF00C8FF) : Colors.white38,
+                              color: isSelected
+                                  ? const Color(0xFF00C8FF)
+                                  : Colors.white38,
                               fontSize: 8,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 0.5,
@@ -1481,8 +1947,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               .where((m) => m.startsWith('ollama/') && m.contains(':cloud'))
               .toList();
           if (cloudHub.isEmpty) return <PopupMenuEntry<dynamic>>[];
-          final hubInstalled = GatewayService().state.isOllamaRunning ||
-              _isOllamaAutoStarting;
+          final hubInstalled =
+              GatewayService().state.isOllamaRunning || _isOllamaAutoStarting;
           return <PopupMenuEntry<dynamic>>[
             const PopupMenuDivider(),
             PopupMenuItem<dynamic>(
@@ -1490,18 +1956,30 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               height: 20,
               child: Row(
                 children: [
-                  const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 12),
+                  const Icon(Icons.cloud_queue_rounded,
+                      color: Color(0xFFAB47BC), size: 12),
                   const SizedBox(width: 6),
-                  const Text('OLLAMA CLOUD', style: TextStyle(color: Color(0xFFAB47BC), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+                  const Text('OLLAMA CLOUD',
+                      style: TextStyle(
+                          color: Color(0xFFAB47BC),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5)),
                   if (!hubInstalled) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.amber.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text('AUTO-START', style: TextStyle(color: Colors.amber, fontSize: 7, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                      child: const Text('AUTO-START',
+                          style: TextStyle(
+                              color: Colors.amber,
+                              fontSize: 7,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5)),
                     ),
                   ],
                 ],
@@ -1509,15 +1987,19 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
             ...cloudHub.map((model) {
               final isSelected = model == _selectedModel;
-              final displayName = '☁ ${model.split('/').last.replaceAll(':cloud', '').toUpperCase()}';
+              final displayName =
+                  '☁ ${model.split('/').last.replaceAll(':cloud', '').toUpperCase()}';
               return PopupMenuItem<dynamic>(
                 value: 'model:$model',
                 height: 44,
                 child: Row(
                   children: [
                     Icon(
-                      isSelected ? Icons.check_circle : Icons.cloud_queue_rounded,
-                      color: isSelected ? const Color(0xFFAB47BC) : Colors.white38,
+                      isSelected
+                          ? Icons.check_circle
+                          : Icons.cloud_queue_rounded,
+                      color:
+                          isSelected ? const Color(0xFFAB47BC) : Colors.white38,
                       size: 18,
                     ),
                     const SizedBox(width: 10),
@@ -1531,14 +2013,18 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             style: TextStyle(
                               color: isSelected ? Colors.white : Colors.white70,
                               fontSize: 13,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             'FREE · NO DOWNLOAD',
                             style: TextStyle(
-                              color: isSelected ? const Color(0xFFAB47BC) : Colors.white38,
+                              color: isSelected
+                                  ? const Color(0xFFAB47BC)
+                                  : Colors.white38,
                               fontSize: 8,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 0.5,
@@ -1562,37 +2048,50 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             children: [
               const Icon(Icons.cloud_outlined, color: Colors.white38, size: 12),
               const SizedBox(width: 6),
-              const Text('CLOUD', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+              const Text('CLOUD',
+                  style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.5)),
             ],
           ),
         ),
         ..._availableModels
             .where((m) => !m.startsWith('ollama/'))
             .map((model) => PopupMenuItem<String>(
-          value: 'model:$model',
-          height: 36,
-          child: Row(
-            children: [
-              Icon(
-                model == _selectedModel ? Icons.check_circle : Icons.circle_outlined,
-                color: model == _selectedModel ? Colors.purpleAccent : Colors.white38,
-                size: 18,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  model,
-                  style: TextStyle(
-                    color: model == _selectedModel ? Colors.white : Colors.white70,
-                    fontSize: 13,
-                    fontWeight: model == _selectedModel ? FontWeight.bold : FontWeight.normal,
+                  value: 'model:$model',
+                  height: 36,
+                  child: Row(
+                    children: [
+                      Icon(
+                        model == _selectedModel
+                            ? Icons.check_circle
+                            : Icons.circle_outlined,
+                        color: model == _selectedModel
+                            ? Colors.purpleAccent
+                            : Colors.white38,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          model,
+                          style: TextStyle(
+                            color: model == _selectedModel
+                                ? Colors.white
+                                : Colors.white70,
+                            fontSize: 13,
+                            fontWeight: model == _selectedModel
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        )),
+                )),
 
         const PopupMenuDivider(),
         PopupMenuItem<void>(
@@ -1616,7 +2115,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               children: [
                 Icon(Icons.memory, color: Colors.cyanAccent, size: 20),
                 SizedBox(width: 12),
-                Text('Agent Intelligence', style: TextStyle(color: Colors.white, fontSize: 14)),
+                Text('Agent Intelligence',
+                    style: TextStyle(color: Colors.white, fontSize: 14)),
               ],
             ),
           ),
@@ -1637,7 +2137,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       } else if (value.toString().startsWith('model:')) {
         final model = value.toString().substring(6);
         final isNowOllama = model.startsWith('ollama/');
-        final isNowCloud = !model.startsWith('ollama/') && !model.startsWith('local-llm/');
+        final isNowCloud =
+            !model.startsWith('ollama/') && !model.startsWith('local-llm/');
         setState(() {
           _selectedModel = model;
           if (!model.startsWith('local-llm/') && !model.startsWith('ollama/')) {
@@ -1664,7 +2165,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         final needsReload = model.startsWith('local-llm');
         if (needsReload) {
           final modelId = model.split('/').last;
-          final localModel = LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
+          final localModel =
+              LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
           LocalLlmService().activateModel(localModel);
         } else {
           unawaited(GatewayService().persistModel(model));
@@ -1687,7 +2189,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final mode = PreferencesService().wakeWordMode;
     if (mode == 'off') return;
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       if (mode == 'foreground') NativeBridge.stopHotword();
     } else if (state == AppLifecycleState.resumed) {
       NativeBridge.startHotword();
@@ -1713,6 +2216,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
     _skillsSub?.cancel();
+    _talkAudioStreamSub?.cancel();
+    _talkEventSub?.cancel();
+    final talkSessionId = _talkRelaySessionId;
+    if (talkSessionId != null && talkSessionId.isNotEmpty) {
+      unawaited(
+          GatewayService().closeTalkSession(talkSessionId).catchError((_) {}));
+    }
     _glowController.dispose();
     _tts.stop();
     _audioRecorder.dispose();
@@ -1774,7 +2284,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       session.title,
                       style: TextStyle(
                         color: isActive ? Colors.white : Colors.white70,
-                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                        fontWeight:
+                            isActive ? FontWeight.bold : FontWeight.normal,
                         fontSize: 14,
                       ),
                       maxLines: 1,
@@ -1782,10 +2293,12 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                     ),
                     subtitle: Text(
                       _formatDate(session.updatedAt),
-                      style: const TextStyle(color: Colors.white38, fontSize: 10),
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 10),
                     ),
                     trailing: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.white38, size: 18),
+                      icon: const Icon(Icons.more_vert,
+                          color: Colors.white38, size: 18),
                       onSelected: (action) async {
                         if (action == 'delete') {
                           await _persistence.deleteSession(session.id);
@@ -1795,8 +2308,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         }
                       },
                       itemBuilder: (ctx) => [
-                        const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                        const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        const PopupMenuItem(
+                            value: 'rename', child: Text('Rename')),
+                        const PopupMenuItem(
+                            value: 'delete', child: Text('Delete')),
                       ],
                     ),
                     selected: isActive,
@@ -1828,7 +2343,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           decoration: const InputDecoration(hintText: 'Chat name'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final name = controller.text.trim();
@@ -1845,7 +2361,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       ),
     );
   }
-  
+
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
@@ -1858,7 +2374,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-
     final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
 
@@ -1866,199 +2381,239 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     const double collapsedSize = 96.0;
     // Removed the -24 margin to make chat container flush with screen edges
     final double barWidth = _isChatCollapsed ? collapsedSize : size.width;
-    
+
     // Adaptive height: Capped to avoid keyboard overflow on small screens
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    final double barHeight = _isChatCollapsed 
-        ? collapsedSize 
-        : (size.height * 0.6).clamp(320.0, size.height - keyboardHeight - (keyboardHeight > 0 ? 80 : 160));
+    final double barHeight = _isChatCollapsed
+        ? collapsedSize
+        : (size.height * 0.6).clamp(320.0,
+            size.height - keyboardHeight - (keyboardHeight > 0 ? 80 : 160));
 
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: _isPipMode ? Colors.transparent : null,
       extendBodyBehindAppBar: true,
-      resizeToAvoidBottomInset: false, // Prevents VRM aspect-ratio scaling bounds from squishing
+      resizeToAvoidBottomInset:
+          false, // Prevents VRM aspect-ratio scaling bounds from squishing
       endDrawer: _buildSessionDrawer(),
-      appBar: _isPipMode ? null : AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.05), // Reduced alpha for more transparency
-            ),
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white70),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: AnimatedOpacity(
-          opacity: _isCinematic ? 0.0 : 1.0,
-          duration: const Duration(milliseconds: 400),
-          child: GestureDetector(
-            onTap: () => _showUnifiedMenu(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // Reduced padding
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      appBar: _isPipMode
+          ? null
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              flexibleSpace: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                  child: Container(
+                    color: Colors.black.withValues(
+                        alpha: 0.05), // Reduced alpha for more transparency
+                  ),
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                   SvgPicture.asset(
-                    'assets/app_icon_official.svg',
-                    width: 14,
-                    height: 14,
-                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                   ),
-                   const SizedBox(width: 8),
-                   Flexible(
-                    child: Column(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white70),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              title: AnimatedOpacity(
+                opacity: _isCinematic ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 400),
+                child: GestureDetector(
+                  onTap: () => _showUnifiedMenu(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6), // Reduced padding
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _agentName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600, // Thinner, cleaner font weight
-                            letterSpacing: 0.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        SvgPicture.asset(
+                          'assets/app_icon_official.svg',
+                          width: 14,
+                          height: 14,
+                          colorFilter: const ColorFilter.mode(
+                              Colors.white, BlendMode.srcIn),
                         ),
-                        Text(
-                          _selectedModel.startsWith('local-llm/')
-                            ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
-                            : _selectedModel.startsWith('ollama/')
-                              ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_isOllamaAutoStarting ? 'STARTING HUB...' : _selectedModel.contains(':cloud') ? 'OLLAMA CLOUD' : 'LOCAL HUB'}'
-                              : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_ollamaStopFlash ? 'HUB OFF' : _selectedModel.split('/').last.toUpperCase()}',
-                          style: TextStyle(
-                            color: _selectedModel.startsWith('local-llm/')
-                              ? (_localLlmState.status == LocalLlmStatus.starting ? Colors.amber : const Color(0xFF00E5AA))
-                              : _selectedModel.startsWith('ollama/')
-                                ? (_isOllamaAutoStarting ? Colors.amber : _selectedModel.contains(':cloud') ? const Color(0xFFAB47BC) : const Color(0xFF00C8FF))
-                                : (_ollamaStopFlash ? Colors.white38 : Colors.white.withValues(alpha: 0.5)),
-                            fontSize: 8,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _agentName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight
+                                      .w600, // Thinner, cleaner font weight
+                                  letterSpacing: 0.3,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                _selectedModel.startsWith('local-llm/')
+                                    ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
+                                    : _selectedModel.startsWith('ollama/')
+                                        ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_isOllamaAutoStarting ? 'STARTING HUB...' : _selectedModel.contains(':cloud') ? 'OLLAMA CLOUD' : 'LOCAL HUB'}'
+                                        : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_ollamaStopFlash ? 'HUB OFF' : _selectedModel.split('/').last.toUpperCase()}',
+                                style: TextStyle(
+                                  color: _selectedModel.startsWith('local-llm/')
+                                      ? (_localLlmState.status ==
+                                              LocalLlmStatus.starting
+                                          ? Colors.amber
+                                          : const Color(0xFF00E5AA))
+                                      : _selectedModel.startsWith('ollama/')
+                                          ? (_isOllamaAutoStarting
+                                              ? Colors.amber
+                                              : _selectedModel
+                                                      .contains(':cloud')
+                                                  ? const Color(0xFFAB47BC)
+                                                  : const Color(0xFF00C8FF))
+                                          : (_ollamaStopFlash
+                                              ? Colors.white38
+                                              : Colors.white
+                                                  .withValues(alpha: 0.5)),
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.8,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(width: 10),
+                        const Icon(Icons.expand_more_rounded,
+                            color: Colors.white38, size: 16),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  const Icon(Icons.expand_more_rounded, color: Colors.white38, size: 16),
-                ],
+                ),
               ),
-            ),
-          ),
-        ),
-      centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_comment_outlined, color: Colors.white70),
-            onPressed: () async {
-              await _persistence.createSession();
-              _loadChatHistory();
-            },
-            tooltip: 'New Chat',
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
-            tooltip: 'More',
-            color: Colors.black.withValues(alpha: 0.7), // Deeper frosted alpha
-            constraints: const BoxConstraints(maxWidth: 210),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-            ),
-            onSelected: (value) async {
-              if (value == 'pip') {
-                try {
-                  await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
-                } catch (e) {
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('PiP not supported: $e')),
-                  );
-                }
-              }
-            },
-            itemBuilder: (ctx) => [
-              PopupMenuItem<String>(
-                enabled: false,
-                height: 40,
-                child: Builder(
-                  builder: (ctx2) => ListTile(
-                    dense: true,
-                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                    leading: Icon(
-                      Icons.picture_in_picture_alt,
-                      color: Colors.white70,
-                      size: 20,
-                    ),
-                    title: const Text('Picture in Picture',
-                        style: TextStyle(color: Colors.white70, fontSize: 13)),
-                    onTap: () async {
-                      Navigator.pop(ctx2);
+              centerTitle: true,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.add_comment_outlined,
+                      color: Colors.white70),
+                  onPressed: () async {
+                    await _persistence.createSession();
+                    _loadChatHistory();
+                  },
+                  tooltip: 'New Chat',
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert_rounded,
+                      color: Colors.white70),
+                  tooltip: 'More',
+                  color: Colors.black
+                      .withValues(alpha: 0.7), // Deeper frosted alpha
+                  constraints: const BoxConstraints(maxWidth: 210),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side:
+                        BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  onSelected: (value) async {
+                    if (value == 'pip') {
                       try {
-                        await const MethodChannel('vrm/pip_mode').invokeMethod('enterPictureInPictureMode');
-                      } catch (_) {}
-                    },
-                  ),
-                ),
-              ),
-              PopupMenuItem<String>(
-                enabled: false,
-                child: Builder(
-                  builder: (ctx2) => ListTile(
-                    dense: true,
-                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                    leading: const Icon(Icons.history, color: Colors.white70, size: 20),
-                    title: const Text('Chat Sessions',
-                        style: TextStyle(color: Colors.white70, fontSize: 13)),
-                    onTap: () {
-                      Navigator.pop(ctx2);
-                      // Use scaffoldKey to avoid Scaffold.of() resolving against
-                      // the PopupMenu overlay context instead of our Scaffold.
-                      _scaffoldKey.currentState?.openEndDrawer();
-                    },
-                  ),
-                ),
-              ),
-              PopupMenuItem<String>(
-                enabled: false,
-                child: Builder(
-                  builder: (ctx2) => ListTile(
-                    dense: true,
-                    leading: Icon(
-                      _showDiagnostics ? Icons.bug_report : Icons.bug_report_outlined,
-                      color: _showDiagnostics ? AppColors.statusGreen : Colors.white54,
-                      size: 20,
+                        await const MethodChannel('vrm/pip_mode')
+                            .invokeMethod('enterPictureInPictureMode');
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('PiP not supported: $e')),
+                        );
+                      }
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    PopupMenuItem<String>(
+                      enabled: false,
+                      height: 40,
+                      child: Builder(
+                        builder: (ctx2) => ListTile(
+                          dense: true,
+                          visualDensity:
+                              const VisualDensity(horizontal: -4, vertical: -4),
+                          leading: Icon(
+                            Icons.picture_in_picture_alt,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
+                          title: const Text('Picture in Picture',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 13)),
+                          onTap: () async {
+                            Navigator.pop(ctx2);
+                            try {
+                              await const MethodChannel('vrm/pip_mode')
+                                  .invokeMethod('enterPictureInPictureMode');
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
                     ),
-                    title: Text(
-                      _showDiagnostics ? 'Hide Diagnostics' : 'Show Diagnostics',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    PopupMenuItem<String>(
+                      enabled: false,
+                      child: Builder(
+                        builder: (ctx2) => ListTile(
+                          dense: true,
+                          visualDensity:
+                              const VisualDensity(horizontal: -4, vertical: -4),
+                          leading: const Icon(Icons.history,
+                              color: Colors.white70, size: 20),
+                          title: const Text('Chat Sessions',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 13)),
+                          onTap: () {
+                            Navigator.pop(ctx2);
+                            // Use scaffoldKey to avoid Scaffold.of() resolving against
+                            // the PopupMenu overlay context instead of our Scaffold.
+                            _scaffoldKey.currentState?.openEndDrawer();
+                          },
+                        ),
+                      ),
                     ),
-                    onTap: () {
-                      Navigator.pop(ctx2);
-                      setState(() => _showDiagnostics = !_showDiagnostics);
-                    },
-                  ),
+                    PopupMenuItem<String>(
+                      enabled: false,
+                      child: Builder(
+                        builder: (ctx2) => ListTile(
+                          dense: true,
+                          leading: Icon(
+                            _showDiagnostics
+                                ? Icons.bug_report
+                                : Icons.bug_report_outlined,
+                            color: _showDiagnostics
+                                ? AppColors.statusGreen
+                                : Colors.white54,
+                            size: 20,
+                          ),
+                          title: Text(
+                            _showDiagnostics
+                                ? 'Hide Diagnostics'
+                                : 'Show Diagnostics',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 13),
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx2);
+                            setState(
+                                () => _showDiagnostics = !_showDiagnostics);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-        ],
-      ),
+              ],
+            ),
       body: Stack(
         children: [
           // 1. Deep space background
@@ -2096,23 +2651,25 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               alignment: Alignment.bottomCenter, // Ensure centering
               transform: Matrix4.identity()
                 ..scaleByDouble(
-                    MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0,
-                    MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0,
-                    1.0,
-                    1.0,
-                  ),
+                  MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0,
+                  MediaQuery.of(context).viewInsets.bottom > 0 ? 1.04 : 1.0,
+                  1.0,
+                  1.0,
+                ),
               transformAlignment: Alignment.bottomCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minWidth: size.width, 
+                  minWidth: size.width,
                   maxWidth: size.width.clamp(0.0, 600.0),
                   maxHeight: size.height,
                 ),
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300), // Swifter transition
+                  duration:
+                      const Duration(milliseconds: 300), // Swifter transition
                   transitionBuilder: (child, animation) {
                     return ScaleTransition(
-                      scale: Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(
+                      scale: Tween<double>(begin: 0.95, end: 1.0)
+                          .animate(CurvedAnimation(
                         parent: animation,
                         curve: Curves.easeOutCubic,
                       )),
@@ -2147,84 +2704,98 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           // 4. Glassmorphic Chat Area
           if (!_isPipMode)
             Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  // 5. Epic Floating Chat/Mic Bar
+              child: Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // 5. Epic Floating Chat/Mic Bar
 
-                  if (!_isChatCollapsed) const Spacer(flex: 3),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 600),
-                    curve: Curves.elasticOut,
-                    width: barWidth,
-                    height: barHeight,
-                    margin: EdgeInsets.only(bottom: _isChatCollapsed ? 40 : 0),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(_isChatCollapsed ? collapsedSize / 2 : 24),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: _isChatCollapsed ? 0.2 : 0.12),
-                        width: _isChatCollapsed ? 2 : 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _isListening 
-                              ? AppColors.statusGreen.withValues(alpha: 0.2) 
-                              : Colors.black.withValues(alpha: 0.3),
-                          blurRadius: _isChatCollapsed ? 30 : 20,
-                          spreadRadius: _isChatCollapsed ? 5 : -2,
+                    if (!_isChatCollapsed) const Spacer(flex: 3),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.elasticOut,
+                      width: barWidth,
+                      height: barHeight,
+                      margin:
+                          EdgeInsets.only(bottom: _isChatCollapsed ? 40 : 0),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(
+                            _isChatCollapsed ? collapsedSize / 2 : 24),
+                        border: Border.all(
+                          color: Colors.white
+                              .withValues(alpha: _isChatCollapsed ? 0.2 : 0.12),
+                          width: _isChatCollapsed ? 2 : 1.5,
                         ),
-                        if (_isListening && _isChatCollapsed)
+                        boxShadow: [
                           BoxShadow(
-                            color: AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value),
-                            blurRadius: 20 * _glowController.value,
-                            spreadRadius: 10 * _glowController.value,
+                            color: _isListening
+                                ? AppColors.statusGreen.withValues(alpha: 0.2)
+                                : Colors.black.withValues(alpha: 0.3),
+                            blurRadius: _isChatCollapsed ? 30 : 20,
+                            spreadRadius: _isChatCollapsed ? 5 : -2,
                           ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(_isChatCollapsed ? collapsedSize / 2 : 32),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                        child: Column(
-                          children: [
-                            // ── Drag handle ──────────────────────────────────
-                            if (!_isChatCollapsed)
-                              GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onVerticalDragEnd: (details) {
-                                  // Swipe down (positive velocity) → voice-only
-                                  // Swipe up (negative velocity)   → expand
-                                  if (details.primaryVelocity == null) return;
-                                  if (details.primaryVelocity! > 400) {
-                                    setState(() => _isChatCollapsed = true);
-                                  } else if (details.primaryVelocity! < -400) {
-                                    setState(() => _isChatCollapsed = false);
-                                  }
-                                },
-                                child: Container(
-                                  height: 32, // Larger vertical hit area
-                                  width: double.infinity,
-                                  alignment: Alignment.center,
+                          if (_isListening && _isChatCollapsed)
+                            BoxShadow(
+                              color: AppColors.statusGreen.withValues(
+                                  alpha: 0.1 * _glowController.value),
+                              blurRadius: 20 * _glowController.value,
+                              spreadRadius: 10 * _glowController.value,
+                            ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                            _isChatCollapsed ? collapsedSize / 2 : 32),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          child: Column(
+                            children: [
+                              // ── Drag handle ──────────────────────────────────
+                              if (!_isChatCollapsed)
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onVerticalDragEnd: (details) {
+                                    // Swipe down (positive velocity) → voice-only
+                                    // Swipe up (negative velocity)   → expand
+                                    if (details.primaryVelocity == null) return;
+                                    if (details.primaryVelocity! > 400) {
+                                      setState(() => _isChatCollapsed = true);
+                                    } else if (details.primaryVelocity! <
+                                        -400) {
+                                      setState(() => _isChatCollapsed = false);
+                                    }
+                                  },
                                   child: Container(
-                                    width: 40,
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.25),
-                                      borderRadius: BorderRadius.circular(2),
+                                    height: 32, // Larger vertical hit area
+                                    width: double.infinity,
+                                    alignment: Alignment.center,
+                                    child: Container(
+                                      width: 40,
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.25),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
                               if (!_isChatCollapsed)
                                 Expanded(
                                   child: ShaderMask(
-                                    shaderCallback: (bounds) => const LinearGradient(
+                                    shaderCallback: (bounds) =>
+                                        const LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
-                                      colors: [Colors.transparent, Colors.white, Colors.white, Colors.transparent],
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.white,
+                                        Colors.white,
+                                        Colors.transparent
+                                      ],
                                       stops: [0.0, 0.05, 0.95, 1.0],
                                     ).createShader(bounds),
                                     blendMode: BlendMode.dstIn,
@@ -2236,7 +2807,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                                         final msg = _messages[i];
                                         return ChatBubble(
                                           message: msg,
-                                          isThinking: i == _messages.length - 1 && _isThinking,
+                                          isThinking:
+                                              i == _messages.length - 1 &&
+                                                  _isThinking,
                                         );
                                       },
                                     ),
@@ -2245,277 +2818,474 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
 
                               // Voice persona chips removed — accessible via the AuraDot orb above the avatar.
 
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: _isChatCollapsed ? 0 : 16, 
-                                vertical: _isChatCollapsed ? 0 : 12
-                              ),
-                              decoration: BoxDecoration(
-                                color: _isChatCollapsed ? Colors.transparent : Colors.black.withValues(alpha: 0.4),
-                                border: _isChatCollapsed 
-                                  ? null 
-                                  : Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-                              ),
-                              child: SafeArea(
-                                top: false,
-                                bottom: false, // Ensure container is flush against the bottom edge
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    // ──────────────────────────────────────────
-                                    // 2026 UX: hold-to-record orb
-                                    //   onLongPressStart  → start listening
-                                    //   onLongPressEnd    → stop  listening
-                                    //   onVerticalDragEnd(up) → expand chat
-                                    //   onTap → no-op (reserved for hold)
-                                    // ──────────────────────────────────────────
-                                    if (_isChatCollapsed)
-                                      GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () {
-                                          // Tap on collapsed orb = show hint
-                                          ScaffoldMessenger.of(context).clearSnackBars();
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Row(
-                                                children: [
-                                                  Icon(Icons.info_outline, color: Colors.white70, size: 16),
-                                                  SizedBox(width: 8),
-                                                  Text('Hold to talk  ·  Swipe ↑ to expand', style: TextStyle(fontSize: 13)),
-                                                ],
-                                              ),
-                                              backgroundColor: const Color(0xFF1A1A2E),
-                                              duration: const Duration(seconds: 2),
-                                              behavior: SnackBarBehavior.floating,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            ),
-                                          );
-                                        },
-                                        onLongPressStart: (_) {
-                                          HapticFeedback.mediumImpact();
-                                          _startListening();
-                                        },
-                                        onLongPressEnd: (_) {
-                                          HapticFeedback.lightImpact();
-                                          _stopListening();
-                                        },
-                                        onVerticalDragEnd: (details) {
-                                          if ((details.primaryVelocity ?? 0) < -400) {
-                                            setState(() => _isChatCollapsed = false);
-                                          }
-                                        },
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            AnimatedBuilder(
-                                              animation: _glowController,
-                                              builder: (_, __) => Transform.translate(
-                                                offset: Offset(0, -3 * _glowController.value),
-                                                child: Icon(
-                                                  Icons.keyboard_arrow_up_rounded,
-                                                  color: Colors.white.withValues(alpha: 0.25 + 0.2 * _glowController.value),
-                                                  size: 14,
-                                                ),
-                                              ),
-                                            ),
-                                            AnimatedBuilder(
-                                              animation: _glowController,
-                                              builder: (context, child) {
-                                                return AnimatedContainer(
-                                                  duration: const Duration(milliseconds: 300),
-                                                  width: 64,
-                                                  height: 64,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: _isListening 
-                                                        ? AppColors.statusGreen.withValues(alpha: 0.1 * _glowController.value)
-                                                        : Colors.transparent,
-                                                  ),
-                                                  alignment: Alignment.center,
-                                                  child: Icon(
-                                                    _isListening ? Icons.mic : Icons.mic_none,
-                                                    color: _isListening ? AppColors.statusGreen : Colors.white70,
-                                                    size: 36,
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    if (!_isChatCollapsed) ...[
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            // Image preview strip — shown when a photo is pending
-                                            if (_pendingImageBase64 != null)
-                                              Padding(
-                                                padding: const EdgeInsets.only(bottom: 6),
-                                                child: Stack(
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: _isChatCollapsed ? 0 : 16,
+                                    vertical: _isChatCollapsed ? 0 : 12),
+                                decoration: BoxDecoration(
+                                  color: _isChatCollapsed
+                                      ? Colors.transparent
+                                      : Colors.black.withValues(alpha: 0.4),
+                                  border: _isChatCollapsed
+                                      ? null
+                                      : Border(
+                                          top: BorderSide(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.08))),
+                                ),
+                                child: SafeArea(
+                                  top: false,
+                                  bottom:
+                                      false, // Ensure container is flush against the bottom edge
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      // ──────────────────────────────────────────
+                                      // 2026 UX: hold-to-record orb
+                                      //   onLongPressStart  → start listening
+                                      //   onLongPressEnd    → stop  listening
+                                      //   onVerticalDragEnd(up) → expand chat
+                                      //   onTap → no-op (reserved for hold)
+                                      // ──────────────────────────────────────────
+                                      if (_isChatCollapsed)
+                                        GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: () {
+                                            // Tap on collapsed orb = show hint
+                                            ScaffoldMessenger.of(context)
+                                                .clearSnackBars();
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: const Row(
                                                   children: [
-                                                    ClipRRect(
-                                                      borderRadius: BorderRadius.circular(10),
-                                                      child: Image.memory(
-                                                        base64Decode(_pendingImageBase64!),
-                                                        height: 80,
-                                                        width: 80,
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                                    ),
-                                                    Positioned(
-                                                      top: 2,
-                                                      right: 2,
-                                                      child: GestureDetector(
-                                                        onTap: () => setState(() => _pendingImageBase64 = null),
-                                                        child: Container(
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.black.withValues(alpha: 0.6),
-                                                            shape: BoxShape.circle,
-                                                          ),
-                                                          child: const Icon(Icons.close, color: Colors.white, size: 16),
-                                                        ),
-                                                      ),
-                                                    ),
+                                                    Icon(Icons.info_outline,
+                                                        color: Colors.white70,
+                                                        size: 16),
+                                                    SizedBox(width: 8),
+                                                    Text(
+                                                        'Hold to talk  ·  Swipe ↑ to expand',
+                                                        style: TextStyle(
+                                                            fontSize: 13)),
                                                   ],
                                                 ),
+                                                backgroundColor:
+                                                    const Color(0xFF1A1A2E),
+                                                duration:
+                                                    const Duration(seconds: 2),
+                                                behavior:
+                                                    SnackBarBehavior.floating,
+                                                shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12)),
                                               ),
-                                            Row(
-                                              children: [
-                                                // 3-Dots Utility Menu (Camera / Video)
-                                                PopupMenuButton<String>(
-                                                  icon: Icon(
-                                                    Icons.more_horiz_rounded,
-                                                    color: (_pendingImageBase64 != null || _pendingVideoBase64 != null)
-                                                        ? AppColors.statusGreen
-                                                        : Colors.white54,
-                                                    size: 22,
+                                            );
+                                          },
+                                          onLongPressStart: (_) {
+                                            HapticFeedback.mediumImpact();
+                                            _startListening();
+                                          },
+                                          onLongPressEnd: (_) {
+                                            HapticFeedback.lightImpact();
+                                            _stopListening();
+                                          },
+                                          onVerticalDragEnd: (details) {
+                                            if ((details.primaryVelocity ?? 0) <
+                                                -400) {
+                                              setState(() =>
+                                                  _isChatCollapsed = false);
+                                            }
+                                          },
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              AnimatedBuilder(
+                                                animation: _glowController,
+                                                builder: (_, __) =>
+                                                    Transform.translate(
+                                                  offset: Offset(
+                                                      0,
+                                                      -3 *
+                                                          _glowController
+                                                              .value),
+                                                  child: Icon(
+                                                    Icons
+                                                        .keyboard_arrow_up_rounded,
+                                                    color: Colors.white.withValues(
+                                                        alpha: 0.25 +
+                                                            0.2 *
+                                                                _glowController
+                                                                    .value),
+                                                    size: 14,
                                                   ),
-                                                  padding: EdgeInsets.zero,
-                                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                                  color: Colors.black.withValues(alpha: 0.9),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(16),
-                                                    side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.8),
+                                                ),
+                                              ),
+                                              AnimatedBuilder(
+                                                animation: _glowController,
+                                                builder: (context, child) {
+                                                  return AnimatedContainer(
+                                                    duration: const Duration(
+                                                        milliseconds: 300),
+                                                    width: 64,
+                                                    height: 64,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: _isListening
+                                                          ? AppColors
+                                                              .statusGreen
+                                                              .withValues(
+                                                                  alpha: 0.1 *
+                                                                      _glowController
+                                                                          .value)
+                                                          : Colors.transparent,
+                                                    ),
+                                                    alignment: Alignment.center,
+                                                    child: Icon(
+                                                      _isListening
+                                                          ? Icons.mic
+                                                          : Icons.mic_none,
+                                                      color: _isListening
+                                                          ? AppColors
+                                                              .statusGreen
+                                                          : Colors.white70,
+                                                      size: 36,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (!_isChatCollapsed) ...[
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Image preview strip — shown when a photo is pending
+                                              if (_pendingImageBase64 != null)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          bottom: 6),
+                                                  child: Stack(
+                                                    children: [
+                                                      ClipRRect(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(10),
+                                                        child: Image.memory(
+                                                          base64Decode(
+                                                              _pendingImageBase64!),
+                                                          height: 80,
+                                                          width: 80,
+                                                          fit: BoxFit.cover,
+                                                        ),
+                                                      ),
+                                                      Positioned(
+                                                        top: 2,
+                                                        right: 2,
+                                                        child: GestureDetector(
+                                                          onTap: () => setState(
+                                                              () =>
+                                                                  _pendingImageBase64 =
+                                                                      null),
+                                                          child: Container(
+                                                            decoration:
+                                                                BoxDecoration(
+                                                              color: Colors
+                                                                  .black
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.6),
+                                                              shape: BoxShape
+                                                                  .circle,
+                                                            ),
+                                                            child: const Icon(
+                                                                Icons.close,
+                                                                color: Colors
+                                                                    .white,
+                                                                size: 16),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
-                                                  onSelected: (value) {
-                                                    if (value == 'camera') _takePicture();
-                                                    if (value == 'video') _showVideoDurationPicker();
-                                                    if (value == 'voice') _toggleListening();
-                                                    if (value == 'clear') {
-                                                      setState(() {
-                                                        _pendingImageBase64 = null;
-                                                        _pendingVideoBase64 = null;
-                                                      });
-                                                    }
-                                                  },
-                                                  itemBuilder: (ctx) => [
-                                                    PopupMenuItem(
-                                                      value: 'voice',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(_isListening ? Icons.mic : Icons.mic_none, color: _isListening ? AppColors.statusGreen : Colors.white70, size: 20),
-                                                          const SizedBox(width: 12),
-                                                          Text(_isListening ? 'Stop Listening' : 'Voice Input', style: TextStyle(color: _isListening ? AppColors.statusGreen : Colors.white, fontSize: 13)),
-                                                        ],
-                                                      ),
+                                                ),
+                                              Row(
+                                                children: [
+                                                  // 3-Dots Utility Menu (Camera / Video)
+                                                  PopupMenuButton<String>(
+                                                    icon: Icon(
+                                                      Icons.more_horiz_rounded,
+                                                      color: (_pendingImageBase64 !=
+                                                                  null ||
+                                                              _pendingVideoBase64 !=
+                                                                  null)
+                                                          ? AppColors
+                                                              .statusGreen
+                                                          : Colors.white54,
+                                                      size: 22,
                                                     ),
-                                                    PopupMenuItem(
-                                                      value: 'camera',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(_isTakingPhoto ? Icons.hourglass_empty : Icons.camera_alt_outlined, color: Colors.white70, size: 20),
-                                                          const SizedBox(width: 12),
-                                                          const Text('Take Photo', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                                        ],
-                                                      ),
+                                                    padding: EdgeInsets.zero,
+                                                    constraints:
+                                                        const BoxConstraints(
+                                                            minWidth: 36,
+                                                            minHeight: 36),
+                                                    color: Colors.black
+                                                        .withValues(alpha: 0.9),
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              16),
+                                                      side: BorderSide(
+                                                          color: Colors.white
+                                                              .withValues(
+                                                                  alpha: 0.1),
+                                                          width: 0.8),
                                                     ),
-                                                    PopupMenuItem(
-                                                      value: 'video',
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(_isRecordingVideo ? Icons.hourglass_empty : Icons.videocam_outlined, color: Colors.white70, size: 20),
-                                                          const SizedBox(width: 12),
-                                                          const Text('Record Clip', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    if (_pendingImageBase64 != null || _pendingVideoBase64 != null)
-                                                      const PopupMenuItem(
-                                                        value: 'clear',
+                                                    onSelected: (value) {
+                                                      if (value == 'camera') {
+                                                        _takePicture();
+                                                      }
+                                                      if (value == 'video') {
+                                                        _showVideoDurationPicker();
+                                                      }
+                                                      if (value == 'voice') {
+                                                        _toggleListening();
+                                                      }
+                                                      if (value == 'clear') {
+                                                        setState(() {
+                                                          _pendingImageBase64 =
+                                                              null;
+                                                          _pendingVideoBase64 =
+                                                              null;
+                                                        });
+                                                      }
+                                                    },
+                                                    itemBuilder: (ctx) => [
+                                                      PopupMenuItem(
+                                                        value: 'voice',
                                                         child: Row(
                                                           children: [
-                                                            Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                                            SizedBox(width: 12),
-                                                            Text('Clear Attachment', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                                            Icon(
+                                                                _isListening
+                                                                    ? Icons.mic
+                                                                    : Icons
+                                                                        .mic_none,
+                                                                color: _isListening
+                                                                    ? AppColors
+                                                                        .statusGreen
+                                                                    : Colors
+                                                                        .white70,
+                                                                size: 20),
+                                                            const SizedBox(
+                                                                width: 12),
+                                                            Text(
+                                                                _isListening
+                                                                    ? 'Stop Listening'
+                                                                    : 'Voice Input',
+                                                                style: TextStyle(
+                                                                    color: _isListening
+                                                                        ? AppColors
+                                                                            .statusGreen
+                                                                        : Colors
+                                                                            .white,
+                                                                    fontSize:
+                                                                        13)),
                                                           ],
                                                         ),
                                                       ),
-                                                  ],
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Expanded(
-                                                  child: TextField(
-                                                    controller: _textController,
-                                                    style: const TextStyle(color: Colors.white, fontSize: 15),
-                                                    onChanged: (_) => setState(() {}),
-                                                    decoration: InputDecoration(
-                                                      hintText: _pendingVideoBase64 != null
-                                                          ? "Ask about the video..."
-                                                          : _pendingImageBase64 != null
-                                                              ? "Ask about the image..."
-                                                              : "Message your companion...",
-                                                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                                                      border: OutlineInputBorder(
-                                                        borderRadius: BorderRadius.circular(30),
-                                                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.8),
+                                                      PopupMenuItem(
+                                                        value: 'camera',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                                _isTakingPhoto
+                                                                    ? Icons
+                                                                        .hourglass_empty
+                                                                    : Icons
+                                                                        .camera_alt_outlined,
+                                                                color: Colors
+                                                                    .white70,
+                                                                size: 20),
+                                                            const SizedBox(
+                                                                width: 12),
+                                                            const Text(
+                                                                'Take Photo',
+                                                                style: TextStyle(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    fontSize:
+                                                                        13)),
+                                                          ],
+                                                        ),
                                                       ),
-                                                      enabledBorder: OutlineInputBorder(
-                                                        borderRadius: BorderRadius.circular(30),
-                                                        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.8),
+                                                      PopupMenuItem(
+                                                        value: 'video',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                                _isRecordingVideo
+                                                                    ? Icons
+                                                                        .hourglass_empty
+                                                                    : Icons
+                                                                        .videocam_outlined,
+                                                                color: Colors
+                                                                    .white70,
+                                                                size: 20),
+                                                            const SizedBox(
+                                                                width: 12),
+                                                            const Text(
+                                                                'Record Clip',
+                                                                style: TextStyle(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    fontSize:
+                                                                        13)),
+                                                          ],
+                                                        ),
                                                       ),
-                                                      focusedBorder: OutlineInputBorder(
-                                                        borderRadius: BorderRadius.circular(30),
-                                                        borderSide: const BorderSide(color: AppColors.statusGreen, width: 1.0),
-                                                      ),
-                                                      filled: true,
-                                                      fillColor: Colors.white.withValues(alpha: 0.05),
-                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                    ),
-                                                    onSubmitted: _handleSubmit,
+                                                      if (_pendingImageBase64 !=
+                                                              null ||
+                                                          _pendingVideoBase64 !=
+                                                              null)
+                                                        const PopupMenuItem(
+                                                          value: 'clear',
+                                                          child: Row(
+                                                            children: [
+                                                              Icon(
+                                                                  Icons
+                                                                      .delete_outline,
+                                                                  color: Colors
+                                                                      .redAccent,
+                                                                  size: 20),
+                                                              SizedBox(
+                                                                  width: 12),
+                                                              Text(
+                                                                  'Clear Attachment',
+                                                                  style: TextStyle(
+                                                                      color: Colors
+                                                                          .redAccent,
+                                                                      fontSize:
+                                                                          13)),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                    ],
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: TextField(
+                                                      controller:
+                                                          _textController,
+                                                      style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 15),
+                                                      onChanged: (_) =>
+                                                          setState(() {}),
+                                                      decoration:
+                                                          InputDecoration(
+                                                        hintText: _pendingVideoBase64 !=
+                                                                null
+                                                            ? "Ask about the video..."
+                                                            : _pendingImageBase64 !=
+                                                                    null
+                                                                ? "Ask about the image..."
+                                                                : "Message your companion...",
+                                                        hintStyle:
+                                                            const TextStyle(
+                                                                color: Colors
+                                                                    .white38,
+                                                                fontSize: 14),
+                                                        border:
+                                                            OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(30),
+                                                          borderSide: BorderSide(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.1),
+                                                              width: 0.8),
+                                                        ),
+                                                        enabledBorder:
+                                                            OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(30),
+                                                          borderSide: BorderSide(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.1),
+                                                              width: 0.8),
+                                                        ),
+                                                        focusedBorder:
+                                                            OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(30),
+                                                          borderSide:
+                                                              const BorderSide(
+                                                                  color: AppColors
+                                                                      .statusGreen,
+                                                                  width: 1.0),
+                                                        ),
+                                                        filled: true,
+                                                        fillColor: Colors.white
+                                                            .withValues(
+                                                                alpha: 0.05),
+                                                        contentPadding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                horizontal: 16,
+                                                                vertical: 8),
+                                                      ),
+                                                      onSubmitted:
+                                                          _handleSubmit,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(alpha: 0.8),
+                                          ),
+                                          child: IconButton(
+                                            icon: const Icon(Icons.send_rounded,
+                                                color: Colors.white, size: 20),
+                                            onPressed: () => _handleSubmit(
+                                                _textController.text),
+                                          ),
                                         ),
-                                        child: IconButton(
-                                          icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                                          onPressed: () => _handleSubmit(_textController.text),
-                                        ),
-                                      ),
+                                      ],
                                     ],
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           // 5. Canvas Overlay (WebView AI Browser)
           if (_canvasVisible && _canvasController != null && !_isPipMode)
             Positioned(
@@ -2527,9 +3297,13 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 20, spreadRadius: 5),
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 20,
+                        spreadRadius: 5),
                   ],
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.2)),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
@@ -2546,7 +3320,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             _canvasController = WebViewController()
                               ..setJavaScriptMode(JavaScriptMode.unrestricted)
                               ..loadRequest(Uri.parse('about:blank'));
-                            CanvasCapability().setController(_canvasController!);
+                            CanvasCapability()
+                                .setController(_canvasController!);
                           },
                           child: Container(
                             padding: const EdgeInsets.all(4),
@@ -2554,7 +3329,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                               color: Colors.black.withValues(alpha: 0.6),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close, color: Colors.white, size: 20),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 20),
                           ),
                         ),
                       ),
@@ -2565,8 +3341,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ),
 
           // 6. Hologram Overlay (image / canvas snapshot presenter)
-          if (!_isPipMode)
-            const HologramOverlay(),
+          if (!_isPipMode) const HologramOverlay(),
 
           // 7. Diagnostics (slide-up panel)
           if (_showDiagnostics && !_isPipMode)
@@ -2612,7 +3387,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+              border: Border(
+                  bottom:
+                      BorderSide(color: Colors.white.withValues(alpha: 0.1))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2627,16 +3404,20 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.copy_rounded, size: 18, color: Colors.white70),
+                      icon: const Icon(Icons.copy_rounded,
+                          size: 18, color: Colors.white70),
                       onPressed: () {
-                        Clipboard.setData(ClipboardData(text: _diagnosticLogs.join('\n')));
+                        Clipboard.setData(
+                            ClipboardData(text: _diagnosticLogs.join('\n')));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Logs copied to clipboard')),
+                          const SnackBar(
+                              content: Text('Logs copied to clipboard')),
                         );
                       },
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white70),
+                      icon: const Icon(Icons.close_rounded,
+                          size: 18, color: Colors.white70),
                       onPressed: () => setState(() => _showDiagnostics = false),
                     ),
                   ],
@@ -2677,8 +3458,6 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               },
             ),
           ),
-
-
         ],
       ),
     );
@@ -2705,7 +3484,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.cyanAccent.withValues(alpha: 0.1),
@@ -2719,7 +3499,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.psychology_alt, color: Colors.cyanAccent, size: 20),
+                        const Icon(Icons.psychology_alt,
+                            color: Colors.cyanAccent, size: 20),
                         const SizedBox(width: 12),
                         Text(
                           'VOICE PERSONA',
@@ -2732,13 +3513,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         ),
                         const Spacer(),
                         IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                          icon: const Icon(Icons.close,
+                              color: Colors.white54, size: 20),
                           onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
                     const Divider(color: Colors.white12, height: 32),
-                    
+
                     // Persona Grid
                     Wrap(
                       spacing: 8,
@@ -2754,12 +3536,17 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
-                              color: isSelected ? Colors.cyanAccent.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.05),
+                              color: isSelected
+                                  ? Colors.cyanAccent.withValues(alpha: 0.2)
+                                  : Colors.white.withValues(alpha: 0.05),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: isSelected ? Colors.cyanAccent : Colors.white10,
+                                color: isSelected
+                                    ? Colors.cyanAccent
+                                    : Colors.white10,
                                 width: 1,
                               ),
                             ),
@@ -2768,7 +3555,9 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                               style: GoogleFonts.outfit(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w900,
-                                color: isSelected ? Colors.cyanAccent : Colors.white70,
+                                color: isSelected
+                                    ? Colors.cyanAccent
+                                    : Colors.white70,
                                 letterSpacing: 1.0,
                               ),
                             ),
@@ -2776,13 +3565,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         );
                       }).toList(),
                     ),
-                    
+
                     const SizedBox(height: 32),
-                    
+
                     // Speed Control
                     Row(
                       children: [
-                        const Icon(Icons.speed, color: Colors.white54, size: 16),
+                        const Icon(Icons.speed,
+                            color: Colors.white54, size: 16),
                         const SizedBox(width: 8),
                         Text(
                           'SPEECH VELOCITY',
@@ -2796,7 +3586,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         const Spacer(),
                         Text(
                           '${PreferencesService().ttsSpeed.toStringAsFixed(1)}X',
-                          style: GoogleFonts.outfit(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                          style: GoogleFonts.outfit(
+                              color: Colors.cyanAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -2818,11 +3611,14 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         },
                       ),
                     ),
-                    
+
                     const SizedBox(height: 16),
                     Text(
                       'AI Voice Personas are processed by OpenClaw Gateway.',
-                      style: TextStyle(color: Colors.white24, fontSize: 9, fontStyle: FontStyle.italic),
+                      style: TextStyle(
+                          color: Colors.white24,
+                          fontSize: 9,
+                          fontStyle: FontStyle.italic),
                     ),
                   ],
                 ),
@@ -2835,7 +3631,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
         return FadeTransition(
           opacity: anim1,
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.8, end: 1.0).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutBack)),
+            scale: Tween<double>(begin: 0.8, end: 1.0).animate(
+                CurvedAnimation(parent: anim1, curve: Curves.easeOutBack)),
             child: child,
           ),
         );
@@ -2843,4 +3640,3 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     );
   }
 }
-

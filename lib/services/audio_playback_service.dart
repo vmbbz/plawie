@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 /// Handles both Gateway MP3 URLs and local TTS engine output.
 /// Provides hooks for VRM lip-sync (onStart / onComplete).
 class AudioPlaybackService {
-  static final AudioPlaybackService _instance = AudioPlaybackService._internal();
+  static final AudioPlaybackService _instance =
+      AudioPlaybackService._internal();
   factory AudioPlaybackService() => _instance;
   AudioPlaybackService._internal() {
     _init();
@@ -15,7 +16,7 @@ class AudioPlaybackService {
   final AudioPlayer _player = AudioPlayer();
   bool _isPlaying = false;
   bool get isPlaying => _isPlaying;
-  
+
   // Callbacks for UI/VRM synchronization (e.g. lip-sync)
   VoidCallback? onStart;
   VoidCallback? onComplete;
@@ -41,7 +42,8 @@ class AudioPlaybackService {
       _isPlaying = state == PlayerState.playing;
       if (state == PlayerState.playing) {
         onStart?.call();
-      } else if (state == PlayerState.completed || state == PlayerState.stopped) {
+      } else if (state == PlayerState.completed ||
+          state == PlayerState.stopped) {
         onComplete?.call();
       }
     });

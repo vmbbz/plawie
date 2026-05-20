@@ -18,6 +18,7 @@ class PreferencesService {
   static const _keyNodeGatewayToken = 'node_gateway_token';
   static const _keyGatewayToken = 'gateway_token';
   static const _keyLastApprovedRequestId = 'last_approved_request_id';
+  static const _keySetupInProgress = 'setup_in_progress';
 
   SharedPreferences? _prefs;
 
@@ -38,6 +39,9 @@ class PreferencesService {
 
   bool get setupComplete => _p.getBool(_keySetupComplete) ?? false;
   set setupComplete(bool value) => _p.setBool(_keySetupComplete, value);
+
+  bool get setupInProgress => _p.getBool(_keySetupInProgress) ?? false;
+  set setupInProgress(bool value) => _p.setBool(_keySetupInProgress, value);
 
   bool get isFirstRun => _p.getBool(_keyFirstRun) ?? true;
   set isFirstRun(bool value) => _p.setBool(_keyFirstRun, value);
