@@ -34,6 +34,7 @@ class GatewayService {
 
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
+  StreamSubscription<Map<String, dynamic>>? _gatewayEventSubscription;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
   bool _rpcDiscoveryDone =
@@ -66,6 +67,9 @@ class GatewayService {
   // Failure tracking for proactive auto-healing
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
+  bool _dashboardPairingApprovalInFlight = false;
+  DateTime? _lastDashboardPairingApprovalAttemptAt;
+  final Set<String> _autoApprovedDashboardRequestIds = <String>{};
   DateTime? _lastHardeningSweepAt;
   DateTime? _gatewaySettleUntil;
   DateTime? _lastProcessValidationAt;
@@ -76,6 +80,8 @@ class GatewayService {
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
   static const Duration _disconnectContextCooldown = Duration(seconds: 20);
+  static const Duration _dashboardPairingApprovalCooldown =
+      Duration(seconds: 8);
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -438,15 +444,30 @@ PARAMETER num_batch 512
       PreferencesService prefs) async {
     final provider = (prefs.apiProvider ?? '').trim().toLowerCase();
     final configuredModel = (prefs.configuredModel ?? '').trim();
-    final usesOllama = provider.contains('ollama');
-    final isLegacyCloudModel = configuredModel.startsWith('ollama/') &&
+    final isCloudOllamaModel = configuredModel.startsWith('ollama/') &&
         configuredModel.contains(':cloud');
-    if (!usesOllama || !isLegacyCloudModel) return;
+    if (!isCloudOllamaModel) return;
+
+    final hasOllamaAuthProfile = await _hasOllamaAuthProfile();
+    if (hasOllamaAuthProfile) return;
+
+    const legacyCloudDefaults = <String>{
+      'ollama/qwen3-coder:480b-cloud',
+      'ollama/gpt-oss:120b-cloud',
+      'ollama/deepseek-v3.1:671b-cloud',
+    };
+    final isLegacyDefault = legacyCloudDefaults.contains(configuredModel);
+    final providerAllowsMigration =
+        provider.isEmpty || provider.contains('ollama');
+    if (!isLegacyDefault && !providerAllowsMigration) return;
 
     const localFallback = 'ollama/qwen2.5:0.5b';
     prefs.configuredModel = localFallback;
+    if (providerAllowsMigration) {
+      prefs.apiProvider = 'ollama';
+    }
     _addActivity(
-        '[MIGRATION] Legacy Ollama cloud model detected; switching default to $localFallback');
+        '[MIGRATION] Legacy Ollama cloud default without auth profile detected; switching default to $localFallback');
 
     final running = await NativeBridge.isGatewayRunning();
     if (running) return;
@@ -466,6 +487,57 @@ PARAMETER num_batch 512
     } catch (_) {
       // Best effort migration; prefs fallback still prevents cloud default selection.
     }
+  }
+
+  Future<bool> _hasOllamaAuthProfile() async {
+    try {
+      final file = File(
+        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
+      );
+      if (!await file.exists()) return false;
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) return false;
+      return _containsOllamaAuthMarker(jsonDecode(raw));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _containsOllamaAuthMarker(Object? node) {
+    if (node is Map) {
+      for (final entry in node.entries) {
+        final key = '${entry.key}'.toLowerCase();
+        final value = entry.value;
+
+        if (key.contains('ollama')) {
+          if (value is String && value.trim().isNotEmpty) return true;
+          if (value is Map && value.isNotEmpty) {
+            final apiKey = value['apiKey'] ?? value['token'] ?? value['key'];
+            if (apiKey is String && apiKey.trim().isNotEmpty) return true;
+            // Some auth profile formats keep provider metadata nested;
+            // non-empty map under an ollama profile key is enough to treat as configured.
+            return true;
+          }
+        }
+
+        if (key == 'provider' &&
+            value is String &&
+            value.toLowerCase().contains('ollama')) {
+          return true;
+        }
+
+        if (_containsOllamaAuthMarker(value)) return true;
+      }
+      return false;
+    }
+
+    if (node is List) {
+      for (final value in node) {
+        if (_containsOllamaAuthMarker(value)) return true;
+      }
+    }
+
+    return false;
   }
 
   /// New Auto-Healing Logic: Detects critical failures in logs and attempts recovery.
@@ -849,6 +921,7 @@ PARAMETER num_batch 512
           : [..._state.logs.sublist(_state.logs.length - 499), log];
 
       _handleGatewayAutoHeal(log);
+      _maybeAutoApproveDashboardPairingFromLog(log);
 
       // Detect "ready" signal to flip isReady flag.
       // Strip ANSI codes first: gateway logs like "[36m[gateway][39m [36mready[39m"
@@ -2394,6 +2467,8 @@ PARAMETER num_batch 512
     // The next session generates a fresh token; keeping the old one causes
     // _checkHealth() on re-start to authenticate with a stale token → WS
     // handshake fails → gateway appears hung for up to 5 min (cache TTL).
+    _gatewayEventSubscription?.cancel();
+    _gatewayEventSubscription = null;
     _connection?.dispose();
     _connection = null;
     _cachedToken = null;
@@ -2475,6 +2550,13 @@ PARAMETER num_batch 512
       // Listen for 1008 pairing required events from the gateway
       _connection!.pairingRequiredStream
           .listen((requestId) => _handleOperatorPairingRequired(requestId));
+      // Listen to gateway events for non-blocking operator/browser pairing UX.
+      // Web Dashboard runs in a separate WebView client identity and may emit
+      // device.pair.requested independently from this control channel.
+      _gatewayEventSubscription?.cancel();
+      _gatewayEventSubscription = _connection!.eventStream.listen(
+        _handleGatewayEventFrame,
+      );
       // Reset backoff only for brand-new connection objects, not on every
       // health tick — otherwise the exponential backoff never accumulates.
       _connection!.resetReconnectCounter();
@@ -2502,12 +2584,152 @@ PARAMETER num_batch 512
     return ok;
   }
 
+  void _handleGatewayEventFrame(Map<String, dynamic> frame) {
+    final event = frame['event']?.toString() ?? '';
+    if (event != 'device.pair.requested') return;
+
+    final payload = frame['payload'];
+    final requestId = _extractRequestIdFromDynamic(payload) ??
+        _extractRequestIdFromDynamic(frame);
+    if (requestId == null || requestId.isEmpty) return;
+
+    // device.pair.* can include non-operator requests in edge cases;
+    // we auto-approve only operator/browser pairing prompts.
+    final role =
+        _extractStringFromDynamic(payload, const {'role', 'requestedRole'})
+                ?.toLowerCase() ??
+            '';
+    if (role.isNotEmpty && role != 'operator') return;
+
+    unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'event'));
+  }
+
+  String? _extractRequestIdFromDynamic(Object? value) {
+    final uuidPattern = RegExp(
+      r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$',
+    );
+
+    String? visit(Object? node) {
+      if (node is String) {
+        final direct = node.trim();
+        if (uuidPattern.hasMatch(direct.toLowerCase())) return direct;
+        final match = RegExp(
+          r'requestid[:=\s]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+          caseSensitive: false,
+        ).firstMatch(node);
+        return match?.group(1);
+      }
+      if (node is Map) {
+        const keys = <String>{
+          'requestId',
+          'requestID',
+          'request_id',
+          'pairingRequestId',
+          'pairing_request_id',
+        };
+        for (final entry in node.entries) {
+          if (keys.contains('${entry.key}')) {
+            final id = visit(entry.value);
+            if (id != null) return id;
+          }
+        }
+        for (final child in node.values) {
+          final id = visit(child);
+          if (id != null) return id;
+        }
+      }
+      if (node is List) {
+        for (final child in node) {
+          final id = visit(child);
+          if (id != null) return id;
+        }
+      }
+      return null;
+    }
+
+    return visit(value);
+  }
+
+  String? _extractStringFromDynamic(Object? value, Set<String> keys) {
+    String? visit(Object? node) {
+      if (node is Map) {
+        for (final entry in node.entries) {
+          final key = '${entry.key}';
+          if (keys.contains(key) && entry.value is String) {
+            final v = (entry.value as String).trim();
+            if (v.isNotEmpty) return v;
+          }
+        }
+        for (final child in node.values) {
+          final v = visit(child);
+          if (v != null) return v;
+        }
+      } else if (node is List) {
+        for (final child in node) {
+          final v = visit(child);
+          if (v != null) return v;
+        }
+      }
+      return null;
+    }
+
+    return visit(value);
+  }
+
+  Future<void> _autoApproveDashboardPairingRequest(
+    String requestId, {
+    required String source,
+  }) async {
+    final safeRequestId = requestId.trim().toLowerCase();
+    if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) return;
+    if (_autoApprovedDashboardRequestIds.contains(safeRequestId)) return;
+
+    final now = DateTime.now();
+    final lastAttempt = _lastDashboardPairingApprovalAttemptAt;
+    if (_dashboardPairingApprovalInFlight) return;
+    if (lastAttempt != null &&
+        now.difference(lastAttempt) < _dashboardPairingApprovalCooldown) {
+      return;
+    }
+
+    _dashboardPairingApprovalInFlight = true;
+    _lastDashboardPairingApprovalAttemptAt = now;
+    try {
+      _addActivity(
+          '[PAIR] Dashboard requested browser approval ($safeRequestId via $source) — auto-approving...');
+      await _approveOperatorPairingRequest(safeRequestId);
+      _autoApprovedDashboardRequestIds.add(safeRequestId);
+      _addActivity(
+          '[PAIR] Dashboard browser approval succeeded ($safeRequestId).');
+    } catch (e) {
+      _addActivity(
+          '[WARN] Dashboard browser auto-approval failed ($safeRequestId): $e');
+    } finally {
+      _dashboardPairingApprovalInFlight = false;
+    }
+  }
+
+  void _maybeAutoApproveDashboardPairingFromLog(String rawLog) {
+    final stripped = rawLog.replaceAll(AppConstants.ansiEscape, '');
+    final lower = stripped.toLowerCase();
+    if (!lower.contains('pairing required: device is not approved yet')) return;
+    if (!lower.contains('origin=http://127.0.0.1:18789')) return;
+    if (!lower.contains('remote=127.0.0.1')) return;
+    if (!lower.contains('wv)') && !lower.contains('mozilla/5.0')) return;
+
+    final requestId = _extractRequestIdFromDynamic(stripped);
+    if (requestId == null || requestId.isEmpty) return;
+    unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'log'));
+  }
+
   /// Called when the gateway closes the operator WS with 1008 (pairing required).
   Future<void> _handleOperatorPairingRequired([String? requestId]) async {
     if (_pairingResolveAttempted) return;
     _pairingResolveAttempted = true;
     final pairingConnection = _connection;
     final deviceId = pairingConnection?.deviceId ?? '';
+    _gatewayEventSubscription?.cancel();
+    _gatewayEventSubscription = null;
     pairingConnection?.disconnect();
     _connection = null;
     await clearDeviceToken();
@@ -4107,6 +4329,7 @@ PARAMETER num_batch 512
   void dispose() {
     _healthTimer?.cancel();
     _logSubscription?.cancel();
+    _gatewayEventSubscription?.cancel();
     _connection?.dispose();
     _stateController.close();
     _chatActivityController.close();
