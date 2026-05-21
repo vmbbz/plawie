@@ -58,6 +58,9 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
 
     final gatewayProvider =
         Provider.of<GatewayProvider>(context, listen: false);
+    unawaited(
+      gatewayProvider.prepareLocalOllamaForGateway(reason: 'dashboard-open'),
+    );
     String? url;
 
     if (forceRefresh) {

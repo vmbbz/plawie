@@ -11,6 +11,7 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
 - Returning users must not need to delete app data. Cached gateway token, operator device token, node token, and dashboard URL must self-heal if stale.
 - Runtime hardening must not rewrite config while the gateway is settling unless the user explicitly starts a repair path.
 - Local Ollama must not ask users for a real API key. For loopback/local Ollama, OpenClaw uses the placeholder credential `ollama-local`.
+- If the selected model is `ollama/...`, returning-user startup must ensure the internal Ollama Hub is running before dashboard/webchat/chat can depend on it.
 - Web dashboard pairing requires an operator connection with `operator.admin` on the current v2026.5.x gateway.
 
 ## Fresh Install Sequence
@@ -58,6 +59,7 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
    - do not rewrite `openclaw.json`
    - refresh the gateway token/dashboard URL
    - ensure local Ollama `auth-profiles.json` exists because this file can be repaired without restarting the gateway
+   - if the persisted primary model starts with `ollama/`, start the internal Ollama Hub in the background when `127.0.0.1:11434` is not reachable
    - attach operator WebSocket
    - run passive hardening verification only
 3. If gateway is running but not fully attached:
@@ -106,6 +108,12 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
 5. Node reconnects with the issued device token.
 6. Expected success line: `[NODE] Paired and connected`.
 
+Node connect frames must include the current `connect.challenge` nonce. Reconnect
+races can deliver the challenge before the node handshake waiter is installed; the
+app caches that nonce briefly, clears it on disconnect, and refuses to send a
+no-nonce `connect` frame. A successful `[NODE] Paired and connected` clears any
+old nonce/protocol error from the Node UI.
+
 ### Web Dashboard Pairing
 
 1. WebView loads the authenticated dashboard URL.
@@ -122,9 +130,16 @@ OpenClaw's current local Ollama behavior is:
 
 - Local/LAN Ollama does not require a real user API key.
 - The placeholder `ollama-local` is valid for loopback/private Ollama hosts.
+- `ECONNREFUSED 127.0.0.1:11434` is a daemon reachability problem, not an API-key problem.
 - Endpoint details belong in `models.providers.ollama`.
 - Runtime credentials belong in the versioned `auth-profiles.json` store.
 - Old flat auth stores such as `{ "providers": { "ollama": { "apiKey": "..." }}}` are not reliable runtime format.
+
+The official Ollama `ollama launch openclaw` flow is useful for desktop/CLI
+onboarding because Ollama can configure OpenClaw, pick a model, and start the
+gateway. Plawie cannot rely on that interactive host flow inside Android PRoot,
+so it writes the equivalent local provider/auth configuration itself and manages
+the embedded Ollama daemon lifecycle.
 
 Required local files:
 
@@ -180,6 +195,7 @@ These can appear during first-pair or gateway settle and are not automatically f
 - a small number of `handshake-timeout` logs while the gateway is still loading plugins
 - `unknown-ip` in security audit logs from local CLI/helper flows where forwarded IP metadata is unavailable
 - client count briefly rising when WebView or CLI helpers connect
+- a single node reconnect waiting for a fresh `connect.challenge` nonce
 
 ## Hard Failures
 
@@ -192,7 +208,8 @@ These should not persist after setup:
 - repeated gateway restarts after setup says complete
 - schema reload failures or `Unrecognized keys`
 - event-loop delay warnings that never settle after plugins finish loading
-- node token nonce/protocol errors after a token refresh
+- repeated node token nonce/protocol errors after a token refresh
+- repeated `ECONNREFUSED 127.0.0.1:11434` after Ollama Hub autostart has been attempted
 - web dashboard stuck on pairing after operator WS has `operator.admin`
 
 ## Log Signatures To Watch
@@ -215,6 +232,7 @@ Needs repair:
 missing scope: operator.pairing
 missing scope: operator.admin
 No API key found for provider "ollama"
+connect ECONNREFUSED 127.0.0.1:11434
 config reload skipped
 File changed during read
 protocol mismatch

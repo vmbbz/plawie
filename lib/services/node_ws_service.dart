@@ -418,6 +418,21 @@ class NodeWsService {
     _pendingRequests.clear();
   }
 
+  /// Close the current socket but keep auto-reconnect enabled.
+  ///
+  /// Used when the app detects a bad/stale handshake before sending `connect`.
+  /// Calling disconnect() would disable reconnect entirely, which is too harsh
+  /// for transient gateway settle races.
+  Future<void> forceReconnect({String reason = 'manual-reconnect'}) async {
+    if (_url == null) return;
+    _shouldReconnect = true;
+    _reconnectTimer?.cancel();
+    try {
+      await _channel?.sink.close();
+    } catch (_) {}
+    _handleDisconnect(closeReason: reason);
+  }
+
   /// Stop reconnect timers and close any in-flight socket connections.
   /// Use this during pairing approval to freeze all outbound traffic while
   /// letting the gateway event loop drain before the CLI approve call.

@@ -71,7 +71,9 @@ class GatewayService {
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
   bool _dashboardPairingApprovalInFlight = false;
+  bool _ollamaAutostartInFlight = false;
   DateTime? _lastDashboardPairingApprovalAttemptAt;
+  DateTime? _lastOllamaAutostartAttemptAt;
   final Set<String> _autoApprovedDashboardRequestIds = <String>{};
   DateTime? _lastHardeningSweepAt;
   DateTime? _gatewaySettleUntil;
@@ -85,6 +87,7 @@ class GatewayService {
   static const Duration _disconnectContextCooldown = Duration(seconds: 20);
   static const Duration _dashboardPairingApprovalCooldown =
       Duration(seconds: 8);
+  static const Duration _ollamaAutostartCooldown = Duration(seconds: 45);
 
   // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
   static final _staleNamePattern = RegExp(r'[.\-_:]');
@@ -94,7 +97,7 @@ class GatewayService {
     await prefs.init();
     final model = (prefs.configuredModel ?? '').trim();
     if (model.isEmpty || model.contains(':cloud')) return false;
-    return model.startsWith('ollama/') || model.startsWith('local-llm/');
+    return model.startsWith('ollama/');
   }
 
   /// Live stream of human-readable chat and hub events for the Agent Hub panel.
@@ -1645,6 +1648,96 @@ PARAMETER num_batch 512
     return success;
   }
 
+  Future<bool> prepareLocalOllamaForGateway({
+    String reason = 'ui-open',
+    Duration wait = Duration.zero,
+  }) {
+    return _ensureLocalOllamaReadyForGateway(reason: reason, wait: wait);
+  }
+
+  Future<bool> _ensureLocalOllamaReadyForGateway({
+    required String reason,
+    Duration wait = Duration.zero,
+  }) async {
+    if (!await _configuredModelNeedsLocalOllama()) return true;
+
+    if (await checkOllamaHealth()) {
+      if (!_state.isOllamaRunning) {
+        _updateState(_state.copyWith(
+          isOllamaRunning: true,
+          logs: [..._state.logs, '[INFO] Ollama Hub is reachable'],
+        ));
+      }
+      return true;
+    }
+
+    final now = DateTime.now();
+    final lastAttempt = _lastOllamaAutostartAttemptAt;
+    final cooldownActive = lastAttempt != null &&
+        now.difference(lastAttempt) < _ollamaAutostartCooldown;
+
+    if (!_ollamaAutostartInFlight && !cooldownActive) {
+      _ollamaAutostartInFlight = true;
+      _lastOllamaAutostartAttemptAt = now;
+      try {
+        _addActivity(
+            '[OLLAMA] Local model selected; ensuring Ollama Hub is running ($reason)');
+
+        final installed = await isInternalOllamaInstalled()
+            .timeout(const Duration(seconds: 5), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!installed) {
+          _addActivity(
+              '[OLLAMA] Internal Ollama Hub is not installed yet; setup/repair required.');
+          return false;
+        }
+
+        final processRunning = await isInternalOllamaRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!processRunning) {
+          final started = await startInternalOllama()
+              .timeout(const Duration(seconds: 15), onTimeout: () => false)
+              .catchError((_) => false);
+          if (!started) {
+            _addActivity('[OLLAMA] Ollama Hub autostart failed.');
+            return false;
+          }
+        } else {
+          _addActivity(
+              '[OLLAMA] Ollama Hub process found; waiting for API readiness...');
+          unawaited(_waitForOllamaHealthThenSync());
+        }
+      } finally {
+        _ollamaAutostartInFlight = false;
+      }
+    } else if (_ollamaAutostartInFlight) {
+      _addActivity('[OLLAMA] Ollama Hub autostart already in progress.');
+    }
+
+    if (wait > Duration.zero) {
+      return _waitForOllamaHealth(timeout: wait);
+    }
+    return checkOllamaHealth();
+  }
+
+  Future<bool> _waitForOllamaHealth({required Duration timeout}) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (await checkOllamaHealth()) {
+        if (!_state.isOllamaRunning) {
+          _updateState(_state.copyWith(
+            isOllamaRunning: true,
+            logs: [..._state.logs, '[INFO] Ollama Hub is reachable'],
+          ));
+        }
+        return true;
+      }
+      await Future.delayed(const Duration(seconds: 2));
+    }
+    return false;
+  }
+
   /// Polls :11434 every 3 s for up to 30 s, then triggers model sync.
   /// Runs fire-and-forget after startInternalOllama().
   Future<void> _waitForOllamaHealthThenSync() async {
@@ -2460,6 +2553,8 @@ PARAMETER num_batch 512
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
   /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
   Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
+    unawaited(_ensureLocalOllamaReadyForGateway(reason: 'dashboard-url'));
+
     // If we already have a tokenized URL and aren't forcing, return it immediately
     if (!force &&
         _state.dashboardUrl != null &&
@@ -3171,17 +3266,12 @@ PARAMETER num_batch 512
           // opening WebDashboardScreen feels instant (token is already cached).
           unawaited(fetchAuthenticatedDashboardUrl(force: false)
               .catchError((_) => null));
-          // After gateway (re)start, only re-probe Ollama when the selected
-          // model is local. Cloud/default users should not hit the hub path.
-          if (!_state.isOllamaRunning) {
-            unawaited(Future(() async {
-              if (await _configuredModelNeedsLocalOllama() &&
-                  await checkOllamaHealth()) {
-                unawaited(syncLocalModelsWithOllama());
-              }
-            }));
-          }
         }
+
+        // Returning users can land on a healthy gateway with an ollama/ model
+        // selected while the daemon is still down. Start it in the background
+        // before dashboard/webchat or Flutter chat trigger provider calls.
+        unawaited(_ensureLocalOllamaReadyForGateway(reason: 'gateway-health'));
 
         if (_pairingResolveAttempted) {
           return;
@@ -3546,15 +3636,24 @@ PARAMETER num_batch 512
       } catch (_) {
         // /api/ps timeout or connection refused → Ollama not running
         _addActivity(
-            '[MEM] ✗ Ollama not reachable at :11434 — start it from Local LLM Hub');
+            '[MEM] Ollama not reachable at :11434 - attempting autostart');
       }
 
       // Pre-send health gate: if Ollama is completely down, fail fast instead of
-      // waiting 3 min for the gateway to timeout. The gateway would just return an
-      // empty stream with no diagnostic — this surfaces the real cause immediately.
+      // waiting 3 min for the gateway to timeout. We now try one controlled
+      // autostart first so returning users do not have to visit Local LLM Hub.
       if (!ollamaReachable) {
-        yield '[Error] Ollama server is not responding. Open Local LLM → Start Ollama Hub, then retry.';
-        return;
+        ollamaReachable = await _ensureLocalOllamaReadyForGateway(
+          reason: 'chat-send',
+          wait: const Duration(seconds: 30),
+        );
+        if (!ollamaReachable) {
+          yield '[Error] Ollama server is not responding. Open Local LLM -> Start Ollama Hub, then retry.';
+          return;
+        }
+        ollamaColdStart = true;
+        _addActivity(
+            '[MEM] Ollama became reachable after autostart (cold start expected)');
       }
     }
     final wsOk = await _ensureWebSocket(token);

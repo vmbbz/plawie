@@ -37,6 +37,9 @@ class NodeService {
       _capabilityHandlers = {};
   String? _gatewayAuthToken;
   Completer<String?>? _challengeCompleter;
+  String? _cachedChallengeNonce;
+  DateTime? _cachedChallengeReceivedAt;
+  static const Duration _challengeNonceTtl = Duration(seconds: 10);
   static final _uuidPattern =
       RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
 
@@ -173,13 +176,9 @@ class NodeService {
       await _ws.connect(targetHost, targetPort);
       log('[NODE] WebSocket connected, awaiting challenge...');
 
-      // Wait for the gateway challenge nonce before sending the connect frame.
-      // The gateway sends connect.challenge proactively on connection open.
-      // For localhost trusted devices it may skip the challenge — 800ms timeout then proceed.
-      // Sending nonce: '' causes INVALID_REQUEST (schema requires min 1 char when present).
-      final challengeNonce =
-          await _awaitChallengeNonce(const Duration(milliseconds: 3000));
-      await _sendConnect(challengeNonce);
+      // Latest gateways require a fresh challenge nonce for node connects.
+      // Never send a no-nonce connect frame; it is rejected with 1008.
+      await _sendConnectWithFreshNonce(const Duration(seconds: 6));
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
@@ -211,15 +210,45 @@ class NodeService {
   }
 
   Future<String> _awaitChallengeNonce(Duration timeout) async {
+    final cachedNonce = _consumeCachedChallengeNonce();
+    if (cachedNonce.isNotEmpty) return cachedNonce;
+
     final completer = _challengeCompleter;
     if (completer == null) return '';
     try {
-      return await completer.future.timeout(timeout) ?? '';
+      final nonce = await completer.future.timeout(timeout) ?? '';
+      if (nonce.isNotEmpty) return nonce;
+      return _consumeCachedChallengeNonce();
     } catch (_) {
-      return '';
+      return _consumeCachedChallengeNonce();
     } finally {
       _challengeCompleter = null;
     }
+  }
+
+  String _consumeCachedChallengeNonce() {
+    final nonce = _cachedChallengeNonce;
+    final receivedAt = _cachedChallengeReceivedAt;
+    if (nonce == null || nonce.isEmpty || receivedAt == null) {
+      _cachedChallengeNonce = null;
+      _cachedChallengeReceivedAt = null;
+      return '';
+    }
+    final fresh = DateTime.now().difference(receivedAt) <= _challengeNonceTtl;
+    _cachedChallengeNonce = null;
+    _cachedChallengeReceivedAt = null;
+    return fresh ? nonce : '';
+  }
+
+  Future<bool> _sendConnectWithFreshNonce(Duration timeout) async {
+    final challengeNonce = await _awaitChallengeNonce(timeout);
+    if (challengeNonce.isEmpty) {
+      log('[NODE] Challenge nonce not received; reopening socket before secure connect.');
+      await _ws.forceReconnect(reason: 'missing-connect-challenge');
+      return false;
+    }
+    await _sendConnect(challengeNonce);
+    return true;
   }
 
   Future<void> _handleSocketReconnectReady() async {
@@ -240,9 +269,7 @@ class NodeService {
       log('[NODE] WebSocket reconnected, completing handshake...');
       _challengeCompleter = null;
       _challengeCompleter = Completer<String?>();
-      final challengeNonce =
-          await _awaitChallengeNonce(const Duration(milliseconds: 800));
-      await _sendConnect(challengeNonce);
+      await _sendConnectWithFreshNonce(const Duration(seconds: 6));
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
@@ -272,6 +299,8 @@ class NodeService {
     switch (frame.event) {
       case '_disconnected':
         _challengeCompleter = null;
+        _cachedChallengeNonce = null;
+        _cachedChallengeReceivedAt = null;
         if (_state.status != NodeStatus.disabled) {
           final closeCode = frame.payload?['closeCode'];
           final closeReason =
@@ -289,9 +318,16 @@ class NodeService {
         if (_challengeCompleter != null && !_challengeCompleter!.isCompleted) {
           _challengeCompleter!.complete(nonce ?? '');
         } else {
-          // Ignore stale challenge events from prior sockets to prevent nonce drift.
-          log('[NODE] Challenge received with no active handshake; ignoring stale nonce');
-          return;
+          // Reconnects can receive connect.challenge just before onReconnectReady
+          // creates its waiter. Cache only briefly and clear it on disconnect to
+          // avoid nonce drift across sockets.
+          if (nonce != null && nonce.isNotEmpty) {
+            _cachedChallengeNonce = nonce;
+            _cachedChallengeReceivedAt = DateTime.now();
+            log('[NODE] Challenge received before handshake waiter; cached for reconnect');
+          } else {
+            log('[NODE] Challenge missing nonce before handshake waiter');
+          }
         }
         _updateState(_state.copyWith(status: NodeStatus.challenging));
         log(nonce != null
@@ -350,6 +386,12 @@ class NodeService {
 
   /// Build and send the `connect` request and adapt protocol version on mismatch.
   Future<void> _sendConnect(String nonce) async {
+    if (nonce.isEmpty) {
+      log('[NODE] Refusing to send connect without challenge nonce; reopening socket.');
+      await _ws.forceReconnect(reason: 'missing-connect-nonce');
+      return;
+    }
+
     final version = await OpenClawCommandService.detectOpenClawVersion();
 
     final prefs = PreferencesService();
@@ -422,9 +464,7 @@ class NodeService {
         'id': _identity.deviceId ?? '',
         'publicKey': _identity.publicKeyBase64Url ?? '',
         'signature': signature,
-        if (nonce.isNotEmpty)
-          'nonce':
-              nonce, // omit when empty — gateway schema requires min 1 char
+        'nonce': nonce,
         'signedAt': signedAtMs,
       },
       'auth': {
@@ -462,9 +502,10 @@ class NodeService {
       final code = errPayload['code'] as String? ?? '';
       final message = errPayload['message'] as String? ?? 'Connect failed';
       final details = errPayload['details'];
+      final normalizedMessage = message.toLowerCase();
 
       if (code == 'INVALID_REQUEST' &&
-          message.toLowerCase().contains('protocol mismatch')) {
+          normalizedMessage.contains('protocol mismatch')) {
         final expectedProtocol = _extractExpectedProtocol(details);
         if (expectedProtocol != null && expectedProtocol > 0) {
           if (expectedProtocol != _preferredConnectProtocol) {
@@ -490,6 +531,10 @@ class NodeService {
         log('[NODE] Gateway is warming up (UNAVAILABLE). Entering grace period...');
         _updateState(_state.copyWith(status: NodeStatus.warmingUp));
         // NodeWsService will trigger _disconnected on close, or we can force it
+      } else if (code == 'INVALID_REQUEST' &&
+          normalizedMessage.contains("required property 'nonce'")) {
+        log('[NODE] Gateway required a fresh nonce; reopening socket for secure reconnect.');
+        await _ws.forceReconnect(reason: 'gateway-required-nonce');
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
@@ -572,10 +617,13 @@ class NodeService {
   void _onConnected(NodeFrame frame) {
     _pairingRetryNotBefore = null;
     _pairingApprovalFailureCount = 0;
+    _cachedChallengeNonce = null;
+    _cachedChallengeReceivedAt = null;
     _updateState(_state.copyWith(
       status: NodeStatus.paired,
       connectedAt: DateTime.now(),
       clearPairingCode: true,
+      clearError: true,
     ));
     log('[NODE] Paired and connected');
   }
