@@ -22,6 +22,7 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
   bool _loading = true;
   String? _error;
   bool _pairingApprovalInFlight = false;
+  bool _pairingReloadsScheduled = false;
   final Set<String> _approvedPairingRequests = <String>{};
 
   @override
@@ -124,18 +125,37 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
       _pairingApprovalInFlight = true;
       final gatewayProvider =
           Provider.of<GatewayProvider>(context, listen: false);
-      await gatewayProvider.approveLocalDashboardPairingRequest(requestId);
-      _approvedPairingRequests.add(requestId);
-
-      await Future.delayed(const Duration(milliseconds: 900));
-      if (mounted) {
-        await _controller.reload();
+      final approved =
+          await gatewayProvider.approveLocalDashboardPairingRequest(requestId);
+      if (approved) {
+        _approvedPairingRequests.add(requestId);
       }
+      _schedulePairingReloads();
     } catch (_) {
       // The dashboard can render before the body is script-readable. The log
       // watcher in GatewayService is the fallback, so this path stays quiet.
     } finally {
       _pairingApprovalInFlight = false;
+    }
+  }
+
+  void _schedulePairingReloads() {
+    if (_pairingReloadsScheduled) return;
+    _pairingReloadsScheduled = true;
+    for (final delay in const [
+      Duration(milliseconds: 900),
+      Duration(milliseconds: 2500),
+      Duration(milliseconds: 5000),
+    ]) {
+      Timer(delay, () async {
+        if (!mounted) return;
+        try {
+          await _controller.reload();
+        } catch (_) {}
+        if (delay.inMilliseconds == 5000) {
+          _pairingReloadsScheduled = false;
+        }
+      });
     }
   }
 

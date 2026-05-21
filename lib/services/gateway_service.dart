@@ -27,6 +27,9 @@ class GatewayService {
     'http://localhost:18789',
   ];
   static const String _mobileChatSessionPrefix = 'mobile:chat:';
+  static const String ollamaProviderId = 'ollama';
+  static const String ollamaLocalApiKey = 'ollama-local';
+  static const String _defaultAuthProfileName = 'default';
 
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
@@ -315,11 +318,50 @@ PARAMETER num_batch 512
   Stream<Map<String, dynamic>> get gatewayEventStream =>
       _connection?.eventStream ?? const Stream<Map<String, dynamic>>.empty();
 
+  static String authProfileIdForProvider(String provider) =>
+      '${provider.trim().toLowerCase()}:$_defaultAuthProfileName';
+
+  /// Adds the config-side auth profile metadata OpenClaw 2026.x expects.
+  ///
+  /// The secret itself lives in `auth-profiles.json`; this top-level block tells
+  /// the gateway which provider/profile/mode should be considered at runtime.
+  static void ensureProviderAuthConfigBlock(
+    Map<String, dynamic> config,
+    String provider, {
+    String mode = 'api_key',
+  }) {
+    final normalizedProvider = provider.trim().toLowerCase();
+    if (normalizedProvider.isEmpty) return;
+    final profileId = authProfileIdForProvider(normalizedProvider);
+
+    if (config['auth'] is! Map) config['auth'] = <String, dynamic>{};
+    final auth = config['auth'] as Map;
+
+    if (auth['profiles'] is! Map) auth['profiles'] = <String, dynamic>{};
+    final profiles = auth['profiles'] as Map;
+    profiles[profileId] = <String, dynamic>{
+      'provider': normalizedProvider,
+      'mode': mode,
+    };
+
+    if (auth['order'] is! Map) auth['order'] = <String, dynamic>{};
+    final order = auth['order'] as Map;
+    final existingOrder = order[normalizedProvider];
+    final nextOrder = <String>[
+      profileId,
+      if (existingOrder is List)
+        ...existingOrder
+            .map((value) => value.toString())
+            .where((value) => value.isNotEmpty && value != profileId),
+    ];
+    order[normalizedProvider] = nextOrder;
+  }
+
   /// True when the connected gateway explicitly advertises [method].
   bool supportsMethod(String method) =>
       (_connection?.supportedMethods ?? const <String>[]).contains(method);
 
-  Future<void> approveLocalDashboardPairingRequest(String requestId) {
+  Future<bool> approveLocalDashboardPairingRequest(String requestId) {
     return _autoApproveDashboardPairingRequest(requestId, source: 'webview');
   }
 
@@ -541,6 +583,77 @@ PARAMETER num_batch 512
     return false;
   }
 
+  /// Ensure local Ollama can run through the gateway without a user-supplied key.
+  ///
+  /// Current OpenClaw releases use a versioned `auth-profiles.json` store:
+  /// `{ version: 1, profiles: { "ollama:default": { type: "api_key", ... }}}`.
+  /// Older flat `providers.ollama.apiKey` auth stores are ignored by the agent
+  /// runtime, which is why logs showed "No API key found for provider ollama".
+  Future<void> ensureLocalOllamaAuthProfile({
+    bool updateGatewayConfig = true,
+  }) async {
+    if (updateGatewayConfig) {
+      final config = await _readConfig();
+      ensureProviderAuthConfigBlock(config, ollamaProviderId);
+      await _writeConfig(config);
+    }
+    await _writeApiKeyAuthProfile(
+      provider: ollamaProviderId,
+      key: ollamaLocalApiKey,
+    );
+  }
+
+  Future<void> _writeApiKeyAuthProfile({
+    required String provider,
+    required String key,
+  }) async {
+    final normalizedProvider = provider.trim().toLowerCase();
+    final normalizedKey = key.trim();
+    if (normalizedProvider.isEmpty || normalizedKey.isEmpty) return;
+
+    try {
+      final filesDir = await getFilesDir();
+      final authFile = File(
+        '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
+      );
+      await Directory(authFile.parent.path).create(recursive: true);
+
+      Map<String, dynamic> store = <String, dynamic>{};
+      if (await authFile.exists()) {
+        final raw = await authFile.readAsString();
+        if (raw.trim().isNotEmpty) {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map) store = _deepCastMap(decoded);
+        }
+      }
+
+      store['version'] = 1;
+      if (store['profiles'] is! Map) {
+        store['profiles'] = <String, dynamic>{};
+      }
+
+      final profiles = store['profiles'] as Map;
+      final profileId = authProfileIdForProvider(normalizedProvider);
+      final existing = profiles[profileId];
+      final profile = existing is Map
+          ? Map<String, dynamic>.from(existing)
+          : <String, dynamic>{};
+
+      profile['type'] = 'api_key';
+      profile['provider'] = normalizedProvider;
+      profile['key'] = normalizedKey;
+      // If a previous build wrote this profile as a token, remove stale fields
+      // so the current API-key resolver sees one unambiguous credential shape.
+      profile.remove('token');
+      profile.remove('tokenRef');
+      profiles[profileId] = profile;
+
+      await _writeStringAtomically(authFile, _canonicalJsonSignature(store));
+    } catch (e) {
+      debugPrint('[GatewayService] Auth profile patch error: $e');
+    }
+  }
+
   /// New Auto-Healing Logic: Detects critical failures in logs and attempts recovery.
   void _handleGatewayAutoHeal(String log) {
     if (_isFixingDep) return;
@@ -686,6 +799,7 @@ PARAMETER num_batch 512
 
     if (alreadyRunning && await _isGatewayHealthy()) {
       // FAST PATH: already healthy → skip config write + doctor + reload
+      unawaited(ensureLocalOllamaAuthProfile(updateGatewayConfig: false));
       _subscribeLogs();
       _startHealthCheck();
       _markGatewaySettleWindow();
@@ -721,6 +835,7 @@ PARAMETER num_batch 512
       // Attach path is intentionally non-mutating. Any config write while a
       // live gateway is booting can trigger a reload/restart and wipe the
       // just-established websocket/pairing state.
+      await ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
       await _verifyGatewayConfigHardened(reason: 'attach-existing');
 
       // Re-probe token after hardening to avoid stale cache.
@@ -779,16 +894,6 @@ PARAMETER num_batch 512
 
       await NativeBridge.acquirePartialWakeLock();
       await _configureGateway();
-
-      // Auditor Safety Net: Force bind via CLI immediately before native start (survives any native flag)
-      try {
-        await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'openclaw config set gateway.bind loopback && openclaw config set gateway.port 18789',
-          timeout: 10,
-        );
-      } catch (_) {}
 
       await Future.delayed(const Duration(milliseconds: 300));
       final success = await NativeBridge.startGateway();
@@ -1271,6 +1376,8 @@ PARAMETER num_batch 512
     ollama['api'] ??= 'ollama';
     // Schema requires models to always be an array. Fix any existing entry missing it.
     ollama['models'] ??= <Map<String, dynamic>>[];
+    config['models']['providers']['ollama'] = ollama;
+    ensureProviderAuthConfigBlock(config, ollamaProviderId);
 
     // Remove keys that have never been part of the OpenClaw schema.
     // These were written by earlier builds and must be stripped so the gateway
@@ -1347,6 +1454,10 @@ PARAMETER num_batch 512
     }
 
     await _writeConfig(config);
+    await _writeApiKeyAuthProfile(
+      provider: ollamaProviderId,
+      key: ollamaLocalApiKey,
+    );
   }
 
   void _applyExplicitAuthMode(Map<String, dynamic> config) {
@@ -1460,6 +1571,7 @@ PARAMETER num_batch 512
     };
 
     config['models']['providers']['ollama'] = ollamaConfig;
+    ensureProviderAuthConfigBlock(config, ollamaProviderId);
 
     if (setAsPrimary && primaryModel != null) {
       config['agents'] ??= {};
@@ -1482,6 +1594,10 @@ PARAMETER num_batch 512
     }
 
     await _writeConfig(config);
+    await _writeApiKeyAuthProfile(
+      provider: ollamaProviderId,
+      key: ollamaLocalApiKey,
+    );
     _updateState(_state.copyWith(
       logs: [..._state.logs, '[INFO] Ollama provider configured at $baseUrl'],
     ));
@@ -2287,6 +2403,7 @@ PARAMETER num_batch 512
               : null),
       'models': prov['models'] ?? defaultModels,
     };
+    ensureProviderAuthConfigBlock(config, openClawProvider);
 
     // Keep the local Control UI origin list explicit and minimal.
     config['gateway'] ??= {};
@@ -2314,26 +2431,8 @@ PARAMETER num_batch 512
       }));
     }
 
-    // 2. Update agent auth-profiles.json
-    try {
-      final filesDir = await getFilesDir();
-      final authPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json';
-      final authFile = File(authPath);
-      Map<String, dynamic> auth = {};
-
-      if (await authFile.exists()) {
-        auth = jsonDecode(await authFile.readAsString());
-      } else {
-        await Directory(authFile.parent.path).create(recursive: true);
-      }
-
-      auth['providers'] ??= {};
-      (auth['providers'][openClawProvider] ??= {})['apiKey'] = key;
-      await authFile.writeAsString(jsonEncode(auth));
-    } catch (e) {
-      debugPrint('[GatewayService] Auth patch error: $e');
-    }
+    // 2. Update agent auth-profiles.json in the current canonical format.
+    await _writeApiKeyAuthProfile(provider: openClawProvider, key: key);
 
     // 3. Update .env for CLI compatibility
     if (envKey.isNotEmpty) {
@@ -2553,6 +2652,12 @@ PARAMETER num_batch 512
 
     try {
       await NativeBridge.stopGateway();
+      for (var attempt = 0; attempt < 8; attempt++) {
+        final stillRunning =
+            await NativeBridge.isGatewayRunning().catchError((_) => false);
+        if (!stillRunning) break;
+        await Future.delayed(const Duration(milliseconds: 350));
+      }
       // Use copyWith so Ollama Hub state (isOllamaRunning, ollamaHubModels) is
       // preserved — the gateway stopping does NOT stop Ollama. Clearing these
       // here would make the chat dropdown lose its LOCAL HUB entries.
@@ -2680,7 +2785,8 @@ PARAMETER num_batch 512
     if (role == 'node') return;
     if (role.isNotEmpty && role != 'operator' && role != 'browser') return;
 
-    unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'event'));
+    unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'event')
+        .then((_) => null));
   }
 
   String? _extractRequestIdFromDynamic(Object? value) {
@@ -2755,20 +2861,20 @@ PARAMETER num_batch 512
     return visit(value);
   }
 
-  Future<void> _autoApproveDashboardPairingRequest(
+  Future<bool> _autoApproveDashboardPairingRequest(
     String requestId, {
     required String source,
   }) async {
     final safeRequestId = requestId.trim().toLowerCase();
-    if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) return;
-    if (_autoApprovedDashboardRequestIds.contains(safeRequestId)) return;
+    if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) return false;
+    if (_autoApprovedDashboardRequestIds.contains(safeRequestId)) return true;
 
     final now = DateTime.now();
     final lastAttempt = _lastDashboardPairingApprovalAttemptAt;
-    if (_dashboardPairingApprovalInFlight) return;
+    if (_dashboardPairingApprovalInFlight) return false;
     if (lastAttempt != null &&
         now.difference(lastAttempt) < _dashboardPairingApprovalCooldown) {
-      return;
+      return false;
     }
 
     _dashboardPairingApprovalInFlight = true;
@@ -2776,19 +2882,29 @@ PARAMETER num_batch 512
     try {
       _addActivity(
           '[PAIR] Dashboard requested browser approval ($safeRequestId via $source) — auto-approving...');
-      final rpcApproved = await _tryApprovePairingViaRpc(safeRequestId);
-      if (!rpcApproved) {
+      var approved = await _tryApprovePairingViaRpc(safeRequestId);
+      if (!approved) {
+        // If the previous operator token was under-scoped, _tryApprovePairingViaRpc
+        // clears it and schedules reconnect. Give that recovery a short window
+        // before falling back to the CLI path.
+        await Future.delayed(const Duration(milliseconds: 1800));
+        approved = await _tryApprovePairingViaRpc(safeRequestId);
+      }
+      if (!approved) {
         await _approveOperatorPairingRequest(
           safeRequestId,
           skipRequestResolution: true,
         );
+        approved = true;
       }
       _autoApprovedDashboardRequestIds.add(safeRequestId);
       _addActivity(
           '[PAIR] Dashboard browser approval succeeded ($safeRequestId).');
+      return true;
     } catch (e) {
       _addActivity(
           '[WARN] Dashboard browser auto-approval failed ($safeRequestId): $e');
+      return false;
     } finally {
       _dashboardPairingApprovalInFlight = false;
     }
@@ -2804,7 +2920,8 @@ PARAMETER num_batch 512
 
     final requestId = _extractRequestIdFromDynamic(stripped);
     if (requestId == null || requestId.isEmpty) return;
-    unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'log'));
+    unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'log')
+        .then((_) => null));
   }
 
   Future<bool> _tryApprovePairingViaRpc(String requestId) async {
@@ -2820,8 +2937,52 @@ PARAMETER num_batch 512
       if (frame['ok'] == true) return true;
       final payload = frame['payload'];
       if (payload is Map && payload['ok'] == true) return true;
-    } catch (_) {}
+      final missingScope = _missingOperatorApprovalScope(frame);
+      if (missingScope != null) {
+        await _recoverOperatorScopeForPairing(missingScope);
+      }
+    } catch (e) {
+      final missingScope = _missingOperatorApprovalScope(e);
+      if (missingScope != null) {
+        await _recoverOperatorScopeForPairing(missingScope);
+      }
+    }
     return false;
+  }
+
+  String? _missingOperatorApprovalScope(Object? value) {
+    String text;
+    if (value is String) {
+      text = value;
+    } else {
+      try {
+        text = jsonEncode(value);
+      } catch (_) {
+        text = value.toString();
+      }
+    }
+    final lower = text.toLowerCase();
+    if (lower.contains('missing scope: operator.admin')) {
+      return 'operator.admin';
+    }
+    if (lower.contains('missing scope: operator.pairing')) {
+      return 'operator.pairing';
+    }
+    return null;
+  }
+
+  Future<void> _recoverOperatorScopeForPairing(String missingScope) async {
+    _addActivity(
+        '[PAIR] Operator token lacks $missingScope; clearing cached token for scope refresh.');
+    _gatewayEventSubscription?.cancel();
+    _gatewayEventSubscription = null;
+    _connection?.disconnect();
+    _connection = null;
+    await clearDeviceToken();
+    unawaited(Future.delayed(
+      const Duration(milliseconds: 750),
+      () => _checkHealth(),
+    ));
   }
 
   /// Called when the gateway closes the operator WS with 1008 (pairing required).
@@ -4512,6 +4673,12 @@ PARAMETER num_batch 512
     final discovery = config['discovery'];
     final models = config['models'];
     final ollama = models?['providers']?['ollama'];
+    final topLevelAuth = config['auth'];
+    final ollamaProfileId = authProfileIdForProvider(ollamaProviderId);
+    final topLevelProfiles =
+        topLevelAuth is Map ? topLevelAuth['profiles'] : null;
+    final ollamaProfile =
+        topLevelProfiles is Map ? topLevelProfiles[ollamaProfileId] : null;
 
     return gateway['mode'] == 'local' &&
         gateway['bind'] == 'loopback' &&
@@ -4533,7 +4700,10 @@ PARAMETER num_batch 512
         ollama is Map &&
         ollama['baseUrl'] == 'http://127.0.0.1:11434' &&
         ollama['apiKey'] is String &&
-        (ollama['apiKey'] as String).isNotEmpty;
+        (ollama['apiKey'] as String).isNotEmpty &&
+        ollamaProfile is Map &&
+        ollamaProfile['provider'] == ollamaProviderId &&
+        ollamaProfile['mode'] == 'api_key';
   }
 
   /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
@@ -4654,6 +4824,17 @@ PARAMETER num_batch 512
         "baseUrl": "http://127.0.0.1:11434"
       }
     }
+  },
+  "auth": {
+    "profiles": {
+      "${authProfileIdForProvider(ollamaProviderId)}": {
+        "provider": "ollama",
+        "mode": "api_key"
+      }
+    },
+    "order": {
+      "ollama": ["${authProfileIdForProvider(ollamaProviderId)}"]
+    }
   }
 }
 ''';
@@ -4685,6 +4866,7 @@ PARAMETER num_batch 512
           '✅ Hardening sweep (config patch${shouldReload ? ' + reload' : ''}) applied successfully');
       _addActivity(
           '[SYS] Industrial-grade CLI hardening applied${shouldReload ? ' and reloaded' : ''}.');
+      await ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
     } catch (e) {
       debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }

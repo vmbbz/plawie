@@ -28,6 +28,33 @@ class BootstrapService {
         name: 'BootstrapService', error: error, stackTrace: stackTrace);
   }
 
+  Future<void> _stopGatewayBeforeSetup() async {
+    // Setup performs many config writes. If even one old gateway process is
+    // still watching openclaw.json, those writes become live reloads and can
+    // race the first websocket/node pairing. Stop through both the Dart service
+    // and a direct process sweep, then wait until the native detector agrees.
+    await GatewayService().stop().catchError((_) => null);
+
+    const gatewayProcessPattern =
+        r'[o]penclaw.*gateway|[n]ode .*openclaw.*gateway|[n]ode .*openclaw\.mjs.*gateway';
+    await NativeBridge.runInProot(
+      "pkill -TERM -f '$gatewayProcessPattern' 2>/dev/null || true; "
+      'sleep 1; '
+      "pkill -KILL -f '$gatewayProcessPattern' 2>/dev/null || true",
+      timeout: 10,
+    ).catchError((_) => '');
+
+    for (var attempt = 0; attempt < 12; attempt++) {
+      final running =
+          await NativeBridge.isGatewayRunning().catchError((_) => false);
+      if (!running) return;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    _log(
+        '[SETUP] Warning: gateway still appears to be running after stop sweep');
+  }
+
   /// Update OpenClaw gateway to the latest version
   /// This fixes WebSocket handshake issues and other bugs
   Future<void> updateGateway() async {
@@ -227,7 +254,7 @@ class BootstrapService {
     try {
       // Pause any background gateway automation while setup rewrites config.
       // Reusing the singleton ensures provider-owned timers/subscriptions are stopped too.
-      await GatewayService().stop().catchError((_) => null);
+      await _stopGatewayBeforeSetup();
       await GatewayService()
           .clearDeviceToken(clearProtocol: true)
           .catchError((_) => null);
@@ -862,6 +889,10 @@ class BootstrapService {
       _applyExplicitAuthMode(workingConfig);
       _syncLocalGatewayRemoteCredentials(workingConfig);
       _sanitizeOpenClawSchema(workingConfig);
+      GatewayService.ensureProviderAuthConfigBlock(
+        workingConfig,
+        GatewayService.ollamaProviderId,
+      );
       final authPatch = _buildSharedSecretAuthPatch(workingConfig);
       final remotePatch = _buildLocalGatewayRemotePatch(workingConfig);
       final patchJson = '''
@@ -906,6 +937,17 @@ class BootstrapService {
       }
     }
   },
+  "auth": {
+    "profiles": {
+      "${GatewayService.authProfileIdForProvider(GatewayService.ollamaProviderId)}": {
+        "provider": "ollama",
+        "mode": "api_key"
+      }
+    },
+    "order": {
+      "ollama": ["${GatewayService.authProfileIdForProvider(GatewayService.ollamaProviderId)}"]
+    }
+  },
   "agents": {
     "defaults": {
       "model": {
@@ -922,6 +964,8 @@ class BootstrapService {
         'rm -f /tmp/prestart_harden.json',
         timeout: 30,
       );
+      await GatewayService()
+          .ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
 
       // 3. Ensure node starts on first-pair path.
       // Device approval now follows the official requestId-driven CLI flow
@@ -993,6 +1037,10 @@ class BootstrapService {
       ollama['api'] ??= 'ollama';
       ollama['models'] ??= [];
       config['models']['providers']['ollama'] = ollama;
+      GatewayService.ensureProviderAuthConfigBlock(
+        config,
+        GatewayService.ollamaProviderId,
+      );
 
       // 4. Hardened Google/Gemini
       config['models']['providers']['google'] ??= <String, dynamic>{};
@@ -1027,6 +1075,8 @@ class BootstrapService {
       }
 
       await _writeJsonAtomically(configFile, config);
+      await GatewayService()
+          .ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
       _log(
           '[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');
     } catch (e) {

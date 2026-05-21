@@ -499,9 +499,12 @@ fi
     }
 
     fun stopGateway(): Boolean {
-        // Original approach: Kill openclaw gateway process directly
+        // Kill every known launcher shape. Newer OpenClaw installs can run
+        // through /usr/local/bin/openclaw or node + openclaw.mjs; missing one
+        // leaves a live config watcher that restarts during setup hardening.
         return try {
-            val stopCmd = "pkill -f 'openclaw.*gateway' || true"
+            val gatewayPattern = "[o]penclaw.*gateway|[n]ode .*openclaw.*gateway|[n]ode .*openclaw\\.mjs.*gateway"
+            val stopCmd = "pkill -TERM -f '$gatewayPattern' 2>/dev/null || true; sleep 1; pkill -KILL -f '$gatewayPattern' 2>/dev/null || true"
             val fullCmd = buildGatewayCommand(stopCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()
@@ -516,9 +519,10 @@ fi
     }
 
     fun isGatewayRunning(): Boolean {
-        // Original approach: Check if openclaw gateway process is running
+        // Keep this pattern in sync with stopGateway().
         return try {
-            val checkCmd = "pgrep -f 'openclaw.*gateway' > /dev/null 2>&1"
+            val gatewayPattern = "[o]penclaw.*gateway|[n]ode .*openclaw.*gateway|[n]ode .*openclaw\\.mjs.*gateway"
+            val checkCmd = "pgrep -f '$gatewayPattern' > /dev/null 2>&1"
             val fullCmd = buildGatewayCommand(checkCmd)
             val pb = ProcessBuilder(fullCmd)
             pb.environment().clear()

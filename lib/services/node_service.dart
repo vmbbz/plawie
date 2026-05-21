@@ -442,7 +442,7 @@ class NodeService {
     log('[NODE] Connect frame protocol=v$connectProtocol caps=$caps commands=$commands');
     log('[NODE] Connect frame platform=android');
     final response = await _ws.sendRequest(connectFrame);
-    log('[NODE] Connect response ok=${response.isOk} payload=${response.payload} error=${response.error}');
+    log(_summarizeConnectResponse(response));
 
     if (response.isOk) {
       // hello-ok
@@ -484,7 +484,7 @@ class NodeService {
       if (code == 'TOKEN_INVALID' ||
           code == 'NOT_PAIRED' ||
           code == 'DEVICE_NOT_PAIRED') {
-        log('[NODE] Not paired or token invalid, gateway will close with 1008...');
+        log('[NODE] Pairing requested; waiting for gateway close to approve by requestId...');
         // Do nothing — await the 1008 close event to trigger _handleNodePairingRequired
       } else if (code == 'UNAVAILABLE') {
         log('[NODE] Gateway is warming up (UNAVAILABLE). Entering grace period...');
@@ -501,6 +501,43 @@ class NodeService {
         }
       }
     }
+  }
+
+  String _summarizeConnectResponse(NodeFrame response) {
+    if (response.isOk) {
+      final payload = response.payload ?? const <String, dynamic>{};
+      final protocol = _parseProtocolVersion(payload['protocol']) ?? '?';
+      final features = payload['features'];
+      final methods = features is Map ? features['methods'] : null;
+      final methodCount = methods is List ? methods.length : 0;
+      final snapshot = payload['snapshot'];
+      final presence = snapshot is Map ? snapshot['presence'] : null;
+      final presenceCount = presence is List ? presence.length : 0;
+      final authPayload = payload['auth'];
+      final deviceToken =
+          authPayload is Map ? authPayload['deviceToken']?.toString() : null;
+      final previewLength = deviceToken == null
+          ? 0
+          : (deviceToken.length < 6 ? deviceToken.length : 6);
+      final tokenPreview = deviceToken != null && deviceToken.isNotEmpty
+          ? '${deviceToken.substring(0, previewLength)}...'
+          : 'unchanged';
+      return '[NODE] Connect accepted (protocol=v$protocol, methods=$methodCount, presence=$presenceCount, token=$tokenPreview)';
+    }
+
+    final errPayload = response.payload ?? response.error ?? {};
+    final code = errPayload['code']?.toString() ?? 'REJECTED';
+    final message =
+        errPayload['message']?.toString() ?? 'Gateway rejected connect';
+    final details = errPayload['details'];
+    final requestId = details is Map ? details['requestId']?.toString() : null;
+    if (code == 'NOT_PAIRED' || code == 'DEVICE_NOT_PAIRED') {
+      final suffix = requestId != null && requestId.isNotEmpty
+          ? ' (requestId=$requestId)'
+          : '';
+      return '[NODE] Pairing required$suffix';
+    }
+    return '[NODE] Connect rejected: $code - $message';
   }
 
   int? _extractExpectedProtocol(dynamic details) {

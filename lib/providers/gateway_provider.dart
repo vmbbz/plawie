@@ -134,7 +134,7 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
   }
 
-  Future<void> approveLocalDashboardPairingRequest(String requestId) {
+  Future<bool> approveLocalDashboardPairingRequest(String requestId) {
     return _gatewayService.approveLocalDashboardPairingRequest(requestId);
   }
 

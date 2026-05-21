@@ -237,10 +237,13 @@ class GatewayConnection {
     const role = 'operator';
     // Keep the operator handshake inside the documented operator scope namespace.
     // Requesting non-operator scopes (e.g. "agent") causes INVALID_REQUEST on
-    // newer gateways, and requesting operator.admin by default creates noisy
-    // scope-upgrade loops for first-pair bootstrap sessions.
+    // newer gateways. The web dashboard/browser approval path requires
+    // operator.admin on v2026.5.x, so we request it up-front and let the normal
+    // requestId pairing flow upgrade older cached operator tokens once.
     const scopes = [
+      'operator.admin',
       'operator.approvals',
+      'operator.pairing',
       'operator.read',
       'operator.talk.secrets',
       'operator.write',
