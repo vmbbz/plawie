@@ -134,6 +134,10 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
   }
 
+  Future<void> approveLocalDashboardPairingRequest(String requestId) {
+    return _gatewayService.approveLocalDashboardPairingRequest(requestId);
+  }
+
   /// Invoke a generic RPC method on the gateway.
   Future<Map<String, dynamic>> invoke(String method,
       [Map<String, dynamic>? params]) {

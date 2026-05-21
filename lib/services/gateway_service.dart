@@ -319,6 +319,10 @@ PARAMETER num_batch 512
   bool supportsMethod(String method) =>
       (_connection?.supportedMethods ?? const <String>[]).contains(method);
 
+  Future<void> approveLocalDashboardPairingRequest(String requestId) {
+    return _autoApproveDashboardPairingRequest(requestId, source: 'webview');
+  }
+
   bool get _isInGatewaySettleWindow {
     final settleUntil = _gatewaySettleUntil;
     return settleUntil != null && DateTime.now().isBefore(settleUntil);
@@ -335,10 +339,7 @@ PARAMETER num_batch 512
         DateTime.now().difference(lastSweep) < _runtimeHardeningCooldown) {
       return;
     }
-    await hardenGatewayConfigViaCli(
-      allowReload: false,
-      reason: 'runtime-health-check',
-    );
+    await _verifyGatewayConfigHardened(reason: 'runtime-health-check');
   }
 
   Future<void> _logGatewayDisconnectContext() async {
@@ -672,14 +673,13 @@ PARAMETER num_batch 512
     // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
 
+    final prefs = PreferencesService();
+    await prefs.init();
     final isComplete = await NativeBridge.isBootstrapComplete();
-    if (!isComplete) {
+    if (!isComplete && !prefs.setupInProgress) {
       _addActivity('[SYS] Bootstrap incomplete. Gateway cannot start.');
       return;
     }
-
-    final prefs = PreferencesService();
-    await prefs.init();
 
     // 1. ALWAYS check if already running and attach if so
     final alreadyRunning = await NativeBridge.isGatewayRunning();
@@ -718,11 +718,10 @@ PARAMETER num_batch 512
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
-      // Apply hardening BEFORE we start polling/connecting
-      await hardenGatewayConfigViaCli(
-        allowReload: false,
-        reason: 'attach-existing',
-      );
+      // Attach path is intentionally non-mutating. Any config write while a
+      // live gateway is booting can trigger a reload/restart and wipe the
+      // just-established websocket/pairing state.
+      await _verifyGatewayConfigHardened(reason: 'attach-existing');
 
       // Re-probe token after hardening to avoid stale cache.
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
@@ -827,12 +826,9 @@ PARAMETER num_batch 512
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
-      await hardenGatewayConfigViaCli(
-        allowReload: false,
-        reason: 'post-start',
-      ); // ensure origins are correct BEFORE connect
+      await _verifyGatewayConfigHardened(reason: 'post-start');
 
-      // Force token re-acquisition after hardening so the connection never
+      // Force token re-acquisition after start so the connection never
       // uses stale auth from a previous process.
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
 
@@ -910,6 +906,46 @@ PARAMETER num_batch 512
       await Future.delayed(const Duration(milliseconds: 500));
     }
     debugPrint('✅ Gateway is fully READY');
+
+    // 4. Wait for the operator websocket, health RPC, and default skills.
+    // HTTP readiness alone is not enough for setup completion: the fresh-install
+    // regressions showed the app landing on Home while OpenClaw had only loaded
+    // memory-core and the control websocket was still cycling.
+    final operationalDeadline = DateTime.now().add(const Duration(seconds: 90));
+    Object? lastOperationalError;
+    while (DateTime.now().isBefore(operationalDeadline)) {
+      if (DateTime.now().difference(startTime) > timeout) {
+        break;
+      }
+      try {
+        final token = await retrieveTokenFromConfig(force: true)
+            .timeout(const Duration(seconds: 5));
+        if (token != null && token.isNotEmpty) {
+          await _ensureWebSocket(token).timeout(const Duration(seconds: 20));
+        }
+        if (_state.isWebsocketConnected) {
+          await _checkHealth().timeout(const Duration(seconds: 20));
+        }
+        final skillsReady = _state.activeSkills?.isNotEmpty ?? false;
+        if (_state.isWebsocketConnected &&
+            _state.detailedHealth != null &&
+            skillsReady) {
+          debugPrint('✅ Gateway operational: websocket, health, skills ready');
+          return;
+        }
+      } catch (e) {
+        lastOperationalError = e;
+      }
+      await Future.delayed(const Duration(seconds: 2));
+    }
+
+    throw TimeoutException(
+      'Gateway operational readiness timed out '
+      '(ws=${_state.isWebsocketConnected}, '
+      'health=${_state.detailedHealth != null}, '
+      'skills=${_state.activeSkills?.length ?? 0}, '
+      'last=$lastOperationalError)',
+    );
   }
 
   void _subscribeLogs() {
@@ -1049,6 +1085,7 @@ PARAMETER num_batch 512
       final dir = Directory(file.parent.path);
       if (!await dir.exists()) await dir.create(recursive: true);
 
+      _ensurePersistentGatewayToken(config);
       _applyExplicitAuthMode(config);
       _syncLocalGatewayRemoteCredentials(config);
       final nextSignature = _canonicalJsonSignature(config);
@@ -1072,9 +1109,25 @@ PARAMETER num_batch 512
         }
       }
 
-      await file.writeAsString(nextSignature);
+      await _writeStringAtomically(file, nextSignature);
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
+    }
+  }
+
+  Future<void> _writeStringAtomically(File file, String content) async {
+    final tmp =
+        File('${file.path}.tmp-${DateTime.now().microsecondsSinceEpoch}');
+    await tmp.writeAsString(content, flush: true);
+    try {
+      await tmp.rename(file.path);
+    } catch (_) {
+      await file.writeAsString(content, flush: true);
+      if (await tmp.exists()) {
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
     }
   }
 
@@ -1317,6 +1370,29 @@ PARAMETER num_batch 512
     if (password is String && password.isNotEmpty) {
       auth['mode'] = 'password';
     }
+  }
+
+  void _ensurePersistentGatewayToken(Map<String, dynamic> config) {
+    config['gateway'] ??= {};
+    final gateway = config['gateway'];
+    if (gateway is! Map) return;
+
+    final mode = gateway['mode'];
+    if (mode is String && mode.isNotEmpty && mode != 'local') return;
+
+    gateway['auth'] ??= {};
+    final auth = gateway['auth'];
+    if (auth is! Map) return;
+
+    final token = auth['token'];
+    if (token is String && token.isNotEmpty) return;
+    final password = auth['password'];
+    if (password is String && password.isNotEmpty) return;
+
+    // Keep a stable persisted token to prevent runtime-token churn on every reboot.
+    final generated = 'plawie-${const Uuid().v4().replaceAll('-', '')}';
+    auth['token'] = generated;
+    auth['mode'] = 'token';
   }
 
   void _syncLocalGatewayRemoteCredentials(Map<String, dynamic> config) {
@@ -2593,13 +2669,16 @@ PARAMETER num_batch 512
         _extractRequestIdFromDynamic(frame);
     if (requestId == null || requestId.isEmpty) return;
 
-    // device.pair.* can include non-operator requests in edge cases;
-    // we auto-approve only operator/browser pairing prompts.
+    // device.pair.* can include node requests in edge cases. The web dashboard
+    // sometimes omits role metadata, so we reject explicit node roles but allow
+    // operator/browser/unknown local UI requests and let requestId approval
+    // preserve the gateway's requested role/scopes.
     final role =
         _extractStringFromDynamic(payload, const {'role', 'requestedRole'})
                 ?.toLowerCase() ??
             '';
-    if (role.isNotEmpty && role != 'operator') return;
+    if (role == 'node') return;
+    if (role.isNotEmpty && role != 'operator' && role != 'browser') return;
 
     unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'event'));
   }
@@ -2697,7 +2776,13 @@ PARAMETER num_batch 512
     try {
       _addActivity(
           '[PAIR] Dashboard requested browser approval ($safeRequestId via $source) — auto-approving...');
-      await _approveOperatorPairingRequest(safeRequestId);
+      final rpcApproved = await _tryApprovePairingViaRpc(safeRequestId);
+      if (!rpcApproved) {
+        await _approveOperatorPairingRequest(
+          safeRequestId,
+          skipRequestResolution: true,
+        );
+      }
       _autoApprovedDashboardRequestIds.add(safeRequestId);
       _addActivity(
           '[PAIR] Dashboard browser approval succeeded ($safeRequestId).');
@@ -2720,6 +2805,23 @@ PARAMETER num_batch 512
     final requestId = _extractRequestIdFromDynamic(stripped);
     if (requestId == null || requestId.isEmpty) return;
     unawaited(_autoApproveDashboardPairingRequest(requestId, source: 'log'));
+  }
+
+  Future<bool> _tryApprovePairingViaRpc(String requestId) async {
+    final conn = _connection;
+    if (conn == null || conn.state != GatewayConnectionState.connected) {
+      return false;
+    }
+
+    try {
+      final frame = await invoke('device.pair.approve', {
+        'requestId': requestId,
+      }).timeout(const Duration(seconds: 10));
+      if (frame['ok'] == true) return true;
+      final payload = frame['payload'];
+      if (payload is Map && payload['ok'] == true) return true;
+    } catch (_) {}
+    return false;
   }
 
   /// Called when the gateway closes the operator WS with 1008 (pairing required).
@@ -2760,8 +2862,11 @@ PARAMETER num_batch 512
     ));
   }
 
-  Future<void> _approveOperatorPairingRequest(String requestId,
-      {String? deviceId}) async {
+  Future<void> _approveOperatorPairingRequest(
+    String requestId, {
+    String? deviceId,
+    bool skipRequestResolution = false,
+  }) async {
     final safeRequestId = requestId.trim();
     if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
       throw Exception('Invalid pairing request id: $requestId');
@@ -2769,14 +2874,16 @@ PARAMETER num_batch 512
     final token = await retrieveTokenFromConfig(force: true);
     final localGatewayUrl =
         'ws://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}';
-    final resolvedRequestId = await _resolvePendingDeviceRequestId(
-          fallbackRequestId: safeRequestId,
-          deviceId: deviceId,
-          role: 'operator',
-          gatewayUrl: localGatewayUrl,
-          token: token,
-        ) ??
-        safeRequestId;
+    final resolvedRequestId = skipRequestResolution
+        ? safeRequestId
+        : await _resolvePendingDeviceRequestId(
+              fallbackRequestId: safeRequestId,
+              deviceId: deviceId,
+              role: 'operator',
+              gatewayUrl: localGatewayUrl,
+              token: token,
+            ) ??
+            safeRequestId;
     try {
       await NativeBridge.runInProot(
         'openclaw devices approve $resolvedRequestId --json',
@@ -2793,14 +2900,16 @@ PARAMETER num_batch 512
         _addActivity(
             '[INFO] Operator approval failed ($e); retrying with explicit gateway auth...');
       }
-      final retryRequestId = await _resolvePendingDeviceRequestId(
-            fallbackRequestId: safeRequestId,
-            deviceId: deviceId,
-            role: 'operator',
-            gatewayUrl: localGatewayUrl,
-            token: token,
-          ) ??
-          resolvedRequestId;
+      final retryRequestId = skipRequestResolution
+          ? resolvedRequestId
+          : await _resolvePendingDeviceRequestId(
+                fallbackRequestId: safeRequestId,
+                deviceId: deviceId,
+                role: 'operator',
+                gatewayUrl: localGatewayUrl,
+                token: token,
+              ) ??
+              resolvedRequestId;
       await NativeBridge.runInProot(
         'openclaw devices approve $retryRequestId '
         '--url ${NativeBridge.shellQuote(localGatewayUrl)} '
@@ -2928,7 +3037,8 @@ PARAMETER num_batch 512
         // slow-booting gateway can't stall the health loop for 90s.
         if (_connection?.state == GatewayConnectionState.connected &&
             !_rpcDiscoveryDone) {
-          _rpcDiscoveryDone = true; // set first so a timeout doesn't re-run
+          var healthRpcSucceeded = false;
+          var skillsDiscoverySatisfied = false;
 
           try {
             final healthResult =
@@ -2945,6 +3055,7 @@ PARAMETER num_batch 512
                   '[INFO] Health RPC: ok=${healthData['ok'] ?? healthData['health']}'
                 ],
               ));
+              healthRpcSucceeded = true;
             }
           } catch (_) {
             // Non-fatal — health RPC may not be supported on all gateways
@@ -2997,8 +3108,13 @@ PARAMETER num_batch 512
                     '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'
                   ],
                 ));
+                skillsDiscoverySatisfied = parsedSkills.isNotEmpty;
               }
             } catch (_) {}
+          } else {
+            // Older gateways may not expose skills.status. Do not block
+            // discovery forever if the method is genuinely absent.
+            skillsDiscoverySatisfied = true;
           }
 
           // Bug 2 fix: Capabilities (tools.allow) discovery from config since capabilities.list RPC doesn't exist
@@ -3017,7 +3133,15 @@ PARAMETER num_batch 512
           }
 
           // Re-register device skills so the AI always has the current enabled set.
-          await reregisterSkills();
+          try {
+            await reregisterSkills();
+          } catch (_) {}
+
+          _rpcDiscoveryDone = healthRpcSucceeded && skillsDiscoverySatisfied;
+          if (!_rpcDiscoveryDone) {
+            _addActivity(
+                '[INFO] Gateway RPC discovery still warming; retrying on next health tick.');
+          }
         }
       }
     } catch (e) {
@@ -4335,6 +4459,83 @@ PARAMETER num_batch 512
     _chatActivityController.close();
   }
 
+  Future<void> _verifyGatewayConfigHardened({required String reason}) async {
+    try {
+      final config = await _readConfig();
+      if (_isGatewayConfigHardened(config)) {
+        _lastHardeningSweepAt = DateTime.now();
+        return;
+      }
+      _addActivity(
+        '[WARN] Gateway config is not fully hardened ($reason). '
+        'Skipping live rewrite to avoid startup reload churn; next explicit start/setup will repair it.',
+      );
+    } catch (e) {
+      _addActivity('[WARN] Gateway config verification failed ($reason): $e');
+    }
+  }
+
+  bool _isGatewayConfigHardened(Map<String, dynamic> config) {
+    final gateway = config['gateway'];
+    if (gateway is! Map) return false;
+
+    final origins = (gateway['controlUi']?['allowedOrigins'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
+    final hasLoopbackOrigins =
+        localControlUiAllowedOrigins.every(origins.contains) &&
+            !origins.contains('*');
+
+    final auth = gateway['auth'];
+    final remote = gateway['remote'];
+    final authMode = auth is Map ? auth['mode'] : null;
+    final authToken = auth is Map ? auth['token'] : null;
+    final authPassword = auth is Map ? auth['password'] : null;
+    final hasPersistentAuth = (authToken is String && authToken.isNotEmpty) ||
+        (authPassword is String && authPassword.isNotEmpty);
+    final remoteToken = remote is Map ? remote['token'] : null;
+    final remotePassword = remote is Map ? remote['password'] : null;
+    final remoteCredentialsAligned = ((authToken is! String ||
+            authToken.isEmpty ||
+            remoteToken == authToken) &&
+        (authPassword is! String ||
+            authPassword.isEmpty ||
+            remotePassword == authPassword));
+
+    final sidecars = gateway['sidecars'];
+    bool sidecarOff(String key) =>
+        sidecars is! Map ||
+        sidecars[key] is! Map ||
+        (sidecars[key] as Map)['enabled'] == false;
+
+    final discovery = config['discovery'];
+    final models = config['models'];
+    final ollama = models?['providers']?['ollama'];
+
+    return gateway['mode'] == 'local' &&
+        gateway['bind'] == 'loopback' &&
+        gateway['port'] == AppConstants.gatewayPort &&
+        hasLoopbackOrigins &&
+        hasPersistentAuth &&
+        (authMode == 'token' || authMode == 'password') &&
+        remoteCredentialsAligned &&
+        gateway['startup']?['modelPrewarm'] == false &&
+        gateway['startup']?['updateCheck'] == false &&
+        sidecarOff('browser') &&
+        sidecarOff('model-prewarm') &&
+        sidecarOff('modelPrewarm') &&
+        discovery is Map &&
+        discovery['mdns']?['mode'] == 'off' &&
+        discovery['wideArea']?['enabled'] == false &&
+        models is Map &&
+        models['startup']?['modelPrewarm'] == false &&
+        ollama is Map &&
+        ollama['baseUrl'] == 'http://127.0.0.1:11434' &&
+        ollama['apiKey'] is String &&
+        (ollama['apiKey'] as String).isNotEmpty;
+  }
+
   /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
   /// with optional runtime reload.
   Future<void> hardenGatewayConfigViaCli({
@@ -4346,33 +4547,7 @@ PARAMETER num_batch 512
 
     try {
       final config = await _readConfig();
-      final origins =
-          (config['gateway']?['controlUi']?['allowedOrigins'] as List?)
-                  ?.cast<String>() ??
-              [];
-      final mdnsOff = config['discovery']?['mdns']?['mode'] == 'off';
-      final authMode = config['gateway']?['auth']?['mode'];
-      final authToken = config['gateway']?['auth']?['token'];
-      final authPassword = config['gateway']?['auth']?['password'];
-      final remoteToken = config['gateway']?['remote']?['token'];
-      final remotePassword = config['gateway']?['remote']?['password'];
-      final hasLoopbackOrigins =
-          localControlUiAllowedOrigins.every(origins.contains);
-      final remoteCredentialsAligned = ((authToken is! String ||
-              authToken.isEmpty ||
-              remoteToken == authToken) &&
-          (authPassword is! String ||
-              authPassword.isEmpty ||
-              remotePassword == authPassword));
-
-      // Skip if the two fields we can reliably verify are already correct.
-      // Previously checked sidecarsOff (gateway.sidecars.model-prewarm.enabled)
-      // which is never written → always false → always triggered a reload.
-      if (hasLoopbackOrigins &&
-          !origins.contains('*') &&
-          mdnsOff &&
-          remoteCredentialsAligned &&
-          (authMode == null || authMode == 'token' || authMode == 'password')) {
+      if (_isGatewayConfigHardened(config)) {
         debugPrint('✅ Hardening already present. Skipping reload.');
         return;
       }
@@ -4400,6 +4575,7 @@ PARAMETER num_batch 512
 
   Future<void> _applyHardeningPatch({required bool allowReload}) async {
     final currentConfig = await _readConfig();
+    _ensurePersistentGatewayToken(currentConfig);
     _applyExplicitAuthMode(currentConfig);
     _syncLocalGatewayRemoteCredentials(currentConfig);
     final gatewayAuth =
@@ -4446,6 +4622,13 @@ PARAMETER num_batch 512
         "autoApproveCidrs": ["127.0.0.1/32"]
       }
     },
+    "startup": { "modelPrewarm": false, "updateCheck": false },
+    "sidecars": {
+      "browser": { "enabled": false },
+      "model-prewarm": { "enabled": false },
+      "modelPrewarm": { "enabled": false }
+    },
+    "http": { "endpoints": { "chatCompletions": { "enabled": true } } },
     "mode": "local",
     "bind": "loopback",
     "port": 18789
@@ -4456,6 +4639,20 @@ PARAMETER num_batch 512
   "discovery": {
     "mdns": {
       "mode": "off"
+    },
+    "wideArea": {
+      "enabled": false
+    }
+  },
+  "models": {
+    "startup": {
+      "modelPrewarm": false
+    },
+    "providers": {
+      "ollama": {
+        "apiKey": "ollama-local",
+        "baseUrl": "http://127.0.0.1:11434"
+      }
     }
   }
 }

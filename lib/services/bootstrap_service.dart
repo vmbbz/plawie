@@ -10,6 +10,7 @@ import 'preferences_service.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'gateway_service.dart';
+import 'package:uuid/uuid.dart';
 
 class BootstrapService {
   static const bool _forceLiveOpenClawInstall = true;
@@ -495,7 +496,7 @@ class BootstrapService {
           subMessage: 'Plugins loading • Voice engine • Canvas');
 
       final gateway = GatewayService();
-      await gateway.attachOrStart();
+      await gateway.attachOrStart(forceStart: true);
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.96,
           'Verifying connections...', 98,
@@ -518,11 +519,11 @@ class BootstrapService {
             subMessage: 'System Online & Ready');
       } catch (e) {
         _log('Gateway warmup or approval timed out', error: e);
-        // Try approval one last time even if health check failed (might be slow)
+        // Try approval one last time even if health check failed, but do not
+        // mark bootstrap complete. A fresh install must not land users on Home
+        // with a half-started gateway and missing skills.
         await _approveLocalNodeIfNeeded().catchError((_) => null);
-        _emitProgress(
-            onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100,
-            subMessage: 'System starting in background');
+        rethrow;
       }
 
       await NativeBridge.markBootstrapComplete();
@@ -851,8 +852,18 @@ class BootstrapService {
       );
 
       // 2. Complex structures via patch (Atomic write).
-      final authPatch = _buildSharedSecretAuthPatch(existingConfig);
-      final remotePatch = _buildLocalGatewayRemotePatch(existingConfig);
+      // Fresh installs have no gateway.auth yet; without a persisted token,
+      // OpenClaw generates a runtime-only token and every restart changes the
+      // trust root. Generate the stable token before the gateway ever boots.
+      final workingConfig = Map<String, dynamic>.from(existingConfig);
+      workingConfig['gateway'] ??= <String, dynamic>{};
+      (workingConfig['gateway'] as Map)['mode'] = 'local';
+      _ensurePersistentGatewayToken(workingConfig);
+      _applyExplicitAuthMode(workingConfig);
+      _syncLocalGatewayRemoteCredentials(workingConfig);
+      _sanitizeOpenClawSchema(workingConfig);
+      final authPatch = _buildSharedSecretAuthPatch(workingConfig);
+      final remotePatch = _buildLocalGatewayRemotePatch(workingConfig);
       final patchJson = '''
 {
   "gateway": {
@@ -902,7 +913,7 @@ class BootstrapService {
       }
     }
   },
-  "env": { "vars": {} }
+  "tools": { "allow": ["*"] }
 }
 ''';
       await NativeBridge.runInProot(
@@ -953,8 +964,10 @@ class BootstrapService {
       );
       config['gateway']['auth'] ??= {};
       (config['gateway']['auth'] as Map).remove('unauthenticatedLocalhost');
+      _ensurePersistentGatewayToken(config);
       _applyExplicitAuthMode(config);
       _syncLocalGatewayRemoteCredentials(config);
+      _sanitizeOpenClawSchema(config);
 
       // Fix autoApprove path to match official OpenClaw 2.0 strict schema
       config['gateway']['nodes'] ??= {};
@@ -998,7 +1011,8 @@ class BootstrapService {
         'dangerouslyAllowHostHeaderOriginFallback',
       );
       config['discovery'] = {
-        'mdns': {'mode': 'off'}
+        'mdns': {'mode': 'off'},
+        'wideArea': {'enabled': false},
       };
 
       // Remove invalid TTS persona "model" keys — gateway schema rejects them.
@@ -1012,7 +1026,7 @@ class BootstrapService {
         }
       }
 
-      await configFile.writeAsString(jsonEncode(config));
+      await _writeJsonAtomically(configFile, config);
       _log(
           '[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');
     } catch (e) {
@@ -1123,6 +1137,27 @@ class BootstrapService {
     return patch.isEmpty ? null : patch;
   }
 
+  void _ensurePersistentGatewayToken(Map<String, dynamic> config) {
+    config['gateway'] ??= <String, dynamic>{};
+    final gateway = config['gateway'];
+    if (gateway is! Map) return;
+
+    final mode = gateway['mode'];
+    if (mode is String && mode.isNotEmpty && mode != 'local') return;
+
+    gateway['auth'] ??= <String, dynamic>{};
+    final auth = gateway['auth'];
+    if (auth is! Map) return;
+
+    final token = auth['token'];
+    if (token is String && token.isNotEmpty) return;
+    final password = auth['password'];
+    if (password is String && password.isNotEmpty) return;
+
+    auth['token'] = 'plawie-${const Uuid().v4().replaceAll('-', '')}';
+    auth['mode'] = 'token';
+  }
+
   String _resolveBootstrapPrimaryModel(
       PreferencesService prefs, Map<String, dynamic> config) {
     final configured = prefs.configuredModel;
@@ -1207,6 +1242,82 @@ class BootstrapService {
       remote['password'] = password;
     } else {
       remote.remove('password');
+    }
+  }
+
+  void _sanitizeOpenClawSchema(Map<String, dynamic> config) {
+    final agentsDefaults = config['agents']?['defaults'];
+    if (agentsDefaults is Map) {
+      agentsDefaults.remove('provider');
+      agentsDefaults.remove('tools');
+      agentsDefaults.remove('timeoutMs');
+      agentsDefaults.remove('systemPrompt');
+    }
+
+    final skills = config['skills'];
+    if (skills is Map) {
+      skills.remove('discovery');
+      skills.remove('mode');
+      skills.remove('sync');
+      if (skills.isEmpty) config.remove('skills');
+    }
+
+    const validPrimitives = {
+      '*',
+      'browser',
+      'computer',
+      'files',
+      'memory',
+      'search',
+      'image',
+      'canvas',
+      'shell',
+    };
+    final existingAllow = config['tools']?['allow'];
+    if (existingAllow is List) {
+      final sanitized = existingAllow
+          .map((e) => e.toString())
+          .where(validPrimitives.contains)
+          .toList();
+      config['tools'] ??= <String, dynamic>{};
+      config['tools']['allow'] = sanitized.isEmpty ? ['*'] : sanitized;
+    }
+
+    final ollamaProvider = config['models']?['providers']?['ollama'];
+    if (ollamaProvider is Map) {
+      ollamaProvider.remove('defaultContextWindow');
+      ollamaProvider.remove('contextWindow');
+      final ollamaModels = ollamaProvider['models'];
+      if (ollamaModels is List) {
+        for (final model in ollamaModels) {
+          if (model is Map) model.remove('contextWindow');
+        }
+      }
+    }
+
+    final ttsPersonas = (config['messages'] as Map?)?['tts']?['personas'];
+    if (ttsPersonas is Map) {
+      for (final persona in ttsPersonas.values) {
+        if (persona is Map) persona.remove('model');
+      }
+    }
+  }
+
+  Future<void> _writeJsonAtomically(
+    File file,
+    Map<String, dynamic> config,
+  ) async {
+    await file.parent.create(recursive: true);
+    final tmp =
+        File('${file.path}.tmp-${DateTime.now().microsecondsSinceEpoch}');
+    await tmp.writeAsString(jsonEncode(config), flush: true);
+    try {
+      await tmp.rename(file.path);
+    } catch (_) {
+      await file.writeAsString(jsonEncode(config), flush: true);
+      if (await tmp.exists()) {
+        await tmp.delete().catchError((_) => tmp);
+      }
     }
   }
 }

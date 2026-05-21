@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../constants.dart';
@@ -18,6 +21,8 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   String? _error;
+  bool _pairingApprovalInFlight = false;
+  final Set<String> _approvedPairingRequests = <String>{};
 
   @override
   void initState() {
@@ -31,6 +36,7 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
           },
           onPageFinished: (_) {
             if (mounted) setState(() => _loading = false);
+            unawaited(_inspectAndApprovePairingPage());
           },
           onWebResourceError: (error) {
             if (mounted) {
@@ -49,7 +55,8 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
 
-    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
     String? url;
 
     if (forceRefresh) {
@@ -94,6 +101,76 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
     }
   }
 
+  Future<void> _inspectAndApprovePairingPage() async {
+    if (_pairingApprovalInFlight) return;
+
+    try {
+      final rawText = await _controller.runJavaScriptReturningResult(
+        'document.body ? document.body.innerText : ""',
+      );
+      final text = _coerceJavaScriptString(rawText);
+      final lower = text.toLowerCase();
+      if (!lower.contains('device pairing required') &&
+          !lower.contains('pairing required')) {
+        return;
+      }
+
+      final requestId = _extractPairingRequestId(text);
+      if (requestId == null || _approvedPairingRequests.contains(requestId)) {
+        return;
+      }
+      if (!mounted) return;
+
+      _pairingApprovalInFlight = true;
+      final gatewayProvider =
+          Provider.of<GatewayProvider>(context, listen: false);
+      await gatewayProvider.approveLocalDashboardPairingRequest(requestId);
+      _approvedPairingRequests.add(requestId);
+
+      await Future.delayed(const Duration(milliseconds: 900));
+      if (mounted) {
+        await _controller.reload();
+      }
+    } catch (_) {
+      // The dashboard can render before the body is script-readable. The log
+      // watcher in GatewayService is the fallback, so this path stays quiet.
+    } finally {
+      _pairingApprovalInFlight = false;
+    }
+  }
+
+  String _coerceJavaScriptString(Object? value) {
+    final raw = value?.toString() ?? '';
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is String) return decoded;
+    } catch (_) {}
+    return raw;
+  }
+
+  String? _extractPairingRequestId(String text) {
+    final patterns = <RegExp>[
+      RegExp(
+        r'requestId:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'openclaw\s+devices\s+approve\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+        caseSensitive: false,
+      ),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      final id = match?.group(1);
+      if (id != null && id.isNotEmpty) return id.toLowerCase();
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -122,8 +199,8 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _error!.contains('401') || _error!.contains('403') 
-                          ? Icons.lock_outline 
+                      _error!.contains('401') || _error!.contains('403')
+                          ? Icons.lock_outline
                           : Icons.wifi_off,
                       size: 48,
                       color: Theme.of(context).colorScheme.error,
@@ -134,7 +211,9 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
-                    if (_error!.contains('401') || _error!.contains('403') || _error!.contains('Unauthorized'))
+                    if (_error!.contains('401') ||
+                        _error!.contains('403') ||
+                        _error!.contains('Unauthorized'))
                       FilledButton.icon(
                         onPressed: () {
                           setState(() {
@@ -164,8 +243,7 @@ class _WebDashboardScreenState extends State<WebDashboardScreen> {
             )
           else
             WebViewWidget(controller: _controller),
-          if (_loading)
-            const LinearProgressIndicator(),
+          if (_loading) const LinearProgressIndicator(),
         ],
       ),
     );

@@ -78,7 +78,10 @@ class NodeWsService {
 
   Future<void> _doConnect({bool notifyReady = false}) async {
     if (_url == null) return;
-    if (_connectAttemptInFlight) return;
+    if (_connectAttemptInFlight) {
+      await _waitForExistingSocketAttempt();
+      return;
+    }
     _connectAttemptInFlight = true;
 
     try {
@@ -223,13 +226,41 @@ class NodeWsService {
 
   /// Wait for the socket to be connected (channel.ready).
   Future<void> waitForSocket() async {
-    final completer = _socketCompleter;
+    var completer = _socketCompleter;
+    if (completer == null && _connectAttemptInFlight) {
+      await _waitForExistingSocketAttempt();
+      completer = _socketCompleter;
+    }
+    if (completer == null && _channel == null) {
+      // Race guard: a caller can hit waitForSocket() just after a reconnect
+      // disconnect reset the previous completer. Try one immediate re-connect
+      // before surfacing "WebSocket not connecting".
+      if (_url != null && _shouldReconnect && !_connectAttemptInFlight) {
+        try {
+          await _doConnect();
+        } catch (_) {}
+      }
+      completer = _socketCompleter;
+    }
     if (completer == null) {
       throw StateError('WebSocket not connecting');
     }
     await completer.future;
     if (_channel == null) {
       throw StateError('WebSocket not connected');
+    }
+  }
+
+  Future<void> _waitForExistingSocketAttempt() async {
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (DateTime.now().isBefore(deadline)) {
+      final completer = _socketCompleter;
+      if (completer != null) {
+        await completer.future;
+        return;
+      }
+      if (!_connectAttemptInFlight) return;
+      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
