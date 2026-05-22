@@ -18,12 +18,13 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> with TickerProviderStateMixin {
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with TickerProviderStateMixin {
   late final TabController _tabController;
   bool _loading = true;
   String? _error;
   final TextEditingController _commandController = TextEditingController();
-  
+
   final List<String> _logs = [];
   final ScrollController _scrollController = ScrollController();
 
@@ -44,31 +45,42 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
       'name': 'Anthropic Claude',
       'icon': 'api',
       'models': [
-        {'id': 'claude-opus-4.6', 'name': 'Claude Opus 4.6'},
-        {'id': 'claude-sonnet-4.6', 'name': 'Claude Sonnet 4.6'},
+        {'id': 'claude-opus-4-6', 'name': 'Claude Opus 4.6'},
+        {'id': 'claude-sonnet-4-6', 'name': 'Claude Sonnet 4.6'},
         {'id': 'claude-3-5-sonnet-latest', 'name': 'Claude 3.5 Sonnet'},
       ],
-      'defaultModel': 'claude-opus-4.6',
+      'defaultModel': 'claude-opus-4-6',
     },
     {
       'id': 'openai',
       'name': 'OpenAI',
       'icon': 'psychology',
       'models': [
+        {'id': 'gpt-5.4', 'name': 'GPT-5.4'},
         {'id': 'gpt-4o', 'name': 'GPT-4o'},
-        {'id': 'gpt-o1', 'name': 'GPT o1'},
       ],
-      'defaultModel': 'gpt-4o',
+      'defaultModel': 'gpt-5.4',
+    },
+    {
+      'id': 'xai',
+      'name': 'xAI Grok',
+      'icon': 'rocket_launch',
+      'models': [
+        {'id': 'grok-4', 'name': 'Grok 4'},
+        {'id': 'grok-4-1-fast', 'name': 'Grok 4.1 Fast'},
+        {'id': 'grok-code-fast-1', 'name': 'Grok Code Fast 1'},
+      ],
+      'defaultModel': 'grok-4',
     },
     {
       'id': 'groq',
       'name': 'Groq',
       'icon': 'speed',
       'models': [
-        {'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'},
-        {'id': 'llama-3.1-70b-versatile', 'name': 'Llama 3.1 70B'},
+        {'id': 'llama-3.3-70b-versatile', 'name': 'Llama 3.3 70B'},
+        {'id': 'llama-3.1-8b-instant', 'name': 'Llama 3.1 8B Instant'},
       ],
-      'defaultModel': 'llama-3.1-405b',
+      'defaultModel': 'llama-3.3-70b-versatile',
     },
   ];
 
@@ -101,12 +113,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   Future<void> _loadOnboardingHelp() async {
     try {
       setState(() => _loading = true);
-      
+
       final result = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
-        timeout: 15
-      );
-      
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw onboard --help',
+          timeout: 15);
+
       _writeLog(result);
       setState(() => _loading = false);
     } catch (e) {
@@ -122,46 +133,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   Future<void> _startOpenClawServices() async {
     try {
       _writeLog('\nChecking OpenClaw configuration...');
-      
+
       final validateResult = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && (openclaw config --validate || openclaw doctor --fix)',
-        timeout: 30
-      );
-      
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && (openclaw config --validate || openclaw doctor --fix)',
+          timeout: 30);
+
       if (validateResult.contains('Invalid')) {
         _writeLog('\n⚠️ Configuration auto-fixed. Start may fail.');
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Config auto-fixed – please restart if issues persist')),
+          const SnackBar(
+              content:
+                  Text('Config auto-fixed – please restart if issues persist')),
         );
       }
 
       final configCheck = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show',
-        timeout: 5000
-      );
-      
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw config --show',
+          timeout: 5000);
+
       _writeLog('\nCurrent config: $configCheck');
-      
+
       if (configCheck.contains('api-key')) {
         _writeLog('\n✅ API key found, starting OpenClaw CLI Gateway...');
-        
+
         await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && pkill -f "openclaw gateway" || true',
-          timeout: 5000
-        );
-        
+            'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && pkill -f "openclaw gateway" || true',
+            timeout: 5000);
+
         final gatewayStarted = await NativeBridge.startGateway();
-        
+
         if (gatewayStarted) {
           _writeLog('\n✅ OpenClaw CLI Gateway started successfully');
           _writeLog('\n🤖 OpenClaw Agent is now running 24/7');
-          
+
           await Future.delayed(const Duration(seconds: 2));
           if (mounted) _triggerGatewayStateRefresh();
-          
+
           await _markOnboardingComplete();
-          
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -175,7 +185,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
           _writeLog('\n❌ Failed to start OpenClaw CLI Gateway');
         }
       } else {
-        _writeLog('\n❌ No API key configured. Please configure an API key first.');
+        _writeLog(
+            '\n❌ No API key configured. Please configure an API key first.');
       }
     } catch (e) {
       _writeLog('\n❌ Service startup failed: $e');
@@ -190,7 +201,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
   }
 
   void _triggerGatewayStateRefresh() {
-    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
     gatewayProvider.checkHealth();
   }
 
@@ -205,10 +217,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     super.dispose();
   }
 
-  Future<void> _processProviderSetup(String provider, String key, {String? modelId, String? modelName}) async {
-    final gatewayProvider = Provider.of<GatewayProvider>(context, listen: false);
-    
-    _writeLog('\n🔑 Configuring $provider API key and syncing to global .env...');
+  Future<void> _processProviderSetup(String provider, String key,
+      {String? modelId, String? modelName}) async {
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+
+    _writeLog(
+        '\n🔑 Configuring $provider API key and syncing to global .env...');
     await gatewayProvider.configureApiKey(provider, key);
 
     if (modelId == null || modelName == null) {
@@ -240,9 +255,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
 
     _writeLog('\n📦 Saving model preference ($modelName)...');
     await gatewayProvider.persistModel(primaryModel);
-    
+
     _writeLog('\n🔄 Triggering gateway hot-reload...');
-    await NativeBridge.runInProot('export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || true');
+    await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && openclaw reload || true');
 
     _writeLog('✅ API key and model ($modelName) synced.');
   }
@@ -257,14 +273,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     return p;
   }
 
-  Future<void> _executeProviderSetupUI(String provider, String key, String modelId, String modelName) async {
-     try {
-       await _processProviderSetup(provider, key, modelId: modelId, modelName: modelName);
-       _writeLog('\n🚀 Starting OpenClaw services...');
-       await _startOpenClawServices();
-     } catch (e) {
-       _writeLog('\n✗ Setup failed: $e');
-     }
+  Future<void> _executeProviderSetupUI(
+      String provider, String key, String modelId, String modelName) async {
+    try {
+      await _processProviderSetup(provider, key,
+          modelId: modelId, modelName: modelName);
+      _writeLog('\n🚀 Starting OpenClaw services...');
+      await _startOpenClawServices();
+    } catch (e) {
+      _writeLog('\n✗ Setup failed: $e');
+    }
   }
 
   @override
@@ -291,7 +309,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                           children: [
                             if (!widget.isFirstRun)
                               IconButton(
-                                icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white70, size: 18),
+                                icon: const Icon(Icons.arrow_back_ios_rounded,
+                                    color: Colors.white70, size: 18),
                                 onPressed: () => Navigator.of(context).pop(),
                               )
                             else
@@ -300,12 +319,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  SvgPicture.asset('assets/app_icon_official.svg', width: 18, height: 18,
-                                      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+                                  SvgPicture.asset(
+                                      'assets/app_icon_official.svg',
+                                      width: 18,
+                                      height: 18,
+                                      colorFilter: const ColorFilter.mode(
+                                          Colors.white, BlendMode.srcIn)),
                                   const SizedBox(width: 10),
                                   Text('OPENCLAW SETUP',
                                       style: GoogleFonts.outfit(
-                                        fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2.5, color: Colors.white)),
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 14,
+                                          letterSpacing: 2.5,
+                                          color: Colors.white)),
                                 ],
                               ),
                             ),
@@ -330,8 +356,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                   indicatorWeight: 2,
                   labelColor: AppColors.statusGreen,
                   unselectedLabelColor: Colors.white38,
-                  labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.5),
-                  unselectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 11, letterSpacing: 1.5),
+                  labelStyle: GoogleFonts.outfit(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
+                      letterSpacing: 1.5),
+                  unselectedLabelStyle: GoogleFonts.outfit(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                      letterSpacing: 1.5),
                 ),
               ),
               Expanded(
@@ -346,10 +378,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.statusGreen));
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.statusGreen));
     }
     if (_error != null) {
-      return Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.white70)));
+      return Center(
+          child: Text('Error: $_error',
+              style: const TextStyle(color: Colors.white70)));
     }
     return TabBarView(
       controller: _tabController,
@@ -373,7 +408,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                 itemCount: _logs.length,
                 itemBuilder: (context, index) => Text(
                   _logs[index],
-                  style: GoogleFonts.jetBrainsMono(color: AppColors.statusGreen, fontSize: 12),
+                  style: GoogleFonts.jetBrainsMono(
+                      color: AppColors.statusGreen, fontSize: 12),
                 ),
               ),
             ),
@@ -394,10 +430,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
     String text = 'VERIFIED';
     Color color = AppColors.statusGreen;
     switch (id) {
-      case 'google': text = 'MOST SCALABLE'; color = const Color(0xFF4285F4); break;
-      case 'anthropic': text = 'BEST INTELLIGENCE'; color = const Color(0xFFD97757); break;
-      case 'openai': text = 'FASTEST RESPONSE'; color = const Color(0xFF10A37F); break;
-      case 'groq': text = 'ULTRA SPEED'; color = const Color(0xFFF55036); break;
+      case 'google':
+        text = 'MOST SCALABLE';
+        color = const Color(0xFF4285F4);
+        break;
+      case 'anthropic':
+        text = 'BEST INTELLIGENCE';
+        color = const Color(0xFFD97757);
+        break;
+      case 'openai':
+        text = 'FASTEST RESPONSE';
+        color = const Color(0xFF10A37F);
+        break;
+      case 'groq':
+        text = 'ULTRA SPEED';
+        color = const Color(0xFFF55036);
+        break;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -407,10 +455,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(
-        text, 
+        text,
         style: GoogleFonts.outfit(
-          fontSize: 9, 
-          fontWeight: FontWeight.w700, 
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
           color: color,
           letterSpacing: 0.5,
         ),
@@ -439,7 +487,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(provider['name'], style: GoogleFonts.outfit(fontWeight: FontWeight.w800, fontSize: 18, color: Colors.white)),
+                      Text(provider['name'],
+                          style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 18,
+                              color: Colors.white)),
                       _buildBadge(id),
                     ],
                   ),
@@ -449,7 +501,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
             const SizedBox(height: 16),
             TextField(
               controller: _apiKeyControllers[id],
-              decoration: const InputDecoration(hintText: 'Enter API Key', isDense: true),
+              decoration: const InputDecoration(
+                  hintText: 'Enter API Key', isDense: true),
               obscureText: true,
             ),
             const SizedBox(height: 16),
@@ -460,12 +513,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> with TickerProvider
                   final key = _apiKeyControllers[id]?.text.trim();
                   if (key == null || key.isEmpty) return;
                   final modelId = _selectedModels[id]!;
-                  final modelName = models.firstWhere((m) => m['id'] == modelId)['name']!;
+                  final modelName =
+                      models.firstWhere((m) => m['id'] == modelId)['name']!;
                   _tabController.animateTo(0);
                   _executeProviderSetupUI(id, key, modelId, modelName);
                 },
-                style: FilledButton.styleFrom(backgroundColor: AppColors.statusGreen, foregroundColor: Colors.black),
-                child: const Text('CONFIGURE & CONNECT', style: TextStyle(fontWeight: FontWeight.w800)),
+                style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.statusGreen,
+                    foregroundColor: Colors.black),
+                child: const Text('CONFIGURE & CONNECT',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ],

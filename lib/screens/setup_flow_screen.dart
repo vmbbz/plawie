@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../app.dart';
 import '../constants.dart';
 import '../services/native_bridge.dart';
+import '../services/model_provider_catalog.dart';
 import '../services/preferences_service.dart';
 import 'setup_wizard_screen.dart';
 
@@ -41,17 +42,39 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   static const _providers = [
     _ProviderInfo(
-      id: 'ANTHROPIC_API_KEY',
+      id: 'ollama',
+      name: 'Ollama Local',
+      subtitle: 'Free · offline-first',
+      icon: Icons.memory_rounded,
+      color: Color(0xFF66BB6A),
+      hint: '',
+      prefix: '',
+      defaultModel: ModelProviderCatalog.localOllamaDefaultModel,
+      requiresApiKey: false,
+    ),
+    _ProviderInfo(
+      id: 'ollama_cloud',
+      name: 'Ollama Cloud',
+      subtitle: 'Sign in later',
+      icon: Icons.cloud_queue_rounded,
+      color: Color(0xFFAB47BC),
+      hint: '',
+      prefix: '',
+      defaultModel: 'ollama/kimi-k2.5:cloud',
+      requiresApiKey: false,
+    ),
+    _ProviderInfo(
+      id: 'anthropic',
       name: 'Claude',
       subtitle: 'by Anthropic',
       icon: Icons.auto_awesome,
       color: Color(0xFFD97706),
       hint: 'sk-ant-api03-...',
       prefix: 'sk-ant-',
-      defaultModel: 'anthropic/claude-opus-4.6',
+      defaultModel: 'anthropic/claude-opus-4-6',
     ),
     _ProviderInfo(
-      id: 'GEMINI_API_KEY',
+      id: 'google',
       name: 'Gemini',
       subtitle: 'by Google',
       icon: Icons.diamond_outlined,
@@ -61,44 +84,34 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: 'google/gemini-3.1-pro-preview',
     ),
     _ProviderInfo(
-      id: 'OPENAI_API_KEY',
+      id: 'openai',
       name: 'OpenAI',
-      subtitle: 'GPT-4 / GPT-4o',
+      subtitle: 'GPT models',
       icon: Icons.psychology,
       color: Color(0xFF10A37F),
       hint: 'sk-proj-...',
       prefix: 'sk-',
-      defaultModel: 'openai/gpt-4o',
+      defaultModel: 'openai/gpt-5.4',
     ),
     _ProviderInfo(
-      id: 'XAI_API_KEY',
+      id: 'xai',
       name: 'Grok',
       subtitle: 'by xAI',
       icon: Icons.rocket_launch_rounded,
       color: Color(0xFFE0E0E0),
       hint: 'xai-...',
       prefix: 'xai-',
-      defaultModel: 'xai/grok-4.3',
+      defaultModel: 'xai/grok-4',
     ),
     _ProviderInfo(
-      id: 'GROQ_API_KEY',
+      id: 'groq',
       name: 'Groq',
       subtitle: 'Lightning fast',
       icon: Icons.bolt,
       color: Color(0xFFF55036),
       hint: 'gsk_...',
       prefix: 'gsk_',
-      defaultModel: 'groq/llama-3.1-405b',
-    ),
-    _ProviderInfo(
-      id: 'OLLAMA_CLOUD',
-      name: 'Ollama (Local)',
-      subtitle: 'Free · offline-first',
-      icon: Icons.cloud_queue_rounded,
-      color: Color(0xFFAB47BC),
-      hint: '',
-      prefix: '',
-      defaultModel: 'qwen2.5:0.5b',
+      defaultModel: 'groq/llama-3.3-70b-versatile',
     ),
   ];
 
@@ -147,7 +160,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       case 0:
         return _selectedProvider != null;
       case 1:
-        if (_selectedProvider == 'OLLAMA_CLOUD') return true;
+        if (_activeProvider?.requiresApiKey == false) return true;
         return _apiKeyController.text.trim().length >= 8;
       case 2:
         return _agentNameController.text.trim().isNotEmpty;
@@ -168,13 +181,15 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       await prefs.init();
 
       if (_selectedProvider != null) {
-        final normalizedProvider =
-            _selectedProvider == 'OLLAMA_CLOUD' ? 'ollama' : _selectedProvider;
-        prefs.pendingProvider = normalizedProvider;
-        prefs.apiProvider = normalizedProvider;
+        final activeProvider = _activeProvider!;
+        final apiProvider =
+            ModelProviderCatalog.apiProviderForSetupId(activeProvider.id);
+        prefs.pendingProvider = activeProvider.id;
+        prefs.apiProvider = apiProvider;
+        prefs.configuredModel = activeProvider.defaultModel;
       }
       final key = _apiKeyController.text.trim();
-      if (key.isNotEmpty && _selectedProvider != 'OLLAMA_CLOUD') {
+      if (key.isNotEmpty && _activeProvider?.requiresApiKey != false) {
         prefs.pendingApiKey = key;
       }
       prefs.agentName = _agentNameController.text.trim();
@@ -598,7 +613,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
         ),
         const SizedBox(height: 24),
-        if (provider.id == 'OLLAMA_CLOUD') ...[
+        if (!provider.requiresApiKey) ...[
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -614,7 +629,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 Icon(provider.icon, color: provider.color, size: 48),
                 const SizedBox(height: 16),
                 Text(
-                  'No API key needed',
+                  provider.id == 'ollama_cloud'
+                      ? 'Ollama sign-in later'
+                      : 'No API key needed',
                   style: GoogleFonts.outfit(
                     fontWeight: FontWeight.w600,
                     fontSize: 18,
@@ -622,7 +639,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Plawie starts in local/free Ollama mode by default. You can optionally sign in later for cloud models from Local LLM settings.',
+                  provider.id == 'ollama_cloud'
+                      ? 'Plawie will install and start the local Ollama Hub, then you can sign in from Local LLM -> Cloud to unlock ollama.com models. No manual API key is required.'
+                      : 'Plawie installs the local Ollama Hub and starts with a tiny free model. You can switch to larger local or cloud models later from Chat settings.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -1108,6 +1127,7 @@ class _ProviderInfo {
   final String hint;
   final String prefix;
   final String defaultModel;
+  final bool requiresApiKey;
 
   const _ProviderInfo({
     required this.id,
@@ -1118,5 +1138,6 @@ class _ProviderInfo {
     required this.hint,
     required this.prefix,
     required this.defaultModel,
+    this.requiresApiKey = true,
   });
 }

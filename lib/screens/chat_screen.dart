@@ -26,6 +26,7 @@ import '../widgets/chat_bubble.dart';
 import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
+import '../services/model_provider_catalog.dart';
 import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
@@ -90,10 +91,10 @@ class _ChatScreenState extends State<ChatScreen>
 
   String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
-  String _selectedModel = 'google/gemini-3.1-pro-preview';
+  String _selectedModel = ModelProviderCatalog.defaultCloudFallbackModel;
   // Cloud model to fall back to when a local model (NDK or Ollama) stops.
   // Set at load time from onboarding provider; updated when user picks a cloud model.
-  String _cloudFallbackModel = 'google/gemini-3.1-pro-preview';
+  String _cloudFallbackModel = ModelProviderCatalog.defaultCloudFallbackModel;
 
   // Vision / image attachment state
   String? _pendingImageBase64; // base64 of photo waiting to be sent
@@ -104,26 +105,13 @@ class _ChatScreenState extends State<ChatScreen>
   bool _isRecordingVideo = false;
 
   // Static cloud model list — augmented at runtime with gateway agents
-  final List<String> _availableModels = [
-    'google/gemini-3.1-pro-preview',
-    'anthropic/claude-opus-4.6',
-    'openai/gpt-4o',
-    'xai/grok-4.3',
-    'groq/llama-3.1-405b',
-  ];
+  final List<String> _availableModels =
+      ModelProviderCatalog.cloudModelIds.toList();
 
   // Ollama cloud models — available whenever Ollama Hub is running.
   // Route identically to local Ollama models (same `ollama/` prefix); the
   // Ollama daemon proxies inference to ollama.com when it sees a :cloud tag.
-  static const _kCloudOllamaModels = [
-    'ollama/qwen3-coder:480b-cloud',
-    'ollama/gpt-oss:120b-cloud',
-    'ollama/gpt-oss:20b-cloud',
-    'ollama/deepseek-v3.1:671b-cloud',
-    'ollama/kimi-k2.5:cloud',
-    'ollama/minimax-m2.7:cloud',
-    'ollama/glm-5:cloud',
-  ];
+  static final _kCloudOllamaModels = ModelProviderCatalog.ollamaCloudModelIds;
 
   // Dynamic agents fetched from the gateway
   List<AgentInfo> _dynamicAgents = [];
@@ -375,6 +363,15 @@ class _ChatScreenState extends State<ChatScreen>
   void _loadPreferences() async {
     final prefs = PreferencesService();
     await prefs.init();
+    final storedConfigured = prefs.configuredModel;
+    final canonicalConfigured = storedConfigured == null
+        ? null
+        : ModelProviderCatalog.canonicalizeModelId(storedConfigured);
+    if (storedConfigured != null &&
+        canonicalConfigured != null &&
+        canonicalConfigured != storedConfigured) {
+      prefs.configuredModel = canonicalConfigured;
+    }
     if (mounted) {
       setState(() {
         _agentName = prefs.agentName;
@@ -415,7 +412,7 @@ class _ChatScreenState extends State<ChatScreen>
         }
 
         // Load the user's configured model (from setup or settings).
-        final configured = prefs.configuredModel;
+        final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
           final ollamaOk = gwState.isOllamaRunning;
           final isOllama = configured.startsWith('ollama/');
@@ -1623,9 +1620,8 @@ class _ChatScreenState extends State<ChatScreen>
                                   ? 'CLOUD · OLLAMA'
                                   : _selectedModel.startsWith('ollama/')
                                       ? 'LOCAL · HUB'
-                                      : _selectedModel
-                                          .split('/')
-                                          .last
+                                      : ModelProviderCatalog.labelForModel(
+                                              _selectedModel)
                                           .toUpperCase(),
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
@@ -1989,7 +1985,7 @@ class _ChatScreenState extends State<ChatScreen>
             ...cloudHub.map((model) {
               final isSelected = model == _selectedModel;
               final displayName =
-                  '☁ ${model.split('/').last.replaceAll(':cloud', '').toUpperCase()}';
+                  '☁ ${ModelProviderCatalog.labelForModel(model)}';
               return PopupMenuItem<dynamic>(
                 value: 'model:$model',
                 height: 44,
@@ -2021,7 +2017,7 @@ class _ChatScreenState extends State<ChatScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            'FREE · NO DOWNLOAD',
+                            'HUB + OLLAMA SIGN-IN',
                             style: TextStyle(
                               color: isSelected
                                   ? const Color(0xFFAB47BC)
@@ -2062,7 +2058,7 @@ class _ChatScreenState extends State<ChatScreen>
             .where((m) => !m.startsWith('ollama/'))
             .map((model) => PopupMenuItem<String>(
                   value: 'model:$model',
-                  height: 36,
+                  height: 44,
                   child: Row(
                     children: [
                       Icon(
@@ -2076,18 +2072,33 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          model,
-                          style: TextStyle(
-                            color: model == _selectedModel
-                                ? Colors.white
-                                : Colors.white70,
-                            fontSize: 13,
-                            fontWeight: model == _selectedModel
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              ModelProviderCatalog.labelForModel(model),
+                              style: TextStyle(
+                                color: model == _selectedModel
+                                    ? Colors.white
+                                    : Colors.white70,
+                                fontSize: 13,
+                                fontWeight: model == _selectedModel
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              ModelProviderCatalog.routeLabelForModel(model),
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -2123,7 +2134,7 @@ class _ChatScreenState extends State<ChatScreen>
           ),
         ),
       ],
-    ).then((value) {
+    ).then((value) async {
       if (value == null) return;
       if (!context.mounted) return;
 
@@ -2136,10 +2147,29 @@ class _ChatScreenState extends State<ChatScreen>
           builder: (_) => const AvatarForgePage(),
         ));
       } else if (value.toString().startsWith('model:')) {
-        final model = value.toString().substring(6);
+        final model = ModelProviderCatalog.canonicalizeModelId(
+            value.toString().substring(6));
         final isNowOllama = model.startsWith('ollama/');
         final isNowCloud =
             !model.startsWith('ollama/') && !model.startsWith('local-llm/');
+        final catalogModel = ModelProviderCatalog.modelById(model);
+        if (isNowCloud && catalogModel != null) {
+          final hasCredential = await GatewayService()
+              .hasProviderCredential(catalogModel.providerId);
+          if (!context.mounted) return;
+          if (!hasCredential) {
+            final provider =
+                ModelProviderCatalog.providerById(catalogModel.providerId);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Add a ${provider?.label ?? catalogModel.providerId} API key in Settings before using ${catalogModel.label}.',
+                ),
+              ),
+            );
+            return;
+          }
+        }
         setState(() {
           _selectedModel = model;
           if (!model.startsWith('local-llm/') && !model.startsWith('ollama/')) {
@@ -2487,7 +2517,7 @@ class _ChatScreenState extends State<ChatScreen>
                                     ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
                                     : _selectedModel.startsWith('ollama/')
                                         ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_isOllamaAutoStarting ? 'STARTING HUB...' : _selectedModel.contains(':cloud') ? 'OLLAMA CLOUD' : 'LOCAL HUB'}'
-                                        : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_ollamaStopFlash ? 'HUB OFF' : _selectedModel.split('/').last.toUpperCase()}',
+                                        : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_ollamaStopFlash ? 'HUB OFF' : ModelProviderCatalog.labelForModel(_selectedModel).toUpperCase()}',
                                 style: TextStyle(
                                   color: _selectedModel.startsWith('local-llm/')
                                       ? (_localLlmState.status ==

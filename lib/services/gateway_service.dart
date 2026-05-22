@@ -14,6 +14,7 @@ import 'gateway_connection.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
+import 'model_provider_catalog.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
@@ -467,6 +468,7 @@ PARAMETER num_batch 512
     }
 
     await _migrateLegacyOllamaCloudDefaults(prefs);
+    await _migrateLegacyModelIds(prefs);
 
     // Initialize file directory early
     await getFilesDir();
@@ -509,7 +511,7 @@ PARAMETER num_batch 512
         provider.isEmpty || provider.contains('ollama');
     if (!isLegacyDefault && !providerAllowsMigration) return;
 
-    const localFallback = 'ollama/qwen2.5:0.5b';
+    const localFallback = ModelProviderCatalog.localOllamaDefaultModel;
     prefs.configuredModel = localFallback;
     if (providerAllowsMigration) {
       prefs.apiProvider = 'ollama';
@@ -534,6 +536,33 @@ PARAMETER num_batch 512
       await _writeConfig(config);
     } catch (_) {
       // Best effort migration; prefs fallback still prevents cloud default selection.
+    }
+  }
+
+  Future<void> _migrateLegacyModelIds(PreferencesService prefs) async {
+    final configuredModel = (prefs.configuredModel ?? '').trim();
+    if (configuredModel.isEmpty) return;
+
+    final canonical = ModelProviderCatalog.canonicalizeModelId(configuredModel);
+    if (canonical == configuredModel) return;
+
+    prefs.configuredModel = canonical;
+    _addActivity(
+        '[MIGRATION] Updated legacy model id $configuredModel -> $canonical');
+
+    try {
+      final running = await NativeBridge.isGatewayRunning();
+      if (running) return;
+      final config = await _readConfig();
+      final primary = config['agents']?['defaults']?['model']?['primary'];
+      if (primary != configuredModel) return;
+      config['agents'] ??= {};
+      config['agents']['defaults'] ??= {};
+      config['agents']['defaults']['model'] ??= {};
+      config['agents']['defaults']['model']['primary'] = canonical;
+      await _writeConfig(config);
+    } catch (_) {
+      // Best effort migration; prefs drives the next model persist anyway.
     }
   }
 
@@ -2363,64 +2392,72 @@ PARAMETER num_batch 512
     await _writeConfig(config);
   }
 
-  /// Map a provider name to its default model string (provider/model).
-  /// Public so GatewayProvider can call it during configureAndStart.
-  String getModelForProvider(String provider) {
-    final raw = provider.toLowerCase();
-    if (raw.contains('ollama_cloud') || raw.contains('ollama cloud')) {
-      // Mobile setup is local-first: choosing Ollama in onboarding should be
-      // free/offline by default. Cloud-tagged Ollama models require separate
-      // Ollama account auth and produce noisy startup auth errors otherwise.
-      return 'ollama/qwen2.5:0.5b';
-    }
-    switch (_normalizeProvider(provider)) {
-      case 'google':
-        return 'google/gemini-3.1-pro-preview';
-      case 'anthropic':
-        return 'anthropic/claude-opus-4.6';
-      case 'openai':
-        return 'openai/gpt-4o';
-      case 'xai':
-        return 'xai/grok-4.3';
-      case 'groq':
-        return 'groq/llama-3.1-405b';
-      case 'ollama':
-        return 'ollama/qwen2.5:0.5b';
-      default:
-        return provider;
+  Future<bool> hasProviderCredential(String provider) async {
+    final normalized = _normalizeProvider(provider);
+    if (normalized == 'ollama' || normalized == 'ollama_cloud') return true;
+
+    try {
+      final config = await _readConfig();
+      final providerConfig = config['models']?['providers']?[normalized];
+      if (providerConfig is Map) {
+        final apiKey = providerConfig['apiKey'];
+        if (_credentialValueLooksSet(apiKey)) return true;
+      }
+
+      final envKey = _getEnvKeyForProvider(normalized);
+      final envVars = config['env']?['vars'];
+      if (envVars is Map && _credentialValueLooksSet(envVars[envKey])) {
+        return true;
+      }
+
+      final authFile = File(
+        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
+      );
+      if (!await authFile.exists()) return false;
+      final raw = await authFile.readAsString();
+      if (raw.trim().isEmpty) return false;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return false;
+      final profiles = decoded['profiles'];
+      if (profiles is! Map) return false;
+      final profile = profiles[authProfileIdForProvider(normalized)];
+      if (profile is! Map) return false;
+      return _credentialValueLooksSet(profile['key']) ||
+          _credentialValueLooksSet(profile['token']) ||
+          _credentialValueLooksSet(profile['keyRef']) ||
+          _credentialValueLooksSet(profile['tokenRef']);
+    } catch (_) {
+      return false;
     }
   }
 
+  bool _credentialValueLooksSet(dynamic value) {
+    if (value == null) return false;
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isNotEmpty &&
+          trimmed != 'null' &&
+          trimmed != 'ollama-local';
+    }
+    if (value is Map || value is List) return value.isNotEmpty;
+    return true;
+  }
+
+  /// Map a provider name to its default model string (provider/model).
+  /// Public so GatewayProvider can call it during configureAndStart.
+  String getModelForProvider(String provider) {
+    return ModelProviderCatalog.defaultModelForProvider(provider);
+  }
+
   /// Normalize provider names to OpenClaw internal identifiers.
-  /// Handles both human names ('gemini', 'claude') and env-key format
-  /// IDs from the setup screen ('GEMINI_API_KEY', 'ANTHROPIC_API_KEY').
+  /// Handles human names, provider IDs, and legacy env-key IDs.
   String _normalizeProvider(String provider) {
-    final p = provider.toLowerCase();
-    if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
-    if (p.contains('openai')) return 'openai';
-    if (p.contains('xai') || p.contains('grok')) return 'xai';
-    if (p.contains('gemini') || p.contains('google')) return 'google';
-    if (p.contains('groq')) return 'groq';
-    if (p.contains('ollama')) return 'ollama';
-    return p;
+    return ModelProviderCatalog.apiProviderForSetupId(provider);
   }
 
   /// Get the standard environment variable name for a provider's API key.
   String _getEnvKeyForProvider(String provider) {
-    switch (_normalizeProvider(provider)) {
-      case 'anthropic':
-        return 'ANTHROPIC_API_KEY';
-      case 'openai':
-        return 'OPENAI_API_KEY';
-      case 'google':
-        return 'GOOGLE_API_KEY';
-      case 'xai':
-        return 'XAI_API_KEY';
-      case 'groq':
-        return 'GROQ_API_KEY';
-      default:
-        return '';
-    }
+    return ModelProviderCatalog.envKeyForProvider(provider);
   }
 
   /// Write an API key (Direct I/O — avoids proot / node-e overhead)
@@ -2432,32 +2469,8 @@ PARAMETER num_batch 512
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
 
-    final List<Map<String, dynamic>> defaultModels;
-    if (openClawProvider == 'google') {
-      defaultModels = [
-        {'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'}
-      ];
-    } else if (openClawProvider == 'anthropic') {
-      defaultModels = [
-        {'id': 'claude-opus-4.6', 'name': 'Claude Opus 4.6'}
-      ];
-    } else if (openClawProvider == 'openai') {
-      defaultModels = [
-        {'id': 'gpt-4o', 'name': 'GPT-4o'}
-      ];
-    } else if (openClawProvider == 'xai') {
-      defaultModels = [
-        {'id': 'grok-4.3', 'name': 'Grok 4.3'}
-      ];
-    } else if (openClawProvider == 'groq') {
-      defaultModels = [
-        {'id': 'llama-3.1-405b', 'name': 'Llama 3.1 405B'}
-      ];
-    } else {
-      defaultModels = [
-        {'id': 'default', 'name': 'Default Model'}
-      ];
-    }
+    final defaultModels =
+        ModelProviderCatalog.defaultModelsForProvider(openClawProvider);
 
     // Generate a secure gateway token if we don't have one
     final prefs = PreferencesService();
@@ -2497,16 +2510,13 @@ PARAMETER num_batch 512
     config['gateway']['mode'] = 'local';
     config['models'] ??= {};
     config['models']['providers'] ??= {};
-    final prov = config['models']['providers'][openClawProvider] ?? {};
-    config['models']['providers'][openClawProvider] = {
-      ...prov,
-      'apiKey': key,
-      'baseUrl': prov['baseUrl'] ??
-          (openClawProvider == 'google'
-              ? 'https://generativelanguage.googleapis.com/v1beta'
-              : null),
-      'models': prov['models'] ?? defaultModels,
-    };
+    final prov = config['models']['providers'][openClawProvider];
+    config['models']['providers'][openClawProvider] =
+        ModelProviderCatalog.mergeProviderConfig(
+      openClawProvider,
+      prov is Map ? prov : null,
+      apiKey: key,
+    );
     ensureProviderAuthConfigBlock(config, openClawProvider);
 
     // Keep the local Control UI origin list explicit and minimal.
@@ -4672,7 +4682,7 @@ PARAMETER num_batch 512
       m = config['agents']?['defaults']?['model']?['primary'] as String? ?? '';
     }
     if (m.isEmpty) {
-      m = 'ollama/qwen2.5:0.5b';
+      m = ModelProviderCatalog.localOllamaDefaultModel;
     }
 
     // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility

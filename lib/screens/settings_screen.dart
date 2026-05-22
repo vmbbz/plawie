@@ -13,6 +13,7 @@ import '../providers/node_provider.dart';
 import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/gateway_service.dart';
+import '../services/model_provider_catalog.dart';
 import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
@@ -1091,56 +1092,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (match.isNotEmpty) return match.first.name;
       return 'Local · $ggufId';
     }
-    const models = [
-      'google/gemini-3.1-pro-preview',
-      'anthropic/claude-opus-4.6',
-      'openai/gpt-4o',
-      'xai/grok-4.3',
-      'groq/llama-3.1-405b',
-    ];
-    const labels = [
-      'Gemini 3.1 Pro Preview',
-      'Claude Opus 4.6',
-      'GPT-4o',
-      'Grok 4.3',
-      'Llama 3.1 405B',
-    ];
-    final idx = models.indexOf(modelId);
-    if (idx != -1) return labels[idx];
-    return modelId.split('/').last;
+    return ModelProviderCatalog.labelForModel(modelId);
   }
 
   String _getProviderLabel(String modelId) {
     if (modelId.startsWith('local-llm/')) return 'On-Device (Free)';
-    if (modelId.startsWith('google/')) return 'Google';
-    if (modelId.startsWith('anthropic/')) return 'Anthropic';
-    if (modelId.startsWith('openai/')) return 'OpenAI';
-    if (modelId.startsWith('xai/')) return 'xAI';
-    if (modelId.startsWith('groq/')) return 'Groq';
+    final model = ModelProviderCatalog.modelById(modelId);
+    final provider = model == null
+        ? null
+        : ModelProviderCatalog.providerById(model.providerId);
+    if (provider != null) return provider.label;
     return modelId.split('/').first.toUpperCase();
   }
 
   String _providerName(String provider) {
-    switch (provider) {
-      case 'google':
-        return 'Google';
-      case 'anthropic':
-        return 'Anthropic';
-      case 'openai':
-        return 'OpenAI';
-      case 'xai':
-        return 'xAI / Grok';
-      case 'groq':
-        return 'Groq';
-      default:
-        return provider;
-    }
+    final option = ModelProviderCatalog.providerById(provider);
+    if (option == null) return provider;
+    return option.id == 'xai' ? 'xAI / Grok' : option.label;
   }
 
   void _showUpdateApiKeyDialog(BuildContext context) {
     final keyController = TextEditingController();
-    final providers = ['google', 'anthropic', 'openai', 'xai', 'groq'];
-    String selectedProvider = _prefs.apiProvider ?? 'google';
+    final providers = ModelProviderCatalog.providers
+        .where((provider) => provider.requiresApiKey)
+        .map((provider) => provider.id)
+        .toList(growable: false);
+    String selectedProvider = ModelProviderCatalog.apiProviderForSetupId(
+        _prefs.apiProvider ?? 'google');
     if (!providers.contains(selectedProvider)) selectedProvider = 'google';
 
     showDialog(
@@ -1218,32 +1196,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showChangeModelDialog(BuildContext context) {
-    final cloudModels = [
-      'google/gemini-3.1-pro-preview',
-      'anthropic/claude-opus-4.6',
-      'openai/gpt-4o',
-      'xai/grok-4.3',
-      'groq/llama-3.1-405b',
-      'ollama/qwen3-coder:480b-cloud',
-      'ollama/gpt-oss:120b-cloud',
-      'ollama/deepseek-v3.1:671b-cloud',
-      'ollama/kimi-k2.5:cloud',
-      'ollama/minimax-m2.7:cloud',
-      'ollama/glm-5:cloud',
-    ];
-    final cloudLabels = [
-      'Gemini 3.1 Pro Preview',
-      'Claude Opus 4.6',
-      'GPT-4o',
-      'Grok 4.3',
-      'Llama 3.1 405B',
-      '☁ QWEN3 CODER 480B',
-      '☁ GPT-OSS 120B',
-      '☁ DEEPSEEK V3.1 671B',
-      '☁ KIMI K2.5',
-      '☁ MINIMAX M2.7',
-      '☁ GLM-5',
-    ];
+    final cloudModels = ModelProviderCatalog.chatDefaultModelIds;
+    final cloudLabels = cloudModels
+        .map((model) => ModelProviderCatalog.labelForModel(model))
+        .toList(growable: false);
 
     final llmService = LocalLlmService();
     final llmReady = llmService.state.status == LocalLlmStatus.ready;
@@ -1257,20 +1213,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String current = _prefs.configuredModel ?? cloudModels[0];
 
     Future<void> switchModel(String val, String label) async {
+      final modelId = ModelProviderCatalog.canonicalizeModelId(val);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Switching model...')),
       );
       try {
         final gw = context.read<GatewayProvider>();
-        await gw.persistModel(val);
+        final catalogModel = ModelProviderCatalog.modelById(modelId);
+        if (catalogModel != null &&
+            catalogModel.route == ModelRouteKind.cloud &&
+            !await GatewayService()
+                .hasProviderCredential(catalogModel.providerId)) {
+          if (!context.mounted) return;
+          final provider =
+              ModelProviderCatalog.providerById(catalogModel.providerId);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Add a ${provider?.label ?? catalogModel.providerId} API key before using ${catalogModel.label}.',
+              ),
+            ),
+          );
+          return;
+        }
+        await gw.persistModel(modelId);
         if (!context.mounted) return;
-        _prefs.configuredModel = val;
-        if (val.startsWith('ollama/')) {
+        _prefs.configuredModel = modelId;
+        if (modelId.startsWith('ollama/')) {
           unawaited(GatewayService().prepareLocalOllamaForGateway(
-            reason: val.contains(':cloud')
+            reason: modelId.contains(':cloud')
                 ? 'settings-model-switch-cloud'
                 : 'settings-model-switch-local',
-            wait: Duration(seconds: val.contains(':cloud') ? 30 : 15),
+            wait: Duration(seconds: modelId.contains(':cloud') ? 30 : 15),
           ));
         }
         setState(() {});
@@ -1341,8 +1315,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     cloudModels.length,
                     (i) => RadioListTile<String>(
                           title: Text(cloudLabels[i]),
-                          subtitle: Text(cloudModels[i],
-                              style: const TextStyle(fontSize: 11)),
+                          subtitle: Text(
+                            '${ModelProviderCatalog.routeLabelForModel(cloudModels[i])} - ${cloudModels[i]}',
+                            style: const TextStyle(fontSize: 11),
+                          ),
                           value: cloudModels[i],
                         )),
                 if (!llmReady)

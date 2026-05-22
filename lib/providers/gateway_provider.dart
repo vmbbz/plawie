@@ -6,6 +6,7 @@ import '../models/setup_state.dart';
 import '../services/gateway_service.dart' as svc;
 import '../services/gateway_skill_proxy.dart';
 import '../services/bootstrap_service.dart';
+import '../services/model_provider_catalog.dart';
 
 class GatewayProvider extends ChangeNotifier {
   final svc.GatewayService _gatewayService = svc.GatewayService();
@@ -28,7 +29,7 @@ class GatewayProvider extends ChangeNotifier {
   /// Send a message to the OpenClaw gateway and stream the response.
   Stream<String> sendMessage(
     String message, {
-    String model = 'google/gemini-3.1-pro-preview',
+    String model = ModelProviderCatalog.defaultCloudFallbackModel,
     List<Map<String, dynamic>>? conversationHistory,
     String? sessionKey,
   }) {

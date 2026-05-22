@@ -47,9 +47,18 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Chat Settings Model Picker',
                         description:
-                            'Open Chat -> settings menu to switch intelligence paths. ON DEVICE is native fllama. LOCAL HUB is Ollama through the OpenClaw Gateway. OLLAMA CLOUD uses ollama.com models but still needs the local Ollama Hub running as the signed-in proxy. CLOUD providers need their own API keys.',
+                            'Open Chat -> settings menu to switch intelligence paths. ON DEVICE is native fllama. LOCAL HUB is Ollama through the OpenClaw Gateway. OLLAMA CLOUD uses ollama.com models but still needs the local Ollama Hub running as the signed-in proxy. CLOUD providers need their own API keys, and Plawie blocks switching when the chosen provider has no stored credential.',
                         icon: Icons.tune_rounded,
                         color: Colors.cyanAccent,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildHelpCard(
+                        context,
+                        title: 'Provider Keys',
+                        description:
+                            'Settings -> Update API Key supports Gemini, Claude, OpenAI, Grok/xAI, and Groq. Keys are written into the OpenClaw provider config and auth profile before Gateway use, then the selected model is persisted as provider/model-id.',
+                        icon: Icons.key_rounded,
+                        color: AppColors.statusAmber,
                       ),
                       const SizedBox(height: 12),
                       _buildHelpCard(

@@ -7,6 +7,7 @@ import '../models/setup_state.dart';
 import 'native_bridge.dart';
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
+import 'model_provider_catalog.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'gateway_service.dart';
@@ -508,7 +509,8 @@ class BootstrapService {
         }
 
         setupPrefs.pendingProvider = null;
-        setupPrefs.apiProvider = pendingProvider;
+        setupPrefs.apiProvider =
+            ModelProviderCatalog.apiProviderForSetupId(pendingProvider);
       }
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85,
@@ -863,6 +865,7 @@ class BootstrapService {
       final existingConfig = await _readExistingOpenClawConfig();
       final preferredPrimaryModel =
           _resolveBootstrapPrimaryModel(prefs, existingConfig);
+      final providerPatch = _buildProviderDefaultsPatch(existingConfig);
 
       // 1. Core stability flags + provider defaults via CLI
       await NativeBridge.runInProot(
@@ -895,6 +898,7 @@ class BootstrapService {
       );
       final authPatch = _buildSharedSecretAuthPatch(workingConfig);
       final remotePatch = _buildLocalGatewayRemotePatch(workingConfig);
+      final rootAuthPatch = _buildRootAuthPatch(workingConfig);
       final patchJson = '''
 {
   "gateway": {
@@ -930,24 +934,9 @@ class BootstrapService {
   },
   "models": {
     "startup": { "modelPrewarm": false },
-    "providers": {
-      "ollama": {
-        "apiKey": "ollama-local",
-        "baseUrl": "http://127.0.0.1:11434"
-      }
-    }
+    "providers": ${jsonEncode(providerPatch)}
   },
-  "auth": {
-    "profiles": {
-      "${GatewayService.authProfileIdForProvider(GatewayService.ollamaProviderId)}": {
-        "provider": "ollama",
-        "mode": "api_key"
-      }
-    },
-    "order": {
-      "ollama": ["${GatewayService.authProfileIdForProvider(GatewayService.ollamaProviderId)}"]
-    }
-  },
+  "auth": ${jsonEncode(rootAuthPatch)},
   "agents": {
     "defaults": {
       "model": {
@@ -1024,7 +1013,7 @@ class BootstrapService {
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
       config['agents']['defaults']['model']['primary'] ??=
-          'ollama/qwen2.5:0.5b';
+          ModelProviderCatalog.localOllamaDefaultModel;
 
       // 3. Hardened Ollama-first
       config['models'] ??= {};
@@ -1042,14 +1031,17 @@ class BootstrapService {
         GatewayService.ollamaProviderId,
       );
 
-      // 4. Hardened Google/Gemini
-      config['models']['providers']['google'] ??= <String, dynamic>{};
-      final google = Map<String, dynamic>.from(
-          config['models']['providers']['google'] as Map);
-      google['baseUrl'] ??= 'https://generativelanguage.googleapis.com/v1beta';
-      google['api'] ??= 'google-generative-ai';
-      google['models'] ??= [];
-      config['models']['providers']['google'] = google;
+      // 4. Hardened provider defaults. Preserve user keys while ensuring every
+      // provider exposed by the UI has model metadata and known base URLs.
+      for (final provider in ModelProviderCatalog.providers) {
+        if (provider.id == 'ollama_cloud') continue;
+        final existing = config['models']['providers'][provider.id];
+        config['models']['providers'][provider.id] =
+            ModelProviderCatalog.mergeProviderConfig(
+          provider.id,
+          existing is Map ? existing : null,
+        );
+      }
 
       // 5. GLOBAL ORIGIN & DISCOVERY ENFORCEMENT
       config['gateway']['controlUi'] ??= {};
@@ -1224,7 +1216,37 @@ class BootstrapService {
       return configPrimary;
     }
 
-    return 'ollama/qwen2.5:0.5b';
+    return ModelProviderCatalog.localOllamaDefaultModel;
+  }
+
+  Map<String, dynamic> _buildProviderDefaultsPatch(
+      Map<String, dynamic> existingConfig) {
+    final existingProviders = existingConfig['models']?['providers'] is Map
+        ? existingConfig['models']['providers'] as Map
+        : <dynamic, dynamic>{};
+    final providers = <String, dynamic>{};
+    for (final provider in ModelProviderCatalog.providers) {
+      if (provider.id == 'ollama_cloud') continue;
+      final existing = existingProviders[provider.id];
+      providers[provider.id] = ModelProviderCatalog.mergeProviderConfig(
+        provider.id,
+        existing is Map ? existing : null,
+      );
+    }
+    return providers;
+  }
+
+  Map<String, dynamic> _buildRootAuthPatch(Map<String, dynamic> config) {
+    final auth = config['auth'] is Map
+        ? Map<String, dynamic>.from(config['auth'] as Map)
+        : <String, dynamic>{};
+
+    if (auth['profiles'] is! Map) auth['profiles'] = <String, dynamic>{};
+    if (auth['order'] is! Map) auth['order'] = <String, dynamic>{};
+    return {
+      'profiles': Map<String, dynamic>.from(auth['profiles'] as Map),
+      'order': Map<String, dynamic>.from(auth['order'] as Map),
+    };
   }
 
   Map<String, dynamic>? _buildLocalGatewayRemotePatch(

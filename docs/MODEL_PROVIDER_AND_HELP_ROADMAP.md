@@ -1,41 +1,72 @@
-# Plawie Model Provider and Help Roadmap
+# Plawie Model Provider Implementation
 
 Last updated: 2026-05-22
 
-## Current External Contract
+This document is the implementation contract for model selection, provider keys,
+Ollama Cloud, and future native NDK Gateway bridging in Plawie.
 
-OpenClaw's current model-provider docs describe provider/model routing as
-`provider/model-id`, with examples such as `openai/gpt-5.5`,
-`google/gemini-3.1-pro-preview`, `xai/grok-4.3`, and `ollama/llama3.2`.
-OpenClaw also documents OpenAI-compatible custom providers through a local
-`baseUrl`, which is the key contract for a future Plawie native NDK bridge.
-
-Sources:
+## Sources Checked
 
 - OpenClaw model providers: https://documentation.openclaw.ai/concepts/model-providers
 - OpenClaw xAI provider: https://docs.openclaw.ai/providers/xai
+- OpenClaw OpenAI provider: https://docs.openclaw.ai/providers/openai
 - OpenClaw local models: https://docs.openclaw.ai/gateway/local-models
 - OpenClaw v2026.5.18 release: https://github.com/openclaw/openclaw/releases/tag/v2026.5.18
 - Ollama OpenClaw integration: https://docs.ollama.com/integrations/openclaw
 
-## Product Defaults
+## Implemented Architecture
 
-Use these paths in the app UI:
+Model/provider knowledge is centralized in:
 
-| User goal | Recommended path | What Plawie must do |
+- `lib/services/model_provider_catalog.dart`
+
+All user-facing model surfaces should use this catalog instead of hardcoded
+provider lists:
+
+- First-run setup: `lib/screens/setup_flow_screen.dart`
+- Chat model menu: `lib/screens/chat_screen.dart`
+- Settings model/API-key dialogs: `lib/screens/settings_screen.dart`
+- Local LLM / Ollama Cloud page: `lib/screens/management/local_llm_screen.dart`
+- Gateway config and credential routing: `lib/services/gateway_service.dart`
+- Fresh-install hardening: `lib/services/bootstrap_service.dart`
+- In-app guide: `lib/screens/help_screen.dart`
+
+## Provider Defaults
+
+| Provider | Default model | Credential | Runtime route |
+| --- | --- | --- | --- |
+| Google Gemini | `google/gemini-3.1-pro-preview` | `GOOGLE_API_KEY` | OpenClaw Gateway provider |
+| Anthropic Claude | `anthropic/claude-opus-4-6` | `ANTHROPIC_API_KEY` | OpenClaw Gateway provider |
+| OpenAI | `openai/gpt-5.4` | `OPENAI_API_KEY` | OpenClaw Gateway provider |
+| xAI / Grok | `xai/grok-4` | `XAI_API_KEY` | OpenClaw Gateway provider |
+| Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | OpenClaw Gateway provider |
+| Ollama Local | `ollama/qwen2.5:0.5b` | `ollama-local` placeholder | Embedded Ollama Hub at `127.0.0.1:11434` |
+| Ollama Cloud | `ollama/kimi-k2.5:cloud` | Ollama sign-in, no manual API key | Embedded Ollama Hub proxies to ollama.com |
+
+Compatibility aliases are migrated by the app where safe:
+
+| Legacy ID | Canonical ID |
+| --- | --- |
+| `anthropic/claude-opus-4.6` | `anthropic/claude-opus-4-6` |
+| `anthropic/claude-sonnet-4.6` | `anthropic/claude-sonnet-4-6` |
+| `xai/grok-4.3` | `xai/grok-4` |
+| `groq/llama-3.1-405b` | `groq/llama-3.3-70b-versatile` |
+
+## Routing Rules
+
+| Selected model | Required preparation | Failure prevented |
 | --- | --- | --- |
-| Free and private | NDK Direct local model | Run fllama in-process, no gateway dependency. |
-| Free with full Gateway tools | Ollama Local Hub | Start embedded Ollama, route as `ollama/model`. |
-| Big free-ish cloud models | Ollama Cloud | Start embedded Ollama first, then require `ollama signin`. |
-| Premium best reasoning | Claude / Gemini / OpenAI | Store API key, write OpenClaw provider config, hot-reload gateway. |
-| Grok users | xAI/Grok | Store `XAI_API_KEY`, route as `xai/grok-4.3`. |
-| Lowest latency cloud | Groq | Store `GROQ_API_KEY`, route through Gateway provider. |
+| `local-llm/...` | Start native fllama model in Local LLM | Avoids Gateway dependency for private/offline chat |
+| `ollama/...` local | Start embedded Ollama Hub, wait for health | Prevents `ECONNREFUSED 127.0.0.1:11434` |
+| `ollama/...:cloud` | Start embedded Ollama Hub, then require Ollama sign-in | Prevents confusing API-key prompts for Ollama Cloud |
+| API-key cloud model | Verify provider credential exists before switching | Prevents silent Gateway provider failure |
+| Dynamic OpenClaw agent | Persist model key and reconnect WS | Lets Gateway route by current agent config |
 
-## Ollama Rule
+## Ollama Cloud Contract
 
-All `ollama/...` models are Gateway-routed through the local Ollama daemon.
-That includes `:cloud` models. The cloud tag changes where inference happens,
-but the daemon still acts as the local authenticated proxy for OpenClaw.
+Ollama Cloud is not a simple API-key provider in Plawie. It uses the local
+Ollama daemon as an authenticated proxy. Therefore every `ollama/...` model,
+including `:cloud`, requires the embedded Hub.
 
 Hard failure signature:
 
@@ -45,57 +76,56 @@ endpoint=local route=local
 ECONNREFUSED 127.0.0.1:11434
 ```
 
-Fix:
+Correct flow:
 
-1. Start embedded Ollama Hub.
-2. Wait until `127.0.0.1:11434/api/tags` responds.
-3. For `:cloud` models, verify Ollama sign-in.
-4. Persist the selected model and reconnect the Gateway WebSocket.
+1. Persist the chosen `ollama/...` model.
+2. Start the embedded Ollama Hub if `127.0.0.1:11434` is down.
+3. Wait for `/api/tags` health.
+4. If the model has `:cloud`, verify Ollama sign-in.
+5. Persist model to OpenClaw config and reconnect the Gateway WebSocket.
 
-## Chat Settings UX
+## Fresh Setup Contract
 
-The Chat page model menu should make routing obvious:
+First-run setup now exposes these choices:
 
-- `ON DEVICE`: Native fllama models. Fast, private, limited Gateway tool use.
-- `LOCAL HUB`: Ollama models running through OpenClaw Gateway. Full tools.
-- `OLLAMA CLOUD`: Ollama.com models. Requires local Hub plus Ollama sign-in.
-- `CLOUD`: API-key providers such as Gemini, Claude, OpenAI, xAI, and Groq.
+- Ollama Local: no key, free/offline-first, tiny default local model.
+- Ollama Cloud: no manual key, but sign-in from Local LLM -> Cloud is required.
+- Gemini, Claude, OpenAI, Grok/xAI, Groq: API-key based Gateway providers.
 
-When a user picks an `ollama/...` model, Plawie should call the hardened
-Ollama readiness routine, not just launch the binary. This prevents "selected
-but not actually routable" states.
+Setup stores:
 
-## Setup Flow
+- `pendingProvider`: the selected setup provider, including `ollama_cloud` when the user explicitly chose cloud.
+- `apiProvider`: normalized provider used by Settings and Gateway credentials.
+- `configuredModel`: provider default model from the centralized catalog.
 
-First-run setup should offer:
+Bootstrap then bakes provider config before the first Gateway start, preventing
+post-start reload churn that can break pairing.
 
-- Ollama Local: no key, free/offline-first, Gateway Hub installed during setup.
-- Ollama Cloud: explain that sign-in happens later from Local LLM settings.
-- xAI/Grok: API key, route to `xai/grok-4.3`.
-- Gemini, Claude, OpenAI, Groq: API key.
+## Runtime Guardrails
 
-Do not default first-run Ollama users to `:cloud`. It creates auth errors before
-they have had a chance to sign in.
+Implemented guardrails:
 
-## Native NDK Bridge Plan
+- Chat model picker blocks known cloud provider models when the provider key is missing.
+- Settings model picker also blocks known cloud provider models without credentials.
+- Selecting any `ollama/...` model calls the hardened Ollama readiness path.
+- Local LLM Cloud page starts/checks the Hub before activating `:cloud` models.
+- Local LLM Cloud page launches Ollama sign-in instead of pretending a manual API key is needed.
+- Bootstrap provider hardening preserves existing keys and writes defaults for every provider shown in the UI.
 
-Goal: remove the heavy PRoot Ollama memory overhead for small local models while
-still letting OpenClaw see a normal OpenAI-compatible provider.
+## Native NDK Gateway Bridge Status
 
-Bridge contract:
+Goal: expose native fllama as an OpenAI-compatible local provider so OpenClaw can
+route through it without the PRoot Ollama memory overhead.
+
+Planned bridge contract:
 
 ```text
 GET  http://127.0.0.1:11435/v1/models
 POST http://127.0.0.1:11435/v1/chat/completions
-POST http://127.0.0.1:11435/v1/responses   (later)
+POST http://127.0.0.1:11435/v1/responses
 ```
 
-Implementation sketch:
-
-1. Start a Dart/Android local HTTP server owned by `LocalLlmService`.
-2. Translate OpenAI-compatible chat requests into fllama prompts.
-3. Support non-streaming first, then SSE streaming.
-4. Register an OpenClaw provider such as `plawie_ndk` with:
+Proposed provider config:
 
 ```json
 {
@@ -112,29 +142,30 @@ Implementation sketch:
   },
   "agents": {
     "defaults": {
-      "model": {
-        "primary": "plawie_ndk/qwen2.5-0.5b"
-      }
+      "model": { "primary": "plawie_ndk/qwen2.5-0.5b" }
     }
   }
 }
 ```
 
-Open question before implementation: confirm whether the installed OpenClaw
-Gateway accepts arbitrary provider IDs with OpenAI-compatible `baseUrl`, or
-whether it requires a known provider adapter. If arbitrary IDs are blocked, the
-fallback is an isolated OpenAI-compatible profile instead of replacing the
-global `openai` provider.
+Do not enable this as a default Gateway provider yet. The app already has a
+stable direct `local-llm/...` native path. The Gateway bridge must first prove:
 
-## Help Page Scope
+- OpenClaw accepts arbitrary provider IDs with `baseUrl` on Android.
+- Streaming Server-Sent Events match OpenAI-compatible expectations.
+- Tool calls are passed back to Gateway instead of being consumed only by the local fllama path.
+- Startup/shutdown is lifecycle-safe and does not compete with Ollama on memory.
 
-The in-app Help page must be a user guide, not only an architecture page:
+Until that validation is complete, Plawie keeps native fllama as the direct
+private path and Ollama Hub as the full Gateway tool-use path.
 
-- What Plawie/OpenClaw is.
-- Which model path to choose.
-- How to use Chat settings.
-- How Ollama Local and Ollama Cloud differ.
-- How avatars, gestures, voice, Canvas, and device tools work.
-- How to maintain the app after updates.
-- How to interpret common errors.
-- Where to update API keys and repair local inference.
+## Release Checklist
+
+- Build APK after provider catalog changes.
+- Fresh install with Ollama Local selected.
+- Fresh install with Ollama Cloud selected, then sign in from Local LLM -> Cloud.
+- App update with existing `ollama/kimi-k2.5:cloud` selection.
+- Switch Chat menu from Gemini to Grok with no xAI key and confirm selection is blocked.
+- Add xAI key in Settings, switch to Grok, and confirm Gateway chat route works.
+- Switch to Ollama Cloud from Chat and confirm Hub readiness logs appear before chat.
+- Confirm Help page explains model routing, provider keys, and recovery steps.

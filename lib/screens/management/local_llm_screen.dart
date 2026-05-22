@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/gateway_service.dart';
+import 'package:clawa/services/model_provider_catalog.dart';
 import 'package:clawa/services/native_bridge.dart';
 import 'package:clawa/services/openclaw_service.dart';
 import 'package:clawa/services/preferences_service.dart';
@@ -14,37 +15,40 @@ import 'package:clawa/models/gateway_state.dart';
 /// Curated on-device Ollama library models, sorted smallest → largest.
 /// Pulled from ollama.com/library; include proper chat templates.
 const _kToolModels = [
-  {'tag': 'smollm2:1.7b',          'label': 'SmolLM2 1.7B',          'size': '1.0 GB'},
-  {'tag': 'deepseek-r1:1.5b',      'label': 'DeepSeek R1 1.5B',      'size': '1.1 GB'},
-  {'tag': 'qwen2.5:0.5b',          'label': 'Qwen 2.5 0.5B',         'size': '394 MB'},
-  {'tag': 'qwen2.5:1.5b',          'label': 'Qwen 2.5 1.5B',         'size': '986 MB'},
-  {'tag': 'llama3.2:1b',           'label': 'Llama 3.2 1B',          'size': '1.3 GB'},
-  {'tag': 'llama3.2:3b',           'label': 'Llama 3.2 3B',          'size': '2.0 GB'},
-  {'tag': 'qwen2.5:3b',            'label': 'Qwen 2.5 3B',           'size': '1.9 GB'},
-  {'tag': 'qwen2.5-coder:3b',      'label': 'Qwen 2.5 Coder 3B',     'size': '1.9 GB'},
-  {'tag': 'phi4-mini:3.8b',        'label': 'Phi-4 Mini 3.8B',       'size': '2.5 GB'},
-  {'tag': 'qwen2.5:7b',            'label': 'Qwen 2.5 7B',           'size': '4.7 GB'},
-  {'tag': 'qwen2.5-coder:7b',      'label': 'Qwen 2.5 Coder 7B',     'size': '4.7 GB'},
-  {'tag': 'llama3.1:8b',           'label': 'Llama 3.1 8B',          'size': '4.7 GB'},
-  {'tag': 'deepseek-r1:7b',        'label': 'DeepSeek R1 7B',        'size': '4.7 GB'},
-  {'tag': 'mistral:7b',            'label': 'Mistral 7B',            'size': '4.1 GB'},
-  {'tag': 'qwen2.5:14b',           'label': 'Qwen 2.5 14B',          'size': '9.0 GB'},
-  {'tag': 'phi4:14b',              'label': 'Phi-4 14B',             'size': '9.1 GB'},
-  {'tag': 'llama3.2-vision:11b',   'label': 'Llama 3.2 Vision 11B',  'size': '8.1 GB'},
+  {'tag': 'smollm2:1.7b', 'label': 'SmolLM2 1.7B', 'size': '1.0 GB'},
+  {'tag': 'deepseek-r1:1.5b', 'label': 'DeepSeek R1 1.5B', 'size': '1.1 GB'},
+  {'tag': 'qwen2.5:0.5b', 'label': 'Qwen 2.5 0.5B', 'size': '394 MB'},
+  {'tag': 'qwen2.5:1.5b', 'label': 'Qwen 2.5 1.5B', 'size': '986 MB'},
+  {'tag': 'llama3.2:1b', 'label': 'Llama 3.2 1B', 'size': '1.3 GB'},
+  {'tag': 'llama3.2:3b', 'label': 'Llama 3.2 3B', 'size': '2.0 GB'},
+  {'tag': 'qwen2.5:3b', 'label': 'Qwen 2.5 3B', 'size': '1.9 GB'},
+  {'tag': 'qwen2.5-coder:3b', 'label': 'Qwen 2.5 Coder 3B', 'size': '1.9 GB'},
+  {'tag': 'phi4-mini:3.8b', 'label': 'Phi-4 Mini 3.8B', 'size': '2.5 GB'},
+  {'tag': 'qwen2.5:7b', 'label': 'Qwen 2.5 7B', 'size': '4.7 GB'},
+  {'tag': 'qwen2.5-coder:7b', 'label': 'Qwen 2.5 Coder 7B', 'size': '4.7 GB'},
+  {'tag': 'llama3.1:8b', 'label': 'Llama 3.1 8B', 'size': '4.7 GB'},
+  {'tag': 'deepseek-r1:7b', 'label': 'DeepSeek R1 7B', 'size': '4.7 GB'},
+  {'tag': 'mistral:7b', 'label': 'Mistral 7B', 'size': '4.1 GB'},
+  {'tag': 'qwen2.5:14b', 'label': 'Qwen 2.5 14B', 'size': '9.0 GB'},
+  {'tag': 'phi4:14b', 'label': 'Phi-4 14B', 'size': '9.1 GB'},
+  {
+    'tag': 'llama3.2-vision:11b',
+    'label': 'Llama 3.2 Vision 11B',
+    'size': '8.1 GB'
+  },
 ];
 
 /// Ollama cloud models — run on ollama.com servers via the local Ollama daemon.
 /// No download needed. Require `ollama signin` authentication.
 /// Sources: ollama.com/blog/cloud-models + docs.ollama.com/integrations/openclaw
-const _kCloudOllamaModels = [
-  {'tag': 'qwen3-coder:480b-cloud',   'label': 'Qwen3 Coder 480B',   'category': 'Code',      'hasTools': 'true'},
-  {'tag': 'gpt-oss:120b-cloud',       'label': 'GPT-OSS 120B',        'category': 'General',   'hasTools': 'true'},
-  {'tag': 'gpt-oss:20b-cloud',        'label': 'GPT-OSS 20B',         'category': 'General',   'hasTools': 'false'},
-  {'tag': 'deepseek-v3.1:671b-cloud', 'label': 'DeepSeek V3.1 671B', 'category': 'Reasoning', 'hasTools': 'false'},
-  {'tag': 'kimi-k2.5:cloud',          'label': 'Kimi K2.5',          'category': 'General',   'hasTools': 'true'},
-  {'tag': 'minimax-m2.7:cloud',       'label': 'MiniMax M2.7',       'category': 'General',   'hasTools': 'false'},
-  {'tag': 'glm-5:cloud',              'label': 'GLM-5',              'category': 'General',   'hasTools': 'false'},
-];
+final _kCloudOllamaModels = ModelProviderCatalog.ollamaCloudModels
+    .map((model) => <String, String>{
+          'tag': model.ollamaTag,
+          'label': model.label,
+          'category': model.category,
+          'hasTools': model.supportsToolCalls ? 'true' : 'false',
+        })
+    .toList(growable: false);
 
 class LocalLlmScreen extends StatefulWidget {
   const LocalLlmScreen({super.key});
@@ -53,7 +57,8 @@ class LocalLlmScreen extends StatefulWidget {
   State<LocalLlmScreen> createState() => _LocalLlmScreenState();
 }
 
-class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObserver {
+class _LocalLlmScreenState extends State<LocalLlmScreen>
+    with WidgetsBindingObserver {
   final _service = LocalLlmService();
   LocalLlmState _state = const LocalLlmState();
   LocalLlmModel? _selectedModel;
@@ -61,7 +66,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   GatewayState _gatewayState = const GatewayState();
 
   // Diagnostics state
-  final _testPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
+  final _testPromptController = TextEditingController(
+      text: 'Hello, what model are you? Tell me a brief joke.');
   final _testResponseNotifier = ValueNotifier<String>('');
   bool _isTesting = false;
   double _tokensPerSec = 0;
@@ -87,7 +93,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
   // Thread slider state
   int _cpuCoreCount = 8; // default; refined at initState from /proc/cpuinfo
-  bool _threadsPendingApply = false; // true when slider moved but Ollama not recreated
+  bool _threadsPendingApply =
+      false; // true when slider moved but Ollama not recreated
 
   // Integrated Ollama State
   bool _isInternalOllamaInstalled = false;
@@ -95,7 +102,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   double _installProgress = 0;
   bool _isInternalOllamaRunning = false;
   bool _isTogglingOllama = false;
-  
+
   // Model Sync/Pull State
   bool _isSyncingOllama = false;
   bool _isPullingOllama = false;
@@ -109,7 +116,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   StreamSubscription<String>? _ollamaTestSub;
 
   // Ollama Diagnostics
-  final _ollamaTestPromptController = TextEditingController(text: 'Hello, what model are you? Tell me a brief joke.');
+  final _ollamaTestPromptController = TextEditingController(
+      text: 'Hello, what model are you? Tell me a brief joke.');
   String _ollamaTestResponse = '';
   bool _isOllamaTesting = false;
 
@@ -162,7 +170,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     _checkOllamaSignin();
     _readCpuCoreCount();
     // Default selection to the recommended model
-    final toolCatalog = _service.catalog.where((m) => m.supportsToolCalls).toList();
+    final toolCatalog =
+        _service.catalog.where((m) => m.supportsToolCalls).toList();
     _selectedModel = toolCatalog.firstWhere(
       (m) => m.quality == 'Recommended',
       orElse: () => toolCatalog.first,
@@ -202,7 +211,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Re-check signin status when user returns from the browser OAuth flow.
-    // We add a 1s delay because the ollama background process may take a 
+    // We add a 1s delay because the ollama background process may take a
     // moment to finish writing the ~/.ollama/credentials file.
     if (state == AppLifecycleState.resumed) {
       Future.delayed(const Duration(seconds: 1), () => _checkOllamaSignin());
@@ -238,7 +247,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Installation failed: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+              content: Text('Installation failed: $e'),
+              backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -249,18 +260,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   Future<void> _toggleInternalOllama() async {
     if (_isTogglingOllama) return;
     setState(() => _isTogglingOllama = true);
-    
+
     try {
       if (_isInternalOllamaRunning) {
         await GatewayService().stopInternalOllama();
       } else {
         await GatewayService().startInternalOllama();
       }
-      
+
       // Wait for process state to settle
       await Future.delayed(const Duration(milliseconds: 1500));
       await _checkInternalStatus();
-      
+
       // Trigger a health check if it should be running
       if (_isInternalOllamaRunning) {
         await _checkOllamaStatus();
@@ -282,10 +293,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         backgroundColor: const Color(0xFF1E1E2E),
         title: Row(
           children: [
-            const Icon(Icons.terminal_rounded, color: Colors.blueAccent, size: 20),
+            const Icon(Icons.terminal_rounded,
+                color: Colors.blueAccent, size: 20),
             const SizedBox(width: 8),
-            Text('Integrated Hub Logs', 
-              style: GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
+            Text('Integrated Hub Logs',
+                style: GoogleFonts.outfit(color: Colors.white, fontSize: 16)),
           ],
         ),
         content: Container(
@@ -299,7 +311,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           child: SingleChildScrollView(
             child: Text(
               logs,
-              style: GoogleFonts.jetBrainsMono(color: Colors.white70, fontSize: 10),
+              style: GoogleFonts.jetBrainsMono(
+                  color: Colors.white70, fontSize: 10),
             ),
           ),
         ),
@@ -364,7 +377,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       // A configured :cloud model is not proof of sign-in after app updates or
       // config restores. Always verify the actual Ollama credentials/live probe.
       final signedIn = await GatewayService().checkOllamaCredentials();
-      
+
       if (mounted) {
         setState(() => _ollamaSignedIn = signedIn);
         // If we just successfully signed in and had a model pending, activate it now.
@@ -376,7 +389,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         // Also load the active cloud model from prefs if we're signed in.
         if (signedIn && _activeCloudModel == null) {
           if (configured != null && configured.contains(':cloud')) {
-            setState(() => _activeCloudModel = configured.replaceFirst('ollama/', ''));
+            setState(() =>
+                _activeCloudModel = configured.replaceFirst('ollama/', ''));
           }
         }
       }
@@ -416,7 +430,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         'head -10 /tmp/oc_signin_out.txt',
         timeout: 15,
       );
-      
+
       final urlMatch = RegExp(r'https://[^\s]+').firstMatch(result);
       if (urlMatch != null) {
         final uri = Uri.tryParse(urlMatch.group(0)!);
@@ -433,7 +447,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         }
       } else {
         // Didn't get URL — check if it's because we're already logged in
-        if (result.contains('already logged in') || result.contains('Logged in as')) {
+        if (result.contains('already logged in') ||
+            result.contains('Logged in as')) {
           _checkOllamaSignin(); // Re-probe to update UI state immediately
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -448,13 +463,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               context: context,
               builder: (_) => AlertDialog(
                 backgroundColor: const Color(0xFF1A1A2E),
-                title: const Text('Ollama Sign-in', style: TextStyle(color: Colors.white, fontSize: 14)),
+                title: const Text('Ollama Sign-in',
+                    style: TextStyle(color: Colors.white, fontSize: 14)),
                 content: SelectableText(
-                  result.isNotEmpty ? result : 'No output received. Is Ollama Hub running?',
+                  result.isNotEmpty
+                      ? result
+                      : 'No output received. Is Ollama Hub running?',
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close')),
                 ],
               ),
             );
@@ -474,6 +494,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   }
 
   Future<void> _selectCloudOllamaModel(String tag) async {
+    final fullModel = tag.startsWith('ollama/') ? tag : 'ollama/$tag';
     if (!_isInternalOllamaInstalled) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -486,13 +507,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       return;
     }
 
-    // No client-side sign-in gate — the Ollama daemon handles auth.
-    // If the user isn't signed in, the daemon returns an auth error which
-    // surfaces naturally in the chat stream. The USE button always works.
-
-    // AUTO-START: If the hub is not running, start it for the user before activating.
+    // AUTO-START: cloud models still need the local Ollama daemon as the
+    // authenticated proxy. Persist prefs first so the readiness guard knows why
+    // the Hub is required.
     if (!_isOllamaHealthy) {
       _pendingCloudModel = tag;
+      PreferencesService().configuredModel = fullModel;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -502,20 +522,44 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           ),
         );
       }
-      if (!_isInternalOllamaRunning) {
-        _toggleInternalOllama(); // This sets _isTogglingOllama and calls startInternalOllama()
-      } else {
-        // Hub is "running" (process exists) but not "healthy" (API down).
-        // Trigger a fresh status probe which will then chain-activate the model.
-        _checkOllamaStatus();
+      final ready = await GatewayService().prepareLocalOllamaForGateway(
+        reason: 'local-llm-cloud-select',
+        wait: const Duration(seconds: 30),
+      );
+      await _checkInternalStatus();
+      await _checkOllamaStatus();
+      if (!ready && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Ollama Hub is not ready yet. Start Agent Hub first.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
+      return;
+    }
+
+    if (!_ollamaSignedIn) {
+      _pendingCloudModel = tag;
+      PreferencesService().configuredModel = fullModel;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Ollama Cloud needs sign-in. Opening Ollama sign-in...'),
+            backgroundColor: Color(0xFFAB47BC),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      await _launchOllamaSignin();
       return;
     }
 
     setState(() => _isRegisteringOllama = true);
     try {
       // 1. Persist the full model path (ollama/tag) to gateway config AND prefs.
-      final fullModel = tag.startsWith('ollama/') ? tag : 'ollama/$tag';
       await GatewayService().persistModel(fullModel);
 
       // 2. Also update the Ollama provider config block for gateway routing.
@@ -542,14 +586,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+              content: Text('Failed: $e'), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
       if (mounted) setState(() => _isRegisteringOllama = false);
     }
   }
-
 
   Future<void> _fetchOllamaModels() async {
     // Prefer the managed list from GatewayService (canonical names from our
@@ -608,10 +652,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       GatewayService().disconnectWebSocket();
 
       if (mounted) {
-        setState(() => _activeCloudModel = null); // Clear cloud model — now using local
+        setState(() =>
+            _activeCloudModel = null); // Clear cloud model — now using local
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ollama registered as Gateway Driver: $_selectedOllamaModel'),
+            content: Text(
+                'Ollama registered as Gateway Driver: $_selectedOllamaModel'),
             backgroundColor: AppColors.statusGreen,
           ),
         );
@@ -619,13 +665,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to register Ollama: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+              content: Text('Failed to register Ollama: $e'),
+              backgroundColor: Colors.redAccent),
         );
       }
     } finally {
       if (mounted) setState(() => _isRegisteringOllama = false);
     }
   }
+
   Future<void> _handleOllamaSync() async {
     setState(() => _isSyncingOllama = true);
     try {
@@ -639,7 +688,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sync failed: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+              content: Text('Sync failed: $e'),
+              backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -672,7 +723,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Pull failed: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+              content: Text('Pull failed: $e'),
+              backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -725,7 +778,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               _buildAppBar(context),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -775,7 +829,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       pinned: true,
       backgroundColor: const Color(0xFF0D1B2A),
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
+        icon:
+            const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
         onPressed: () => Navigator.pop(context),
       ),
       title: Text(
@@ -811,10 +866,26 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
   Widget _buildStatusCard() {
     final (Color color, IconData icon, String label) = switch (_state.status) {
-      LocalLlmStatus.ready => (AppColors.statusGreen, Icons.check_circle_rounded, 'Running'),
-      LocalLlmStatus.starting => (Colors.amber, Icons.hourglass_top_rounded, 'Starting...'),
-      LocalLlmStatus.downloading => (Colors.blueAccent, Icons.cloud_download_rounded, 'Downloading'),
-      LocalLlmStatus.installing => (Colors.purpleAccent, Icons.memory_rounded, 'Activating...'),
+      LocalLlmStatus.ready => (
+          AppColors.statusGreen,
+          Icons.check_circle_rounded,
+          'Running'
+        ),
+      LocalLlmStatus.starting => (
+          Colors.amber,
+          Icons.hourglass_top_rounded,
+          'Starting...'
+        ),
+      LocalLlmStatus.downloading => (
+          Colors.blueAccent,
+          Icons.cloud_download_rounded,
+          'Downloading'
+        ),
+      LocalLlmStatus.installing => (
+          Colors.purpleAccent,
+          Icons.memory_rounded,
+          'Activating...'
+        ),
       LocalLlmStatus.error => (Colors.redAccent, Icons.error_rounded, 'Error'),
       LocalLlmStatus.idle => (Colors.white30, Icons.circle_outlined, 'Offline'),
     };
@@ -843,14 +914,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(label,
                     style: TextStyle(
-                        color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                        color: color,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -900,7 +974,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 _service.stop();
               }),
               icon: const Icon(Icons.refresh, size: 14, color: Colors.white54),
-              label: const Text('Reset', style: TextStyle(color: Colors.white54, fontSize: 12)),
+              label: const Text('Reset',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
             ),
           ],
         ],
@@ -915,7 +990,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     final bool aboveCoreCount = threads > _cpuCoreCount;
     final int sliderMax = _cpuCoreCount;
     // Clamp display value to slider max to avoid assertion error
-    final double sliderValue = threads.toDouble().clamp(1.0, sliderMax.toDouble());
+    final double sliderValue =
+        threads.toDouble().clamp(1.0, sliderMax.toDouble());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -927,17 +1003,21 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             Text(
               'CPU Threads',
               style: GoogleFonts.outfit(
-                  color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
             ),
             Row(
               children: [
                 if (isInferring)
                   const Padding(
                     padding: EdgeInsets.only(right: 6),
-                    child: Icon(Icons.lock_outline, color: Colors.white38, size: 13),
+                    child: Icon(Icons.lock_outline,
+                        color: Colors.white38, size: 13),
                   ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
                     color: aboveCoreCount
                         ? Colors.amber.withValues(alpha: 0.15)
@@ -986,7 +1066,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 ? null
                 : (v) {
                     final newThreads = v.toInt();
-                    _service.setThreads(newThreads, currentModel: _selectedModel);
+                    _service.setThreads(newThreads,
+                        currentModel: _selectedModel);
                     if (hasOllamaModels) {
                       setState(() => _threadsPendingApply = true);
                     }
@@ -1008,7 +1089,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 12),
+                const Icon(Icons.warning_amber_rounded,
+                    color: Colors.amber, size: 12),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -1032,7 +1114,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             ),
             child: Row(
               children: [
-                const Icon(Icons.refresh_rounded, color: Colors.amber, size: 14),
+                const Icon(Icons.refresh_rounded,
+                    color: Colors.amber, size: 14),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
@@ -1052,11 +1135,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                           }
                         },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: Colors.amber.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(7),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                      border: Border.all(
+                          color: Colors.amber.withValues(alpha: 0.6)),
                     ),
                     child: _isSyncingOllama
                         ? const SizedBox(
@@ -1187,31 +1272,47 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 ),
                 if (isActive) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppColors.statusGreen.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.4)),
+                      border: Border.all(
+                          color: AppColors.statusGreen.withValues(alpha: 0.4)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(width: 5, height: 5, decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.statusGreen)),
+                        Container(
+                            width: 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.statusGreen)),
                         const SizedBox(width: 4),
-                        Text('RUNNING', style: TextStyle(color: AppColors.statusGreen, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                        Text('RUNNING',
+                            style: TextStyle(
+                                color: AppColors.statusGreen,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5)),
                       ],
                     ),
                   ),
                 ] else ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: qualityColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       model.quality,
-                      style: TextStyle(color: qualityColor, fontSize: 9, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: qualityColor,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -1220,14 +1321,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             const SizedBox(height: 6),
             Text(
               model.description,
-              style: const TextStyle(color: Colors.white54, fontSize: 11, height: 1.4),
+              style: const TextStyle(
+                  color: Colors.white54, fontSize: 11, height: 1.4),
             ),
             const SizedBox(height: 10),
             Row(
               children: [
                 _specChip('${model.fileSizeMb} MB download'),
                 const SizedBox(width: 6),
-                _specChip('${(model.requiredRamMb / 1024).toStringAsFixed(1)} GB RAM'),
+                _specChip(
+                    '${(model.requiredRamMb / 1024).toStringAsFixed(1)} GB RAM'),
                 const SizedBox(width: 6),
                 _specChip('${model.contextWindow ~/ 1024}K ctx'),
                 const Spacer(),
@@ -1259,24 +1362,29 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9)),
+      child: Text(label,
+          style: const TextStyle(color: Colors.white38, fontSize: 9)),
     );
   }
 
-  Widget _buildActionButton(LocalLlmModel model, bool isDownloaded, bool isActive) {
+  Widget _buildActionButton(
+      LocalLlmModel model, bool isDownloaded, bool isActive) {
     final anotherModelRunning = _state.activeModelId != null && !isActive;
-    final isStartingThis = _state.status == LocalLlmStatus.starting && _selectedModel?.id == model.id;
+    final isStartingThis = _state.status == LocalLlmStatus.starting &&
+        _selectedModel?.id == model.id;
 
     // Active model → Stop
     if (isActive) {
       return TextButton.icon(
         onPressed: _service.stop,
         icon: const Icon(Icons.stop_rounded, size: 14, color: Colors.redAccent),
-        label: const Text('Stop', style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+        label: const Text('Stop',
+            style: TextStyle(color: Colors.redAccent, fontSize: 11)),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           backgroundColor: Colors.red.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
@@ -1285,12 +1393,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (isStartingThis) {
       return TextButton.icon(
         onPressed: null,
-        icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
-        label: const Text('Starting...', style: TextStyle(color: Colors.amber, fontSize: 11)),
+        icon: const SizedBox(
+            width: 14,
+            height: 14,
+            child:
+                CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
+        label: const Text('Starting...',
+            style: TextStyle(color: Colors.amber, fontSize: 11)),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           backgroundColor: Colors.amber.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
@@ -1305,30 +1419,39 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 setState(() => _selectedModel = model);
                 _service.startWithModel(model);
               },
-        icon: Icon(isSwitch ? Icons.swap_horiz_rounded : Icons.play_arrow_rounded,
-            size: 14, color: isSwitch ? Colors.amber : AppColors.statusGreen),
+        icon: Icon(
+            isSwitch ? Icons.swap_horiz_rounded : Icons.play_arrow_rounded,
+            size: 14,
+            color: isSwitch ? Colors.amber : AppColors.statusGreen),
         label: Text(
           isSwitch ? 'Switch' : 'Start',
-          style: TextStyle(color: isSwitch ? Colors.amber : AppColors.statusGreen, fontSize: 11),
+          style: TextStyle(
+              color: isSwitch ? Colors.amber : AppColors.statusGreen,
+              fontSize: 11),
         ),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          backgroundColor: (isSwitch ? Colors.amber : AppColors.statusGreen).withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          backgroundColor: (isSwitch ? Colors.amber : AppColors.statusGreen)
+              .withValues(alpha: 0.1),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
 
     // Not downloaded → Download
     return TextButton.icon(
-      onPressed: _state.status == LocalLlmStatus.idle || _state.status == LocalLlmStatus.error
+      onPressed: _state.status == LocalLlmStatus.idle ||
+              _state.status == LocalLlmStatus.error
           ? () {
               setState(() => _selectedModel = model);
               _service.downloadAndStart(model);
             }
           : null,
-      icon: const Icon(Icons.cloud_download_rounded, size: 14, color: Colors.blueAccent),
-      label: const Text('Download', style: TextStyle(color: Colors.blueAccent, fontSize: 11)),
+      icon: const Icon(Icons.cloud_download_rounded,
+          size: 14, color: Colors.blueAccent),
+      label: const Text('Download',
+          style: TextStyle(color: Colors.blueAccent, fontSize: 11)),
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         backgroundColor: Colors.blueAccent.withValues(alpha: 0.1),
@@ -1350,12 +1473,15 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         children: [
           Row(
             children: [
-              const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 16),
+              const Icon(Icons.info_outline_rounded,
+                  color: Colors.amber, size: 16),
               const SizedBox(width: 8),
               Text(
                 'Device Requirements',
                 style: GoogleFonts.outfit(
-                    color: Colors.amber, fontWeight: FontWeight.w700, fontSize: 13),
+                    color: Colors.amber,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13),
               ),
             ],
           ),
@@ -1377,7 +1503,10 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             dense: true,
             title: const Text(
               'About VRAM vs RAM on phones',
-              style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: Colors.amber,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600),
             ),
             iconColor: Colors.amber,
             collapsedIconColor: Colors.white38,
@@ -1393,7 +1522,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 'The "Required RAM" figures in each model card below already account for this: '
                 'they are the total system RAM (model weights + KV cache + Android OS overhead) '
                 'needed for stable inference on CPU. No VRAM is needed or used.',
-                style: TextStyle(color: Colors.white54, fontSize: 10, height: 1.6),
+                style:
+                    TextStyle(color: Colors.white54, fontSize: 10, height: 1.6),
               ),
             ],
           ),
@@ -1411,7 +1541,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             width: 90,
             child: Text(tier,
                 style: const TextStyle(
-                    color: Colors.white60, fontSize: 11, fontWeight: FontWeight.w600)),
+                    color: Colors.white60,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
           ),
           Expanded(
             child: Text(spec,
@@ -1434,33 +1566,42 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.info_outline_rounded, color: Colors.blueAccent, size: 15),
+            const Icon(Icons.info_outline_rounded,
+                color: Colors.blueAccent, size: 15),
             const SizedBox(width: 8),
             Text('How to use local models',
                 style: GoogleFonts.outfit(
-                    color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12)),
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12)),
           ]),
           const SizedBox(height: 10),
-          _instructionStep('1  Download', 'Tap Download on the model card above to save it to your device (~1–2 GB).'),
+          _instructionStep('1  Download',
+              'Tap Download on the model card above to save it to your device (~1–2 GB).'),
           const SizedBox(height: 6),
-          _instructionStep('2  Direct Mode', 'Tap Start to load via the on-device NDK (fllama). This provides a high-speed, direct LLM experience with 100% offline Voice — bypassing the gateway for maximum privacy.'),
+          _instructionStep('2  Direct Mode',
+              'Tap Start to load via the on-device NDK (fllama). This provides a high-speed, direct LLM experience with 100% offline Voice — bypassing the gateway for maximum privacy.'),
           const SizedBox(height: 6),
-          _instructionStep('3  Agent Hub', 'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
+          _instructionStep('3  Agent Hub',
+              'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
               color: Colors.blueAccent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.2)),
+              border:
+                  Border.all(color: Colors.blueAccent.withValues(alpha: 0.2)),
             ),
             child: Row(children: [
-              const Icon(Icons.bolt_rounded, color: Colors.blueAccent, size: 13),
+              const Icon(Icons.bolt_rounded,
+                  color: Colors.blueAccent, size: 13),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'NDK Direct = Pure offline Voice & high-speed LLM. Not connected to the OpenClaw Gateway. Optimized for direct performance.',
-                  style: const TextStyle(color: Colors.blueAccent, fontSize: 10, height: 1.4),
+                  style: const TextStyle(
+                      color: Colors.blueAccent, fontSize: 10, height: 1.4),
                 ),
               ),
             ]),
@@ -1478,11 +1619,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           width: 72,
           child: Text(label,
               style: const TextStyle(
-                  color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w700)),
+                  color: Colors.white54,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700)),
         ),
         Expanded(
           child: Text(text,
-              style: const TextStyle(color: Colors.white38, fontSize: 10, height: 1.4)),
+              style: const TextStyle(
+                  color: Colors.white38, fontSize: 10, height: 1.4)),
         ),
       ],
     );
@@ -1508,12 +1652,15 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         children: [
           Row(
             children: [
-              const Icon(Icons.offline_bolt_outlined, color: Colors.blueAccent, size: 16),
+              const Icon(Icons.offline_bolt_outlined,
+                  color: Colors.blueAccent, size: 16),
               const SizedBox(width: 8),
               Text(
                 'NDK Direct — Direct LLM Experience',
                 style: GoogleFonts.outfit(
-                    color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13),
               ),
             ],
           ),
@@ -1556,14 +1703,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               Row(
                 children: [
                   Icon(
-                    _activeCloudModel != null
-                        ? Icons.cloud_queue_rounded
-                        : _isInternalOllamaInstalled ? Icons.settings_input_component : Icons.auto_awesome,
-                    color: _activeCloudModel != null
-                        ? const Color(0xFFAB47BC)
-                        : _isInternalOllamaInstalled ? AppColors.statusGreen : Colors.amber,
-                    size: 20
-                  ),
+                      _activeCloudModel != null
+                          ? Icons.cloud_queue_rounded
+                          : _isInternalOllamaInstalled
+                              ? Icons.settings_input_component
+                              : Icons.auto_awesome,
+                      color: _activeCloudModel != null
+                          ? const Color(0xFFAB47BC)
+                          : _isInternalOllamaInstalled
+                              ? AppColors.statusGreen
+                              : Colors.amber,
+                      size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1581,29 +1731,31 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                         ),
                         Text(
                           _activeCloudModel != null
-                            ? 'Cloud Model Active — via Ollama Hub'
-                            : _isInternalOllamaInstalled 
-                              ? (_isInternalOllamaRunning
-                                  ? (_selectedOllamaModel != null
-                                      ? 'Active · $_selectedOllamaModel'
-                                      : 'Service Active')
-                                  : 'Service Standby')
-                              : 'Enable offline AI — no internet required',
+                              ? 'Cloud Model Active — via Ollama Hub'
+                              : _isInternalOllamaInstalled
+                                  ? (_isInternalOllamaRunning
+                                      ? (_selectedOllamaModel != null
+                                          ? 'Active · $_selectedOllamaModel'
+                                          : 'Service Active')
+                                      : 'Service Standby')
+                                  : 'Enable offline AI — no internet required',
                           style: TextStyle(
-                            color: _activeCloudModel != null
-                                ? const Color(0xFFAB47BC)
-                                : _isInternalOllamaRunning ? AppColors.statusGreen : Colors.white38,
-                            fontSize: 11
-                          ),
+                              color: _activeCloudModel != null
+                                  ? const Color(0xFFAB47BC)
+                                  : _isInternalOllamaRunning
+                                      ? AppColors.statusGreen
+                                      : Colors.white38,
+                              fontSize: 11),
                         ),
                       ],
                     ),
                   ),
-                  if (_isInternalOllamaInstalled) 
+                  if (_isInternalOllamaInstalled)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: IconButton(
-                        icon: const Icon(Icons.wysiwyg_rounded, color: Colors.white24, size: 18),
+                        icon: const Icon(Icons.wysiwyg_rounded,
+                            color: Colors.white24, size: 18),
                         onPressed: _showOllamaLogsDialog,
                         tooltip: 'View Hub Logs',
                       ),
@@ -1627,13 +1779,15 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                   Center(
                     child: Text(
                       'Downloading Runtime: ${(_installProgress * 100).toStringAsFixed(1)}%',
-                      style: GoogleFonts.jetBrainsMono(color: Colors.amber, fontSize: 10),
+                      style: GoogleFonts.jetBrainsMono(
+                          color: Colors.amber, fontSize: 10),
                     ),
                   ),
                 ] else ...[
                   Text(
                     'Enables Plawie to use a powerful local inference engine (Ollama) for reasoning and tools. No external apps required.',
-                    style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
+                    style: TextStyle(
+                        color: Colors.white54, fontSize: 12, height: 1.4),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
@@ -1641,11 +1795,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber.withValues(alpha: 0.1),
                       foregroundColor: Colors.amber,
-                      side: BorderSide(color: Colors.amber.withValues(alpha: 0.3)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      side: BorderSide(
+                          color: Colors.amber.withValues(alpha: 0.3)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       minimumSize: const Size(double.infinity, 45),
                     ),
-                    child: Text('Initialize Local LLM Hub', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                    child: Text('Initialize Local LLM Hub',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
                   ),
                 ],
               ] else ...[
@@ -1666,39 +1823,50 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
                 const Divider(color: Colors.white10, height: 1),
                 const SizedBox(height: 12),
-                
+
                 // Sync Action
                 _buildModelActionRow(
                   icon: Icons.sync_rounded,
                   title: 'Sync Installed GGUFs',
                   subtitle: 'Register local files with Ollama',
                   trailing: _isSyncingOllama
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : TextButton(
-                        onPressed: _handleOllamaSync,
-                        child: const Text('SYNC', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-                      ),
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : TextButton(
+                          onPressed: _handleOllamaSync,
+                          child: const Text('SYNC',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueAccent)),
+                        ),
                 ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // Pull Action
                 _buildModelActionRow(
                   icon: Icons.download_for_offline_rounded,
                   title: 'Pull from Library',
                   subtitle: 'Download tags (e.g. phi3)',
                   trailing: _isPullingOllama
-                    ? SizedBox(
-                        width: 40,
-                        child: Center(
-                          child: Text('${(_ollamaPullProgress * 100).toInt()}%', 
-                            style: const TextStyle(fontSize: 10, color: Colors.amber, fontWeight: FontWeight.bold)),
-                        )
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.add_circle_outline, color: Colors.amber, size: 20),
-                        onPressed: _showPullDialog,
-                      ),
+                      ? SizedBox(
+                          width: 40,
+                          child: Center(
+                            child: Text(
+                                '${(_ollamaPullProgress * 100).toInt()}%',
+                                style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.amber,
+                                    fontWeight: FontWeight.bold)),
+                          ))
+                      : IconButton(
+                          icon: const Icon(Icons.add_circle_outline,
+                              color: Colors.amber, size: 20),
+                          onPressed: _showPullDialog,
+                        ),
                 ),
 
                 const SizedBox(height: 16),
@@ -1706,18 +1874,28 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: (_isOllamaHealthy && !_isRegisteringOllama) 
-                      ? _registerOllamaAsDriver 
-                      : null,
+                    onPressed: (_isOllamaHealthy && !_isRegisteringOllama)
+                        ? _registerOllamaAsDriver
+                        : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isOllamaHealthy ? AppColors.statusGreen.withValues(alpha: 0.1) : Colors.white12,
-                      foregroundColor: _isOllamaHealthy ? AppColors.statusGreen : Colors.white24,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      backgroundColor: _isOllamaHealthy
+                          ? AppColors.statusGreen.withValues(alpha: 0.1)
+                          : Colors.white12,
+                      foregroundColor: _isOllamaHealthy
+                          ? AppColors.statusGreen
+                          : Colors.white24,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       minimumSize: const Size(double.infinity, 45),
                     ),
                     child: _isRegisteringOllama
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text('Set as Primary Gateway Driver', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text('Set as Primary Gateway Driver',
+                            style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],
@@ -1743,7 +1921,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         children: [
           Row(
             children: [
-              const Icon(Icons.monitor_heart_rounded, color: Colors.white30, size: 12),
+              const Icon(Icons.monitor_heart_rounded,
+                  color: Colors.white30, size: 12),
               const SizedBox(width: 6),
               Text(
                 'LIVE ACTIVITY',
@@ -1762,7 +1941,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 ? Center(
                     child: Text(
                       'Waiting for activity...',
-                      style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 10),
+                      style: GoogleFonts.jetBrainsMono(
+                          color: Colors.white24, fontSize: 10),
                     ),
                   )
                 : ListView.builder(
@@ -1770,14 +1950,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                     itemCount: _activityLogs.length,
                     itemBuilder: (ctx, i) {
                       final entry = _activityLogs[i];
-                      final Color entryColor = entry.contains('✗') || entry.contains('⚠')
-                          ? Colors.redAccent
-                          : entry.contains('✓')
-                              ? AppColors.statusGreen
-                              : Colors.white54;
+                      final Color entryColor =
+                          entry.contains('✗') || entry.contains('⚠')
+                              ? Colors.redAccent
+                              : entry.contains('✓')
+                                  ? AppColors.statusGreen
+                                  : Colors.white54;
                       return Text(
                         entry,
-                        style: GoogleFonts.jetBrainsMono(color: entryColor, fontSize: 10),
+                        style: GoogleFonts.jetBrainsMono(
+                            color: entryColor, fontSize: 10),
                       );
                     },
                   ),
@@ -1786,13 +1968,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       ),
     );
   }
-  
+
   Widget _buildGatewayHealthCard() {
     final isConnected = _gatewayState.isWebsocketConnected;
-    final uptime = _gatewayState.startedAt != null 
+    final uptime = _gatewayState.startedAt != null
         ? DateTime.now().difference(_gatewayState.startedAt!)
         : null;
-    
+
     final healthData = _gatewayState.detailedHealth;
     final ok = healthData?['ok'] ?? isConnected;
 
@@ -1808,7 +1990,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: (isConnected ? AppColors.statusGreen : Colors.amber).withValues(alpha: 0.1),
+              color: (isConnected ? AppColors.statusGreen : Colors.amber)
+                  .withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -1832,15 +2015,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 ),
                 Text(
                   uptime != null
-                    ? '${uptime.inMinutes}m ${uptime.inSeconds % 60}s uptime'
-                    : 'Standby',
+                      ? '${uptime.inMinutes}m ${uptime.inSeconds % 60}s uptime'
+                      : 'Standby',
                   style: const TextStyle(color: Colors.white30, fontSize: 10),
                 ),
               ],
             ),
           ),
           if (ok == true)
-            const Icon(Icons.verified_user_rounded, color: Colors.blueAccent, size: 14),
+            const Icon(Icons.verified_user_rounded,
+                color: Colors.blueAccent, size: 14),
         ],
       ),
     );
@@ -1850,9 +2034,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: (_isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent).withValues(alpha: 0.1),
+        color: (_isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent)
+            .withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: (_isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent).withValues(alpha: 0.2)),
+        border: Border.all(
+            color: (_isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent)
+                .withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1862,14 +2049,16 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             height: 6,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent,
+              color:
+                  _isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent,
             ),
           ),
           const SizedBox(width: 6),
           Text(
             _isOllamaHealthy ? 'ONLINE' : 'OFFLINE',
             style: GoogleFonts.outfit(
-              color: _isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent,
+              color:
+                  _isOllamaHealthy ? AppColors.statusGreen : Colors.redAccent,
               fontSize: 10,
               fontWeight: FontWeight.w800,
             ),
@@ -1886,9 +2075,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       // ollamaId format: "qwen2.5-1.5b-instruct:q4_k_m"
       // catalog id:      "qwen2.5-1.5b-instruct-q4_k_m"
       // Match by stripping all punctuation and comparing lowercase.
-      final stripped = ollamaId.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase();
+      final stripped =
+          ollamaId.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase();
       return catalog.firstWhere(
-        (m) => m.id.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase() == stripped,
+        (m) =>
+            m.id.replaceAll(RegExp(r'[.\-_:]'), '').toLowerCase() == stripped,
       );
     } catch (_) {
       return null;
@@ -1923,16 +2114,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             decoration: BoxDecoration(
               color: AppColors.statusAmber.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.statusAmber.withValues(alpha: 0.3)),
+              border: Border.all(
+                  color: AppColors.statusAmber.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.statusAmber),
+                const Icon(Icons.warning_amber_rounded,
+                    size: 14, color: AppColors.statusAmber),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
                     'No tool-capable models synced. Download Qwen 2.5 1.5B or 3B for full gateway features.',
-                    style: TextStyle(fontSize: 11, color: AppColors.statusAmber),
+                    style:
+                        TextStyle(fontSize: 11, color: AppColors.statusAmber),
                   ),
                 ),
               ],
@@ -1951,7 +2145,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               value: validValue,
               dropdownColor: const Color(0xFF1E1E2E),
               isExpanded: true,
-              hint: const Text('No models found', style: TextStyle(color: Colors.white24, fontSize: 12)),
+              hint: const Text('No models found',
+                  style: TextStyle(color: Colors.white24, fontSize: 12)),
               items: displayModels.map((m) {
                 final entry = _catalogEntryFor(m['id']!);
                 final hasTools = entry?.supportsToolCalls ?? false;
@@ -1963,12 +2158,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                         child: Text(
                           m['name'] ?? m['id']!,
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                          style: GoogleFonts.outfit(
+                              color: Colors.white, fontSize: 13),
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: hasTools
                               ? AppColors.statusGreen.withValues(alpha: 0.15)
@@ -1986,7 +2183,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                             fontSize: 8,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.8,
-                            color: hasTools ? AppColors.statusGreen : Colors.white38,
+                            color: hasTools
+                                ? AppColors.statusGreen
+                                : Colors.white38,
                           ),
                         ),
                       ),
@@ -2004,7 +2203,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
   Widget _buildOllamaActionButton() {
     return ElevatedButton(
-      onPressed: _isInternalOllamaInstalled ? _toggleInternalOllama : _checkOllamaStatus,
+      onPressed: _isInternalOllamaInstalled
+          ? _toggleInternalOllama
+          : _checkOllamaStatus,
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white.withValues(alpha: 0.1),
         foregroundColor: Colors.white,
@@ -2013,11 +2214,17 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         padding: EdgeInsets.zero,
       ),
       child: _isTogglingOllama
-          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white70))
           : Icon(
-              _isInternalOllamaInstalled 
-                ? (_isInternalOllamaRunning ? Icons.stop_rounded : Icons.play_arrow_rounded)
-                : Icons.refresh_rounded,
+              _isInternalOllamaInstalled
+                  ? (_isInternalOllamaRunning
+                      ? Icons.stop_rounded
+                      : Icons.play_arrow_rounded)
+                  : Icons.refresh_rounded,
               size: 20,
             ),
     );
@@ -2036,7 +2243,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         children: [
           Row(
             children: [
-              const Icon(Icons.query_stats_rounded, color: AppColors.statusGreen, size: 18),
+              const Icon(Icons.query_stats_rounded,
+                  color: AppColors.statusGreen, size: 18),
               const SizedBox(width: 10),
               Text(
                 'Test Inference',
@@ -2063,20 +2271,28 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             children: [
               Text(
                 'Endpoint: http://127.0.0.1:8081',
-                style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
+                style: GoogleFonts.jetBrainsMono(
+                    color: Colors.white24, fontSize: 9),
               ),
               const Spacer(),
               GestureDetector(
                 onTap: _isCheckingHealth ? null : _checkHealth,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: _isCheckingHealth
-                      ? const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38))
-                      : Text('Engine Status', style: GoogleFonts.jetBrainsMono(color: Colors.white38, fontSize: 9)),
+                      ? const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 1.5, color: Colors.white38))
+                      : Text('Engine Status',
+                          style: GoogleFonts.jetBrainsMono(
+                              color: Colors.white38, fontSize: 9)),
                 ),
               ),
             ],
@@ -2086,7 +2302,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             Text(
               _healthStatus,
               style: GoogleFonts.jetBrainsMono(
-                color: _healthStatus.contains('healthy') ? AppColors.statusGreen : Colors.redAccent,
+                color: _healthStatus.contains('healthy')
+                    ? AppColors.statusGreen
+                    : Colors.redAccent,
                 fontSize: 9,
               ),
             ),
@@ -2114,12 +2332,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.statusGreen.withValues(alpha: 0.1),
               foregroundColor: AppColors.statusGreen,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               minimumSize: const Size(double.infinity, 45),
             ),
             child: _isTesting
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.statusGreen))
-              : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppColors.statusGreen))
+                : const Text('Execute Test',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
           ),
           ValueListenableBuilder<String>(
             valueListenable: _testResponseNotifier,
@@ -2137,7 +2361,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                   child: SingleChildScrollView(
                     child: SelectableText(
                       response,
-                      style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
+                      style: GoogleFonts.outfit(
+                          color: Colors.white70, fontSize: 12, height: 1.5),
                     ),
                   ),
                 ),
@@ -2150,7 +2375,10 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
   }
 
   Future<void> _checkHealth() async {
-    setState(() { _isCheckingHealth = true; _healthStatus = ''; });
+    setState(() {
+      _isCheckingHealth = true;
+      _healthStatus = '';
+    });
     final bool healthy = _service.state.status == LocalLlmStatus.ready;
     if (mounted) {
       setState(() {
@@ -2174,7 +2402,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
       (token) {
         _testResponseNotifier.value += token;
         _tokenCount++;
-        final duration = DateTime.now().difference(_testStartTime!).inMilliseconds / 1000;
+        final duration =
+            DateTime.now().difference(_testStartTime!).inMilliseconds / 1000;
         if (duration > 0 && mounted) {
           setState(() => _tokensPerSec = _tokenCount / duration);
         }
@@ -2228,18 +2457,23 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
         children: [
           Row(
             children: [
-              const Icon(Icons.speed_rounded, color: Colors.blueAccent, size: 18),
+              const Icon(Icons.speed_rounded,
+                  color: Colors.blueAccent, size: 18),
               const SizedBox(width: 10),
               Text(
                 'Direct HTTP Test (No Gateway)',
-                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             'Endpoint: http://127.0.0.1:11434/v1/chat/completions\nThis tests the background Ollama process directly.',
-            style: GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
+            style:
+                GoogleFonts.jetBrainsMono(color: Colors.white24, fontSize: 9),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -2249,7 +2483,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.black.withValues(alpha: 0.2),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.all(12),
             ),
           ),
@@ -2259,12 +2495,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blueAccent.withValues(alpha: 0.1),
               foregroundColor: Colors.blueAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               minimumSize: const Size(double.infinity, 45),
             ),
             child: _isOllamaTesting
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
-              : const Text('Execute Test', style: TextStyle(fontWeight: FontWeight.bold)),
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.blueAccent))
+                : const Text('Execute Test',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
           ),
           if (_ollamaTestResponse.isNotEmpty)
             Padding(
@@ -2279,7 +2521,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 child: SingleChildScrollView(
                   child: SelectableText(
                     _ollamaTestResponse,
-                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, height: 1.5),
+                    style: GoogleFonts.outfit(
+                        color: Colors.white70, fontSize: 12, height: 1.5),
                   ),
                 ),
               ),
@@ -2310,8 +2553,13 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
-              Text(subtitle, style: const TextStyle(color: Colors.white30, fontSize: 10)),
+              Text(title,
+                  style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+              Text(subtitle,
+                  style: const TextStyle(color: Colors.white30, fontSize: 10)),
             ],
           ),
         ),
@@ -2341,16 +2589,22 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('Add Model',
-                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
+                      style: GoogleFonts.outfit(
+                          color: Colors.white, fontSize: 18)),
                   const SizedBox(height: 12),
                   TabBar(
                     labelColor: Colors.white,
                     unselectedLabelColor: Colors.white38,
                     indicatorColor: AppColors.statusGreen,
-                    labelStyle: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700),
+                    labelStyle: GoogleFonts.outfit(
+                        fontSize: 12, fontWeight: FontWeight.w700),
                     tabs: const [
-                      Tab(icon: Icon(Icons.cloud_queue_rounded, size: 16), text: 'Cloud'),
-                      Tab(icon: Icon(Icons.phone_android, size: 16), text: 'On-Device'),
+                      Tab(
+                          icon: Icon(Icons.cloud_queue_rounded, size: 16),
+                          text: 'Cloud'),
+                      Tab(
+                          icon: Icon(Icons.phone_android, size: 16),
+                          text: 'On-Device'),
                     ],
                   ),
                 ],
@@ -2372,21 +2626,26 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  const Color(0xFFAB47BC).withValues(alpha: 0.15),
-                                  const Color(0xFFAB47BC).withValues(alpha: 0.05),
+                                  const Color(0xFFAB47BC)
+                                      .withValues(alpha: 0.15),
+                                  const Color(0xFFAB47BC)
+                                      .withValues(alpha: 0.05),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFAB47BC).withValues(alpha: 0.2)),
+                              border: Border.all(
+                                  color: const Color(0xFFAB47BC)
+                                      .withValues(alpha: 0.2)),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 18),
+                                    const Icon(Icons.cloud_queue_rounded,
+                                        color: Color(0xFFAB47BC), size: 18),
                                     const SizedBox(width: 10),
                                     Text(
                                       'Ollama Cloud',
@@ -2398,19 +2657,28 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                     ),
                                     const Spacer(),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFAB47BC).withValues(alpha: 0.1),
+                                        color: const Color(0xFFAB47BC)
+                                            .withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
-                                      child: const Text('FREE', style: TextStyle(color: Color(0xFFAB47BC), fontSize: 8, fontWeight: FontWeight.w900)),
+                                      child: const Text('FREE',
+                                          style: TextStyle(
+                                              color: Color(0xFFAB47BC),
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.w900)),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
                                 const Text(
                                   'Run massive models like Qwen 480B or Llama 405B without downloading anything. All you need is a free ollama.com account.',
-                                  style: TextStyle(color: Colors.white60, fontSize: 11, height: 1.4),
+                                  style: TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 11,
+                                      height: 1.4),
                                 ),
                               ],
                             ),
@@ -2420,7 +2688,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                           GestureDetector(
                             onTap: _ollamaSignedIn ? null : _launchOllamaSignin,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
                               decoration: BoxDecoration(
                                 color: (_ollamaSignedIn
                                         ? AppColors.statusGreen
@@ -2486,26 +2755,33 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                             padding: const EdgeInsets.symmetric(
                                                 horizontal: 8, vertical: 4),
                                             decoration: BoxDecoration(
-                                              color: Colors.amber.withValues(alpha: 0.15),
-                                              borderRadius: BorderRadius.circular(6),
+                                              color: Colors.amber
+                                                  .withValues(alpha: 0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                               border: Border.all(
-                                                  color: Colors.amber.withValues(alpha: 0.5)),
+                                                  color: Colors.amber
+                                                      .withValues(alpha: 0.5)),
                                             ),
                                             child: const Text('SIGN IN',
                                                 style: TextStyle(
                                                     color: Colors.amber,
                                                     fontSize: 9,
-                                                    fontWeight: FontWeight.w800)),
+                                                    fontWeight:
+                                                        FontWeight.w800)),
                                           ),
                                   // Refresh button (always shown)
                                   const SizedBox(width: 6),
                                   GestureDetector(
-                                    onTap: _isCheckingSignin ? null : _checkOllamaSignin,
+                                    onTap: _isCheckingSignin
+                                        ? null
+                                        : _checkOllamaSignin,
                                     child: Icon(
                                       Icons.refresh_rounded,
                                       size: 16,
                                       color: _ollamaSignedIn
-                                          ? AppColors.statusGreen.withValues(alpha: 0.7)
+                                          ? AppColors.statusGreen
+                                              .withValues(alpha: 0.7)
                                           : Colors.white38,
                                     ),
                                   ),
@@ -2515,7 +2791,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                           ),
                           const SizedBox(height: 14),
                           const Text('AVAILABLE CLOUD MODELS',
-                              style: TextStyle(color: Colors.white30, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w600)),
+                              style: TextStyle(
+                                  color: Colors.white30,
+                                  fontSize: 10,
+                                  letterSpacing: 1.2,
+                                  fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
                           ..._kCloudOllamaModels.map((m) {
                             final hasTools = m['hasTools'] == 'true';
@@ -2526,34 +2806,51 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.04),
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                  border: Border.all(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.08)),
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.cloud_queue_rounded, color: Color(0xFFAB47BC), size: 18),
+                                    const Icon(Icons.cloud_queue_rounded,
+                                        color: Color(0xFFAB47BC), size: 18),
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(m['label']!,
-                                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                                              style: GoogleFonts.outfit(
+                                                  color: Colors.white,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600)),
                                           Row(children: [
                                             Text(m['category']!,
-                                                style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                                style: const TextStyle(
+                                                    color: Colors.white38,
+                                                    fontSize: 10)),
                                             const SizedBox(width: 6),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 1),
                                               decoration: BoxDecoration(
                                                 color: hasTools
-                                                    ? AppColors.statusGreen.withValues(alpha: 0.12)
-                                                    : Colors.white.withValues(alpha: 0.05),
-                                                borderRadius: BorderRadius.circular(3),
+                                                    ? AppColors.statusGreen
+                                                        .withValues(alpha: 0.12)
+                                                    : Colors.white.withValues(
+                                                        alpha: 0.05),
+                                                borderRadius:
+                                                    BorderRadius.circular(3),
                                               ),
                                               child: Text(
                                                 hasTools ? 'TOOLS' : 'CHAT',
                                                 style: TextStyle(
-                                                  color: hasTools ? AppColors.statusGreen : Colors.white30,
+                                                  color: hasTools
+                                                      ? AppColors.statusGreen
+                                                      : Colors.white30,
                                                   fontSize: 8,
                                                   fontWeight: FontWeight.w700,
                                                 ),
@@ -2564,16 +2861,26 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                       ),
                                     ),
                                     ElevatedButton(
-                                      onPressed: () => _selectCloudOllamaModel(m['tag']!),
+                                      onPressed: () =>
+                                          _selectCloudOllamaModel(m['tag']!),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFAB47BC).withValues(alpha: 0.15),
-                                        foregroundColor: const Color(0xFFAB47BC),
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        backgroundColor: const Color(0xFFAB47BC)
+                                            .withValues(alpha: 0.15),
+                                        foregroundColor:
+                                            const Color(0xFFAB47BC),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 6),
                                         minimumSize: Size.zero,
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(6)),
                                       ),
-                                      child: const Text('USE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                      child: const Text('USE',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700)),
                                     ),
                                   ],
                                 ),
@@ -2593,7 +2900,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                         children: [
                           // ── Curated models ───────────────────────────
                           const Text('CURATED MODELS',
-                              style: TextStyle(color: Colors.white30, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w600)),
+                              style: TextStyle(
+                                  color: Colors.white30,
+                                  fontSize: 10,
+                                  letterSpacing: 1.2,
+                                  fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 6,
@@ -2606,27 +2917,36 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                   _pullModelController.text = m['tag']!;
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
                                     color: isSel
-                                        ? AppColors.statusGreen.withValues(alpha: 0.15)
+                                        ? AppColors.statusGreen
+                                            .withValues(alpha: 0.15)
                                         : Colors.white.withValues(alpha: 0.05),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: isSel ? AppColors.statusGreen : Colors.white12,
+                                      color: isSel
+                                          ? AppColors.statusGreen
+                                          : Colors.white12,
                                     ),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(m['label']!,
                                           style: TextStyle(
-                                              color: isSel ? AppColors.statusGreen : Colors.white70,
+                                              color: isSel
+                                                  ? AppColors.statusGreen
+                                                  : Colors.white70,
                                               fontSize: 11,
                                               fontWeight: FontWeight.w600)),
                                       Text(m['size']!,
-                                          style: const TextStyle(color: Colors.white38, fontSize: 9)),
+                                          style: const TextStyle(
+                                              color: Colors.white38,
+                                              fontSize: 9)),
                                     ],
                                   ),
                                 ),
@@ -2636,13 +2956,19 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
 
                           const SizedBox(height: 16),
                           Row(children: [
-                            const Expanded(child: Divider(color: Colors.white12)),
+                            const Expanded(
+                                child: Divider(color: Colors.white12)),
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
                               child: Text('OR SEARCH',
-                                  style: TextStyle(color: Colors.white24, fontSize: 10, letterSpacing: 1)),
+                                  style: TextStyle(
+                                      color: Colors.white24,
+                                      fontSize: 10,
+                                      letterSpacing: 1)),
                             ),
-                            const Expanded(child: Divider(color: Colors.white12)),
+                            const Expanded(
+                                child: Divider(color: Colors.white12)),
                           ]),
                           const SizedBox(height: 10),
 
@@ -2651,37 +2977,55 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                             Expanded(
                               child: TextField(
                                 controller: searchCtrl,
-                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 13),
                                 decoration: const InputDecoration(
                                   hintText: 'Search ollama.com...',
                                   hintStyle: TextStyle(color: Colors.white24),
                                   isDense: true,
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
-                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+                                  enabledBorder: UnderlineInputBorder(
+                                      borderSide:
+                                          BorderSide(color: Colors.white12)),
+                                  focusedBorder: UnderlineInputBorder(
+                                      borderSide: BorderSide(
+                                          color: AppColors.statusGreen)),
                                 ),
                                 onSubmitted: (_) async {
                                   final q = searchCtrl.text.trim();
                                   if (q.isEmpty) return;
                                   setS(() => searching = true);
-                                  final r = await GatewayService().fetchOllamaRegistryModels(q);
-                                  setS(() { searchResults = r; searching = false; });
+                                  final r = await GatewayService()
+                                      .fetchOllamaRegistryModels(q);
+                                  setS(() {
+                                    searchResults = r;
+                                    searching = false;
+                                  });
                                 },
                               ),
                             ),
                             const SizedBox(width: 8),
                             searching
-                                ? const SizedBox(width: 18, height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.statusGreen))
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.statusGreen))
                                 : IconButton(
-                                    icon: const Icon(Icons.search, color: Colors.white38, size: 20),
+                                    icon: const Icon(Icons.search,
+                                        color: Colors.white38, size: 20),
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
                                     onPressed: () async {
                                       final q = searchCtrl.text.trim();
                                       if (q.isEmpty) return;
                                       setS(() => searching = true);
-                                      final r = await GatewayService().fetchOllamaRegistryModels(q);
-                                      setS(() { searchResults = r; searching = false; });
+                                      final r = await GatewayService()
+                                          .fetchOllamaRegistryModels(q);
+                                      setS(() {
+                                        searchResults = r;
+                                        searching = false;
+                                      });
                                     },
                                   ),
                           ]),
@@ -2703,18 +3047,27 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                                       _pullModelController.text = tag;
                                     },
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                                      color: isSel ? AppColors.statusGreen.withValues(alpha: 0.08) : Colors.transparent,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 6, horizontal: 4),
+                                      color: isSel
+                                          ? AppColors.statusGreen
+                                              .withValues(alpha: 0.08)
+                                          : Colors.transparent,
                                       child: Row(children: [
                                         Expanded(
                                           child: Text(tag,
                                               style: TextStyle(
-                                                  color: isSel ? AppColors.statusGreen : Colors.white70,
+                                                  color: isSel
+                                                      ? AppColors.statusGreen
+                                                      : Colors.white70,
                                                   fontSize: 12)),
                                         ),
                                         if (r['pulls'] != null)
-                                          Text('${(r['pulls'] as num) ~/ 1000}K↓',
-                                              style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                                          Text(
+                                              '${(r['pulls'] as num) ~/ 1000}K↓',
+                                              style: const TextStyle(
+                                                  color: Colors.white24,
+                                                  fontSize: 10)),
                                       ]),
                                     ),
                                   );
@@ -2733,8 +3086,12 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                               labelStyle: TextStyle(color: Colors.white38),
                               hintText: 'e.g. qwen2.5:1.5b',
                               hintStyle: TextStyle(color: Colors.white24),
-                              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
-                              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.statusGreen)),
+                              enabledBorder: UnderlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Colors.white12)),
+                              focusedBorder: UnderlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: AppColors.statusGreen)),
                             ),
                           ),
                         ],
@@ -2746,14 +3103,18 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('CANCEL', style: TextStyle(color: Colors.white30)),
+                  child: const Text('CANCEL',
+                      style: TextStyle(color: Colors.white30)),
                 ),
                 TextButton(
                   onPressed: () {
                     Navigator.pop(ctx);
                     _handleOllamaPull();
                   },
-                  child: const Text('PULL', style: TextStyle(color: AppColors.statusGreen, fontWeight: FontWeight.bold)),
+                  child: const Text('PULL',
+                      style: TextStyle(
+                          color: AppColors.statusGreen,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             );

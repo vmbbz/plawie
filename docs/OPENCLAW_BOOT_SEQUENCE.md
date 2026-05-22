@@ -33,24 +33,32 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
    - `models.startup.modelPrewarm = false`
    - `gateway.startup.updateCheck = false`
    - browser and model-prewarm sidecars disabled
-10. Configure local Ollama:
+10. Configure provider defaults from the centralized model catalog:
+   - Google: `google/gemini-3.1-pro-preview`
+   - Anthropic: `anthropic/claude-opus-4-6`
+   - OpenAI: `openai/gpt-5.4`
+   - xAI/Grok: `xai/grok-4`
+   - Groq: `groq/llama-3.3-70b-versatile`
+   - Ollama Local: `ollama/qwen2.5:0.5b`
+   - Ollama Cloud: `ollama/kimi-k2.5:cloud`
+11. Configure local Ollama:
    - `models.providers.ollama.baseUrl = "http://127.0.0.1:11434"`
    - `models.providers.ollama.apiKey = "ollama-local"`
    - `models.providers.ollama.api = "ollama"`
-   - primary model defaults to an `ollama/...` model unless the user selected another provider with a key.
-11. Write canonical model auth:
+   - primary model defaults to the setup-selected catalog model; API-key providers require credentials, Ollama Local uses `ollama-local`, and Ollama Cloud waits for user sign-in.
+12. Write canonical model auth:
    - `openclaw.json auth.profiles.ollama:default = { provider: "ollama", mode: "api_key" }`
    - `auth-profiles.json profiles.ollama:default = { type: "api_key", provider: "ollama", key: "ollama-local" }`
-12. Clear node device token for first-pair path only during setup.
-13. Start the gateway once.
-14. Wait for operational readiness:
+13. Clear node device token for first-pair path only during setup.
+14. Start the gateway once.
+15. Wait for operational readiness:
    - HTTP health OK
    - operator WebSocket connected
    - `skills.status` or equivalent RPC returns active skills
    - no schema reload failure
-15. Start/attach the device node.
-16. Approve first node pairing by request ID.
-17. Navigate to app dashboard/home only after the gateway has settled enough to avoid post-start reload loops.
+16. Start/attach the device node.
+17. Approve first node pairing by request ID.
+18. Navigate to app dashboard/home only after the gateway has settled enough to avoid post-start reload loops.
 
 ## Returning User Sequence
 
@@ -214,6 +222,7 @@ These should not persist after setup:
 - repeated node token nonce/protocol errors after a token refresh
 - repeated `ECONNREFUSED 127.0.0.1:11434` after Ollama Hub autostart has been attempted
 - `provider=ollama ... :cloud` plus `endpoint=local route=local` while the embedded daemon is stopped
+- selecting Gemini/Claude/OpenAI/Grok/Groq model without the matching provider credential
 - web dashboard stuck on pairing after operator WS has `operator.admin`
 
 ## Log Signatures To Watch
