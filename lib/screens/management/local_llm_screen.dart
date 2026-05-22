@@ -229,19 +229,85 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
     }
   }
 
+  Future<bool> _confirmInternalOllamaInstall() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF172235),
+        title: Text(
+          'Install Ollama Hub?',
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          'This downloads the official ARM64 Ollama runtime '
+          '(${ModelProviderCatalog.ollamaRuntimeDownloadLabel}). Use Wi-Fi if '
+          'mobile data is limited. Cloud models like Kimi still need this '
+          'local Hub as the signed-in proxy, but no local model is downloaded '
+          'until you choose one.',
+          style: const TextStyle(
+            color: Colors.white70,
+            height: 1.45,
+            fontSize: 13,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber.withValues(alpha: 0.18),
+              foregroundColor: Colors.amber,
+            ),
+            child: const Text('Install on Wi-Fi'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<bool> _startOllamaAndWaitForHealth() async {
+    final started = await GatewayService().startInternalOllama();
+    if (!started) return false;
+    for (var i = 0; i < 15; i++) {
+      if (await GatewayService().checkOllamaHealth()) return true;
+      await Future.delayed(const Duration(seconds: 2));
+    }
+    return false;
+  }
+
   Future<void> _installInternalOllama() async {
+    if (!await _confirmInternalOllamaInstall()) return;
     setState(() {
       _isInstallingInternal = true;
       _installProgress = 0;
     });
     try {
       await GatewayService().installInternalOllama(
-        onProgress: (p) => setState(() => _installProgress = p),
+        onProgress: (p) {
+          if (mounted) setState(() => _installProgress = p);
+        },
       );
       await _checkInternalStatus();
+      final hubReady = await _startOllamaAndWaitForHealth();
+      await _checkInternalStatus();
+      await _checkOllamaStatus();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Integrated Agent Hub ready!')),
+          SnackBar(
+            content: Text(
+              hubReady
+                  ? 'Ollama Hub installed and running.'
+                  : 'Ollama Hub installed. Tap Start if it is not ready yet.',
+            ),
+            backgroundColor: hubReady ? AppColors.statusGreen : Colors.amber,
+          ),
         );
       }
     } catch (e) {
@@ -1778,14 +1844,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Downloading Runtime: ${(_installProgress * 100).toStringAsFixed(1)}%',
+                      'Downloading Runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}): ${(_installProgress * 100).toStringAsFixed(1)}%',
                       style: GoogleFonts.jetBrainsMono(
                           color: Colors.amber, fontSize: 10),
                     ),
                   ),
                 ] else ...[
                   Text(
-                    'Enables Plawie to use a powerful local inference engine (Ollama) for reasoning and tools. No external apps required.',
+                    'Enables Ollama Cloud and local Ollama models through OpenClaw. One-time runtime download: ${ModelProviderCatalog.ollamaRuntimeDownloadLabel}; use Wi-Fi if mobile data is limited. Local model files are separate and downloaded only when you choose them.',
                     style: TextStyle(
                         color: Colors.white54, fontSize: 12, height: 1.4),
                   ),
@@ -1801,7 +1867,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
                           borderRadius: BorderRadius.circular(12)),
                       minimumSize: const Size(double.infinity, 45),
                     ),
-                    child: Text('Initialize Local LLM Hub',
+                    child: Text(
+                        'Install Ollama Hub (${ModelProviderCatalog.ollamaRuntimeDownloadLabel})',
                         style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
                   ),
                 ],

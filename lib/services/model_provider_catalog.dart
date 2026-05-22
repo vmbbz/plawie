@@ -64,6 +64,8 @@ class ModelProviderCatalog {
       'google/gemini-3.1-pro-preview';
   static const String plawieNdkProviderId = 'plawie_ndk';
   static const String plawieNdkBaseUrl = 'http://127.0.0.1:11435/v1';
+  static const int ollamaRuntimeDownloadBytes = 1303711365;
+  static const String ollamaRuntimeDownloadLabel = '1.30 GB';
 
   static const List<ProviderOption> providers = [
     ProviderOption(

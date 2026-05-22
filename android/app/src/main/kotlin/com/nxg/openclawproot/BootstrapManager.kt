@@ -1508,12 +1508,15 @@ os.networkInterfaces = () => ({});
     }
 
     fun installOllama(sourcePath: String) {
-        val dest = File("$rootfsDir/usr/local/bin/ollama")
+        val installRoot = File("$rootfsDir/usr/local")
+        val dest = File(installRoot, "bin/ollama")
+        val libOllamaDir = File(installRoot, "lib/ollama")
         val source = File(sourcePath)
         if (!source.exists()) {
             throw RuntimeException("Source download missing: $sourcePath")
         }
         dest.parentFile?.mkdirs()
+        libOllamaDir.mkdirs()
 
         try {
             // Handle .tgz, .zst extraction or direct binary copy
@@ -1521,6 +1524,33 @@ os.networkInterfaces = () => ({});
             val isGzipFile = sourcePath.endsWith(".tgz") || sourcePath.endsWith(".tar.gz") || isGzip(source)
 
             if (isZstdFile || isGzipFile) {
+                val installRootCanonical = installRoot.canonicalFile
+                var foundBinary = false
+                var libFileCount = 0
+
+                fun mapOllamaEntry(rawName: String): String? {
+                    val clean = rawName.removePrefix("./").removePrefix("/")
+                    val withoutTopDir = clean.substringAfter("/", clean)
+                    for (candidate in listOf(clean, withoutTopDir).distinct()) {
+                        if (candidate == "bin/ollama" || candidate == "ollama") {
+                            return "bin/ollama"
+                        }
+                        if (candidate == "lib/ollama" || candidate.startsWith("lib/ollama/")) {
+                            return candidate
+                        }
+                    }
+                    return null
+                }
+
+                fun safeInstallTarget(relativePath: String): File {
+                    val target = File(installRoot, relativePath).canonicalFile
+                    val rootPath = installRootCanonical.path
+                    if (target.path != rootPath && !target.path.startsWith("$rootPath${File.separator}")) {
+                        throw RuntimeException("Unsafe Ollama archive path: $relativePath")
+                    }
+                    return target
+                }
+
                 FileInputStream(source).use { fis ->
                     val bis = java.io.BufferedInputStream(fis)
                     val decompressor: java.io.InputStream = if (isZstdFile) {
@@ -1531,27 +1561,51 @@ os.networkInterfaces = () => ({});
 
                     org.apache.commons.compress.archivers.tar.TarArchiveInputStream(decompressor).use { tis ->
                         var entry = tis.nextEntry
-                        var found = false
                         while (entry != null) {
-                            // Match both "bin/ollama" and just "ollama" in the archive
-                            if (entry.name == "bin/ollama" || entry.name == "ollama" || entry.name.endsWith("/ollama")) {
-                                if (!entry.isDirectory) {
-                                    FileOutputStream(dest).use { fos ->
-                                        val buf = ByteArray(65536)
-                                        var len: Int
-                                        while (tis.read(buf).also { len = it } != -1) {
-                                            fos.write(buf, 0, len)
+                            val mapped = mapOllamaEntry(entry.name)
+                            if (mapped != null) {
+                                val outFile = safeInstallTarget(mapped)
+                                when {
+                                    entry.isDirectory -> outFile.mkdirs()
+                                    entry.isSymbolicLink -> {
+                                        outFile.parentFile?.mkdirs()
+                                        try {
+                                            if (outFile.exists()) outFile.delete()
+                                            Os.symlink(entry.linkName, outFile.absolutePath)
+                                        } catch (_: Exception) {
+                                            // Symlinks are uncommon in the Ollama runtime archive.
+                                            // If Android blocks one, keep extracting regular files.
                                         }
                                     }
-                                    found = true
-                                    break
+                                    !entry.isLink -> {
+                                        outFile.parentFile?.mkdirs()
+                                        FileOutputStream(outFile).use { fos ->
+                                            val buf = ByteArray(65536)
+                                            var len: Int
+                                            while (tis.read(buf).also { len = it } != -1) {
+                                                fos.write(buf, 0, len)
+                                            }
+                                        }
+                                        outFile.setReadable(true, false)
+                                        outFile.setWritable(true, false)
+                                        if (mapped == "bin/ollama" ||
+                                            (entry.mode and 0b001_001_001) != 0) {
+                                            outFile.setExecutable(true, false)
+                                        }
+                                        if (mapped == "bin/ollama") {
+                                            foundBinary = true
+                                        } else if (mapped.startsWith("lib/ollama/")) {
+                                            libFileCount++
+                                        }
+                                    }
                                 }
                             }
                             entry = tis.nextEntry
                         }
-                        if (!found) throw RuntimeException("Ollama binary not found in archive")
+                        if (!foundBinary) throw RuntimeException("Ollama binary not found in archive")
                     }
                 }
+                Log.i("BootstrapManager", "Installed Ollama runtime archive: lib files=$libFileCount")
             } else {
                 source.copyTo(dest, overwrite = true)
             }

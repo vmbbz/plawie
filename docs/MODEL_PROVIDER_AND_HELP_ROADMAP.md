@@ -40,8 +40,8 @@ provider lists:
 | OpenAI | `openai/gpt-5.4` | `OPENAI_API_KEY` | OpenClaw Gateway provider |
 | xAI / Grok | `xai/grok-4` | `XAI_API_KEY` | OpenClaw Gateway provider |
 | Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | OpenClaw Gateway provider |
-| Ollama Local | `ollama/qwen2.5:0.5b` | `ollama-local` placeholder | Embedded Ollama Hub at `127.0.0.1:11434` |
-| Ollama Cloud | `ollama/kimi-k2.5:cloud` | Ollama sign-in, no manual API key | Embedded Ollama Hub proxies to ollama.com |
+| Ollama Local | `ollama/qwen2.5:0.5b` | `ollama-local` placeholder | Embedded Ollama Hub at `127.0.0.1:11434`; one-time runtime download is ~1.30 GB |
+| Ollama Cloud | `ollama/kimi-k2.5:cloud` | Ollama sign-in, no manual API key | Embedded Ollama Hub proxies to ollama.com; still needs the ~1.30 GB runtime |
 
 Compatibility aliases are migrated by the app where safe:
 
@@ -57,8 +57,8 @@ Compatibility aliases are migrated by the app where safe:
 | Selected model | Required preparation | Failure prevented |
 | --- | --- | --- |
 | `local-llm/...` | Start native fllama model in Local LLM | Avoids Gateway dependency for private/offline chat |
-| `ollama/...` local | Start embedded Ollama Hub, wait for health | Prevents `ECONNREFUSED 127.0.0.1:11434` |
-| `ollama/...:cloud` | Start embedded Ollama Hub, then require Ollama sign-in | Prevents confusing API-key prompts for Ollama Cloud |
+| `ollama/...` local | Confirm/install embedded Ollama Hub runtime, start Hub, wait for health | Prevents `ECONNREFUSED 127.0.0.1:11434` and surprise mobile-data use |
+| `ollama/...:cloud` | Confirm/install embedded Ollama Hub runtime, start Hub, then require Ollama sign-in | Prevents confusing API-key prompts for Ollama Cloud |
 | API-key cloud model | Verify provider credential exists before switching | Prevents silent Gateway provider failure |
 | Dynamic OpenClaw agent | Persist model key and reconnect WS | Lets Gateway route by current agent config |
 
@@ -66,7 +66,9 @@ Compatibility aliases are migrated by the app where safe:
 
 Ollama Cloud is not a simple API-key provider in Plawie. It uses the local
 Ollama daemon as an authenticated proxy. Therefore every `ollama/...` model,
-including `:cloud`, requires the embedded Hub.
+including `:cloud`, requires the embedded Hub. The official ARM64 runtime used
+by the current embedded path is about **1.30 GB**, so Plawie must ask before
+downloading it and should recommend Wi-Fi.
 
 Hard failure signature:
 
@@ -79,17 +81,19 @@ ECONNREFUSED 127.0.0.1:11434
 Correct flow:
 
 1. Persist the chosen `ollama/...` model.
-2. Start the embedded Ollama Hub if `127.0.0.1:11434` is down.
-3. Wait for `/api/tags` health.
-4. If the model has `:cloud`, verify Ollama sign-in.
-5. Persist model to OpenClaw config and reconnect the Gateway WebSocket.
+2. If the embedded runtime is missing, guide the user to Local LLM and ask before downloading it.
+3. Start the embedded Ollama Hub if `127.0.0.1:11434` is down.
+4. Wait for `/api/tags` health.
+5. If the model has `:cloud`, verify Ollama sign-in.
+6. Persist model to OpenClaw config and reconnect the Gateway WebSocket.
 
 ## Fresh Setup Contract
 
 First-run setup now exposes these choices:
 
-- Ollama Local: no key, free/offline-first, tiny default local model.
-- Ollama Cloud: no manual key, but sign-in from Local LLM -> Cloud is required.
+- On-device NDK/fllama: preferred lightweight local path; downloads only the chosen GGUF model.
+- Ollama Local: no key, free/offline-first, but requires the optional ~1.30 GB Ollama Hub runtime before any Ollama model can run.
+- Ollama Cloud: no manual key, but requires the optional ~1.30 GB Ollama Hub runtime plus sign-in from Local LLM -> Cloud.
 - Gemini, Claude, OpenAI, Grok/xAI, Groq: API-key based Gateway providers.
 
 Setup stores:
@@ -107,7 +111,7 @@ Implemented guardrails:
 
 - Chat model picker blocks known cloud provider models when the provider key is missing.
 - Settings model picker also blocks known cloud provider models without credentials.
-- Selecting any `ollama/...` model calls the hardened Ollama readiness path.
+- Selecting any `ollama/...` model calls the hardened Ollama readiness path without silently downloading the heavy Hub runtime.
 - Local LLM Cloud page starts/checks the Hub before activating `:cloud` models.
 - Local LLM Cloud page launches Ollama sign-in instead of pretending a manual API key is needed.
 - Bootstrap provider hardening preserves existing keys and writes defaults for every provider shown in the UI.

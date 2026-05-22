@@ -199,9 +199,9 @@ class PreferencesService {
   // ── Local LLM ───────────────────────────────────────────────────────────────
 
   /// CPU thread count for local inference (fllama + Ollama Modelfile).
-  /// Default 6: safe for 8-core Snapdragon phones (leaves 2 cores for OS/UI).
+  /// Default 4: conservative for mainstream phones and safer for thermals.
   static const _keyLlmThreads = 'llm_thread_count';
-  int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 6;
+  int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 4;
   set llmThreadCount(int v) => _p.setInt(_keyLlmThreads, v);
 
   String? get lastApprovedRequestId => _p.getString(_keyLastApprovedRequestId);

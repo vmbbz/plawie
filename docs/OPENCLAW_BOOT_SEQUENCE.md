@@ -11,7 +11,7 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
 - Returning users must not need to delete app data. Cached gateway token, operator device token, node token, and dashboard URL must self-heal if stale.
 - Runtime hardening must not rewrite config while the gateway is settling unless the user explicitly starts a repair path.
 - Local Ollama must not ask users for a real API key. For loopback/local Ollama, OpenClaw uses the placeholder credential `ollama-local`.
-- If the selected model is `ollama/...` (local or `:cloud`), returning-user startup must ensure the internal Ollama Hub is running before dashboard/webchat/chat can depend on it.
+- If the selected model is `ollama/...` (local or `:cloud`), returning-user startup must ensure the internal Ollama Hub is running before dashboard/webchat/chat can depend on it. If the Hub runtime is missing, the app must explain the one-time ~1.30 GB download and require explicit user consent.
 - Web dashboard pairing requires an operator connection with `operator.admin` on the current v2026.5.x gateway.
 
 ## Fresh Install Sequence
@@ -45,7 +45,7 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
    - `models.providers.ollama.baseUrl = "http://127.0.0.1:11434"`
    - `models.providers.ollama.apiKey = "ollama-local"`
    - `models.providers.ollama.api = "ollama"`
-   - primary model defaults to the setup-selected catalog model; API-key providers require credentials, Ollama Local uses `ollama-local`, and Ollama Cloud waits for user sign-in.
+   - primary model defaults to the setup-selected catalog model; API-key providers require credentials, Ollama Local uses `ollama-local`, and Ollama Cloud waits for the Hub runtime plus user sign-in.
 12. Write canonical model auth:
    - `openclaw.json auth.profiles.ollama:default = { provider: "ollama", mode: "api_key" }`
    - `auth-profiles.json profiles.ollama:default = { type: "api_key", provider: "ollama", key: "ollama-local" }`
@@ -71,7 +71,8 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
    - do not rewrite `openclaw.json`
    - refresh the gateway token/dashboard URL
    - ensure local Ollama `auth-profiles.json` exists because this file can be repaired without restarting the gateway
-   - if the persisted primary model starts with `ollama/` (including `:cloud`), start the internal Ollama Hub in the background when `127.0.0.1:11434` is not reachable
+   - if the persisted primary model starts with `ollama/` (including `:cloud`) and the Hub runtime is installed, start the internal Ollama Hub in the background when `127.0.0.1:11434` is not reachable
+   - if the persisted primary model starts with `ollama/` but the Hub runtime is missing, do not download silently; surface the explicit Local LLM install path
    - attach operator WebSocket
    - run passive hardening verification only
 3. If gateway is running but not fully attached:

@@ -640,8 +640,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 const SizedBox(height: 8),
                 Text(
                   provider.id == 'ollama_cloud'
-                      ? 'Plawie will install and start the local Ollama Hub, then you can sign in from Local LLM -> Cloud to unlock ollama.com models. No manual API key is required.'
-                      : 'Plawie installs the local Ollama Hub and starts with a tiny free model. You can switch to larger local or cloud models later from Chat settings.',
+                      ? 'Ollama Cloud uses ollama.com models with no manual API key, but it still needs the local Ollama Hub runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) as a signed-in proxy. Plawie asks before that download.'
+                      : 'Plawie can install the local Ollama Hub and start with a tiny free model. Hub/runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) and model downloads are confirmed separately so mobile data is never spent by surprise.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,

@@ -26,8 +26,8 @@ class LocalLlmModel {
 
   // Multimodal / Vision support
   final bool isMultimodal;
-  final String? mmProjUrl;     // HuggingFace URL for the CLIP mmproj file
-  final int? mmProjSizeMb;     // Download size hint for the mmproj file
+  final String? mmProjUrl; // HuggingFace URL for the CLIP mmproj file
+  final int? mmProjSizeMb; // Download size hint for the mmproj file
 
   /// True when the model architecture supports OpenAI-style tool/function calls
   /// AND the Ollama Modelfile template for this model includes {{ .Tools }}.
@@ -65,8 +65,10 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'qwen2.5-0.5b-instruct-q4_k_m',
     name: 'Qwen 2.5 0.5B Instruct (Q4_K_M)',
-    description: 'Ultra-lightweight. Very fast but limited reasoning. Good for quick commands on 6 GB devices. Supports tool calls for gateway routing.',
-    huggingFaceUrl: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    description:
+        'Ultra-lightweight. Very fast but limited reasoning. Good for quick commands on 6 GB devices. Supports tool calls for gateway routing.',
+    huggingFaceUrl:
+        'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 400,
     requiredRamMb: 1500,
     recommendedThreads: 4,
@@ -77,8 +79,10 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'qwen2.5-1.5b-instruct-q4_k_m',
     name: 'Qwen 2.5 1.5B Instruct (Q4_K_M)',
-    description: 'Recommended default. Solid tool-use support, ~14–18 tok/s on Snapdragon 8 Gen 2. Native OpenAI tool-call format.',
-    huggingFaceUrl: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    description:
+        'Recommended default. Solid tool-use support, ~14–18 tok/s on Snapdragon 8 Gen 2. Native OpenAI tool-call format.',
+    huggingFaceUrl:
+        'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 1000,
     requiredRamMb: 3000,
     recommendedThreads: 4,
@@ -89,8 +93,10 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'qwen2.5-3b-instruct-q4_k_m',
     name: 'Qwen 2.5 3B Instruct (Q4_K_M)',
-    description: 'Best tool-use quality. Requires 12 GB+ RAM. ~10–15 tok/s on flagship hardware.',
-    huggingFaceUrl: 'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf',
+    description:
+        'Best tool-use quality. Requires 12 GB+ RAM. ~10–15 tok/s on flagship hardware.',
+    huggingFaceUrl:
+        'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf',
     fileSizeMb: 1900,
     requiredRamMb: 4500,
     recommendedThreads: 6,
@@ -101,8 +107,10 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'smollm2-1.7b-instruct-q4_k_m',
     name: 'SmolLM2 1.7B Instruct (Q4_K_M)',
-    description: 'HuggingFace-trained speed-focused model. Good for simple tasks, fast responses. Supports tool calls for gateway routing.',
-    huggingFaceUrl: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf',
+    description:
+        'HuggingFace-trained speed-focused model. Good for simple tasks, fast responses. Supports tool calls for gateway routing.',
+    huggingFaceUrl:
+        'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf',
     fileSizeMb: 1100,
     requiredRamMb: 3000,
     recommendedThreads: 4,
@@ -116,9 +124,12 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'qwen2-vl-2b-instruct-q4_k_m',
     name: 'Qwen2-VL 2B (Vision, Q4_K_M)',
-    description: 'Compact vision+text model. Understands images and text together. Needs ~3 GB RAM. Best choice for most Android phones.',
-    huggingFaceUrl: 'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/Qwen2-VL-2B-Instruct-Q4_K_M.gguf',
-    mmProjUrl: 'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen2-VL-2B-Instruct-f16.gguf',
+    description:
+        'Compact vision+text model. Understands images and text together. Needs ~3 GB RAM. Best choice for most Android phones.',
+    huggingFaceUrl:
+        'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/Qwen2-VL-2B-Instruct-Q4_K_M.gguf',
+    mmProjUrl:
+        'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen2-VL-2B-Instruct-f16.gguf',
     fileSizeMb: 1430,
     mmProjSizeMb: 295,
     requiredRamMb: 2800,
@@ -131,9 +142,12 @@ const _modelCatalog = [
   LocalLlmModel(
     id: 'llava-1.5-7b-q4_k_m',
     name: 'LLaVA 1.5 7B (Vision, Q4_K_M)',
-    description: 'Full-size LLaVA vision model. Strong image reasoning. Requires ~6 GB RAM — flagship phones only.',
-    huggingFaceUrl: 'https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/ggml-model-q4_k.gguf',
-    mmProjUrl: 'https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/mmproj-model-f16.gguf',
+    description:
+        'Full-size LLaVA vision model. Strong image reasoning. Requires ~6 GB RAM — flagship phones only.',
+    huggingFaceUrl:
+        'https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/ggml-model-q4_k.gguf',
+    mmProjUrl:
+        'https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/mmproj-model-f16.gguf',
     fileSizeMb: 4370,
     mmProjSizeMb: 624,
     requiredRamMb: 5800,
@@ -149,12 +163,12 @@ const _modelCatalog = [
 // ---------------------------------------------------------------------------
 
 enum LocalLlmStatus {
-  idle,        // no model / server not running
+  idle, // no model / server not running
   downloading, // downloading model file
-  installing,  // reserved / unused — fllama activation uses `starting` directly
-  starting,    // starting llama-server process
-  ready,       // server up and responding
-  error,       // unrecoverable error
+  installing, // reserved / unused — fllama activation uses `starting` directly
+  starting, // starting llama-server process
+  ready, // server up and responding
+  error, // unrecoverable error
 }
 
 class LocalLlmState {
@@ -187,7 +201,8 @@ class LocalLlmState {
       status: status ?? this.status,
       activeModelId: activeModelId ?? this.activeModelId,
       downloadProgress: downloadProgress ?? this.downloadProgress,
-      errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      errorMessage:
+          clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
       threads: threads ?? this.threads,
       isEnabled: isEnabled ?? this.isEnabled,
     );
@@ -195,13 +210,16 @@ class LocalLlmState {
 
   // Clear error = new idle state
   LocalLlmState cleared() => LocalLlmState(
-    status: LocalLlmStatus.idle,
-    activeModelId: activeModelId,
-    threads: threads,
-    isEnabled: isEnabled,
-  );
+        status: LocalLlmStatus.idle,
+        activeModelId: activeModelId,
+        threads: threads,
+        isEnabled: isEnabled,
+      );
 
-  bool get isDownloaded => status == LocalLlmStatus.ready || status == LocalLlmStatus.starting || activeModelId != null;
+  bool get isDownloaded =>
+      status == LocalLlmStatus.ready ||
+      status == LocalLlmStatus.starting ||
+      activeModelId != null;
   bool get isDownloading => status == LocalLlmStatus.downloading;
 }
 
@@ -273,7 +291,8 @@ class LocalLlmService {
 
   /// True when local LLM is ready AND the active model supports vision.
   bool get isVisionReady =>
-      _state.status == LocalLlmStatus.ready && (activeModel?.isMultimodal ?? false);
+      _state.status == LocalLlmStatus.ready &&
+      (activeModel?.isMultimodal ?? false);
 
   void _updateState(LocalLlmState s) {
     _state = s;
@@ -314,7 +333,10 @@ class LocalLlmService {
   /// Activate fllama with an already-downloaded model.
   Future<void> startWithModel(LocalLlmModel model) async {
     // No-op if this exact model is already running.
-    if (_state.status == LocalLlmStatus.ready && _state.activeModelId == model.id) return;
+    if (_state.status == LocalLlmStatus.ready &&
+        _state.activeModelId == model.id) {
+      return;
+    }
     if (!await _isModelInstalled(model)) {
       await downloadAndStart(model);
       return;
@@ -359,7 +381,7 @@ class LocalLlmService {
   /// Ollama model was created with. UI should show a "Recreate Model" banner.
   bool get threadsPendingOllamaApply {
     // We can't read the Modelfile directly, so we track it via a simple
-    // comparison: if threads != the pref default (6) AND an Ollama model is
+    // comparison: if threads != the pref default (4) AND an Ollama model is
     // registered in gateway state, the Modelfile may not match.
     // This is a best-effort signal — false negatives are safe (no banner shown).
     return false; // set to true by UI after thread change while Ollama active
@@ -382,7 +404,8 @@ class LocalLlmService {
   Stream<String> testInference(String prompt) {
     final controller = StreamController<String>();
     if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
-      controller.add('[Error] Local LLM is not ready. Status: ${_state.status}');
+      controller
+          .add('[Error] Local LLM is not ready. Status: ${_state.status}');
       controller.close();
       return controller.stream;
     }
@@ -421,7 +444,8 @@ class LocalLlmService {
   Stream<String> chat(List<Map<String, dynamic>> history, String userMessage) {
     final controller = StreamController<String>();
     if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
-      controller.add('[Error] Local LLM is not ready. Status: ${_state.status}');
+      controller
+          .add('[Error] Local LLM is not ready. Status: ${_state.status}');
       controller.close();
       return controller.stream;
     }
@@ -433,19 +457,23 @@ class LocalLlmService {
 
     final trimmed = _trimHistory(history, userMessage);
     final messages = [
-      Message(Role.system,
+      Message(
+          Role.system,
           'You are Plawie, a helpful AI assistant running locally on this Android device. '
           'Be concise and direct.'),
       for (final m in trimmed)
         Message(
-          (m['role'] as String?) == 'assistant' ? Role.assistant
-              : (m['role'] as String?) == 'system' ? Role.system
-              : Role.user,
+          (m['role'] as String?) == 'assistant'
+              ? Role.assistant
+              : (m['role'] as String?) == 'system'
+                  ? Role.system
+                  : Role.user,
           (m['content'] as String?) ?? '',
         ),
       Message(Role.user, userMessage),
     ];
-    _fetchAgentTools().then((tools) => _runChatTurn(messages, controller, tools: tools));
+    _fetchAgentTools()
+        .then((tools) => _runChatTurn(messages, controller, tools: tools));
     return controller.stream;
   }
 
@@ -485,8 +513,8 @@ class LocalLlmService {
   // AgentSkillServer route map — device-native skills only (no gateway needed)
   static const _skillRoutes = {
     'avatar-control': '/api/avatar/control',
-    'tts-voice':      '/api/tts/control',
-    'device-node':    '/api/device/control',
+    'tts-voice': '/api/tts/control',
+    'device-node': '/api/device/control',
   };
 
   // Tool cache — refreshed at most once per 30 s to avoid HTTP on every message
@@ -496,7 +524,8 @@ class LocalLlmService {
   /// Fetches the AgentSkillServer tool catalog and merges with built-in tools.
   /// Falls back to [_localTools] only if the server is unreachable.
   Future<List<Tool>> _fetchAgentTools() async {
-    if (_cachedTools != null && _toolCacheTime != null &&
+    if (_cachedTools != null &&
+        _toolCacheTime != null &&
         DateTime.now().difference(_toolCacheTime!).inSeconds < 30) {
       return _cachedTools!;
     }
@@ -509,8 +538,8 @@ class LocalLlmService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final catalog = data['tools'] as List<dynamic>? ?? [];
         for (final t in catalog) {
-          final schema = t['input_schema'] as Map<String, dynamic>?
-              ?? {'type': 'object', 'properties': {}};
+          final schema = t['input_schema'] as Map<String, dynamic>? ??
+              {'type': 'object', 'properties': {}};
           tools.add(Tool(
             name: t['name'] as String,
             description: t['description'] as String? ?? '',
@@ -538,7 +567,7 @@ class LocalLlmService {
     if (route == null) {
       return jsonEncode({
         'error': 'Skill "$name" requires the OpenClaw gateway. '
-                 'Switch to an Ollama or cloud model for full skill access.',
+            'Switch to an Ollama or cloud model for full skill access.',
       });
     }
     try {
@@ -560,8 +589,7 @@ class LocalLlmService {
   /// [controller], then on completion checks for tool calls.  If the model
   /// requested tool calls, dispatches them and recurses (depth-limited to 3).
   Future<void> _runChatTurn(
-      List<Message> messages,
-      StreamController<String> controller,
+      List<Message> messages, StreamController<String> controller,
       {int depth = 0, List<Tool>? tools}) async {
     if (depth > 3 || controller.isClosed) return;
     _isInferring = true;
@@ -591,7 +619,9 @@ class LocalLlmService {
 
         // fllama surfaces context-overflow as a text response containing "exceeds ... tokens".
         // Catch it early and replace with a user-friendly message.
-        if (delta.isNotEmpty && delta.contains('exceeds') && delta.contains('context')) {
+        if (delta.isNotEmpty &&
+            delta.contains('exceeds') &&
+            delta.contains('context')) {
           if (!controller.isClosed) {
             controller.add('[Error] Conversation too long for this model. '
                 'Start a new chat to continue.');
@@ -622,14 +652,17 @@ class LocalLlmService {
                 for (final tc in tcList) {
                   if (tc is! Map<String, dynamic>) continue;
                   final idx = tc['index'] as int? ?? 0;
-                  accToolCalls.putIfAbsent(idx, () => {'name': '', 'arguments': '', 'id': ''});
+                  accToolCalls.putIfAbsent(
+                      idx, () => {'name': '', 'arguments': '', 'id': ''});
                   final fn = tc['function'] as Map<String, dynamic>? ?? {};
-                  if (fn['name'] is String && (fn['name'] as String).isNotEmpty) {
+                  if (fn['name'] is String &&
+                      (fn['name'] as String).isNotEmpty) {
                     accToolCalls[idx]!['name'] = fn['name'] as String;
                   }
                   if (fn['arguments'] is String) {
                     accToolCalls[idx]!['arguments'] =
-                        accToolCalls[idx]!['arguments']! + (fn['arguments'] as String);
+                        accToolCalls[idx]!['arguments']! +
+                            (fn['arguments'] as String);
                   }
                   if (tc['id'] is String) {
                     accToolCalls[idx]!['id'] = tc['id'] as String;
@@ -657,20 +690,24 @@ class LocalLlmService {
     }
 
     // Build tool_calls list in OpenAI wire format and dispatch each tool.
-    final sorted = accToolCalls.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-    final toolCallsList = sorted.map((e) => <String, dynamic>{
-      'id': e.value['id'],
-      'type': 'function',
-      'function': {
-        'name': e.value['name'],
-        'arguments': e.value['arguments'],
-      },
-    }).toList();
-    final toolResultMessages = await Future.wait(sorted.map((e) async => Message(
-      Role.tool,
-      await _dispatchTool(e.value['name']!, e.value['arguments']!),
-      toolResponseName: e.value['name'],
-    )));
+    final sorted = accToolCalls.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final toolCallsList = sorted
+        .map((e) => <String, dynamic>{
+              'id': e.value['id'],
+              'type': 'function',
+              'function': {
+                'name': e.value['name'],
+                'arguments': e.value['arguments'],
+              },
+            })
+        .toList();
+    final toolResultMessages =
+        await Future.wait(sorted.map((e) async => Message(
+              Role.tool,
+              await _dispatchTool(e.value['name']!, e.value['arguments']!),
+              toolResponseName: e.value['name'],
+            )));
 
     final updated = [
       ...messages,
@@ -697,7 +734,8 @@ class LocalLlmService {
   }
 
   /// Processes a list of JPEG frames via fllama vision inference.
-  Stream<String> analyseVideoFrames(List<Uint8List> frames, String summaryPrompt) async* {
+  Stream<String> analyseVideoFrames(
+      List<Uint8List> frames, String summaryPrompt) async* {
     if (frames.isEmpty) {
       yield '[Error] No frames extracted from video.';
       return;
@@ -736,7 +774,8 @@ class LocalLlmService {
           }
         },
       );
-      final result = await completer.future.timeout(const Duration(seconds: 60));
+      final result =
+          await completer.future.timeout(const Duration(seconds: 60));
       yield result;
     } catch (e) {
       _isInferring = false;
@@ -794,35 +833,41 @@ class LocalLlmService {
 
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 30);
-      final request = await client.getUrl(Uri.parse(model.huggingFaceUrl))
+      final request = await client
+          .getUrl(Uri.parse(model.huggingFaceUrl))
           .timeout(const Duration(seconds: 30));
       if (alreadyBytes > 0) {
         request.headers.add('Range', 'bytes=$alreadyBytes-');
       }
-      final response = await request.close().timeout(const Duration(seconds: 30));
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
 
       if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable) {
       } else {
-        final isResume = response.statusCode == HttpStatus.partialContent; // 206
+        final isResume =
+            response.statusCode == HttpStatus.partialContent; // 206
         if (response.statusCode != HttpStatus.ok && !isResume) {
           throw HttpException('Download failed: HTTP ${response.statusCode}');
         }
 
         final openMode = isResume ? FileMode.append : FileMode.write;
         final startOffset = isResume ? alreadyBytes : 0;
-        final serverLength = response.contentLength != -1 ? response.contentLength : 0;
+        final serverLength =
+            response.contentLength != -1 ? response.contentLength : 0;
         final totalBytes = serverLength > 0 ? startOffset + serverLength : 0;
         int received = startOffset;
 
         final sink = tmpFile.openWrite(mode: openMode);
         try {
-          await for (final chunk in response.timeout(const Duration(seconds: 60))) {
+          await for (final chunk
+              in response.timeout(const Duration(seconds: 60))) {
             sink.add(chunk);
             received += chunk.length;
             final progress = totalBytes > 0 ? received / totalBytes : 0.0;
             _updateState(_state.copyWith(
               downloadProgress: progress,
-              errorMessage: 'Downloading: ${(received/1048576).toStringAsFixed(1)} MB',
+              errorMessage:
+                  'Downloading: ${(received / 1048576).toStringAsFixed(1)} MB',
             ));
           }
         } finally {
@@ -830,7 +875,8 @@ class LocalLlmService {
         }
       }
 
-      _updateState(_state.copyWith(errorMessage: 'Installing model into PRoot...'));
+      _updateState(
+          _state.copyWith(errorMessage: 'Installing model into PRoot...'));
       final filesDir = await NativeBridge.getFilesDir();
       final prootPath = '$filesDir/rootfs';
       final hostProotModelPath = '$prootPath${model.prootModelPath}';
@@ -874,17 +920,22 @@ class LocalLlmService {
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/${model.mmProjFilename}');
       final url = Uri.parse(model.mmProjUrl!);
-      final request = await HttpClient().getUrl(url).timeout(const Duration(seconds: 20));
-      final response = await request.close().timeout(const Duration(seconds: 20));
+      final request =
+          await HttpClient().getUrl(url).timeout(const Duration(seconds: 20));
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
 
       final total = response.contentLength != -1 ? response.contentLength : 0;
       int received = 0;
       final sink = tmpFile.openWrite();
       try {
-        await for (final chunk in response.timeout(const Duration(seconds: 60))) {
+        await for (final chunk
+            in response.timeout(const Duration(seconds: 60))) {
           sink.add(chunk);
           received += chunk.length;
-          if (total > 0) _updateState(_state.copyWith(downloadProgress: received / total));
+          if (total > 0) {
+            _updateState(_state.copyWith(downloadProgress: received / total));
+          }
         }
       } finally {
         await sink.close();
@@ -899,7 +950,9 @@ class LocalLlmService {
       await tmpFile.delete();
       _updateState(_state.copyWith(downloadProgress: 1.0, errorMessage: null));
     } catch (e) {
-      _updateState(_state.copyWith(status: LocalLlmStatus.error, errorMessage: 'Vision projection download failed: $e'));
+      _updateState(_state.copyWith(
+          status: LocalLlmStatus.error,
+          errorMessage: 'Vision projection download failed: $e'));
     }
   }
 
@@ -920,9 +973,8 @@ class LocalLlmService {
       final prootRoot = '$filesDir/rootfs';
 
       _activeModelPath = '$prootRoot${model.prootModelPath}';
-      _activeMmprojPath = model.isMultimodal
-          ? '$prootRoot${model.prootMmProjPath}'
-          : null;
+      _activeMmprojPath =
+          model.isMultimodal ? '$prootRoot${model.prootMmProjPath}' : null;
 
       if (!File(_activeModelPath!).existsSync()) {
         throw Exception('Model file not found: $_activeModelPath');

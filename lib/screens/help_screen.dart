@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
 import '../app.dart';
+import '../services/model_provider_catalog.dart';
 import '../widgets/glass_card.dart';
 
 class HelpScreen extends StatelessWidget {
@@ -65,7 +66,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Ollama Local vs Ollama Cloud',
                         description:
-                            'Local Ollama downloads models to the phone and runs through 127.0.0.1:11434. Ollama Cloud does not need a manual API key, but it does need Ollama sign-in from Local LLM -> Cloud. If chat says 127.0.0.1:11434 refused, start the Ollama Hub first.',
+                            'Local Ollama downloads models to the phone and runs through 127.0.0.1:11434. Ollama Cloud does not need a manual API key, but it does need the one-time Ollama Hub runtime install (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) plus Ollama sign-in from Local LLM -> Cloud. If chat says 127.0.0.1:11434 refused, install/start the Ollama Hub first.',
                         icon: Icons.cloud_queue_rounded,
                         color: const Color(0xFFAB47BC),
                       ),

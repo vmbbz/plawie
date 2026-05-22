@@ -2313,7 +2313,7 @@ PARAMETER num_batch 512
       _updateState(_state.copyWith(
         logs: [
           ..._state.logs,
-          '[INFO] Downloading internal Ollama binary (ARM64) [Attempt $attempts/3]...'
+          '[INFO] Downloading internal Ollama runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}, ARM64) [Attempt $attempts/3]...'
         ],
       ));
 
@@ -3574,6 +3574,13 @@ PARAMETER num_batch 512
     var isCloudOllama = isOllama && model.contains(':cloud');
     if (isCloudOllama) {
       _addActivity('[CHAT] Cloud Ollama model - routing via hub proxy.');
+      final hubInstalled = await isInternalOllamaInstalled()
+          .timeout(const Duration(seconds: 5), onTimeout: () => false)
+          .catchError((_) => false);
+      if (!hubInstalled) {
+        yield '[Error] Ollama Cloud uses ollama.com, but it still needs the local Ollama Hub runtime as its signed-in proxy. Open Local LLM -> Install Ollama Hub (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}, Wi-Fi recommended), then sign in and retry.';
+        return;
+      }
       final hubReady = await _ensureLocalOllamaReadyForGateway(
         reason: 'cloud-chat',
         wait: const Duration(seconds: 30),
@@ -3660,7 +3667,12 @@ PARAMETER num_batch 512
           wait: const Duration(seconds: 30),
         );
         if (!ollamaReachable) {
-          yield '[Error] Ollama server is not responding. Open Local LLM -> Start Ollama Hub, then retry.';
+          final hubInstalled = await isInternalOllamaInstalled()
+              .timeout(const Duration(seconds: 5), onTimeout: () => false)
+              .catchError((_) => false);
+          yield hubInstalled
+              ? '[Error] Ollama server is not responding. Open Local LLM -> Start Ollama Hub, then retry.'
+              : '[Error] Ollama Hub runtime is not installed yet. Open Local LLM -> Install Ollama Hub (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}, Wi-Fi recommended), then retry.';
           return;
         }
         ollamaColdStart = true;

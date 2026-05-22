@@ -134,7 +134,7 @@ PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|endoftext|>"
 PARAMETER num_ctx 2048
 PARAMETER num_gpu 0
-PARAMETER num_thread 1
+PARAMETER num_thread 4
 PARAMETER num_batch 512
 ```
 
@@ -154,7 +154,7 @@ PARAMETER stop "<|eot_id|>"
 PARAMETER stop "<|start_header_id|>"
 PARAMETER num_ctx 4096
 PARAMETER num_gpu 0
-PARAMETER num_thread 1
+PARAMETER num_thread 4
 PARAMETER num_batch 512
 ```
 
@@ -173,7 +173,7 @@ The `{{ .Tools }}` block injects the tool schemas as a second system message. Ad
 | Parameter | Value | Reason |
 |-----------|-------|--------|
 | `num_gpu 0` | CPU only | Mobile Android — no supported Vulkan/OpenCL GPU compute |
-| `num_thread 1` | Single thread | Prevents thermal throttle crash on mobile |
+| `num_thread 4` | Conservative multi-thread default | Good throughput on 8-core phones while leaving cores for UI, gateway, and Android |
 | `num_batch 512` | Token batch | Balance between throughput and memory |
 
 ---
@@ -387,7 +387,7 @@ The app logs a warning when available RAM < 1.1 GB (before a 1.5B model send):
 
 1. **`PARAMETER num_batch 512`** — lowering this causes instability; raising risks OOM
 2. **`PARAMETER num_gpu 0`** — Ollama GPU compute is not supported on Android ARM; removing this causes silent failures
-3. **`PARAMETER num_thread 1`** — multi-thread inference on mobile causes thermal crash within 1–2 min
+3. **`PARAMETER num_thread 4`** — keep this conservative; raising it can starve the gateway/UI or worsen thermal throttling
 4. **`{{ .Tools }}` in TEMPLATE** — required for tool use; removing it silently breaks tools
 5. **`_getDynamicContextSize` uses `contains` not exact match** — changing to exact match breaks all models (full model IDs never match short map keys)
 6. **Three-layer context window defence** — all three layers (Modelfile, configureOllama, patchSessionMetadata) must stay in sync; removing any one allows OOM regression
