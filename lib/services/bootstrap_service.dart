@@ -1055,6 +1055,9 @@ class BootstrapService {
         'wideArea': {'enabled': false},
       };
 
+      config['tools'] ??= <String, dynamic>{};
+      (config['tools'] as Map)['allow'] ??= ['*'];
+
       // Remove invalid TTS persona "model" keys — gateway schema rejects them.
       // Personas written by older versions of this code used "model" which is
       // not a recognized field; the gateway refuses to start if they're present.

@@ -12,6 +12,7 @@ import '../../app.dart';
 import '../../widgets/glass_card.dart';
 import '../../services/clawhub_service.dart';
 import '../../services/gateway_service.dart';
+import '../../services/gateway_tool_catalog.dart';
 import '../../services/local_llm_service.dart';
 import '../../services/native_bridge.dart';
 import '../../services/node_service.dart';
@@ -45,7 +46,8 @@ const _premiumSkills = [
     id: 'agent-card',
     title: 'Wallet',
     subtitle: 'AgentCard.ai',
-    description: 'Issue virtual Visa cards, manage balances, and make autonomous payments.',
+    description:
+        'Issue virtual Visa cards, manage balances, and make autonomous payments.',
     icon: Icons.account_balance_wallet_rounded,
     color: Color(0xFF3D52D5),
     hasPage: true,
@@ -56,12 +58,13 @@ const _premiumSkills = [
     id: 'molt-launch',
     title: 'Work',
     subtitle: 'MoltLaunch',
-    description: 'On-chain AI job marketplace • ERC-8004 identity • ETH escrow on Base',
+    description:
+        'On-chain AI job marketplace • ERC-8004 identity • ETH escrow on Base',
     icon: Icons.work_rounded,
     color: Colors.orangeAccent,
     hasPage: true,
     tooltip: 'MoltLaunch on-chain work...',
-    installSlug: 'moltlaunch',        // ← REAL CLAWHUB SLUG
+    installSlug: 'moltlaunch', // ← REAL CLAWHUB SLUG
   ),
   _SkillEntry(
     id: 'valeo-sentinel',
@@ -72,18 +75,19 @@ const _premiumSkills = [
     color: AppColors.statusGreen,
     hasPage: true,
     tooltip: 'Valeo Sentinel x402...',
-    installSlug: 'valeo-sentinel',    // ← REAL CLAWHUB SLUG
+    installSlug: 'valeo-sentinel', // ← REAL CLAWHUB SLUG
   ),
   _SkillEntry(
     id: 'twilio-voice',
     title: 'Calls',
     subtitle: 'Twilio AI',
-    description: 'ConversationRelay voice orchestration + Deepgram transcription',
+    description:
+        'ConversationRelay voice orchestration + Deepgram transcription',
     icon: Icons.phone_android_rounded,
     color: Colors.redAccent,
     hasPage: true,
     tooltip: 'Twilio ConversationRelay...',
-    installSlug: 'twilio-api',        // ← REAL CLAWHUB SLUG (most popular)
+    installSlug: 'twilio-api', // ← REAL CLAWHUB SLUG (most popular)
   ),
   _SkillEntry(
     id: 'moonpay',
@@ -94,7 +98,7 @@ const _premiumSkills = [
     color: Color(0xFF7B2FBE),
     hasPage: true,
     tooltip: 'MoonPay verified bank...',
-    installSlug: 'moonpay',           // ← REAL CLAWHUB SLUG
+    installSlug: 'moonpay', // ← REAL CLAWHUB SLUG
   ),
   _SkillEntry(
     id: 'local-llm',
@@ -111,11 +115,12 @@ const _premiumSkills = [
     id: 'cdp-agentkit',
     title: 'AgentKit',
     subtitle: 'Coinbase CDP',
-    description: '50+ AI-driven Base actions (gasless swaps, NFT, DCA, Farcaster)',
+    description:
+        '50+ AI-driven Base actions (gasless swaps, NFT, DCA, Farcaster)',
     icon: Icons.rocket_launch_rounded,
     color: Color(0xFF0052FF),
     tooltip: 'Official Coinbase AgentKit...',
-    installSlug: 'x402-client',       // ← REAL CLAWHUB SLUG for Coinbase payments
+    installSlug: 'x402-client', // ← REAL CLAWHUB SLUG for Coinbase payments
   ),
 ];
 
@@ -174,7 +179,9 @@ class _SkillsManagerState extends State<SkillsManager>
     try {
       final tmp = Directory.systemTemp;
       await for (final f in tmp.list()) {
-        try { await f.delete(recursive: true); } catch (_) {}
+        try {
+          await f.delete(recursive: true);
+        } catch (_) {}
       }
     } catch (_) {}
 
@@ -189,8 +196,9 @@ class _SkillsManagerState extends State<SkillsManager>
 
     // 4. Device tokens — clear from SharedPreferences and in-memory so the
     //    next gateway connect performs a fresh identity handshake.
-    await GatewayService().clearDeviceToken(); // operator token (prefs + memory)
-    NodeService().clearCachedToken();           // node gateway auth token (memory)
+    await GatewayService()
+        .clearDeviceToken(); // operator token (prefs + memory)
+    NodeService().clearCachedToken(); // node gateway auth token (memory)
     PreferencesService().nodeDeviceToken = null; // node device token (prefs)
 
     // 5. Refresh gateway state
@@ -216,7 +224,8 @@ class _SkillsManagerState extends State<SkillsManager>
 
     if (skill.installSlug == null) {
       // Built-in skill — just navigate to its page
-      messenger.showSnackBar(const SnackBar(content: Text('Built-in skill activated')));
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Built-in skill activated')));
       if (skill.hasPage) {
         _navigateToSkillPage(context, skill.id);
       }
@@ -231,7 +240,8 @@ class _SkillsManagerState extends State<SkillsManager>
     );
 
     try {
-      final installCmd = await OpenClawCommandService.getSkillInstallCommand(skill.installSlug!);
+      final installCmd = await OpenClawCommandService.getSkillInstallCommand(
+          skill.installSlug!);
       String cliResult;
       try {
         cliResult = await NativeBridge.runInProot(
@@ -258,11 +268,12 @@ class _SkillsManagerState extends State<SkillsManager>
         await OpenClawCommandService.reloadGateway();
       }
       ClawHubService.instance.invalidateCache();
-      
+
       if (navigator.canPop()) navigator.pop();
 
       final lower = cliResult.toLowerCase();
-      if (lower.contains('installed') || (!lower.contains('error:') && !lower.contains('failed'))) {
+      if (lower.contains('installed') ||
+          (!lower.contains('error:') && !lower.contains('failed'))) {
         messenger.showSnackBar(
           SnackBar(
             content: Text('✅ ${skill.title} installed successfully!'),
@@ -455,8 +466,7 @@ class _SkillsManagerState extends State<SkillsManager>
             'assets/app_icon_official.svg',
             width: 18,
             height: 18,
-            colorFilter:
-                const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
           ),
           const SizedBox(width: 10),
           Text(
@@ -472,7 +482,8 @@ class _SkillsManagerState extends State<SkillsManager>
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.cleaning_services_rounded, color: Colors.white38, size: 20),
+          icon: const Icon(Icons.cleaning_services_rounded,
+              color: Colors.white38, size: 20),
           tooltip: 'Clear all caches (npm, ClawHub, temp)',
           onPressed: () => _clearAllCaches(context),
         ),
@@ -562,33 +573,37 @@ class _MySkillsTabState extends State<_MySkillsTab> {
 
     // 1. All gateway-confirmed installed skills (enriched with premium metadata
     //    where the ID matches; blueGrey fallback card for non-premium plugins).
-    final dynamicInstalled = rawSkills.map((s) {
-      final id =
-          (s['id'] ?? s['name'] ?? s['skillId'])?.toString().toLowerCase() ??
+    final dynamicInstalled = rawSkills
+        .map((s) {
+          final id = (s['id'] ?? s['name'] ?? s['skillId'])
+                  ?.toString()
+                  .toLowerCase() ??
               '';
-      return widget.premiumSkills.firstWhere(
-        (p) =>
-            p.id == id || id.contains(p.id.replaceAll('-', '_')),
-        orElse: () {
-          final title = (s['title'] ?? s['name'] ?? id).toString();
-          final author = (s['author'] ?? 'Plugin').toString();
-          final String desc;
-          if (s['description'] != null && s['description'].toString().isNotEmpty) {
-             desc = s['description'].toString();
-          } else {
-             desc = 'An installed OpenClaw skill.';
-          }
-          return _SkillEntry(
-            id: id,
-            title: title,
-            subtitle: author,
-            description: desc,
-            icon: Icons.extension_rounded,
-            color: Colors.blueGrey,
+          return widget.premiumSkills.firstWhere(
+            (p) => p.id == id || id.contains(p.id.replaceAll('-', '_')),
+            orElse: () {
+              final title = (s['title'] ?? s['name'] ?? id).toString();
+              final author = (s['author'] ?? 'Plugin').toString();
+              final String desc;
+              if (s['description'] != null &&
+                  s['description'].toString().isNotEmpty) {
+                desc = s['description'].toString();
+              } else {
+                desc = 'An installed OpenClaw skill.';
+              }
+              return _SkillEntry(
+                id: id,
+                title: title,
+                subtitle: author,
+                description: desc,
+                icon: Icons.extension_rounded,
+                color: Colors.blueGrey,
+              );
+            },
           );
-        },
-      );
-    }).where((s) => s.id.isNotEmpty && s.id != 'local-llm').toList();
+        })
+        .where((s) => s.id.isNotEmpty && s.id != 'local-llm')
+        .toList();
 
     // 2. Uninstalled premium catalogue — appended below so the grid always
     //    shows all 6 premium skill tiles even when none are installed yet.
@@ -640,9 +655,15 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                         },
                         child: Row(
                           children: [
-                            const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
+                            const Icon(Icons.refresh,
+                                size: 13, color: AppColors.statusGreen),
                             const SizedBox(width: 4),
-                            Text('REFRESH', style: TextStyle(fontSize: 10, letterSpacing: 1.2, color: AppColors.statusGreen.withValues(alpha: 0.85))),
+                            Text('REFRESH',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    letterSpacing: 1.2,
+                                    color: AppColors.statusGreen
+                                        .withValues(alpha: 0.85))),
                           ],
                         ),
                       ),
@@ -673,8 +694,8 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                     installedIds.contains(skill.id) ||
                                         installedIds.any((id) =>
                                             id.contains(skill.id) ||
-                                            id.contains(skill.id
-                                                .replaceAll('-', '_')));
+                                            id.contains(
+                                                skill.id.replaceAll('-', '_')));
                                 // Always open detail sheet first — shows live
                                 // stats. Sheet has Open / Connect / Install CTA.
                                 showSkillDetailSheet(
@@ -688,7 +709,8 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                   // Partner skills with a dedicated page use
                                   // "Connect" (not "Install") and show "Open"
                                   // once active so the user can go straight in.
-                                  installLabel: skill.hasPage ? 'Connect' : 'Install',
+                                  installLabel:
+                                      skill.hasPage ? 'Connect' : 'Install',
                                   onOpen: (skill.hasPage && installed)
                                       ? () => widget.onNavigate(skill.id)
                                       : null,
@@ -701,7 +723,6 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                             ),
                           ),
                       ],
-
                     );
                   },
                 ),
@@ -747,7 +768,8 @@ class _MySkillsTabState extends State<_MySkillsTab> {
   ) {
     if (isLoading) {
       return const SliverToBoxAdapter(
-        child: Center(child: Padding(
+        child: Center(
+            child: Padding(
           padding: EdgeInsets.all(20),
           child: CircularProgressIndicator(),
         )),
@@ -760,8 +782,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(16),
-            border:
-                Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
           ),
           child: const Center(
             child: Text(
@@ -776,16 +797,16 @@ class _MySkillsTabState extends State<_MySkillsTab> {
       delegate: SliverChildBuilderDelegate(
         (context, i) {
           final skill = rawSkills[i];
-          final skillId =
-              (skill['id'] ?? skill['name'] ?? skill['skillId'])
+          final skillId = (skill['id'] ?? skill['name'] ?? skill['skillId'])
                   ?.toString()
                   .toLowerCase() ??
-                  '';
+              '';
           final skillTitle =
               (skill['title'] ?? skill['name'] ?? skillId).toString();
-          final skillDesc = (skill['description'] ?? 'SKILL.yaml Workspace Binding').toString();
-          final isPremium =
-              _premiumSkills.any((s) => s.id == skillId);
+          final skillDesc =
+              (skill['description'] ?? 'SKILL.yaml Workspace Binding')
+                  .toString();
+          final isPremium = _premiumSkills.any((s) => s.id == skillId);
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Container(
@@ -824,8 +845,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.4)),
+                      fontSize: 10, color: Colors.white.withValues(alpha: 0.4)),
                 ),
                 // Tap → detail sheet with edit shortcut
                 onTap: () => showSkillDetailSheet(
@@ -834,17 +854,15 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                   initialName: skillTitle,
                   initialDescription: skillDesc,
                   isInstalled: true,
-                  accentColor: isPremium
-                      ? AppColors.statusGreen
-                      : Colors.blueGrey,
+                  accentColor:
+                      isPremium ? AppColors.statusGreen : Colors.blueGrey,
                   icon: isPremium
                       ? Icons.verified_rounded
                       : Icons.extension_rounded,
                   onEdit: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) =>
-                            SkillConfigEditor(skillId: skillId)),
+                        builder: (_) => SkillConfigEditor(skillId: skillId)),
                   ),
                 ),
                 trailing: Row(
@@ -1018,7 +1036,8 @@ class _DiscoverTabState extends State<_DiscoverTab>
       _loadFeatured();
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 500), () => _doSearch(query));
+    _debounce =
+        Timer(const Duration(milliseconds: 500), () => _doSearch(query));
   }
 
   Future<void> _doSearch(String query) async {
@@ -1115,8 +1134,8 @@ class _DiscoverTabState extends State<_DiscoverTab>
                   : null,
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.07),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: BorderSide.none,
@@ -1136,7 +1155,8 @@ class _DiscoverTabState extends State<_DiscoverTab>
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: Row(
               children: [
-                const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFFB74D)),
+                const Icon(Icons.star_rounded,
+                    size: 14, color: Color(0xFFFFB74D)),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -1161,8 +1181,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
         // ── Results ─────────────────────────────────────────────────────────
         Expanded(
           child: _loading
-              ? const Center(
-                  child: CircularProgressIndicator(strokeWidth: 2))
+              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
               : _results.isEmpty
                   ? (_searched
                       ? _NoResultsWithSuggestions(
@@ -1179,8 +1198,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
                       itemCount: _results.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 10),
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, i) => _DiscoverCard(
                         skill: _results[i],
                         onInstall: _rateLimitCountdown > 0
@@ -1221,36 +1239,42 @@ class _DiscoverTabState extends State<_DiscoverTab>
 //   • Custom skills   — your device-native skills (avatar, TTS, hardware)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Full catalog of known OpenClaw primitive tools with descriptions.
+// Full catalog of valid OpenClaw primitive tools with descriptions.
 const _toolCatalog = <String, _ToolMeta>{
-  'browser':       _ToolMeta('Web Browser',       'Navigate URLs, extract content, fill forms', Icons.language_rounded,        'core'),
-  'computer':      _ToolMeta('Computer Use',       'Execute shell commands and scripts',          Icons.code_rounded,             'core'),
-  'files':         _ToolMeta('File System',         'Read, write and list local files',            Icons.folder_open_rounded,      'core'),
-  'memory':        _ToolMeta('Memory Store',        'Persist facts and recall context across sessions', Icons.psychology_rounded,  'core'),
-  'search':        _ToolMeta('Web Search',          'Search the web and fetch results',            Icons.search_rounded,           'network'),
-  'image':         _ToolMeta('Image Generation',    'Generate images via local or cloud model',    Icons.palette_rounded,          'ai'),
-  'canvas':        _ToolMeta('Canvas / Web UI',     'Render interactive web UIs in the canvas',   Icons.draw_rounded,             'ui'),
-  'base':          _ToolMeta('Base Chain',           'Sign transactions and interact with Base L2', Icons.currency_bitcoin_rounded, 'web3'),
-  'calculator':    _ToolMeta('Calculator',          'Evaluate mathematical expressions',           Icons.calculate_rounded,        'core'),
-  'calendar':      _ToolMeta('Calendar',            'Read and create calendar events',             Icons.calendar_today_rounded,   'device'),
-  'weather':       _ToolMeta('Weather',             'Fetch current conditions and forecasts',      Icons.cloud_rounded,            'network'),
-  'shell':         _ToolMeta('Terminal Shell',      'Run arbitrary shell commands in PRoot',       Icons.terminal_rounded,         'core'),
-  'twilio':        _ToolMeta('Twilio Voice',        'Make/receive calls via ConversationRelay',    Icons.phone_rounded,            'network'),
-  'crypto':        _ToolMeta('Crypto Prices',       'Fetch live token prices and market data',     Icons.currency_exchange_rounded,'network'),
-  'camera':        _ToolMeta('Camera',              'Capture photos and video via device camera',  Icons.camera_alt_rounded,       'device'),
-  'location':      _ToolMeta('Location',            'Read device GPS coordinates',                 Icons.location_on_rounded,      'device'),
-  'screen':        _ToolMeta('Screen Recording',    'Record or share the device screen',           Icons.screen_share_rounded,     'device'),
-  'haptic':        _ToolMeta('Haptics',             'Trigger vibration and haptic patterns',       Icons.vibration_rounded,        'device'),
-  'sensor':        _ToolMeta('Sensors',             'Read accelerometer, gyroscope, barometer',    Icons.sensors_rounded,          'device'),
+  'browser': _ToolMeta(
+      'Web Browser',
+      'Navigate URLs, extract content, fill forms',
+      Icons.language_rounded,
+      'core'),
+  'computer': _ToolMeta('Computer Use', 'Execute shell commands and scripts',
+      Icons.code_rounded, 'core'),
+  'files': _ToolMeta('File System', 'Read, write and list local files',
+      Icons.folder_open_rounded, 'core'),
+  'memory': _ToolMeta(
+      'Memory Store',
+      'Persist facts and recall context across sessions',
+      Icons.psychology_rounded,
+      'core'),
+  'search': _ToolMeta('Web Search', 'Search the web and fetch results',
+      Icons.search_rounded, 'network'),
+  'image': _ToolMeta('Image Generation',
+      'Generate images via local or cloud model', Icons.palette_rounded, 'ai'),
+  'canvas': _ToolMeta('Canvas / Web UI',
+      'Render interactive web UIs in the canvas', Icons.draw_rounded, 'ui'),
+  'shell': _ToolMeta(
+      'Terminal Shell',
+      'Run shell commands in the local OpenClaw sandbox',
+      Icons.terminal_rounded,
+      'core'),
 };
 
 const _categoryColors = <String, Color>{
-  'core':    Color(0xFF4CAF50),
+  'core': Color(0xFF4CAF50),
   'network': Color(0xFF2196F3),
-  'ai':      Color(0xFF9C27B0),
-  'web3':    Color(0xFF9945FF),
-  'device':  Color(0xFFFF9800),
-  'ui':      Color(0xFF00BCD4),
+  'ai': Color(0xFF9C27B0),
+  'web3': Color(0xFF9945FF),
+  'device': Color(0xFFFF9800),
+  'ui': Color(0xFF00BCD4),
 };
 
 /// Metadata entry for the tool catalog.
@@ -1267,23 +1291,33 @@ const _customSkills = <_CustomSkillInfo>[
   _CustomSkillInfo(
     id: 'avatar-control',
     label: 'Avatar Control',
-    description: 'Switch 3D VRM model, trigger gestures (wave, nod, bow…), set facial emotions. Wired to the live VrmAvatarWidget via AgentSkillServer.',
+    description:
+        'Switch 3D VRM model, trigger gestures (wave, nod, bow…), set facial emotions. Wired to the live VrmAvatarWidget via AgentSkillServer.',
     icon: Icons.face_retouching_natural_rounded,
     actions: ['change_model', 'play_gesture', 'set_emotion', 'get_status'],
   ),
   _CustomSkillInfo(
     id: 'tts-voice',
     label: 'TTS Voice Control',
-    description: 'Switch TTS engine (Piper / ElevenLabs / OpenAI / Native), change voice, or speak text from the agent. Wired to TtsService.',
+    description:
+        'Switch TTS engine (Piper / ElevenLabs / OpenAI / Native), change voice, or speak text from the agent. Wired to TtsService.',
     icon: Icons.record_voice_over_rounded,
     actions: ['set_engine', 'set_voice', 'speak', 'stop', 'get_status'],
   ),
   _CustomSkillInfo(
     id: 'device-node',
     label: 'Device Control',
-    description: 'Vibrate, toggle flashlight, read battery level, get GPS, read sensors. Powered by the NodeProvider hardware capability layer.',
+    description:
+        'Vibrate, toggle flashlight, read battery level, get GPS, read sensors. Powered by the NodeProvider hardware capability layer.',
     icon: Icons.phonelink_setup_rounded,
-    actions: ['vibrate', 'flashlight_on', 'flashlight_off', 'get_battery', 'get_location', 'read_sensor'],
+    actions: [
+      'vibrate',
+      'flashlight_on',
+      'flashlight_off',
+      'get_battery',
+      'get_location',
+      'read_sensor'
+    ],
   ),
 ];
 
@@ -1310,10 +1344,11 @@ class _ToolsTab extends StatefulWidget {
 }
 
 class _ToolsTabState extends State<_ToolsTab> {
-  // All 19 known tools always shown. _enabledTools reflects tools.allow in config.
+  // Known gateway primitives always shown. _enabledTools reflects tools.allow.
   // Loaded once at init; updated immediately on toggle (optimistic UI).
   Set<String> _enabledTools = {};
   bool _loading = true;
+  bool _savingTools = false;
 
   @override
   void initState() {
@@ -1333,14 +1368,68 @@ class _ToolsTabState extends State<_ToolsTab> {
 
   Future<void> _toggle(String toolId) async {
     // Optimistic update — flip immediately, persist in background
+    if (_savingTools) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final gateway = context.read<GatewayProvider>();
     final newSet = Set<String>.from(_enabledTools);
     if (newSet.contains(toolId)) {
       newSet.remove(toolId);
     } else {
       newSet.add(toolId);
     }
-    setState(() => _enabledTools = newSet);
-    await OpenClawCommandService.saveToolsAllow(newSet.toList()..sort());
+    setState(() {
+      _savingTools = true;
+      _enabledTools = newSet;
+    });
+    final saved = await OpenClawCommandService.saveToolsAllow(
+      newSet.toList()..sort(),
+    );
+    if (!mounted) return;
+    setState(() => _savingTools = false);
+    if (!saved) {
+      await _loadEnabled();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not update tools.allow. Is setup complete?'),
+        ),
+      );
+      return;
+    }
+    gateway.refreshRpcDiscovery();
+  }
+
+  Future<void> _enableAllTools() async {
+    if (_savingTools) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final gateway = context.read<GatewayProvider>();
+    setState(() {
+      _savingTools = true;
+      _enabledTools = GatewayToolCatalog.primitiveIds.toSet();
+    });
+
+    final saved = await OpenClawCommandService.saveToolsAllow(
+      const [GatewayToolCatalog.wildcard],
+    );
+    if (!mounted) return;
+
+    setState(() => _savingTools = false);
+    if (!saved) {
+      await _loadEnabled();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not enable tools. Is setup complete?'),
+        ),
+      );
+      return;
+    }
+
+    gateway.refreshRpcDiscovery();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('All Gateway tools enabled.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   _ToolMeta _metaFor(String toolId) {
@@ -1348,7 +1437,8 @@ class _ToolsTabState extends State<_ToolsTab> {
     for (final entry in _toolCatalog.entries) {
       if (lower.contains(entry.key)) return entry.value;
     }
-    return _ToolMeta(toolId, 'OpenClaw gateway tool', Icons.extension_rounded, 'core');
+    return _ToolMeta(
+        toolId, 'OpenClaw gateway tool', Icons.extension_rounded, 'core');
   }
 
   @override
@@ -1360,8 +1450,8 @@ class _ToolsTabState extends State<_ToolsTab> {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
 
-    // Always show all 19 known tools from the catalog so the user can
-    // enable/disable them even when openclaw.json tools.allow is empty.
+    // Always show valid Gateway primitive tools. Device-native capabilities
+    // are displayed above as custom app skills and are paired-node scoped.
     // Live gateway capabilities are used ONLY to update _enabledTools on connect.
     final liveCapabilities = gatewayState.capabilities;
     if (liveCapabilities != null && liveCapabilities.isNotEmpty) {
@@ -1378,311 +1468,377 @@ class _ToolsTabState extends State<_ToolsTab> {
     }
 
     // Always use full catalog — never show empty state
-    final allToolIds = _toolCatalog.keys.toList();
+    final allToolIds = GatewayToolCatalog.primitiveIds;
+    final allEnabled = allToolIds.every(_enabledTools.contains);
+    final categoriesWithTools = _categoryColors.keys
+        .where((category) =>
+            allToolIds.any((id) => _toolCatalog[id]?.category == category))
+        .toList();
 
-        return CustomScrollView(
-          slivers: [
-            // ── Skills–Tools explainer ────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _sectionLabel('CAPABILITY LAYER'),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              _pill('SKILLS', const Color(0xFF4CAF50)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'npm packages that give the agent new capabilities',
-                                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.55)),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              _pill('TOOLS', const Color(0xFF2196F3)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'OS-level primitives the agent is permitted to invoke\n(configured in openclaw.json → tools.allow)',
-                                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.55), height: 1.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              _pill('CUSTOM', const Color(0xFFFF9800)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'App-native skills bridged via AgentSkillServer (127.0.0.1:8765)',
-                                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.55)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ── Custom device-native skills ───────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
-                child: _sectionLabel('CUSTOM APP SKILLS'),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                child: Text(
-                  'Device-native skills wired directly into the Flutter app — executed via AgentSkillServer on loopback port 8765.',
-                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.38), height: 1.5),
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _CustomSkillCard(info: _customSkills[i]),
+    return CustomScrollView(
+      slivers: [
+        // ── Skills–Tools explainer ────────────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionLabel('CAPABILITY LAYER'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(14),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.07)),
                   ),
-                  childCount: _customSkills.length,
-                ),
-              ),
-            ),
-
-            // ── Gateway tools header ──────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _sectionLabel('GATEWAY TOOLS (openclaw.json)'),
-                    if (!isOffline)
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Row(
                         children: [
-                          const SizedBox(width: 4),
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () {
-                              context.read<GatewayProvider>().refreshRpcDiscovery();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Refreshing gateway tools…'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                            child: Row(
-                              children: [
-                                const Icon(Icons.refresh, size: 13, color: AppColors.statusGreen),
-                                const SizedBox(width: 4),
-                                Text('REFRESH',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        letterSpacing: 1.2,
-                                        color: AppColors.statusGreen.withValues(alpha: 0.85))),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          GestureDetector(
-                            onTap: () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              final gateway = Provider.of<GatewayProvider>(context, listen: false);
-                              messenger.showSnackBar(const SnackBar(
-                                content: Text('Clearing caches…'),
-                                duration: Duration(seconds: 2),
-                              ));
-                              ClawHubService.instance.invalidateCache();
-                              await GatewayService().clearDeviceToken();
-                              NodeService().clearCachedToken();
-                              PreferencesService().nodeDeviceToken = null;
-                              try {
-                                await NativeBridge.runInProot(
-                                  'npm cache clean --force 2>/dev/null; '
-                                  'rm -rf /root/.npm/_cacache /tmp/npm-* /tmp/.npm 2>/dev/null || true',
-                                  timeout: 30,
-                                );
-                              } catch (_) {}
-                              if (!context.mounted) return;
-                              gateway.checkHealth();
-                              messenger.showSnackBar(const SnackBar(
-                                content: Text('All caches cleared.'),
-                                duration: Duration(seconds: 2),
-                              ));
-                            },
-                            child: Row(
-                              children: [
-                                Icon(Icons.cleaning_services_rounded,
-                                    size: 13,
-                                    color: Colors.white.withValues(alpha: 0.4)),
-                                const SizedBox(width: 4),
-                                Text('CLEAR CACHE',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        letterSpacing: 1.2,
-                                        color: Colors.white.withValues(alpha: 0.4))),
-                              ],
+                          _pill('SKILLS', const Color(0xFF4CAF50)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'npm packages that give the agent new capabilities',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white.withValues(alpha: 0.55)),
                             ),
                           ),
                         ],
                       ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: Text(
-                  'Primitive capabilities the agent can invoke. Edit tools.allow in openclaw.json to add or remove.',
-                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.38), height: 1.5),
-                ),
-              ),
-            ),
-
-            // ── Gateway offline notice ───────────────────────────────────
-            if (isOffline)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.statusAmber.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.statusAmber.withValues(alpha: 0.25)),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.power_off_rounded, size: 14, color: AppColors.statusAmber),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Gateway offline — showing last known config',
-                            style: TextStyle(fontSize: 12, color: AppColors.statusAmber),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _pill('TOOLS', const Color(0xFF2196F3)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'OS-level primitives the agent is permitted to invoke\n(configured in openclaw.json → tools.allow)',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  height: 1.5),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-            // ── Tool cards grouped by category ────────────────────────────
-            // Categories rendered in display order; each group gets a coloured
-            // header so the user can scan core / network / ai / web3 / device / ui.
-            for (final category in _categoryColors.keys) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 3,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: _categoryColors[category],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        category.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.8,
-                          color: _categoryColors[category],
-                        ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _pill('CUSTOM', const Color(0xFFFF9800)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'App-native skills bridged via AgentSkillServer (127.0.0.1:8765)',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white.withValues(alpha: 0.55)),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      final toolId = allToolIds
-                          .where((id) => _toolCatalog[id]?.category == category)
-                          .toList()[i];
-                      final enabled = _enabledTools.contains(toolId);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _ToolCard(
-                          toolId: toolId,
-                          meta: _metaFor(toolId),
-                          isEnabled: enabled,
-                          onToggle: () => _toggle(toolId),
-                        ),
-                      );
-                    },
-                    childCount: allToolIds
-                        .where((id) => _toolCatalog[id]?.category == category)
-                        .length,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
+          ),
+        ),
 
-            // ── RPC explorer quick-jump ───────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const BotMethodExplorer(initialFilter: 'skills')),
-                  ),
-                  icon: const Icon(Icons.terminal_rounded, size: 18, color: Colors.purpleAccent),
-                  label: Text(
-                    'EXPLORE RPC METHODS',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                      color: Colors.purpleAccent,
+        // ── Custom device-native skills ───────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+            child: _sectionLabel('CUSTOM APP SKILLS'),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            child: Text(
+              'Device-native skills wired directly into the Flutter app — executed via AgentSkillServer on loopback port 8765.',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.38),
+                  height: 1.5),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _CustomSkillCard(info: _customSkills[i]),
+              ),
+              childCount: _customSkills.length,
+            ),
+          ),
+        ),
+
+        // ── Gateway tools header ──────────────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _sectionLabel('GATEWAY TOOLS (openclaw.json)'),
                     ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.all(18),
-                    side: BorderSide(color: Colors.purpleAccent.withValues(alpha: 0.3)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: (allEnabled
+                                ? AppColors.statusGreen
+                                : AppColors.statusAmber)
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: (allEnabled
+                                  ? AppColors.statusGreen
+                                  : AppColors.statusAmber)
+                              .withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Text(
+                        allEnabled
+                            ? 'ALL ENABLED'
+                            : '${_enabledTools.length}/${allToolIds.length} ON',
+                        style: TextStyle(
+                          color: allEnabled
+                              ? AppColors.statusGreen
+                              : AppColors.statusAmber,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    GestureDetector(
+                      onTap:
+                          allEnabled || _savingTools ? null : _enableAllTools,
+                      child: _ToolActionChip(
+                        icon: _savingTools
+                            ? Icons.hourglass_top_rounded
+                            : Icons.done_all_rounded,
+                        label: allEnabled ? 'ALL ON' : 'ENABLE ALL',
+                        color: allEnabled
+                            ? AppColors.statusGreen
+                            : Colors.cyanAccent,
+                        muted: allEnabled || _savingTools,
+                      ),
+                    ),
+                    if (!isOffline)
+                      GestureDetector(
+                        onTap: () {
+                          context.read<GatewayProvider>().refreshRpcDiscovery();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Refreshing gateway tools…'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        child: const _ToolActionChip(
+                          icon: Icons.refresh,
+                          label: 'REFRESH',
+                          color: AppColors.statusGreen,
+                        ),
+                      ),
+                    if (!isOffline)
+                      GestureDetector(
+                        onTap: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final gateway = Provider.of<GatewayProvider>(context,
+                              listen: false);
+                          messenger.showSnackBar(const SnackBar(
+                            content: Text('Clearing caches…'),
+                            duration: Duration(seconds: 2),
+                          ));
+                          ClawHubService.instance.invalidateCache();
+                          await GatewayService().clearDeviceToken();
+                          NodeService().clearCachedToken();
+                          PreferencesService().nodeDeviceToken = null;
+                          try {
+                            await NativeBridge.runInProot(
+                              'npm cache clean --force 2>/dev/null; '
+                              'rm -rf /root/.npm/_cacache /tmp/npm-* /tmp/.npm 2>/dev/null || true',
+                              timeout: 30,
+                            );
+                          } catch (_) {}
+                          if (!context.mounted) return;
+                          gateway.checkHealth();
+                          messenger.showSnackBar(const SnackBar(
+                            content: Text('All caches cleared.'),
+                            duration: Duration(seconds: 2),
+                          ));
+                        },
+                        child: _ToolActionChip(
+                          icon: Icons.cleaning_services_rounded,
+                          label: 'CLEAR CACHE',
+                          color: Colors.white.withValues(alpha: 0.45),
+                          muted: true,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Text(
+              'Primitive capabilities the agent can invoke. Plawie defaults this to all-on with tools.allow = ["*"] after setup; use individual switches only when you want to lock a tool down.',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.38),
+                  height: 1.5),
+            ),
+          ),
+        ),
+
+        // ── Gateway offline notice ───────────────────────────────────
+        if (isOffline)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.statusAmber.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.statusAmber.withValues(alpha: 0.25)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.power_off_rounded,
+                        size: 14, color: AppColors.statusAmber),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Gateway offline — showing last known config',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.statusAmber),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        );
+          ),
+
+        // ── Tool cards grouped by category ────────────────────────────
+        // Categories rendered in display order; each group gets a coloured
+        // header so the user can scan core / network / ai / web3 / device / ui.
+        for (final category in categoriesWithTools) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: _categoryColors[category],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    category.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.8,
+                      color: _categoryColors[category],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  final toolId = allToolIds
+                      .where((id) => _toolCatalog[id]?.category == category)
+                      .toList()[i];
+                  final enabled = _enabledTools.contains(toolId);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _ToolCard(
+                      toolId: toolId,
+                      meta: _metaFor(toolId),
+                      isEnabled: enabled,
+                      onToggle: () => _toggle(toolId),
+                    ),
+                  );
+                },
+                childCount: allToolIds
+                    .where((id) => _toolCatalog[id]?.category == category)
+                    .length,
+              ),
+            ),
+          ),
+        ],
+
+        // ── RPC explorer quick-jump ───────────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        const BotMethodExplorer(initialFilter: 'skills')),
+              ),
+              icon: const Icon(Icons.terminal_rounded,
+                  size: 18, color: Colors.purpleAccent),
+              label: Text(
+                'EXPLORE RPC METHODS',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                  color: Colors.purpleAccent,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.all(18),
+                side: BorderSide(
+                    color: Colors.purpleAccent.withValues(alpha: 0.3)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _pill(String label, Color color) => Container(
@@ -1703,7 +1859,6 @@ class _ToolsTabState extends State<_ToolsTab> {
         ),
       );
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared small widgets
@@ -1746,9 +1901,17 @@ class _EmptyState extends StatelessWidget {
 class _NoResultsWithSuggestions extends StatelessWidget {
   final String query;
   final void Function(String) onSuggestion;
-  const _NoResultsWithSuggestions({required this.query, required this.onSuggestion});
+  const _NoResultsWithSuggestions(
+      {required this.query, required this.onSuggestion});
 
-  static const _suggestions = ['weather', 'github', 'moonpay', 'coding-agent', 'notion', 'tmux'];
+  static const _suggestions = [
+    'weather',
+    'github',
+    'moonpay',
+    'coding-agent',
+    'notion',
+    'tmux'
+  ];
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -1756,36 +1919,47 @@ class _NoResultsWithSuggestions extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.search_off_rounded, size: 40, color: Colors.white12),
+            const Icon(Icons.search_off_rounded,
+                size: 40, color: Colors.white12),
             const SizedBox(height: 16),
             Text(
               'No skills found for "$query"',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.statusGrey, fontSize: 13, height: 1.6),
+              style: const TextStyle(
+                  color: AppColors.statusGrey, fontSize: 13, height: 1.6),
             ),
             const SizedBox(height: 20),
             const Text(
               'TRY',
-              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
-                  letterSpacing: 1.5, color: Colors.white24),
+              style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                  color: Colors.white24),
             ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               alignment: WrapAlignment.center,
-              children: _suggestions.map((s) => GestureDetector(
-                onTap: () => onSuggestion(s),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                  ),
-                  child: Text(s, style: const TextStyle(fontSize: 12, color: Colors.white60)),
-                ),
-              )).toList(),
+              children: _suggestions
+                  .map((s) => GestureDetector(
+                        onTap: () => onSuggestion(s),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12)),
+                          ),
+                          child: Text(s,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.white60)),
+                        ),
+                      ))
+                  .toList(),
             ),
           ],
         ),
@@ -1910,7 +2084,8 @@ class _ServiceCard extends StatelessWidget {
                 top: 12,
                 right: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
                     color: isInstalled
                         ? skill.color.withValues(alpha: 0.15)
@@ -1955,16 +2130,26 @@ class _DiscoverCard extends StatelessWidget {
     if (s.contains('weather')) return Icons.cloud_rounded;
     if (s.contains('github') || s.contains('git')) return Icons.code_rounded;
     if (s.contains('notion')) return Icons.article_rounded;
-    if (s.contains('tmux') || s.contains('shell')) return Icons.terminal_rounded;
+    if (s.contains('tmux') || s.contains('shell')) {
+      return Icons.terminal_rounded;
+    }
     if (s.contains('voice') || s.contains('call')) return Icons.phone_rounded;
     if (s.contains('search') || s.contains('web')) return Icons.search_rounded;
-    if (s.contains('coding') || s.contains('code')) return Icons.developer_mode_rounded;
-    if (s.contains('summar') || s.contains('text')) return Icons.summarize_rounded;
-    if (s.contains('session') || s.contains('log')) return Icons.history_rounded;
+    if (s.contains('coding') || s.contains('code')) {
+      return Icons.developer_mode_rounded;
+    }
+    if (s.contains('summar') || s.contains('text')) {
+      return Icons.summarize_rounded;
+    }
+    if (s.contains('session') || s.contains('log')) {
+      return Icons.history_rounded;
+    }
     if (s.contains('calendar')) return Icons.calendar_today_rounded;
     if (s.contains('email') || s.contains('mail')) return Icons.mail_rounded;
     if (s.contains('file') || s.contains('folder')) return Icons.folder_rounded;
-    if (s.contains('crypto') || s.contains('solana')) return Icons.currency_bitcoin_rounded;
+    if (s.contains('crypto') || s.contains('solana')) {
+      return Icons.currency_bitcoin_rounded;
+    }
     if (s.contains('image') || s.contains('photo')) return Icons.image_rounded;
     return Icons.extension_rounded;
   }
@@ -1972,10 +2157,16 @@ class _DiscoverCard extends StatelessWidget {
   Color _colorFor(String slug) {
     final s = slug.toLowerCase();
     if (s.contains('weather')) return const Color(0xFF2196F3);
-    if (s.contains('github') || s.contains('git')) return const Color(0xFF6E40C9);
+    if (s.contains('github') || s.contains('git')) {
+      return const Color(0xFF6E40C9);
+    }
     if (s.contains('notion')) return Colors.white;
-    if (s.contains('tmux') || s.contains('shell')) return const Color(0xFF4CAF50);
-    if (s.contains('voice') || s.contains('call')) return const Color(0xFFF44336);
+    if (s.contains('tmux') || s.contains('shell')) {
+      return const Color(0xFF4CAF50);
+    }
+    if (s.contains('voice') || s.contains('call')) {
+      return const Color(0xFFF44336);
+    }
     if (s.contains('coding')) return const Color(0xFF00BCD4);
     if (s.contains('summar')) return const Color(0xFFFF9800);
     return AppColors.statusGreen;
@@ -1984,7 +2175,7 @@ class _DiscoverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _colorFor(skill.slug);
-    final icon  = _iconFor(skill.slug);
+    final icon = _iconFor(skill.slug);
 
     return GestureDetector(
       onTap: () => showSkillDetailSheet(
@@ -1995,9 +2186,8 @@ class _DiscoverCard extends StatelessWidget {
         isInstalled: skill.isInstalled,
         accentColor: color,
         icon: icon,
-        onInstall: onInstall != null
-            ? (slug, name) async => onInstall!()
-            : null,
+        onInstall:
+            onInstall != null ? (slug, name) async => onInstall!() : null,
       ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
@@ -2087,21 +2277,26 @@ class _DiscoverCard extends StatelessWidget {
                     Row(
                       children: [
                         if (skill.stars != null)
-                          _miniStat(Icons.star_rounded,
-                              _fmt(skill.stars!), const Color(0xFFFFC107)),
+                          _miniStat(Icons.star_rounded, _fmt(skill.stars!),
+                              const Color(0xFFFFC107)),
                         if (skill.currentInstalls != null) ...[
                           const SizedBox(width: 10),
-                          _miniStat(Icons.devices_rounded,
-                              _fmt(skill.currentInstalls!), AppColors.statusGreen),
+                          _miniStat(
+                              Icons.devices_rounded,
+                              _fmt(skill.currentInstalls!),
+                              AppColors.statusGreen),
                         ],
                         if (skill.downloadCount != null) ...[
                           const SizedBox(width: 10),
-                          _miniStat(Icons.download_rounded,
-                              _fmt(skill.downloadCount!), const Color(0xFF2196F3)),
+                          _miniStat(
+                              Icons.download_rounded,
+                              _fmt(skill.downloadCount!),
+                              const Color(0xFF2196F3)),
                         ],
                         const Spacer(),
                         Icon(Icons.chevron_right_rounded,
-                            size: 16, color: Colors.white.withValues(alpha: 0.18)),
+                            size: 16,
+                            color: Colors.white.withValues(alpha: 0.18)),
                       ],
                     ),
                   ],
@@ -2114,8 +2309,8 @@ class _DiscoverCard extends StatelessWidget {
               GestureDetector(
                 onTap: onInstall,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 7),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -2159,6 +2354,48 @@ class _DiscoverCard extends StatelessWidget {
 
 // ── Tool row (Tools tab) ──────────────────────────────────────────────────────
 
+class _ToolActionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool muted;
+
+  const _ToolActionChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.muted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = muted ? color.withValues(alpha: 0.55) : color;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: effectiveColor.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: effectiveColor.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: effectiveColor),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 1.0,
+              fontWeight: FontWeight.w800,
+              color: effectiveColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool card — gateway primitive tool with category badge + description
@@ -2197,7 +2434,8 @@ class _ToolCard extends StatelessWidget {
             // Handle
             Center(
               child: Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 decoration: BoxDecoration(
                   color: Colors.white24,
                   borderRadius: BorderRadius.circular(2),
@@ -2613,13 +2851,11 @@ class _LocalLlmCard extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: badgeColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: badgeColor.withValues(alpha: 0.3)),
+                border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
               ),
               child: Text(
                 badgeText,
@@ -2660,8 +2896,7 @@ class _MoltLaunchBanner extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.verified_rounded,
-                color: Colors.orange, size: 16),
+            const Icon(Icons.verified_rounded, color: Colors.orange, size: 16),
             const SizedBox(width: 10),
             const Expanded(
               child: Text(
@@ -2708,8 +2943,8 @@ class _MoltLaunchBanner extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('MoltLaunch — On-chain Agent Jobs',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 13)),
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   SizedBox(height: 2),
                   Text(
                     'AI job marketplace · ERC-8004 identity · ETH escrow on Base',
@@ -2719,7 +2954,8 @@ class _MoltLaunchBanner extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Colors.orange, size: 20),
+            const Icon(Icons.chevron_right_rounded,
+                color: Colors.orange, size: 20),
           ],
         ),
       ),
@@ -2814,6 +3050,7 @@ class _SkillEntry {
   final IconData icon;
   final Color color;
   final String? tooltip;
+
   /// True when there is a dedicated Flutter page for this skill
   /// (agent-card, molt-launch, valeo-sentinel, twilio-voice, moonpay, local-llm).
   /// Affects the CTA labels in the detail sheet: "Connect" instead of "Install",
@@ -2899,14 +3136,11 @@ class _InstallPromptSheet extends StatelessWidget {
               ),
               child: Text(skill.description,
                   style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: AppColors.statusGrey)),
+                      fontSize: 14, height: 1.5, color: AppColors.statusGrey)),
             ),
             const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: AppColors.statusAmber.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
@@ -2919,8 +3153,8 @@ class _InstallPromptSheet extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Skill will be installed into your running OpenClaw gateway instance.',
-                      style: TextStyle(
-                          fontSize: 12, color: AppColors.statusAmber),
+                      style:
+                          TextStyle(fontSize: 12, color: AppColors.statusAmber),
                     ),
                   ),
                 ],
@@ -3002,8 +3236,8 @@ class _InstallSheet extends StatelessWidget {
             const SizedBox(height: 20),
             Text(
               'Installing $skillTitle…',
-              style: GoogleFonts.outfit(
-                  fontWeight: FontWeight.bold, fontSize: 16),
+              style:
+                  GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 6),
             const Text(

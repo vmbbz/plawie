@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'gateway_tool_catalog.dart';
 import 'native_bridge.dart';
 
 /// Service for detecting OpenClaw version and adapting command syntax.
@@ -83,7 +84,7 @@ class OpenClawCommandService {
     } else {
       cmd = baseCommand.replaceAll('openclaw skills ', 'openclaw skill ');
     }
-    
+
     return cmd;
   }
 
@@ -91,8 +92,7 @@ class OpenClawCommandService {
   static Future<List<String>> getCoreTools() async {
     final config = await getOpenClawConfig();
     final allow = config?['tools']?['allow'];
-    if (allow is List) return allow.map((e) => e.toString()).toList();
-    return [];
+    return GatewayToolCatalog.normalizeAllowList(allow);
   }
 
   static String getSkillListCommand() => 'openclaw skills list';
@@ -156,7 +156,7 @@ class OpenClawCommandService {
       final response = await http
           .get(Uri.parse('$baseUrl/api/tags'))
           .timeout(const Duration(seconds: 3));
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['models'] is List) {
@@ -181,9 +181,9 @@ class OpenClawCommandService {
         return decoded
             .where((m) => m['provider'] == 'ollama')
             .map((m) => {
-              'id': m['id']?.toString() ?? '',
-              'name': m['name']?.toString() ?? '',
-            })
+                  'id': m['id']?.toString() ?? '',
+                  'name': m['name']?.toString() ?? '',
+                })
             .where((m) => m['id']!.isNotEmpty)
             .toList();
       }
@@ -197,24 +197,14 @@ class OpenClawCommandService {
     _cacheTime = null;
   }
 
-  // Only valid gateway primitive IDs. The wildcard '*' is also accepted —
-  // it explicitly allows all tools and is more reliable than an absent block
-  // on gateway versions that changed the absent-block default behaviour.
-  static const _kGatewayPrimitives = {
-    '*', 'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
-  };
-
   /// Writes [tools] as the new `tools.allow` list in openclaw.json.
   static Future<bool> saveToolsAllow(List<String> tools) async {
     try {
-      final config = await getOpenClawConfig() ?? <String, dynamic>{};
-      final valid = tools.where(_kGatewayPrimitives.contains).toList()..sort();
+      final config = await getOpenClawConfig();
+      if (config == null || config.isEmpty) return false;
+      final allowList = GatewayToolCatalog.toConfigAllowList(tools);
       config['tools'] ??= <String, dynamic>{};
-      if (valid.isEmpty || (valid.length == 1 && valid.first == '*')) {
-        config['tools']['allow'] = ['*'];
-      } else {
-        config['tools']['allow'] = valid.where((e) => e != '*').toList();
-      }
+      config['tools']['allow'] = allowList;
       final encoded = jsonEncode(config);
       final escaped = encoded.replaceAll("'", "'\\''");
       await _run(

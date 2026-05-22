@@ -15,6 +15,7 @@ import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
+import 'gateway_tool_catalog.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
@@ -1432,30 +1433,22 @@ PARAMETER num_batch 512
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
 
+    config['tools'] ??= <String, dynamic>{};
+    (config['tools'] as Map)['allow'] ??= [GatewayToolCatalog.wildcard];
+
     // Sanitize tools.allow: remove any entries that aren't valid gateway primitives.
     // npm-skill slugs and device names cause the gateway to warn "unknown entries"
     // and give the AI zero tools. ["*"] wildcard is preserved — it means all-allowed.
-    const validPrimitives = {
-      '*',
-      'browser',
-      'computer',
-      'files',
-      'memory',
-      'search',
-      'image',
-      'canvas',
-      'shell',
-    };
     final existingAllow = config['tools']?['allow'];
     if (existingAllow is List) {
-      final sanitized = existingAllow
-          .map((e) => e.toString())
-          .where(validPrimitives.contains)
-          .toList();
-      if (sanitized.isEmpty) {
+      final sanitized = GatewayToolCatalog.normalizeAllowList(
+        existingAllow,
+        expandWildcard: false,
+      );
+      if (sanitized.isEmpty && existingAllow.isNotEmpty) {
         // Nothing valid — write explicit wildcard so AI keeps all tools.
         config['tools'] ??= <String, dynamic>{};
-        config['tools']['allow'] = ['*'];
+        config['tools']['allow'] = [GatewayToolCatalog.wildcard];
       } else {
         config['tools']['allow'] = sanitized;
       }
@@ -3393,9 +3386,9 @@ PARAMETER num_batch 512
           try {
             final cfg = await _readConfig();
             if (cfg['tools'] is Map && cfg['tools']['allow'] is List) {
-              final toolsList = (cfg['tools']['allow'] as List)
-                  .map((e) => e.toString())
-                  .toList();
+              final toolsList = GatewayToolCatalog.normalizeAllowList(
+                cfg['tools']['allow'],
+              );
               _updateState(_state.copyWith(capabilities: toolsList));
             } else {
               _updateState(_state.copyWith(capabilities: []));

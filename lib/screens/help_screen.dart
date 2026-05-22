@@ -630,7 +630,7 @@ class HelpScreen extends StatelessWidget {
               Icons.build_rounded,
               Colors.amberAccent,
               'Tools',
-              'Reads your running gateway\'s tools.allow config live — no hardcoded list, always accurate.'
+              'Gateway primitive permissions default to all-on with tools.allow = ["*"]. The Tools tab expands that wildcard, lets you Enable All in one tap, or lock down individual primitives.'
             ),
           ].map((t) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),

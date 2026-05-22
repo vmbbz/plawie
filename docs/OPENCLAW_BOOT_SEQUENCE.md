@@ -49,16 +49,20 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
 12. Write canonical model auth:
    - `openclaw.json auth.profiles.ollama:default = { provider: "ollama", mode: "api_key" }`
    - `auth-profiles.json profiles.ollama:default = { type: "api_key", provider: "ollama", key: "ollama-local" }`
-13. Clear node device token for first-pair path only during setup.
-14. Start the gateway once.
-15. Wait for operational readiness:
+13. Write default Gateway tool permissions:
+   - `tools.allow = ["*"]`
+   - UI expands the wildcard into the valid primitive tool list so Tools tab reflects the real backend state.
+   - Individual lockdown writes an explicit allow list; invalid skill/device names are never written into `tools.allow`.
+14. Clear node device token for first-pair path only during setup.
+15. Start the gateway once.
+16. Wait for operational readiness:
    - HTTP health OK
    - operator WebSocket connected
    - `skills.status` or equivalent RPC returns active skills
    - no schema reload failure
-16. Start/attach the device node.
-17. Approve first node pairing by request ID.
-18. Navigate to app dashboard/home only after the gateway has settled enough to avoid post-start reload loops.
+17. Start/attach the device node.
+18. Approve first node pairing by request ID.
+19. Navigate to app dashboard/home only after the gateway has settled enough to avoid post-start reload loops.
 
 ## Returning User Sequence
 
@@ -96,6 +100,29 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
 | CLI helper | `cli` | operator | token/password derived | Setup, pairing approval, diagnostics |
 
 `operator.admin` is requested by the Flutter operator WS because the current gateway rejects browser dashboard approvals with `missing scope: operator.admin`. Older cached operator tokens can trigger one scope-upgrade pairing cycle after update; the app must clear that cached token, approve by request ID, and reconnect once.
+
+## Tool Permissions
+
+Plawie defaults OpenClaw primitive tools to enabled with:
+
+```json
+{
+  "tools": {
+    "allow": ["*"]
+  }
+}
+```
+
+This is safe for Plawie's local-first runtime because the gateway is loopback
+bound, token protected, and paired-device scoped. The powerful primitives
+(`shell`, `computer`, `files`, `browser`) should not be exposed to arbitrary LAN
+clients or unauthenticated dashboards.
+
+The Skills Manager Tools tab expands `["*"]` into the concrete primitive tool
+IDs so users see the real active state instead of a false "all disabled" UI.
+The one-tap Enable All button writes `["*"]`. Individual toggles write an
+explicit allow list. Device capabilities such as camera/location/sensors are
+not written into `tools.allow`; they are node/custom-skill capabilities.
 
 ## Pairing Flows
 
