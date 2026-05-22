@@ -71,6 +71,16 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: 'openai/gpt-4o',
     ),
     _ProviderInfo(
+      id: 'XAI_API_KEY',
+      name: 'Grok',
+      subtitle: 'by xAI',
+      icon: Icons.rocket_launch_rounded,
+      color: Color(0xFFE0E0E0),
+      hint: 'xai-...',
+      prefix: 'xai-',
+      defaultModel: 'xai/grok-4.3',
+    ),
+    _ProviderInfo(
       id: 'GROQ_API_KEY',
       name: 'Groq',
       subtitle: 'Lightning fast',

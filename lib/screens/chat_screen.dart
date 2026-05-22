@@ -108,6 +108,7 @@ class _ChatScreenState extends State<ChatScreen>
     'google/gemini-3.1-pro-preview',
     'anthropic/claude-opus-4.6',
     'openai/gpt-4o',
+    'xai/grok-4.3',
     'groq/llama-3.1-405b',
   ];
 
@@ -2147,10 +2148,35 @@ class _ChatScreenState extends State<ChatScreen>
         });
         PreferencesService().configuredModel = model;
 
-        // Auto-start Ollama Hub if switching to any ollama/ model while hub is off
+        // Auto-start and health-check Ollama Hub if switching to any
+        // ollama/ model. :cloud models still need the local daemon as the
+        // authenticated proxy to ollama.com.
         if (isNowOllama && !GatewayService().state.isOllamaRunning) {
+          final messenger = ScaffoldMessenger.of(context);
           setState(() => _isOllamaAutoStarting = true);
-          unawaited(GatewayService().startInternalOllama());
+          unawaited(GatewayService()
+              .prepareLocalOllamaForGateway(
+            reason: model.contains(':cloud')
+                ? 'chat-model-switch-cloud'
+                : 'chat-model-switch-local',
+            wait: Duration(seconds: model.contains(':cloud') ? 30 : 15),
+          )
+              .then((ready) {
+            if (!mounted) return;
+            setState(() => _isOllamaAutoStarting = false);
+            if (!ready) {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Ollama Hub is not ready yet. Open Local LLM to install/start it.',
+                  ),
+                ),
+              );
+            }
+          }).catchError((_) {
+            if (!mounted) return;
+            setState(() => _isOllamaAutoStarting = false);
+          }));
         }
 
         // Auto-stop Ollama Hub when switching to a pure cloud model (saves memory)

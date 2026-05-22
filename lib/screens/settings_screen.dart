@@ -12,6 +12,7 @@ import '../providers/gateway_provider.dart';
 import '../providers/node_provider.dart';
 import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
+import '../services/gateway_service.dart';
 import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
@@ -1094,12 +1095,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'google/gemini-3.1-pro-preview',
       'anthropic/claude-opus-4.6',
       'openai/gpt-4o',
+      'xai/grok-4.3',
       'groq/llama-3.1-405b',
     ];
     const labels = [
       'Gemini 3.1 Pro Preview',
       'Claude Opus 4.6',
       'GPT-4o',
+      'Grok 4.3',
       'Llama 3.1 405B',
     ];
     final idx = models.indexOf(modelId);
@@ -1112,13 +1115,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (modelId.startsWith('google/')) return 'Google';
     if (modelId.startsWith('anthropic/')) return 'Anthropic';
     if (modelId.startsWith('openai/')) return 'OpenAI';
+    if (modelId.startsWith('xai/')) return 'xAI';
     if (modelId.startsWith('groq/')) return 'Groq';
     return modelId.split('/').first.toUpperCase();
   }
 
+  String _providerName(String provider) {
+    switch (provider) {
+      case 'google':
+        return 'Google';
+      case 'anthropic':
+        return 'Anthropic';
+      case 'openai':
+        return 'OpenAI';
+      case 'xai':
+        return 'xAI / Grok';
+      case 'groq':
+        return 'Groq';
+      default:
+        return provider;
+    }
+  }
+
   void _showUpdateApiKeyDialog(BuildContext context) {
     final keyController = TextEditingController();
-    final providers = ['google', 'anthropic', 'openai', 'groq'];
+    final providers = ['google', 'anthropic', 'openai', 'xai', 'groq'];
     String selectedProvider = _prefs.apiProvider ?? 'google';
     if (!providers.contains(selectedProvider)) selectedProvider = 'google';
 
@@ -1136,7 +1157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 items: providers
                     .map((p) => DropdownMenuItem(
                           value: p,
-                          child: Text(p[0].toUpperCase() + p.substring(1)),
+                          child: Text(_providerName(p)),
                         ))
                     .toList(),
                 onChanged: (v) => setDialogState(() => selectedProvider = v!),
@@ -1201,6 +1222,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'google/gemini-3.1-pro-preview',
       'anthropic/claude-opus-4.6',
       'openai/gpt-4o',
+      'xai/grok-4.3',
       'groq/llama-3.1-405b',
       'ollama/qwen3-coder:480b-cloud',
       'ollama/gpt-oss:120b-cloud',
@@ -1213,6 +1235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Gemini 3.1 Pro Preview',
       'Claude Opus 4.6',
       'GPT-4o',
+      'Grok 4.3',
       'Llama 3.1 405B',
       '☁ QWEN3 CODER 480B',
       '☁ GPT-OSS 120B',
@@ -1242,6 +1265,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await gw.persistModel(val);
         if (!context.mounted) return;
         _prefs.configuredModel = val;
+        if (val.startsWith('ollama/')) {
+          unawaited(GatewayService().prepareLocalOllamaForGateway(
+            reason: val.contains(':cloud')
+                ? 'settings-model-switch-cloud'
+                : 'settings-model-switch-local',
+            wait: Duration(seconds: val.contains(':cloud') ? 30 : 15),
+          ));
+        }
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

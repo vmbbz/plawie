@@ -2380,6 +2380,8 @@ PARAMETER num_batch 512
         return 'anthropic/claude-opus-4.6';
       case 'openai':
         return 'openai/gpt-4o';
+      case 'xai':
+        return 'xai/grok-4.3';
       case 'groq':
         return 'groq/llama-3.1-405b';
       case 'ollama':
@@ -2396,6 +2398,7 @@ PARAMETER num_batch 512
     final p = provider.toLowerCase();
     if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
     if (p.contains('openai')) return 'openai';
+    if (p.contains('xai') || p.contains('grok')) return 'xai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
     if (p.contains('ollama')) return 'ollama';
@@ -2411,6 +2414,8 @@ PARAMETER num_batch 512
         return 'OPENAI_API_KEY';
       case 'google':
         return 'GOOGLE_API_KEY';
+      case 'xai':
+        return 'XAI_API_KEY';
       case 'groq':
         return 'GROQ_API_KEY';
       default:
@@ -2439,6 +2444,10 @@ PARAMETER num_batch 512
     } else if (openClawProvider == 'openai') {
       defaultModels = [
         {'id': 'gpt-4o', 'name': 'GPT-4o'}
+      ];
+    } else if (openClawProvider == 'xai') {
+      defaultModels = [
+        {'id': 'grok-4.3', 'name': 'Grok 4.3'}
       ];
     } else if (openClawProvider == 'groq') {
       defaultModels = [
