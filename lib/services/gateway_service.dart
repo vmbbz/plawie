@@ -96,7 +96,9 @@ class GatewayService {
     final prefs = PreferencesService();
     await prefs.init();
     final model = (prefs.configuredModel ?? '').trim();
-    if (model.isEmpty || model.contains(':cloud')) return false;
+    if (model.isEmpty) return false;
+    // Ollama cloud tags still route through the local Ollama daemon, which
+    // proxies authenticated requests to ollama.com.
     return model.startsWith('ollama/');
   }
 
@@ -3496,14 +3498,6 @@ PARAMETER num_batch 512
     return false;
   }
 
-  String _resolveLocalOllamaFallbackModel() {
-    final available = _state.ollamaHubModels;
-    if (available.isNotEmpty) {
-      return 'ollama/${available.first}';
-    }
-    return 'ollama/qwen2.5:0.5b';
-  }
-
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local-llm/ → fllama NDK (on-device inference, no network, no gateway)
@@ -3567,15 +3561,21 @@ PARAMETER num_batch 512
     var isOllama = model.startsWith('ollama/');
     var isCloudOllama = isOllama && model.contains(':cloud');
     if (isCloudOllama) {
-      _addActivity('[CHAT] ☁ Cloud Ollama model — routing via hub proxy.');
+      _addActivity('[CHAT] Cloud Ollama model - routing via hub proxy.');
+      final hubReady = await _ensureLocalOllamaReadyForGateway(
+        reason: 'cloud-chat',
+        wait: const Duration(seconds: 30),
+      );
+      if (!hubReady) {
+        yield '[Error] Ollama Cloud needs the local Ollama Hub running as its proxy, but :11434 is not responding yet. Open Local LLM -> Start Ollama Hub, then retry.';
+        return;
+      }
       final signedIn = await checkOllamaCredentials();
       if (!signedIn) {
-        final fallback = _resolveLocalOllamaFallbackModel();
         _addActivity(
-            '[CHAT] Cloud Ollama requires sign-in; auto-falling back to local model $fallback');
-        model = fallback;
-        isOllama = true;
-        isCloudOllama = false;
+            '[CHAT] Cloud Ollama requires ollama signin before the daemon can proxy requests.');
+        yield '[Error] Ollama Cloud needs sign-in, not a manual API key. Open Local LLM -> Cloud -> Sign in with Ollama, then retry.';
+        return;
       }
     }
     final isLocalOllama = isOllama && !isCloudOllama;

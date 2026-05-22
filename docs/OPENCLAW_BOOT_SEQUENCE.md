@@ -11,7 +11,7 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
 - Returning users must not need to delete app data. Cached gateway token, operator device token, node token, and dashboard URL must self-heal if stale.
 - Runtime hardening must not rewrite config while the gateway is settling unless the user explicitly starts a repair path.
 - Local Ollama must not ask users for a real API key. For loopback/local Ollama, OpenClaw uses the placeholder credential `ollama-local`.
-- If the selected model is `ollama/...`, returning-user startup must ensure the internal Ollama Hub is running before dashboard/webchat/chat can depend on it.
+- If the selected model is `ollama/...` (local or `:cloud`), returning-user startup must ensure the internal Ollama Hub is running before dashboard/webchat/chat can depend on it.
 - Web dashboard pairing requires an operator connection with `operator.admin` on the current v2026.5.x gateway.
 
 ## Fresh Install Sequence
@@ -59,7 +59,7 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
    - do not rewrite `openclaw.json`
    - refresh the gateway token/dashboard URL
    - ensure local Ollama `auth-profiles.json` exists because this file can be repaired without restarting the gateway
-   - if the persisted primary model starts with `ollama/`, start the internal Ollama Hub in the background when `127.0.0.1:11434` is not reachable
+   - if the persisted primary model starts with `ollama/` (including `:cloud`), start the internal Ollama Hub in the background when `127.0.0.1:11434` is not reachable
    - attach operator WebSocket
    - run passive hardening verification only
 3. If gateway is running but not fully attached:
@@ -130,6 +130,8 @@ OpenClaw's current local Ollama behavior is:
 
 - Local/LAN Ollama does not require a real user API key.
 - The placeholder `ollama-local` is valid for loopback/private Ollama hosts.
+- Ollama `:cloud` models also require the local Ollama daemon because the daemon proxies signed-in requests to ollama.com.
+- Ollama `:cloud` needs `ollama signin` / Ollama account auth, not a manually entered API key.
 - `ECONNREFUSED 127.0.0.1:11434` is a daemon reachability problem, not an API-key problem.
 - Endpoint details belong in `models.providers.ollama`.
 - Runtime credentials belong in the versioned `auth-profiles.json` store.
@@ -139,7 +141,8 @@ The official Ollama `ollama launch openclaw` flow is useful for desktop/CLI
 onboarding because Ollama can configure OpenClaw, pick a model, and start the
 gateway. Plawie cannot rely on that interactive host flow inside Android PRoot,
 so it writes the equivalent local provider/auth configuration itself and manages
-the embedded Ollama daemon lifecycle.
+the embedded Ollama daemon lifecycle. For cloud models, Plawie must still launch
+the embedded daemon and guide the user through Ollama sign-in.
 
 Required local files:
 
@@ -210,6 +213,7 @@ These should not persist after setup:
 - event-loop delay warnings that never settle after plugins finish loading
 - repeated node token nonce/protocol errors after a token refresh
 - repeated `ECONNREFUSED 127.0.0.1:11434` after Ollama Hub autostart has been attempted
+- `provider=ollama ... :cloud` plus `endpoint=local route=local` while the embedded daemon is stopped
 - web dashboard stuck on pairing after operator WS has `operator.admin`
 
 ## Log Signatures To Watch

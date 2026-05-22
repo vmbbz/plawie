@@ -359,18 +359,11 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
     if (_isCheckingSignin) return;
     if (mounted) setState(() => _isCheckingSignin = true);
     try {
-      // Quick path: if a cloud model is already active or configured in prefs,
-      // the user IS signed in — the daemon wouldn't accept the model without auth.
       final configured = PreferencesService().configuredModel;
-      final hasActiveCloud = _activeCloudModel != null ||
-          (configured != null && configured.contains(':cloud'));
 
-      bool signedIn = hasActiveCloud;
-
-      // If no quick proof, run the multi-strategy credential check.
-      if (!signedIn) {
-        signedIn = await GatewayService().checkOllamaCredentials();
-      }
+      // A configured :cloud model is not proof of sign-in after app updates or
+      // config restores. Always verify the actual Ollama credentials/live probe.
+      final signedIn = await GatewayService().checkOllamaCredentials();
       
       if (mounted) {
         setState(() => _ollamaSignedIn = signedIn);
@@ -1054,7 +1047,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen> with WidgetsBindingObse
                       ? null
                       : () async {
                           await _handleOllamaSync();
-                          if (mounted) setState(() => _threadsPendingApply = false);
+                          if (mounted) {
+                            setState(() => _threadsPendingApply = false);
+                          }
                         },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
