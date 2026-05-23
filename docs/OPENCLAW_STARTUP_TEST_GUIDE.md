@@ -50,6 +50,7 @@ closed, protocol, nonce, or missing-skill symptoms.
 [NODE] Connecting to 127.0.0.1:18789...
 [NODE] WebSocket connected, awaiting challenge...
 [NODE] Challenge received
+[NODE] Declaring 15 commands: [...]
 [NODE] Connect accepted (protocol=v4, ...)
 [NODE] Paired and connected
 ```
@@ -69,10 +70,12 @@ capture gateway logs around default skill loading and RPC discovery.
 ## Red Flags
 
 - Node connects before `Gateway RPC discovery complete`.
+- Node pairs with `Declaring 0 commands`.
 - Repeated `[NODE] Local gateway still settling` after interactive-ready logs.
 - Repeated `invalid connect params` or missing `nonce` after a successful pair.
 - Gateway writes config or reloads repeatedly during first setup.
 - Skills list is empty after `Health RPC` succeeds.
+- `ENOENT` for `/root/.openclaw/workspace/HEARTBEAT.md`.
 - Dashboard repeatedly requests different device IDs on the same local session.
 - Any Ollama daemon or port `11434` activity during setup or cloud-provider chat.
 
@@ -108,9 +111,28 @@ The test passes only when:
 
 1. Default Gateway skills appear in logs.
 2. `Gateway RPC discovery complete` appears before Node pairing.
-3. Node reaches `Paired and connected` once and stays stable.
+3. Node declares the expected command catalog before `Paired and connected`.
 4. Web dashboard opens without permanent pairing drift.
 5. Chat uses the selected cloud provider without starting any local Ollama daemon.
 
 Fast-looking startup without these markers is a fail. It is better to wait for
 real readiness than to land users on a UI that immediately disconnects.
+
+## NDK Bridge Experiment
+
+Run this only after the Gateway/Node baseline passes.
+
+1. Open Local LLM.
+2. Download or start the smallest available model first, usually Qwen 2.5 0.5B.
+3. Confirm direct NDK chat works with model id `local-llm/...`.
+4. In `Gateway Bridge Experiment`, tap `Start Bridge`.
+5. Verify `http://127.0.0.1:11435/v1/health` reports the active fllama model.
+6. Tap `Use In Gateway`.
+7. Send one short chat message and watch gateway logs for `plawie_ndk/local-llm`.
+
+Bridge pass criteria:
+
+- Port `11435` appears only after the user starts the bridge.
+- Gateway provider is `plawie_ndk`, model `plawie_ndk/local-llm`.
+- A simple chat turn returns text or a clear bridge HTTP error.
+- Gateway pairing and Node WebSocket stay stable while the bridge is active.

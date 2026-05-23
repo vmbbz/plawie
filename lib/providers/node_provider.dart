@@ -24,6 +24,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   GatewayState? _lastGatewayState;
   Timer? _watchdog;
   DateTime? _lastGatewaySettlingLogAt;
+  bool _permissionRequestInFlight = false;
 
   // Capabilities
   final _cameraCapability = CameraCapability();
@@ -325,11 +326,19 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Request runtime permissions proactively so they are granted before
   /// the gateway sends invoke requests (which would otherwise be blocked).
   Future<void> _requestNodePermissions() async {
-    await [
-      Permission.camera,
-      Permission.location,
-      Permission.sensors,
-    ].request();
+    if (_permissionRequestInFlight) return;
+    _permissionRequestInFlight = true;
+    try {
+      await [
+        Permission.camera,
+        Permission.location,
+        Permission.sensors,
+      ].request();
+    } catch (e) {
+      _nodeService.log('[NODE] Permission request skipped: $e');
+    } finally {
+      _permissionRequestInFlight = false;
+    }
   }
 
   /// Prompt user to disable battery optimization so Android doesn't kill

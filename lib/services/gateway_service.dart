@@ -329,6 +329,7 @@ class GatewayService {
 
     // Initialize file directory early
     await getFilesDir();
+    await _ensureWorkspaceHeartbeatFile();
 
     // SELF-HEALING: Ensure binary wrappers are fresh on every startup.
     try {
@@ -929,6 +930,32 @@ class GatewayService {
     return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
+  Future<void> _ensureWorkspaceHeartbeatFile() async {
+    try {
+      final workspace = Directory(
+        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/workspace',
+      );
+      await workspace.create(recursive: true);
+
+      final heartbeat = File('${workspace.path}/HEARTBEAT.md');
+      if (await heartbeat.exists()) return;
+
+      await heartbeat.writeAsString('''
+# Plawie Heartbeat
+
+HEARTBEAT_OK
+
+This file exists so OpenClaw's default heartbeat prompt can read workspace
+context without producing a missing-file error. Plawie does not schedule
+autonomous workspace tasks here. If nothing else is configured, reply
+HEARTBEAT_OK.
+''');
+      _addActivity('[SYS] Workspace HEARTBEAT.md initialized.');
+    } catch (e) {
+      debugPrint('[GatewayService] HEARTBEAT.md init skipped: $e');
+    }
+  }
+
   /// Recursively casts a `Map<dynamic,dynamic>` (as returned by jsonDecode)
   /// to `Map<String,dynamic>`. Required because jsonDecode on Android/Dart
   /// returns `Map<dynamic,dynamic>` even when all keys are strings.
@@ -1070,6 +1097,7 @@ class GatewayService {
 
   /// Direct I/O: configure gateway binding and node settings.
   Future<void> _configureGateway() async {
+    await _ensureWorkspaceHeartbeatFile();
     final config = await _readConfig();
 
     // Safety check: if read failed but file exists, abort to prevent clobbering auth tokens

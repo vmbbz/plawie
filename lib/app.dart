@@ -20,6 +20,7 @@ class PlawieApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => GatewayProvider(), lazy: false),
         ChangeNotifierProxyProvider<GatewayProvider, NodeProvider>(
           create: (_) => NodeProvider(),
+          lazy: false,
           update: (_, gatewayProvider, nodeProvider) {
             nodeProvider!.onGatewayStateUpdate(gatewayProvider);
             return nodeProvider;
