@@ -479,7 +479,8 @@ class BootstrapService {
       final pendingApiKey = setupPrefs.pendingApiKey;
       if (pendingProvider != null && pendingProvider.isNotEmpty) {
         final credGateway = GatewayService();
-        final providerModel = credGateway.getModelForProvider(pendingProvider);
+        final providerModel =
+            ModelProviderCatalog.setupSafeModelForProvider(pendingProvider);
         final hasApiKey = pendingApiKey != null && pendingApiKey.isNotEmpty;
 
         if (hasApiKey) {
@@ -1206,11 +1207,16 @@ class BootstrapService {
   String _resolveBootstrapPrimaryModel(
       PreferencesService prefs, Map<String, dynamic> config) {
     final configured = prefs.configuredModel;
-    if (configured != null && configured.isNotEmpty) return configured;
+    if (configured != null && configured.isNotEmpty) {
+      if (configured.startsWith('ollama/')) {
+        return ModelProviderCatalog.setupSafeGatewayModel;
+      }
+      return configured;
+    }
 
     final pendingProvider = prefs.pendingProvider;
     if (pendingProvider != null && pendingProvider.isNotEmpty) {
-      return GatewayService().getModelForProvider(pendingProvider);
+      return ModelProviderCatalog.setupSafeModelForProvider(pendingProvider);
     }
 
     final configPrimary =
@@ -1219,7 +1225,7 @@ class BootstrapService {
       return configPrimary;
     }
 
-    return ModelProviderCatalog.localOllamaDefaultModel;
+    return ModelProviderCatalog.setupSafeGatewayModel;
   }
 
   Map<String, dynamic> _buildProviderDefaultsPatch(

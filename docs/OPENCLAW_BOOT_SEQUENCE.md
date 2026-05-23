@@ -45,7 +45,8 @@ routing stay aligned as OpenClaw Gateway security rules evolve.
    - `models.providers.ollama.baseUrl = "http://127.0.0.1:11434"`
    - `models.providers.ollama.apiKey = "ollama-local"`
    - `models.providers.ollama.api = "ollama"`
-   - primary model defaults to the setup-selected catalog model; API-key providers require credentials, Ollama Local uses `ollama-local`, and Ollama Cloud waits for the Hub runtime plus user sign-in.
+   - primary model defaults to the setup-selected catalog model for API-key providers.
+   - Ollama Local/Ollama Cloud setup choices use a setup-safe gateway primary until the user explicitly starts NDK local inference or installs Ollama Hub. Fresh setup must not depend on the optional `127.0.0.1:11434` daemon.
 12. Write canonical model auth:
    - `openclaw.json auth.profiles.ollama:default = { provider: "ollama", mode: "api_key" }`
    - `auth-profiles.json profiles.ollama:default = { type: "api_key", provider: "ollama", key: "ollama-local" }`

@@ -100,7 +100,9 @@ Setup stores:
 
 - `pendingProvider`: the selected setup provider, including `ollama_cloud` when the user explicitly chose cloud.
 - `apiProvider`: normalized provider used by Settings and Gateway credentials.
-- `configuredModel`: provider default model from the centralized catalog.
+- `configuredModel`: setup-safe gateway model. For Ollama Local/Ollama Cloud
+  this is not an `ollama/...` model during fresh setup, because the optional
+  Hub runtime may not exist yet.
 
 Bootstrap then bakes provider config before the first Gateway start, preventing
 post-start reload churn that can break pairing.

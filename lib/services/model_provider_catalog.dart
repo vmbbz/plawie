@@ -62,6 +62,7 @@ class ModelProviderCatalog {
   static const String localOllamaDefaultModel = 'ollama/qwen2.5:0.5b';
   static const String defaultCloudFallbackModel =
       'google/gemini-3.1-pro-preview';
+  static const String setupSafeGatewayModel = defaultCloudFallbackModel;
   static const String plawieNdkProviderId = 'plawie_ndk';
   static const String plawieNdkBaseUrl = 'http://127.0.0.1:11435/v1';
   static const int ollamaRuntimeDownloadBytes = 1303711365;
@@ -346,6 +347,20 @@ class ModelProviderCatalog {
     final normalized = normalizeProvider(provider);
     final option = providerById(normalized);
     return option?.defaultModel ?? provider;
+  }
+
+  /// Model to persist during fresh setup before optional local runtimes exist.
+  ///
+  /// `ollama/...` models require the separate Ollama daemon on :11434. Fresh
+  /// setup must not make gateway readiness depend on that optional 1.30 GB
+  /// runtime, so local/Ollama Cloud choices boot with a safe gateway model until
+  /// the user explicitly starts NDK local inference or installs Ollama Hub.
+  static String setupSafeModelForProvider(String provider) {
+    final normalized = normalizeProvider(provider);
+    if (normalized == 'ollama' || normalized == 'ollama_cloud') {
+      return setupSafeGatewayModel;
+    }
+    return defaultModelForProvider(normalized);
   }
 
   static String normalizeProvider(String provider) {

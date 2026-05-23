@@ -184,9 +184,11 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         final activeProvider = _activeProvider!;
         final apiProvider =
             ModelProviderCatalog.apiProviderForSetupId(activeProvider.id);
+        final setupModel =
+            ModelProviderCatalog.setupSafeModelForProvider(activeProvider.id);
         prefs.pendingProvider = activeProvider.id;
         prefs.apiProvider = apiProvider;
-        prefs.configuredModel = activeProvider.defaultModel;
+        prefs.configuredModel = setupModel;
       }
       final key = _apiKeyController.text.trim();
       if (key.isNotEmpty && _activeProvider?.requiresApiKey != false) {
@@ -641,7 +643,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 Text(
                   provider.id == 'ollama_cloud'
                       ? 'Ollama Cloud uses ollama.com models with no manual API key, but it still needs the local Ollama Hub runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) as a signed-in proxy. Plawie asks before that download.'
-                      : 'Plawie can install the local Ollama Hub and start with a tiny free model. Hub/runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) and model downloads are confirmed separately so mobile data is never spent by surprise.',
+                      : 'Plawie boots the gateway first, then lets you download a tiny NDK local model from Local LLM. The optional Ollama Hub runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) is never downloaded without confirmation.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
