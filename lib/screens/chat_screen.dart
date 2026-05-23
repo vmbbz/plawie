@@ -337,7 +337,6 @@ class _ChatScreenState extends State<ChatScreen>
         final provider = prefs.apiProvider;
         if (provider != null &&
             provider.isNotEmpty &&
-            provider != 'ollama' &&
             !provider.startsWith('local')) {
           _cloudFallbackModel = GatewayService().getModelForProvider(provider);
         }
@@ -1803,56 +1802,54 @@ class _ChatScreenState extends State<ChatScreen>
             ],
           ),
         ),
-        ..._availableModels
-            .where((m) => !m.startsWith('ollama/'))
-            .map((model) => PopupMenuItem<String>(
-                  value: 'model:$model',
-                  height: 44,
-                  child: Row(
-                    children: [
-                      Icon(
-                        model == _selectedModel
-                            ? Icons.check_circle
-                            : Icons.circle_outlined,
-                        color: model == _selectedModel
-                            ? Colors.purpleAccent
-                            : Colors.white38,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              ModelProviderCatalog.labelForModel(model),
-                              style: TextStyle(
-                                color: model == _selectedModel
-                                    ? Colors.white
-                                    : Colors.white70,
-                                fontSize: 13,
-                                fontWeight: model == _selectedModel
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              ModelProviderCatalog.routeLabelForModel(model),
-                              style: const TextStyle(
-                                color: Colors.white38,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+        ..._availableModels.map((model) => PopupMenuItem<String>(
+              value: 'model:$model',
+              height: 44,
+              child: Row(
+                children: [
+                  Icon(
+                    model == _selectedModel
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    color: model == _selectedModel
+                        ? Colors.purpleAccent
+                        : Colors.white38,
+                    size: 18,
                   ),
-                )),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          ModelProviderCatalog.labelForModel(model),
+                          style: TextStyle(
+                            color: model == _selectedModel
+                                ? Colors.white
+                                : Colors.white70,
+                            fontSize: 13,
+                            fontWeight: model == _selectedModel
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          ModelProviderCatalog.routeLabelForModel(model),
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )),
 
         const PopupMenuDivider(),
         PopupMenuItem<void>(

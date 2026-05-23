@@ -1,7 +1,5 @@
 enum ModelRouteKind {
   onDevice,
-  ollamaLocal,
-  ollamaCloud,
   cloud,
 }
 
@@ -29,8 +27,14 @@ class ModelOption {
   });
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
-  String get ollamaTag =>
-      id.startsWith('ollama/') ? id.substring('ollama/'.length) : id;
+
+  /// Model id as it should appear inside `models.providers.<provider>.models`.
+  /// Most providers use one segment after the provider prefix, but OpenRouter
+  /// preserves nested upstream ids such as `openrouter/free`.
+  String get providerModelId {
+    final prefix = '$providerId/';
+    return id.startsWith(prefix) ? id.substring(prefix.length) : shortId;
+  }
 }
 
 class ProviderOption {
@@ -62,16 +66,8 @@ class ModelProviderCatalog {
       'google/gemini-3.1-pro-preview';
   static const String setupSafeGatewayModel = defaultCloudFallbackModel;
 
-  /// Legacy identifiers retained so old preferences/config can be migrated
-  /// without breaking returning users. Normal UI should not expose ollama/*.
-  static const String ollamaProviderId = 'ollama';
-  static const String localOllamaDefaultModel = defaultCloudFallbackModel;
   static const String plawieNdkProviderId = 'plawie_ndk';
   static const String plawieNdkBaseUrl = 'http://127.0.0.1:11435/v1';
-
-  /// Legacy size label used only by old/deprecated code paths.
-  static const int ollamaRuntimeDownloadBytes = 1303711365;
-  static const String ollamaRuntimeDownloadLabel = '1.30 GB';
 
   static const List<ProviderOption> providers = [
     ProviderOption(
@@ -113,6 +109,16 @@ class ModelProviderCatalog {
       keyPrefix: 'xai-',
       defaultModel: 'xai/grok-4',
       description: 'Grok reasoning, fast variants, and coding models.',
+    ),
+    ProviderOption(
+      id: 'openrouter',
+      label: 'OpenRouter',
+      subtitle: 'free + many providers',
+      envKey: 'OPENROUTER_API_KEY',
+      keyHint: 'sk-or-...',
+      keyPrefix: 'sk-or-',
+      defaultModel: 'openrouter/openrouter/free',
+      description: 'One account for free community models and paid fallbacks.',
     ),
     ProviderOption(
       id: 'groq',
@@ -201,6 +207,31 @@ class ModelProviderCatalog {
       category: 'Code',
     ),
     ModelOption(
+      id: 'openrouter/openrouter/free',
+      label: 'OpenRouter Free Router',
+      providerId: 'openrouter',
+      route: ModelRouteKind.cloud,
+      description: 'Routes to currently available free OpenRouter models.',
+      category: 'Free',
+      recommended: true,
+    ),
+    ModelOption(
+      id: 'openrouter/auto',
+      label: 'OpenRouter Auto',
+      providerId: 'openrouter',
+      route: ModelRouteKind.cloud,
+      description: 'OpenRouter automatic routing across supported models.',
+      category: 'Router',
+    ),
+    ModelOption(
+      id: 'openrouter/moonshotai/kimi-k2.6',
+      label: 'Kimi K2.6 via OpenRouter',
+      providerId: 'openrouter',
+      route: ModelRouteKind.cloud,
+      description: 'Strong long-context agent model through OpenRouter.',
+      category: 'Agent',
+    ),
+    ModelOption(
       id: 'groq/llama-3.3-70b-versatile',
       label: 'Llama 3.3 70B Versatile',
       providerId: 'groq',
@@ -219,14 +250,8 @@ class ModelProviderCatalog {
     ),
   ];
 
-  /// Deprecated: embedded Ollama routes are hidden from normal model pickers.
-  static const List<ModelOption> ollamaCloudModels = [];
-
   static List<String> get cloudModelIds =>
       cloudModels.map((m) => m.id).toList(growable: false);
-
-  static List<String> get ollamaCloudModelIds =>
-      ollamaCloudModels.map((m) => m.id).toList(growable: false);
 
   static List<String> get chatDefaultModelIds => cloudModelIds;
 
@@ -264,6 +289,7 @@ class ModelProviderCatalog {
   static String normalizeProvider(String provider) {
     final p = provider.trim().toLowerCase();
     if (p.contains('ollama')) return 'google';
+    if (p.contains('openrouter')) return 'openrouter';
     if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
     if (p.contains('openai')) return 'openai';
     if (p.contains('xai') || p.contains('grok')) return 'xai';
@@ -285,7 +311,7 @@ class ModelProviderCatalog {
     final normalized = normalizeProvider(provider);
     final models = cloudModels
         .where((model) => model.providerId == normalized)
-        .map((model) => {'id': model.shortId, 'name': model.label})
+        .map((model) => {'id': model.providerModelId, 'name': model.label})
         .toList(growable: false);
     if (models.isNotEmpty) return models;
     return const [
@@ -313,6 +339,9 @@ class ModelProviderCatalog {
   static String labelForModel(String modelId) {
     final model = modelById(modelId);
     if (model != null) return model.label;
+    if (modelId == '$plawieNdkProviderId/local-llm') {
+      return 'Plawie NDK Bridge';
+    }
     if (modelId.startsWith('ollama/')) return 'Legacy Ollama route';
     if (modelId.startsWith('local-llm/')) {
       return 'Local - ${modelId.substring('local-llm/'.length)}';
@@ -322,27 +351,16 @@ class ModelProviderCatalog {
 
   static String routeLabelForModel(String modelId) {
     if (modelId.startsWith('local-llm/')) return 'ON DEVICE';
+    if (modelId == '$plawieNdkProviderId/local-llm') return 'EXPERIMENT';
     if (modelId.startsWith('ollama/')) return 'LEGACY';
     final model = modelById(modelId);
     return model?.category.toUpperCase() ?? 'CLOUD';
   }
 
-  static bool needsOllamaHub(String modelId) => false;
-
-  static bool needsOllamaSignIn(String modelId) => false;
-
   static Map<String, dynamic> providerConfigDefaults(String provider) {
     final normalized = normalizeProvider(provider);
     final models = defaultModelsForProvider(normalized);
     switch (normalized) {
-      case 'ollama':
-      case 'ollama_cloud':
-        return {
-          'api': 'ollama',
-          'apiKey': 'ollama-local',
-          'baseUrl': 'http://127.0.0.1:11434',
-          'models': models,
-        };
       case 'google':
         return {
           'api': 'google-generative-ai',
@@ -357,6 +375,11 @@ class ModelProviderCatalog {
       case 'groq':
         return {
           'baseUrl': 'https://api.groq.com/openai/v1',
+          'models': models,
+        };
+      case 'openrouter':
+        return {
+          'baseUrl': 'https://openrouter.ai/api/v1',
           'models': models,
         };
       default:

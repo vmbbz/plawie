@@ -403,30 +403,6 @@ class NativeBridge {
     return await _channel.invokeMethod<int>('getTotalMemoryMb') ?? 4096;
   }
 
-  // ── Integrated Ollama Management ──────────────────────────────────────────
-
-  static Future<bool> isOllamaInstalled() async {
-    return await _channel.invokeMethod<bool>('isOllamaInstalled') ?? false;
-  }
-
-  static Future<bool> isOllamaRunning() async {
-    return await _channel.invokeMethod<bool>('isOllamaRunning') ?? false;
-  }
-
-  static Future<bool> startOllama() async {
-    return await _channel.invokeMethod<bool>('startOllama') ?? false;
-  }
-
-  static Future<bool> stopOllama() async {
-    return await _channel.invokeMethod<bool>('stopOllama') ?? false;
-  }
-
-  static Future<bool> installOllama(String tempPath) async {
-    return await _channel
-            .invokeMethod<bool>('installOllama', {'tempPath': tempPath}) ??
-        false;
-  }
-
   // ── Wake Word "Plawie" ─────────────────────────────────────────────────────
 
   static const _hotwordChannel = MethodChannel('com.nxg.openclawproot/hotword');

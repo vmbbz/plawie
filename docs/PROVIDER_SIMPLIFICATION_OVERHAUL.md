@@ -12,7 +12,7 @@ The production model contract is now:
 
 | Mode | Route | Runtime | Gateway | User promise |
 | --- | --- | --- | --- | --- |
-| Cloud Agent Mode | `google/`, `anthropic/`, `openai/`, `xai/`, `groq/` | OpenClaw Gateway | Yes | Full tools, skills, dashboard, BYO provider key |
+| Cloud Agent Mode | `google/`, `anthropic/`, `openai/`, `xai/`, `openrouter/`, `groq/` | OpenClaw Gateway | Yes | Full tools, skills, dashboard, BYO provider key |
 | Private Offline Mode | `local-llm/...` | NDK fllama | No | Offline/private chat and direct app actions |
 | Legacy Ollama | `ollama/...` | Embedded daemon | Legacy only | Hidden from UI; stale prefs migrate to safe cloud fallback |
 
@@ -37,10 +37,12 @@ The production model contract is now:
 - [x] Remove Ollama Local and Ollama Cloud from first-run setup choices.
 - [x] Remove Ollama models from chat/settings default model pickers.
 - [x] Migrate stale `ollama/...` preferences to the safe cloud fallback.
-- [x] Keep low-level Ollama service methods as legacy code only until a later
-  cleanup pass can delete them safely.
+- [x] Remove low-level Ollama install/start/stop/status methods from Dart and
+  Android native code.
 - [x] Reframe Local LLM page as NDK Offline Mode only.
 - [x] Remove/disable surprise Ollama runtime install/download prompts.
+- [x] Add explicit NDK Gateway bridge experiment on `127.0.0.1:11435` without
+  making it a production default.
 - [x] Fix camera/canvas snapshot UX so captured images attach to chat instead of
   forcing an unclosable full overlay.
 - [x] Update README, Help, and architecture docs.
@@ -56,11 +58,13 @@ The production model contract is now:
   runtime.
 - NDK fllama analyzer cleanup preserves the native OpenAI-compatible request
   path and removes dead Dart fallback code.
+- Targeted grep confirms no `ollama serve`, `11434`, `installOllama`,
+  `startOllama`, `stopOllama`, or hidden local API route remains in `lib/` or
+  `android/`.
 
 ## Non-Goals For This Pass
 
 - Do not enable an HTTP NDK bridge as a Gateway provider by default.
-- Do not delete all legacy Ollama backend code in one risky sweep.
 - Do not change the gateway boot/pairing hardening unless required by analysis.
 
 ## Verification Matrix

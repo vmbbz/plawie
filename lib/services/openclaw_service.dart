@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'gateway_tool_catalog.dart';
 import 'native_bridge.dart';
 
@@ -146,50 +145,6 @@ class OpenClawCommandService {
     try {
       await _run('openclaw reload 2>/dev/null || true', timeout: 10);
     } catch (_) {}
-  }
-
-  /// Lists models currently available in the local Ollama instance.
-  static Future<List<Map<String, String>>> getOllamaModels({
-    String baseUrl = 'http://127.0.0.1:11434',
-  }) async {
-    try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/api/tags'))
-          .timeout(const Duration(seconds: 3));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['models'] is List) {
-          return (data['models'] as List).map((m) {
-            final name = m['name']?.toString() ?? 'unknown';
-            return {
-              'id': name,
-              'name': name.split(':').first.toUpperCase(),
-            };
-          }).toList();
-        }
-      }
-    } catch (_) {}
-
-    try {
-      final result = await _run(
-        'openclaw models list --json 2>/dev/null || echo "[]"',
-        timeout: 10,
-      );
-      final decoded = jsonDecode(result.trim());
-      if (decoded is List) {
-        return decoded
-            .where((m) => m['provider'] == 'ollama')
-            .map((m) => {
-                  'id': m['id']?.toString() ?? '',
-                  'name': m['name']?.toString() ?? '',
-                })
-            .where((m) => m['id']!.isNotEmpty)
-            .toList();
-      }
-    } catch (_) {}
-
-    return [];
   }
 
   static void invalidateVersionCache() {

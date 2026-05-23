@@ -86,6 +86,17 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       requiresApiKey: true,
     ),
     _ProviderInfo(
+      id: 'openrouter',
+      name: 'OpenRouter',
+      subtitle: 'free + many models',
+      icon: Icons.hub_rounded,
+      color: Color(0xFF7C3AED),
+      hint: 'sk-or-...',
+      prefix: 'sk-or-',
+      defaultModel: 'openrouter/openrouter/free',
+      requiresApiKey: true,
+    ),
+    _ProviderInfo(
       id: 'groq',
       name: 'Groq',
       subtitle: 'Lightning fast',

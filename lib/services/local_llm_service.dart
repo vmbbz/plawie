@@ -36,12 +36,9 @@ class LocalLlmModel {
   final String? mmProjUrl; // HuggingFace URL for the CLIP mmproj file
   final int? mmProjSizeMb; // Download size hint for the mmproj file
 
-  /// True when the model architecture supports OpenAI-style tool/function calls
-  /// AND the Ollama Modelfile template for this model includes {{ .Tools }}.
-  /// Used to:
-  ///   - Inject the chat template when registering with Ollama (full gateway routing)
-  ///   - Filter the gateway primary model picker (non-tool models show CHAT ONLY)
-  ///   - Route chat via gateway agent loop vs. direct Ollama HTTP
+  /// True when the model architecture supports OpenAI-style tool/function calls.
+  /// NDK direct mode uses this to label models that can participate in local
+  /// tool experiments without promising full gateway parity.
   final bool supportsToolCalls;
 
   const LocalLlmModel({
@@ -397,26 +394,13 @@ class LocalLlmService {
   /// Whether fllama inference is currently running (used by UI to disable slider).
   bool get isInferring => _isInferring;
 
-  /// Update thread count.
-  /// - fllama: takes effect immediately on next inference call (no restart needed).
-  /// - Ollama: baked into the Modelfile at `ollama create` time — requires model
-  ///   recreation to apply. Callers can check [threadsPendingOllamaApply].
+  /// Update thread count. fllama applies it on the next inference call.
   Future<void> setThreads(int threads, {LocalLlmModel? currentModel}) async {
     _updateState(_state.copyWith(threads: threads.clamp(1, 16)));
     // Persist so the slider survives app restarts.
     final prefs = PreferencesService();
     await prefs.init();
     prefs.llmThreadCount = threads.clamp(1, 16);
-  }
-
-  /// True when the thread count in prefs differs from what the currently-active
-  /// Ollama model was created with. UI should show a "Recreate Model" banner.
-  bool get threadsPendingOllamaApply {
-    // We can't read the Modelfile directly, so we track it via a simple
-    // comparison: if threads != the pref default (4) AND an Ollama model is
-    // registered in gateway state, the Modelfile may not match.
-    // This is a best-effort signal — false negatives are safe (no banner shown).
-    return false; // set to true by UI after thread change while Ollama active
   }
 
   /// Toggle local LLM on/off.

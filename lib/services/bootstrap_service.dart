@@ -1305,6 +1305,15 @@ class BootstrapService {
       // Model prewarm is no longer configured under models.startup in the
       // current strict schema.
       models.remove('startup');
+      final providers = models['providers'];
+      if (providers is Map) providers.remove('ollama');
+    }
+    final auth = config['auth'];
+    if (auth is Map) {
+      final profiles = auth['profiles'];
+      if (profiles is Map) profiles.remove('ollama:default');
+      final order = auth['order'];
+      if (order is Map) order.remove('ollama');
     }
     config.remove('ollama');
 
@@ -1343,18 +1352,6 @@ class BootstrapService {
           .toList();
       config['tools'] ??= <String, dynamic>{};
       config['tools']['allow'] = sanitized.isEmpty ? ['*'] : sanitized;
-    }
-
-    final ollamaProvider = config['models']?['providers']?['ollama'];
-    if (ollamaProvider is Map) {
-      ollamaProvider.remove('defaultContextWindow');
-      ollamaProvider.remove('contextWindow');
-      final ollamaModels = ollamaProvider['models'];
-      if (ollamaModels is List) {
-        for (final model in ollamaModels) {
-          if (model is Map) model.remove('contextWindow');
-        }
-      }
     }
 
     final ttsPersonas = (config['messages'] as Map?)?['tts']?['personas'];

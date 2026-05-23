@@ -198,7 +198,7 @@ class PreferencesService {
 
   // ── Local LLM ───────────────────────────────────────────────────────────────
 
-  /// CPU thread count for local inference (fllama + Ollama Modelfile).
+  /// CPU thread count for local fllama inference.
   /// Default 4: conservative for mainstream phones and safer for thermals.
   static const _keyLlmThreads = 'llm_thread_count';
   int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 4;

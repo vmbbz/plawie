@@ -73,6 +73,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       'defaultModel': 'grok-4',
     },
     {
+      'id': 'openrouter',
+      'name': 'OpenRouter',
+      'icon': 'hub',
+      'models': [
+        {'id': 'openrouter/free', 'name': 'OpenRouter Free Router'},
+        {'id': 'auto', 'name': 'OpenRouter Auto'},
+        {'id': 'moonshotai/kimi-k2.6', 'name': 'Kimi K2.6'},
+      ],
+      'defaultModel': 'openrouter/free',
+    },
+    {
       'id': 'groq',
       'name': 'Groq',
       'icon': 'speed',
@@ -266,6 +277,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   String _toOpenClawProvider(String provider) {
     final p = provider.toLowerCase();
     if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
+    if (p.contains('openrouter')) return 'openrouter';
     if (p.contains('openai')) return 'openai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';

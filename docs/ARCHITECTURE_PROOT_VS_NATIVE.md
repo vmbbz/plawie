@@ -18,14 +18,16 @@ pairing, dashboard readiness, or returning-user attach.
 ## Provider Direction
 
 - Cloud Agent Mode: OpenClaw Gateway routes to Gemini, Claude, OpenAI, Grok/xAI,
-  or Groq using user-provided API keys.
+  OpenRouter, or Groq using user-provided API keys.
 - Private Offline Mode: fllama runs GGUF models directly inside the app and
   bypasses Gateway.
-- Embedded Ollama daemon paths are legacy-only and hidden from normal UI because
-  the runtime is too large and memory-heavy for the launch target.
+- Embedded Ollama daemon paths are removed from normal runtime code because the
+  runtime is too large and memory-heavy for the launch target. Remaining
+  `ollama` references are migration/removal guards for returning installs.
 
 ## Future Exploration
 
-A native OpenAI-compatible HTTP bridge on `127.0.0.1:11435` can be tested later
-as a possible Gateway provider. It must prove streaming compatibility, tool-call
+A native OpenAI-compatible HTTP bridge on `127.0.0.1:11435` can be started from
+Local LLM as an explicit experiment. It registers provider `plawie_ndk` with
+model `plawie_ndk/local-llm`. It must prove streaming compatibility, tool-call
 compatibility, and lifecycle safety before becoming a production route.

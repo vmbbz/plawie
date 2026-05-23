@@ -29,8 +29,6 @@ class GatewayService {
     'http://localhost:18789',
   ];
   static const String _mobileChatSessionPrefix = 'mobile:chat:';
-  static const String ollamaProviderId = 'ollama';
-  static const String ollamaLocalApiKey = 'ollama-local';
   static const String _defaultAuthProfileName = 'default';
 
   static final GatewayService _instance = GatewayService._internal();
@@ -50,11 +48,6 @@ class GatewayService {
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
   bool _isStopping = false;
-  bool _isSyncing =
-      false; // guard against concurrent syncLocalModelsWithOllama calls
-  // Set to true after _clearStaleSessions() runs, reset on WS disconnect.
-  // Prevents wiping sessions on every sendMessage (was causing "new LLM every few messages").
-  bool _sessionCleanedThisConnection = false;
   final _chatActivityController = StreamController<String>.broadcast();
   final List<String> _activityBuffer = []; // replay buffer for late subscribers
 
@@ -73,9 +66,7 @@ class GatewayService {
   int _consecutiveFailures = 0;
   bool _isAutoHealingInProgress = false;
   bool _dashboardPairingApprovalInFlight = false;
-  bool _ollamaAutostartInFlight = false;
   DateTime? _lastDashboardPairingApprovalAttemptAt;
-  DateTime? _lastOllamaAutostartAttemptAt;
   final Set<String> _autoApprovedDashboardRequestIds = <String>{};
   DateTime? _lastHardeningSweepAt;
   DateTime? _gatewaySettleUntil;
@@ -97,141 +88,12 @@ class GatewayService {
       Duration(seconds: 60);
   static const Duration _dashboardPairingApprovalCooldown =
       Duration(seconds: 8);
-  static const Duration _ollamaAutostartCooldown = Duration(seconds: 45);
 
-  // Pre-compiled regex for stale-name normalisation — allocated once, reused in tight loops.
-  static final _staleNamePattern = RegExp(r'[.\-_:]');
-
-  Future<bool> _configuredModelNeedsLocalOllama() async {
-    // Embedded Ollama is deprecated for the production UI. Stale ollama/*
-    // preferences are migrated to a safe cloud fallback during init, and no
-    // normal app surface should autostart the daemon anymore.
-    return false;
-  }
-
-  /// Live stream of human-readable chat and hub events for the Agent Hub panel.
-  /// Emits: Flutter-side send/receive events + parsed Ollama server signals.
+  /// Live stream of human-readable chat and gateway events.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
 
   /// Last ≤40 activity events — use to seed the panel when the screen opens.
   List<String> get recentActivity => List.unmodifiable(_activityBuffer);
-
-  /// Get dynamic context size based on model capabilities
-  /// Allows powerful devices to use higher contexts while keeping mobile safe
-  int _getDynamicContextSize(String modelId) {
-    // Substring matching — handles full IDs like 'qwen2.5-0.5b-instruct:q4_k_m'
-    // as well as short Ollama tags like 'qwen2.5:0.5b'.
-    //
-    // Context values are capped to what a phone can safely allocate in KV cache.
-    // The KV cache is allocated at `ollama create` time (baked into the Modelfile).
-    // Setting too high a value (e.g. 32768 for 1.5B) requires ~895 MB for KV cache
-    // alone — causing OOM on 4–6 GB phones. Values below are per-model safe maxes.
-    //
-    // Rule of thumb for mobile:
-    //   <3B model  → 4096 (KV cache 100–500 MB, safe on 4 GB+ phones)
-    //   3–8B model → 2048 (model already fills most RAM; KV must be small)
-    //   Vision     → 2048 (vision encoder adds extra RAM overhead)
-    final modelContexts = {
-      // ── Qwen2.5 text ──
-      'qwen2.5:0.5b': 4096,
-      'qwen2.5-0.5b': 4096,
-      'qwen2.5:1.5b': 4096,
-      'qwen2.5-1.5b': 4096,
-      'qwen2.5:3b': 4096,
-      'qwen2.5-3b': 4096,
-      'qwen2.5:7b': 2048,
-      'qwen2.5-7b': 2048,
-      'qwen2.5:14b': 2048,
-      'qwen2.5-14b': 2048,
-      // ── Qwen2.5 Coder ──
-      'qwen2.5-coder:3b': 4096,
-      'qwen2.5-coder:7b': 2048,
-      // ── SmolLM2 ──
-      'smollm2:135m': 2048,
-      'smollm2-135m': 2048,
-      'smollm2:360m': 2048,
-      'smollm2-360m': 2048,
-      'smollm2:1.7b': 4096,
-      'smollm2-1.7b': 4096,
-      // ── Llama 3.x ──
-      'llama3.2:1b': 4096,
-      'llama3.2-1b': 4096,
-      'llama3.2:3b': 4096,
-      'llama3.2-3b': 4096,
-      'llama3.1:8b': 2048,
-      'llama3.1-8b': 2048,
-      'llama3.2-vision': 2048,
-      // ── DeepSeek R1 ──
-      'deepseek-r1:1.5b': 4096,
-      'deepseek-r1-1.5b': 4096,
-      'deepseek-r1:7b': 2048,
-      'deepseek-r1-7b': 2048,
-      // ── Phi ──
-      'phi4-mini': 4096,
-      'phi4:14b': 2048,
-      'phi4-14b': 2048,
-      // ── Mistral ──
-      'mistral:7b': 2048,
-      'mistral-7b': 2048,
-      // ── Vision ──
-      'llava-1.5-7b': 2048,
-      'llava': 2048,
-      'qwen2-vl-2b': 2048,
-      'qwen2-vl-7b': 2048,
-      'qwen2-vl': 2048,
-    };
-    for (final entry in modelContexts.entries) {
-      if (modelId.contains(entry.key)) return entry.value;
-    }
-    // Safe default — enough room for system prompt + tool schemas + short conversation.
-    return 2048;
-  }
-
-  /// Dynamic Modelfile template. TEMPLATE block is required — without it Ollama
-  /// falls back to a broken default format and generates 0 tokens.
-  /// [modelName] is used to select the correct chat template and stop tokens.
-  String _buildModelfileTemplate(String ggufPath, int contextSize,
-      {String modelName = '', int numThreads = 4}) {
-    final name = modelName.toLowerCase();
-
-    // Llama 3.x format
-    if (name.contains('llama3') || name.contains('llama-3')) {
-      return '''FROM $ggufPath
-TEMPLATE """{{ if .System }}<|start_header_id|>system<|end_header_id|>
-{{ .System }}<|eot_id|>
-{{ end }}{{ if .Tools }}<|start_header_id|>system<|end_header_id|>
-{{ .Tools }}<|eot_id|>
-{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
-{{ .Prompt }}<|eot_id|>
-<|start_header_id|>assistant<|end_header_id|>
-{{ end }}{{ .Response }}<|eot_id|>"""
-PARAMETER stop "<|eot_id|>"
-PARAMETER stop "<|start_header_id|>"
-PARAMETER num_ctx $contextSize
-PARAMETER num_gpu 0
-PARAMETER num_thread $numThreads
-PARAMETER num_batch 512
-''';
-    }
-
-    // Default: ChatML format (Qwen2.5, SmolLM2, Phi, Gemma, etc.)
-    return '''FROM $ggufPath
-TEMPLATE """{{ if .System }}<|im_start|>system
-{{ .System }}<|im_end|>
-{{ end }}{{ if .Tools }}<|im_start|>system
-{{ .Tools }}<|im_end|>
-{{ end }}{{ if .Prompt }}<|im_start|>user
-{{ .Prompt }}<|im_end|>
-<|im_start|>assistant
-{{ end }}{{ .Response }}<|im_end|>"""
-PARAMETER stop "<|im_end|>"
-PARAMETER stop "<|endoftext|>"
-PARAMETER num_ctx $contextSize
-PARAMETER num_gpu 0
-PARAMETER num_thread $numThreads
-PARAMETER num_batch 512
-''';
-  }
 
   /// Buffer + broadcast a single activity event.
   void _addActivity(String event) {
@@ -313,17 +175,6 @@ PARAMETER num_batch 512
     _state = newState;
     _stateController.add(_state);
   }
-
-  /// Parse any `grep <Key> /proc/meminfo` line into MB.
-  /// Input looks like: "MemAvailable:    1054204 kB"
-  static int _parseMemKbLineToMb(String raw) {
-    final parts = raw.trim().split(RegExp(r'\s+'));
-    final kb = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
-    return kb ~/ 1024;
-  }
-
-  /// Convenience alias used specifically for MemAvailable lines.
-  static int _parseMemAvailableMb(String raw) => _parseMemKbLineToMb(raw);
 
   /// List of methods supported by the current gateway connection.
   List<String> get supportedMethods => _connection?.supportedMethods ?? [];
@@ -473,7 +324,7 @@ PARAMETER num_batch 512
       return;
     }
 
-    await _migrateLegacyOllamaCloudDefaults(prefs);
+    await _migrateLegacyDaemonModelDefaults(prefs);
     await _migrateLegacyModelIds(prefs);
 
     // Initialize file directory early
@@ -496,7 +347,7 @@ PARAMETER num_batch 512
     unawaited(attachOrStart(autoStart: prefs.autoStartGateway));
   }
 
-  Future<void> _migrateLegacyOllamaCloudDefaults(
+  Future<void> _migrateLegacyDaemonModelDefaults(
       PreferencesService prefs) async {
     final provider = (prefs.apiProvider ?? '').trim().toLowerCase();
     final configuredModel = (prefs.configuredModel ?? '').trim();
@@ -516,9 +367,9 @@ PARAMETER num_batch 512
     try {
       final config = await _readConfig();
       final primary = config['agents']?['defaults']?['model']?['primary'];
-      final isOllamaPrimary =
+      final isLegacyDaemonPrimary =
           primary is String && primary.startsWith('ollama/');
-      if (!isOllamaPrimary) return;
+      if (!isLegacyDaemonPrimary) return;
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
@@ -554,26 +405,6 @@ PARAMETER num_batch 512
     } catch (_) {
       // Best effort migration; prefs drives the next model persist anyway.
     }
-  }
-
-  /// Ensure local Ollama can run through the gateway without a user-supplied key.
-  ///
-  /// Current OpenClaw releases use a versioned `auth-profiles.json` store:
-  /// `{ version: 1, profiles: { "ollama:default": { type: "api_key", ... }}}`.
-  /// Older flat `providers.ollama.apiKey` auth stores are ignored by the agent
-  /// runtime, which is why logs showed "No API key found for provider ollama".
-  Future<void> ensureLocalOllamaAuthProfile({
-    bool updateGatewayConfig = true,
-  }) async {
-    if (updateGatewayConfig) {
-      final config = await _readConfig();
-      ensureProviderAuthConfigBlock(config, ollamaProviderId);
-      await _writeConfig(config);
-    }
-    await _writeApiKeyAuthProfile(
-      provider: ollamaProviderId,
-      key: ollamaLocalApiKey,
-    );
   }
 
   Future<void> _writeApiKeyAuthProfile({
@@ -1081,39 +912,6 @@ PARAMETER num_batch 512
       } else {
         _updateState(_state.copyWith(logs: logs));
       }
-
-      // Parse key Ollama server log lines into human-readable hub events.
-      // Skip verbose startup spam (print_info:, load:, load_tensors:, etc.)
-      if (log.contains('llama runner started')) {
-        final m = RegExp(r'started in ([\d.]+) seconds').firstMatch(log);
-        if (m != null) {
-          _addActivity('[HUB] Model ready in ${m.group(1)}s');
-        }
-      } else if (log.contains('n_ctx =') && !log.contains('n_ctx_train')) {
-        final m = RegExp(r'n_ctx = (\d+)').firstMatch(log);
-        if (m != null) {
-          _addActivity('[HUB] Context: ${m.group(1)} tokens');
-        }
-      } else if (log.contains('KV buffer size')) {
-        final m = RegExp(r'size = ([\d.]+) MiB').firstMatch(log);
-        if (m != null) {
-          _addActivity('[HUB] KV cache: ${m.group(1)} MiB');
-        }
-      } else if (log.contains('[GIN]') && log.contains('chat/completions')) {
-        // GIN format: "| 200 | 2.3s |" or "| 500 | 1m30s |"
-        final m = RegExp(r'\|\s*(\d+)\s*\|\s*([^\|]+)\s*\|').firstMatch(log);
-        if (m != null) {
-          final code = m.group(1);
-          final dur = m.group(2)?.trim();
-          _addActivity(
-            '[HUB] ${code == '200' ? '✓' : '✗'} HTTP $code ($dur)',
-          );
-        }
-      } else if (log.contains('aborting completion')) {
-        _addActivity('[HUB] ⚠ Inference aborted (client disconnected)');
-      }
-      // Intentionally skip: GET /api/tags (health-check noise),
-      // print_info:, load:, load_tensors:, llama_model_loader: (verbose startup spam)
     });
   }
 
@@ -1344,13 +1142,10 @@ PARAMETER num_batch 512
     (config['gateway'] as Map).remove('startup');
     (config['gateway'] as Map).remove('sidecars');
 
-    // Provider cleanup. Embedded Ollama is legacy-only now; do not create it
-    // during normal hardening, but sanitize stale blocks if returning users have
-    // them on disk.
-    config['models'] ??= {};
-    config['models']['providers'] ??= {};
-    (config['models'] as Map).remove('startup');
-    config.remove('ollama');
+    // Provider cleanup. Remove stale daemon/proxy model routes from old builds
+    // so returning installs cannot accidentally revive a removed runtime.
+    _ensureCatalogProviderDefaults(config);
+    _removeLegacyOllamaConfig(config);
 
     // Remove keys that have never been part of the OpenClaw schema.
     // These were written by earlier builds and must be stripped so the gateway
@@ -1391,20 +1186,6 @@ PARAMETER num_batch 512
         config['tools']['allow'] = sanitized;
       }
     }
-    // Remove invalid Ollama provider keys written by earlier builds (v2026.3.x).
-    // These broke gateway schema validation, causing config reload to be skipped.
-    final ollamaProvider = config['models']?['providers']?['ollama'];
-    if (ollamaProvider is Map) {
-      ollamaProvider.remove('defaultContextWindow'); // not in gateway schema
-      ollamaProvider.remove('contextWindow'); // not in gateway schema
-      final ollamaModels = ollamaProvider['models'];
-      if (ollamaModels is List) {
-        for (final m in ollamaModels) {
-          if (m is Map) m.remove('contextWindow'); // not in model entry schema
-        }
-      }
-    }
-
     final gatewayConfig = config['gateway'];
     if (gatewayConfig is Map) {
       gatewayConfig.remove('startup');
@@ -1412,9 +1193,9 @@ PARAMETER num_batch 512
     }
     final modelsConfig = config['models'];
     if (modelsConfig is Map) {
-      modelsConfig.remove('startup');
+      _ensureCatalogProviderDefaults(config);
     }
-    config.remove('ollama');
+    _removeLegacyOllamaConfig(config);
 
     // NOTE: agents.defaults.systemPrompt is NOT a valid gateway schema field.
     // The gateway rejects it with "Unrecognized keys" and breaks config hot-reload.
@@ -1509,818 +1290,6 @@ PARAMETER num_batch 512
     }
   }
 
-  /// Register Ollama as the gateway provider and optionally set it as primary.
-  ///
-  /// [syncedModels] — list of Ollama model names (e.g. "qwen2-5-0-5b:latest")
-  /// that were successfully synced. Written to openclaw.json so the gateway
-  /// exposes them on /v1/models. Pass empty list to skip updating the model list.
-  Future<void> configureOllama({
-    String baseUrl = 'http://127.0.0.1:11434',
-    String? primaryModel,
-    bool setAsPrimary = true,
-    List<String> syncedModels = const [],
-    bool isCloudModel = false,
-  }) async {
-    final config = await _readConfig();
-    config['models'] ??= {};
-    config['models']['providers'] ??= {};
-    // IMPORTANT: Only write keys that are in the OpenClaw gateway schema.
-    // 'defaultContextWindow' and per-model 'contextWindow' are NOT valid schema
-    // keys — writing them causes "[reload] config reload skipped (invalid config)"
-    // which makes the gateway ignore ALL config changes including context caps.
-    // Context window is enforced via: (1) Modelfile PARAMETER num_ctx at
-    // `ollama create` time, and (2) patchSessionMetadata before each chat.send.
-    final ollamaConfig = <String, dynamic>{
-      'baseUrl': baseUrl,
-      'apiKey': 'ollama-local',
-      'api': 'ollama',
-      'models': syncedModels
-          .map((n) => <String, dynamic>{
-                'id': n,
-                'name': n,
-              })
-          .toList(),
-    };
-
-    config['models']['providers']['ollama'] = ollamaConfig;
-    ensureProviderAuthConfigBlock(config, ollamaProviderId);
-
-    if (setAsPrimary && primaryModel != null) {
-      config['agents'] ??= {};
-      config['agents']['defaults'] ??= {};
-      config['agents']['defaults']['model'] ??= {};
-      final fullModel = primaryModel.startsWith('ollama/')
-          ? primaryModel
-          : 'ollama/$primaryModel';
-      config['agents']['defaults']['model']['primary'] = fullModel;
-
-      // NOTE: agents.defaults.systemPrompt, agents.defaults.tools, and agents.defaults.timeoutMs
-      // are NOT valid OpenClaw schema keys — writing them causes "Unrecognized keys" and breaks
-      // gateway config hot-reload. Context and system prompt are handled via Modelfile PARAMETER
-      // num_ctx and skills.register at connect time.
-
-      // Persist to Flutter prefs so the chat screen restores it on next open.
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.configuredModel = fullModel;
-    }
-
-    await _writeConfig(config);
-    await _writeApiKeyAuthProfile(
-      provider: ollamaProviderId,
-      key: ollamaLocalApiKey,
-    );
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] Ollama provider configured at $baseUrl'],
-    ));
-  }
-
-  /// Probe the Ollama server directly via HTTP.
-  Future<bool> checkOllamaHealth(
-      {String baseUrl = 'http://127.0.0.1:11434'}) async {
-    try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/api/tags'))
-          .timeout(const Duration(seconds: 2));
-      return response.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // ── Internal Ollama Management (Integrated Sandbox) ─────────────────
-
-  Future<bool> isInternalOllamaInstalled() async {
-    return await NativeBridge.isOllamaInstalled();
-  }
-
-  Future<bool> isInternalOllamaRunning() async {
-    return await NativeBridge.isOllamaRunning();
-  }
-
-  Future<bool> startInternalOllama() async {
-    final success = await NativeBridge.startOllama();
-    _updateState(_state.copyWith(
-      isOllamaRunning: success,
-      logs: [
-        ..._state.logs,
-        success
-            ? '[INFO] Ollama Hub starting — waiting for ready signal...'
-            : '[WARN] Ollama start returned failure.'
-      ],
-    ));
-    if (success) {
-      // Poll health in the background; auto-sync once Ollama responds.
-      unawaited(_waitForOllamaHealthThenSync());
-      await startForegroundService();
-    }
-    return success;
-  }
-
-  Future<bool> prepareLocalOllamaForGateway({
-    String reason = 'ui-open',
-    Duration wait = Duration.zero,
-  }) {
-    return _ensureLocalOllamaReadyForGateway(reason: reason, wait: wait);
-  }
-
-  Future<bool> _ensureLocalOllamaReadyForGateway({
-    required String reason,
-    Duration wait = Duration.zero,
-  }) async {
-    if (!await _configuredModelNeedsLocalOllama()) return true;
-
-    if (await checkOllamaHealth()) {
-      if (!_state.isOllamaRunning) {
-        _updateState(_state.copyWith(
-          isOllamaRunning: true,
-          logs: [..._state.logs, '[INFO] Ollama Hub is reachable'],
-        ));
-      }
-      return true;
-    }
-
-    final now = DateTime.now();
-    final lastAttempt = _lastOllamaAutostartAttemptAt;
-    final cooldownActive = lastAttempt != null &&
-        now.difference(lastAttempt) < _ollamaAutostartCooldown;
-
-    if (!_ollamaAutostartInFlight && !cooldownActive) {
-      _ollamaAutostartInFlight = true;
-      _lastOllamaAutostartAttemptAt = now;
-      try {
-        _addActivity(
-            '[OLLAMA] Local model selected; ensuring Ollama Hub is running ($reason)');
-
-        final installed = await isInternalOllamaInstalled()
-            .timeout(const Duration(seconds: 5), onTimeout: () => false)
-            .catchError((_) => false);
-        if (!installed) {
-          _addActivity(
-              '[OLLAMA] Internal Ollama Hub is not installed yet; setup/repair required.');
-          return false;
-        }
-
-        final processRunning = await isInternalOllamaRunning()
-            .timeout(const Duration(seconds: 3), onTimeout: () => false)
-            .catchError((_) => false);
-        if (!processRunning) {
-          final started = await startInternalOllama()
-              .timeout(const Duration(seconds: 15), onTimeout: () => false)
-              .catchError((_) => false);
-          if (!started) {
-            _addActivity('[OLLAMA] Ollama Hub autostart failed.');
-            return false;
-          }
-        } else {
-          _addActivity(
-              '[OLLAMA] Ollama Hub process found; waiting for API readiness...');
-          unawaited(_waitForOllamaHealthThenSync());
-        }
-      } finally {
-        _ollamaAutostartInFlight = false;
-      }
-    } else if (_ollamaAutostartInFlight) {
-      _addActivity('[OLLAMA] Ollama Hub autostart already in progress.');
-    }
-
-    if (wait > Duration.zero) {
-      return _waitForOllamaHealth(timeout: wait);
-    }
-    return checkOllamaHealth();
-  }
-
-  Future<bool> _waitForOllamaHealth({required Duration timeout}) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      if (await checkOllamaHealth()) {
-        if (!_state.isOllamaRunning) {
-          _updateState(_state.copyWith(
-            isOllamaRunning: true,
-            logs: [..._state.logs, '[INFO] Ollama Hub is reachable'],
-          ));
-        }
-        return true;
-      }
-      await Future.delayed(const Duration(seconds: 2));
-    }
-    return false;
-  }
-
-  /// Polls :11434 every 3 s for up to 30 s, then triggers model sync.
-  /// Runs fire-and-forget after startInternalOllama().
-  Future<void> _waitForOllamaHealthThenSync() async {
-    const maxAttempts = 10;
-    for (int i = 0; i < maxAttempts; i++) {
-      await Future.delayed(const Duration(seconds: 3));
-      if (await checkOllamaHealth()) {
-        _updateState(_state.copyWith(
-          isOllamaRunning: true,
-          logs: [
-            ..._state.logs,
-            '[INFO] Ollama Hub ready — auto-syncing models...'
-          ],
-        ));
-        // Clear stale session files before syncing. Aborted runs pile up
-        // assistant/error messages that inflatethe conversation history
-        // (messages=45+) and push total context beyond num_ctx=4096.
-        await _clearStaleSessions();
-        await syncLocalModelsWithOllama();
-        return;
-      }
-    }
-    _updateState(_state.copyWith(
-      logs: [
-        ..._state.logs,
-        '[WARN] Ollama Hub did not respond after 30 s — check logs.'
-      ],
-    ));
-  }
-
-  /// Truncate the gateway agent session JSONL file so aborted / timed-out
-  /// runs don't accumulate and inflate the message count (user:18 + assistant:27
-  /// etc.) that the Node.js engine forwards in every request.
-  Future<void> _clearStaleSessions() async {
-    // Run at most once per WS session — reset by stateStream listener on disconnect.
-    // Prevents wiping context on every message (was the "new LLM every few messages" bug).
-    if (_sessionCleanedThisConnection) return;
-    _sessionCleanedThisConnection = true;
-
-    try {
-      final filesDir = await getFilesDir();
-      final sessionsDir =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/sessions';
-      final dir = Directory(sessionsDir);
-      if (!await dir.exists()) return;
-      await for (final entity in dir.list()) {
-        if (entity is File && entity.path.endsWith('.jsonl')) {
-          final bytes = await entity.length();
-          // Only clear files > 50 KB — balances keeping short context vs preventing
-          // 50–100 message bloat that pushes over num_ctx=2048 and causes timeouts.
-          // 512 KB was too lenient (accumulated thousands of tokens per request).
-          if (bytes > 51200) {
-            await entity.writeAsString('');
-            _updateState(_state.copyWith(
-              logs: [
-                ..._state.logs,
-                '[HUB] Cleared stale session (${(bytes / 1024).toStringAsFixed(1)} KB): ${entity.uri.pathSegments.last}'
-              ],
-            ));
-          }
-        }
-      }
-    } catch (e) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[WARN] Session cleanup error: $e'],
-      ));
-    }
-  }
-
-  /// Extracts diagnostic logs from the integrated Ollama hub.
-  Future<String> _getOllamaLogsInternal() async {
-    try {
-      final logs = await NativeBridge.runInProot(
-        'cat /root/.openclaw/ollama.log 2>/dev/null || echo "[No Hub logs found]"',
-        timeout: 5,
-      );
-      final lines = logs.split('\n');
-      if (lines.length <= 100) return logs;
-      return lines.sublist(lines.length - 100).join('\n');
-    } catch (e) {
-      return 'Failed to fetch hub logs: $e';
-    }
-  }
-
-  Future<String> getOllamaLogs() => _getOllamaLogsInternal();
-
-  /// Removes Ollama registrations that belong to OUR GGUFs but use a stale
-  /// name format (e.g., dots replaced with dashes from a previous build).
-  /// Identified by stripping all punctuation and comparing the result.
-  Future<void> _cleanupStaleOllamaRegistrations(
-      Set<String> canonicalNames) async {
-    final registered = await _getRegisteredOllamaModels();
-    // Pre-compute normalised canonical set once rather than inside the inner loop.
-    final normalisedCanonicals = {
-      for (final c in canonicalNames)
-        c.replaceAll(_staleNamePattern, '').toLowerCase(): c,
-    };
-    for (final name in registered) {
-      if (canonicalNames.contains(name)) continue; // already canonical — keep
-      final stripped = name.replaceAll(_staleNamePattern, '').toLowerCase();
-      final isOurs = normalisedCanonicals.containsKey(stripped);
-      if (!isOurs) continue;
-      // Old-format registration for a model we own — delete it.
-      try {
-        await http
-            .delete(
-              Uri.parse('http://127.0.0.1:11434/api/delete'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({'model': name}),
-            )
-            .timeout(const Duration(seconds: 10));
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[HUB] Removed stale registration: $name'],
-        ));
-      } catch (_) {}
-    }
-  }
-
-  /// Pushes the current enabled-skills catalog to the gateway immediately.
-  /// Called both from the periodic health check and whenever a skill is toggled.
-  Future<void> reregisterSkills() async {
-    if (!_state.isRunning) return;
-    // Only attempt skills.register when the gateway explicitly declares support.
-    // Calling it unconditionally overwrites the session's npm-skill tool context
-    // with only our 3-4 device skills, making weather/github/etc. invisible to the AI.
-    final supported = _connection?.supportedMethods ?? const <String>[];
-    if (!supported.contains('skills.register')) return;
-    try {
-      final catalog = SkillsService().getToolsCatalog();
-      if (catalog.isNotEmpty) {
-        await invoke('skills.register', {
-          'skills': catalog,
-          'callbackUrl': 'http://127.0.0.1:8765',
-        }).timeout(const Duration(seconds: 5));
-        _addActivity(
-            '[SKILLS] Registered ${catalog.length} device skills with gateway');
-      }
-    } catch (e) {
-      _addActivity('[SKILLS] skills.register failed: $e');
-    }
-  }
-
-  Future<void> syncLocalModelsWithOllama() async {
-    if (_isSyncing) return;
-    _isSyncing = true;
-    try {
-      await _syncLocalModelsWithOllamaInternal();
-    } finally {
-      _isSyncing = false;
-    }
-  }
-
-  Future<void> _syncLocalModelsWithOllamaInternal() async {
-    final catalog = LocalLlmService().catalog;
-
-    // Safety check: is Ollama actually reachable?
-    if (!await isInternalOllamaRunning()) {
-      _updateState(_state.copyWith(
-        logs: [
-          ..._state.logs,
-          '[ERROR] Cannot sync: Integrated Hub is OFFLINE.'
-        ],
-      ));
-      return;
-    }
-
-    // Log Ollama version for diagnostics.
-    final version = await getOllamaVersion();
-    if (version != null) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[INFO] Ollama version: $version'],
-      ));
-    }
-
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] Scanning for local GGUF models...'],
-    ));
-
-    // Single pass: determine which models are downloaded (avoids double file-stat per model).
-    final llmSvc = LocalLlmService();
-    final downloadedToolModels = <dynamic>[];
-    for (final m in catalog) {
-      if (m.supportsToolCalls && await llmSvc.isModelDownloaded(m)) {
-        downloadedToolModels.add(m);
-      }
-    }
-
-    // Compute canonical names for cleanup, then clean up stale registrations.
-    final canonicalNames = {
-      for (final m in downloadedToolModels) _toOllamaModelName(m.id as String)
-    };
-    await _cleanupStaleOllamaRegistrations(canonicalNames);
-
-    // Pre-fetch registered models to skip re-hashing on every startup.
-    final registered = await _getRegisteredOllamaModels();
-
-    int synced = 0;
-    final syncedModelNames =
-        <String>[]; // collect for gateway config + state emit
-
-    for (final model in downloadedToolModels) {
-      final ollamaName = _toOllamaModelName(model.id as String);
-      // Always re-create: ensures num_ctx params from the current
-      // Modelfile are applied. ollama create reuses the existing GGUF blob
-      // (no re-hashing) so this is fast.
-      if (registered.contains(ollamaName)) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[HUB] Refreshing $ollamaName params...'],
-        ));
-      }
-      try {
-        final success = await _createOllamaModelFromGguf(
-          ollamaName,
-          model.prootModelPath as String,
-          supportsToolCalls: model.supportsToolCalls as bool,
-        );
-        if (success) {
-          synced++;
-          syncedModelNames.add(ollamaName);
-          _updateState(_state.copyWith(
-            logs: [
-              ..._state.logs,
-              '[INFO] Registered ${model.id} as $ollamaName.'
-            ],
-          ));
-        } else {
-          _updateState(_state.copyWith(
-            logs: [
-              ..._state.logs,
-              '[WARN] Hub rejected $ollamaName (catalog: ${model.id}).'
-            ],
-          ));
-        }
-      } catch (e) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[ERROR] Sync error for ${model.id}: $e'],
-        ));
-      }
-    }
-
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] Hub Sync Done. $synced models available.'],
-    ));
-
-    // Write synced models into openclaw.json and emit to state.
-    // Auto-select the first synced model only if the user isn't already on a
-    // local model — avoids silently hijacking an explicit cloud preference.
-    // Exception: if prefs say "already local" but openclaw.json primary is
-    // missing or pointing at cloud (e.g., after a gateway restart wipes config),
-    // we must still write the primary — otherwise the gateway uses a cloud model.
-    if (syncedModelNames.isNotEmpty) {
-      final prefs = PreferencesService();
-      await prefs.init();
-      final currentModel = prefs.configuredModel ?? '';
-      final isCloudModel = currentModel.contains(':cloud');
-      final alreadyLocal = currentModel.startsWith('ollama/') ||
-          currentModel.startsWith('local-llm/');
-
-      // GUARD: Never overwrite an explicit cloud model preference during sync.
-      // The user chose a cloud model — sync should only update the local model
-      // registry, not hijack their primary model choice.
-      if (isCloudModel) {
-        _addActivity(
-            '[SYNC] Cloud model active ($currentModel) — skipping local model sync to save RAM.');
-        await configureOllama(syncedModels: [], setAsPrimary: false);
-        return;
-      } else {
-        // Check if openclaw.json primary is in sync with the user's preference.
-        final liveConfig = await _readConfig();
-        final jsonPrimary =
-            liveConfig['agents']?['defaults']?['model']?['primary'] as String?;
-        final jsonPrimaryIsLocal = jsonPrimary != null &&
-            (jsonPrimary.startsWith('ollama/') ||
-                jsonPrimary.startsWith('local-llm/'));
-
-        // Force-write the primary if the JSON config doesn't reflect it — this
-        // repairs drift after gateway restarts that regenerate openclaw.json.
-        // BUT: if the user already has a specific local model selected, preserve
-        // their choice instead of picking syncedModelNames.first.
-        final needsPrimaryWrite = !alreadyLocal || !jsonPrimaryIsLocal;
-        final primaryToWrite =
-            alreadyLocal ? currentModel : syncedModelNames.first;
-
-        await configureOllama(
-          syncedModels: syncedModelNames,
-          primaryModel: needsPrimaryWrite ? primaryToWrite : null,
-          setAsPrimary: needsPrimaryWrite,
-        );
-      }
-
-      _updateState(_state.copyWith(
-        isOllamaRunning: true,
-        ollamaHubModels: syncedModelNames,
-      ));
-    }
-  }
-
-  /// Converts a catalog model ID to a valid Ollama model name.
-  ///
-  /// Ollama validates names via round-trip: ParseNameBestEffort(name).String()
-  /// must equal the original input. Short names like "model:latest" fail because
-  /// Ollama fills in the registry prefix, making String() return
-  /// "registry.ollama.ai/library/model:latest" which doesn't match "model:latest".
-  ///
-  /// Strategy: split on the quantization suffix (e.g. "-q4_k_m") to produce
-  /// a proper model:tag pair. Dots are preserved because Ollama natively uses
-  /// them (e.g. qwen2.5:7b). Underscores are kept in the tag (valid there).
-  ///
-  /// Examples:
-  ///   qwen2.5-0.5b-instruct-q4_k_m  →  qwen2.5-0.5b-instruct:q4_k_m
-  ///   qwen2.5-1.5b-instruct-q4_k_m  →  qwen2.5-1.5b-instruct:q4_k_m
-  String _toOllamaModelName(String catalogId) {
-    final id = catalogId.toLowerCase();
-    // Find the quantization suffix: last occurrence of "-q<digit>" pattern.
-    final qMatch = RegExp(r'-q(\d)').allMatches(id).lastOrNull;
-    if (qMatch != null) {
-      final modelPart = id.substring(0, qMatch.start);
-      final tagPart = id.substring(qMatch.start + 1); // strip leading '-'
-      return '$modelPart:$tagPart';
-    }
-    // Fallback: no quantization marker found — use id as model name, local as tag.
-    return '$id:local';
-  }
-
-  /// Returns the set of model names already registered in the running Ollama instance.
-  Future<Set<String>> _getRegisteredOllamaModels() async {
-    try {
-      final response = await http
-          .get(Uri.parse('http://127.0.0.1:11434/api/tags'))
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final models = data['models'] as List? ?? [];
-        return models.map((m) => m['name'] as String).toSet();
-      }
-    } catch (_) {}
-    return {};
-  }
-
-  /// Returns the Ollama server version string, or null on failure.
-  Future<String?> getOllamaVersion() async {
-    try {
-      final r = await http
-          .get(Uri.parse('http://127.0.0.1:11434/api/version'))
-          .timeout(const Duration(seconds: 3));
-      if (r.statusCode == 200) {
-        return (jsonDecode(r.body) as Map<String, dynamic>)['version']
-            as String?;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  /// Removes a catalog model from the Ollama Hub registry.
-  /// Safe to call even if Ollama is offline (silently no-ops).
-  /// Wire this up in deleteModel() when model deletion is implemented.
-  Future<void> deregisterOllamaModel(String catalogId) async {
-    if (!await isInternalOllamaRunning()) return;
-    final ollamaName = _toOllamaModelName(catalogId);
-    try {
-      await http
-          .delete(
-            Uri.parse('http://127.0.0.1:11434/api/delete'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'model': ollamaName}),
-          )
-          .timeout(const Duration(seconds: 10));
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[INFO] Deregistered $ollamaName from Hub.'],
-      ));
-    } catch (e) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[WARN] Could not deregister $ollamaName: $e'],
-      ));
-    }
-  }
-
-  /// Searches the Ollama model registry for available models.
-  /// Returns a list of model metadata maps with keys: name, description, pulls, tags.
-  Future<List<Map<String, dynamic>>> fetchOllamaRegistryModels(
-      String query) async {
-    try {
-      final uri = Uri.parse('https://ollama.com/api/search').replace(
-        queryParameters: {'q': query, 'sort': 'popular'},
-      );
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final list = jsonDecode(response.body);
-        if (list is List) {
-          return list.cast<Map<String, dynamic>>();
-        }
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  /// Register a local GGUF file with the integrated Ollama Hub.
-  ///
-  /// APPROACH: Write a minimal Modelfile to the PRoot filesystem from Dart, then run
-  /// `ollama create` CLI inside PRoot pointing at that file. This avoids:
-  ///   - HTTP API path resolution failure (PRoot ptrace doesn't translate HTTP socket paths)
-  ///   - /dev/stdin unreliability in non-interactive PRoot (heredoc stdin gets no data)
-  ///
-  /// The Modelfile is written to $filesDir/rootfs/ubuntu/tmp/ (Android host FS), which
-  /// appears as /tmp/ inside PRoot — accessible by the Ollama CLI process.
-  Future<bool> _createOllamaModelFromGguf(String name, String ggufPath,
-      {bool supportsToolCalls = false}) async {
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[HUB] Registering $name...'],
-    ));
-    File? tempModelfile;
-    try {
-      // Write Modelfile to the rootfs /tmp directory with dynamic context sizing
-      // Dart writes to the Android host path; PRoot sees it at /tmp/oc_mf.
-      final filesDir = await getFilesDir();
-      final safeName = name.replaceAll(':', '_').replaceAll('/', '_');
-      tempModelfile = File('$filesDir/rootfs/ubuntu/tmp/oc_mf_$safeName');
-
-      // Get dynamic context size and user-configured thread count
-      final contextSize = _getDynamicContextSize(name);
-      final prefs = PreferencesService();
-      await prefs.init();
-      final modelfileContent = _buildModelfileTemplate(
-        ggufPath,
-        contextSize,
-        modelName: name,
-        numThreads: prefs.llmThreadCount,
-      );
-      await tempModelfile.writeAsString(modelfileContent);
-
-      // Verify Modelfile contains correct context size
-      if (modelfileContent.contains('PARAMETER num_ctx $contextSize')) {
-        _addActivity(
-            '[HUB] Modelfile created with num_ctx=$contextSize for $name');
-      } else {
-        _addActivity(
-            '[HUB] WARNING: Modelfile missing num_ctx=$contextSize for $name');
-      }
-
-      final prootModelfilePath = '/tmp/oc_mf_$safeName';
-
-      // isModelDownloaded() on the host FS already confirmed the GGUF exists —
-      // no redundant PRoot file-check needed here.
-      final result = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && OLLAMA_HOST=127.0.0.1:11434 ollama create "$name" -f "$prootModelfilePath"',
-        timeout: 180,
-      );
-
-      final lower = result.toLowerCase();
-      final success = lower.contains('success') && !lower.contains('error:');
-      if (success) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[HUB] $name — success'],
-        ));
-      } else {
-        final trimmed = result.trim().split('\n').take(8).join(' | ');
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[DEBUG] ollama create output: $trimmed'],
-        ));
-      }
-      return success;
-    } catch (e) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[DEBUG] ollama create failed: $e'],
-      ));
-      return false;
-    } finally {
-      // Clean up temp Modelfile regardless of outcome.
-      try {
-        await tempModelfile?.delete();
-      } catch (_) {}
-    }
-  }
-
-  /// Pull a model from the Ollama library into the integrated hub.
-  Stream<double> pullOllamaModel(String name) async* {
-    _updateState(_state.copyWith(
-      logs: [..._state.logs, '[INFO] Pulling Ollama model: $name'],
-    ));
-
-    final client = http.Client();
-    try {
-      final request =
-          http.Request('POST', Uri.parse('http://127.0.0.1:11434/api/pull'));
-      request.body = jsonEncode({'name': name});
-
-      final response = await client.send(request);
-      if (response.statusCode != 200) {
-        throw Exception('Pull failed: ${response.statusCode}');
-      }
-
-      await for (final line in response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
-        if (line.trim().isEmpty) continue;
-        try {
-          final data = jsonDecode(line);
-          if (data['status'] == 'success') {
-            _updateState(_state.copyWith(
-              logs: [..._state.logs, '[INFO] Successfully pulled $name'],
-            ));
-            yield 1.0;
-          } else if (data['total'] != null && data['completed'] != null) {
-            yield data['completed'].toDouble() / data['total'].toDouble();
-          }
-        } catch (_) {}
-      }
-    } catch (e) {
-      _updateState(_state.copyWith(
-        logs: [..._state.logs, '[ERROR] Pull failed for $name: $e'],
-      ));
-      rethrow;
-    } finally {
-      client.close();
-    }
-  }
-
-  /// Called after a successful `ollama pull` to add the model to hub state
-  /// so it appears in the chat dropdown immediately without a full re-sync.
-  void registerPulledModel(String modelName) {
-    if (!_state.ollamaHubModels.contains(modelName)) {
-      _updateState(_state.copyWith(
-        ollamaHubModels: [..._state.ollamaHubModels, modelName],
-        logs: [..._state.logs, '[HUB] Registered pulled model: $modelName'],
-      ));
-      unawaited(configureOllama(syncedModels: _state.ollamaHubModels));
-    }
-  }
-
-  Future<bool> stopInternalOllama() async {
-    final success = await NativeBridge.stopOllama();
-    // Clear hub models from state so the chat dropdown removes ollama/ entries.
-    _updateState(_state.copyWith(
-      isOllamaRunning: false,
-      ollamaHubModels: const [],
-      logs: [..._state.logs, '[INFO] Ollama Hub stopped.'],
-    ));
-    return success;
-  }
-
-  Future<void> installInternalOllama({Function(double)? onProgress}) async {
-    const url =
-        'https://github.com/ollama/ollama/releases/download/v0.19.0/ollama-linux-arm64.tar.zst';
-    int attempts = 0;
-
-    while (attempts < 3) {
-      attempts++;
-      final client = http.Client();
-      _updateState(_state.copyWith(
-        logs: [
-          ..._state.logs,
-          '[INFO] Downloading internal Ollama runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}, ARM64) [Attempt $attempts/3]...'
-        ],
-      ));
-
-      try {
-        final request = http.Request('GET', Uri.parse(url));
-        final response = await client.send(request);
-
-        if (response.statusCode != 200) {
-          throw Exception('Download failed: ${response.statusCode}');
-        }
-
-        final contentLength = response.contentLength ?? 0;
-        int downloaded = 0;
-
-        final tempFile = File('${Directory.systemTemp.path}/ollama_dl.tar.zst');
-        if (await tempFile.exists()) await tempFile.delete();
-        final sink = tempFile.openWrite();
-
-        await for (final chunk in response.stream) {
-          sink.add(chunk);
-          downloaded += chunk.length;
-          if (contentLength > 0 && onProgress != null) {
-            onProgress(downloaded / contentLength);
-          }
-        }
-        await sink.close();
-
-        _updateState(_state.copyWith(
-          logs: [
-            ..._state.logs,
-            '[INFO] Binary downloaded. Calling native installer...'
-          ],
-        ));
-
-        final success = await NativeBridge.installOllama(tempFile.path);
-        if (!success) throw Exception('Native installation failed.');
-
-        _updateState(_state.copyWith(
-          logs: [
-            ..._state.logs,
-            '[INFO] Internal Ollama installed successfully.'
-          ],
-        ));
-        return; // Success!
-      } catch (e) {
-        _updateState(_state.copyWith(
-          logs: [..._state.logs, '[WARNING] Attempt $attempts failed: $e'],
-        ));
-        if (attempts >= 3) {
-          _updateState(_state.copyWith(
-            logs: [..._state.logs, '[ERROR] All download attempts failed.'],
-          ));
-          rethrow;
-        }
-        await Future.delayed(Duration(seconds: 2 * attempts));
-      } finally {
-        client.close();
-      }
-    }
-  }
-
-  /// Direct I/O: Persist the selected model (no proot overhead).
   Future<void> persistModel(String model) async {
     final canonical = ModelProviderCatalog.canonicalizeModelId(model);
     final config = await _readConfig();
@@ -2333,7 +1302,6 @@ PARAMETER num_batch 512
 
   Future<bool> hasProviderCredential(String provider) async {
     final normalized = _normalizeProvider(provider);
-    if (normalized == 'ollama' || normalized == 'ollama_cloud') return true;
 
     try {
       final config = await _readConfig();
@@ -2374,12 +1342,43 @@ PARAMETER num_batch 512
     if (value == null) return false;
     if (value is String) {
       final trimmed = value.trim();
-      return trimmed.isNotEmpty &&
-          trimmed != 'null' &&
-          trimmed != 'ollama-local';
+      return trimmed.isNotEmpty && trimmed != 'null';
     }
     if (value is Map || value is List) return value.isNotEmpty;
     return true;
+  }
+
+  void _removeLegacyOllamaConfig(Map<String, dynamic> config) {
+    final models = config['models'];
+    if (models is Map) {
+      models.remove('startup');
+      final providers = models['providers'];
+      if (providers is Map) providers.remove('ollama');
+    }
+    final auth = config['auth'];
+    if (auth is Map) {
+      final profiles = auth['profiles'];
+      if (profiles is Map) profiles.remove('ollama:default');
+      final order = auth['order'];
+      if (order is Map) order.remove('ollama');
+    }
+    config.remove('ollama');
+  }
+
+  void _ensureCatalogProviderDefaults(Map<String, dynamic> config) {
+    if (config['models'] is! Map) config['models'] = <String, dynamic>{};
+    final models = config['models'] as Map;
+    if (models['providers'] is! Map) {
+      models['providers'] = <String, dynamic>{};
+    }
+    final providers = models['providers'] as Map;
+    for (final provider in ModelProviderCatalog.providers) {
+      final existing = providers[provider.id];
+      providers[provider.id] = ModelProviderCatalog.mergeProviderConfig(
+        provider.id,
+        existing is Map ? existing : null,
+      );
+    }
   }
 
   /// Map a provider name to its default model string (provider/model).
@@ -2429,7 +1428,7 @@ PARAMETER num_batch 512
       'export OPENCLAW_PROVIDER_KEY="$key"',
       'openclaw onboard --non-interactive',
       '--mode local',
-      '--auth-choice ${openClawProvider == 'ollama' ? 'skip' : 'custom-api-key'}',
+      '--auth-choice custom-api-key',
       '--custom-base-url "${openClawProvider == 'google' ? "https://generativelanguage.googleapis.com/v1beta" : ""}"',
       '--custom-model-id "${defaultModels.first['id']}"',
       '--custom-api-key-ref-env OPENCLAW_PROVIDER_KEY', // Use SecretRef for API Key
@@ -2503,6 +1502,81 @@ PARAMETER num_batch 512
         );
       }
     } catch (_) {}
+  }
+
+  /// Experimental provider wiring for the native fllama HTTP bridge.
+  ///
+  /// This is deliberately explicit and not used by first-run setup. It lets us
+  /// test whether the Gateway can treat Plawie's NDK bridge as an
+  /// OpenAI-compatible provider without reintroducing a PRoot daemon.
+  Future<void> configureNdkGatewayBridge({
+    bool setAsPrimary = true,
+    bool reloadIfRunning = false,
+  }) async {
+    final provider = ModelProviderCatalog.plawieNdkProviderId;
+    const bridgeKey = 'plawie-ndk-local';
+
+    final config = await _readConfig();
+    config['models'] ??= <String, dynamic>{};
+    config['models']['providers'] ??= <String, dynamic>{};
+    config['models']['providers'][provider] = <String, dynamic>{
+      'api': 'openai',
+      'apiKey': bridgeKey,
+      'baseUrl': ModelProviderCatalog.plawieNdkBaseUrl,
+      'models': [
+        {'id': 'local-llm', 'name': 'Plawie NDK Bridge'}
+      ],
+    };
+    ensureProviderAuthConfigBlock(config, provider);
+
+    if (setAsPrimary) {
+      config['agents'] ??= <String, dynamic>{};
+      config['agents']['defaults'] ??= <String, dynamic>{};
+      config['agents']['defaults']['model'] ??= <String, dynamic>{};
+      config['agents']['defaults']['model']['primary'] = '$provider/local-llm';
+
+      final prefs = PreferencesService();
+      await prefs.init();
+      prefs.configuredModel = '$provider/local-llm';
+    }
+
+    await _writeConfig(config);
+    await _writeApiKeyAuthProfile(provider: provider, key: bridgeKey);
+    _addActivity(
+      '[NDK-BRIDGE] Gateway provider configured at ${ModelProviderCatalog.plawieNdkBaseUrl}',
+    );
+
+    if (reloadIfRunning && await NativeBridge.isGatewayRunning()) {
+      await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw reload 2>/dev/null || true',
+        timeout: 15,
+      );
+      disconnectWebSocket();
+    }
+  }
+
+  Future<void> reregisterSkills() async {
+    if (!_state.isRunning) return;
+    // Only call skills.register when the gateway explicitly supports it.
+    // Calling it blindly can overwrite upstream/default tool context.
+    final supported = _connection?.supportedMethods ?? const <String>[];
+    if (!supported.contains('skills.register')) return;
+    try {
+      final catalog = SkillsService().getToolsCatalog();
+      if (catalog.isNotEmpty) {
+        await invoke('skills.register', {
+          'skills': catalog,
+          'callbackUrl': 'http://127.0.0.1:8765',
+        }).timeout(const Duration(seconds: 5));
+        _addActivity(
+          '[SKILLS] Registered ${catalog.length} device skills with gateway',
+        );
+      }
+    } catch (e) {
+      _addActivity('[SKILLS] skills.register failed: $e');
+    }
   }
 
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
@@ -2715,9 +1789,6 @@ PARAMETER num_batch 512
         if (!stillRunning) break;
         await Future.delayed(const Duration(milliseconds: 350));
       }
-      // Use copyWith so Ollama Hub state (isOllamaRunning, ollamaHubModels) is
-      // preserved — the gateway stopping does NOT stop Ollama. Clearing these
-      // here would make the chat dropdown lose its LOCAL HUB entries.
       _updateState(_state.copyWith(
         status: GatewayStatus.stopped,
         isWebsocketConnected: false,
@@ -2761,8 +1832,6 @@ PARAMETER num_batch 512
         final closeReasonRaw = (_connection?.lastCloseReason ?? '').trim();
         final closeReason = _describeWsClose(closeCode, closeReasonRaw);
         if (disconnected) {
-          _sessionCleanedThisConnection =
-              false; // Allow cleanup on next reconnect
           _rpcDiscoveryDone =
               false; // Bug 1 fix: Reset RPC discovery flag on WS disconnect
           unawaited(_logGatewayDisconnectContext());
@@ -3494,64 +2563,9 @@ PARAMETER num_batch 512
     }
   }
 
-  /// Checks if the Ollama daemon is authenticated with ollama.com.
-  /// Uses multiple strategies because the PRoot credential file path varies
-  /// across Android devices and Ollama versions:
-  /// 1. Check the expected credential file path
-  /// 2. If hub is running, probe `ollama list` — if it succeeds without
-  ///    "unauthorized", the user IS signed in (most reliable check).
-  /// Public so LocalLlmScreen can share this single auth check.
-  Future<bool> checkOllamaCredentials() async {
-    // Strategy 1: check the expected cred file path
-    try {
-      final filesDir = await getFilesDir();
-      final credsPath = '$filesDir/rootfs/ubuntu/root/.ollama/credentials';
-      final file = File(credsPath);
-      if (await file.exists()) {
-        final size = await file.length();
-        if (size > 10) {
-          _addActivity('[AUTH] Credential file found (${size}B)');
-          return true;
-        }
-      }
-    } catch (_) {}
-
-    // Strategy 2: if the hub is running, ask ollama directly
-    if (_state.isOllamaRunning) {
-      try {
-        final result = await NativeBridge.runInProot(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'OLLAMA_HOST=127.0.0.1:11434 ollama list 2>&1 | head -3',
-          timeout: 8,
-        );
-        final lower = result.toLowerCase();
-        // If we get "unauthorized" or "not allowed", definitely not signed in
-        if (lower.contains('unauthorized') || lower.contains('not allowed')) {
-          _addActivity('[AUTH] ollama list → unauthorized');
-          return false;
-        }
-        // If we get actual model output or "NAME" header, user IS signed in
-        if (lower.contains('name') ||
-            lower.contains(':') ||
-            result.trim().isNotEmpty) {
-          _addActivity('[AUTH] ollama list → signed in (live probe)');
-          return true;
-        }
-      } catch (_) {}
-    }
-
-    _addActivity('[AUTH] No credential file found and hub probe failed');
-    return false;
-  }
-
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local-llm/ → fllama NDK (on-device inference, no network, no gateway)
-  /// • ollama/    → WS chat.send → gateway → Ollama :11434 (dashboard visible).
-  ///                Modelfile PARAMETER num_ctx 2048 should cap context.
-  ///                Watch hub logs: n_ctx=4096 = stable; n_ctx=32768 = gateway
-  ///                is overriding it (fundamental gateway limitation).
-  ///                WS fallback: direct :11434 with options.num_ctx when WS fails.
   /// • cloud      → WS chat.send → gateway agent loop → visible in dashboard
   Stream<String> sendMessage(
     String message, {
@@ -3604,119 +2618,8 @@ PARAMETER num_batch 512
       return;
     }
 
-    // All other models (ollama/ and cloud) use WS chat.send → gateway.
-    // If WS is unavailable, ollama/ falls back to direct :11434 so inference
-    // still works; cloud falls back to HTTP gateway proxy.
-    var isOllama = model.startsWith('ollama/');
-    var isCloudOllama = isOllama && model.contains(':cloud');
-    if (isCloudOllama) {
-      _addActivity('[CHAT] Cloud Ollama model - routing via hub proxy.');
-      final hubInstalled = await isInternalOllamaInstalled()
-          .timeout(const Duration(seconds: 5), onTimeout: () => false)
-          .catchError((_) => false);
-      if (!hubInstalled) {
-        yield '[Error] Ollama Cloud uses ollama.com, but it still needs the local Ollama Hub runtime as its signed-in proxy. Open Local LLM -> Install Ollama Hub (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}, Wi-Fi recommended), then sign in and retry.';
-        return;
-      }
-      final hubReady = await _ensureLocalOllamaReadyForGateway(
-        reason: 'cloud-chat',
-        wait: const Duration(seconds: 30),
-      );
-      if (!hubReady) {
-        yield '[Error] Ollama Cloud needs the local Ollama Hub running as its proxy, but :11434 is not responding yet. Open Local LLM -> Start Ollama Hub, then retry.';
-        return;
-      }
-      final signedIn = await checkOllamaCredentials();
-      if (!signedIn) {
-        _addActivity(
-            '[CHAT] Cloud Ollama requires ollama signin before the daemon can proxy requests.');
-        yield '[Error] Ollama Cloud needs sign-in, not a manual API key. Open Local LLM -> Cloud -> Sign in with Ollama, then retry.';
-        return;
-      }
-    }
-    final isLocalOllama = isOllama && !isCloudOllama;
-
-    // For local Ollama: proactively clear bloated session files so the gateway
-    // doesn't forward a wall of stale history on every request.
-    // Fire-and-forget — don't block the message on disk I/O.
-    if (isLocalOllama) unawaited(_clearStaleSessions());
-
-    // For local Ollama: memory snapshot + cold-start detection.
-    // Fix 4+5: read /proc/meminfo directly (no PRoot spawn) and use the
-    // /api/ps result to extend the WS timeout for cold starts.
-    bool ollamaColdStart = true; // assume cold until /api/ps says otherwise
-    bool ollamaReachable = false; // tracks if Ollama HTTP is up at all
-    if (isLocalOllama) {
-      try {
-        // /proc/meminfo is readable directly from Android — no PRoot needed.
-        final meminfo =
-            await File('/proc/meminfo').readAsString().catchError((_) => '');
-        final totalMb = _parseMemKbLineToMb(meminfo
-            .split('\n')
-            .firstWhere((l) => l.startsWith('MemTotal:'), orElse: () => ''));
-        final availMb = _parseMemAvailableMb(meminfo.split('\n').firstWhere(
-            (l) => l.startsWith('MemAvailable:'),
-            orElse: () => ''));
-        final swapMb = _parseMemKbLineToMb(meminfo
-            .split('\n')
-            .firstWhere((l) => l.startsWith('SwapFree:'), orElse: () => ''));
-        _addActivity(
-            '[MEM] Total: ${totalMb}MB | Available: ${availMb}MB | Swap: ${swapMb}MB');
-        if (availMb < 1100) {
-          _addActivity(
-              '[MEM] ⚠ Only ${availMb}MB free — need ~1.1GB for Qwen2.5-1.5B. Inference may crash.');
-        } else if (availMb < 1500) {
-          _addActivity('[MEM] △ ${availMb}MB free — tight but may work');
-        }
-      } catch (_) {}
-      // Check what Ollama has loaded — also determines cold-start timeout.
-      // A failed /api/ps means Ollama isn't running yet (ollamaReachable stays false).
-      try {
-        final psResp = await http
-            .get(Uri.parse('http://127.0.0.1:11434/api/ps'))
-            .timeout(const Duration(seconds: 3));
-        if (psResp.statusCode == 200) {
-          ollamaReachable = true;
-          final psData = jsonDecode(psResp.body) as Map<String, dynamic>?;
-          final loadedModels = psData?['models'] as List?;
-          if (loadedModels != null && loadedModels.isNotEmpty) {
-            final names =
-                loadedModels.map((m) => (m as Map)['name'] ?? '?').join(', ');
-            _addActivity('[MEM] Ollama loaded: $names');
-            ollamaColdStart = false; // model is already in memory
-          } else {
-            _addActivity(
-                '[MEM] Ollama: no model cached (cold start — using extended timeout)');
-          }
-        }
-      } catch (_) {
-        // /api/ps timeout or connection refused → Ollama not running
-        _addActivity(
-            '[MEM] Ollama not reachable at :11434 - attempting autostart');
-      }
-
-      // Pre-send health gate: if Ollama is completely down, fail fast instead of
-      // waiting 3 min for the gateway to timeout. We now try one controlled
-      // autostart first so returning users do not have to visit Local LLM Hub.
-      if (!ollamaReachable) {
-        ollamaReachable = await _ensureLocalOllamaReadyForGateway(
-          reason: 'chat-send',
-          wait: const Duration(seconds: 30),
-        );
-        if (!ollamaReachable) {
-          final hubInstalled = await isInternalOllamaInstalled()
-              .timeout(const Duration(seconds: 5), onTimeout: () => false)
-              .catchError((_) => false);
-          yield hubInstalled
-              ? '[Error] Ollama server is not responding. Open Local LLM -> Start Ollama Hub, then retry.'
-              : '[Error] Ollama Hub runtime is not installed yet. Open Local LLM -> Install Ollama Hub (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}, Wi-Fi recommended), then retry.';
-          return;
-        }
-        ollamaColdStart = true;
-        _addActivity(
-            '[MEM] Ollama became reachable after autostart (cold start expected)');
-      }
-    }
+    // Cloud/provider models use WS chat.send -> gateway. If WS is unavailable,
+    // fall back to the gateway HTTP proxy.
     final wsOk = await _ensureWebSocket(token);
     if (wsOk) {
       // HOT-SWITCHING: If user changed model, update gateway config
@@ -3724,39 +2627,9 @@ PARAMETER num_batch 512
       if (changes.isNotEmpty) {
         _addActivity('[CHAT] Updating gateway config: $changes');
       }
-      // Context window for local Ollama is controlled by the Modelfile
-      // PARAMETER num_ctx written at `ollama create` time by _buildModelfileTemplate.
-      // Do NOT pass contextWindow via sessions.patch — it's schema-invalid and causes
-      // "[reload] config reload skipped" which breaks all subsequent config changes.
-      //
-      // SYSTEM PROMPT via sessions.patch: even though systemPrompt is also technically
-      // schema-invalid, this call ensures the in-memory session immediately uses the
-      // mobile-optimized short prompt (set in config at startup). Without this, a
-      // long stale system prompt from a previous gateway launch can push the total
-      // prompt tokens over num_ctx=2048 → Ollama produces 0 tokens → timeout.
-      // The gateway validator logs an error but still processes the session correctly.
-      // This was confirmed working in commit 10ff306. Fire-and-forget — don't await.
-      // System prompt (with gesture + canvas instructions) is written to openclaw.json
-      // in _configureGateway() at startup — the only schema-valid way to set it.
-      // sessions.patch rejects 'systemPrompt' with INVALID_REQUEST on all gateway versions.
     } else {
-      if (isLocalOllama) {
-        // WS fallback: direct local Ollama — no dashboard, but inference still works.
-        final ollamaModel = model.substring('ollama/'.length);
-        _addActivity(
-            '[CHAT] ⚠ WS unavailable — direct fallback for $ollamaModel');
-        yield* sendMessageHttp(message,
-            model: ollamaModel,
-            directUrl: 'http://127.0.0.1:11434/v1/chat/completions',
-            conversationHistory: conversationHistory,
-            ollamaOptions: {'num_ctx': 1024});
-      } else {
-        // Cloud Ollama fallback: route via HTTP gateway proxy (same as cloud models).
-        yield* sendMessageHttp(message,
-            model: model,
-            token: token,
-            conversationHistory: conversationHistory);
-      }
+      yield* sendMessageHttp(message,
+          model: model, token: token, conversationHistory: conversationHistory);
       return;
     }
 
@@ -3776,11 +2649,7 @@ PARAMETER num_batch 512
                 ? model.substring(6)
                 : (_connection!.mainSessionKey ?? 'main');
 
-    // Cold-start (model not yet in RAM) gets 3 min; warm gets 2 min; cloud 90 s.
-    // Local Ollama: extended timeout for cold-start model loading.
-    // Cloud Ollama: treat like any cloud model (90s) — no local load delay.
-    final timeoutMs =
-        isLocalOllama ? (ollamaColdStart ? 180000 : 120000) : 90000;
+    const timeoutMs = 90000;
 
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
@@ -3891,9 +2760,6 @@ PARAMETER num_batch 512
             if ((state == 'final' || state == 'aborted' || state == 'error') &&
                 (runStarted || !firstToken)) {
               if (!chunkController.isClosed) {
-                if (isOllama) {
-                  _addActivity('[CHAT] ✓ Hub stream finished (state: $state)');
-                }
                 chunkController.close();
               }
             }
@@ -4033,17 +2899,13 @@ PARAMETER num_batch 512
                           frame['error'])
                       ?.toString() ??
                   '';
-              // Auth errors from cloud Ollama models — surface as actionable guidance.
               final isAuthError = reason == 'auth' ||
                   rawErr.toLowerCase().contains('auth') ||
                   rawErr.toLowerCase().contains('surface_error');
               if (isAuthError) {
-                const authMsg = 'Cloud model sign-in required.\n\n'
-                    'Go to Local LLM → Cloud Models and tap "Sign in to Ollama", '
-                    'or run `ollama signin` in the Terminal tab.\n\n'
-                    'Once signed in, tap Refresh on the auth status card and try again.';
-                _addActivity(
-                    '[CHAT] ✗ Cloud auth required (ollama signin needed)');
+                const authMsg =
+                    'Cloud model authentication is required. Add a valid provider API key in Model Settings, then try again.';
+                _addActivity('[CHAT] ✗ Cloud auth required');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $authMsg');
                   chunkController.close();
@@ -4080,20 +2942,13 @@ PARAMETER num_batch 512
     );
 
     try {
-      final streamTimeoutSec = isLocalOllama ? 600 : 90;
-      await for (final chunk in chunkController.stream
-          .timeout(Duration(seconds: streamTimeoutSec))) {
+      await for (final chunk
+          in chunkController.stream.timeout(const Duration(seconds: 90))) {
         yield chunk;
       }
       _addActivity('[CHAT] ✓ Complete');
     } on TimeoutException {
-      if (isLocalOllama) {
-        _addActivity('[CHAT] ✗ Timed out after 600 s');
-        yield '[Error] Ollama timed out (600 s). The model runner may have crashed — '
-            'check hub logs for OOM errors.';
-      } else {
-        yield '[Error] Gateway chat timed out after 90 seconds.';
-      }
+      yield '[Error] Gateway chat timed out after 90 seconds.';
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
       yield '[Error] WebSocket chat error: $e';
@@ -4322,16 +3177,14 @@ PARAMETER num_batch 512
     List<Map<String, dynamic>>? conversationHistory,
     String?
         directUrl, // if set, bypass the gateway and POST directly to this URL
-    Map<String, dynamic>?
-        ollamaOptions, // Ollama-specific inference options (e.g. num_ctx)
   }) async* {
     model = await _resolveModel(model);
 
     final url = directUrl ?? '${AppConstants.gatewayUrl}/v1/chat/completions';
-    final isDirectLlama = directUrl != null;
+    final isDirectEndpoint = directUrl != null;
 
-    // For direct llama-server calls, no gateway token or openclaw headers needed.
-    if (!isDirectLlama) {
+    // For direct local bridge calls, no gateway token or openclaw headers needed.
+    if (!isDirectEndpoint) {
       token ??= await retrieveTokenFromConfig();
       if (token == null || token.isEmpty) {
         yield '[Error] No auth token for model routing.';
@@ -4349,16 +3202,14 @@ PARAMETER num_batch 512
                 {'role': 'user', 'content': message}
               ];
 
-    // Always use the actual model name. The old 'local-llm' override was for
-    // llama-server, but that path exits early before reaching here. directUrl
-    // now exclusively means Ollama direct routing, which needs the real name.
     final effectiveModel = model;
 
     final client = http.Client();
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
-        if (!isDirectLlama && token != null) 'Authorization': 'Bearer $token',
+        if (!isDirectEndpoint && token != null)
+          'Authorization': 'Bearer $token',
       };
       final request = http.Request('POST', Uri.parse(url))
         ..headers.addAll(headers)
@@ -4366,17 +3217,14 @@ PARAMETER num_batch 512
           'model': effectiveModel,
           'messages': messages,
           'stream': true,
-          if (ollamaOptions != null) 'options': ollamaOptions,
-          // Keep model loaded indefinitely — prevents 3-4 s reload on every message.
-          if (isDirectLlama) 'keep_alive': -1,
+          if (isDirectEndpoint) 'keep_alive': -1,
         });
 
-      // Ollama on mobile can be slow; give it 4 minutes before giving up (matches WS path).
-      final timeoutDuration = isDirectLlama
+      final timeoutDuration = isDirectEndpoint
           ? const Duration(seconds: 240)
           : const Duration(seconds: 90);
 
-      if (isDirectLlama) {
+      if (isDirectEndpoint) {
         _addActivity('[CHAT] → Sending to $effectiveModel');
       }
 
@@ -4385,21 +3233,19 @@ PARAMETER num_batch 512
 
       if (streamedResponse.statusCode != 200) {
         final body = await streamedResponse.stream.bytesToString();
-        if (isDirectLlama) {
+        if (isDirectEndpoint) {
           _addActivity('[CHAT] ✗ HTTP ${streamedResponse.statusCode}');
         }
         yield '[Error] HTTP ${streamedResponse.statusCode}: $body';
         return;
       }
 
-      if (isDirectLlama) {
-        _addActivity('[CHAT] ← Ollama accepted (HTTP 200)');
+      if (isDirectEndpoint) {
+        _addActivity('[CHAT] ← Local bridge accepted (HTTP 200)');
       }
 
       // Process the SSE stream.
-      // Handles two formats:
-      //   SSE (OpenAI-compat):  data: {"choices":[{"delta":{"content":"..."}}]}
-      //   NDJSON (Ollama native): {"message":{"role":"assistant","content":"..."}}
+      // Handles OpenAI-compatible SSE and simple NDJSON bridge streams.
       bool firstChunk = true;
       int rawChunks = 0;
       final List<String> rawSamples = [];
@@ -4408,7 +3254,7 @@ PARAMETER num_batch 512
           .transform(const LineSplitter())) {
         if (chunk.isEmpty) continue;
         rawChunks++;
-        if (isDirectLlama && rawChunks <= 3) {
+        if (isDirectEndpoint && rawChunks <= 3) {
           rawSamples.add(chunk.length > 120 ? chunk.substring(0, 120) : chunk);
         }
 
@@ -4418,7 +3264,6 @@ PARAMETER num_batch 512
           if (data == '[DONE]') break;
           rawJson = data;
         } else if (chunk.startsWith('{')) {
-          // Ollama native NDJSON — no SSE envelope
           rawJson = chunk;
         }
 
@@ -4433,7 +3278,6 @@ PARAMETER num_batch 512
           // OpenAI-compat non-streaming (single chunk): choices[0].message.content
           final messageContent =
               (json['choices'] as List?)?[0]?['message']?['content'] as String?;
-          // Ollama native NDJSON: message.content + done flag
           final nativeContent =
               (json['message'] as Map?)?['content'] as String?;
           final done = json['done'] as bool? ?? false;
@@ -4447,20 +3291,20 @@ PARAMETER num_batch 512
                       : null;
 
           if (token != null) {
-            if (firstChunk && isDirectLlama) {
+            if (firstChunk && isDirectEndpoint) {
               firstChunk = false;
               _addActivity('[CHAT] ✓ First token received');
             }
             yield token;
           }
 
-          if (done) break; // Ollama native signals end with done:true
+          if (done) break;
         } catch (e) {
           // Malformed chunk or heartbeat, skip silently unless debug
           debugPrint('[GatewayService] SSE parse error: $e (raw: $rawJson)');
         }
       }
-      if (isDirectLlama) {
+      if (isDirectEndpoint) {
         _addActivity('[CHAT] ✓ Stream complete ($rawChunks chunks)');
         if (firstChunk) {
           for (int i = 0; i < rawSamples.length; i++) {
@@ -4469,10 +3313,10 @@ PARAMETER num_batch 512
         }
       }
     } on TimeoutException {
-      if (isDirectLlama) {
+      if (isDirectEndpoint) {
         _addActivity('[CHAT] ✗ Timed out after 240 s');
-        yield '[Error] Ollama timed out (240 s). '
-            'The device may be thermally throttled — try a shorter message or wait for it to cool.';
+        yield '[Error] Local bridge timed out (240 s). '
+            'The device may be under heavy load — try a shorter message or wait for it to cool.';
       } else {
         yield '[Error] Gateway chat timed out.';
       }
@@ -4738,10 +3582,10 @@ PARAMETER num_batch 512
     }
     m = ModelProviderCatalog.canonicalizeModelId(m);
 
-    // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility
-    // Any model that isn't a local-llm or ollama model must be sent as
+    // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility.
+    // Cloud/provider models are persisted in openclaw.json; chat.send receives
     // 'openclaw' (primary) or 'openclaw/<agentId>' (agent routing).
-    if (!m.startsWith('local-llm/') && !m.startsWith('ollama/')) {
+    if (!m.startsWith('local-llm/')) {
       if (m.startsWith('agent/')) {
         return 'openclaw/${m.substring(6)}';
       }
@@ -4837,13 +3681,16 @@ PARAMETER num_batch 512
 
     final discovery = config['discovery'];
     final models = config['models'];
-    final ollama = models?['providers']?['ollama'];
-    final topLevelAuth = config['auth'];
-    final ollamaProfileId = authProfileIdForProvider(ollamaProviderId);
-    final topLevelProfiles =
-        topLevelAuth is Map ? topLevelAuth['profiles'] : null;
-    final ollamaProfile =
-        topLevelProfiles is Map ? topLevelProfiles[ollamaProfileId] : null;
+    final providers = models is Map ? models['providers'] : null;
+    final hasCatalogProviders = providers is Map &&
+        ModelProviderCatalog.providers
+            .every((provider) => providers.containsKey(provider.id));
+    final authRoot = config['auth'];
+    final authProfiles = authRoot is Map ? authRoot['profiles'] : null;
+    final authOrder = authRoot is Map ? authRoot['order'] : null;
+    final hasNoLegacyOllamaAuth =
+        (authProfiles is! Map || !authProfiles.containsKey('ollama:default')) &&
+            (authOrder is! Map || !authOrder.containsKey('ollama'));
 
     return gateway['mode'] == 'local' &&
         gateway['bind'] == 'loopback' &&
@@ -4856,17 +3703,14 @@ PARAMETER num_batch 512
         discovery['mdns']?['mode'] == 'off' &&
         discovery['wideArea']?['enabled'] == false &&
         models is Map &&
+        providers is Map &&
+        hasCatalogProviders &&
+        !providers.containsKey('ollama') &&
         !models.containsKey('startup') &&
         !gateway.containsKey('startup') &&
         !gateway.containsKey('sidecars') &&
-        !config.containsKey('ollama') &&
-        ollama is Map &&
-        ollama['baseUrl'] == 'http://127.0.0.1:11434' &&
-        ollama['apiKey'] is String &&
-        (ollama['apiKey'] as String).isNotEmpty &&
-        ollamaProfile is Map &&
-        ollamaProfile['provider'] == ollamaProviderId &&
-        ollamaProfile['mode'] == 'api_key';
+        hasNoLegacyOllamaAuth &&
+        !config.containsKey('ollama');
   }
 
   /// INDUSTRIAL HARDENING: Use config patch (official, reliable way to set arrays)
@@ -4911,16 +3755,13 @@ PARAMETER num_batch 512
     _ensurePersistentGatewayToken(currentConfig);
     _applyExplicitAuthMode(currentConfig);
     _syncLocalGatewayRemoteCredentials(currentConfig);
+    _ensureCatalogProviderDefaults(currentConfig);
     final currentGateway = currentConfig['gateway'];
     if (currentGateway is Map) {
       currentGateway.remove('startup');
       currentGateway.remove('sidecars');
     }
-    final currentModels = currentConfig['models'];
-    if (currentModels is Map) {
-      currentModels.remove('startup');
-    }
-    currentConfig.remove('ollama');
+    _removeLegacyOllamaConfig(currentConfig);
     await _writeConfig(currentConfig);
 
     final gatewayAuth =
@@ -4978,25 +3819,6 @@ PARAMETER num_batch 512
     },
     "wideArea": {
       "enabled": false
-    }
-  },
-  "models": {
-    "providers": {
-      "ollama": {
-        "apiKey": "ollama-local",
-        "baseUrl": "http://127.0.0.1:11434"
-      }
-    }
-  },
-  "auth": {
-    "profiles": {
-      "${authProfileIdForProvider(ollamaProviderId)}": {
-        "provider": "ollama",
-        "mode": "api_key"
-      }
-    },
-    "order": {
-      "ollama": ["${authProfileIdForProvider(ollamaProviderId)}"]
     }
   }
 }

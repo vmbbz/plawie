@@ -135,10 +135,6 @@ class GatewayProvider extends ChangeNotifier {
     return _gatewayService.fetchAuthenticatedDashboardUrl(force: true);
   }
 
-  Future<bool> prepareLocalOllamaForGateway({String reason = 'ui-open'}) {
-    return _gatewayService.prepareLocalOllamaForGateway(reason: reason);
-  }
-
   Future<bool> approveLocalDashboardPairingRequest(String requestId) {
     return _gatewayService.approveLocalDashboardPairingRequest(requestId);
   }

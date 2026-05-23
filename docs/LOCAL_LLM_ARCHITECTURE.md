@@ -12,7 +12,7 @@ Cloud are legacy implementation paths and are hidden from normal UI.
 | Mode | Prefix | Runtime | Gateway | Network | Intended use |
 | --- | --- | --- | --- | --- | --- |
 | NDK Direct | `local-llm/...` | fllama / llama.cpp NDK | No | No | Private/offline chat and direct app actions |
-| Cloud Agent | `google/...`, `anthropic/...`, `openai/...`, `xai/...`, `groq/...` | OpenClaw Gateway | Yes | Yes | Tools, skills, dashboard, multi-step agent workflows |
+| Cloud Agent | `google/...`, `anthropic/...`, `openai/...`, `xai/...`, `openrouter/...`, `groq/...` | OpenClaw Gateway | Yes | Yes | Tools, skills, dashboard, multi-step agent workflows |
 
 ## Why Ollama Is Deprecated
 
@@ -26,8 +26,8 @@ Current behavior:
 - Fresh setup does not offer Ollama Local or Ollama Cloud.
 - Chat/settings do not list `ollama/...` models.
 - Stale `ollama/...` preferences migrate to the safe cloud fallback.
-- Legacy backend methods remain in code only so returning installs can be cleaned
-  up safely without a risky one-pass deletion.
+- Legacy daemon install/start/stop methods have been removed from Dart and
+  Android. Remaining `ollama` references are migration/removal guards only.
 
 ## NDK Direct Flow
 
@@ -61,17 +61,39 @@ Camera and canvas captures from local tools attach to the assistant chat bubble.
 They do not auto-open a full-screen hologram overlay, because that trapped the
 user during local-tool tests.
 
-## Future NDK Gateway Bridge
+## Experimental NDK Gateway Bridge
 
-A local OpenAI-compatible HTTP bridge may still be explored later:
+A local OpenAI-compatible HTTP bridge exists as an explicit experiment:
 
 ```text
+Provider: plawie_ndk
+Model:    plawie_ndk/local-llm
+Base URL: http://127.0.0.1:11435/v1
 GET  http://127.0.0.1:11435/v1/models
 POST http://127.0.0.1:11435/v1/chat/completions
 ```
 
-Do not enable it by default until it proves:
+It is started manually from Local LLM -> Gateway Bridge Experiment and can then
+write a temporary OpenClaw provider config. It is not part of fresh setup and is
+not enabled by default.
 
-- Gateway accepts the provider cleanly.
-- Streaming and tool-call payloads match OpenAI-compatible expectations.
-- It does not compete with Gateway/node stability under memory pressure.
+Expected confidence signals:
+
+- Local LLM model is `ready` before bridge use.
+- Bridge status is `running`.
+- `/v1/health` returns `ok: true`, `runtime: fllama`, and the active model ID.
+- Gateway config contains `models.providers.plawie_ndk.baseUrl =
+  http://127.0.0.1:11435/v1`.
+- Gateway logs show a request to the `plawie_ndk/local-llm` model without
+  trying `127.0.0.1:11434`.
+- A chat turn either produces assistant text or returns a clear bridge HTTP
+  error such as `model_not_ready`.
+
+Do not promote it to a production default until it proves:
+
+- Streaming Server-Sent Events match OpenAI-compatible expectations.
+- Tool calls either round-trip through Gateway correctly or are explicitly
+  disabled for bridge-routed local models.
+- Startup/shutdown is lifecycle-safe.
+- NDK inference does not compete with Gateway/node stability under memory
+  pressure on 8 GB phones.

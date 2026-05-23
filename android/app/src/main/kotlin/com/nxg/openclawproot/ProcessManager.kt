@@ -117,8 +117,7 @@ class ProcessManager(
 
         // Model directory bind: models are stored at $filesDir/rootfs/root/.openclaw/models
         // (outside the ubuntu rootfs at $filesDir/rootfs/ubuntu/) so they need an explicit
-        // bind mount to be visible at /root/.openclaw/models inside PRoot. Without this,
-        // Ollama's HTTP create API returns "invalid model name" (misleading error for file not found).
+        // bind mount to be visible at /root/.openclaw/models inside PRoot.
         val modelsHostDir = java.io.File("$filesDir/rootfs/root/.openclaw/models")
         modelsHostDir.mkdirs() // ensure host dir exists before binding
         flags.add("--bind=${modelsHostDir.absolutePath}:/root/.openclaw/models")
@@ -626,78 +625,4 @@ fi
         logSink = null
     }
 
-    fun startOllama(): Boolean {
-        return try {
-            android.util.Log.i("ProcessManager", "Starting lean internal Ollama server")
-            // Ensure any existing instances are cleared first to avoid port collision
-            stopOllama()
-            
-            // Start Ollama as a separate long-lived process inside PRoot.
-            // - OLLAMA_HOST=127.0.0.1:11434 ensures accessibility across PRoot namespaces securely.
-            // - OLLAMA_ORIGINS=* ensures the Flutter client can connect across the bridge.
-            // - OLLAMA_KEEP_ALIVE=15m prevents indefinite model residency while keeping short sessions warm.
-            // - OLLAMA_NUM_PARALLEL=1 prevents Ollama from loading multiple copies of the model for
-            //   parallel requests — saves ~1.5 GB RAM on mobile (only one request at a time anyway).
-            // - OLLAMA_MAX_LOADED_MODELS=1 and OLLAMA_MAX_QUEUE=8 fail small instead of exhausting RAM.
-            // - Flash Attention + q8_0 KV cache reduce context memory when supported by the model/runtime.
-            //
-            // Do not append '&' here. buildGatewayCommand uses --kill-on-exit, so backgrounding the server
-            // can let the shell exit and cause PRoot to kill the Ollama child.
-            val ollamaCmd = """
-                ulimit -n 4096 2>/dev/null || true
-                exec nice -n 10 env \
-                  OLLAMA_HOST=127.0.0.1:11434 \
-                  OLLAMA_ORIGINS="*" \
-                  OLLAMA_KEEP_ALIVE=15m \
-                  OLLAMA_NUM_PARALLEL=1 \
-                  OLLAMA_MAX_LOADED_MODELS=1 \
-                  OLLAMA_MAX_QUEUE=8 \
-                  OLLAMA_CONTEXT_LENGTH=2048 \
-                  OLLAMA_FLASH_ATTENTION=1 \
-                  OLLAMA_KV_CACHE_TYPE=q8_0 \
-                  /usr/local/bin/ollama serve > /root/.openclaw/ollama.log 2>&1
-            """.trimIndent()
-            val fullCmd = buildGatewayCommand(ollamaCmd)
-            val pb = ProcessBuilder(fullCmd)
-            pb.environment().clear()
-            pb.environment().putAll(prootEnv())
-            pb.start()
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("ProcessManager", "Failed to start Ollama", e)
-            false
-        }
-    }
-
-    fun stopOllama(): Boolean {
-        return try {
-            // Try graceful termination first so Ollama can release model state, then force-kill stragglers.
-            val stopCmd = "pkill -TERM -f '[o]llama serve' 2>/dev/null || true; sleep 1; pkill -9 -f '[o]llama' 2>/dev/null || true"
-            val fullCmd = buildGatewayCommand(stopCmd)
-            val pb = ProcessBuilder(fullCmd)
-            pb.environment().clear()
-            pb.environment().putAll(prootEnv())
-            pb.start().waitFor()
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("ProcessManager", "Failed to stop Ollama", e)
-            false
-        }
-    }
-
-    fun isOllamaRunning(): Boolean {
-        return try {
-            // Check for any process with 'ollama' in the command line
-            val checkCmd = "pgrep -f '[o]llama serve' > /dev/null 2>&1"
-            val fullCmd = buildGatewayCommand(checkCmd)
-            val pb = ProcessBuilder(fullCmd)
-            pb.environment().clear()
-            pb.environment().putAll(prootEnv())
-            val process = pb.start()
-            process.waitFor()
-            process.exitValue() == 0
-        } catch (e: Exception) {
-            false
-        }
-    }
 }

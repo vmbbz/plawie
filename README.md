@@ -94,7 +94,7 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 
 1. **Download** the latest APK from [Releases](https://github.com/vmbbz/plawie/releases/latest).
 2. **Install** on any device running Android 10+.
-3. **Launch** → choose Gemini, Claude, OpenAI, Grok, or Groq and add your own provider key.
+3. **Launch** → choose Gemini, Claude, OpenAI, Grok, OpenRouter, or Groq and add your own provider key.
 4. **Install** → Plawie sets up the hardened PRoot Gateway and pairs the local device node.
 5. **Start Chatting** with your personal AI companion.
 

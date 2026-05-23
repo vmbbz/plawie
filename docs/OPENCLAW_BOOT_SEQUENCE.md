@@ -23,7 +23,7 @@ The stable sequence is:
 
 Setup collects:
 
-- Cloud provider choice: Gemini, Claude, OpenAI, Grok/xAI, or Groq.
+- Cloud provider choice: Gemini, Claude, OpenAI, Grok/xAI, OpenRouter, or Groq.
 - Optional API key.
 - Agent name and basic settings.
 
@@ -89,6 +89,8 @@ Expected local ports:
 - `8765`: Plawie app capability bridge.
 
 There should be no required `11434` Ollama listener in the production path.
+The experimental NDK bridge, when manually enabled, uses `11435` and must not
+start during setup or returning-user attach.
 
 ## Alarm Conditions
 
@@ -99,6 +101,8 @@ Investigate immediately if logs show:
 - Node repeatedly loses nonce/challenge state after successful pairing.
 - Dashboard keeps asking for a new request ID after auto-approval.
 - Any code path tries to download/start Ollama during setup or dashboard open.
+- The NDK bridge appears in Gateway logs without the user manually enabling the
+  bridge experiment.
 
 ## Recovery Rules
 

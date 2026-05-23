@@ -47,7 +47,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Chat Settings Model Picker',
                         description:
-                            'Open Chat -> settings menu to switch intelligence paths. ON DEVICE is native fllama for private/offline turns. CLOUD uses the OpenClaw Gateway with Gemini, Claude, OpenAI, Grok/xAI, or Groq. Cloud providers need their own API keys, and Plawie blocks switching when the chosen provider has no stored credential.',
+                            'Open Chat -> settings menu to switch intelligence paths. ON DEVICE is native fllama for private/offline turns. CLOUD uses the OpenClaw Gateway with Gemini, Claude, OpenAI, Grok/xAI, OpenRouter, or Groq. Cloud providers need their own API keys, and Plawie blocks switching when the chosen provider has no stored credential.',
                         icon: Icons.tune_rounded,
                         color: Colors.cyanAccent,
                       ),
@@ -56,7 +56,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Provider Keys',
                         description:
-                            'Settings -> Update API Key supports Gemini, Claude, OpenAI, Grok/xAI, and Groq. Keys are written into the OpenClaw provider config and auth profile before Gateway use, then the selected model is persisted as provider/model-id.',
+                            'Settings -> Update API Key supports Gemini, Claude, OpenAI, Grok/xAI, OpenRouter, and Groq. Keys are written into the OpenClaw provider config and auth profile before Gateway use, then the selected model is persisted as provider/model-id.',
                         icon: Icons.key_rounded,
                         color: AppColors.statusAmber,
                       ),
@@ -65,7 +65,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Offline vs Gateway',
                         description:
-                            'Private Offline Mode downloads only the GGUF model you choose and runs it through fllama NDK. Gateway Mode is for full OpenClaw tools, skills, dashboard, and multi-step agent behavior using a cloud provider key. The embedded Ollama daemon path is legacy and hidden from normal setup to avoid surprise 1.30 GB runtime downloads.',
+                            'Private Offline Mode downloads only the GGUF model you choose and runs it through fllama NDK. Gateway Mode is for full OpenClaw tools, skills, dashboard, and multi-step agent behavior using a cloud provider key. Plawie no longer starts a hidden cloud/local daemon during setup.',
                         icon: Icons.route_rounded,
                         color: AppColors.statusGreen,
                       ),
@@ -413,7 +413,7 @@ class HelpScreen extends StatelessWidget {
       (
         Icons.key_rounded,
         'CLOUD',
-        'Gemini, Claude, OpenAI, xAI, Groq',
+        'Gemini, Claude, OpenAI, xAI, OpenRouter, Groq',
         'Bring provider API key, Gateway hot-reloads config.'
       ),
     ];
@@ -485,7 +485,7 @@ class HelpScreen extends StatelessWidget {
         'Refresh once after Node paired. Plawie auto-approves local dashboard scopes when Gateway is ready.'
       ),
       (
-        'Model asks for Ollama/11434',
+        'Model asks for a removed runtime',
         'That is a stale legacy route. Switch Chat to a cloud provider model or local-llm/ NDK model.'
       ),
       (
