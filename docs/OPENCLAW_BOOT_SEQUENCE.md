@@ -13,9 +13,9 @@ The stable sequence is:
 2. Write one hardened config before the first Gateway start.
 3. Start or attach to Gateway.
 4. Wait for HTTP readiness and authenticated dashboard token.
-5. Start/connect the local device node.
-6. Approve local pairing/scopes.
-7. Load skills and verify Gateway health.
+5. Wait for operator WebSocket, RPC health, default skills, and tool discovery.
+6. Release local device-node auto-connect.
+7. Approve local pairing/scopes.
 8. Enter the app with Gateway, Node, and dashboard ready.
 9. Start model features only after the Gateway baseline is stable.
 
@@ -48,7 +48,7 @@ Pre-start hardening writes:
 3. If Gateway is already healthy, attach without mutating config.
 4. If Gateway is booting, attach and wait for readiness without causing reload churn.
 5. If Gateway is stopped, start it after non-destructive hardening.
-6. Once ready, reconnect Node and refresh dashboard token.
+6. Once Gateway is interactively ready, reconnect Node and refresh dashboard token.
 
 ## Model Routing
 
@@ -76,12 +76,21 @@ Healthy startup should include:
 [GATEWAY] Process detected / starting
 [GATEWAY] Gateway token confirmed; waiting for HTTP readiness
 [GATEWAY] Health OK
+[GATEWAY] WebSocket handshake complete
+[GATEWAY] Health RPC: ok=...
+[GATEWAY] Active skills: ...
+[GATEWAY] Gateway RPC discovery complete; node auto-connect released.
 [NODE] Connecting to 127.0.0.1:18789
 [NODE] WebSocket connected, awaiting challenge
 [NODE] Declaring commands
 [NODE] Connect accepted
 [NODE] Paired and connected
 ```
+
+If Node logs appear before `Gateway RPC discovery complete`, the app is pairing
+too early. That can look faster, but it is not production-ready because the
+gateway may still be loading default skills or recovering its operator RPC
+surface.
 
 Expected local ports:
 

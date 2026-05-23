@@ -23,6 +23,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   svc_gateway.GatewayProvider? _gatewayProvider;
   GatewayState? _lastGatewayState;
   Timer? _watchdog;
+  DateTime? _lastGatewaySettlingLogAt;
 
   // Capabilities
   final _cameraCapability = CameraCapability();
@@ -34,6 +35,25 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _vibrationCapability = VibrationCapability();
 
   NodeState get state => _state;
+
+  bool get _localGatewayReadyForNode =>
+      _gatewayProvider?.state.isInteractiveReady == true;
+
+  bool _isLocalHost(String? host) {
+    final value = (host ?? '127.0.0.1').trim().toLowerCase();
+    return value.isEmpty || value == '127.0.0.1' || value == 'localhost';
+  }
+
+  void _logGatewaySettlingOnce() {
+    final now = DateTime.now();
+    final last = _lastGatewaySettlingLogAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 20)) {
+      return;
+    }
+    _lastGatewaySettlingLogAt = now;
+    _nodeService.log(
+        '[NODE] Local gateway still settling; pairing waits for RPC/skills readiness');
+  }
 
   NodeProvider() {
     WidgetsBinding.instance.addObserver(this);
@@ -98,6 +118,12 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await NativeBridge.startNodeService();
       }
     } catch (_) {}
+
+    if (_isLocalHost(_state.gatewayHost) && !_localGatewayReadyForNode) {
+      _logGatewaySettlingOnce();
+      _startWatchdog();
+      return;
+    }
 
     if (_state.isPaired &&
         _nodeService.isConnectionStale &&
@@ -251,10 +277,12 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final gatewayState = gatewayProvider.state;
     final wasRunning = _lastGatewayState?.isRunning ?? false;
     final isRunning = gatewayState.isRunning;
+    final wasInteractiveReady = _lastGatewayState?.isInteractiveReady ?? false;
+    final isInteractiveReady = gatewayState.isInteractiveReady;
     _lastGatewayState = gatewayState;
 
-    if (!wasRunning && isRunning) {
-      // Gateway just started OR was detected - force sync connection status.
+    if (!wasInteractiveReady && isInteractiveReady) {
+      // Gateway just became fully interactive - force sync connection status.
       // This ensures any "Connection failed" errors from when the gateway was down
       // are promptly cleared as the node completes its challenge.
       _checkAutoConnect();
@@ -270,6 +298,11 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final prefs = PreferencesService();
     await prefs.init();
     if (prefs.nodeEnabled) {
+      if (_isLocalHost(prefs.nodeGatewayHost) && !_localGatewayReadyForNode) {
+        _logGatewaySettlingOnce();
+        _startWatchdog();
+        return;
+      }
       _nodeService.log('[NODE] Gateway ready; auto-connect check running');
       unawaited(_requestNodePermissions());
       // Ensure foreground service is running before connecting
@@ -332,10 +365,14 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
               _state.status == NodeStatus.error) &&
           !_state.isConnecting &&
           _state.status != NodeStatus.pairing;
-      if (shouldReconnect && (_lastGatewayState?.isRunning ?? false)) {
+      final canUseGateway = !_isLocalHost(_state.gatewayHost) ||
+          (_lastGatewayState?.isInteractiveReady ?? false);
+      if (shouldReconnect && canUseGateway) {
         // Connection dropped and gateway is up — reconnect
         _nodeService.connect();
-      } else if (_state.isPaired && _nodeService.isConnectionStale) {
+      } else if (_state.isPaired &&
+          _nodeService.isConnectionStale &&
+          canUseGateway) {
         // Connection appears alive but no data received — force reconnect
         _nodeService.disconnect().then((_) => _nodeService.connect());
       }
@@ -360,7 +397,11 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
 
     await NativeBridge.startNodeService();
-    await _nodeService.connect();
+    if (!_isLocalHost(_state.gatewayHost) || _localGatewayReadyForNode) {
+      await _nodeService.connect();
+    } else {
+      _logGatewaySettlingOnce();
+    }
     _startWatchdog();
   }
 
@@ -390,6 +431,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> reconnect() async {
+    if (_isLocalHost(_state.gatewayHost) && !_localGatewayReadyForNode) {
+      _logGatewaySettlingOnce();
+      return;
+    }
     await _nodeService.disconnect();
     await _nodeService.connect();
   }

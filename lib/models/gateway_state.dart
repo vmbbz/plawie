@@ -15,10 +15,17 @@ class GatewayState {
   final List<Map<String, dynamic>>? activeSkills;
   final List<String>? capabilities;
   final bool isWebsocketConnected;
+
+  /// True only after HTTP, operator WebSocket, RPC health, skills, and tool
+  /// discovery have all settled enough for device-node pairing to start.
+  final bool isInteractiveReady;
+
   /// True when a background repair or "doctor --fix" is in progress.
   final bool isRepairing;
+
   /// Current progress (0.0 to 1.0) of the background repair.
   final double repairProgress;
+
   /// Current status message for the background repair.
   final String repairMessage;
   final bool isReady;
@@ -33,6 +40,7 @@ class GatewayState {
     this.activeSkills,
     this.capabilities,
     this.isWebsocketConnected = false,
+    this.isInteractiveReady = false,
     this.isRepairing = false,
     this.repairProgress = 0.0,
     this.repairMessage = '',
@@ -55,6 +63,7 @@ class GatewayState {
     List<String>? capabilities,
     bool clearCapabilities = false,
     bool? isWebsocketConnected,
+    bool? isInteractiveReady,
     bool? isRepairing,
     double? repairProgress,
     String? repairMessage,
@@ -65,11 +74,16 @@ class GatewayState {
       logs: logs ?? this.logs,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       startedAt: clearStartedAt ? null : (startedAt ?? this.startedAt),
-      dashboardUrl: clearDashboardUrl ? null : (dashboardUrl ?? this.dashboardUrl),
-      detailedHealth: clearDetailedHealth ? null : (detailedHealth ?? this.detailedHealth),
-      activeSkills: clearActiveSkills ? null : (activeSkills ?? this.activeSkills),
-      capabilities: clearCapabilities ? null : (capabilities ?? this.capabilities),
+      dashboardUrl:
+          clearDashboardUrl ? null : (dashboardUrl ?? this.dashboardUrl),
+      detailedHealth:
+          clearDetailedHealth ? null : (detailedHealth ?? this.detailedHealth),
+      activeSkills:
+          clearActiveSkills ? null : (activeSkills ?? this.activeSkills),
+      capabilities:
+          clearCapabilities ? null : (capabilities ?? this.capabilities),
       isWebsocketConnected: isWebsocketConnected ?? this.isWebsocketConnected,
+      isInteractiveReady: isInteractiveReady ?? this.isInteractiveReady,
       isRepairing: isRepairing ?? this.isRepairing,
       repairProgress: repairProgress ?? this.repairProgress,
       repairMessage: repairMessage ?? this.repairMessage,

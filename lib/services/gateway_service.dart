@@ -623,8 +623,10 @@ class GatewayService {
       }
 
       debugPrint('[GATEWAY] Process detected — attaching...');
+      _rpcDiscoveryDone = false;
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
+        isInteractiveReady: false,
         logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
       ));
 
@@ -679,6 +681,7 @@ class GatewayService {
     debugPrint('[GATEWAY] Starting gateway process...');
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
+      isInteractiveReady: false,
       clearError: true,
       logs: [..._state.logs, '[INFO] Starting gateway...'],
       dashboardUrl: savedUrl,
@@ -842,11 +845,9 @@ class GatewayService {
         if (_state.isWebsocketConnected) {
           await _checkHealth().timeout(const Duration(seconds: 20));
         }
-        final skillsReady = _state.activeSkills?.isNotEmpty ?? false;
-        if (_state.isWebsocketConnected &&
-            _state.detailedHealth != null &&
-            skillsReady) {
-          debugPrint('✅ Gateway operational: websocket, health, skills ready');
+        if (_state.isInteractiveReady) {
+          debugPrint(
+              '✅ Gateway operational: websocket, RPC, skills/tools ready');
           return;
         }
       } catch (e) {
@@ -858,6 +859,7 @@ class GatewayService {
     throw TimeoutException(
       'Gateway operational readiness timed out '
       '(ws=${_state.isWebsocketConnected}, '
+      'interactive=${_state.isInteractiveReady}, '
       'health=${_state.detailedHealth != null}, '
       'skills=${_state.activeSkills?.length ?? 0}, '
       'last=$lastOperationalError)',
@@ -890,15 +892,16 @@ class GatewayService {
           status: GatewayStatus.running,
           startedAt: _state.startedAt ?? DateTime.now(),
         ));
-        unawaited(_ensureNodeConnectedAfterGatewayReady(
-          reason: 'gateway-ready-log',
-        ));
       }
 
       // Detect restart signals to reset ready flag
       if (log.contains('signal SIGUSR1 received') ||
           log.contains('restarting')) {
-        _updateState(_state.copyWith(isReady: false));
+        _rpcDiscoveryDone = false;
+        _updateState(_state.copyWith(
+          isReady: false,
+          isInteractiveReady: false,
+        ));
       }
 
       String? dashboardUrl;
@@ -1756,6 +1759,7 @@ class GatewayService {
   void refreshRpcDiscovery() {
     _rpcDiscoveryDone = false;
     _updateState(_state.copyWith(
+      isInteractiveReady: false,
       logs: [
         ..._state.logs,
         '[INFO] RPC discovery refreshed — will re-query on next tick'
@@ -1792,6 +1796,7 @@ class GatewayService {
       _updateState(_state.copyWith(
         status: GatewayStatus.stopped,
         isWebsocketConnected: false,
+        isInteractiveReady: false,
         clearError: true,
         clearStartedAt: true,
         clearDashboardUrl: true,
@@ -1838,11 +1843,15 @@ class GatewayService {
         }
         if (!connected && !disconnected) {
           // Transitional state (connecting/handshaking) — not a real disconnect.
-          _updateState(_state.copyWith(isWebsocketConnected: false));
+          _updateState(_state.copyWith(
+            isWebsocketConnected: false,
+            isInteractiveReady: false,
+          ));
           return;
         }
         _updateState(_state.copyWith(
           isWebsocketConnected: connected,
+          isInteractiveReady: connected ? _rpcDiscoveryDone : false,
           logs: connected
               ? [
                   ..._state.logs,
@@ -1875,6 +1884,7 @@ class GatewayService {
     if (ok) {
       _updateState(_state.copyWith(
         isWebsocketConnected: true,
+        isInteractiveReady: _rpcDiscoveryDone,
         logs: [
           ..._state.logs,
           '[INFO] WebSocket handshake complete (session: ${_connection!.mainSessionKey ?? 'main'})'
@@ -2326,15 +2336,6 @@ class GatewayService {
               .catchError((_) => null));
         }
 
-        // Returning users with legacy ollama/* preferences are migrated during
-        // config hardening. Do not start optional local runtimes from the
-        // gateway health loop; keeping this path gateway-only is what prevents
-        // first-run setup and returning-user boot from being slowed by local
-        // inference experiments.
-        unawaited(_ensureNodeConnectedAfterGatewayReady(
-          reason: 'gateway-health',
-        ));
-
         if (_pairingResolveAttempted) {
           return;
         }
@@ -2350,28 +2351,31 @@ class GatewayService {
         // slow-booting gateway can't stall the health loop for 90s.
         if (_connection?.state == GatewayConnectionState.connected &&
             !_rpcDiscoveryDone) {
-          var healthRpcSucceeded = false;
-          var skillsDiscoverySatisfied = false;
+          final supported = _connection?.supportedMethods ?? const <String>[];
+          var healthRpcSucceeded = !supported.contains('health');
+          var skillsDiscoverySatisfied = !supported.contains('skills.status');
 
-          try {
-            final healthResult =
-                await invoke('health').timeout(const Duration(seconds: 8));
-            final healthData = healthResult.containsKey('payload')
-                ? healthResult['payload']
-                : healthResult;
-            if (healthData != null &&
-                (healthData['ok'] == true || healthData['health'] != null)) {
-              _updateState(_state.copyWith(
-                detailedHealth: healthData,
-                logs: [
-                  ..._state.logs,
-                  '[INFO] Health RPC: ok=${healthData['ok'] ?? healthData['health']}'
-                ],
-              ));
-              healthRpcSucceeded = true;
+          if (supported.contains('health')) {
+            try {
+              final healthResult =
+                  await invoke('health').timeout(const Duration(seconds: 8));
+              final healthData = healthResult.containsKey('payload')
+                  ? healthResult['payload']
+                  : healthResult;
+              if (healthData != null &&
+                  (healthData['ok'] == true || healthData['health'] != null)) {
+                _updateState(_state.copyWith(
+                  detailedHealth: healthData,
+                  logs: [
+                    ..._state.logs,
+                    '[INFO] Health RPC: ok=${healthData['ok'] ?? healthData['health']}'
+                  ],
+                ));
+                healthRpcSucceeded = true;
+              }
+            } catch (_) {
+              // Non-fatal — health RPC may not be supported on all gateways
             }
-          } catch (_) {
-            // Non-fatal — health RPC may not be supported on all gateways
           }
 
           // Skills discovery via skills.status (the correct RPC — skills.list does not exist).
@@ -2379,8 +2383,6 @@ class GatewayService {
           // connect-time via caps/commands/permissions in the handshake params, not via RPC.
           // Guard with supportedMethods so unknown-method log noise is avoided on older
           // gateway versions and the call auto-enables when the gateway declares it.
-          final supported = _connection?.supportedMethods ?? const <String>[];
-
           if (supported.contains('skills.status')) {
             try {
               final skillsResult = await invoke('skills.status')
@@ -2451,10 +2453,22 @@ class GatewayService {
           } catch (_) {}
 
           _rpcDiscoveryDone = healthRpcSucceeded && skillsDiscoverySatisfied;
-          if (!_rpcDiscoveryDone) {
+          _updateState(_state.copyWith(
+            isInteractiveReady: _rpcDiscoveryDone,
+          ));
+          if (_rpcDiscoveryDone) {
+            _addActivity(
+                '[INFO] Gateway RPC discovery complete; node auto-connect released.');
+          } else {
             _addActivity(
                 '[INFO] Gateway RPC discovery still warming; retrying on next health tick.');
           }
+        }
+
+        if (_rpcDiscoveryDone) {
+          unawaited(_ensureNodeConnectedAfterGatewayReady(
+            reason: 'gateway-rpc-ready',
+          ));
         }
       }
     } catch (e) {
@@ -2466,6 +2480,22 @@ class GatewayService {
         _httpWaitingSince ??= DateTime.now();
         final elapsed = DateTime.now().difference(_httpWaitingSince!).inSeconds;
         _addActivity('[INFO] Gateway starting up... (${elapsed}s)');
+
+        final processAlive = await NativeBridge.isGatewayRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+        if (!processAlive && elapsed >= 10) {
+          _rpcDiscoveryDone = false;
+          _addActivity(
+              '[HEALTH] Gateway startup process disappeared; restarting cleanly.');
+          _updateState(_state.copyWith(
+            status: GatewayStatus.stopped,
+            isWebsocketConnected: false,
+            isInteractiveReady: false,
+          ));
+          unawaited(attachOrStart(autoStart: true, forceStart: true));
+          return;
+        }
+
         if (elapsed > 60 && !_isAutoHealingInProgress) {
           _triggerPassiveAutoHeal();
         }
@@ -2482,6 +2512,8 @@ class GatewayService {
       if (!isRunning && _state.status != GatewayStatus.stopped) {
         _updateState(_state.copyWith(
           status: GatewayStatus.stopped,
+          isWebsocketConnected: false,
+          isInteractiveReady: false,
           logs: [..._state.logs, '[WARN] Gateway process not running'],
         ));
 
@@ -2528,6 +2560,11 @@ class GatewayService {
     required String reason,
   }) async {
     if (_nodeAutoConnectInFlight) return;
+    if (!_rpcDiscoveryDone ||
+        _connection?.state != GatewayConnectionState.connected ||
+        !_state.isInteractiveReady) {
+      return;
+    }
     final now = DateTime.now();
     final lastAttempt = _lastNodeAutoConnectAttemptAt;
     if (lastAttempt != null &&
@@ -3598,8 +3635,13 @@ class GatewayService {
   /// Disconnect the persistent WS connection so the next sendMessage() opens a
   /// fresh session — picking up any gateway config change (e.g. local-llm reload).
   void disconnectWebSocket() {
+    _rpcDiscoveryDone = false;
     _connection?.dispose();
     _connection = null;
+    _updateState(_state.copyWith(
+      isWebsocketConnected: false,
+      isInteractiveReady: false,
+    ));
   }
 
   /// Clear the cached auth token so the next request re-probes for a fresh one.
