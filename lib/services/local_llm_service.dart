@@ -1,13 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:fllama/fllama.dart';
+import '../models/node_frame.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
+import 'capabilities/camera_capability.dart';
+import 'capabilities/canvas_capability.dart';
+import 'capabilities/capability_handler.dart';
+import 'capabilities/flash_capability.dart';
+import 'capabilities/location_capability.dart';
+import 'capabilities/screen_capability.dart';
+import 'capabilities/sensor_capability.dart';
+import 'capabilities/vibration_capability.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -66,7 +73,7 @@ const _modelCatalog = [
     id: 'qwen2.5-0.5b-instruct-q4_k_m',
     name: 'Qwen 2.5 0.5B Instruct (Q4_K_M)',
     description:
-        'Ultra-lightweight. Very fast but limited reasoning. Good for quick commands on 6 GB devices. Supports tool calls for gateway routing.',
+        'Ultra-lightweight. Very fast but limited reasoning. Good for quick offline commands on 6 GB devices.',
     huggingFaceUrl:
         'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 400,
@@ -80,7 +87,7 @@ const _modelCatalog = [
     id: 'qwen2.5-1.5b-instruct-q4_k_m',
     name: 'Qwen 2.5 1.5B Instruct (Q4_K_M)',
     description:
-        'Recommended default. Solid tool-use support, ~14–18 tok/s on Snapdragon 8 Gen 2. Native OpenAI tool-call format.',
+        'Recommended offline default. Better reasoning while staying realistic for 8-12 GB Android phones.',
     huggingFaceUrl:
         'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 1000,
@@ -94,7 +101,7 @@ const _modelCatalog = [
     id: 'qwen2.5-3b-instruct-q4_k_m',
     name: 'Qwen 2.5 3B Instruct (Q4_K_M)',
     description:
-        'Best tool-use quality. Requires 12 GB+ RAM. ~10–15 tok/s on flagship hardware.',
+        'Stronger offline reasoning. Requires 12 GB+ RAM and should be avoided during heavy Gateway work.',
     huggingFaceUrl:
         'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf',
     fileSizeMb: 1900,
@@ -108,7 +115,7 @@ const _modelCatalog = [
     id: 'smollm2-1.7b-instruct-q4_k_m',
     name: 'SmolLM2 1.7B Instruct (Q4_K_M)',
     description:
-        'HuggingFace-trained speed-focused model. Good for simple tasks, fast responses. Supports tool calls for gateway routing.',
+        'HuggingFace-trained speed-focused model. Good for simple offline tasks and fast responses.',
     huggingFaceUrl:
         'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf',
     fileSizeMb: 1100,
@@ -223,6 +230,24 @@ class LocalLlmState {
   bool get isDownloading => status == LocalLlmStatus.downloading;
 }
 
+class _TrimmedLocalHistory {
+  final List<Map<String, dynamic>> recent;
+  final String? summary;
+
+  const _TrimmedLocalHistory({
+    required this.recent,
+    this.summary,
+  });
+}
+
+class _LocalToolInvocation {
+  final String name;
+  final Map<String, dynamic> args;
+  final String label;
+
+  const _LocalToolInvocation(this.name, this.args, this.label);
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -248,6 +273,13 @@ class LocalLlmService {
   int? _activeRequestId;
   bool _isInferring = false;
   StreamController<String>? _activeChatController;
+  final CameraCapability _cameraCapability = CameraCapability();
+  final CanvasCapability _canvasCapability = CanvasCapability();
+  final FlashCapability _flashCapability = FlashCapability();
+  final LocationCapability _locationCapability = LocationCapability();
+  final ScreenCapability _screenCapability = ScreenCapability();
+  final SensorCapability _sensorCapability = SensorCapability();
+  final VibrationCapability _vibrationCapability = VibrationCapability();
 
   Stream<LocalLlmState> get stateStream => _stateController.stream;
   LocalLlmState get state => _state;
@@ -443,25 +475,68 @@ class LocalLlmService {
   /// [history] is a list of {role, content} maps (OpenAI format).
   Stream<String> chat(List<Map<String, dynamic>> history, String userMessage) {
     final controller = StreamController<String>();
+    debugPrint(
+        '[NDK] chat requested status=${_state.status.name} model=${_state.activeModelId ?? 'none'} history=${history.length} chars=${userMessage.length}');
     if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
       controller
           .add('[Error] Local LLM is not ready. Status: ${_state.status}');
+      debugPrint(
+          '[NDK] chat rejected: local LLM not ready status=${_state.status.name}');
       controller.close();
       return controller.stream;
     }
+
+    final directAnswer = _directLocalAnswer(userMessage);
+    if (directAnswer != null) {
+      debugPrint('[NDK] direct local answer served without inference');
+      Future.microtask(() {
+        if (!controller.isClosed) controller.add(directAnswer);
+        if (!controller.isClosed) controller.close();
+      });
+      return controller.stream;
+    }
+
+    final directActions = _directLocalToolActions(userMessage);
+    if (directActions.isNotEmpty) {
+      debugPrint(
+          '[NDK] direct local tool action(s): ${directActions.map((a) => a.name).join(', ')}');
+      Future(() async {
+        final responses = <String>[];
+        for (final action in directActions) {
+          final result =
+              await _dispatchTool(action.name, jsonEncode(action.args));
+          responses.add(_formatDirectToolResult(action, result));
+        }
+        if (!controller.isClosed) {
+          controller.add(responses.join('\n\n'));
+        }
+        if (!controller.isClosed) controller.close();
+      });
+      return controller.stream;
+    }
+
     if (_isInferring && _activeRequestId != null) {
       fllamaCancelInference(_activeRequestId!);
     }
     _activeChatController?.close();
     _activeChatController = controller;
 
-    final trimmed = _trimHistory(history, userMessage);
+    final tools = _toolsForMessage(userMessage);
+    final trimmed = _trimHistory(
+      history,
+      userMessage,
+      toolCount: tools.length,
+    );
+    final toolNames = tools.map((t) => t.name).join(', ');
     final messages = [
       Message(
           Role.system,
           'You are Plawie, a helpful AI assistant running locally on this Android device. '
-          'Be concise and direct.'),
-      for (final m in trimmed)
+          'Be concise and direct. '
+          '${tools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Use a tool only if it directly helps the user request.'}'),
+      if (trimmed.summary != null && trimmed.summary!.isNotEmpty)
+        Message(Role.system, trimmed.summary!),
+      for (final m in trimmed.recent)
         Message(
           (m['role'] as String?) == 'assistant'
               ? Role.assistant
@@ -472,30 +547,112 @@ class LocalLlmService {
         ),
       Message(Role.user, userMessage),
     ];
-    _fetchAgentTools()
-        .then((tools) => _runChatTurn(messages, controller, tools: tools));
+    debugPrint(
+        '[NDK] tool gate selected=${tools.length}/${_localTools.length}${tools.isEmpty ? '' : ' names=$toolNames'}');
+    _runChatTurn(messages, controller, tools: tools);
     return controller.stream;
   }
 
   /// Trims history to fit within the active context window.
   /// Keeps the most recent messages — older ones are dropped first.
-  List<Map<String, dynamic>> _trimHistory(
-      List<Map<String, dynamic>> history, String newMessage) {
-    // 3 chars/token is more conservative than the naive 4 — English BPE tokenizers average
-    // ~3.5 chars/token on prose, less for code/numbers/punctuation-heavy text.
+  _TrimmedLocalHistory _trimHistory(
+    List<Map<String, dynamic>> history,
+    String newMessage, {
+    required int toolCount,
+  }) {
+    final modelId = _state.activeModelId ?? '';
+    final tinyModel = modelId.contains('0.5b');
+    final smallModel = tinyModel || modelId.contains('1.5b');
     const avgCharsPerToken = 3;
-    // Reserve 1024 tokens for the response + 600 for chat-template overhead.
-    // Qwen2.5 / LLaVA templates add <|im_start|>, role, <|im_end|> per message —
-    // with 10+ turns that's ~600 tokens of non-content overhead not counted in history chars.
-    final budget = (_activeContextSize - 1024 - 600) * avgCharsPerToken;
+    final responseReserve = _responseTokenLimit;
+    // Tool schemas and chat templates are real prompt tokens. Keep a larger
+    // reserve for tiny models so 5+ turns degrade gracefully instead of
+    // surfacing a context-overflow error to the user.
+    final hasTools = toolCount > 0;
+    final toolAndTemplateReserve = hasTools
+        ? (tinyModel ? 900 : 800) + (toolCount * (tinyModel ? 90 : 70))
+        : (tinyModel ? 520 : 650);
+    final rawBudget =
+        (_activeContextSize - responseReserve - toolAndTemplateReserve) *
+            avgCharsPerToken;
+    final budget = rawBudget.clamp(
+      tinyModel ? 900 : 1600,
+      tinyModel
+          ? (hasTools ? 1800 : 2600)
+          : (smallModel ? (hasTools ? 3600 : 5000) : 7200),
+    );
+
+    final maxRecentMessages =
+        tinyModel ? (hasTools ? 4 : 6) : (smallModel ? 8 : 12);
     var chars = newMessage.length;
     final result = <Map<String, dynamic>>[];
     for (final msg in history.reversed) {
-      chars += (msg['content'] as String? ?? '').length;
+      if (result.length >= maxRecentMessages) break;
+      final role = (msg['role'] as String?) ?? 'user';
+      var content = (msg['content'] as String?) ?? '';
+      if (content.trim().isEmpty) continue;
+      final perMessageCap = role == 'assistant'
+          ? (tinyModel ? 420 : 900)
+          : (tinyModel ? 320 : 700);
+      content = _truncateForPrompt(content, perMessageCap);
+      chars += content.length;
       if (chars > budget) break;
-      result.insert(0, msg);
+      result.insert(0, {'role': role, 'content': content});
     }
-    return result;
+
+    final keptCount = result.length;
+    final olderCount = history.length - keptCount;
+    String? summary;
+    if (olderCount > 0) {
+      final older = history.take(olderCount).toList();
+      summary = _summarizeDroppedHistory(older, tiny: tinyModel);
+    }
+
+    debugPrint(
+        '[NDK] context packed model=$modelId kept=$keptCount dropped=${olderCount.clamp(0, history.length)} budgetChars=$budget tools=$toolCount newChars=${newMessage.length}');
+    return _TrimmedLocalHistory(recent: result, summary: summary);
+  }
+
+  int get _responseTokenLimit {
+    final modelId = _state.activeModelId ?? '';
+    if (modelId.contains('0.5b')) return 384;
+    if (modelId.contains('1.5b') || modelId.contains('1.7b')) return 512;
+    if (modelId.contains('3b')) return 640;
+    return 768;
+  }
+
+  String _truncateForPrompt(String input, int maxChars) {
+    final clean = input
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'\x00.*?\x00'), '')
+        .trim();
+    if (clean.length <= maxChars) return clean;
+    return '${clean.substring(0, maxChars - 24).trim()} ... [truncated]';
+  }
+
+  String? _summarizeDroppedHistory(List<Map<String, dynamic>> older,
+      {required bool tiny}) {
+    if (older.isEmpty) return null;
+    final maxItems = tiny ? 4 : 6;
+    final maxChars = tiny ? 520 : 900;
+    final items = older
+        .where((m) => ((m['content'] as String?) ?? '').trim().isNotEmpty)
+        .toList();
+    if (items.isEmpty) return null;
+    final selected = items.length > maxItems
+        ? items.sublist(items.length - maxItems)
+        : items;
+    final lines = <String>[];
+    for (final msg in selected) {
+      final role = ((msg['role'] as String?) ?? 'user') == 'assistant'
+          ? 'Assistant'
+          : 'User';
+      lines.add(
+          '$role: ${_truncateForPrompt((msg['content'] as String?) ?? '', 140)}');
+    }
+    final summary = lines.join(' ');
+    return 'Earlier conversation, compressed for mobile context: '
+        '${_truncateForPrompt(summary, maxChars)}';
   }
 
   // --------------------------------------------------------------------------
@@ -508,81 +665,496 @@ class LocalLlmService {
       jsonSchema: '{"type":"object","properties":{},"required":[]}',
       description: 'Returns the current date and time on the device.',
     ),
+    Tool(
+      name: 'device_battery',
+      jsonSchema: '{"type":"object","properties":{},"required":[]}',
+      description: 'Returns Android battery level and charging state.',
+    ),
+    Tool(
+      name: 'camera_snap',
+      jsonSchema:
+          '{"type":"object","properties":{"facing":{"type":"string","enum":["back","front"]}},"required":[]}',
+      description: 'Takes a photo with the Android camera.',
+    ),
+    Tool(
+      name: 'camera_list',
+      jsonSchema: '{"type":"object","properties":{},"required":[]}',
+      description: 'Lists available Android cameras.',
+    ),
+    Tool(
+      name: 'location_get',
+      jsonSchema: '{"type":"object","properties":{},"required":[]}',
+      description: 'Gets the current GPS location if permission is granted.',
+    ),
+    Tool(
+      name: 'flash_set',
+      jsonSchema:
+          '{"type":"object","properties":{"action":{"type":"string","enum":["on","off","toggle","status"]}},"required":["action"]}',
+      description: 'Controls or checks the Android flashlight.',
+    ),
+    Tool(
+      name: 'haptic_vibrate',
+      jsonSchema:
+          '{"type":"object","properties":{"durationMs":{"type":"integer","minimum":50,"maximum":2000}},"required":[]}',
+      description: 'Vibrates the phone briefly.',
+    ),
+    Tool(
+      name: 'sensor_list',
+      jsonSchema: '{"type":"object","properties":{},"required":[]}',
+      description: 'Lists available sensor names.',
+    ),
+    Tool(
+      name: 'sensor_read',
+      jsonSchema:
+          '{"type":"object","properties":{"sensor":{"type":"string","enum":["accelerometer","gyroscope","magnetometer","barometer"]}},"required":[]}',
+      description: 'Reads a phone sensor.',
+    ),
+    Tool(
+      name: 'screen_record',
+      jsonSchema:
+          '{"type":"object","properties":{"durationMs":{"type":"integer","minimum":1000,"maximum":10000}},"required":[]}',
+      description: 'Records the screen after Android user consent.',
+    ),
+    Tool(
+      name: 'canvas_navigate',
+      jsonSchema:
+          '{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}',
+      description: 'Opens a URL in the in-app canvas panel.',
+    ),
+    Tool(
+      name: 'canvas_snapshot',
+      jsonSchema: '{"type":"object","properties":{},"required":[]}',
+      description: 'Captures a snapshot of the in-app canvas panel.',
+    ),
+    Tool(
+      name: 'avatar_gesture',
+      jsonSchema:
+          '{"type":"object","properties":{"gesture":{"type":"string"}},"required":["gesture"]}',
+      description: 'Makes the Plawie avatar play a gesture.',
+    ),
+    Tool(
+      name: 'avatar_emotion',
+      jsonSchema:
+          '{"type":"object","properties":{"emotion":{"type":"string"}},"required":["emotion"]}',
+      description: 'Sets the Plawie avatar facial emotion.',
+    ),
   ];
 
-  // AgentSkillServer route map — device-native skills only (no gateway needed)
-  static const _skillRoutes = {
-    'avatar-control': '/api/avatar/control',
-    'tts-voice': '/api/tts/control',
-    'device-node': '/api/device/control',
-  };
+  /// Fast deterministic answers for questions the app can answer better than a
+  /// tiny model. This avoids spending local context on bookkeeping questions.
+  String? _directLocalAnswer(String userMessage) {
+    final lower = userMessage.toLowerCase();
+    final asksTools = (lower.contains('tool') ||
+            lower.contains('capabilit') ||
+            lower.contains('what can you do')) &&
+        (lower.contains('what') ||
+            lower.contains('which') ||
+            lower.contains('list') ||
+            lower.contains('show') ||
+            lower.contains('can you'));
+    if (!asksTools) return null;
 
-  // Tool cache — refreshed at most once per 30 s to avoid HTTP on every message
-  List<Tool>? _cachedTools;
-  DateTime? _toolCacheTime;
-
-  /// Fetches the AgentSkillServer tool catalog and merges with built-in tools.
-  /// Falls back to [_localTools] only if the server is unreachable.
-  Future<List<Tool>> _fetchAgentTools() async {
-    if (_cachedTools != null &&
-        _toolCacheTime != null &&
-        DateTime.now().difference(_toolCacheTime!).inSeconds < 30) {
-      return _cachedTools!;
-    }
-    final tools = List<Tool>.from(_localTools);
-    try {
-      final response = await http
-          .get(Uri.parse('http://127.0.0.1:8765/api/tools'))
-          .timeout(const Duration(seconds: 2));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final catalog = data['tools'] as List<dynamic>? ?? [];
-        for (final t in catalog) {
-          final schema = t['input_schema'] as Map<String, dynamic>? ??
-              {'type': 'object', 'properties': {}};
-          tools.add(Tool(
-            name: t['name'] as String,
-            description: t['description'] as String? ?? '',
-            jsonSchema: jsonEncode(schema),
-          ));
-        }
-      }
-    } catch (_) {
-      // AgentSkillServer not running — local tools only, no crash
-    }
-    _cachedTools = tools;
-    _toolCacheTime = DateTime.now();
-    return tools;
+    return 'I can use these on-device native tools in NDK Direct mode:\n\n'
+        '- get_current_datetime: current local date/time\n'
+        '- device_battery: battery level and charging state\n'
+        '- camera_snap and camera_list: camera capture and camera discovery\n'
+        '- location_get: GPS location when permission is granted\n'
+        '- flash_set: torch on/off/toggle/status\n'
+        '- haptic_vibrate: phone vibration\n'
+        '- sensor_list and sensor_read: accelerometer, gyroscope, magnetometer, barometer\n'
+        '- screen_record: short screen recording after Android consent\n'
+        '- canvas_navigate and canvas_snapshot: in-app web canvas actions\n'
+        '- avatar_gesture and avatar_emotion: Plawie avatar expression controls\n\n'
+        'For full OpenClaw cloud/plugin skills, use a gateway-backed provider. '
+        'For private offline device actions, stay on NDK Direct.';
   }
 
-  /// Dispatches a tool call — built-in tools are handled inline; device-native
-  /// skills are forwarded to AgentSkillServer via HTTP POST. Partner skills
-  /// (Twilio, MoonPay, etc.) that require the gateway return a clear message.
+  List<_LocalToolInvocation> _directLocalToolActions(String userMessage) {
+    final lower = userMessage.toLowerCase();
+    final actions = <_LocalToolInvocation>[];
+    bool hasAny(Iterable<String> words) => words.any(lower.contains);
+    void add(String name, Map<String, dynamic> args, String label) {
+      if (actions.any((a) => a.name == name)) return;
+      actions.add(_LocalToolInvocation(name, args, label));
+    }
+
+    final asksToDoSomething = hasAny([
+      'take',
+      'snap',
+      'capture',
+      'get',
+      'show',
+      'turn',
+      'toggle',
+      'switch',
+      'vibrate',
+      'buzz',
+      'open',
+      'record',
+      'read',
+      'list',
+      'what',
+      'where',
+    ]);
+    if (!asksToDoSomething) return const <_LocalToolInvocation>[];
+
+    if (hasAny(['time', 'date', 'today', 'now'])) {
+      add('get_current_datetime', const {}, 'current date/time');
+    }
+    if (hasAny(['battery', 'charging', 'charge level'])) {
+      add('device_battery', const {}, 'battery status');
+    }
+    if (hasAny(['camera list', 'list cameras', 'available cameras'])) {
+      add('camera_list', const {}, 'camera list');
+    } else if (hasAny(['camera', 'photo', 'picture', 'selfie', 'snapshot'])) {
+      add(
+          'camera_snap',
+          {
+            if (hasAny(['front', 'selfie'])) 'facing': 'front',
+            if (hasAny(['back', 'rear'])) 'facing': 'back',
+          },
+          'camera snapshot');
+    }
+    if (hasAny(['location', 'gps', 'where am i', 'coordinates'])) {
+      add('location_get', const {}, 'current location');
+    }
+    if (hasAny(['flashlight', 'torch', 'flash light'])) {
+      final action = hasAny(['off', 'disable', 'turn off'])
+          ? 'off'
+          : hasAny(['status', 'state'])
+              ? 'status'
+              : hasAny(['toggle'])
+                  ? 'toggle'
+                  : 'on';
+      add('flash_set', {'action': action}, 'flashlight $action');
+    }
+    if (hasAny(['vibrate', 'haptic', 'buzz'])) {
+      add('haptic_vibrate', const {'durationMs': 300}, 'haptic vibration');
+    }
+    if (hasAny([
+      'sensor',
+      'accelerometer',
+      'gyroscope',
+      'magnetometer',
+      'barometer'
+    ])) {
+      if (hasAny(['list', 'available sensors'])) {
+        add('sensor_list', const {}, 'sensor list');
+      } else {
+        final sensor = hasAny(['gyroscope'])
+            ? 'gyroscope'
+            : hasAny(['magnetometer'])
+                ? 'magnetometer'
+                : hasAny(['barometer'])
+                    ? 'barometer'
+                    : 'accelerometer';
+        add('sensor_read', {'sensor': sensor}, '$sensor reading');
+      }
+    }
+    if (hasAny(['screen record', 'record screen', 'screen recording'])) {
+      add('screen_record', const {'durationMs': 5000}, 'screen recording');
+    }
+    if (hasAny(['avatar', 'gesture', 'wave', 'nod', 'bow'])) {
+      final gesture = hasAny(['bow'])
+          ? 'bow'
+          : hasAny(['nod'])
+              ? 'nod'
+              : 'wave';
+      add('avatar_gesture', {'gesture': gesture}, 'avatar gesture');
+    }
+    if (hasAny(['emotion', 'smile', 'happy', 'sad', 'angry', 'surprised'])) {
+      final emotion = hasAny(['sad'])
+          ? 'sad'
+          : hasAny(['angry'])
+              ? 'angry'
+              : hasAny(['surprised'])
+                  ? 'surprised'
+                  : 'happy';
+      add('avatar_emotion', {'emotion': emotion}, 'avatar emotion');
+    }
+
+    final urlMatch = RegExp(r'https?://\S+').firstMatch(userMessage);
+    if (urlMatch != null &&
+        hasAny(['open', 'navigate', 'website', 'url', 'canvas'])) {
+      add('canvas_navigate', {'url': urlMatch.group(0)!}, 'canvas navigation');
+    }
+
+    return actions;
+  }
+
+  String _formatDirectToolResult(
+      _LocalToolInvocation action, String resultJson) {
+    try {
+      final decoded = jsonDecode(resultJson);
+      if (decoded is! Map) {
+        return 'Done: ${action.label}.';
+      }
+      final data = Map<String, dynamic>.from(decoded);
+      final ok = data['ok'] == true || data['success'] == true;
+      final error = data['error'];
+      if (!ok && error != null) {
+        final message = error is Map
+            ? (error['message'] ?? error['code'] ?? error).toString()
+            : error.toString();
+        return 'I tried ${action.label}, but it failed: $message';
+      }
+
+      final result = data['result'] is Map
+          ? Map<String, dynamic>.from(data['result'] as Map)
+          : data;
+      switch (action.name) {
+        case 'get_current_datetime':
+          return 'Current device time: ${data['datetime']}.';
+        case 'device_battery':
+          return 'Battery: ${data['level'] ?? result['level'] ?? 'unknown'}% '
+              '(${(data['isCharging'] ?? result['isCharging']) == true ? 'charging' : 'not charging'}).';
+        case 'camera_snap':
+          return 'Captured a photo${result['width'] != null ? ' (${result['width']}x${result['height']})' : ''}.';
+        case 'camera_list':
+          return 'Available cameras: ${jsonEncode(result['cameras'] ?? const [])}.';
+        case 'location_get':
+          return 'Location: lat=${result['lat']}, lng=${result['lng']}, accuracy=${result['accuracy']}m.';
+        case 'flash_set':
+          return 'Flashlight is ${result['on'] == true ? 'on' : 'off'}.';
+        case 'haptic_vibrate':
+          return 'Vibrated the phone.';
+        case 'sensor_list':
+          return 'Available sensors: ${(result['sensors'] as List?)?.join(', ') ?? 'unknown'}.';
+        case 'sensor_read':
+          return 'Sensor reading: ${_compactToolJson(result)}.';
+        case 'screen_record':
+          return 'Screen recording captured.';
+        case 'canvas_navigate':
+          return 'Opened ${result['url'] ?? action.args['url']} in the canvas.';
+        case 'avatar_gesture':
+          return 'Played avatar gesture: ${action.args['gesture']}.';
+        case 'avatar_emotion':
+          return 'Set avatar emotion: ${action.args['emotion']}.';
+        default:
+          return 'Done: ${action.label}.';
+      }
+    } catch (_) {
+      return 'Done: ${action.label}.';
+    }
+  }
+
+  String _compactToolJson(Map<String, dynamic> data) {
+    final copy = Map<String, dynamic>.from(data);
+    for (final key in ['base64', 'imageBase64', 'bytes']) {
+      if (copy[key] is String) {
+        copy[key] = '[${(copy[key] as String).length} chars]';
+      }
+    }
+    return jsonEncode(copy);
+  }
+
+  /// Selects only the tool schemas that the current message plausibly needs.
+  ///
+  /// Passing every tool on every turn burns context and confuses small models.
+  /// Adaptive gating keeps normal chat light while still enabling tools for
+  /// explicit device requests.
+  List<Tool> _toolsForMessage(String userMessage) {
+    final lower = userMessage.toLowerCase();
+    final selected = <String>{};
+
+    bool hasAny(Iterable<String> words) => words.any(lower.contains);
+
+    if (hasAny(['time', 'date', 'today', 'now'])) {
+      selected.add('get_current_datetime');
+    }
+    if (hasAny(['battery', 'charging', 'charge level'])) {
+      selected.add('device_battery');
+    }
+    if (hasAny(['camera', 'photo', 'picture', 'selfie', 'snapshot'])) {
+      selected.addAll(['camera_snap', 'camera_list']);
+    }
+    if (hasAny(['location', 'gps', 'where am i', 'coordinates'])) {
+      selected.add('location_get');
+    }
+    if (hasAny(['flashlight', 'torch', 'flash light'])) {
+      selected.add('flash_set');
+    }
+    if (hasAny(['vibrate', 'haptic', 'buzz'])) {
+      selected.add('haptic_vibrate');
+    }
+    if (hasAny([
+      'sensor',
+      'accelerometer',
+      'gyroscope',
+      'magnetometer',
+      'barometer'
+    ])) {
+      selected.addAll(['sensor_list', 'sensor_read']);
+    }
+    if (hasAny(['screen record', 'record screen', 'screen recording'])) {
+      selected.add('screen_record');
+    }
+    if (hasAny(['open url', 'open website', 'web canvas', 'navigate to'])) {
+      selected.addAll(['canvas_navigate', 'canvas_snapshot']);
+    }
+    if (hasAny(['avatar', 'gesture', 'wave', 'emotion', 'smile', 'face'])) {
+      selected.addAll(['avatar_gesture', 'avatar_emotion']);
+    }
+    if (selected.isEmpty &&
+        hasAny(['use a tool', 'call a tool', 'native tool'])) {
+      selected.addAll([
+        'get_current_datetime',
+        'device_battery',
+        'location_get',
+        'flash_set',
+      ]);
+    }
+
+    if (selected.isEmpty) return const <Tool>[];
+    return _localTools.where((tool) => selected.contains(tool.name)).toList();
+  }
+
+  /// Dispatches a tool call through native app capabilities only.
+  /// Gateway/partner plugins intentionally stay out of NDK mode so local chat
+  /// cannot wedge the OpenClaw gateway while the phone is under inference load.
   Future<String> _dispatchTool(String name, String argumentsJson) async {
+    Map<String, dynamic> args;
+    try {
+      final decoded = argumentsJson.trim().isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(argumentsJson);
+      args = decoded is Map ? Map<String, dynamic>.from(decoded) : {};
+    } catch (e) {
+      return jsonEncode({'ok': false, 'error': 'Invalid tool JSON: $e'});
+    }
+    debugPrint('[NDK] dispatch tool name=$name args=${jsonEncode(args)}');
+
     switch (name) {
       case 'get_current_datetime':
         return jsonEncode({'datetime': DateTime.now().toIso8601String()});
+      case 'device_battery':
+        return _postAgentSkill(
+            '/api/device/control', {'action': 'get_battery'});
+      case 'camera_snap':
+        return _dispatchCapability(
+          _cameraCapability,
+          'camera.snap',
+          args,
+          withPermission: true,
+        );
+      case 'camera_list':
+        return _dispatchCapability(_cameraCapability, 'camera.list', args);
+      case 'location_get':
+        return _dispatchCapability(
+          _locationCapability,
+          'location.get',
+          args,
+          withPermission: true,
+        );
+      case 'flash_set':
+        final action = (args['action'] as String?) ?? 'toggle';
+        final command = switch (action) {
+          'on' => 'flash.on',
+          'off' => 'flash.off',
+          'status' => 'flash.status',
+          _ => 'flash.toggle',
+        };
+        return _dispatchCapability(
+          _flashCapability,
+          command,
+          args,
+          withPermission: true,
+        );
+      case 'haptic_vibrate':
+        return _dispatchCapability(
+          _vibrationCapability,
+          'haptic.vibrate',
+          args,
+        );
+      case 'sensor_list':
+        return _dispatchCapability(_sensorCapability, 'sensor.list', args);
+      case 'sensor_read':
+        return _dispatchCapability(
+          _sensorCapability,
+          'sensor.read',
+          args,
+          withPermission: true,
+        );
+      case 'screen_record':
+        return _dispatchCapability(_screenCapability, 'screen.record', args);
+      case 'canvas_navigate':
+        return _dispatchCapability(_canvasCapability, 'canvas.navigate', args);
+      case 'canvas_snapshot':
+        return _dispatchCapability(_canvasCapability, 'canvas.snapshot', args);
+      case 'avatar_gesture':
+        return _postAgentSkill('/api/avatar/control', {
+          'action': 'play_gesture',
+          'gesture': args['gesture'] ?? args['name'] ?? 'wave',
+        });
+      case 'avatar_emotion':
+        return _postAgentSkill('/api/avatar/control', {
+          'action': 'set_emotion',
+          'emotion': args['emotion'] ?? args['name'] ?? 'happy',
+        });
+      default:
+        return jsonEncode({
+          'ok': false,
+          'error':
+              'Unknown local tool "$name". Available local tools are compact native tools only.',
+        });
     }
-    final route = _skillRoutes[name];
-    if (route == null) {
+  }
+
+  Future<String> _dispatchCapability(
+    CapabilityHandler handler,
+    String command,
+    Map<String, dynamic> args, {
+    bool withPermission = false,
+  }) async {
+    try {
+      final frame = withPermission
+          ? await handler.handleWithPermission(command, args)
+          : await handler.handle(command, args);
+      return _frameToToolJson(command, frame);
+    } catch (e) {
+      return jsonEncode({'ok': false, 'tool': command, 'error': '$e'});
+    }
+  }
+
+  Future<String> _postAgentSkill(
+      String route, Map<String, dynamic> body) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final request =
+          await client.postUrl(Uri.parse('http://127.0.0.1:8765$route'));
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+      final response =
+          await request.close().timeout(const Duration(seconds: 8));
+      final payload = await utf8.decodeStream(response);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return payload;
+      }
       return jsonEncode({
-        'error': 'Skill "$name" requires the OpenClaw gateway. '
-            'Switch to an Ollama or cloud model for full skill access.',
+        'ok': false,
+        'status': response.statusCode,
+        'error': payload,
+      });
+    } catch (e) {
+      return jsonEncode({'ok': false, 'error': 'AgentSkillServer failed: $e'});
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  String _frameToToolJson(String command, NodeFrame frame) {
+    if (frame.isError) {
+      return jsonEncode({
+        'ok': false,
+        'tool': command,
+        'error': frame.error,
       });
     }
-    try {
-      final body = jsonDecode(argumentsJson) as Map<String, dynamic>;
-      final res = await http
-          .post(
-            Uri.parse('http://127.0.0.1:8765$route'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 15));
-      return res.body;
-    } catch (e) {
-      return jsonEncode({'error': 'Tool execution failed: $e'});
-    }
+    return jsonEncode({
+      'ok': true,
+      'tool': command,
+      'result': frame.payload ?? <String, dynamic>{},
+    });
   }
 
   /// Runs one inference turn with local tools.  Streams text deltas to
@@ -593,6 +1165,11 @@ class LocalLlmService {
       {int depth = 0, List<Tool>? tools}) async {
     if (depth > 3 || controller.isClosed) return;
     _isInferring = true;
+    final startedAt = Stopwatch()..start();
+    final effectiveTools = tools ?? _localTools;
+    final toolCount = effectiveTools.length;
+    debugPrint(
+        '[NDK] fllama turn start depth=$depth model=${_state.activeModelId ?? 'unknown'} messages=${messages.length} tools=$toolCount threads=${_state.threads} ctx=$_activeContextSize');
 
     // Per-turn tool call accumulator (index → {name, arguments, id}).
     final accToolCalls = <int, Map<String, String>>{};
@@ -600,94 +1177,112 @@ class LocalLlmService {
     String lastResponse = '';
     final completer = Completer<void>();
 
-    await fllamaInference(
-      _buildInferenceRequest(OpenAiRequest(
-        maxTokens: 1024,
-        messages: messages,
-        modelPath: _activeModelPath!,
-        mmprojPath: _activeMmprojPath,
-        numGpuLayers: 99,
-        contextSize: _activeContextSize,
-        temperature: 0.7,
-        tools: tools ?? _localTools,
-        toolChoice: ToolChoice.auto,
-      )),
-      (response, jsonString, done) {
-        // Stream text deltas as they arrive.
-        final delta = response.substring(lastResponse.length);
-        lastResponse = response;
+    try {
+      await fllamaInference(
+        _buildInferenceRequest(OpenAiRequest(
+          maxTokens: _responseTokenLimit,
+          messages: messages,
+          modelPath: _activeModelPath!,
+          mmprojPath: _activeMmprojPath,
+          numGpuLayers: 99,
+          contextSize: _activeContextSize,
+          temperature: 0.7,
+          tools: effectiveTools,
+          toolChoice: effectiveTools.isEmpty ? null : ToolChoice.auto,
+        )),
+        (response, jsonString, done) {
+          // Stream text deltas as they arrive.
+          final delta = response.substring(lastResponse.length);
+          lastResponse = response;
 
-        // fllama surfaces context-overflow as a text response containing "exceeds ... tokens".
-        // Catch it early and replace with a user-friendly message.
-        if (delta.isNotEmpty &&
-            delta.contains('exceeds') &&
-            delta.contains('context')) {
-          if (!controller.isClosed) {
-            controller.add('[Error] Conversation too long for this model. '
-                'Start a new chat to continue.');
-            _isInferring = false;
-            controller.close();
+          // fllama surfaces context-overflow as a text response containing "exceeds ... tokens".
+          // Catch it early and replace with a user-friendly message.
+          if (delta.isNotEmpty &&
+              delta.contains('exceeds') &&
+              delta.contains('context')) {
+            if (!controller.isClosed) {
+              controller.add('[Error] This turn is still too large for the '
+                  'active local model after mobile context compaction. '
+                  'Please shorten the latest request or switch to the 1.5B/3B '
+                  'local model for a larger working memory.');
+              _isInferring = false;
+              controller.close();
+            }
+            if (!completer.isCompleted) completer.complete();
+            return;
           }
-          if (!completer.isCompleted) completer.complete();
-          return;
-        }
 
-        if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
+          if (delta.isNotEmpty && !controller.isClosed) controller.add(delta);
 
-        // Accumulate tool_calls from each streaming JSON chunk.
-        if (jsonString.isNotEmpty) {
-          try {
-            final raw = jsonDecode(jsonString);
-            final chunks = raw is List ? raw : [raw];
-            for (final c in chunks) {
-              if (c is! Map<String, dynamic>) continue;
-              final choices = c['choices'] as List<dynamic>? ?? [];
-              if (choices.isEmpty) continue;
-              final choice = choices.first as Map<String, dynamic>;
-              final reason = choice['finish_reason'] as String?;
-              if (reason != null && reason.isNotEmpty) finishReason = reason;
-              final deltaMap = choice['delta'] as Map<String, dynamic>? ?? {};
-              final tcList = deltaMap['tool_calls'] as List<dynamic>?;
-              if (tcList != null) {
-                for (final tc in tcList) {
-                  if (tc is! Map<String, dynamic>) continue;
-                  final idx = tc['index'] as int? ?? 0;
-                  accToolCalls.putIfAbsent(
-                      idx, () => {'name': '', 'arguments': '', 'id': ''});
-                  final fn = tc['function'] as Map<String, dynamic>? ?? {};
-                  if (fn['name'] is String &&
-                      (fn['name'] as String).isNotEmpty) {
-                    accToolCalls[idx]!['name'] = fn['name'] as String;
-                  }
-                  if (fn['arguments'] is String) {
-                    accToolCalls[idx]!['arguments'] =
-                        accToolCalls[idx]!['arguments']! +
-                            (fn['arguments'] as String);
-                  }
-                  if (tc['id'] is String) {
-                    accToolCalls[idx]!['id'] = tc['id'] as String;
+          // Accumulate tool_calls from each streaming JSON chunk.
+          if (jsonString.isNotEmpty) {
+            try {
+              final raw = jsonDecode(jsonString);
+              final chunks = raw is List ? raw : [raw];
+              for (final c in chunks) {
+                if (c is! Map<String, dynamic>) continue;
+                final choices = c['choices'] as List<dynamic>? ?? [];
+                if (choices.isEmpty) continue;
+                final choice = choices.first as Map<String, dynamic>;
+                final reason = choice['finish_reason'] as String?;
+                if (reason != null && reason.isNotEmpty) finishReason = reason;
+                final deltaMap = choice['delta'] as Map<String, dynamic>? ?? {};
+                final tcList = deltaMap['tool_calls'] as List<dynamic>?;
+                if (tcList != null) {
+                  for (final tc in tcList) {
+                    if (tc is! Map<String, dynamic>) continue;
+                    final idx = tc['index'] as int? ?? 0;
+                    accToolCalls.putIfAbsent(
+                        idx, () => {'name': '', 'arguments': '', 'id': ''});
+                    final fn = tc['function'] as Map<String, dynamic>? ?? {};
+                    if (fn['name'] is String &&
+                        (fn['name'] as String).isNotEmpty) {
+                      accToolCalls[idx]!['name'] = fn['name'] as String;
+                    }
+                    if (fn['arguments'] is String) {
+                      accToolCalls[idx]!['arguments'] =
+                          accToolCalls[idx]!['arguments']! +
+                              (fn['arguments'] as String);
+                    }
+                    if (tc['id'] is String) {
+                      accToolCalls[idx]!['id'] = tc['id'] as String;
+                    }
                   }
                 }
               }
-            }
-          } catch (_) {}
-        }
+            } catch (_) {}
+          }
 
-        if (done) {
-          _isInferring = false;
-          completer.complete();
-        }
-      },
-    ).then((id) => _activeRequestId = id);
+          if (done) {
+            _isInferring = false;
+            if (!completer.isCompleted) completer.complete();
+          }
+        },
+      ).then((id) => _activeRequestId = id);
+    } catch (e) {
+      _isInferring = false;
+      debugPrint(
+          '[NDK] fllama turn failed after ${startedAt.elapsedMilliseconds}ms: $e');
+      if (!controller.isClosed) {
+        controller.add('[Error] Local NDK inference failed: $e');
+        controller.close();
+      }
+      if (!completer.isCompleted) completer.complete();
+      return;
+    }
 
     await completer.future;
     if (controller.isClosed) return;
 
     // No tool calls → inference is complete.
     if (finishReason != 'tool_calls' || accToolCalls.isEmpty) {
+      debugPrint(
+          '[NDK] fllama turn complete depth=$depth ms=${startedAt.elapsedMilliseconds} chars=${lastResponse.length} finish=${finishReason.isEmpty ? 'stop' : finishReason}');
       controller.close();
       return;
     }
+    debugPrint(
+        '[NDK] fllama requested ${accToolCalls.length} tool call(s) depth=$depth ms=${startedAt.elapsedMilliseconds}');
 
     // Build tool_calls list in OpenAI wire format and dispatch each tool.
     final sorted = accToolCalls.entries.toList()
@@ -962,6 +1557,9 @@ class LocalLlmService {
 
   /// Store host model paths and flip state to ready — fllama needs no server process.
   Future<void> _activateFllama(LocalLlmModel model) async {
+    final contextSize = model.contextWindow.clamp(512, 4096);
+    debugPrint(
+        '[NDK] activating fllama model=${model.id} sizeMb=${model.fileSizeMb} threads=${_state.threads} ctx=$contextSize');
     _updateState(_state.copyWith(
       status: LocalLlmStatus.starting,
       downloadProgress: 0.5,
@@ -993,7 +1591,10 @@ class LocalLlmService {
         activeModelId: model.id,
         downloadProgress: 1.0,
       ));
+      debugPrint(
+          '[NDK] fllama ready model=${model.id} path=$_activeModelPath mmproj=${_activeMmprojPath ?? 'none'}');
     } catch (e) {
+      debugPrint('[NDK] fllama activation failed: $e');
       _updateState(_state.copyWith(
         status: LocalLlmStatus.error,
         errorMessage: 'Failed to activate fllama: $e',

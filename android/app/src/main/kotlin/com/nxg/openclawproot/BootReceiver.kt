@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import androidx.core.content.ContextCompat
 
 /**
  * Boot receiver — auto-starts the Plawie foreground service after device reboot.
@@ -34,21 +33,33 @@ class BootReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val autoStart = prefs.getBoolean(PREF_AUTO_START, false)
 
-        if (autoStart) {
+        if (autoStart && SetupGuards.canAutomateGateway(context)) {
             Log.i(TAG, "Auto-starting Plawie services...")
             PlawieForegroundService.start(context)
             NodeForegroundService.start(context)
+        } else if (autoStart) {
+            Log.i(TAG, "Auto-start deferred until setup completes.")
         }
     }
 
     private fun handleHeartbeat(context: Context) {
         Log.i(TAG, "Alarm Heartbeat triggered — ensuring service health")
+        if (!SetupGuards.canAutomateGateway(context)) {
+            Log.i(TAG, "Alarm heartbeat paused until setup completes.")
+            rescheduleHeartbeat(context)
+            return
+        }
+
         if (!PlawieForegroundService.isRunning) {
             Log.w(TAG, "Service was killed, restarting via Alarm...")
             PlawieForegroundService.start(context)
         }
         
         // Reschedule for 30 mins later
+        rescheduleHeartbeat(context)
+    }
+
+    private fun rescheduleHeartbeat(context: Context) {
         try {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
             val nextIntent = Intent(context, BootReceiver::class.java).apply {

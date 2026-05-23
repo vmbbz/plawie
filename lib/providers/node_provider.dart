@@ -187,8 +187,16 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final prefs = PreferencesService();
     await prefs.init();
     if (prefs.nodeEnabled) {
-      await _requestNodePermissions();
-      await _requestBatteryOptimization();
+      _nodeService.log('[NODE] Node enabled; waiting for gateway readiness');
+      _state = _state.copyWith(status: NodeStatus.disconnected);
+      notifyListeners();
+
+      // Permissions are useful before tool invocation, but they must not block
+      // the node identity/handshake path. On app-update and background resume
+      // Android may defer permission UI, leaving the node service running while
+      // Dart still thinks it is disabled.
+      unawaited(_requestNodePermissions());
+      unawaited(_requestBatteryOptimization());
       await NativeBridge.startNodeService();
       // NOTE: We do NOT call _nodeService.connect() here anymore.
       // Connection is triggered via onGatewayStateUpdate once the gateway
@@ -262,7 +270,8 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     final prefs = PreferencesService();
     await prefs.init();
     if (prefs.nodeEnabled) {
-      await _requestNodePermissions();
+      _nodeService.log('[NODE] Gateway ready; auto-connect check running');
+      unawaited(_requestNodePermissions());
       // Ensure foreground service is running before connecting
       try {
         final running = await NativeBridge.isNodeServiceRunning();
@@ -273,6 +282,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (!_state.isConnecting &&
           _state.status != NodeStatus.paired &&
           _state.status != NodeStatus.pairing) {
+        _nodeService.log('[NODE] Auto-connect starting handshake');
         await _nodeService.connect();
       }
       _startWatchdog();

@@ -81,12 +81,20 @@ class GatewayService {
   DateTime? _gatewaySettleUntil;
   DateTime? _lastProcessValidationAt;
   DateTime? _lastDisconnectContextAt;
+  DateTime? _lastNodeAutoConnectAttemptAt;
+  DateTime? _talkSpeakUnavailableUntil;
+  DateTime? _lastLocalInferenceHealthSkipAt;
   int _consecutiveProcessValidationMisses = 0;
   bool _processValidationInFlight = false;
+  bool _nodeAutoConnectInFlight = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
   static const Duration _disconnectContextCooldown = Duration(seconds: 20);
+  static const Duration _nodeAutoConnectCooldown = Duration(seconds: 20);
+  static const Duration _talkSpeakUnavailableBackoff = Duration(minutes: 5);
+  static const Duration _localInferenceHealthSkipLogCooldown =
+      Duration(seconds: 60);
   static const Duration _dashboardPairingApprovalCooldown =
       Duration(seconds: 8);
   static const Duration _ollamaAutostartCooldown = Duration(seconds: 45);
@@ -95,13 +103,10 @@ class GatewayService {
   static final _staleNamePattern = RegExp(r'[.\-_:]');
 
   Future<bool> _configuredModelNeedsLocalOllama() async {
-    final prefs = PreferencesService();
-    await prefs.init();
-    final model = (prefs.configuredModel ?? '').trim();
-    if (model.isEmpty) return false;
-    // Ollama cloud tags still route through the local Ollama daemon, which
-    // proxies authenticated requests to ollama.com.
-    return model.startsWith('ollama/');
+    // Embedded Ollama is deprecated for the production UI. Stale ollama/*
+    // preferences are migrated to a safe cloud fallback during init, and no
+    // normal app surface should autostart the daemon anymore.
+    return false;
   }
 
   /// Live stream of human-readable chat and hub events for the Agent Hub panel.
@@ -495,30 +500,15 @@ PARAMETER num_batch 512
       PreferencesService prefs) async {
     final provider = (prefs.apiProvider ?? '').trim().toLowerCase();
     final configuredModel = (prefs.configuredModel ?? '').trim();
-    final isCloudOllamaModel = configuredModel.startsWith('ollama/') &&
-        configuredModel.contains(':cloud');
-    if (!isCloudOllamaModel) return;
+    if (!configuredModel.startsWith('ollama/')) return;
 
-    final hasOllamaAuthProfile = await _hasOllamaAuthProfile();
-    if (hasOllamaAuthProfile) return;
-
-    const legacyCloudDefaults = <String>{
-      'ollama/qwen3-coder:480b-cloud',
-      'ollama/gpt-oss:120b-cloud',
-      'ollama/deepseek-v3.1:671b-cloud',
-    };
-    final isLegacyDefault = legacyCloudDefaults.contains(configuredModel);
-    final providerAllowsMigration =
-        provider.isEmpty || provider.contains('ollama');
-    if (!isLegacyDefault && !providerAllowsMigration) return;
-
-    const localFallback = ModelProviderCatalog.localOllamaDefaultModel;
-    prefs.configuredModel = localFallback;
-    if (providerAllowsMigration) {
-      prefs.apiProvider = 'ollama';
+    const fallback = ModelProviderCatalog.defaultCloudFallbackModel;
+    prefs.configuredModel = fallback;
+    if (provider.isEmpty || provider.contains('ollama')) {
+      prefs.apiProvider = 'google';
     }
     _addActivity(
-        '[MIGRATION] Legacy Ollama cloud default without auth profile detected; switching default to $localFallback');
+        '[MIGRATION] Deprecated Ollama route $configuredModel detected; switching to $fallback');
 
     final running = await NativeBridge.isGatewayRunning();
     if (running) return;
@@ -526,14 +516,13 @@ PARAMETER num_batch 512
     try {
       final config = await _readConfig();
       final primary = config['agents']?['defaults']?['model']?['primary'];
-      final isCloudPrimary = primary is String &&
-          primary.startsWith('ollama/') &&
-          primary.contains(':cloud');
-      if (!isCloudPrimary) return;
+      final isOllamaPrimary =
+          primary is String && primary.startsWith('ollama/');
+      if (!isOllamaPrimary) return;
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
-      config['agents']['defaults']['model']['primary'] = localFallback;
+      config['agents']['defaults']['model']['primary'] = fallback;
       await _writeConfig(config);
     } catch (_) {
       // Best effort migration; prefs fallback still prevents cloud default selection.
@@ -565,57 +554,6 @@ PARAMETER num_batch 512
     } catch (_) {
       // Best effort migration; prefs drives the next model persist anyway.
     }
-  }
-
-  Future<bool> _hasOllamaAuthProfile() async {
-    try {
-      final file = File(
-        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
-      );
-      if (!await file.exists()) return false;
-      final raw = await file.readAsString();
-      if (raw.trim().isEmpty) return false;
-      return _containsOllamaAuthMarker(jsonDecode(raw));
-    } catch (_) {
-      return false;
-    }
-  }
-
-  bool _containsOllamaAuthMarker(Object? node) {
-    if (node is Map) {
-      for (final entry in node.entries) {
-        final key = '${entry.key}'.toLowerCase();
-        final value = entry.value;
-
-        if (key.contains('ollama')) {
-          if (value is String && value.trim().isNotEmpty) return true;
-          if (value is Map && value.isNotEmpty) {
-            final apiKey = value['apiKey'] ?? value['token'] ?? value['key'];
-            if (apiKey is String && apiKey.trim().isNotEmpty) return true;
-            // Some auth profile formats keep provider metadata nested;
-            // non-empty map under an ollama profile key is enough to treat as configured.
-            return true;
-          }
-        }
-
-        if (key == 'provider' &&
-            value is String &&
-            value.toLowerCase().contains('ollama')) {
-          return true;
-        }
-
-        if (_containsOllamaAuthMarker(value)) return true;
-      }
-      return false;
-    }
-
-    if (node is List) {
-      for (final value in node) {
-        if (_containsOllamaAuthMarker(value)) return true;
-      }
-    }
-
-    return false;
   }
 
   /// Ensure local Ollama can run through the gateway without a user-supplied key.
@@ -824,8 +762,12 @@ PARAMETER num_batch 512
     final prefs = PreferencesService();
     await prefs.init();
     final isComplete = await NativeBridge.isBootstrapComplete();
-    if (!isComplete && !prefs.setupInProgress) {
-      _addActivity('[SYS] Bootstrap incomplete. Gateway cannot start.');
+    if (!isComplete && !(prefs.setupInProgress && forceStart)) {
+      if (prefs.setupInProgress) {
+        _addActivity('[SYS] Setup in progress. Gateway start deferred.');
+      } else {
+        _addActivity('[SYS] Bootstrap incomplete. Gateway cannot start.');
+      }
       return;
     }
 
@@ -834,7 +776,6 @@ PARAMETER num_batch 512
 
     if (alreadyRunning && await _isGatewayHealthy()) {
       // FAST PATH: already healthy → skip config write + doctor + reload
-      unawaited(ensureLocalOllamaAuthProfile(updateGatewayConfig: false));
       _subscribeLogs();
       _startHealthCheck();
       _markGatewaySettleWindow();
@@ -870,7 +811,6 @@ PARAMETER num_batch 512
       // Attach path is intentionally non-mutating. Any config write while a
       // live gateway is booting can trigger a reload/restart and wipe the
       // just-established websocket/pairing state.
-      await ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
       await _verifyGatewayConfigHardened(reason: 'attach-existing');
 
       // Re-probe token after hardening to avoid stale cache.
@@ -931,7 +871,9 @@ PARAMETER num_batch 512
       await _configureGateway();
 
       await Future.delayed(const Duration(milliseconds: 300));
-      final success = await NativeBridge.startGateway();
+      final success = await NativeBridge.startGateway(
+        allowDuringSetup: prefs.setupInProgress && forceStart,
+      );
 
       if (!success) {
         throw Exception('Native start failed.');
@@ -1010,7 +952,6 @@ PARAMETER num_batch 512
     }
 
     // 2. Wait for HTTP /health success (server listening)
-    final url = 'http://127.0.0.1:18789/health';
     bool listening = false;
     while (!listening) {
       if (DateTime.now().difference(startTime) > timeout) {
@@ -1018,9 +959,13 @@ PARAMETER num_batch 512
             'Gateway health check timed out after ${timeout.inSeconds}s');
       }
       try {
-        final resp =
-            await http.get(Uri.parse(url)).timeout(const Duration(seconds: 2));
-        if (resp.statusCode == 200) {
+        final token = await retrieveTokenFromConfig()
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
+        final resp = await _probeGatewayHealth(
+          token: token,
+          timeout: const Duration(seconds: 6),
+        );
+        if (resp.statusCode < 500) {
           listening = true;
           debugPrint('✅ Gateway port listening');
         }
@@ -1107,7 +1052,16 @@ PARAMETER num_batch 512
           strippedLog.contains('gateway ready') ||
           log.contains('http server listening') ||
           strippedLog.contains('http server listening')) {
-        _updateState(_state.copyWith(isReady: true));
+        _httpWaitingSince = null;
+        _consecutiveFailures = 0;
+        _updateState(_state.copyWith(
+          isReady: true,
+          status: GatewayStatus.running,
+          startedAt: _state.startedAt ?? DateTime.now(),
+        ));
+        unawaited(_ensureNodeConnectedAfterGatewayReady(
+          reason: 'gateway-ready-log',
+        ));
       }
 
       // Detect restart signals to reset ready flag
@@ -1384,35 +1338,19 @@ PARAMETER num_batch 512
     config['gateway']['http']['endpoints']['chatCompletions'] ??= {};
     config['gateway']['http']['endpoints']['chatCompletions']['enabled'] = true;
 
-    // Keep startup lean for mobile stability.
-    // Long startup sidecar tasks (especially model prewarm) correlate with
-    // event-loop delay spikes and websocket handshake timeouts in diagnostics.
-    config['gateway']['startup'] ??= {};
-    config['gateway']['startup']['modelPrewarm'] = false;
-    config['gateway']['startup']['updateCheck'] = false;
-    config['gateway']['sidecars'] ??= {};
-    config['gateway']['sidecars']['browser'] ??= <String, dynamic>{};
-    config['gateway']['sidecars']['browser']['enabled'] = false;
-    config['gateway']['sidecars']['model-prewarm'] ??= <String, dynamic>{};
-    config['gateway']['sidecars']['model-prewarm']['enabled'] = false;
-    config['gateway']['sidecars']['modelPrewarm'] ??= <String, dynamic>{};
-    config['gateway']['sidecars']['modelPrewarm']['enabled'] = false;
+    // OpenClaw 2026.5.x uses a strict gateway schema. Older builds wrote
+    // gateway.startup and gateway.sidecars mobile-tuning keys; the current
+    // gateway rejects those at startup, so remove them aggressively.
+    (config['gateway'] as Map).remove('startup');
+    (config['gateway'] as Map).remove('sidecars');
 
-    // Ollama Default Provider — always ensure models array is present.
+    // Provider cleanup. Embedded Ollama is legacy-only now; do not create it
+    // during normal hardening, but sanitize stale blocks if returning users have
+    // them on disk.
     config['models'] ??= {};
-    config['models']['startup'] ??= {};
-    config['models']['startup']['modelPrewarm'] = false;
     config['models']['providers'] ??= {};
-    config['models']['providers']['ollama'] ??= <String, dynamic>{};
-    final ollama = Map<String, dynamic>.from(
-        config['models']['providers']['ollama'] as Map);
-    ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
-    ollama['apiKey'] ??= 'ollama-local';
-    ollama['api'] ??= 'ollama';
-    // Schema requires models to always be an array. Fix any existing entry missing it.
-    ollama['models'] ??= <Map<String, dynamic>>[];
-    config['models']['providers']['ollama'] = ollama;
-    ensureProviderAuthConfigBlock(config, ollamaProviderId);
+    (config['models'] as Map).remove('startup');
+    config.remove('ollama');
 
     // Remove keys that have never been part of the OpenClaw schema.
     // These were written by earlier builds and must be stripped so the gateway
@@ -1467,6 +1405,17 @@ PARAMETER num_batch 512
       }
     }
 
+    final gatewayConfig = config['gateway'];
+    if (gatewayConfig is Map) {
+      gatewayConfig.remove('startup');
+      gatewayConfig.remove('sidecars');
+    }
+    final modelsConfig = config['models'];
+    if (modelsConfig is Map) {
+      modelsConfig.remove('startup');
+    }
+    config.remove('ollama');
+
     // NOTE: agents.defaults.systemPrompt is NOT a valid gateway schema field.
     // The gateway rejects it with "Unrecognized keys" and breaks config hot-reload.
     // Device skills are registered via skills.register RPC at connect time instead.
@@ -1481,10 +1430,6 @@ PARAMETER num_batch 512
     }
 
     await _writeConfig(config);
-    await _writeApiKeyAuthProfile(
-      provider: ollamaProviderId,
-      key: ollamaLocalApiKey,
-    );
   }
 
   void _applyExplicitAuthMode(Map<String, dynamic> config) {
@@ -2377,11 +2322,12 @@ PARAMETER num_batch 512
 
   /// Direct I/O: Persist the selected model (no proot overhead).
   Future<void> persistModel(String model) async {
+    final canonical = ModelProviderCatalog.canonicalizeModelId(model);
     final config = await _readConfig();
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
     config['agents']['defaults']['model'] ??= {};
-    config['agents']['defaults']['model']['primary'] = model;
+    config['agents']['defaults']['model']['primary'] = canonical;
     await _writeConfig(config);
   }
 
@@ -2567,7 +2513,9 @@ PARAMETER num_batch 512
   /// Explicitly query the OpenClaw CLI for the Dashboard URL containing the auth token.
   /// This is required because OpenClaw 2.x no longer prints the token in startup logs automatically.
   Future<String?> fetchAuthenticatedDashboardUrl({bool force = false}) async {
-    unawaited(_ensureLocalOllamaReadyForGateway(reason: 'dashboard-url'));
+    // Dashboard auth must stay independent from optional local inference.
+    // Legacy ollama/* selections are migrated elsewhere; opening the dashboard
+    // should never start a heavyweight runtime.
 
     // If we already have a tokenized URL and aren't forcing, return it immediately
     if (!force &&
@@ -3231,6 +3179,21 @@ PARAMETER num_batch 512
     // and WS handshakes that take several seconds. Without this guard,
     // timer ticks pile up and cause cascading stalls.
     if (_healthCheckInFlight) return;
+
+    if (LocalLlmService().isInferring) {
+      final now = DateTime.now();
+      final last = _lastLocalInferenceHealthSkipAt;
+      if (last == null ||
+          now.difference(last) > _localInferenceHealthSkipLogCooldown) {
+        _lastLocalInferenceHealthSkipAt = now;
+        _updateState(_state.copyWith(logs: [
+          ..._state.logs,
+          '[HEALTH] Skipping gateway probe while NDK local inference is active'
+        ]));
+      }
+      return;
+    }
+
     _healthCheckInFlight = true;
 
     // Add process validation before health checks
@@ -3238,26 +3201,38 @@ PARAMETER num_batch 512
 
     try {
       // ── 1. Fast HTTP probe ─────────────────────────────────────────────
-      final response = await http
-          .head(Uri.parse(AppConstants.gatewayUrl))
-          .timeout(const Duration(seconds: 3));
+      // Current OpenClaw answers the authenticated /health route reliably.
+      // HEAD / can hang behind the dashboard/router on Android PRoot, which
+      // produced scary false "probe failed" logs even while the gateway was
+      // live and WS clients were paired.
+      String? token;
+      try {
+        token = await retrieveTokenFromConfig()
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
+      } catch (_) {}
+
+      final response = await _probeGatewayHealth(
+        token: token,
+        timeout: const Duration(seconds: 8),
+      );
 
       if (response.statusCode < 500) {
         _consecutiveFailures = 0; // Success — reset failure counter
 
         // ── 2. Single token retrieval (with timeout) ─────────────────────
-        String? token;
-        try {
-          token = await retrieveTokenFromConfig()
-              .timeout(const Duration(seconds: 5));
-        } catch (_) {
-          _updateState(_state.copyWith(
-            logs: [
-              ..._state.logs,
-              '[WARN] Token retrieval timed out — skipping WS/RPC this tick'
-            ],
-          ));
-          return; // Skip WS + RPC work; next tick will retry
+        if (token == null || token.isEmpty) {
+          try {
+            token = await retrieveTokenFromConfig()
+                .timeout(const Duration(seconds: 5));
+          } catch (_) {
+            _updateState(_state.copyWith(
+              logs: [
+                ..._state.logs,
+                '[WARN] Token retrieval timed out — skipping WS/RPC this tick'
+              ],
+            ));
+            return; // Skip WS + RPC work; next tick will retry
+          }
         }
 
         if (token == null || token.isEmpty) {
@@ -3282,10 +3257,14 @@ PARAMETER num_batch 512
               .catchError((_) => null));
         }
 
-        // Returning users can land on a healthy gateway with an ollama/ model
-        // selected while the daemon is still down. Start it in the background
-        // before dashboard/webchat or Flutter chat trigger provider calls.
-        unawaited(_ensureLocalOllamaReadyForGateway(reason: 'gateway-health'));
+        // Returning users with legacy ollama/* preferences are migrated during
+        // config hardening. Do not start optional local runtimes from the
+        // gateway health loop; keeping this path gateway-only is what prevents
+        // first-run setup and returning-user boot from being slowed by local
+        // inference experiments.
+        unawaited(_ensureNodeConnectedAfterGatewayReady(
+          reason: 'gateway-health',
+        ));
 
         if (_pairingResolveAttempted) {
           return;
@@ -3451,12 +3430,67 @@ PARAMETER num_batch 512
 
   Future<bool> checkHealth() async {
     try {
-      final response = await http
-          .head(Uri.parse(AppConstants.gatewayUrl))
-          .timeout(const Duration(seconds: 3));
+      final token = await retrieveTokenFromConfig()
+          .timeout(const Duration(seconds: 3), onTimeout: () => null);
+      final response = await _probeGatewayHealth(
+        token: token,
+        timeout: const Duration(seconds: 8),
+      );
       return response.statusCode < 500;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<http.Response> _probeGatewayHealth({
+    String? token,
+    Duration timeout = const Duration(seconds: 8),
+  }) {
+    return http.get(
+      Uri.parse('${AppConstants.gatewayUrl}/health'),
+      headers: {
+        if (token != null && token.isNotEmpty)
+          HttpHeaders.authorizationHeader: 'Bearer $token',
+      },
+    ).timeout(timeout);
+  }
+
+  Future<void> _ensureNodeConnectedAfterGatewayReady({
+    required String reason,
+  }) async {
+    if (_nodeAutoConnectInFlight) return;
+    final now = DateTime.now();
+    final lastAttempt = _lastNodeAutoConnectAttemptAt;
+    if (lastAttempt != null &&
+        now.difference(lastAttempt) < _nodeAutoConnectCooldown) {
+      return;
+    }
+    _nodeAutoConnectInFlight = true;
+    _lastNodeAutoConnectAttemptAt = now;
+    try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      if (!prefs.nodeEnabled) return;
+
+      final node = NodeService();
+      await node.init();
+      if (node.state.isPaired || node.state.isConnecting) return;
+
+      _addActivity(
+          '[NODE] Gateway ready; ensuring node is connected ($reason)');
+      try {
+        final running = await NativeBridge.isNodeServiceRunning();
+        if (!running) {
+          await NativeBridge.startNodeService();
+        }
+      } catch (_) {
+        await NativeBridge.startNodeService();
+      }
+      await node.connect();
+    } catch (e) {
+      _addActivity('[NODE] Auto-connect deferred: $e');
+    } finally {
+      _nodeAutoConnectInFlight = false;
     }
   }
 
@@ -3527,6 +3561,15 @@ PARAMETER num_batch 512
   }) async* {
     model = await _resolveModel(model);
 
+    // Local-llm: bypass the gateway entirely. Do this before token lookup,
+    // autostart, WS setup, or provider sync so NDK mode stays lightweight and
+    // cannot accidentally trigger OpenClaw plugin hooks while the phone is
+    // already doing local inference.
+    if (model.startsWith('local-llm')) {
+      yield* LocalLlmService().chat(conversationHistory ?? [], message);
+      return;
+    }
+
     // Retrieve auth token
     String? token;
     try {
@@ -3556,14 +3599,8 @@ PARAMETER num_batch 512
     if (token == null || token.isEmpty) {
       yield '[Error] Gateway is not running.\n\n'
           'The Agent Hub (gateway) needs to be started before you can chat.\n\n'
-          '**Go to Local LLM page and tap the Start button on the Agent Hub**, '
+          '**Start the Gateway from Home or run setup repair**, '
           'then try again.';
-      return;
-    }
-
-    // Local-llm: bypass the gateway entirely — run inference via fllama NDK.
-    if (model.startsWith('local-llm')) {
-      yield* LocalLlmService().chat(conversationHistory ?? [], message);
       return;
     }
 
@@ -4196,6 +4233,11 @@ PARAMETER num_batch 512
     final input = text.trim();
     if (input.isEmpty) return false;
 
+    final unavailableUntil = _talkSpeakUnavailableUntil;
+    if (unavailableUntil != null && DateTime.now().isBefore(unavailableUntil)) {
+      return false;
+    }
+
     try {
       final frame = await invoke('talk.speak', {
         'text': input,
@@ -4213,7 +4255,12 @@ PARAMETER num_batch 512
           msg.contains('talk.speak unavailable') ||
           msg.contains('method unavailable') ||
           msg.contains('fallbackeligible');
-      if (!unsupported) {
+      if (unsupported) {
+        _talkSpeakUnavailableUntil =
+            DateTime.now().add(_talkSpeakUnavailableBackoff);
+        _addActivity(
+            '[TTS] talk.speak unavailable; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m');
+      } else {
         _addActivity('[TTS] talk.speak failed: $e');
       }
       return false;
@@ -4687,8 +4734,9 @@ PARAMETER num_batch 512
       m = config['agents']?['defaults']?['model']?['primary'] as String? ?? '';
     }
     if (m.isEmpty) {
-      m = ModelProviderCatalog.localOllamaDefaultModel;
+      m = ModelProviderCatalog.defaultCloudFallbackModel;
     }
+    m = ModelProviderCatalog.canonicalizeModelId(m);
 
     // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility
     // Any model that isn't a local-llm or ollama model must be sent as
@@ -4787,12 +4835,6 @@ PARAMETER num_batch 512
             authPassword.isEmpty ||
             remotePassword == authPassword));
 
-    final sidecars = gateway['sidecars'];
-    bool sidecarOff(String key) =>
-        sidecars is! Map ||
-        sidecars[key] is! Map ||
-        (sidecars[key] as Map)['enabled'] == false;
-
     final discovery = config['discovery'];
     final models = config['models'];
     final ollama = models?['providers']?['ollama'];
@@ -4810,16 +4852,14 @@ PARAMETER num_batch 512
         hasPersistentAuth &&
         (authMode == 'token' || authMode == 'password') &&
         remoteCredentialsAligned &&
-        gateway['startup']?['modelPrewarm'] == false &&
-        gateway['startup']?['updateCheck'] == false &&
-        sidecarOff('browser') &&
-        sidecarOff('model-prewarm') &&
-        sidecarOff('modelPrewarm') &&
         discovery is Map &&
         discovery['mdns']?['mode'] == 'off' &&
         discovery['wideArea']?['enabled'] == false &&
         models is Map &&
-        models['startup']?['modelPrewarm'] == false &&
+        !models.containsKey('startup') &&
+        !gateway.containsKey('startup') &&
+        !gateway.containsKey('sidecars') &&
+        !config.containsKey('ollama') &&
         ollama is Map &&
         ollama['baseUrl'] == 'http://127.0.0.1:11434' &&
         ollama['apiKey'] is String &&
@@ -4871,6 +4911,18 @@ PARAMETER num_batch 512
     _ensurePersistentGatewayToken(currentConfig);
     _applyExplicitAuthMode(currentConfig);
     _syncLocalGatewayRemoteCredentials(currentConfig);
+    final currentGateway = currentConfig['gateway'];
+    if (currentGateway is Map) {
+      currentGateway.remove('startup');
+      currentGateway.remove('sidecars');
+    }
+    final currentModels = currentConfig['models'];
+    if (currentModels is Map) {
+      currentModels.remove('startup');
+    }
+    currentConfig.remove('ollama');
+    await _writeConfig(currentConfig);
+
     final gatewayAuth =
         currentConfig['gateway']?['auth'] as Map<String, dynamic>?;
     final gatewayRemote =
@@ -4915,19 +4967,10 @@ PARAMETER num_batch 512
         "autoApproveCidrs": ["127.0.0.1/32"]
       }
     },
-    "startup": { "modelPrewarm": false, "updateCheck": false },
-    "sidecars": {
-      "browser": { "enabled": false },
-      "model-prewarm": { "enabled": false },
-      "modelPrewarm": { "enabled": false }
-    },
     "http": { "endpoints": { "chatCompletions": { "enabled": true } } },
     "mode": "local",
     "bind": "loopback",
     "port": 18789
-  },
-  "ollama": {
-    "num_thread": 4
   },
   "discovery": {
     "mdns": {
@@ -4938,9 +4981,6 @@ PARAMETER num_batch 512
     }
   },
   "models": {
-    "startup": {
-      "modelPrewarm": false
-    },
     "providers": {
       "ollama": {
         "apiKey": "ollama-local",
@@ -4989,7 +5029,6 @@ PARAMETER num_batch 512
           '✅ Hardening sweep (config patch${shouldReload ? ' + reload' : ''}) applied successfully');
       _addActivity(
           '[SYS] Industrial-grade CLI hardening applied${shouldReload ? ' and reloaded' : ''}.');
-      await ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
     } catch (e) {
       debugPrint('⚠️ Hardening sweep failed (non-fatal): $e');
     }

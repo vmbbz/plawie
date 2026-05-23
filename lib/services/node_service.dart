@@ -39,6 +39,7 @@ class NodeService {
   Completer<String?>? _challengeCompleter;
   String? _cachedChallengeNonce;
   DateTime? _cachedChallengeReceivedAt;
+  Future<void>? _initFuture;
   static const Duration _challengeNonceTtl = Duration(seconds: 10);
   static final _uuidPattern =
       RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
@@ -74,7 +75,9 @@ class NodeService {
     }
   }
 
-  Future<void> init() async {
+  Future<void> init() => _initFuture ??= _initInternal();
+
+  Future<void> _initInternal() async {
     await _identity.init();
     final prefs = PreferencesService();
     await prefs.init();

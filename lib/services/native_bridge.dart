@@ -132,8 +132,10 @@ class NativeBridge {
     await _channel.invokeMethod('destroyShell');
   }
 
-  static Future<bool> startGateway() async {
-    return await _channel.invokeMethod('startGateway');
+  static Future<bool> startGateway({bool allowDuringSetup = false}) async {
+    return await _channel.invokeMethod('startGateway', {
+      'allowDuringSetup': allowDuringSetup,
+    });
   }
 
   static String shellQuote(String value) {

@@ -58,13 +58,18 @@ class ProviderOption {
 }
 
 class ModelProviderCatalog {
-  static const String ollamaProviderId = 'ollama';
-  static const String localOllamaDefaultModel = 'ollama/qwen2.5:0.5b';
   static const String defaultCloudFallbackModel =
       'google/gemini-3.1-pro-preview';
   static const String setupSafeGatewayModel = defaultCloudFallbackModel;
+
+  /// Legacy identifiers retained so old preferences/config can be migrated
+  /// without breaking returning users. Normal UI should not expose ollama/*.
+  static const String ollamaProviderId = 'ollama';
+  static const String localOllamaDefaultModel = defaultCloudFallbackModel;
   static const String plawieNdkProviderId = 'plawie_ndk';
   static const String plawieNdkBaseUrl = 'http://127.0.0.1:11435/v1';
+
+  /// Legacy size label used only by old/deprecated code paths.
   static const int ollamaRuntimeDownloadBytes = 1303711365;
   static const String ollamaRuntimeDownloadLabel = '1.30 GB';
 
@@ -118,30 +123,6 @@ class ModelProviderCatalog {
       keyPrefix: 'gsk_',
       defaultModel: 'groq/llama-3.3-70b-versatile',
       description: 'Very fast hosted inference for responsive chat.',
-    ),
-    ProviderOption(
-      id: 'ollama',
-      label: 'Ollama Local',
-      subtitle: 'free offline-first',
-      envKey: '',
-      keyHint: '',
-      keyPrefix: '',
-      defaultModel: localOllamaDefaultModel,
-      description:
-          'Runs local models through the embedded Ollama Hub and OpenClaw.',
-      requiresApiKey: false,
-    ),
-    ProviderOption(
-      id: 'ollama_cloud',
-      label: 'Ollama Cloud',
-      subtitle: 'ollama.com sign-in',
-      envKey: '',
-      keyHint: '',
-      keyPrefix: '',
-      defaultModel: 'ollama/kimi-k2.5:cloud',
-      description:
-          'Uses Ollama Cloud models through the local signed-in Ollama Hub.',
-      requiresApiKey: false,
     ),
   ];
 
@@ -238,85 +219,8 @@ class ModelProviderCatalog {
     ),
   ];
 
-  static const List<ModelOption> ollamaCloudModels = [
-    ModelOption(
-      id: 'ollama/kimi-k2.5:cloud',
-      label: 'Kimi K2.5',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Recommended Ollama Cloud general model.',
-      category: 'General',
-      recommended: true,
-    ),
-    ModelOption(
-      id: 'ollama/qwen3.5:cloud',
-      label: 'Qwen 3.5',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Ollama Cloud reasoning and coding option.',
-      category: 'Reasoning',
-    ),
-    ModelOption(
-      id: 'ollama/glm-5.1:cloud',
-      label: 'GLM 5.1',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Ollama Cloud general model.',
-      category: 'General',
-    ),
-    ModelOption(
-      id: 'ollama/minimax-m2.7:cloud',
-      label: 'MiniMax M2.7',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Ollama Cloud chat model.',
-      category: 'General',
-      supportsToolCalls: false,
-    ),
-    ModelOption(
-      id: 'ollama/qwen3-coder:480b-cloud',
-      label: 'Qwen3 Coder 480B',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Legacy Plawie coding cloud option.',
-      category: 'Code',
-    ),
-    ModelOption(
-      id: 'ollama/gpt-oss:120b-cloud',
-      label: 'GPT-OSS 120B',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Legacy Plawie cloud option.',
-      category: 'General',
-    ),
-    ModelOption(
-      id: 'ollama/gpt-oss:20b-cloud',
-      label: 'GPT-OSS 20B',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Legacy lightweight cloud option.',
-      category: 'General',
-      supportsToolCalls: false,
-    ),
-    ModelOption(
-      id: 'ollama/deepseek-v3.1:671b-cloud',
-      label: 'DeepSeek V3.1 671B',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Legacy reasoning cloud option.',
-      category: 'Reasoning',
-      supportsToolCalls: false,
-    ),
-    ModelOption(
-      id: 'ollama/glm-5:cloud',
-      label: 'GLM 5',
-      providerId: 'ollama',
-      route: ModelRouteKind.ollamaCloud,
-      description: 'Legacy GLM cloud option.',
-      category: 'General',
-      supportsToolCalls: false,
-    ),
-  ];
+  /// Deprecated: embedded Ollama routes are hidden from normal model pickers.
+  static const List<ModelOption> ollamaCloudModels = [];
 
   static List<String> get cloudModelIds =>
       cloudModels.map((m) => m.id).toList(growable: false);
@@ -324,8 +228,7 @@ class ModelProviderCatalog {
   static List<String> get ollamaCloudModelIds =>
       ollamaCloudModels.map((m) => m.id).toList(growable: false);
 
-  static List<String> get chatDefaultModelIds =>
-      [...cloudModelIds, ...ollamaCloudModelIds];
+  static List<String> get chatDefaultModelIds => cloudModelIds;
 
   static ProviderOption? providerById(String provider) {
     final normalized = normalizeProvider(provider);
@@ -337,7 +240,7 @@ class ModelProviderCatalog {
 
   static ModelOption? modelById(String modelId) {
     final canonical = canonicalizeModelId(modelId);
-    for (final model in [...cloudModels, ...ollamaCloudModels]) {
+    for (final model in cloudModels) {
       if (model.id == canonical) return model;
     }
     return null;
@@ -351,35 +254,28 @@ class ModelProviderCatalog {
 
   /// Model to persist during fresh setup before optional local runtimes exist.
   ///
-  /// `ollama/...` models require the separate Ollama daemon on :11434. Fresh
-  /// setup must not make gateway readiness depend on that optional 1.30 GB
-  /// runtime, so local/Ollama Cloud choices boot with a safe gateway model until
-  /// the user explicitly starts NDK local inference or installs Ollama Hub.
+  /// Legacy Ollama choices boot with a safe gateway model. Current setup no
+  /// longer exposes Ollama as a first-run provider.
   static String setupSafeModelForProvider(String provider) {
     final normalized = normalizeProvider(provider);
-    if (normalized == 'ollama' || normalized == 'ollama_cloud') {
-      return setupSafeGatewayModel;
-    }
     return defaultModelForProvider(normalized);
   }
 
   static String normalizeProvider(String provider) {
     final p = provider.trim().toLowerCase();
-    if (p.contains('ollama_cloud')) return 'ollama_cloud';
-    if (p.contains('ollama local') || p == 'ollama_local') return 'ollama';
+    if (p.contains('ollama')) return 'google';
     if (p.contains('claude') || p.contains('anthropic')) return 'anthropic';
     if (p.contains('openai')) return 'openai';
     if (p.contains('xai') || p.contains('grok')) return 'xai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
-    if (p.contains('ollama')) return 'ollama';
     if (p.endsWith('_api_key')) return normalizeProvider(p.split('_').first);
     return p;
   }
 
   static String apiProviderForSetupId(String setupId) {
     final normalized = normalizeProvider(setupId);
-    return normalized == 'ollama_cloud' ? 'ollama' : normalized;
+    return normalized;
   }
 
   static String envKeyForProvider(String provider) =>
@@ -392,18 +288,15 @@ class ModelProviderCatalog {
         .map((model) => {'id': model.shortId, 'name': model.label})
         .toList(growable: false);
     if (models.isNotEmpty) return models;
-    if (normalized == 'ollama' || normalized == 'ollama_cloud') {
-      return const [
-        {'id': 'qwen2.5:0.5b', 'name': 'Qwen 2.5 0.5B'}
-      ];
-    }
     return const [
       {'id': 'default', 'name': 'Default Model'}
     ];
   }
 
   static String canonicalizeModelId(String modelId) {
-    switch (modelId.trim()) {
+    final trimmed = modelId.trim();
+    if (trimmed.startsWith('ollama/')) return defaultCloudFallbackModel;
+    switch (trimmed) {
       case 'anthropic/claude-opus-4.6':
         return 'anthropic/claude-opus-4-6';
       case 'anthropic/claude-sonnet-4.6':
@@ -413,14 +306,14 @@ class ModelProviderCatalog {
       case 'groq/llama-3.1-405b':
         return 'groq/llama-3.3-70b-versatile';
       default:
-        return modelId.trim();
+        return trimmed;
     }
   }
 
   static String labelForModel(String modelId) {
     final model = modelById(modelId);
     if (model != null) return model.label;
-    if (modelId.startsWith('ollama/')) return modelId.substring(7);
+    if (modelId.startsWith('ollama/')) return 'Legacy Ollama route';
     if (modelId.startsWith('local-llm/')) {
       return 'Local - ${modelId.substring('local-llm/'.length)}';
     }
@@ -429,21 +322,14 @@ class ModelProviderCatalog {
 
   static String routeLabelForModel(String modelId) {
     if (modelId.startsWith('local-llm/')) return 'ON DEVICE';
-    if (modelId.startsWith('ollama/') && modelId.contains(':cloud')) {
-      return 'OLLAMA CLOUD';
-    }
-    if (modelId.startsWith('ollama/')) return 'LOCAL HUB';
+    if (modelId.startsWith('ollama/')) return 'LEGACY';
     final model = modelById(modelId);
     return model?.category.toUpperCase() ?? 'CLOUD';
   }
 
-  static bool needsOllamaHub(String modelId) =>
-      canonicalizeModelId(modelId).startsWith('ollama/');
+  static bool needsOllamaHub(String modelId) => false;
 
-  static bool needsOllamaSignIn(String modelId) {
-    final canonical = canonicalizeModelId(modelId);
-    return canonical.startsWith('ollama/') && canonical.contains(':cloud');
-  }
+  static bool needsOllamaSignIn(String modelId) => false;
 
   static Map<String, dynamic> providerConfigDefaults(String provider) {
     final normalized = normalizeProvider(provider);

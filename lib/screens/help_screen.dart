@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
 import '../app.dart';
-import '../services/model_provider_catalog.dart';
 import '../widgets/glass_card.dart';
 
 class HelpScreen extends StatelessWidget {
@@ -48,7 +47,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Chat Settings Model Picker',
                         description:
-                            'Open Chat -> settings menu to switch intelligence paths. ON DEVICE is native fllama. LOCAL HUB is Ollama through the OpenClaw Gateway. OLLAMA CLOUD uses ollama.com models but still needs the local Ollama Hub running as the signed-in proxy. CLOUD providers need their own API keys, and Plawie blocks switching when the chosen provider has no stored credential.',
+                            'Open Chat -> settings menu to switch intelligence paths. ON DEVICE is native fllama for private/offline turns. CLOUD uses the OpenClaw Gateway with Gemini, Claude, OpenAI, Grok/xAI, or Groq. Cloud providers need their own API keys, and Plawie blocks switching when the chosen provider has no stored credential.',
                         icon: Icons.tune_rounded,
                         color: Colors.cyanAccent,
                       ),
@@ -64,11 +63,11 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Ollama Local vs Ollama Cloud',
+                        title: 'Offline vs Gateway',
                         description:
-                            'Local Ollama downloads models to the phone and runs through 127.0.0.1:11434. Ollama Cloud does not need a manual API key, but it does need the one-time Ollama Hub runtime install (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) plus Ollama sign-in from Local LLM -> Cloud. If chat says 127.0.0.1:11434 refused, install/start the Ollama Hub first.',
-                        icon: Icons.cloud_queue_rounded,
-                        color: const Color(0xFFAB47BC),
+                            'Private Offline Mode downloads only the GGUF model you choose and runs it through fllama NDK. Gateway Mode is for full OpenClaw tools, skills, dashboard, and multi-step agent behavior using a cloud provider key. The embedded Ollama daemon path is legacy and hidden from normal setup to avoid surprise 1.30 GB runtime downloads.',
+                        icon: Icons.route_rounded,
+                        color: AppColors.statusGreen,
                       ),
                       const SizedBox(height: 12),
                       _buildTroubleshootingCard(context),
@@ -98,9 +97,8 @@ class HelpScreen extends StatelessWidget {
                       _buildHelpCard(
                         context,
                         title: 'On-Device Local LLM',
-                        description: 'Two local inference modes:\n\n'
-                            '• NDK Direct (fllama) — GGUF models run entirely inside the app via llama.cpp NDK. Zero network, maximum privacy. Download models in Local LLM settings, then select a local-llm/ model in the chat picker. Supports essential tools and 100% offline Voice — operates independently of the OpenClaw gateway for maximum speed.\n\n'
-                            '• Local LLM Hub (Ollama) — the same models routed through the OpenClaw gateway agent loop. Full tool-use, skills, and multi-step reasoning. Start Ollama in Local LLM settings and pick an ollama/ model in the chat model picker.',
+                        description:
+                            'NDK Direct (fllama) runs GGUF models entirely inside the app via llama.cpp NDK. Zero network, maximum privacy. Download models in Local LLM settings, then select a local-llm/ model in the chat picker. It supports essential direct app actions, but full Gateway skills and dashboard visibility stay in Cloud Agent Mode.',
                         icon: Icons.memory_rounded,
                         color: AppColors.statusGreen,
                       ),
@@ -413,18 +411,6 @@ class HelpScreen extends StatelessWidget {
         'Private, fastest startup, no API key.'
       ),
       (
-        Icons.lan_rounded,
-        'LOCAL HUB',
-        'Ollama via Gateway',
-        'Full OpenClaw tools and skills, uses local daemon.'
-      ),
-      (
-        Icons.cloud_queue_rounded,
-        'OLLAMA CLOUD',
-        'Ollama sign-in',
-        'Cloud models, but still needs local Hub proxy.'
-      ),
-      (
         Icons.key_rounded,
         'CLOUD',
         'Gemini, Claude, OpenAI, xAI, Groq',
@@ -499,8 +485,8 @@ class HelpScreen extends StatelessWidget {
         'Refresh once after Node paired. Plawie auto-approves local dashboard scopes when Gateway is ready.'
       ),
       (
-        'Ollama refused 11434',
-        'Start Local LLM -> Ollama Hub. For :cloud models, also sign in to Ollama.'
+        'Model asks for Ollama/11434',
+        'That is a stale legacy route. Switch Chat to a cloud provider model or local-llm/ NDK model.'
       ),
       (
         'Nonce or pairing loop',
@@ -801,8 +787,8 @@ class HelpScreen extends StatelessWidget {
       (
         Icons.memory_rounded,
         'Local LLM',
-        'fllama / Ollama',
-        'NDK Direct (fllama) for high-speed offline voice and tools. Local LLM Hub (Ollama) for full multi-step agentic skills.',
+        'fllama NDK',
+        'Private/offline local models with direct app actions. Gateway skills stay in Cloud Agent Mode.',
         false
       ),
     ];

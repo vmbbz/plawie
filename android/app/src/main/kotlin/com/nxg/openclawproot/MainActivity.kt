@@ -244,6 +244,13 @@ class MainActivity : FlutterActivity() {
                 }
                 "startGateway" -> {
                     try {
+                        val allowDuringSetup = call.argument<Boolean>("allowDuringSetup") ?: false
+                        if (!allowDuringSetup && !SetupGuards.canAutomateGateway(this)) {
+                            Log.i("MainActivity", "startGateway ignored until setup completes")
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+
                         PlawieForegroundService.start(this)
                         val success = processManager.startGateway()
                         result.success(success)

@@ -873,12 +873,7 @@ class BootstrapService {
         'openclaw config set gateway.bind loopback && '
         'openclaw config set gateway.port 18789 && '
         'openclaw config set gateway.mode local && '
-        'openclaw config set gateway.startup.modelPrewarm false && '
-        'openclaw config set models.startup.modelPrewarm false && '
-        'openclaw config set ollama.num_thread 4 && '
-        'openclaw config set discovery.mdns.mode off && '
-        'openclaw config set models.providers.ollama.apiKey ollama-local && '
-        'openclaw config set models.providers.ollama.baseUrl http://127.0.0.1:11434',
+        'openclaw config set discovery.mdns.mode off',
         timeout: 30,
       );
 
@@ -893,10 +888,6 @@ class BootstrapService {
       _applyExplicitAuthMode(workingConfig);
       _syncLocalGatewayRemoteCredentials(workingConfig);
       _sanitizeOpenClawSchema(workingConfig);
-      GatewayService.ensureProviderAuthConfigBlock(
-        workingConfig,
-        GatewayService.ollamaProviderId,
-      );
       final authPatch = _buildSharedSecretAuthPatch(workingConfig);
       final remotePatch = _buildLocalGatewayRemotePatch(workingConfig);
       final rootAuthPatch = _buildRootAuthPatch(workingConfig);
@@ -921,12 +912,6 @@ class BootstrapService {
         "location.get","screen.record","sensor.read","sensor.list","haptic.vibrate"
       ]
     },
-    "startup": { "modelPrewarm": false, "updateCheck": false },
-    "sidecars": {
-      "browser": { "enabled": false },
-      "model-prewarm": { "enabled": false },
-      "modelPrewarm": { "enabled": false }
-    },
     "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
   },
   "discovery": {
@@ -934,7 +919,6 @@ class BootstrapService {
     "wideArea": { "enabled": false }
   },
   "models": {
-    "startup": { "modelPrewarm": false },
     "providers": ${jsonEncode(providerPatch)}
   },
   "auth": ${jsonEncode(rootAuthPatch)},
@@ -954,8 +938,6 @@ class BootstrapService {
         'rm -f /tmp/prestart_harden.json',
         timeout: 30,
       );
-      await GatewayService()
-          .ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
 
       // 3. Ensure node starts on first-pair path.
       // Device approval now follows the official requestId-driven CLI flow
@@ -985,7 +967,7 @@ class BootstrapService {
         await configFile.parent.create(recursive: true);
       }
 
-      // Replicate the Ollama-first logic from GatewayService for setup-time hardening
+      // Gateway-first hardening for setup-time configuration.
       config['gateway'] ??= {};
       config['gateway']['mode'] = 'local';
       config['gateway']['bind'] = 'loopback';
@@ -1013,29 +995,18 @@ class BootstrapService {
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
-      config['agents']['defaults']['model']['primary'] ??=
-          ModelProviderCatalog.localOllamaDefaultModel;
+      final currentPrimary =
+          config['agents']['defaults']['model']['primary'] as String?;
+      config['agents']['defaults']['model']['primary'] =
+          currentPrimary == null || currentPrimary.isEmpty
+              ? ModelProviderCatalog.setupSafeGatewayModel
+              : ModelProviderCatalog.canonicalizeModelId(currentPrimary);
 
-      // 3. Hardened Ollama-first
+      // 3. Hardened provider defaults. Preserve user keys while ensuring every
+      // provider exposed by the UI has model metadata and known base URLs.
       config['models'] ??= {};
       config['models']['providers'] ??= {};
-      config['models']['providers']['ollama'] ??= <String, dynamic>{};
-      final ollama = Map<String, dynamic>.from(
-          config['models']['providers']['ollama'] as Map);
-      ollama['baseUrl'] ??= 'http://127.0.0.1:11434';
-      ollama['apiKey'] ??= 'ollama-local';
-      ollama['api'] ??= 'ollama';
-      ollama['models'] ??= [];
-      config['models']['providers']['ollama'] = ollama;
-      GatewayService.ensureProviderAuthConfigBlock(
-        config,
-        GatewayService.ollamaProviderId,
-      );
-
-      // 4. Hardened provider defaults. Preserve user keys while ensuring every
-      // provider exposed by the UI has model metadata and known base URLs.
       for (final provider in ModelProviderCatalog.providers) {
-        if (provider.id == 'ollama_cloud') continue;
         final existing = config['models']['providers'][provider.id];
         config['models']['providers'][provider.id] =
             ModelProviderCatalog.mergeProviderConfig(
@@ -1044,7 +1015,7 @@ class BootstrapService {
         );
       }
 
-      // 5. GLOBAL ORIGIN & DISCOVERY ENFORCEMENT
+      // 4. GLOBAL ORIGIN & DISCOVERY ENFORCEMENT
       config['gateway']['controlUi'] ??= {};
       config['gateway']['controlUi']['allowedOrigins'] =
           GatewayService.localControlUiAllowedOrigins;
@@ -1071,10 +1042,8 @@ class BootstrapService {
       }
 
       await _writeJsonAtomically(configFile, config);
-      await GatewayService()
-          .ensureLocalOllamaAuthProfile(updateGatewayConfig: false);
       _log(
-          '[CONFIG] Hardened production-grade configuration (Ollama + Google + Origins).');
+          '[CONFIG] Hardened production-grade configuration (providers + origins).');
     } catch (e) {
       _log('[CONFIG] Hardening failed during setup', error: e);
     }
@@ -1208,10 +1177,7 @@ class BootstrapService {
       PreferencesService prefs, Map<String, dynamic> config) {
     final configured = prefs.configuredModel;
     if (configured != null && configured.isNotEmpty) {
-      if (configured.startsWith('ollama/')) {
-        return ModelProviderCatalog.setupSafeGatewayModel;
-      }
-      return configured;
+      return ModelProviderCatalog.canonicalizeModelId(configured);
     }
 
     final pendingProvider = prefs.pendingProvider;
@@ -1222,7 +1188,7 @@ class BootstrapService {
     final configPrimary =
         config['agents']?['defaults']?['model']?['primary'] as String?;
     if (configPrimary != null && configPrimary.isNotEmpty) {
-      return configPrimary;
+      return ModelProviderCatalog.canonicalizeModelId(configPrimary);
     }
 
     return ModelProviderCatalog.setupSafeGatewayModel;
@@ -1235,7 +1201,6 @@ class BootstrapService {
         : <dynamic, dynamic>{};
     final providers = <String, dynamic>{};
     for (final provider in ModelProviderCatalog.providers) {
-      if (provider.id == 'ollama_cloud') continue;
       final existing = existingProviders[provider.id];
       providers[provider.id] = ModelProviderCatalog.mergeProviderConfig(
         provider.id,
@@ -1327,6 +1292,22 @@ class BootstrapService {
   }
 
   void _sanitizeOpenClawSchema(Map<String, dynamic> config) {
+    final gateway = config['gateway'];
+    if (gateway is Map) {
+      // OpenClaw 2026.5.x removed these legacy mobile-tuning keys from the
+      // strict gateway schema. Leaving them in prevents gateway startup.
+      gateway.remove('startup');
+      gateway.remove('sidecars');
+    }
+
+    final models = config['models'];
+    if (models is Map) {
+      // Model prewarm is no longer configured under models.startup in the
+      // current strict schema.
+      models.remove('startup');
+    }
+    config.remove('ollama');
+
     final agentsDefaults = config['agents']?['defaults'];
     if (agentsDefaults is Map) {
       agentsDefaults.remove('provider');

@@ -92,7 +92,7 @@ class _ChatScreenState extends State<ChatScreen>
   String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
   String _selectedModel = ModelProviderCatalog.defaultCloudFallbackModel;
-  // Cloud model to fall back to when a local model (NDK or Ollama) stops.
+  // Cloud model to fall back to when a local NDK model stops.
   // Set at load time from onboarding provider; updated when user picks a cloud model.
   String _cloudFallbackModel = ModelProviderCatalog.defaultCloudFallbackModel;
 
@@ -108,11 +108,6 @@ class _ChatScreenState extends State<ChatScreen>
   final List<String> _availableModels =
       ModelProviderCatalog.cloudModelIds.toList();
 
-  // Ollama cloud models — available whenever Ollama Hub is running.
-  // Route identically to local Ollama models (same `ollama/` prefix); the
-  // Ollama daemon proxies inference to ollama.com when it sees a :cloud tag.
-  static final _kCloudOllamaModels = ModelProviderCatalog.ollamaCloudModelIds;
-
   // Dynamic agents fetched from the gateway
   List<AgentInfo> _dynamicAgents = [];
 
@@ -126,18 +121,14 @@ class _ChatScreenState extends State<ChatScreen>
   // Auto-sync model when local LLM starts/stops
   StreamSubscription<LocalLlmState>? _localLlmSub;
   LocalLlmState _localLlmState = const LocalLlmState();
-  // Ollama Hub model sync — surfaces 'ollama/*' models in the dropdown
+  // Gateway state sync — keeps stale prefs from leaking into the model picker.
   StreamSubscription<GatewayState>? _gatewaySub;
-  // Transitional model-switching states
-  bool _isOllamaAutoStarting =
-      false; // true while hub auto-starts on model selection
-  bool _ollamaStopFlash =
-      false; // true for 1.8 s after switching away from ollama/
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
 
   // Latest camera.snap base64 captured by AI tool call — attached to bot message after stream ends
   String? _pendingAiSnapBase64;
+  String? _pendingAiSnapMimeType;
 
   // Canvas overlay state
   WebViewController? _canvasController;
@@ -168,6 +159,7 @@ class _ChatScreenState extends State<ChatScreen>
     // When the AI calls camera.snap, store the result so we can show it inline in chat
     CameraCapability.onSnapTaken = (b64, mime) {
       _pendingAiSnapBase64 = b64;
+      _pendingAiSnapMimeType = mime;
     };
 
     // Set up canvas WebView controller and wire it to CanvasCapability
@@ -180,8 +172,7 @@ class _ChatScreenState extends State<ChatScreen>
     };
     CanvasCapability.onSnapshotTaken = (b64, mime) {
       _pendingAiSnapBase64 = b64;
-      HologramService.instance
-          .show(HologramPayload.image(b64, label: 'Canvas Snapshot'));
+      _pendingAiSnapMimeType = mime;
     };
     _glowController = AnimationController(
       vsync: this,
@@ -205,59 +196,24 @@ class _ChatScreenState extends State<ChatScreen>
         PreferencesService().configuredModel = _cloudFallbackModel;
       }
     });
-    // React to Ollama Hub start/stop and agent-arena model changes.
-    _gatewaySub = GatewayService().stateStream.listen((gwState) {
+    // React to gateway model changes. Legacy ollama/* preferences are migrated
+    // out here so returning users do not get routed to the deprecated daemon.
+    _gatewaySub = GatewayService().stateStream.listen((_) {
       if (!mounted) return;
 
-      // If agent arena (or any other writer) changed prefs.configuredModel,
-      // sync it to the UI — but only if Ollama is running for ollama/ models.
       final prefsModel = PreferencesService().configuredModel;
       if (prefsModel != null &&
           prefsModel.isNotEmpty &&
           prefsModel != _selectedModel) {
-        final isOllama = prefsModel.startsWith('ollama/');
-        if (!isOllama || gwState.isOllamaRunning) {
-          setState(() => _selectedModel = prefsModel);
+        final canonical = ModelProviderCatalog.canonicalizeModelId(prefsModel);
+        if (canonical != prefsModel) {
+          PreferencesService().configuredModel = canonical;
+        }
+        if (_availableModels.contains(canonical) ||
+            canonical.startsWith('local-llm/')) {
+          setState(() => _selectedModel = canonical);
         }
       }
-
-      if (!gwState.isOllamaRunning) {
-        // Ollama stopped/crashed — remove local hub models but keep :cloud models always.
-        final wasOnLocalHub = _selectedModel.startsWith('ollama/') &&
-            !_selectedModel.contains(':cloud');
-        setState(() {
-          _availableModels.removeWhere(
-              (m) => m.startsWith('ollama/') && !m.contains(':cloud'));
-          _isOllamaAutoStarting = false;
-          if (wasOnLocalHub) {
-            _selectedModel = _cloudFallbackModel;
-            PreferencesService().configuredModel = _cloudFallbackModel;
-          }
-          // Re-ensure cloud models stay present
-          for (final m in _kCloudOllamaModels) {
-            if (!_availableModels.contains(m)) _availableModels.add(m);
-          }
-        });
-        return;
-      }
-
-      // Ollama running — clear auto-starting flag, merge local hub + cloud models.
-      setState(() {
-        _isOllamaAutoStarting = false;
-        _availableModels.removeWhere(
-            (m) => m.startsWith('ollama/') && !m.contains(':cloud'));
-        if (gwState.ollamaHubModels.isNotEmpty) {
-          _availableModels.addAll(
-            gwState.ollamaHubModels
-                .where((m) => !m.endsWith(':cloud'))
-                .map((m) => 'ollama/$m'),
-          );
-        }
-        // Always ensure cloud models are present
-        for (final m in _kCloudOllamaModels) {
-          if (!_availableModels.contains(m)) _availableModels.add(m);
-        }
-      });
     });
     _initVoiceParams();
     _loadChatHistory();
@@ -386,46 +342,12 @@ class _ChatScreenState extends State<ChatScreen>
           _cloudFallbackModel = GatewayService().getModelForProvider(provider);
         }
 
-        // OLLAMA CLOUD models are always visible regardless of hub state.
-        for (final m in _kCloudOllamaModels) {
-          if (!_availableModels.contains(m)) _availableModels.add(m);
-        }
-
-        // Seed any already-synced Ollama Hub models from current gateway state.
-        // The stateStream listener only fires on NEW events; at open time we must
-        // read the current snapshot so the dropdown is populated immediately.
-        final gwState = GatewayService().state;
-        if (gwState.ollamaHubModels.isNotEmpty) {
-          _availableModels.removeWhere(
-              (m) => m.startsWith('ollama/') && !m.contains(':cloud'));
-          _availableModels.addAll(
-            gwState.ollamaHubModels
-                .where((m) => !m.endsWith(':cloud'))
-                .map((m) => 'ollama/$m'),
-          );
-        } else if (gwState.isOllamaRunning) {
-          // Ollama is running but ollamaHubModels is empty — this happens when
-          // the gateway was restarted (stop() now preserves isOllamaRunning but
-          // sync hasn't re-fired yet). Kick off a background sync so _gatewaySub
-          // receives the state event with the model list shortly after.
-          GatewayService().syncLocalModelsWithOllama();
-        }
-
         // Load the user's configured model (from setup or settings).
         final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
-          final ollamaOk = gwState.isOllamaRunning;
-          final isOllama = configured.startsWith('ollama/');
           final isLocal = configured.startsWith('local-llm/');
-          final isCloudOllama = isOllama && configured.contains(':cloud');
-          if (_availableModels.contains(configured) ||
-              isLocal ||
-              (isOllama && ollamaOk) ||
-              isCloudOllama) {
+          if (_availableModels.contains(configured) || isLocal) {
             _selectedModel = configured;
-          } else if (isOllama && !ollamaOk && !isCloudOllama) {
-            // Local hub model but Ollama not running — don't restore stale model.
-            _selectedModel = _cloudFallbackModel;
           }
         }
       });
@@ -604,6 +526,14 @@ class _ChatScreenState extends State<ChatScreen>
         _isTtsSpeaking = false;
         return;
       }
+      if (_selectedModel.startsWith('local-llm/')) {
+        // NDK direct mode is intentionally gateway-isolated. Do not call
+        // talk.speak for every local sentence unless a native local TTS engine
+        // is wired in; otherwise the gateway logs noisy provider errors.
+        _isTtsSpeaking = false;
+        _processNextTtsInQueue();
+        return;
+      }
       final gatewayProvider =
           Provider.of<GatewayProvider>(context, listen: false);
       final playedByTalk = await gatewayProvider.speakTextViaTalk(sentence);
@@ -629,6 +559,23 @@ class _ChatScreenState extends State<ChatScreen>
       _processNextTtsInQueue();
     }
     _ttsSentenceBuffer = '';
+  }
+
+  List<Map<String, dynamic>> _conversationHistoryBeforePendingReply() {
+    // _handleSubmit appends the current user message and then an empty
+    // assistant placeholder before building history. Exclude both here, then
+    // pass the current text separately to avoid duplicating the latest user turn
+    // and burning local context twice as fast.
+    final endExclusive =
+        _messages.length >= 2 ? _messages.length - 2 : _messages.length;
+    return _messages
+        .take(endExclusive)
+        .where((m) => m.text.trim().isNotEmpty)
+        .map((m) => <String, dynamic>{
+              'role': m.isUser ? 'user' : 'assistant',
+              'content': m.text,
+            })
+        .toList();
   }
 
   void _scrollToBottom({bool instant = false}) {
@@ -910,14 +857,7 @@ class _ChatScreenState extends State<ChatScreen>
           }
         } else {
           // Local Text
-          final conversationHistory = _messages
-              .take(_messages.length - 1)
-              .where((m) => m.text.isNotEmpty)
-              .map((m) => <String, dynamic>{
-                    'role': m.isUser ? 'user' : 'assistant',
-                    'content': m.text,
-                  })
-              .toList();
+          final conversationHistory = _conversationHistoryBeforePendingReply();
           stream = gatewayProvider.sendMessage(text,
               model: _selectedModel,
               conversationHistory: conversationHistory,
@@ -940,14 +880,7 @@ class _ChatScreenState extends State<ChatScreen>
             imageBase64,
           );
         } else {
-          final conversationHistory = _messages
-              .take(_messages.length - 1)
-              .where((m) => m.text.isNotEmpty)
-              .map((m) => <String, dynamic>{
-                    'role': m.isUser ? 'user' : 'assistant',
-                    'content': m.text,
-                  })
-              .toList();
+          final conversationHistory = _conversationHistoryBeforePendingReply();
           stream = gatewayProvider.sendMessage(text,
               model: _selectedModel,
               conversationHistory: conversationHistory,
@@ -1085,6 +1018,7 @@ class _ChatScreenState extends State<ChatScreen>
 
         // If the AI called camera.snap during this turn, attach the image to the bot reply
         final snapImage = _pendingAiSnapBase64;
+        final snapMime = _pendingAiSnapMimeType ?? 'image/jpeg';
         if (snapImage != null && _messages.isNotEmpty) {
           _messages.last = ChatMessage(
             text: _messages.last.text,
@@ -1092,11 +1026,10 @@ class _ChatScreenState extends State<ChatScreen>
             thinkContent: _messages.last.thinkContent,
             toolEvents: _messages.last.toolEvents,
             imageBase64: snapImage,
-            imageMimeType: 'image/jpeg',
+            imageMimeType: snapMime,
           );
           _pendingAiSnapBase64 = null;
-          HologramService.instance
-              .show(HologramPayload.image(snapImage, label: 'Camera Snap'));
+          _pendingAiSnapMimeType = null;
         }
       });
       _addDiagnosticLog(
@@ -1615,23 +1548,13 @@ class _ChatScreenState extends State<ChatScreen>
                         Text(
                           _selectedModel.startsWith('local-llm/')
                               ? 'LOCAL · ON-DEVICE'
-                              : (_selectedModel.startsWith('ollama/') &&
-                                      _selectedModel.contains(':cloud'))
-                                  ? 'CLOUD · OLLAMA'
-                                  : _selectedModel.startsWith('ollama/')
-                                      ? 'LOCAL · HUB'
-                                      : ModelProviderCatalog.labelForModel(
-                                              _selectedModel)
-                                          .toUpperCase(),
+                              : ModelProviderCatalog.labelForModel(
+                                      _selectedModel)
+                                  .toUpperCase(),
                           style: TextStyle(
                             color: _selectedModel.startsWith('local-llm/')
                                 ? const Color(0xFF00E5AA)
-                                : (_selectedModel.startsWith('ollama/') &&
-                                        _selectedModel.contains(':cloud'))
-                                    ? const Color(0xFFAB47BC)
-                                    : _selectedModel.startsWith('ollama/')
-                                        ? const Color(0xFF00C8FF)
-                                        : Colors.white.withValues(alpha: 0.4),
+                                : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 1.0,
@@ -1862,180 +1785,6 @@ class _ChatScreenState extends State<ChatScreen>
                 ),
               )),
         ],
-        // ── LOCAL HUB section (on-device Ollama models) ───────────────────
-        ...() {
-          final hubModels = _availableModels
-              .where((m) => m.startsWith('ollama/') && !m.contains(':cloud'))
-              .toList();
-          if (hubModels.isEmpty) return <PopupMenuEntry<dynamic>>[];
-          return <PopupMenuEntry<dynamic>>[
-            const PopupMenuDivider(),
-            PopupMenuItem<dynamic>(
-              enabled: false,
-              height: 20,
-              child: Row(
-                children: [
-                  const Icon(Icons.lan_rounded,
-                      color: Color(0xFF00C8FF), size: 12),
-                  const SizedBox(width: 6),
-                  const Text('LOCAL HUB',
-                      style: TextStyle(
-                          color: Color(0xFF00C8FF),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5)),
-                ],
-              ),
-            ),
-            ...hubModels.map((model) {
-              final isSelected = model == _selectedModel;
-              final displayName = model.replaceFirst('ollama/', '');
-              return PopupMenuItem<dynamic>(
-                value: 'model:$model',
-                height: 44,
-                child: Row(
-                  children: [
-                    Icon(
-                      isSelected ? Icons.check_circle : Icons.lan_rounded,
-                      color:
-                          isSelected ? const Color(0xFF00C8FF) : Colors.white38,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            displayName,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : Colors.white70,
-                              fontSize: 13,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            'LOCAL · HUB',
-                            style: TextStyle(
-                              color: isSelected
-                                  ? const Color(0xFF00C8FF)
-                                  : Colors.white38,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ];
-        }(),
-        // ── OLLAMA CLOUD section (ollama.com server-side models) ───────────
-        ...() {
-          final cloudHub = _availableModels
-              .where((m) => m.startsWith('ollama/') && m.contains(':cloud'))
-              .toList();
-          if (cloudHub.isEmpty) return <PopupMenuEntry<dynamic>>[];
-          final hubInstalled =
-              GatewayService().state.isOllamaRunning || _isOllamaAutoStarting;
-          return <PopupMenuEntry<dynamic>>[
-            const PopupMenuDivider(),
-            PopupMenuItem<dynamic>(
-              enabled: false,
-              height: 20,
-              child: Row(
-                children: [
-                  const Icon(Icons.cloud_queue_rounded,
-                      color: Color(0xFFAB47BC), size: 12),
-                  const SizedBox(width: 6),
-                  const Text('OLLAMA CLOUD',
-                      style: TextStyle(
-                          color: Color(0xFFAB47BC),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5)),
-                  if (!hubInstalled) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text('AUTO-START',
-                          style: TextStyle(
-                              color: Colors.amber,
-                              fontSize: 7,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5)),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            ...cloudHub.map((model) {
-              final isSelected = model == _selectedModel;
-              final displayName =
-                  '☁ ${ModelProviderCatalog.labelForModel(model)}';
-              return PopupMenuItem<dynamic>(
-                value: 'model:$model',
-                height: 44,
-                child: Row(
-                  children: [
-                    Icon(
-                      isSelected
-                          ? Icons.check_circle
-                          : Icons.cloud_queue_rounded,
-                      color:
-                          isSelected ? const Color(0xFFAB47BC) : Colors.white38,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            displayName,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : Colors.white70,
-                              fontSize: 13,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            'HUB + OLLAMA SIGN-IN',
-                            style: TextStyle(
-                              color: isSelected
-                                  ? const Color(0xFFAB47BC)
-                                  : Colors.white38,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ];
-        }(),
         // ── CLOUD section (gateway cloud providers) ────────────────────────
         const PopupMenuDivider(),
         PopupMenuItem<dynamic>(
@@ -2149,9 +1898,7 @@ class _ChatScreenState extends State<ChatScreen>
       } else if (value.toString().startsWith('model:')) {
         final model = ModelProviderCatalog.canonicalizeModelId(
             value.toString().substring(6));
-        final isNowOllama = model.startsWith('ollama/');
-        final isNowCloud =
-            !model.startsWith('ollama/') && !model.startsWith('local-llm/');
+        final isNowCloud = !model.startsWith('local-llm/');
         final catalogModel = ModelProviderCatalog.modelById(model);
         if (isNowCloud && catalogModel != null) {
           final hasCredential = await GatewayService()
@@ -2172,51 +1919,11 @@ class _ChatScreenState extends State<ChatScreen>
         }
         setState(() {
           _selectedModel = model;
-          if (!model.startsWith('local-llm/') && !model.startsWith('ollama/')) {
+          if (!model.startsWith('local-llm/')) {
             _cloudFallbackModel = model;
           }
         });
         PreferencesService().configuredModel = model;
-
-        // Auto-start and health-check Ollama Hub if switching to any
-        // ollama/ model. :cloud models still need the local daemon as the
-        // authenticated proxy to ollama.com.
-        if (isNowOllama && !GatewayService().state.isOllamaRunning) {
-          final messenger = ScaffoldMessenger.of(context);
-          setState(() => _isOllamaAutoStarting = true);
-          unawaited(GatewayService()
-              .prepareLocalOllamaForGateway(
-            reason: model.contains(':cloud')
-                ? 'chat-model-switch-cloud'
-                : 'chat-model-switch-local',
-            wait: Duration(seconds: model.contains(':cloud') ? 30 : 15),
-          )
-              .then((ready) {
-            if (!mounted) return;
-            setState(() => _isOllamaAutoStarting = false);
-            if (!ready) {
-              messenger.showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Ollama Hub is not ready yet. Open Local LLM to install/start it.',
-                  ),
-                ),
-              );
-            }
-          }).catchError((_) {
-            if (!mounted) return;
-            setState(() => _isOllamaAutoStarting = false);
-          }));
-        }
-
-        // Auto-stop Ollama Hub when switching to a pure cloud model (saves memory)
-        if (isNowCloud && GatewayService().state.isOllamaRunning) {
-          unawaited(GatewayService().stopInternalOllama());
-          setState(() => _ollamaStopFlash = true);
-          Future.delayed(const Duration(milliseconds: 1800), () {
-            if (mounted) setState(() => _ollamaStopFlash = false);
-          });
-        }
 
         final needsReload = model.startsWith('local-llm');
         if (needsReload) {
@@ -2515,26 +2222,14 @@ class _ChatScreenState extends State<ChatScreen>
                               Text(
                                 _selectedModel.startsWith('local-llm/')
                                     ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
-                                    : _selectedModel.startsWith('ollama/')
-                                        ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_isOllamaAutoStarting ? 'STARTING HUB...' : _selectedModel.contains(':cloud') ? 'OLLAMA CLOUD' : 'LOCAL HUB'}'
-                                        : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_ollamaStopFlash ? 'HUB OFF' : ModelProviderCatalog.labelForModel(_selectedModel).toUpperCase()}',
+                                    : '${_selectedAvatar.split('.').first.toUpperCase()} · ${ModelProviderCatalog.labelForModel(_selectedModel).toUpperCase()}',
                                 style: TextStyle(
                                   color: _selectedModel.startsWith('local-llm/')
                                       ? (_localLlmState.status ==
                                               LocalLlmStatus.starting
                                           ? Colors.amber
                                           : const Color(0xFF00E5AA))
-                                      : _selectedModel.startsWith('ollama/')
-                                          ? (_isOllamaAutoStarting
-                                              ? Colors.amber
-                                              : _selectedModel
-                                                      .contains(':cloud')
-                                                  ? const Color(0xFFAB47BC)
-                                                  : const Color(0xFF00C8FF))
-                                          : (_ollamaStopFlash
-                                              ? Colors.white38
-                                              : Colors.white
-                                                  .withValues(alpha: 0.5)),
+                                      : Colors.white.withValues(alpha: 0.5),
                                   fontSize: 8,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.8,

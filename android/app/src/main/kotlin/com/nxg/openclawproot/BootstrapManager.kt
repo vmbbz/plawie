@@ -28,6 +28,7 @@ class BootstrapManager(
     private val libDir get() = "$filesDir/lib"
     private val forceLiveOpenClawInstall = true
     private val minimumNodeVersion = listOf(22, 22, 2)
+    private val setupCompleteMarker get() = File("$filesDir/rootfs/root/.clawa/.bootstrap_complete")
 
     fun setupDirectories() {
         listOf(rootfsDir, tmpDir, homeDir, configDir, "$homeDir/.openclaw", libDir).forEach {
@@ -51,6 +52,10 @@ class BootstrapManager(
     }
 
     fun isBootstrapComplete(): Boolean {
+        return isInstallReady() && SetupGuards.isMarkedSetupComplete(context)
+    }
+
+    private fun isInstallReady(): Boolean {
         val rootfs = File(rootfsDir)
         val binBash = File("$rootfsDir/bin/bash")
         val bypass = File("$rootfsDir/root/.openclaw/bionic-bypass.js")
@@ -89,7 +94,7 @@ class BootstrapManager(
 
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
         
-        val complete = rootfsExists && binBashExists && bypassExists
+        val installReady = rootfsExists && binBashExists && bypassExists
                 && nodeExists && nodeMeetsMinimum && openclawBinExists && openclawPkgExists && entryPointExists
 
         return mapOf(
@@ -102,7 +107,11 @@ class BootstrapManager(
             "openclawEntryPointExists" to entryPointExists,
             "openclawBinExists" to openclawBinExists,
             "bypassInstalled" to bypassExists,
-            "complete" to complete
+            "installReady" to installReady,
+            "setupCompleteMarkerExists" to setupCompleteMarker.exists(),
+            "setupMarkedComplete" to SetupGuards.isMarkedSetupComplete(context),
+            "setupInProgress" to SetupGuards.isSetupInProgress(context),
+            "complete" to isBootstrapComplete()
         )
     }
 

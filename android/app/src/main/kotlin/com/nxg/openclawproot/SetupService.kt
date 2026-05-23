@@ -39,6 +39,9 @@ class SetupService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lastNotificationText: String? = null
+    private var lastNotificationProgress: Int = Int.MIN_VALUE
+    private var lastNotificationAtMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -127,8 +130,19 @@ class SetupService : Service() {
 
     fun updateNotificationWith(text: String, progress: Int) {
         try {
+            val now = System.currentTimeMillis()
+            val duplicate = text == lastNotificationText &&
+                progress == lastNotificationProgress
+
+            if (duplicate && now - lastNotificationAtMs < 1_000L) {
+                return
+            }
+
             val manager = getSystemService(NotificationManager::class.java)
             manager.notify(NOTIFICATION_ID, buildNotification(text, progress))
+            lastNotificationText = text
+            lastNotificationProgress = progress
+            lastNotificationAtMs = now
         } catch (_: Exception) {}
     }
 }

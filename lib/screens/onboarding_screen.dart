@@ -269,7 +269,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (p.contains('openai')) return 'openai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
-    if (p.contains('ollama')) return 'ollama';
+    if (p.contains('ollama')) return 'google';
     return p;
   }
 

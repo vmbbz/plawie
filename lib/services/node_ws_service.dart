@@ -63,14 +63,30 @@ class NodeWsService {
   Completer<void>? _socketCompleter;
   Completer<void>? _handshakeCompleter;
 
+  void _completeErrorSafely<T>(Completer<T> completer, Object error) {
+    if (completer.isCompleted) return;
+    // Some internal waiters are opportunistic: they may or may not have an
+    // active awaiter when Android closes a socket during gateway settle. Attach
+    // a passive error handler so those expected disconnects never surface as
+    // unhandled zone exceptions, while callers that do await still receive it.
+    unawaited(() async {
+      try {
+        await completer.future;
+      } catch (_) {
+        // Intentionally swallowed by this safety observer only.
+      }
+    }());
+    completer.completeError(error, StackTrace.current);
+  }
+
   void _resetConnectCompleters(Object error) {
     final socket = _socketCompleter;
     if (socket != null && !socket.isCompleted) {
-      socket.completeError(error);
+      _completeErrorSafely(socket, error);
     }
     final handshake = _handshakeCompleter;
     if (handshake != null && !handshake.isCompleted) {
-      handshake.completeError(error);
+      _completeErrorSafely(handshake, error);
     }
     _socketCompleter = null;
     _handshakeCompleter = null;
@@ -147,7 +163,10 @@ class NodeWsService {
                       !_handshakeCompleter!.isCompleted) {
                     final message = frame.error?['message']?.toString() ??
                         'connect rejected';
-                    _handshakeCompleter!.completeError(StateError(message));
+                    _completeErrorSafely(
+                      _handshakeCompleter!,
+                      StateError(message),
+                    );
                   }
                 }
               }
@@ -309,7 +328,7 @@ class NodeWsService {
 
       // Fail all pending requests
       for (final completer in _pendingRequests.values) {
-        completer.completeError('WebSocket disconnected');
+        _completeErrorSafely(completer, StateError('WebSocket disconnected'));
       }
       _pendingRequests.clear();
       _resetConnectCompleters(StateError('WebSocket disconnected'));
@@ -413,7 +432,7 @@ class NodeWsService {
     _resetConnectCompleters(StateError('Disconnected'));
 
     for (final completer in _pendingRequests.values) {
-      completer.completeError('Disconnected');
+      _completeErrorSafely(completer, StateError('Disconnected'));
     }
     _pendingRequests.clear();
   }

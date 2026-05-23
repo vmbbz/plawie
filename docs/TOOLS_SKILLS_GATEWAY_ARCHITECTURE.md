@@ -119,7 +119,7 @@ static Future<bool> saveToolsAllow(List<String> tools) async {
 }
 ```
 
-**`lib/services/gateway_service.dart` — `configureOllama()` sanitizes disk state on every write:**
+**`lib/services/gateway_service.dart` — gateway hardening sanitizes disk state on every write:**
 ```dart
 const validPrimitives = {
   'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
@@ -146,7 +146,7 @@ if (existingAllow is List) {
 ```
 [CONN] Gateway connected
 [SKILLS] Registered 3 device skills with gateway
-[AGENT] Run started — model: ollama/qwen2.5:latest
+[AGENT] Run started — model: openclaw
 [TOOL] browser: fetching https://...
 [TOOL] search: query="..."
 [AGENT] Run complete
@@ -160,7 +160,7 @@ The openclaw.json at this state had **no `tools.allow` block** and device capabi
 
 ```
 [WARN] tools.allow allowlist contains unknown entries (base, calculator, calendar, crypto, sensor, twilio, weather)
-[AGENT] Run started — model: ollama/qwen2.5:latest
+[AGENT] Run started — model: openclaw
 [AGENT] Run complete
 ```
 
@@ -217,9 +217,8 @@ This is a completely separate section from `tools.allow`. Never put device capab
    npm slugs, and device names), the function at `openclaw_service.dart` filters to `_kGatewayPrimitives`
    before writing. Do not bypass this filter.
 
-3. **`configureOllama()` sanitizes on write.** Every gateway config write passes through
-   `gateway_service.dart:configureOllama()` which removes invalid `tools.allow` entries. This self-heals
-   bad state from earlier bugs without user action.
+3. **Gateway hardening sanitizes on write.** Config hardening removes invalid `tools.allow`
+   entries and schema-invalid legacy keys before Gateway reads or reloads config.
 
 4. **`skills.register` is guarded.** The guard in `reregisterSkills()` and the connect handler checks
    `supported.contains('skills.register')` before calling. Removing this guard causes npm skill context

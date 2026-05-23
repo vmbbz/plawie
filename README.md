@@ -9,8 +9,8 @@
   
   <h3>The World's Most Powerful Autonomous Agent Experience for Android</h3>
   
-  **The full OpenClaw Agentic Experience — fully local, in your pocket.**  
-  **No cloud. No compromises. Just pure intelligence.**
+  **The full OpenClaw Agentic Experience — cloud-capable, private when you need it, in your pocket.**  
+  **Gateway tools for power. NDK offline mode for privacy. One Android app.**
 
   <br/>
 
@@ -45,19 +45,19 @@ We are currently in **Phase 1** of Project Aegis. This phase hardens the existin
 
 ---
 
-**"Run OpenClaw fully local on your personal Android phone, private, always-on, and under your absolute control."**
+**"Run an OpenClaw gateway on your Android phone, pair native device skills, and choose between full cloud-agent power or private on-device NDK chat."**
 
-While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run local LLMs & OpenClaw Gateway—we took a different path.
+While other developers are trying to sell you on complex Docker deployments, cloud routing subscriptions, or requiring a MacBook to run OpenClaw, we took a different path.
 
 **Plawie** provides a full **Ubuntu + Node.js OpenClaw execution environment** running entirely within a sandboxed **PRoot** layer directly on your Android phone.
 
-You simply install the app, and you immediately possess a world-class, autonomous AI agent capable of multi-step reasoning, tool execution, and native Web3 transactions, right from your pocket. Your data stays on your device. Always.
+You install the app, pick a supported provider key for full Gateway Agent Mode, and immediately get a world-class autonomous AI experience capable of multi-step reasoning, tool execution, and native Web3 transactions from your pocket. When you want private offline chat, switch to the NDK Local LLM mode.
 
 ---
 
 ## ✨ What Makes Plawie Special
 
-- **🤖 Fully Local LLM + Gateway** — Runs in a sandboxed PRoot Ubuntu environment with GPU acceleration.
+- **🤖 OpenClaw Gateway + Offline NDK** — Runs the Gateway in hardened PRoot and keeps private local inference in native fllama mode.
 - **🎭 State-Aware UI** — Dynamic logo transition from animated "Installing" circuit to 3D Avatar reveal.
 - **Immersive VRM Avatar** — 3D digital companion with procedural gestures and perfect lip-sync.
 - **🖼️ Hologram Presenter** — Beautiful floating overlays for canvas, images, web previews, and media.
@@ -94,10 +94,11 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 
 1. **Download** the latest APK from [Releases](https://github.com/vmbbz/plawie/releases/latest).
 2. **Install** on any device running Android 10+.
-3. **Launch** → Plawie will automatically set up the hardened PRoot environment (**~40s setup**).
-4. **Start Chatting** with your personal AI companion.
+3. **Launch** → choose Gemini, Claude, OpenAI, Grok, or Groq and add your own provider key.
+4. **Install** → Plawie sets up the hardened PRoot Gateway and pairs the local device node.
+5. **Start Chatting** with your personal AI companion.
 
-> **Pro Tip:** After first launch, go to **Agent Skills → Tools** and tap **Reset** to enable all hardware capabilities.
+> **Pro Tip:** Use **Cloud Agent Mode** for full OpenClaw skills/tools/dashboard. Use **Local LLM** only when you want private offline NDK chat.
 
 ---
 
@@ -106,7 +107,7 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 Plawie isn't just a UI wrapper; it is built on an untouchable technical foundation:
 
 ### 1. The Autonomous PRoot Gateway
-We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages model switching, context windows, and complex tool-calling natively on your device.
+We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages provider routing, sessions, tools, skills, and dashboard access while the Flutter app pairs as a native device node.
 
 **Specifications:**
 - **OS Layer**: Hardened Ubuntu 24.04 (PRoot Sandbox)
@@ -156,14 +157,14 @@ Plawie ships with a production-grade, multi-engine voice stack designed for high
 Your agent can see the world around you:
 - **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM or cloud Gemini.
 - **📹 Video Clips** — Record 2–30s clips, extract key frames via PRoot `ffmpeg`, analyse each frame with the local vision model, then produce a coherent summary — 100% offline.
-- **Cloud Fallback** — When no local vision model is active, video is sent inline to Gemini 1.5 / 2.0 Pro.
+- **Cloud Fallback** — When no local vision path is active, media is routed through the selected cloud provider.
 
-### 6. Integrated Agent Hub (Ollama)
-Plawie includes a full, native **Ollama Hub** running inside the PRoot sandbox:
-- **Zero-Config Setup**: One-tap installation of the official Ollama Linux ARM64 binary.
-- **GGUF Bridging**: Instantly register existing GGUF models as Ollama models using our "Zero-Copy" sync bridge.
-- **Library Discovery**: Pull any model from the Ollama Library directly onto your device.
-- **☁️ Ollama Cloud Models**: Run massive frontier models (Kimi K2.5, DeepSeek V3.1 671B) for free on ollama.com servers. Plawie auto-provisions your personal account inside the PRoot sandbox.
+### 6. Private Offline LLM (NDK)
+Plawie keeps local inference lightweight and honest:
+- **NDK Direct**: GGUF models run through fllama / llama.cpp inside the app.
+- **No Hidden Daemon**: No embedded Ollama runtime is downloaded during setup.
+- **Private Mode**: Local turns bypass the OpenClaw Gateway and stay on-device.
+- **Clear Split**: Use cloud Gateway models for full tools, skills, and dashboard; use `local-llm/` for offline privacy.
 
 ---
 
@@ -331,16 +332,11 @@ flutter build apk --release --target-platform android-arm64
 2. **Select** the model as active.
 3. **In Chat**, select the `local-llm/` model. Direct NDK streaming.
 
-#### ☁️ Mode D — Ollama Cloud Models (Free Frontier Models)
-1. **Local LLM → Cloud Models tab**.
-2. Tap **Sign in to Ollama** — the app launches a browser OAuth flow and provisions your free account inside the PRoot sandbox.
-3. Tap **USE** on any cloud model.
-
 ---
 
 ## 🤝 Contributing to Plawie
 We are building the **"Linux for AI Companions"**. We welcome contributions in:
-- On-device local LLM stability and GPU acceleration.
+- On-device local LLM stability, memory discipline, and native acceleration.
 - Optimized WebGL/GLSL shaders for better battery life.
 - Expanding the native **Base** DeFi toolings.
 - New custom app skills bridged via `AgentSkillServer`.

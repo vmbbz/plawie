@@ -519,20 +519,39 @@ fi
     }
 
     fun isGatewayRunning(): Boolean {
-        // Keep this pattern in sync with stopGateway().
         return try {
-            val gatewayPattern = "[o]penclaw.*gateway|[n]ode .*openclaw.*gateway|[n]ode .*openclaw\\.mjs.*gateway"
-            val checkCmd = "pgrep -f '$gatewayPattern' > /dev/null 2>&1"
-            val fullCmd = buildGatewayCommand(checkCmd)
-            val pb = ProcessBuilder(fullCmd)
-            pb.environment().clear()
-            pb.environment().putAll(prootEnv())
+            // Use Android's real process table instead of a nested PRoot pgrep.
+            // The nested pgrep can briefly match helper shells during startup,
+            // causing the Dart side to "attach" to a gateway that is not alive.
+            val pb = ProcessBuilder(
+                "/system/bin/sh",
+                "-c",
+                "ps -A -o PID,PPID,NAME,ARGS 2>/dev/null || ps -A 2>/dev/null"
+            )
             val process = pb.start()
-            process.waitFor()
-            process.exitValue() == 0
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor(3, TimeUnit.SECONDS)
+            output.lineSequence().any { isGatewayLauncherLine(it) }
         } catch (e: Exception) {
+            android.util.Log.w("ProcessManager", "Gateway process check failed", e)
             false
         }
+    }
+
+    private fun isGatewayLauncherLine(line: String): Boolean {
+        val text = line.lowercase()
+        if (text.contains("pgrep") ||
+            text.contains("pkill") ||
+            text.contains(" grep ") ||
+            text.contains("runinproot")
+        ) {
+            return false
+        }
+
+        return text.contains("openclaw gateway") ||
+            text.contains("openclaw.mjs gateway") ||
+            text.contains("openclaw.js gateway") ||
+            (text.contains("node ") && text.contains("openclaw") && text.contains(" gateway"))
     }
 
     fun getRecentLogs(): String {

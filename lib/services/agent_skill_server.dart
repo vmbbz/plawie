@@ -31,6 +31,7 @@ class AgentSkillServer {
   AgentSkillServer._internal();
 
   HttpServer? _server;
+  Future<void>? _startFuture;
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI
   void Function(String avatarFile)? onAvatarChanged;
@@ -38,15 +39,32 @@ class AgentSkillServer {
   void Function(String emotion)? onEmotionSet;
   void Function(String mode)? onGestureModeChanged;
 
-  Future<void> start() async {
+  Future<void> start() {
+    if (_server != null) return Future.value();
+    return _startFuture ??= _startWithRetry();
+  }
+
+  Future<void> _startWithRetry() async {
     if (_server != null) return;
-    try {
-      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 8765);
-      debugPrint('AgentSkillServer listening on 127.0.0.1:8765');
-      _server!.listen(_handleRequest);
-    } catch (e) {
-      debugPrint('AgentSkillServer failed to start: $e');
+    const maxAttempts = 6;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        _server = await HttpServer.bind(
+          InternetAddress.loopbackIPv4,
+          8765,
+          shared: true,
+        );
+        debugPrint('AgentSkillServer listening on 127.0.0.1:8765');
+        _server!.listen(_handleRequest);
+        return;
+      } catch (e) {
+        debugPrint(
+            'AgentSkillServer bind attempt $attempt/$maxAttempts failed: $e');
+        if (attempt == maxAttempts) break;
+        await Future.delayed(Duration(milliseconds: 350 * attempt));
+      }
     }
+    _startFuture = null;
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -63,7 +81,7 @@ class AgentSkillServer {
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
       await _handleAvatarControl(request);
     } else if (request.method == 'POST' && path == '/api/avatar/equip') {
-      await _handleAvatarEquip(request);  // legacy alias
+      await _handleAvatarEquip(request); // legacy alias
     } else if (request.method == 'POST' && path == '/api/tts/control') {
       await _handleTtsControl(request);
     } else if (request.method == 'POST' && path == '/api/device/control') {
@@ -103,7 +121,8 @@ class AgentSkillServer {
   // falls through to SkillsService for custom YAML/partner skills.
   Future<void> _handleToolsExecute(HttpRequest request) async {
     try {
-      final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      final body = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
       final name = body['name'] as String?;
       final input = (body['input'] as Map<String, dynamic>?) ?? {};
 
@@ -117,7 +136,8 @@ class AgentSkillServer {
         case 'device-node':
           await _processDeviceControl(input, request);
         default:
-          final result = await SkillsService().executeSkill(name, parameters: input);
+          final result =
+              await SkillsService().executeSkill(name, parameters: input);
           _sendSkillResult(request, result);
       }
     } catch (e) {
@@ -128,20 +148,24 @@ class AgentSkillServer {
   // ── Avatar Control ─────────────────────────────────────────────────────────
   Future<void> _handleAvatarControl(HttpRequest request) async {
     try {
-      final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      final data = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
       await _processAvatarControl(data, request);
     } catch (e) {
       _sendError(request, e.toString());
     }
   }
 
-  Future<void> _processAvatarControl(Map<String, dynamic> data, HttpRequest request) async {
+  Future<void> _processAvatarControl(
+      Map<String, dynamic> data, HttpRequest request) async {
     final action = data['action'] as String? ?? 'get_status';
 
     switch (action) {
       case 'change_model':
         final model = data['model'] as String?;
-        if (model == null) return _sendError(request, 'Missing model parameter');
+        if (model == null) {
+          return _sendError(request, 'Missing model parameter');
+        }
         final filename = model.endsWith('.vrm') ? model : '$model.vrm';
         final prefs = PreferencesService();
         await prefs.init();
@@ -151,22 +175,29 @@ class AgentSkillServer {
 
       case 'play_gesture':
         final gesture = data['gesture'] as String?;
-        if (gesture == null) return _sendError(request, 'Missing gesture parameter');
+        if (gesture == null) {
+          return _sendError(request, 'Missing gesture parameter');
+        }
         onGesturePlayed?.call(gesture);
         _sendJson(request, {'success': true, 'gesture': gesture});
 
       case 'set_emotion':
         final emotion = data['emotion'] as String?;
-        if (emotion == null) return _sendError(request, 'Missing emotion parameter');
+        if (emotion == null) {
+          return _sendError(request, 'Missing emotion parameter');
+        }
         onEmotionSet?.call(emotion);
         _sendJson(request, {'success': true, 'emotion': emotion});
 
       case 'set_mode':
         final mode = data['mode'] as String?;
-        if (mode == null) return _sendError(request, 'Missing mode parameter');
+        if (mode == null) {
+          return _sendError(request, 'Missing mode parameter');
+        }
         final validModes = ['normal', 'expressive', 'dance', 'subtle'];
         if (!validModes.contains(mode)) {
-          return _sendError(request, 'Invalid mode. Valid: ${validModes.join(", ")}');
+          return _sendError(
+              request, 'Invalid mode. Valid: ${validModes.join(", ")}');
         }
         onGestureModeChanged?.call(mode);
         _sendJson(request, {'success': true, 'mode': mode});
@@ -184,9 +215,12 @@ class AgentSkillServer {
   // Legacy /api/avatar/equip — kept for backward compat with old gateway skills
   Future<void> _handleAvatarEquip(HttpRequest request) async {
     try {
-      final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      final data = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
       final vrmId = data['vrm_id'] as String?;
-      if (vrmId == null || vrmId.isEmpty) return _sendError(request, 'Missing vrm_id');
+      if (vrmId == null || vrmId.isEmpty) {
+        return _sendError(request, 'Missing vrm_id');
+      }
       final filename = vrmId.endsWith('.vrm') ? vrmId : '$vrmId.vrm';
       final prefs = PreferencesService();
       await prefs.init();
@@ -201,14 +235,16 @@ class AgentSkillServer {
   // ── TTS Voice Control ──────────────────────────────────────────────────────
   Future<void> _handleTtsControl(HttpRequest request) async {
     try {
-      final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      final data = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
       await _processTtsControl(data, request);
     } catch (e) {
       _sendError(request, e.toString());
     }
   }
 
-  Future<void> _processTtsControl(Map<String, dynamic> data, HttpRequest request) async {
+  Future<void> _processTtsControl(
+      Map<String, dynamic> data, HttpRequest request) async {
     final action = data['action'] as String? ?? 'get_status';
     final prefs = PreferencesService();
     await prefs.init();
@@ -220,11 +256,16 @@ class AgentSkillServer {
 
       case 'set_voice':
         // No-op: Voice selection is now handled on the Gateway side.
-        _sendJson(request, {'success': true, 'message': 'Voice changes should be handled in the Gateway config.'});
+        _sendJson(request, {
+          'success': true,
+          'message': 'Voice changes should be handled in the Gateway config.'
+        });
 
       case 'speak':
         final text = data['text'] as String?;
-        if (text == null || text.isEmpty) return _sendError(request, 'Missing text');
+        if (text == null || text.isEmpty) {
+          return _sendError(request, 'Missing text');
+        }
         final tts = TtsService();
         unawaited(tts.speak(text));
         _sendJson(request, {'success': true, 'speaking': text});
@@ -248,21 +289,24 @@ class AgentSkillServer {
   // ── Device Node Control ─────────────────────────────────────────────────────
   Future<void> _handleDeviceControl(HttpRequest request) async {
     try {
-      final data = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
+      final data = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
       await _processDeviceControl(data, request);
     } catch (e) {
       _sendError(request, e.toString());
     }
   }
 
-  Future<void> _processDeviceControl(Map<String, dynamic> data, HttpRequest request) async {
+  Future<void> _processDeviceControl(
+      Map<String, dynamic> data, HttpRequest request) async {
     final action = data['action'] as String? ?? 'get_battery';
 
     switch (action) {
       case 'vibrate':
         final pattern = (data['pattern'] as List?)
-            ?.map((e) => (e as num).toInt())
-            .toList() ?? [0, 300];
+                ?.map((e) => (e as num).toInt())
+                .toList() ??
+            [0, 300];
         await const MethodChannel('plawie/haptics').invokeMethod(
           'vibrate',
           {'pattern': pattern},
@@ -279,21 +323,25 @@ class AgentSkillServer {
 
       case 'get_battery':
         final level = await const MethodChannel('plawie/device')
-            .invokeMethod<int>('getBatteryLevel') ?? -1;
+                .invokeMethod<int>('getBatteryLevel') ??
+            -1;
         final charging = await const MethodChannel('plawie/device')
-            .invokeMethod<bool>('isCharging') ?? false;
+                .invokeMethod<bool>('isCharging') ??
+            false;
         _sendJson(request, {'level': level, 'isCharging': charging});
 
       case 'get_location':
         _sendJson(request, {
-          'note': 'Use the gateway node capability: location.get for live GPS data',
+          'note':
+              'Use the gateway node capability: location.get for live GPS data',
           'command': 'location.get',
         });
 
       case 'read_sensor':
         final sensorType = data['sensor_type'] as String? ?? 'accelerometer';
         _sendJson(request, {
-          'note': 'Use the gateway node capability: sensor.read for live sensor data',
+          'note':
+              'Use the gateway node capability: sensor.read for live sensor data',
           'command': 'sensor.read',
           'sensor_type': sensorType,
         });
@@ -312,26 +360,34 @@ class AgentSkillServer {
   // ── Partner skill proxies (delegate to SkillsService → GatewaySkillProxy) ──
 
   Future<void> _handleTwilio(HttpRequest request) async {
-    final method = request.uri.path.contains('webhook') ? 'get_status' : 'get_status';
-    final result = await SkillsService().executeSkill('twilio-voice', parameters: {'method': method});
+    final method =
+        request.uri.path.contains('webhook') ? 'get_status' : 'get_status';
+    final result = await SkillsService()
+        .executeSkill('twilio-voice', parameters: {'method': method});
     _sendSkillResult(request, result);
   }
 
   Future<void> _handleAgentCard(HttpRequest request) async {
-    final method = request.uri.path.contains('create') ? 'create_card' : 'get_balance';
-    final result = await SkillsService().executeSkill('agent-card', parameters: {'method': method});
+    final method =
+        request.uri.path.contains('create') ? 'create_card' : 'get_balance';
+    final result = await SkillsService()
+        .executeSkill('agent-card', parameters: {'method': method});
     _sendSkillResult(request, result);
   }
 
   Future<void> _handleMoltLaunch(HttpRequest request) async {
-    final method = request.uri.path.contains('identity') ? 'get_identity' : 'get_rep';
-    final result = await SkillsService().executeSkill('molt-launch', parameters: {'method': method});
+    final method =
+        request.uri.path.contains('identity') ? 'get_identity' : 'get_rep';
+    final result = await SkillsService()
+        .executeSkill('molt-launch', parameters: {'method': method});
     _sendSkillResult(request, result);
   }
 
   Future<void> _handleValeo(HttpRequest request) async {
-    final method = request.uri.path.contains('audit') ? 'get_audit' : 'get_budget';
-    final result = await SkillsService().executeSkill('valeo-sentinel', parameters: {'method': method});
+    final method =
+        request.uri.path.contains('audit') ? 'get_audit' : 'get_budget';
+    final result = await SkillsService()
+        .executeSkill('valeo-sentinel', parameters: {'method': method});
     _sendSkillResult(request, result);
   }
 
@@ -373,6 +429,7 @@ class AgentSkillServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
+    _startFuture = null;
   }
 }
 

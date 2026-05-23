@@ -116,6 +116,11 @@ class PlawieForegroundService : Service() {
             }
             ACTION_RESTART -> {
                 Log.i(TAG, "Notification ACTION_RESTART received")
+                if (!SetupGuards.canAutomateGateway(this)) {
+                    Log.i(TAG, "Restart ignored while setup is incomplete or in progress")
+                    updateNotification("Setup in progress")
+                    return START_STICKY
+                }
                 attemptRestart()
                 return START_STICKY
             }
@@ -127,8 +132,11 @@ class PlawieForegroundService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Plawie Local Agent Running"))
         acquireWakeLock()
         
-        // Start the localhost HTTP bridge for Node.js
-        AndroidBridgeServer.startServer(applicationContext)
+        // The app-native skill bridge is now owned by Dart AgentSkillServer on
+        // 127.0.0.1:8765. Starting the legacy Kotlin NanoHTTPD server here races
+        // for the same port and creates noisy EADDRINUSE logs on every gateway
+        // start, so keep it disabled unless we intentionally move it to a new
+        // port in a future bridge refactor.
         
         startWatchdog()
         return START_STICKY
@@ -154,7 +162,7 @@ class PlawieForegroundService : Service() {
         isRunning = false
         instance = null
         stopWatchdog()
-        AndroidBridgeServer.stopServer()
+        // Legacy AndroidBridgeServer is intentionally not started; no-op here.
         releaseWakeLock()
         super.onDestroy()
     }
@@ -166,6 +174,13 @@ class PlawieForegroundService : Service() {
     private val watchdogRunnable = object : Runnable {
         override fun run() {
             if (!watchdogActive) return
+
+            if (!SetupGuards.canAutomateGateway(this@PlawieForegroundService)) {
+                Log.i(TAG, "Watchdog standing down until setup completes")
+                updateNotification("Setup in progress")
+                handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+                return
+            }
             
             Thread {
                 val healthy = checkGatewayHealth()
@@ -263,6 +278,12 @@ class PlawieForegroundService : Service() {
      * Restart the gateway process, with rate limiting to avoid crash loops.
      */
     private fun attemptRestart(reason: String = "unknown") {
+        if (!SetupGuards.canAutomateGateway(this)) {
+            Log.i(TAG, "Watchdog restart suppressed until setup completes ($reason)")
+            updateNotification("Setup in progress")
+            return
+        }
+
         val now = System.currentTimeMillis()
         
         // Prune timestamps older than 1 hour

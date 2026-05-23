@@ -42,28 +42,6 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   static const _providers = [
     _ProviderInfo(
-      id: 'ollama',
-      name: 'Ollama Local',
-      subtitle: 'Free · offline-first',
-      icon: Icons.memory_rounded,
-      color: Color(0xFF66BB6A),
-      hint: '',
-      prefix: '',
-      defaultModel: ModelProviderCatalog.localOllamaDefaultModel,
-      requiresApiKey: false,
-    ),
-    _ProviderInfo(
-      id: 'ollama_cloud',
-      name: 'Ollama Cloud',
-      subtitle: 'Sign in later',
-      icon: Icons.cloud_queue_rounded,
-      color: Color(0xFFAB47BC),
-      hint: '',
-      prefix: '',
-      defaultModel: 'ollama/kimi-k2.5:cloud',
-      requiresApiKey: false,
-    ),
-    _ProviderInfo(
       id: 'anthropic',
       name: 'Claude',
       subtitle: 'by Anthropic',
@@ -72,6 +50,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       hint: 'sk-ant-api03-...',
       prefix: 'sk-ant-',
       defaultModel: 'anthropic/claude-opus-4-6',
+      requiresApiKey: true,
     ),
     _ProviderInfo(
       id: 'google',
@@ -82,6 +61,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       hint: 'AIzaSy...',
       prefix: 'AIza',
       defaultModel: 'google/gemini-3.1-pro-preview',
+      requiresApiKey: true,
     ),
     _ProviderInfo(
       id: 'openai',
@@ -92,6 +72,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       hint: 'sk-proj-...',
       prefix: 'sk-',
       defaultModel: 'openai/gpt-5.4',
+      requiresApiKey: true,
     ),
     _ProviderInfo(
       id: 'xai',
@@ -102,6 +83,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       hint: 'xai-...',
       prefix: 'xai-',
       defaultModel: 'xai/grok-4',
+      requiresApiKey: true,
     ),
     _ProviderInfo(
       id: 'groq',
@@ -112,6 +94,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       hint: 'gsk_...',
       prefix: 'gsk_',
       defaultModel: 'groq/llama-3.3-70b-versatile',
+      requiresApiKey: true,
     ),
   ];
 
@@ -446,7 +429,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          'Your credentials are baked into the gateway before it starts — no post-install reload.',
+          'Choose the cloud provider for OpenClaw Gateway mode. Offline NDK models are set up later from Local LLM and never require an API key.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -631,9 +614,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 Icon(provider.icon, color: provider.color, size: 48),
                 const SizedBox(height: 16),
                 Text(
-                  provider.id == 'ollama_cloud'
-                      ? 'Ollama sign-in later'
-                      : 'No API key needed',
+                  'No API key needed',
                   style: GoogleFonts.outfit(
                     fontWeight: FontWeight.w600,
                     fontSize: 18,
@@ -641,9 +622,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  provider.id == 'ollama_cloud'
-                      ? 'Ollama Cloud uses ollama.com models with no manual API key, but it still needs the local Ollama Hub runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) as a signed-in proxy. Plawie asks before that download.'
-                      : 'Plawie boots the gateway first, then lets you download a tiny NDK local model from Local LLM. The optional Ollama Hub runtime (${ModelProviderCatalog.ollamaRuntimeDownloadLabel}) is never downloaded without confirmation.',
+                  'Plawie will boot the Gateway first. Private offline models can be downloaded later from Local LLM and do not require a provider key.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -1140,6 +1119,6 @@ class _ProviderInfo {
     required this.hint,
     required this.prefix,
     required this.defaultModel,
-    this.requiresApiKey = true,
+    required this.requiresApiKey,
   });
 }

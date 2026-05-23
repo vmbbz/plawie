@@ -1210,7 +1210,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ? '🧠 ${_getModelLabel(localModelId!)} (Free · On-Device)'
         : null;
 
-    String current = _prefs.configuredModel ?? cloudModels[0];
+    String current = ModelProviderCatalog.canonicalizeModelId(
+        _prefs.configuredModel ?? cloudModels[0]);
 
     Future<void> switchModel(String val, String label) async {
       final modelId = ModelProviderCatalog.canonicalizeModelId(val);
@@ -1239,14 +1240,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await gw.persistModel(modelId);
         if (!context.mounted) return;
         _prefs.configuredModel = modelId;
-        if (modelId.startsWith('ollama/')) {
-          unawaited(GatewayService().prepareLocalOllamaForGateway(
-            reason: modelId.contains(':cloud')
-                ? 'settings-model-switch-cloud'
-                : 'settings-model-switch-local',
-            wait: Duration(seconds: modelId.contains(':cloud') ? 30 : 15),
-          ));
-        }
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1265,6 +1258,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         cloudModels[i]: cloudLabels[i],
       if (localModelId != null) localModelId: localLabel!,
     };
+    if (!valueToLabel.containsKey(current)) {
+      current = cloudModels[0];
+    }
 
     showDialog(
       context: context,

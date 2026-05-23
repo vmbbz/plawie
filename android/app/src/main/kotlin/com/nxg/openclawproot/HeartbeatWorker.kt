@@ -14,6 +14,11 @@ class HeartbeatWorker(appContext: Context, workerParams: WorkerParameters) :
 
     override suspend fun doWork(): Result {
         Log.i("HeartbeatWorker", "Running background heartbeat check...")
+
+        if (!SetupGuards.canAutomateGateway(applicationContext)) {
+            Log.i("HeartbeatWorker", "Gateway automation paused until setup completes.")
+            return Result.success()
+        }
         
         // Ensure the foreground service is active
         if (!PlawieForegroundService.isRunning) {

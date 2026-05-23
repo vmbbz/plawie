@@ -164,10 +164,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
         }
       });
     });
-    _checkInternalStatus();
     _checkDownloadedModels();
-    _checkOllamaStatus();
-    _checkOllamaSignin();
     _readCpuCoreCount();
     // Default selection to the recommended model
     final toolCatalog =
@@ -210,12 +207,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Re-check signin status when user returns from the browser OAuth flow.
-    // We add a 1s delay because the ollama background process may take a
-    // moment to finish writing the ~/.ollama/credentials file.
-    if (state == AppLifecycleState.resumed) {
-      Future.delayed(const Duration(seconds: 1), () => _checkOllamaSignin());
-    }
+    // Legacy Ollama sign-in checks are intentionally disabled. NDK offline mode
+    // has no browser auth flow and should not probe the deprecated daemon.
   }
 
   Future<void> _checkInternalStatus() async {
@@ -474,7 +467,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
         timeout: 5,
       );
       final count = int.tryParse(result.trim()) ?? 8;
-      if (mounted) setState(() => _cpuCoreCount = count.clamp(2, 12));
+      final clampedCount = count.clamp(2, 12);
+      if (_state.threads > 4 && !_service.isInferring) {
+        // Keep first-run local inference friendly to average phones. Users can
+        // still raise this manually, but old persisted 6+ thread settings are
+        // too aggressive while Gateway + Flutter are also alive.
+        await _service.setThreads(4, currentModel: _selectedModel);
+      }
+      if (mounted) setState(() => _cpuCoreCount = clampedCount);
     } catch (_) {
       // Default 8 already set — no crash
     }
@@ -1052,7 +1052,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
   Widget _buildThreadSlider() {
     final int threads = _state.threads;
     final bool isInferring = _service.isInferring;
-    final bool hasOllamaModels = _ollamaModels.isNotEmpty;
+    final bool hasOllamaModels =
+        _showLegacyOllamaControls && _ollamaModels.isNotEmpty;
     final bool aboveCoreCount = threads > _cpuCoreCount;
     final int sliderMax = _cpuCoreCount;
     // Clamp display value to slider max to avoid assertion error
@@ -1168,7 +1169,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
               ],
             ),
           ),
-        // Ollama recreate banner
+        // Legacy Ollama recreate banner
         if (_threadsPendingApply && hasOllamaModels && !isInferring)
           Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -1248,14 +1249,14 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
               ],
             ),
             const SizedBox(height: 2),
-            Row(
+            const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.memory, color: Colors.white30, size: 11),
-                const SizedBox(width: 3),
-                const Expanded(
+                Icon(Icons.speed_rounded, color: Colors.white30, size: 11),
+                SizedBox(width: 3),
+                Expanded(
                   child: Text(
-                    'Ollama: Baked into the Modelfile at create time — use Recreate to apply.',
+                    'Recommended default: 2-4 threads. More threads can slow the UI, Gateway health checks, and pairing on average phones.',
                     style: TextStyle(color: Colors.white30, fontSize: 10),
                   ),
                 ),
@@ -1648,8 +1649,8 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
           _instructionStep('2  Direct Mode',
               'Tap Start to load via the on-device NDK (fllama). This provides a high-speed, direct LLM experience with 100% offline Voice — bypassing the gateway for maximum privacy.'),
           const SizedBox(height: 6),
-          _instructionStep('3  Agent Hub',
-              'For full tool-use, skills, and multi-step tasks: start the Integrated Agent Hub below and pick an ollama/ model in chat. This routes through the gateway agent loop.'),
+          _instructionStep('3  Cloud Agent',
+              'For full tools, skills, web dashboard, and multi-step planning: use a Gateway cloud model in Chat with your provider API key. Keep local NDK for private/offline turns.'),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1744,7 +1745,113 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
     );
   }
 
+  bool get _showLegacyOllamaControls => false;
+
   Widget _buildOllamaSection() {
+    if (_showLegacyOllamaControls) {
+      return _buildLegacyOllamaSection();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionLabel('OFFLINE MODE'),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E2E),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: AppColors.statusGreen.withValues(alpha: 0.22),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusGreen.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.memory_rounded,
+                        color: AppColors.statusGreen, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'NDK Direct is the local runtime',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'No Ollama daemon, no 1.30 GB runtime, no hidden proxy.',
+                          style: TextStyle(color: Colors.white38, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusGreen.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Text(
+                      'PRIVATE',
+                      style: TextStyle(
+                        color: AppColors.statusGreen,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Cloud Agent Mode uses the OpenClaw Gateway with your chosen provider key. Private Offline Mode uses fllama directly inside the app. These paths are deliberately separate so local inference cannot overload gateway pairing or background stability.',
+                style: TextStyle(
+                    color: Colors.white60, fontSize: 12, height: 1.45),
+              ),
+              const SizedBox(height: 14),
+              _buildModelActionRow(
+                icon: Icons.cloud_done_rounded,
+                title: 'Need tools, skills, or dashboard?',
+                subtitle:
+                    'Use Chat -> model picker with Gemini, Claude, OpenAI, Grok, or Groq.',
+                trailing: const Icon(Icons.verified_user_rounded,
+                    color: Colors.blueAccent, size: 18),
+              ),
+              const SizedBox(height: 8),
+              _buildModelActionRow(
+                icon: Icons.phone_android_rounded,
+                title: 'Need private/offline chat?',
+                subtitle:
+                    'Download one GGUF above, activate it, then pick local-llm in Chat.',
+                trailing: const Icon(Icons.lock_rounded,
+                    color: AppColors.statusGreen, size: 18),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegacyOllamaSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
