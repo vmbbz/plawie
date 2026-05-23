@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'audio_playback_service.dart';
+import 'preferences_service.dart';
 import 'voice_persona_service.dart';
 
 /// Lean TTS facade — now 100% relies on OpenClaw Gateway TTS.
@@ -17,6 +19,9 @@ class TtsService {
 
   final AudioPlaybackService _playback = AudioPlaybackService();
   final VoicePersonaService _personaService = VoicePersonaService();
+  static const MethodChannel _nativeTtsChannel =
+      MethodChannel('plawie/native_tts');
+  bool _nativeSpeaking = false;
 
   /// Fires when TTS starts speaking (used by VRM lip-sync).
   Function? onStart;
@@ -37,11 +42,28 @@ class TtsService {
   /// List of personas recognized by the OpenClaw gateway
   List<String> get availablePersonas => VoicePersonaService.commonPersonas;
 
-  /// No-op for direct text speaking — gateway handles actual generation
-  /// via tool calls and returns a URL to [speakUrl].
+  /// Direct text speaking for local/offline paths.
+  ///
+  /// Gateway talk mode still uses [speakBytes]/[speakUrl]. Local NDK mode has no
+  /// gateway TTS stream, so this falls back to Android's native TextToSpeech
+  /// engine and keeps the same onStart/onComplete hooks for avatar lip sync.
   Future<void> speak(String text) async {
-    debugPrint('TtsService: Gateway TTS generation requested for: $text');
-    // Note: The actual MP3 will arrive via GatewayService -> speakUrl()
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    debugPrint('TtsService: Speaking via native Android TTS: $clean');
+    _nativeSpeaking = true;
+    onStart?.call();
+    try {
+      await _nativeTtsChannel.invokeMethod('speak', {
+        'text': clean,
+        'speed': PreferencesService().ttsSpeed,
+      });
+    } catch (e) {
+      debugPrint('TtsService: Native TTS failed: $e');
+    } finally {
+      _nativeSpeaking = false;
+      onComplete?.call();
+    }
   }
 
   /// Play a direct MP3 URL from the Gateway
@@ -58,12 +80,16 @@ class TtsService {
   }
 
   Future<void> stop() async {
+    _nativeSpeaking = false;
+    try {
+      await _nativeTtsChannel.invokeMethod('stop');
+    } catch (_) {}
     await _playback.stop();
   }
 
   bool get isReady => true; // Gateway path is always ready
 
-  bool get isSpeaking => _playback.isPlaying;
+  bool get isSpeaking => _playback.isPlaying || _nativeSpeaking;
 
   /// Deprecated: Local engines removed in v2.0-beta.1 cleanup
   bool get isUsingFallback => false;

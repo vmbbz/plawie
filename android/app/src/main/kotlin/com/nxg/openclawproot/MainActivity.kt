@@ -31,18 +31,23 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.projection.MediaProjectionManager
+import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkRequest
 import android.app.AlarmManager
+import android.os.BatteryManager
 import android.os.SystemClock
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.nxg.openclawproot/native"
@@ -60,6 +65,8 @@ class MainActivity : FlutterActivity() {
     private var screenCaptureDurationMs: Long = 5000L
     private var wakeLock: PowerManager.WakeLock? = null
     private var pipMethodChannel: MethodChannel? = null
+    private var nativeTts: TextToSpeech? = null
+    private var nativeTtsReady: Boolean = false
 
     // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
     private var hotwordEventSink: EventChannel.EventSink? = null
@@ -109,6 +116,23 @@ class MainActivity : FlutterActivity() {
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "plawie/native_tts"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "speak" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    val speed = (call.argument<Double>("speed") ?: 1.0).toFloat()
+                    speakNativeTts(text, speed, result)
+                }
+                "stop" -> {
+                    nativeTts?.stop()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         // Register the PIP mic broadcast receiver
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -532,6 +556,20 @@ class MainActivity : FlutterActivity() {
                         result.error("SERVICE_ERROR", e.message, null)
                     }
                 }
+                "getBatteryLevel" -> {
+                    val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                    val percent = if (level >= 0 && scale > 0) (level * 100) / scale else level
+                    result.success(percent)
+                }
+                "isCharging" -> {
+                    val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        status == BatteryManager.BATTERY_STATUS_FULL
+                    result.success(charging)
+                }
                 "vibrate" -> {
                     val durationMs = call.argument<Int>("durationMs")?.toLong() ?: 200L
                     try {
@@ -732,6 +770,75 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun speakNativeTts(text: String, speed: Float, result: MethodChannel.Result) {
+        if (text.isBlank()) {
+            result.success(false)
+            return
+        }
+
+        fun speakNow(tts: TextToSpeech) {
+            val utteranceId = "plawie_${System.currentTimeMillis()}"
+            var completed = false
+            fun finishSuccess(value: Boolean) {
+                if (completed) return
+                completed = true
+                runOnUiThread { result.success(value) }
+            }
+            fun finishError(code: String, message: String?) {
+                if (completed) return
+                completed = true
+                runOnUiThread { result.error(code, message, null) }
+            }
+
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(doneId: String?) {
+                    if (doneId == utteranceId) finishSuccess(true)
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onError(errorId: String?) {
+                    if (errorId == utteranceId) finishError("TTS_ERROR", "Native TTS failed")
+                }
+                override fun onError(errorId: String?, errorCode: Int) {
+                    if (errorId == utteranceId) finishError("TTS_ERROR", "Native TTS failed: $errorCode")
+                }
+                override fun onStop(stoppedId: String?, interrupted: Boolean) {
+                    if (stoppedId == utteranceId) finishSuccess(false)
+                }
+            })
+
+            tts.language = Locale.getDefault()
+            tts.setSpeechRate(speed.coerceIn(0.5f, 2.0f))
+            val params = Bundle().apply {
+                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            }
+            val code = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+            if (code == TextToSpeech.ERROR) {
+                finishError("TTS_ERROR", "Native TTS speak() returned ERROR")
+            }
+        }
+
+        val existing = nativeTts
+        if (existing != null && nativeTtsReady) {
+            speakNow(existing)
+            return
+        }
+
+        nativeTts = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                nativeTtsReady = true
+                nativeTts?.let { speakNow(it) } ?: runOnUiThread {
+                    result.error("TTS_ERROR", "Native TTS unavailable", null)
+                }
+            } else {
+                nativeTtsReady = false
+                runOnUiThread {
+                    result.error("TTS_INIT_ERROR", "Native TTS initialization failed", null)
+                }
+            }
+        }
+    }
+
     private fun createUrlNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -888,6 +995,12 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {}
         try { unregisterReceiver(pipMicReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(wakeWordReceiver) } catch (_: Exception) {}
+        try {
+            nativeTts?.stop()
+            nativeTts?.shutdown()
+        } catch (_: Exception) {}
+        nativeTts = null
+        nativeTtsReady = false
         hotwordEventSink = null
         super.onDestroy()
     }

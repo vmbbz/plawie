@@ -149,7 +149,11 @@ class _ChatScreenState extends State<ChatScreen>
       if (mounted) setState(() => _selectedAvatar = file);
     };
     AgentSkillServer.instance.onGesturePlayed = (gesture) {
-      if (mounted) setState(() => _currentGesture = gesture);
+      if (!mounted) return;
+      setState(() => _currentGesture = null);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _currentGesture = gesture);
+      });
     };
     AgentSkillServer.instance.onGestureModeChanged = (mode) {
       if (mounted) setState(() => _currentGestureMode = mode);
@@ -401,7 +405,11 @@ class _ChatScreenState extends State<ChatScreen>
 
     _tts.onStart = () {
       if (mounted) {
-        setState(() => _speechIntensity = 0.8);
+        setState(() {
+          _speechIntensity = 0.8;
+          _currentGesture = 'talk';
+        });
+        _syncOverlayState();
       }
     };
 
@@ -526,11 +534,7 @@ class _ChatScreenState extends State<ChatScreen>
         return;
       }
       if (_selectedModel.startsWith('local-llm/')) {
-        // NDK direct mode is intentionally gateway-isolated. Do not call
-        // talk.speak for every local sentence unless a native local TTS engine
-        // is wired in; otherwise the gateway logs noisy provider errors.
-        _isTtsSpeaking = false;
-        _processNextTtsInQueue();
+        await _tts.speak(sentence);
         return;
       }
       final gatewayProvider =

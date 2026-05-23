@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../app.dart';
 import '../constants.dart';
 import '../services/native_bridge.dart';
@@ -28,7 +29,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   String? _error;
 
   // Step 0: Provider
-  String? _selectedProvider;
+  String? _selectedProvider = 'openrouter';
 
   // Step 1: API Key
   final _apiKeyController = TextEditingController();
@@ -713,6 +714,10 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               ),
             ),
           ),
+          if (provider.id == 'openrouter') ...[
+            const SizedBox(height: 14),
+            _buildOpenRouterHelpCard(theme, isDark, provider),
+          ],
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
@@ -747,6 +752,40 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildOpenRouterHelpCard(
+      ThemeData theme, bool isDark, _ProviderInfo provider) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => launchUrl(
+        Uri.parse('https://openrouter.ai/settings/keys'),
+        mode: LaunchMode.externalApplication,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: provider.color.withValues(alpha: isDark ? 0.14 : 0.08),
+          border: Border.all(color: provider.color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.open_in_new_rounded, color: provider.color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'New here? Tap to create an OpenRouter key. It is easiest for mainstream users because one key unlocks free router models plus paid upgrades later.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

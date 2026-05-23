@@ -105,6 +105,22 @@
             'gesture_powerful', 'gesture_ready', 'gesture_shoot', 'gesture_spin',
             'gesture_squat', 'gesture_talk'
         ];
+        const LIMB_GESTURE_PATHS = {
+            'wave': 'animations/limbs/Wave_Right_01.vrma',
+            'wave right': 'animations/limbs/Wave_Right_01.vrma',
+            'wave left': 'animations/limbs/Wave_Left_01.vrma',
+            'both wave': 'animations/limbs/Wave_Both_01.vrma',
+            'cheerful wave left': 'animations/limbs/Cheerful_Wave_Left_01.vrma',
+            'cheerful wave right': 'animations/limbs/Cheerful_Wave_Right_01.vrma',
+            'excited wave left': 'animations/limbs/Excited_Wave_Left_01.vrma',
+            'excited wave right': 'animations/limbs/Excited_Wave_Right_01.vrma',
+            'bow': 'animations/limbs/Bowing_01.vrma',
+            'bowing': 'animations/limbs/Bowing_01.vrma',
+            'sitting wave': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'exaggerated wave': 'animations/limbs/Exaggerated_Wave_Both_01.vrma',
+            'stylized wave': 'animations/limbs/Stylized_Wave_Left_01.vrma',
+            'fearful wave': 'animations/limbs/Fearful_Wave_01.vrma',
+        };
 
         let neonStool = null;
         let stoolSeat, stoolLegs = [];
@@ -303,6 +319,20 @@
                                 }
                             });
                         });
+                        Object.entries(LIMB_GESTURE_PATHS).forEach(([alias, path]) => {
+                            loader.load(`./${path}`, (g) => {
+                                const anim = g.userData.vrmAnimations[0];
+                                const clip = createVRMAnimationClip(anim, vrm);
+                                const action = mixer.clipAction(clip);
+                                action.setLoop(THREE.LoopOnce);
+                                action.clampWhenFinished = true;
+                                gestures[alias] = action;
+                                gestures[path.toLowerCase()] = action;
+                                gestures[path.split('/').pop().replace('.vrma', '').toLowerCase().replaceAll('_', ' ')] = action;
+                            }, undefined, (err) => {
+                                if (window.PlawieBridge) window.PlawieBridge.postMessage('WARN: [JS] limb gesture failed ' + alias + ': ' + err);
+                            });
+                        });
                     });
                 },
                 (progress) => {
@@ -485,8 +515,23 @@
             window.playCompositeGesture(name);
         };
 
+        function normalizeGestureName(input) {
+            return String(input || '')
+                .toLowerCase()
+                .replace('assets/vrm/', '')
+                .replace('animations/', '')
+                .replace('gesture_', '')
+                .replace('.vrma', '')
+                .replace(/^limbs\//, '')
+                .replaceAll('_', ' ')
+                .trim();
+        }
+
         window.playCompositeGesture = (baseClipName, layerClipNames = [], options = {}) => {
-            const n = baseClipName.toLowerCase().replace('gesture_', '').replace('assets/vrm/animations/', '').replace('.vrma', '');
+            const candidates = [baseClipName, ...(Array.isArray(layerClipNames) ? layerClipNames : [])]
+                .map(normalizeGestureName)
+                .filter(Boolean);
+            const n = candidates.find(name => gestures[name]) || candidates[0] || 'ready';
             targetEmotion = GESTURE_EMOTIONS[n] || 'neutral';
 
             // Auto-stool logic

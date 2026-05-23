@@ -345,7 +345,7 @@ class SkillsService {
           params['text'];
       if (raw != null) {
         final lower = raw.toLowerCase();
-        String base = 'assets/vrma/cute.vrma';
+        String base = _fullBodyMap['cute']!;
         List<String> layers = [];
         for (var e in _fullBodyMap.entries) {
           if (lower.contains(e.key)) {
@@ -653,8 +653,134 @@ class SkillsService {
   List<Map<String, dynamic>> getToolsCatalog() {
     return _skills.values
         .where((s) => s.enabled)
-        .map((s) => s.toToolDefinition())
+        .map(_toolDefinitionForSkill)
         .toList();
+  }
+
+  Map<String, dynamic> _toolDefinitionForSkill(Skill skill) {
+    switch (skill.id) {
+      case 'avatar-control':
+        final gestures = {
+          ..._fullBodyMap.keys,
+          ..._limbMap.keys,
+          'wave',
+          'bow',
+        }.toList()
+          ..sort();
+        return {
+          'name': skill.id,
+          'description':
+              'Control Plawie avatar model, facial emotion, speaking style, and VRMA gestures/animations.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': [
+                  'play_gesture',
+                  'play_vrma',
+                  'set_emotion',
+                  'set_mode',
+                  'change_model',
+                  'get_status',
+                ],
+                'description':
+                    'Use play_gesture for animation, set_emotion for face, set_mode for speaking style.'
+              },
+              'gesture': {
+                'type': 'string',
+                'enum': gestures,
+                'description':
+                    'Exact gesture name. Examples: greeting, talk, dance, wave right, both wave, bowing.'
+              },
+              'emotion': {
+                'type': 'string',
+                'enum': [
+                  'neutral',
+                  'happy',
+                  'sad',
+                  'angry',
+                  'surprised',
+                  'relaxed',
+                  'thinking',
+                  'excited',
+                ],
+              },
+              'mode': {
+                'type': 'string',
+                'enum': ['normal', 'expressive', 'dance', 'subtle'],
+              },
+              'model': {
+                'type': 'string',
+                'description': 'Avatar VRM file, for example gemini.vrm.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'tts-voice':
+        return {
+          'name': skill.id,
+          'description':
+              'Speak text aloud or inspect voice status. Gateway talk mode handles cloud speech; native TTS handles local speech.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['speak', 'stop', 'get_status', 'set_voice'],
+              },
+              'text': {
+                'type': 'string',
+                'description': 'Text to speak when action is speak.',
+              },
+              'voice': {'type': 'string'},
+            },
+            'required': ['action'],
+          },
+        };
+      case 'device-node':
+        return {
+          'name': skill.id,
+          'description':
+              'Use Android hardware: battery, haptics, flashlight, and sensors.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': [
+                  'get_battery',
+                  'vibrate',
+                  'flashlight_on',
+                  'flashlight_off',
+                  'flashlight_toggle',
+                  'read_sensor',
+                  'take_photo',
+                  'get_location',
+                ],
+              },
+              'sensor_type': {
+                'type': 'string',
+                'enum': [
+                  'accelerometer',
+                  'gyroscope',
+                  'magnetometer',
+                  'barometer'
+                ],
+              },
+              'pattern': {
+                'type': 'array',
+                'items': {'type': 'integer'},
+                'description': 'Haptic pattern in milliseconds.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      default:
+        return skill.toToolDefinition();
+    }
   }
 
   /// Returns the list of all registered native skills.

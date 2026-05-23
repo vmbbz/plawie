@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
@@ -5,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'preferences_service.dart';
 import 'skills_service.dart';
 import 'tts_service.dart';
+import 'capabilities/flash_capability.dart';
+import 'capabilities/vibration_capability.dart';
 
 /// Local HTTP Server that listens on 127.0.0.1:8765 for OpenClaw Native Skills.
 /// The gateway AI agent POSTs to these endpoints to control the Android app.
@@ -32,6 +35,8 @@ class AgentSkillServer {
 
   HttpServer? _server;
   Future<void>? _startFuture;
+  final FlashCapability _flashCapability = FlashCapability();
+  final VibrationCapability _vibrationCapability = VibrationCapability();
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI
   void Function(String avatarFile)? onAvatarChanged;
@@ -181,6 +186,29 @@ class AgentSkillServer {
         onGesturePlayed?.call(gesture);
         _sendJson(request, {'success': true, 'gesture': gesture});
 
+      case 'play_vrma':
+      case 'play_vrma_composite':
+        final base = data['base']?.toString() ??
+            data['gesture']?.toString() ??
+            data['animation']?.toString();
+        final layers = (data['layers'] as List?)
+                ?.map((item) => item.toString())
+                .where((item) => item.trim().isNotEmpty)
+                .toList() ??
+            const <String>[];
+        final target = layers.isNotEmpty ? layers.first : base;
+        if (target == null || target.trim().isEmpty) {
+          return _sendError(request, 'Missing base/gesture/layers parameter');
+        }
+        onGesturePlayed?.call(target);
+        _sendJson(request, {
+          'success': true,
+          'gesture': target,
+          'base': base,
+          'layers': layers,
+          'blendTime': data['blendTime'] ?? 0.4,
+        });
+
       case 'set_emotion':
         final emotion = data['emotion'] as String?;
         if (emotion == null) {
@@ -307,27 +335,41 @@ class AgentSkillServer {
                 ?.map((e) => (e as num).toInt())
                 .toList() ??
             [0, 300];
-        await const MethodChannel('plawie/haptics').invokeMethod(
-          'vibrate',
+        final frame = await _vibrationCapability.handle(
+          'haptic.vibrate',
           {'pattern': pattern},
         );
-        _sendJson(request, {'success': true, 'pattern': pattern});
+        _sendNodeFrame(request, frame, fallback: {'pattern': pattern});
 
       case 'flashlight_on':
-        await const MethodChannel('plawie/flash').invokeMethod('on');
-        _sendJson(request, {'success': true, 'flashlight': 'on'});
+        final frame = await _flashCapability.handleWithPermission(
+          'flash.on',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
 
       case 'flashlight_off':
-        await const MethodChannel('plawie/flash').invokeMethod('off');
-        _sendJson(request, {'success': true, 'flashlight': 'off'});
+        final frame = await _flashCapability.handleWithPermission(
+          'flash.off',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'flashlight_toggle':
+        final frame = await _flashCapability.handleWithPermission(
+          'flash.toggle',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
 
       case 'get_battery':
-        final level = await const MethodChannel('plawie/device')
+        final level = await const MethodChannel('com.nxg.openclawproot/native')
                 .invokeMethod<int>('getBatteryLevel') ??
             -1;
-        final charging = await const MethodChannel('plawie/device')
-                .invokeMethod<bool>('isCharging') ??
-            false;
+        final charging =
+            await const MethodChannel('com.nxg.openclawproot/native')
+                    .invokeMethod<bool>('isCharging') ??
+                false;
         _sendJson(request, {'level': level, 'isCharging': charging});
 
       case 'get_location':
@@ -403,6 +445,24 @@ class AgentSkillServer {
     }
   }
 
+  void _sendNodeFrame(
+    HttpRequest request,
+    dynamic frame, {
+    Map<String, dynamic>? fallback,
+  }) {
+    if (frame.isError) {
+      final error = frame.error;
+      _sendError(request, error is Map ? jsonEncode(error) : '$error');
+      return;
+    }
+    final payload = frame.payload;
+    if (payload is Map<String, dynamic>) {
+      _sendJson(request, {'success': true, ...payload});
+    } else {
+      _sendJson(request, {'success': true, ...?fallback});
+    }
+  }
+
   void _sendJson(HttpRequest request, Map<String, dynamic> data) {
     request.response
       ..statusCode = HttpStatus.ok
@@ -432,6 +492,3 @@ class AgentSkillServer {
     _startFuture = null;
   }
 }
-
-// Suppress the unawaited Future lint for fire-and-forget calls.
-void unawaited(Future<void> future) {}

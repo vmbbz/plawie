@@ -56,7 +56,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Provider Keys',
                         description:
-                            'Settings -> Update API Key supports Gemini, Claude, OpenAI, Grok/xAI, OpenRouter, and Groq. Keys are written into the OpenClaw provider config and auth profile before Gateway use, then the selected model is persisted as provider/model-id.',
+                            'Settings -> Update API Key supports Gemini, Claude, OpenAI, Grok/xAI, OpenRouter, and Groq. OpenRouter is the easiest mainstream starting point: create one key at openrouter.ai/settings/keys, then use free router models first and paid upgrades later. Keys are written into the OpenClaw provider config and auth profile before Gateway use.',
                         icon: Icons.key_rounded,
                         color: AppColors.statusAmber,
                       ),
@@ -874,12 +874,15 @@ class HelpScreen extends StatelessWidget {
     return Column(
       children: [
         const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 24,
+          runSpacing: 12,
           children: [
             _buildSupportButton(context, 'Explore Git Source',
                 'https://github.com/vmbbz/plawie', Icons.code_rounded),
-            const SizedBox(width: 32),
+            _buildSupportButton(context, 'OpenRouter Keys',
+                'https://openrouter.ai/settings/keys', Icons.key_rounded),
             _buildSupportButton(context, 'Join Discord',
                 'https://discord.gg/openclaw', Icons.forum_rounded),
           ],

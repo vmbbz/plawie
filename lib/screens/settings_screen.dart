@@ -1118,8 +1118,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .map((provider) => provider.id)
         .toList(growable: false);
     String selectedProvider = ModelProviderCatalog.apiProviderForSetupId(
-        _prefs.apiProvider ?? 'google');
-    if (!providers.contains(selectedProvider)) selectedProvider = 'google';
+        _prefs.apiProvider ?? 'openrouter');
+    if (!providers.contains(selectedProvider)) selectedProvider = 'openrouter';
 
     showDialog(
       context: context,
@@ -1149,6 +1149,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 obscureText: true,
               ),
+              if (selectedProvider == 'openrouter') ...[
+                const SizedBox(height: 12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => launchUrl(
+                    Uri.parse('https://openrouter.ai/settings/keys'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.open_in_new_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Get an OpenRouter API key. One key can route free models and paid upgrades.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           actions: [

@@ -62,8 +62,7 @@ class ProviderOption {
 }
 
 class ModelProviderCatalog {
-  static const String defaultCloudFallbackModel =
-      'google/gemini-3.1-pro-preview';
+  static const String defaultCloudFallbackModel = 'openrouter/openrouter/free';
   static const String setupSafeGatewayModel = defaultCloudFallbackModel;
 
   static const String plawieNdkProviderId = 'plawie_ndk';

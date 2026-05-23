@@ -237,14 +237,6 @@ class _TrimmedLocalHistory {
   });
 }
 
-class _LocalToolInvocation {
-  final String name;
-  final Map<String, dynamic> args;
-  final String label;
-
-  const _LocalToolInvocation(this.name, this.args, this.label);
-}
-
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -470,35 +462,6 @@ class LocalLlmService {
       return controller.stream;
     }
 
-    final directAnswer = _directLocalAnswer(userMessage);
-    if (directAnswer != null) {
-      debugPrint('[NDK] direct local answer served without inference');
-      Future.microtask(() {
-        if (!controller.isClosed) controller.add(directAnswer);
-        if (!controller.isClosed) controller.close();
-      });
-      return controller.stream;
-    }
-
-    final directActions = _directLocalToolActions(userMessage);
-    if (directActions.isNotEmpty) {
-      debugPrint(
-          '[NDK] direct local tool action(s): ${directActions.map((a) => a.name).join(', ')}');
-      Future(() async {
-        final responses = <String>[];
-        for (final action in directActions) {
-          final result =
-              await _dispatchTool(action.name, jsonEncode(action.args));
-          responses.add(_formatDirectToolResult(action, result));
-        }
-        if (!controller.isClosed) {
-          controller.add(responses.join('\n\n'));
-        }
-        if (!controller.isClosed) controller.close();
-      });
-      return controller.stream;
-    }
-
     if (_isInferring && _activeRequestId != null) {
       fllamaCancelInference(_activeRequestId!);
     }
@@ -517,7 +480,8 @@ class LocalLlmService {
           Role.system,
           'You are Plawie, a helpful AI assistant running locally on this Android device. '
           'Be concise and direct. '
-          '${tools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Use a tool only if it directly helps the user request.'}'),
+          'Never pretend a native action happened. '
+          '${tools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Prefer a tool call for explicit device, camera, avatar, haptic, location, sensor, screen, or canvas requests. Use exact JSON schema and enum values only. After a tool result, briefly explain the real result.'}'),
       if (trimmed.summary != null && trimmed.summary!.isNotEmpty)
         Message(Role.system, trimmed.summary!),
       for (final m in trimmed.recent)
@@ -713,224 +677,17 @@ class LocalLlmService {
     Tool(
       name: 'avatar_gesture',
       jsonSchema:
-          '{"type":"object","properties":{"gesture":{"type":"string"}},"required":["gesture"]}',
-      description: 'Makes the Plawie avatar play a gesture.',
+          '{"type":"object","properties":{"gesture":{"type":"string","enum":["greeting","talk","ready","dance","spin","cute","elegant","fight","peacesign","pose","powerful","shoot","squat","wave","wave left","wave right","both wave","cheerful wave left","cheerful wave right","excited wave left","excited wave right","bowing","sitting wave","exaggerated wave","stylized wave","fearful wave"]}},"required":["gesture"]}',
+      description:
+          'Makes the Plawie avatar play an exact gesture/VRMA animation. Use wave right or both wave for waving; use bowing for bow.',
     ),
     Tool(
       name: 'avatar_emotion',
       jsonSchema:
-          '{"type":"object","properties":{"emotion":{"type":"string"}},"required":["emotion"]}',
+          '{"type":"object","properties":{"emotion":{"type":"string","enum":["neutral","happy","sad","angry","surprised","relaxed","thinking","excited"]}},"required":["emotion"]}',
       description: 'Sets the Plawie avatar facial emotion.',
     ),
   ];
-
-  /// Fast deterministic answers for questions the app can answer better than a
-  /// tiny model. This avoids spending local context on bookkeeping questions.
-  String? _directLocalAnswer(String userMessage) {
-    final lower = userMessage.toLowerCase();
-    final asksTools = (lower.contains('tool') ||
-            lower.contains('capabilit') ||
-            lower.contains('what can you do')) &&
-        (lower.contains('what') ||
-            lower.contains('which') ||
-            lower.contains('list') ||
-            lower.contains('show') ||
-            lower.contains('can you'));
-    if (!asksTools) return null;
-
-    return 'I can use these on-device native tools in NDK Direct mode:\n\n'
-        '- get_current_datetime: current local date/time\n'
-        '- device_battery: battery level and charging state\n'
-        '- camera_snap and camera_list: camera capture and camera discovery\n'
-        '- location_get: GPS location when permission is granted\n'
-        '- flash_set: torch on/off/toggle/status\n'
-        '- haptic_vibrate: phone vibration\n'
-        '- sensor_list and sensor_read: accelerometer, gyroscope, magnetometer, barometer\n'
-        '- screen_record: short screen recording after Android consent\n'
-        '- canvas_navigate and canvas_snapshot: in-app web canvas actions\n'
-        '- avatar_gesture and avatar_emotion: Plawie avatar expression controls\n\n'
-        'For full OpenClaw cloud/plugin skills, use a gateway-backed provider. '
-        'For private offline device actions, stay on NDK Direct.';
-  }
-
-  List<_LocalToolInvocation> _directLocalToolActions(String userMessage) {
-    final lower = userMessage.toLowerCase();
-    final actions = <_LocalToolInvocation>[];
-    bool hasAny(Iterable<String> words) => words.any(lower.contains);
-    void add(String name, Map<String, dynamic> args, String label) {
-      if (actions.any((a) => a.name == name)) return;
-      actions.add(_LocalToolInvocation(name, args, label));
-    }
-
-    final asksToDoSomething = hasAny([
-      'take',
-      'snap',
-      'capture',
-      'get',
-      'show',
-      'turn',
-      'toggle',
-      'switch',
-      'vibrate',
-      'buzz',
-      'open',
-      'record',
-      'read',
-      'list',
-      'what',
-      'where',
-    ]);
-    if (!asksToDoSomething) return const <_LocalToolInvocation>[];
-
-    if (hasAny(['time', 'date', 'today', 'now'])) {
-      add('get_current_datetime', const {}, 'current date/time');
-    }
-    if (hasAny(['battery', 'charging', 'charge level'])) {
-      add('device_battery', const {}, 'battery status');
-    }
-    if (hasAny(['camera list', 'list cameras', 'available cameras'])) {
-      add('camera_list', const {}, 'camera list');
-    } else if (hasAny(['camera', 'photo', 'picture', 'selfie', 'snapshot'])) {
-      add(
-          'camera_snap',
-          {
-            if (hasAny(['front', 'selfie'])) 'facing': 'front',
-            if (hasAny(['back', 'rear'])) 'facing': 'back',
-          },
-          'camera snapshot');
-    }
-    if (hasAny(['location', 'gps', 'where am i', 'coordinates'])) {
-      add('location_get', const {}, 'current location');
-    }
-    if (hasAny(['flashlight', 'torch', 'flash light'])) {
-      final action = hasAny(['off', 'disable', 'turn off'])
-          ? 'off'
-          : hasAny(['status', 'state'])
-              ? 'status'
-              : hasAny(['toggle'])
-                  ? 'toggle'
-                  : 'on';
-      add('flash_set', {'action': action}, 'flashlight $action');
-    }
-    if (hasAny(['vibrate', 'haptic', 'buzz'])) {
-      add('haptic_vibrate', const {'durationMs': 300}, 'haptic vibration');
-    }
-    if (hasAny([
-      'sensor',
-      'accelerometer',
-      'gyroscope',
-      'magnetometer',
-      'barometer'
-    ])) {
-      if (hasAny(['list', 'available sensors'])) {
-        add('sensor_list', const {}, 'sensor list');
-      } else {
-        final sensor = hasAny(['gyroscope'])
-            ? 'gyroscope'
-            : hasAny(['magnetometer'])
-                ? 'magnetometer'
-                : hasAny(['barometer'])
-                    ? 'barometer'
-                    : 'accelerometer';
-        add('sensor_read', {'sensor': sensor}, '$sensor reading');
-      }
-    }
-    if (hasAny(['screen record', 'record screen', 'screen recording'])) {
-      add('screen_record', const {'durationMs': 5000}, 'screen recording');
-    }
-    if (hasAny(['avatar', 'gesture', 'wave', 'nod', 'bow'])) {
-      final gesture = hasAny(['bow'])
-          ? 'bow'
-          : hasAny(['nod'])
-              ? 'nod'
-              : 'wave';
-      add('avatar_gesture', {'gesture': gesture}, 'avatar gesture');
-    }
-    if (hasAny(['emotion', 'smile', 'happy', 'sad', 'angry', 'surprised'])) {
-      final emotion = hasAny(['sad'])
-          ? 'sad'
-          : hasAny(['angry'])
-              ? 'angry'
-              : hasAny(['surprised'])
-                  ? 'surprised'
-                  : 'happy';
-      add('avatar_emotion', {'emotion': emotion}, 'avatar emotion');
-    }
-
-    final urlMatch = RegExp(r'https?://\S+').firstMatch(userMessage);
-    if (urlMatch != null &&
-        hasAny(['open', 'navigate', 'website', 'url', 'canvas'])) {
-      add('canvas_navigate', {'url': urlMatch.group(0)!}, 'canvas navigation');
-    }
-
-    return actions;
-  }
-
-  String _formatDirectToolResult(
-      _LocalToolInvocation action, String resultJson) {
-    try {
-      final decoded = jsonDecode(resultJson);
-      if (decoded is! Map) {
-        return 'Done: ${action.label}.';
-      }
-      final data = Map<String, dynamic>.from(decoded);
-      final ok = data['ok'] == true || data['success'] == true;
-      final error = data['error'];
-      if (!ok && error != null) {
-        final message = error is Map
-            ? (error['message'] ?? error['code'] ?? error).toString()
-            : error.toString();
-        return 'I tried ${action.label}, but it failed: $message';
-      }
-
-      final result = data['result'] is Map
-          ? Map<String, dynamic>.from(data['result'] as Map)
-          : data;
-      switch (action.name) {
-        case 'get_current_datetime':
-          return 'Current device time: ${data['datetime']}.';
-        case 'device_battery':
-          return 'Battery: ${data['level'] ?? result['level'] ?? 'unknown'}% '
-              '(${(data['isCharging'] ?? result['isCharging']) == true ? 'charging' : 'not charging'}).';
-        case 'camera_snap':
-          return 'Captured a photo${result['width'] != null ? ' (${result['width']}x${result['height']})' : ''}.';
-        case 'camera_list':
-          return 'Available cameras: ${jsonEncode(result['cameras'] ?? const [])}.';
-        case 'location_get':
-          return 'Location: lat=${result['lat']}, lng=${result['lng']}, accuracy=${result['accuracy']}m.';
-        case 'flash_set':
-          return 'Flashlight is ${result['on'] == true ? 'on' : 'off'}.';
-        case 'haptic_vibrate':
-          return 'Vibrated the phone.';
-        case 'sensor_list':
-          return 'Available sensors: ${(result['sensors'] as List?)?.join(', ') ?? 'unknown'}.';
-        case 'sensor_read':
-          return 'Sensor reading: ${_compactToolJson(result)}.';
-        case 'screen_record':
-          return 'Screen recording captured.';
-        case 'canvas_navigate':
-          return 'Opened ${result['url'] ?? action.args['url']} in the canvas.';
-        case 'avatar_gesture':
-          return 'Played avatar gesture: ${action.args['gesture']}.';
-        case 'avatar_emotion':
-          return 'Set avatar emotion: ${action.args['emotion']}.';
-        default:
-          return 'Done: ${action.label}.';
-      }
-    } catch (_) {
-      return 'Done: ${action.label}.';
-    }
-  }
-
-  String _compactToolJson(Map<String, dynamic> data) {
-    final copy = Map<String, dynamic>.from(data);
-    for (final key in ['base64', 'imageBase64', 'bytes']) {
-      if (copy[key] is String) {
-        copy[key] = '[${(copy[key] as String).length} chars]';
-      }
-    }
-    return jsonEncode(copy);
-  }
 
   /// Selects only the tool schemas that the current message plausibly needs.
   ///
@@ -942,6 +699,7 @@ class LocalLlmService {
     final selected = <String>{};
 
     bool hasAny(Iterable<String> words) => words.any(lower.contains);
+    final asksAboutTools = hasAny(['tool', 'capabilit', 'what can you do']);
 
     if (hasAny(['time', 'date', 'today', 'now'])) {
       selected.add('get_current_datetime');
@@ -976,17 +734,34 @@ class LocalLlmService {
     if (hasAny(['open url', 'open website', 'web canvas', 'navigate to'])) {
       selected.addAll(['canvas_navigate', 'canvas_snapshot']);
     }
-    if (hasAny(['avatar', 'gesture', 'wave', 'emotion', 'smile', 'face'])) {
+    if (hasAny([
+      'avatar',
+      'gesture',
+      'animation',
+      'animate',
+      'wave',
+      'bow',
+      'dance',
+      'spin',
+      'point',
+      'emotion',
+      'smile',
+      'face'
+    ])) {
       selected.addAll(['avatar_gesture', 'avatar_emotion']);
     }
     if (selected.isEmpty &&
-        hasAny(['use a tool', 'call a tool', 'native tool'])) {
-      selected.addAll([
-        'get_current_datetime',
-        'device_battery',
-        'location_get',
-        'flash_set',
-      ]);
+        (asksAboutTools ||
+            hasAny([
+              'use a tool',
+              'call a tool',
+              'native tool',
+              'what tools',
+              'which tools',
+              'capabilities',
+              'what can you do'
+            ]))) {
+      selected.addAll(_localTools.map((tool) => tool.name));
     }
 
     if (selected.isEmpty) return const <Tool>[];
@@ -1068,7 +843,7 @@ class LocalLlmService {
       case 'avatar_gesture':
         return _postAgentSkill('/api/avatar/control', {
           'action': 'play_gesture',
-          'gesture': args['gesture'] ?? args['name'] ?? 'wave',
+          'gesture': _normalizeAvatarGesture(args['gesture'] ?? args['name']),
         });
       case 'avatar_emotion':
         return _postAgentSkill('/api/avatar/control', {
@@ -1082,6 +857,30 @@ class LocalLlmService {
               'Unknown local tool "$name". Available local tools are compact native tools only.',
         });
     }
+  }
+
+  String _normalizeAvatarGesture(Object? raw) {
+    final value = raw?.toString().trim().toLowerCase() ?? '';
+    if (value.isEmpty) return 'wave right';
+    if (value.contains('both') && value.contains('wave')) return 'both wave';
+    if (value.contains('left') && value.contains('wave')) return 'wave left';
+    if (value.contains('right') && value.contains('wave')) return 'wave right';
+    if (value == 'wave' || value.contains('hello') || value.contains('hi')) {
+      return 'wave right';
+    }
+    if (value.contains('bow')) return 'bowing';
+    if (value.contains('nod')) return 'greeting';
+    if (value.contains('point') || value.contains('peace')) return 'peacesign';
+    if (value.contains('talk') || value.contains('speak')) return 'talk';
+    if (value.contains('dance')) return 'dance';
+    if (value.contains('spin')) return 'spin';
+    if (value.contains('cute')) return 'cute';
+    if (value.contains('ready')) return 'ready';
+    if (value.contains('fight')) return 'fight';
+    if (value.contains('power')) return 'powerful';
+    if (value.contains('shoot')) return 'shoot';
+    if (value.contains('squat') || value.contains('sit')) return 'squat';
+    return value;
   }
 
   Future<String> _dispatchCapability(

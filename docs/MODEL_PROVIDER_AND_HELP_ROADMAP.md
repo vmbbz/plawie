@@ -140,10 +140,30 @@ Recommendation:
 - Do not auto-create provider accounts or hidden keys for users.
 - OpenRouter is now a first-class provider with `openrouter/openrouter/free` as
   the default low-friction route.
+- Fresh setup and Settings should link mainstream users directly to
+  `https://openrouter.ai/settings/keys`. OpenRouter's docs describe API-key
+  auth as a Bearer token flow and allow users to create keys with optional
+  credit limits, which makes it easier to explain than separate keys for every
+  upstream model provider.
 - Later, build "Plawie Cloud Credits" only as a hosted backend with explicit
   sign-in, quota, abuse controls, billing controls, and terms.
 - Keep direct provider BYOK for Gemini, Claude, OpenAI, xAI/Grok, OpenRouter,
   and Groq.
+
+## NDK Tool And Avatar Regression Notes
+
+- The Gateway/OpenClaw path remained structurally intact; the local NDK path was
+  the weaker link. Direct shortcut answers/actions bypassed inference and made
+  the assistant feel hardcoded.
+- `TtsService.speak()` had become a Gateway-only no-op after talk-mode changes,
+  and Chat skipped local-llm speech entirely. Local NDK now uses Android native
+  TTS for offline speech while Gateway models still use talk-mode audio bytes.
+- Avatar VRMA assets from the neon animation work were still present, but the
+  bridge rejected `play_vrma_composite` and the WebView only loaded top-level
+  full-body gestures. The bridge now accepts composite actions and the WebView
+  loads common limb/wave/bow VRMAs for actual playback.
+- Local NDK tool schemas now constrain avatar gesture/emotion arguments so small
+  models have exact values instead of inventing unsupported gesture names.
 
 ## Release Checklist
 
