@@ -17,6 +17,7 @@ class VrmAvatarWidget extends StatefulWidget {
   final bool isCinematic;
   final double glowIntensity;
   final String? gesture;
+
   /// Agent-controlled gesture mode: 'normal' | 'expressive' | 'dance' | 'subtle'
   final String? gestureMode;
   final Function(String)? onLog;
@@ -43,7 +44,8 @@ class VrmAvatarWidget extends StatefulWidget {
   State<VrmAvatarWidget> createState() => _VrmAvatarWidgetState();
 }
 
-class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
+class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
   final VrmAssetServer _server = VrmAssetServer();
   bool _isReady = false;
@@ -54,6 +56,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -61,7 +64,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onWebResourceError: (WebResourceError error) {
-            widget.onLog?.call('WebView Resource Error: ${error.description} (code ${error.errorCode})');
+            widget.onLog?.call(
+                'WebView Resource Error: ${error.description} (code ${error.errorCode})');
           },
         ),
       )
@@ -73,7 +77,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
               // Cancel fallback timer — JS bridge is confirmed working
               _readyFallbackTimer?.cancel();
               setState(() => _isReady = true);
-              _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
+              _controller.runJavaScript(
+                  "window.loadVrmAvatar('${widget.avatarFileName}');");
               _syncState();
             }
           }
@@ -100,7 +105,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
 
     // Relax Android WebView restrictions
     if (_controller.platform is AndroidWebViewController) {
-      final androidController = _controller.platform as AndroidWebViewController;
+      final androidController =
+          _controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
       // ignore: invalid_use_of_visible_for_testing_member
       AndroidWebViewController.enableDebugging(true);
@@ -128,19 +134,40 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _readyFallbackTimer?.cancel();
+    unawaited(_controller
+        .runJavaScript(
+            'if (window.disposePlawieAvatar) window.disposePlawieAvatar();')
+        .catchError((_) {}));
+    unawaited(_controller.loadRequest(Uri.parse('about:blank')).catchError(
+          (_) {},
+        ));
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final pause = state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden;
+    unawaited(_controller
+        .runJavaScript(
+            'if (window.setRenderPaused) window.setRenderPaused($pause);')
+        .catchError((_) {}));
   }
 
   Future<void> _startServerAndLoad() async {
     try {
       await _server.start();
-      
+
       final params = <String, String>{};
       if (widget.isOverlay) params['overlay'] = 'true';
       if (widget.isPip) params['pip'] = 'true';
-      
-      final uri = Uri.parse('${_server.origin}/avatar_scene.html').replace(queryParameters: params);
+
+      final uri = Uri.parse('${_server.origin}/avatar_scene.html')
+          .replace(queryParameters: params);
       widget.onLog?.call('VRM Server active at ${_server.origin}');
 
       // Load from localhost HTTP
@@ -174,12 +201,15 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
     if (widget.gesture != null && widget.gesture != oldWidget.gesture) {
       _controller.runJavaScript("window.playGesture('${widget.gesture}');");
     }
-    if (widget.gestureMode != null && widget.gestureMode != oldWidget.gestureMode) {
-      _controller.runJavaScript("window.setGestureMode('${widget.gestureMode}');");
+    if (widget.gestureMode != null &&
+        widget.gestureMode != oldWidget.gestureMode) {
+      _controller
+          .runJavaScript("window.setGestureMode('${widget.gestureMode}');");
     }
 
     if (oldWidget.avatarFileName != widget.avatarFileName) {
-      _controller.runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
+      _controller
+          .runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
     }
 
     if (oldWidget.isThinking != widget.isThinking ||
@@ -211,10 +241,13 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget> {
       children: [
         GestureDetector(
           onTapDown: (details) {
-            if (widget.isPip) return; // Don't intercept taps in PiP to allow mic button interaction
+            if (widget.isPip) {
+              return; // Don't intercept taps in PiP to allow mic button interaction
+            }
             final x = details.localPosition.dx;
             final y = details.localPosition.dy;
-            _controller.runJavaScript('if (window.setTapTarget) window.setTapTarget($x, $y);');
+            _controller.runJavaScript(
+                'if (window.setTapTarget) window.setTapTarget($x, $y);');
           },
           child: WebViewWidget(controller: _controller),
         ),

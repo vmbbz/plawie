@@ -37,7 +37,7 @@ class PlawieForegroundService : Service() {
         
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds
-        private const val HEALTH_TIMEOUT_MS = 30_000         // 30s — tolerate heavy model/plugin load
+        private const val HEALTH_TIMEOUT_MS = 10_000         // 10s — a healthy local gateway should answer fast
         private const val MAX_CONSECUTIVE_HTTP_FAILURES = 4  // ~2 minutes of HTTP misses before restart
         private const val MAX_CONSECUTIVE_PROCESS_DOWN = 2   // Fast restart when process is truly dead
         private const val STARTUP_GRACE_MS = 180_000L        // 3 min grace after start/restart

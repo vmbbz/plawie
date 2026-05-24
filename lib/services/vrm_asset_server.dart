@@ -55,7 +55,8 @@ class VrmAssetServer {
           final bytes = await local.readAsBytes();
           request.response.statusCode = 200;
           request.response.headers.set('Content-Type', mimeType);
-          request.response.headers.set('Content-Length', bytes.length.toString());
+          request.response.headers
+              .set('Content-Length', bytes.length.toString());
           request.response.headers.set('Access-Control-Allow-Origin', '*');
           request.response.headers.set('Cache-Control', 'no-cache');
           request.response.add(bytes);
@@ -65,11 +66,14 @@ class VrmAssetServer {
       } catch (_) {}
     }
 
-    // Fall back to bundled Flutter assets
-    final assetPath = 'assets/vrm/$path';
+    // Fall back to bundled Flutter assets. If a previously selected cloud VRM
+    // has been removed from cache, serve the bundled default instead of leaving
+    // the WebView rendering an empty scene forever.
+    var assetPath = 'assets/vrm/$path';
     try {
       final data = await rootBundle.load(assetPath);
-      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      final bytes =
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 
       request.response.statusCode = 200;
       request.response.headers.set('Content-Type', mimeType);
@@ -78,8 +82,27 @@ class VrmAssetServer {
       request.response.headers.set('Cache-Control', 'no-cache');
       request.response.add(bytes);
     } catch (e) {
-      request.response.statusCode = 404;
-      request.response.write('Not found: $assetPath');
+      if (path.endsWith('.vrm') && path != 'gemini.vrm') {
+        try {
+          assetPath = 'assets/vrm/gemini.vrm';
+          final data = await rootBundle.load(assetPath);
+          final bytes =
+              data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+          request.response.statusCode = 200;
+          request.response.headers.set('Content-Type', mimeType);
+          request.response.headers
+              .set('Content-Length', bytes.length.toString());
+          request.response.headers.set('Access-Control-Allow-Origin', '*');
+          request.response.headers.set('Cache-Control', 'no-cache');
+          request.response.add(bytes);
+        } catch (_) {
+          request.response.statusCode = 404;
+          request.response.write('Not found: $assetPath');
+        }
+      } else {
+        request.response.statusCode = 404;
+        request.response.write('Not found: $assetPath');
+      }
     }
 
     await request.response.close();
@@ -87,7 +110,9 @@ class VrmAssetServer {
 
   static String _mimeTypeFor(String path) {
     if (path.endsWith('.html')) return 'text/html; charset=utf-8';
-    if (path.endsWith('.js') || path.endsWith('.mjs')) return 'application/javascript; charset=utf-8';
+    if (path.endsWith('.js') || path.endsWith('.mjs')) {
+      return 'application/javascript; charset=utf-8';
+    }
     if (path.endsWith('.json')) return 'application/json; charset=utf-8';
     if (path.endsWith('.css')) return 'text/css; charset=utf-8';
     if (path.endsWith('.vrm')) return 'model/gltf-binary';

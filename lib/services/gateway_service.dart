@@ -86,7 +86,8 @@ class GatewayService {
   static const Duration _disconnectContextCooldown = Duration(seconds: 20);
   static const Duration _nodeAutoConnectCooldown = Duration(seconds: 20);
   static const Duration _talkSpeakUnavailableBackoff = Duration(minutes: 5);
-  static const Duration _hungGatewayRestartCooldown = Duration(minutes: 5);
+  static const Duration _hungGatewayRestartCooldown = Duration(seconds: 90);
+  static const int _hungGatewayForcedRestartFailures = 6;
   static const Duration _startupPassiveHealGrace = Duration(seconds: 150);
   static const Duration _localInferenceHealthSkipLogCooldown =
       Duration(seconds: 60);
@@ -2634,11 +2635,19 @@ HEARTBEAT_OK.
     if (_hungGatewayRestartInFlight || _isStarting || _isStopping) return;
     final now = DateTime.now();
     final lastRestart = _lastHungGatewayRestartAt;
-    if (lastRestart != null &&
-        now.difference(lastRestart) < _hungGatewayRestartCooldown) {
-      _addActivity(
-          '[HEALTH] Gateway still timing out, but restart is cooling down.');
-      return;
+    if (lastRestart != null) {
+      final restartAge = now.difference(lastRestart);
+      if (restartAge < _hungGatewayRestartCooldown &&
+          failureCount < _hungGatewayForcedRestartFailures) {
+        _addActivity('[HEALTH] Gateway still timing out, restart cooling down '
+            '(${restartAge.inSeconds}s/${_hungGatewayRestartCooldown.inSeconds}s).');
+        return;
+      }
+      if (restartAge < _hungGatewayRestartCooldown &&
+          failureCount >= _hungGatewayForcedRestartFailures) {
+        _addActivity('[HEALTH] Gateway remained unresponsive after '
+            '$failureCount probes; overriding restart cooldown.');
+      }
     }
 
     _hungGatewayRestartInFlight = true;
