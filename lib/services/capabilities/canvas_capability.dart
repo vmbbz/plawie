@@ -37,6 +37,11 @@ class CanvasCapability extends CapabilityHandler {
   /// Fired whenever the canvas becomes visible/hidden. Chat screen can listen.
   static Function(bool visible)? onVisibilityChanged;
 
+  /// Called when a canvas tool arrives before the Chat page has created its
+  /// WebView. This lets Chat keep the browser overlay lazy so idle sessions
+  /// do not hold an extra Android WebView/GL context all day.
+  static Future<WebViewController> Function()? onActivationRequested;
+
   /// Fired after canvas.snapshot so chat can attach the image to the bot reply.
   static Function(String base64, String mimeType)? onSnapshotTaken;
 
@@ -54,11 +59,10 @@ class CanvasCapability extends CapabilityHandler {
 
   @override
   Future<NodeFrame> handle(String command, Map<String, dynamic> params) async {
-    if (_controller == null) {
+    if (!await _ensureControllerReady()) {
       return NodeFrame.response('', error: {
         'code': 'CANVAS_NOT_READY',
-        'message':
-            'Canvas is available but not active on the current screen. '
+        'message': 'Canvas is available but not active on the current screen. '
             'The user must be on the Chat page for canvas commands to work.',
       });
     }
@@ -75,6 +79,18 @@ class CanvasCapability extends CapabilityHandler {
           'code': 'UNKNOWN_COMMAND',
           'message': 'Unknown canvas command: $command',
         });
+    }
+  }
+
+  Future<bool> _ensureControllerReady() async {
+    if (_controller != null) return true;
+    final activate = onActivationRequested;
+    if (activate == null) return false;
+    try {
+      setController(await activate());
+      return _controller != null;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -111,15 +127,16 @@ class CanvasCapability extends CapabilityHandler {
   }
 
   Future<NodeFrame> _eval(Map<String, dynamic> params) async {
-    final js = params['js'] as String?
-        ?? params['code'] as String?
-        ?? params['script'] as String?
-        ?? params['javascript'] as String?
-        ?? params['expression'] as String?;
+    final js = params['js'] as String? ??
+        params['code'] as String? ??
+        params['script'] as String? ??
+        params['javascript'] as String? ??
+        params['expression'] as String?;
     if (js == null || js.isEmpty) {
       return NodeFrame.response('', error: {
         'code': 'MISSING_PARAM',
-        'message': 'canvas.eval requires a "js" parameter with JavaScript code.',
+        'message':
+            'canvas.eval requires a "js" parameter with JavaScript code.',
       });
     }
     try {
@@ -169,8 +186,10 @@ class CanvasCapability extends CapabilityHandler {
       return NodeFrame.response('', payload: {
         'base64': resultStr,
         'mimeType': 'image/png',
-        'width': await _controller!.runJavaScriptReturningResult('window.innerWidth'),
-        'height': await _controller!.runJavaScriptReturningResult('window.innerHeight'),
+        'width': await _controller!
+            .runJavaScriptReturningResult('window.innerWidth'),
+        'height': await _controller!
+            .runJavaScriptReturningResult('window.innerHeight'),
       });
     } catch (e) {
       return NodeFrame.response('', error: {

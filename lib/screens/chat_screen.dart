@@ -166,12 +166,13 @@ class _ChatScreenState extends State<ChatScreen>
       _pendingAiSnapMimeType = mime;
     };
 
-    // Set up canvas WebView controller and wire it to CanvasCapability
-    _canvasController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse('about:blank'));
-    CanvasCapability().setController(_canvasController!);
-    CanvasCapability.onVisibilityChanged = (visible) {
+    // Canvas WebView is created lazily on first tool use. Keeping it out of
+    // idle chat avoids holding a second Android WebView/GL context all day.
+    CanvasCapability.onActivationRequested = _ensureCanvasController;
+    CanvasCapability.onVisibilityChanged = (visible) async {
+      if (visible) {
+        await _ensureCanvasController();
+      }
       if (mounted) setState(() => _canvasVisible = visible);
     };
     CanvasCapability.onSnapshotTaken = (b64, mime) {
@@ -381,6 +382,19 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _syncOverlayState() async {
     // Ported to Native PiP - no-op for now as PiP uses the same activity
+  }
+
+  Future<WebViewController> _ensureCanvasController() async {
+    final existing = _canvasController;
+    if (existing != null) return existing;
+
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+    _canvasController = controller;
+    CanvasCapability().setController(controller);
+    await controller.loadRequest(Uri.parse('about:blank'));
+    if (mounted) setState(() {});
+    return controller;
   }
 
   Future<void> _initVoiceParams() async {
@@ -1976,6 +1990,7 @@ class _ChatScreenState extends State<ChatScreen>
     CanvasCapability.onSnapshotTaken = null;
     HologramService.instance.dismiss();
     CanvasCapability().clearController();
+    CanvasCapability.onActivationRequested = null;
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
@@ -3067,13 +3082,16 @@ class _ChatScreenState extends State<ChatScreen>
                         right: 8,
                         child: GestureDetector(
                           onTap: () {
-                            setState(() => _canvasVisible = false);
+                            final controller = _canvasController;
+                            setState(() {
+                              _canvasVisible = false;
+                              _canvasController = null;
+                            });
                             CanvasCapability().clearController();
-                            _canvasController = WebViewController()
-                              ..setJavaScriptMode(JavaScriptMode.unrestricted)
-                              ..loadRequest(Uri.parse('about:blank'));
-                            CanvasCapability()
-                                .setController(_canvasController!);
+                            unawaited(controller
+                                    ?.loadRequest(Uri.parse('about:blank'))
+                                    .catchError((_) {}) ??
+                                Future<void>.value());
                           },
                           child: Container(
                             padding: const EdgeInsets.all(4),

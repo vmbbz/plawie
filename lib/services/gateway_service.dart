@@ -75,15 +75,19 @@ class GatewayService {
   DateTime? _lastNodeAutoConnectAttemptAt;
   DateTime? _talkSpeakUnavailableUntil;
   DateTime? _lastLocalInferenceHealthSkipAt;
+  DateTime? _lastHungGatewayRestartAt;
   int _consecutiveProcessValidationMisses = 0;
   bool _processValidationInFlight = false;
   bool _nodeAutoConnectInFlight = false;
+  bool _hungGatewayRestartInFlight = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
   static const Duration _disconnectContextCooldown = Duration(seconds: 20);
   static const Duration _nodeAutoConnectCooldown = Duration(seconds: 20);
   static const Duration _talkSpeakUnavailableBackoff = Duration(minutes: 5);
+  static const Duration _hungGatewayRestartCooldown = Duration(minutes: 5);
+  static const Duration _startupPassiveHealGrace = Duration(seconds: 150);
   static const Duration _localInferenceHealthSkipLogCooldown =
       Duration(seconds: 60);
   static const Duration _dashboardPairingApprovalCooldown =
@@ -2524,14 +2528,24 @@ HEARTBEAT_OK.
           return;
         }
 
-        if (elapsed > 60 && !_isAutoHealingInProgress) {
+        if (elapsed > _startupPassiveHealGrace.inSeconds &&
+            !_isAutoHealingInProgress) {
           _triggerPassiveAutoHeal();
         }
       } else if (_state.status == GatewayStatus.running) {
         _addActivity(
             '[HEALTH] Probe failed ($_consecutiveFailures/3): ${e.toString().split('\n').first}');
         if (_consecutiveFailures >= 3 && !_isAutoHealingInProgress) {
-          _triggerPassiveAutoHeal();
+          final processAlive = await NativeBridge.isGatewayRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false);
+          if (processAlive) {
+            unawaited(_restartHungGatewayAfterHealthFailures(
+              reason: 'health-timeout',
+              failureCount: _consecutiveFailures,
+            ));
+          } else {
+            _triggerPassiveAutoHeal();
+          }
         }
       }
 
@@ -2574,14 +2588,78 @@ HEARTBEAT_OK.
   Future<http.Response> _probeGatewayHealth({
     String? token,
     Duration timeout = const Duration(seconds: 8),
-  }) {
-    return http.get(
-      Uri.parse('${AppConstants.gatewayUrl}/health'),
-      headers: {
-        if (token != null && token.isNotEmpty)
-          HttpHeaders.authorizationHeader: 'Bearer $token',
-      },
-    ).timeout(timeout);
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = timeout
+      ..idleTimeout = const Duration(seconds: 1)
+      ..maxConnectionsPerHost = 1;
+    try {
+      final request = await client
+          .getUrl(Uri.parse('${AppConstants.gatewayUrl}/health'))
+          .timeout(timeout);
+      request.headers.set(HttpHeaders.connectionHeader, 'close');
+      if (token != null && token.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
+      final response = await request.close().timeout(timeout);
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 2), onTimeout: () => '');
+      final headers = <String, String>{};
+      response.headers.forEach((name, values) {
+        headers[name] = values.join(',');
+      });
+      return http.Response(
+        body,
+        response.statusCode,
+        headers: headers,
+        request: http.Request(
+          'GET',
+          Uri.parse('${AppConstants.gatewayUrl}/health'),
+        ),
+      );
+    } finally {
+      // Future.timeout does not cancel the underlying socket by itself. Force
+      // close so repeated failed health probes cannot accumulate loopback
+      // sockets and slowly poison long idle sessions.
+      client.close(force: true);
+    }
+  }
+
+  Future<void> _restartHungGatewayAfterHealthFailures({
+    required String reason,
+    required int failureCount,
+  }) async {
+    if (_hungGatewayRestartInFlight || _isStarting || _isStopping) return;
+    final now = DateTime.now();
+    final lastRestart = _lastHungGatewayRestartAt;
+    if (lastRestart != null &&
+        now.difference(lastRestart) < _hungGatewayRestartCooldown) {
+      _addActivity(
+          '[HEALTH] Gateway still timing out, but restart is cooling down.');
+      return;
+    }
+
+    _hungGatewayRestartInFlight = true;
+    _lastHungGatewayRestartAt = now;
+    _addActivity('[HEALTH] Gateway process is alive but HTTP is unresponsive '
+        '($failureCount failures, $reason). Restarting gateway cleanly...');
+    try {
+      await stop();
+      await Future.delayed(const Duration(seconds: 2));
+      await start();
+      _consecutiveFailures = 0;
+      _addActivity('[HEALTH] Gateway restart requested after HTTP stall.');
+    } catch (e) {
+      _addActivity('[HEALTH] Gateway restart after HTTP stall failed: $e');
+      _updateState(_state.copyWith(
+        status: GatewayStatus.error,
+        errorMessage: 'Gateway restart failed after HTTP stall: $e',
+      ));
+    } finally {
+      _hungGatewayRestartInFlight = false;
+    }
   }
 
   Future<void> _ensureNodeConnectedAfterGatewayReady({
