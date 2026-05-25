@@ -463,16 +463,8 @@ class ProcessManager(
         // Redirect stdout/stderr to gateway.log so the log streaming thread
         // can pick up output (including the dashboard token URL).
         val pathExport = "export PATH=\$PATH:/usr/local/bin:/usr/bin"
-        val mobileGatewayEnv = listOf(
-            // Official OpenClaw startup env: do not spend the first 5-12s probing
-            // cloud/local model metadata on mobile. Chat warms the model on demand.
-            "export OPENCLAW_SKIP_STARTUP_MODEL_PREWARM=1",
-            // Phones can be busy during first boot; give local clients enough time
-            // to finish the auth frame instead of creating scary stale WS closes.
-            "export OPENCLAW_HANDSHAKE_TIMEOUT_MS=60000"
-        ).joinToString(" && ")
         val gatewayCmd = """
-$pathExport && $mobileGatewayEnv && mkdir -p /root/.openclaw && (
+$pathExport && mkdir -p /root/.openclaw && (
 if [ -x /usr/local/bin/openclaw ]; then
   /usr/local/bin/openclaw gateway --verbose --allow-unconfigured --bind loopback
 elif [ -f /usr/local/lib/node_modules/openclaw/openclaw.mjs ]; then

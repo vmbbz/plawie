@@ -37,8 +37,8 @@ class PlawieForegroundService : Service() {
         
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds
-        private const val HEALTH_TIMEOUT_MS = 45_000         // OpenClaw can stall HTTP while WS stays healthy on Android
-        private const val MAX_CONSECUTIVE_HTTP_FAILURES = 6  // ~3 minutes of HTTP misses before restart
+        private const val HEALTH_TIMEOUT_MS = 10_000         // 10s — a healthy local gateway should answer fast
+        private const val MAX_CONSECUTIVE_HTTP_FAILURES = 4  // ~2 minutes of HTTP misses before restart
         private const val MAX_CONSECUTIVE_PROCESS_DOWN = 2   // Fast restart when process is truly dead
         private const val STARTUP_GRACE_MS = 180_000L        // 3 min grace after start/restart
         private const val MAX_RESTARTS_PER_HOUR = 3          // Cap restarts to avoid loops
@@ -201,15 +201,6 @@ class PlawieForegroundService : Service() {
                         val uptimeMs = System.currentTimeMillis() - startTime
                         val processAlive = processManager.isGatewayRunning()
                         if (processAlive) {
-                            if (uptimeMs < STARTUP_GRACE_MS) {
-                                // During startup grace, the gateway may be alive but still
-                                // loading sidecars/plugins. Avoid noisy false "miss" counters.
-                                consecutiveHttpFailures = 0
-                                consecutiveProcessDown = 0
-                                updateNotification("Gateway starting...")
-                                handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
-                                return@post
-                            }
                             consecutiveProcessDown = 0
                             consecutiveHttpFailures++
                             Log.w(
@@ -264,18 +255,15 @@ class PlawieForegroundService : Service() {
     }
 
     /**
-     * HTTP GET check against the gateway health route.
-     *
-     * We intentionally avoid HEAD: on some Android/PRoot combinations HEAD can
-     * stall even while the gateway is healthy, causing false watchdog misses.
-     * Any HTTP response code still counts as alive.
+     * HTTP HEAD check against the gateway health route.
+     * Returns true if the gateway responds (any status code).
      */
     private fun checkGatewayHealth(): Boolean {
         var conn: HttpURLConnection? = null
         return try {
             val url = URL("http://127.0.0.1:$GATEWAY_PORT/health")
             conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
+            conn.requestMethod = "HEAD"
             conn.connectTimeout = HEALTH_TIMEOUT_MS
             conn.readTimeout = HEALTH_TIMEOUT_MS
             conn.setRequestProperty("Connection", "close")

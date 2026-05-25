@@ -109,10 +109,6 @@ class GatewayService {
   bool _nodeAutoConnectInFlight = false;
   bool _hungGatewayRestartInFlight = false;
   bool _modelAliasRepairInFlight = false;
-  // Warmup: fires once per gateway boot to pre-load auth + plugins.
-  bool _warmupSessionDone = false;
-  // Tools-policy: fires once per gateway boot to detect + repair dirty allow-list.
-  bool _toolsPolicyRepairDone = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
@@ -1955,8 +1951,6 @@ HEARTBEAT_OK.
     if (_isStopping) return;
     _isStopping = true;
     _rpcDiscoveryDone = false; // reset so next start re-runs discovery
-    _warmupSessionDone = false; // reset so warmup re-fires on next boot
-    _toolsPolicyRepairDone = false; // reset so policy check re-fires on next boot
     _healthTimer?.cancel();
     _logSubscription?.cancel();
     // Tear down WS and invalidate token cache BEFORE stopping the process.
@@ -2678,12 +2672,6 @@ HEARTBEAT_OK.
           if (_rpcDiscoveryDone) {
             _addActivity(
                 '[INFO] Gateway RPC discovery complete; node auto-connect released.');
-            // Pre-warm the gateway session so auth + plugin-load costs are
-            // paid before the user types their first message.
-            unawaited(_warmupGatewaySession());
-            // Detect and repair dirty tools.allow (canvas/memory/computer)
-            // left by old builds.  Rewrites config and restarts if needed.
-            unawaited(_repairToolsPolicyIfNeeded());
           } else {
             _addActivity(
                 '[INFO] Gateway RPC discovery still warming; retrying on next health tick.');
@@ -3047,17 +3035,13 @@ HEARTBEAT_OK.
     // Session routing priority:
     // 1) explicit sessionKey from caller (per-chat session binding)
     // 2) agent/<id> model route
-    // 3) unique mobile fallback — never a shared static key; each call that
-    //    reaches here without a resolved session gets its own UUID slot.
-    //    The normal path supplies a pre-resolved key from
-    //    resolveOrCreateGatewaySessionKey(), so this UUID path is a safe-guard
-    //    for edge cases (new install, session loss) not the hot path.
+    // 3) isolated mobile default (never agent:main:main)
     final resolvedSessionKey =
         (sessionKey != null && sessionKey.trim().isNotEmpty)
             ? sessionKey.trim()
             : model.startsWith('agent/')
                 ? model.substring(6)
-                : '$_mobileChatSessionPrefix${const Uuid().v4()}';
+                : '${_mobileChatSessionPrefix}default';
 
     const timeoutMs = 90000;
 
@@ -4373,72 +4357,6 @@ HEARTBEAT_OK.
     _connection?.dispose();
     _stateController.close();
     _chatActivityController.close();
-  }
-
-  /// Fire a silent warmup chat.send to `mobile:chat:warmup` immediately after
-  /// RPC discovery so the gateway pays the auth + plugin-load cost BEFORE the
-  /// user types their first message.  We subscribe for 4 s then cancel — we
-  /// don't need a reply; we only need the gateway to spin up the session lane.
-  Future<void> _warmupGatewaySession() async {
-    if (_warmupSessionDone) return;
-    _warmupSessionDone = true;
-    try {
-      final token = await retrieveTokenFromConfig();
-      if (token == null || token.isEmpty) return;
-      if (_connection?.state != GatewayConnectionState.connected) return;
-      const warmupKey = 'mobile:chat:warmup';
-      final requestId = const Uuid().v4();
-      _addActivity('[WARMUP] Firing session warmup to pre-load auth + plugins...');
-      final sub = _connection!.sendRequest({
-        'method': 'chat.send',
-        'params': {
-          'sessionKey': warmupKey,
-          'message': 'ready',
-          'idempotencyKey': requestId,
-          'timeoutMs': 8000,
-        },
-        'id': requestId,
-      }).listen((_) {});
-      // Cancel after 4 s — we only need the gateway to start, not reply.
-      Future.delayed(const Duration(seconds: 4), () {
-        try {
-          sub.cancel();
-        } catch (_) {}
-      });
-    } catch (e) {
-      _addActivity('[WARMUP] Warmup skipped: $e');
-    }
-  }
-
-  /// After RPC discovery, check if tools.allow in the live config still
-  /// contains the known-bad Android defaults (canvas, memory, computer).
-  /// If dirty, write the corrected config and restart the gateway so the
-  /// next session starts with a clean policy.  Guarded by _toolsPolicyRepairDone
-  /// so it only fires once per gateway boot.
-  Future<void> _repairToolsPolicyIfNeeded() async {
-    if (_toolsPolicyRepairDone) return;
-    _toolsPolicyRepairDone = true;
-    try {
-      final config = await _readConfig();
-      final tools = config['tools'];
-      if (tools is! Map) return;
-      final allow = tools['allow'];
-      if (allow is! List) return;
-      const knownBadEntries = {'canvas', 'memory', 'computer'};
-      final isDirty =
-          allow.any((e) => knownBadEntries.contains(e.toString().trim()));
-      if (!isDirty) return;
-      _addActivity(
-          '[TOOLS] Dirty tools.allow detected — rewriting config and restarting gateway...');
-      // _configureGateway() already writes the correct mobile tool policy.
-      await _configureGateway();
-      // Restart so the running gateway picks up the new allow-list.
-      if (!_isInGatewaySettleWindow && !_isStarting && !_isStopping) {
-        unawaited(stop().then((_) => start()));
-      }
-    } catch (e) {
-      _addActivity('[TOOLS] Tools-policy repair failed: $e');
-    }
   }
 
   Future<void> _verifyGatewayConfigHardened({required String reason}) async {

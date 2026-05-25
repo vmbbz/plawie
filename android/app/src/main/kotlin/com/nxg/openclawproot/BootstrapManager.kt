@@ -1531,11 +1531,10 @@ os.networkInterfaces = () => ({});
      */
     fun ensureAgentSkillsAwareness() {
         Log.i("BootstrapManager", "[FORENSIC] Starting agent skills awareness synchronization...")
-        val workspaceSkillsDir = File("$rootfsDir/root/.openclaw/workspace/skills")
-        if (!workspaceSkillsDir.exists()) workspaceSkillsDir.mkdirs()
-
-        val rootSkillsDir = File("$rootfsDir/root/.openclaw/skills")
-        if (!rootSkillsDir.exists()) rootSkillsDir.mkdirs()
+        val skillsDir = File("$rootfsDir/root/.openclaw/workspace/skills")
+        if (!skillsDir.exists()) {
+            skillsDir.mkdirs()
+        }
 
         val extensionsDir = File("$rootfsDir/root/.openclaw/extensions")
         if (!extensionsDir.exists()) {
@@ -1543,43 +1542,6 @@ os.networkInterfaces = () => ({});
         }
 
         try {
-            fun writeSkillFile(baseDir: File, name: String, content: String) {
-                val skillSubDir = File(baseDir, name)
-                if (!skillSubDir.exists()) skillSubDir.mkdirs()
-                val skillFile = File(skillSubDir, "SKILL.md")
-                if (!skillFile.exists() || skillFile.length() == 0L) {
-                    skillFile.writeText(content)
-                    skillFile.setReadable(true, false)
-                    skillFile.setWritable(true, false)
-                    Log.i("BootstrapManager", "[FORENSIC] Synced skill: ${skillFile.absolutePath}")
-                }
-            }
-
-            fun mirrorPackagedDefaultSkills() {
-                val packagedSkills = File("$rootfsDir/usr/local/lib/node_modules/openclaw/skills")
-                if (!packagedSkills.exists()) {
-                    Log.w("BootstrapManager", "[SYNC] Packaged OpenClaw skills directory missing")
-                    return
-                }
-                packagedSkills.listFiles()?.forEach { source ->
-                    if (!source.isDirectory) return@forEach
-                    val skillFile = File(source, "SKILL.md")
-                    if (!skillFile.exists()) return@forEach
-                    val dest = File(rootSkillsDir, source.name)
-                    if (dest.exists() && File(dest, "SKILL.md").exists()) return@forEach
-                    try {
-                        source.copyRecursively(dest, overwrite = false)
-                        dest.setReadable(true, false)
-                        dest.setWritable(true, false)
-                        Log.i("BootstrapManager", "[SYNC] packaged OpenClaw skill: ${source.name}")
-                    } catch (e: Exception) {
-                        Log.w("BootstrapManager", "[SYNC] Could not copy packaged skill ${source.name}: ${e.message}")
-                    }
-                }
-            }
-
-            mirrorPackagedDefaultSkills()
-
             // 1. Asset Sync: Skills from assets/openclaw/skills if they exist
             // (Recommended core skills moved to Dart layer for better timeout management)
 
@@ -1587,16 +1549,14 @@ os.networkInterfaces = () => ({});
             val assetPath = "openclaw/skills"
             val assets = context.assets.list(assetPath) ?: emptyArray()
             for (assetName in assets) {
-                for (targetDir in listOf(workspaceSkillsDir, rootSkillsDir)) {
-                    val destFile = File(targetDir, assetName)
-                    context.assets.open("$assetPath/$assetName").use { input ->
-                        FileOutputStream(destFile).use { output ->
-                            input.copyTo(output)
-                        }
+                val destFile = File(skillsDir, assetName)
+                context.assets.open("$assetPath/$assetName").use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
                     }
-                    destFile.setReadable(true, false)
-                    destFile.setWritable(true, false)
                 }
+                destFile.setReadable(true, false)
+                destFile.setWritable(true, false)
                 Log.i("BootstrapManager", "[SYNC] asset skill: $assetName")
             }
 
@@ -1699,8 +1659,13 @@ os.networkInterfaces = () => ({});
             )
 
             for ((name, content) in hardwareSkills) {
-                writeSkillFile(workspaceSkillsDir, name, content)
-                writeSkillFile(rootSkillsDir, name, content)
+                val skillSubDir = File(skillsDir, name)
+                if (!skillSubDir.exists()) skillSubDir.mkdirs()
+                val skillFile = File(skillSubDir, "SKILL.md")
+                if (!skillFile.exists()) {
+                    skillFile.writeText(content)
+                    Log.i("BootstrapManager", "[FORENSIC] Generated missing hardware skill: $name")
+                }
             }
 
             // 4. Sync android_bridge_tools.js to extensions

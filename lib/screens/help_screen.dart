@@ -617,7 +617,7 @@ class HelpScreen extends StatelessWidget {
               Icons.build_rounded,
               Colors.amberAccent,
               'Tools',
-              'Gateway primitive permissions use a bounded Android policy: official nodes, UI, web, sessions, automation, messaging, memory, files, and runtime groups. The Tools tab shows these as simple switches without loading every plugin/provider tool.'
+              'Gateway primitive permissions default to all-on with tools.allow = ["*"]. The Tools tab expands that wildcard, lets you Enable All in one tap, or lock down individual primitives.'
             ),
           ].map((t) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),

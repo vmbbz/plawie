@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -87,12 +86,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: ClipRect(
-          child: Platform.isAndroid
-              ? Container(color: Colors.black.withValues(alpha: 0.2))
-              : BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(color: Colors.black.withValues(alpha: 0.2)),
-                ),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(color: Colors.black.withValues(alpha: 0.2)),
+          ),
         ),
         title: Consumer<GatewayProvider>(
           builder: (context, provider, _) => _buildAnimatedTitle(provider),
@@ -436,10 +433,7 @@ class _AnimatedDarkGridBgState extends State<_AnimatedDarkGridBg>
     super.initState();
     _ctrl =
         AnimationController(vsync: this, duration: const Duration(seconds: 12))
-          ..value = 0.0;
-    if (!Platform.isAndroid) {
-      _ctrl.repeat();
-    }
+          ..repeat();
   }
 
   @override
@@ -527,11 +521,8 @@ class _BlobDashCardState extends State<_BlobDashCard>
     _blobCtrl = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: (speed * 1000).toInt()),
-    );
-    if (!Platform.isAndroid) {
-      _blobCtrl.repeat();
-      _blobCtrl.addListener(_tick);
-    }
+    )..repeat();
+    _blobCtrl.addListener(_tick);
     _tapCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 130));
   }
@@ -552,78 +543,70 @@ class _BlobDashCardState extends State<_BlobDashCard>
         112.0; // Consistent height for all cards for premium alignment
     final opacity = widget.enabled ? 1.0 : 0.4;
 
-    final card = GestureDetector(
-      onTapDown: (_) => _tapCtrl.forward(),
-      onTapUp: (_) => _tapCtrl.reverse(),
-      onTapCancel: () => _tapCtrl.reverse(),
-      onTap: widget.onTap,
-      onPanUpdate: (d) {
-        if (!Platform.isAndroid) {
-          // Nudge velocity on drag — spring will pull it back.
+    return Opacity(
+      opacity: opacity,
+      child: GestureDetector(
+        onTapDown: (_) => _tapCtrl.forward(),
+        onTapUp: (_) => _tapCtrl.reverse(),
+        onTapCancel: () => _tapCtrl.reverse(),
+        onTap: widget.onTap,
+        onPanUpdate: (d) {
+          // Nudge velocity on drag — spring will pull it back
           _floatVelocity += d.delta * 2.5;
-        }
-      },
-      child: Transform.translate(
-        offset: _floatOffset,
-        child: ScaleTransition(
-          scale: _tapCtrl.drive(
-            Tween(begin: 1.0, end: 0.93)
-                .chain(CurveTween(curve: Curves.easeOutCubic)),
-          ),
-          child: AnimatedBuilder(
-            animation: _blobCtrl,
-            builder: (context, child) {
-              final t = _blobCtrl.value;
-              final seed = widget.blobSeed.toDouble();
-              return SizedBox(
-                width: cardWidth,
-                height: cardHeight,
-                child: Stack(
-                  children: [
-                    // Layer 1: Glass fill (Stable RRect)
-                    Container(
-                      width: cardWidth,
-                      height: cardHeight,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            widget.iconColor.withValues(
-                                alpha: 0.12 +
-                                    0.04 * math.sin(t * 2 * math.pi + seed)),
-                            widget.iconColor.withValues(
-                                alpha: 0.04 +
-                                    0.02 * math.cos(t * 2 * math.pi + seed)),
-                            Colors.black.withValues(
-                                alpha: 0.5 +
-                                    0.05 * math.sin(t * 2 * math.pi + seed)),
-                          ],
-                          stops: const [0.0, 0.4, 1.0],
+        },
+        child: Transform.translate(
+          offset: _floatOffset,
+          child: ScaleTransition(
+            scale: _tapCtrl.drive(
+              Tween(begin: 1.0, end: 0.93)
+                  .chain(CurveTween(curve: Curves.easeOutCubic)),
+            ),
+            child: AnimatedBuilder(
+              animation: _blobCtrl,
+              builder: (context, child) {
+                final t = _blobCtrl.value;
+                final seed = widget.blobSeed.toDouble();
+                return SizedBox(
+                  width: cardWidth,
+                  height: cardHeight,
+                  child: Stack(
+                    children: [
+                      // Layer 1: Glass fill (Stable RRect)
+                      Container(
+                        width: cardWidth,
+                        height: cardHeight,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              widget.iconColor.withValues(
+                                  alpha: 0.12 +
+                                      0.04 * math.sin(t * 2 * math.pi + seed)),
+                              widget.iconColor.withValues(
+                                  alpha: 0.04 +
+                                      0.02 * math.cos(t * 2 * math.pi + seed)),
+                              Colors.black.withValues(
+                                  alpha: 0.5 +
+                                      0.05 * math.sin(t * 2 * math.pi + seed)),
+                            ],
+                            stops: const [0.0, 0.4, 1.0],
+                          ),
+                          border: Border.all(
+                            color: widget.iconColor.withValues(alpha: 0.12),
+                            width: 0.8,
+                          ),
                         ),
-                        border: Border.all(
-                          color: widget.iconColor.withValues(alpha: 0.12),
-                          width: 0.8,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                            child: Container(color: Colors.transparent),
+                          ),
                         ),
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Platform.isAndroid
-                            ? const SizedBox.expand()
-                            : BackdropFilter(
-                                filter: ImageFilter.blur(
-                                  sigmaX: 25,
-                                  sigmaY: 25,
-                                ),
-                                child: Container(color: Colors.transparent),
-                              ),
-                      ),
-                    ),
-                    // Layer 2: High-fidelity Breathing Aura. Disabled on
-                    // Android home because the repeated mask/filter work is
-                    // purely decorative and competes with gateway startup.
-                    if (!Platform.isAndroid)
+                      // Layer 2: High-fidelity Breathing Aura
                       CustomPaint(
                         size: Size(cardWidth, cardHeight),
                         painter: _AuraPainter(
@@ -632,30 +615,27 @@ class _BlobDashCardState extends State<_BlobDashCard>
                           color: widget.iconColor,
                         ),
                       ),
-                    // Layer 3: Content
-                    child!,
+                      // Layer 3: Content
+                      child!,
+                    ],
+                  ),
+                );
+              },
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _iconBox(),
+                    const SizedBox(height: 12),
+                    _textCol(),
                   ],
                 ),
-              );
-            },
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _iconBox(),
-                  const SizedBox(height: 12),
-                  _textCol(),
-                ],
               ),
             ),
           ),
         ),
       ),
     );
-
-    if (Platform.isAndroid || opacity == 1.0) return card;
-
-    return Opacity(opacity: opacity, child: card);
   }
 
   Widget _iconBox() {

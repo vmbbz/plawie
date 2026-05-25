@@ -53,10 +53,6 @@ class NativeBridge {
     return Map<String, dynamic>.from(result);
   }
 
-  static Future<void> ensureAgentSkillsAwareness() async {
-    await _channel.invokeMethod('ensureAgentSkillsAwareness');
-  }
-
   static Future<bool> extractRootfs(String tarPath) async {
     return await _channel.invokeMethod('extractRootfs', {'tarPath': tarPath});
   }
