@@ -1040,6 +1040,7 @@ class BootstrapService {
       // Bounded mobile policy: enough for nodes/UI/web/memory/runtime without
       // loading every plugin/provider tool on phone startup.
       GatewayToolCatalog.applyDefaultMobilePolicy(config);
+      GatewayService.ensureGatewayTalkTtsConfig(config);
 
       // Remove invalid TTS persona "model" keys — gateway schema rejects them.
       // Personas written by older versions of this code used "model" which is
@@ -1366,6 +1367,7 @@ class BootstrapService {
     // Default to the bounded Android tool policy. Device-native capabilities
     // remain controlled under gateway.nodes.
     GatewayToolCatalog.applyDefaultMobilePolicy(config);
+    GatewayService.ensureGatewayTalkTtsConfig(config);
 
     final ttsPersonas = (config['messages'] as Map?)?['tts']?['personas'];
     if (ttsPersonas is Map) {

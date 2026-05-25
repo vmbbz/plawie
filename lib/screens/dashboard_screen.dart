@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +7,6 @@ import '../providers/gateway_provider.dart';
 import '../providers/node_provider.dart';
 import '../services/bootstrap_service.dart';
 import '../widgets/gateway_controls.dart';
-import '../widgets/glass_card.dart';
 import 'node_screen.dart';
 import 'onboarding_screen.dart';
 import 'terminal_screen.dart';
@@ -45,38 +41,7 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _taglineController;
-  bool _showTagline = false;
-  Timer? _rotationTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _taglineController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _rotationTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (mounted) {
-        setState(() => _showTagline = !_showTagline);
-        if (_showTagline) {
-          _taglineController.forward();
-        } else {
-          _taglineController.reverse();
-        }
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _rotationTimer?.cancel();
-    _taglineController.dispose();
-    super.dispose();
-  }
-
+class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -85,12 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(color: Colors.black.withValues(alpha: 0.2)),
-          ),
-        ),
+        flexibleSpace: Container(color: Colors.black.withValues(alpha: 0.18)),
         title: Consumer<GatewayProvider>(
           builder: (context, provider, _) => _buildAnimatedTitle(provider),
         ),
@@ -106,7 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
       body: Stack(
         children: [
-          NebulaBg(),
+          const _StaticHomeBackdrop(),
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
@@ -115,7 +75,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 children: [
                   const GatewayControls(),
                   const SizedBox(height: 24),
-
                   Padding(
                     padding: const EdgeInsets.only(left: 4, bottom: 12),
                     child: Text(
@@ -128,207 +87,189 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                   ),
-
-                  // Moving dark gradient background layer
-                  _AnimatedDarkGridBg(
-                    child: Consumer<GatewayProvider>(
-                      builder: (context, provider, _) {
-                        final gwState = provider.state;
-                        return Wrap(
-                          spacing: 14,
-                          runSpacing: 14,
-                          children: [
-                            _BlobDashCard(
-                              title: 'Chat with Plawie',
-                              subtitle: gwState.isRunning
-                                  ? 'Talk to your local AI'
-                                  : 'Start gateway first',
-                              icon: Icons.chat_bubble_outline_rounded,
-                              iconColor: AppColors.statusGreen,
-                              widthFactor: 1.0,
-                              blobSeed: 0,
-                              enabled: gwState.isRunning,
-                              onTap: gwState.isRunning
-                                  ? () => Navigator.of(context)
-                                      .push(_zoomRoute(const ChatScreen()))
-                                  : null,
-                            ),
-                            _BlobDashCard(
-                              title: 'Bots',
-                              subtitle: 'System RPCs',
-                              icon: Icons.settings_ethernet_rounded,
-                              iconColor: Colors.tealAccent,
-                              widthFactor: 0.48,
-                              blobSeed: 4,
-                              onTap: () => Navigator.of(context).push(
-                                  _zoomRoute(const BotManagementDashboard())),
-                            ),
-                            _BlobDashCard(
-                              title: 'Terminal',
-                              subtitle: 'Ubuntu Shell',
-                              icon: Icons.terminal_rounded,
-                              iconColor: Colors.cyanAccent,
-                              widthFactor: 0.48,
-                              blobSeed: 2,
-                              onTap: () => Navigator.of(context)
-                                  .push(_zoomRoute(const TerminalScreen())),
-                            ),
-                            _BlobDashCard(
-                              title: 'Web Dashboard',
-                              subtitle: gwState.isRunning
-                                  ? 'Open in browser'
-                                  : 'Offline',
-                              icon: Icons.dashboard_rounded,
-                              iconColor: Colors.blueAccent,
-                              widthFactor: 1.0,
-                              blobSeed: 3,
-                              enabled: gwState.isRunning,
-                              onTap: gwState.isRunning
-                                  ? () async {
-                                      final currentUrl = gwState.dashboardUrl;
-                                      if (currentUrl != null &&
-                                          currentUrl.contains('token=')) {
-                                        Navigator.of(context).push(_zoomRoute(
-                                            WebDashboardScreen(
-                                                url: currentUrl)));
-                                        return;
-                                      }
-                                      showDialog(
-                                          context: context,
-                                          barrierDismissible: false,
-                                          builder: (_) => const Center(
-                                              child:
-                                                  CircularProgressIndicator()));
-                                      final url = await provider
-                                          .fetchAuthenticatedDashboardUrl();
-                                      if (context.mounted) {
-                                        Navigator.of(context).pop();
-                                        Navigator.of(context).push(_zoomRoute(
-                                            WebDashboardScreen(url: url)));
-                                      }
+                  Consumer<GatewayProvider>(
+                    builder: (context, provider, _) {
+                      final gwState = provider.state;
+                      return Wrap(
+                        spacing: 14,
+                        runSpacing: 14,
+                        children: [
+                          _BlobDashCard(
+                            title: 'Chat with Plawie',
+                            subtitle: gwState.isRunning
+                                ? 'Talk to your local AI'
+                                : 'Start gateway first',
+                            icon: Icons.chat_bubble_outline_rounded,
+                            iconColor: AppColors.statusGreen,
+                            widthFactor: 1.0,
+                            enabled: gwState.isRunning,
+                            onTap: gwState.isRunning
+                                ? () => Navigator.of(context)
+                                    .push(_zoomRoute(const ChatScreen()))
+                                : null,
+                          ),
+                          _BlobDashCard(
+                            title: 'Bots',
+                            subtitle: 'System RPCs',
+                            icon: Icons.settings_ethernet_rounded,
+                            iconColor: Colors.tealAccent,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context).push(
+                                _zoomRoute(const BotManagementDashboard())),
+                          ),
+                          _BlobDashCard(
+                            title: 'Terminal',
+                            subtitle: 'Ubuntu Shell',
+                            icon: Icons.terminal_rounded,
+                            iconColor: Colors.cyanAccent,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context)
+                                .push(_zoomRoute(const TerminalScreen())),
+                          ),
+                          _BlobDashCard(
+                            title: 'Web Dashboard',
+                            subtitle: gwState.isRunning
+                                ? 'Open in browser'
+                                : 'Offline',
+                            icon: Icons.dashboard_rounded,
+                            iconColor: Colors.blueAccent,
+                            widthFactor: 1.0,
+                            enabled: gwState.isRunning,
+                            onTap: gwState.isRunning
+                                ? () async {
+                                    final currentUrl = gwState.dashboardUrl;
+                                    if (currentUrl != null &&
+                                        currentUrl.contains('token=')) {
+                                      Navigator.of(context).push(_zoomRoute(
+                                          WebDashboardScreen(url: currentUrl)));
+                                      return;
                                     }
-                                  : null,
-                            ),
-                            _BlobDashCard(
-                              title: 'Base',
-                              subtitle: 'ETH & USDC',
-                              icon: Icons.account_balance_wallet_rounded,
-                              iconColor: const Color(0xFF0052FF),
-                              widthFactor: 0.48,
-                              blobSeed: 1,
-                              onTap: () => Navigator.of(context)
-                                  .push(_zoomRoute(const BaseScreen())),
-                            ),
-                            Consumer<NodeProvider>(
-                              builder: (context, nodeProvider, _) =>
-                                  _BlobDashCard(
-                                title: 'Node',
-                                subtitle: nodeProvider.state.isPaired
-                                    ? 'Linked'
-                                    : 'Capabilities',
-                                icon: Icons.devices_rounded,
-                                iconColor: Colors.white60,
-                                widthFactor: 0.48,
-                                blobSeed: 5,
-                                onTap: () => Navigator.of(context)
-                                    .push(_zoomRoute(const NodeScreen())),
-                              ),
-                            ),
-                            _BlobDashCard(
-                              title: 'Update',
-                              subtitle: 'Fix WebSocket',
-                              icon: Icons.system_update_alt_rounded,
-                              iconColor: Colors.purpleAccent,
-                              widthFactor: 0.48,
-                              blobSeed: 6,
-                              onTap: () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('Update Gateway'),
-                                    content: const Text(
-                                        'This will update OpenClaw to the latest version. Continue?'),
-                                    actions: [
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.of(context).pop(false),
-                                          child: const Text('Cancel')),
-                                      TextButton(
-                                          onPressed: () =>
-                                              Navigator.of(context).pop(true),
-                                          child: const Text('Update')),
-                                    ],
-                                  ),
-                                );
-                                if (confirmed == true) {
-                                  try {
-                                    await BootstrapService().updateGateway();
+                                    showDialog(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (_) => const Center(
+                                            child:
+                                                CircularProgressIndicator()));
+                                    final url = await provider
+                                        .fetchAuthenticatedDashboardUrl();
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(const SnackBar(
-                                              content: Text('Gateway updated!'),
-                                              backgroundColor:
-                                                  AppColors.statusGreen));
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                              content:
-                                                  Text('Update failed: $e'),
-                                              backgroundColor:
-                                                  AppColors.statusRed));
+                                      Navigator.of(context).pop();
+                                      Navigator.of(context).push(_zoomRoute(
+                                          WebDashboardScreen(url: url)));
                                     }
                                   }
+                                : null,
+                          ),
+                          _BlobDashCard(
+                            title: 'Base',
+                            subtitle: 'ETH & USDC',
+                            icon: Icons.account_balance_wallet_rounded,
+                            iconColor: const Color(0xFF0052FF),
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context)
+                                .push(_zoomRoute(const BaseScreen())),
+                          ),
+                          Consumer<NodeProvider>(
+                            builder: (context, nodeProvider, _) =>
+                                _BlobDashCard(
+                              title: 'Node',
+                              subtitle: nodeProvider.state.isPaired
+                                  ? 'Linked'
+                                  : 'Capabilities',
+                              icon: Icons.devices_rounded,
+                              iconColor: Colors.white60,
+                              widthFactor: 0.48,
+                              onTap: () => Navigator.of(context)
+                                  .push(_zoomRoute(const NodeScreen())),
+                            ),
+                          ),
+                          _BlobDashCard(
+                            title: 'Update',
+                            subtitle: 'Fix WebSocket',
+                            icon: Icons.system_update_alt_rounded,
+                            iconColor: Colors.purpleAccent,
+                            widthFactor: 0.48,
+                            onTap: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Update Gateway'),
+                                  content: const Text(
+                                      'This will update OpenClaw to the latest version. Continue?'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(false),
+                                        child: const Text('Cancel')),
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        child: const Text('Update')),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true) {
+                                try {
+                                  await BootstrapService().updateGateway();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                            content: Text('Gateway updated!'),
+                                            backgroundColor:
+                                                AppColors.statusGreen));
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text('Update failed: $e'),
+                                            backgroundColor:
+                                                AppColors.statusRed));
+                                  }
                                 }
-                              },
-                            ),
-                            _BlobDashCard(
-                              title: 'Setup',
-                              subtitle: 'Config keys',
-                              icon: Icons.vpn_key_rounded,
-                              iconColor: Colors.orangeAccent,
-                              widthFactor: 0.48,
-                              blobSeed: 7,
-                              onTap: () => Navigator.of(context)
-                                  .push(_zoomRoute(const OnboardingScreen())),
-                            ),
-                            _BlobDashCard(
-                              title: 'Help',
-                              subtitle: 'Usage guides',
-                              icon: Icons.help_outline_rounded,
-                              iconColor: Colors.white70,
-                              widthFactor: 0.48,
-                              blobSeed: 8,
-                              onTap: () => Navigator.of(context)
-                                  .push(_zoomRoute(const HelpScreen())),
-                            ),
-                            _BlobDashCard(
-                              title: 'Logs',
-                              subtitle: 'Real-time feed',
-                              icon: Icons.article_outlined,
-                              iconColor: Colors.white54,
-                              widthFactor: 0.48,
-                              blobSeed: 9,
-                              onTap: () => Navigator.of(context)
-                                  .push(_zoomRoute(const LogsScreen())),
-                            ),
-                            _BlobDashCard(
-                              title: 'Packages',
-                              subtitle: 'Go, Brew, toolkits',
-                              icon: Icons.extension_rounded,
-                              iconColor: Colors.purpleAccent,
-                              widthFactor: 0.48,
-                              blobSeed: 10,
-                              onTap: () => Navigator.of(context)
-                                  .push(_zoomRoute(const PackagesScreen())),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                              }
+                            },
+                          ),
+                          _BlobDashCard(
+                            title: 'Setup',
+                            subtitle: 'Config keys',
+                            icon: Icons.vpn_key_rounded,
+                            iconColor: Colors.orangeAccent,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context)
+                                .push(_zoomRoute(const OnboardingScreen())),
+                          ),
+                          _BlobDashCard(
+                            title: 'Help',
+                            subtitle: 'Usage guides',
+                            icon: Icons.help_outline_rounded,
+                            iconColor: Colors.white70,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context)
+                                .push(_zoomRoute(const HelpScreen())),
+                          ),
+                          _BlobDashCard(
+                            title: 'Logs',
+                            subtitle: 'Real-time feed',
+                            icon: Icons.article_outlined,
+                            iconColor: Colors.white54,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context)
+                                .push(_zoomRoute(const LogsScreen())),
+                          ),
+                          _BlobDashCard(
+                            title: 'Packages',
+                            subtitle: 'Go, Brew, toolkits',
+                            icon: Icons.extension_rounded,
+                            iconColor: Colors.purpleAccent,
+                            widthFactor: 0.48,
+                            onTap: () => Navigator.of(context)
+                                .push(_zoomRoute(const PackagesScreen())),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-
                   const SizedBox(height: 36),
                   Center(
                     child: Column(
@@ -373,40 +314,15 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
         const SizedBox(width: 12),
-        SizedBox(
-          height: 40,
-          child: Center(
-            child: AnimatedCrossFade(
-              duration: const Duration(milliseconds: 600),
-              alignment: Alignment.centerLeft,
-              crossFadeState: _showTagline
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              firstChild: Text(
-                provider.state.isRepairing ? 'Repairing System...' : 'Plawie',
-                style: TextStyle(
-                  color: provider.state.isRepairing
-                      ? AppColors.statusAmber
-                      : Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              secondChild: Text(
-                provider.state.isRepairing
-                    ? 'PLEASE WAIT...'
-                    : AppConstants.appMotto.toUpperCase(),
-                style: TextStyle(
-                  color: provider.state.isRepairing
-                      ? AppColors.statusAmber.withValues(alpha: 0.8)
-                      : Colors.white.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 10,
-                  letterSpacing: 2.0,
-                ),
-              ),
-            ),
+        Text(
+          provider.state.isRepairing ? 'Repairing System...' : 'Plawie',
+          style: TextStyle(
+            color: provider.state.isRepairing
+                ? AppColors.statusAmber
+                : Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 18,
+            letterSpacing: 1.0,
           ),
         ),
       ],
@@ -414,47 +330,32 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-// ─── Animated dark gradient background behind the grid ────────────────────────
-
-class _AnimatedDarkGridBg extends StatefulWidget {
-  final Widget child;
-  const _AnimatedDarkGridBg({required this.child});
-
-  @override
-  State<_AnimatedDarkGridBg> createState() => _AnimatedDarkGridBgState();
-}
-
-class _AnimatedDarkGridBgState extends State<_AnimatedDarkGridBg>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 12))
-          ..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+class _StaticHomeBackdrop extends StatelessWidget {
+  const _StaticHomeBackdrop();
 
   @override
   Widget build(BuildContext context) {
-    // Background and padding removed as requested to let cards breathe
-    return Padding(
-      padding: EdgeInsets.zero,
-      child: widget.child,
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0.25, -0.45),
+          radius: 1.35,
+          colors: [
+            Color(0xFF08242A),
+            Color(0xFF031016),
+            Colors.black,
+          ],
+          stops: [0.0, 0.48, 1.0],
+        ),
+      ),
+      child: SizedBox.expand(),
     );
   }
 }
 
-// ─── Organic Blob Card ────────────────────────────────────────────────────────
+// ─── Lightweight Dashboard Card ──────────────────────────────────────────────
 
-class _BlobDashCard extends StatefulWidget {
+class _BlobDashCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
@@ -463,14 +364,10 @@ class _BlobDashCard extends StatefulWidget {
   final bool enabled;
   final double widthFactor;
 
-  /// Seed offsets the animation phase so each card has a unique blob shape.
-  final int blobSeed;
-
   const _BlobDashCard({
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.blobSeed,
     this.iconColor = Colors.white70,
     this.onTap,
     this.enabled = true,
@@ -478,149 +375,51 @@ class _BlobDashCard extends StatefulWidget {
   });
 
   @override
-  State<_BlobDashCard> createState() => _BlobDashCardState();
-}
-
-class _BlobDashCardState extends State<_BlobDashCard>
-    with TickerProviderStateMixin {
-  late AnimationController _blobCtrl; // slow organic morph
-  late AnimationController _tapCtrl; // fast tap scale feedback
-
-  // Physics float state
-  Offset _floatOffset = Offset.zero;
-  Offset _floatVelocity = Offset.zero;
-  static const double _stiffness = 80.0; // spring pull toward zero
-  static const double _damping = 14.0; // air resistance
-  static const double _idleAmplitude = 2.5; // px, very subtle hover
-
-  void _tick() {
-    if (!mounted) return;
-    final dt = 1 / 60;
-    final seed = widget.blobSeed.toDouble();
-    final t = _blobCtrl.value;
-
-    // Idle sinusoidal float — unique phase per card
-    final idleX = _idleAmplitude * math.sin(t * 2 * math.pi + seed * 1.1);
-    final idleY = _idleAmplitude * math.cos(t * 2 * math.pi * 0.7 + seed * 0.8);
-    final idleTarget = Offset(idleX, idleY);
-
-    // Spring toward idle position
-    final springForce = (idleTarget - _floatOffset) * _stiffness;
-    _floatVelocity = (_floatVelocity + springForce * dt) *
-        (1.0 - _damping * dt).clamp(0.0, 1.0);
-    _floatOffset = _floatOffset + _floatVelocity * dt;
-
-    setState(() {});
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // Each card gets a unique speed slightly offset so they never look in sync
-    final speed = 5 + (widget.blobSeed % 3) * 1.5;
-    _blobCtrl = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: (speed * 1000).toInt()),
-    )..repeat();
-    _blobCtrl.addListener(_tick);
-    _tapCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 130));
-  }
-
-  @override
-  void dispose() {
-    _blobCtrl.dispose();
-    _tapCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth - 40 - (widget.widthFactor < 1.0 ? 14 : 0)) *
-        widget.widthFactor;
-    final cardHeight =
-        112.0; // Consistent height for all cards for premium alignment
-    final opacity = widget.enabled ? 1.0 : 0.4;
+    final cardWidth =
+        (screenWidth - 40 - (widthFactor < 1.0 ? 14 : 0)) * widthFactor;
+    const cardHeight = 112.0;
+    final contentOpacity = enabled ? 1.0 : 0.42;
 
     return Opacity(
-      opacity: opacity,
-      child: GestureDetector(
-        onTapDown: (_) => _tapCtrl.forward(),
-        onTapUp: (_) => _tapCtrl.reverse(),
-        onTapCancel: () => _tapCtrl.reverse(),
-        onTap: widget.onTap,
-        onPanUpdate: (d) {
-          // Nudge velocity on drag — spring will pull it back
-          _floatVelocity += d.delta * 2.5;
-        },
-        child: Transform.translate(
-          offset: _floatOffset,
-          child: ScaleTransition(
-            scale: _tapCtrl.drive(
-              Tween(begin: 1.0, end: 0.93)
-                  .chain(CurveTween(curve: Curves.easeOutCubic)),
-            ),
-            child: AnimatedBuilder(
-              animation: _blobCtrl,
-              builder: (context, child) {
-                final t = _blobCtrl.value;
-                final seed = widget.blobSeed.toDouble();
-                return SizedBox(
-                  width: cardWidth,
-                  height: cardHeight,
-                  child: Stack(
-                    children: [
-                      // Layer 1: Glass fill (Stable RRect)
-                      Container(
-                        width: cardWidth,
-                        height: cardHeight,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              widget.iconColor.withValues(
-                                  alpha: 0.12 +
-                                      0.04 * math.sin(t * 2 * math.pi + seed)),
-                              widget.iconColor.withValues(
-                                  alpha: 0.04 +
-                                      0.02 * math.cos(t * 2 * math.pi + seed)),
-                              Colors.black.withValues(
-                                  alpha: 0.5 +
-                                      0.05 * math.sin(t * 2 * math.pi + seed)),
-                            ],
-                            stops: const [0.0, 0.4, 1.0],
-                          ),
-                          border: Border.all(
-                            color: widget.iconColor.withValues(alpha: 0.12),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-                            child: Container(color: Colors.transparent),
-                          ),
-                        ),
-                      ),
-                      // Layer 2: High-fidelity Breathing Aura
-                      CustomPaint(
-                        size: Size(cardWidth, cardHeight),
-                        painter: _AuraPainter(
-                          t: t,
-                          seed: seed,
-                          color: widget.iconColor,
-                        ),
-                      ),
-                      // Layer 3: Content
-                      child!,
-                    ],
+      opacity: contentOpacity,
+      child: SizedBox(
+        width: cardWidth,
+        height: cardHeight,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(18),
+            splashColor: iconColor.withValues(alpha: 0.10),
+            highlightColor: Colors.white.withValues(alpha: 0.04),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    iconColor.withValues(alpha: 0.10),
+                    Colors.white.withValues(alpha: 0.035),
+                    Colors.black.withValues(alpha: 0.28),
+                  ],
+                  stops: const [0.0, 0.42, 1.0],
+                ),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.10),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 18,
+                    spreadRadius: -10,
+                    offset: const Offset(0, 10),
                   ),
-                );
-              },
+                ],
+              ),
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -643,19 +442,19 @@ class _BlobDashCardState extends State<_BlobDashCard>
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: widget.iconColor.withValues(alpha: 0.25),
+        color: iconColor.withValues(alpha: 0.25),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: widget.iconColor.withValues(alpha: 0.6), width: 1.2),
+        border:
+            Border.all(color: iconColor.withValues(alpha: 0.45), width: 1.0),
         boxShadow: [
           BoxShadow(
-            color: widget.iconColor.withValues(alpha: 0.4),
-            blurRadius: 12,
-            spreadRadius: -2,
+            color: iconColor.withValues(alpha: 0.16),
+            blurRadius: 10,
+            spreadRadius: -5,
           ),
         ],
       ),
-      child: Icon(widget.icon, color: widget.iconColor, size: 17),
+      child: Icon(icon, color: iconColor, size: 17),
     );
   }
 
@@ -664,7 +463,7 @@ class _BlobDashCardState extends State<_BlobDashCard>
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          widget.title,
+          title,
           style: GoogleFonts.outfit(
             color: Colors.white.withValues(alpha: 0.95),
             fontSize: 14,
@@ -677,7 +476,7 @@ class _BlobDashCardState extends State<_BlobDashCard>
         ),
         const SizedBox(height: 4),
         Text(
-          widget.subtitle,
+          subtitle,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.55),
             fontSize: 10,
@@ -690,64 +489,4 @@ class _BlobDashCardState extends State<_BlobDashCard>
       ],
     );
   }
-}
-
-// ─── Aura math ────────────────────────────────────────────────────────────────
-//
-// Instead of a chaotic wavy membrane, we use a "Soft Aura" — a high-fidelity
-// breathing glow that slowly pulses and rotates around a sharp RRect.
-// This is much more premium and avoids the "lopsided waviness" on the sides.
-
-class _AuraPainter extends CustomPainter {
-  final double t;
-  final double seed;
-  final Color color;
-  _AuraPainter({required this.t, required this.seed, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(12));
-
-    // Breathing factor
-    final breathe = 0.5 + 0.5 * math.sin(t * 2 * math.pi + seed);
-    final alpha = 0.2 + 0.3 * breathe;
-
-    // Layer 1: Soft outer aura (Rotating/Drifting glow)
-    final paintAura = Paint()
-      ..color = color.withValues(alpha: alpha * 0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0 + 4.0 * breathe
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12.0 + 4.0 * breathe);
-
-    canvas.drawRRect(rrect, paintAura);
-
-    // Layer 2: Sharp high-fidelity inner border
-    final paintBorder = Paint()
-      ..color = color.withValues(alpha: alpha * 0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    canvas.drawRRect(rrect, paintBorder);
-
-    // Layer 3: Subtle corner highlight that travels around
-    final highlightPaint = Paint()
-      ..shader = SweepGradient(
-        center: Alignment.center,
-        colors: [
-          Colors.transparent,
-          color.withValues(alpha: 0.6),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.5, 1.0],
-        transform: GradientRotation(t * 2 * math.pi + seed),
-      ).createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
-    canvas.drawRRect(rrect, highlightPaint);
-  }
-
-  @override
-  bool shouldRepaint(_AuraPainter old) => old.t != t;
 }

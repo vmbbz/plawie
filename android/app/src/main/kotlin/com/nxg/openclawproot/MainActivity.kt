@@ -215,6 +215,18 @@ class MainActivity : FlutterActivity() {
                 "ensureOpenClawReady" -> {
                     result.success(bootstrapManager.ensureOpenClawReady())
                 }
+                "ensureAgentSkillsAwareness" -> {
+                    Thread {
+                        try {
+                            bootstrapManager.ensureAgentSkillsAwareness()
+                            runOnUiThread { result.success(true) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("SKILLS_AWARENESS_ERROR", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
                 "extractRootfs" -> {
                     val tarPath = call.argument<String>("tarPath")
                     if (tarPath != null) {

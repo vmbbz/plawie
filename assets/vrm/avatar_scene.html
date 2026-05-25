@@ -79,7 +79,9 @@
         import { createVRMAnimationClip, VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation';
 
         const IS_MOBILE_RENDERER = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const MAX_RENDER_PIXEL_RATIO = IS_MOBILE_RENDERER ? 0.65 : 1.5;
+        const MAX_RENDER_PIXEL_RATIO = IS_MOBILE_RENDERER
+            ? Math.min(window.devicePixelRatio || 1, 2.0)
+            : Math.min(window.devicePixelRatio || 1, 1.75);
         const TARGET_FRAME_MS = IS_MOBILE_RENDERER ? 1000 / 30 : 1000 / 60;
 
         const scene = new THREE.Scene();
@@ -89,7 +91,7 @@
 
         const renderer = new THREE.WebGLRenderer({
             alpha: true,
-            antialias: !IS_MOBILE_RENDERER,
+            antialias: true,
             powerPreference: IS_MOBILE_RENDERER ? "default" : "high-performance"
         });
         renderer.setPixelRatio(MAX_RENDER_PIXEL_RATIO);
@@ -302,7 +304,7 @@
                     
                     // Normalize height: Scale model so it is roughly 1.8 units tall (to top of box)
                     // This ensures Germini and Boruto have the same visual weight.
-                    const targetHeight = 1.6;
+                    const targetHeight = 1.8;
                     const scaleFactor = targetHeight / size.y;
                     vrm.scene.scale.set(scaleFactor, scaleFactor, scaleFactor);
                     vrm.scene.updateMatrixWorld(true);
@@ -310,6 +312,7 @@
                     // Re-measure after scaling
                     const newBox = new THREE.Box3().setFromObject(vrm.scene);
                     const newSize = newBox.getSize(new THREE.Vector3());
+                    const newCenter = newBox.getCenter(new THREE.Vector3());
                     const head = vrm.humanoid.getNormalizedBoneNode('head');
                     const headPos = new THREE.Vector3();
                     if (head) head.getWorldPosition(headPos);
@@ -317,8 +320,9 @@
                     avatarMetrics = {
                         height: newSize.y,
                         width: newSize.x,
-                        centerX: 0.0, // Face camera straight
+                        centerX: newCenter.x, // Frame the body center, not the model origin
                         headY: head ? headPos.y : 1.6,
+                        lookY: newCenter.y,
                     };
 
                     if (vrm.expressionManager) {
@@ -663,7 +667,8 @@
         };
 
         // ── Camera framing ────────────────────────────────────────────────────
-        let avatarMetrics = { height: 1.8, width: 0.8, centerX: 0.0, headY: 1.6 };
+        let avatarMetrics = { height: 1.8, width: 0.8, centerX: 0.0, headY: 1.6, lookY: 0.9 };
+        const ENABLE_HEAD_POSITION_BRIDGE = false;
         let userZoomOffset = 0;
         let initialPinchDistance = 0;
 
@@ -689,8 +694,10 @@
                 return;
             }
 
-            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.25; // Slightly wider to fit full body
-            const PAN_Y_OFFSET = isOverlay ? -0.5 : 0.15; // Positive looks higher, pushing model down
+            // Large companion framing for Chat: close to the screenshot target,
+            // while preserving enough full-body context behind the tray.
+            const ZOOM_FACTOR = isOverlay ? 2.5 : 1.58;
+            const PAN_Y_OFFSET = isOverlay ? -0.5 : -0.04;
             const tanFov = Math.tan((camera.fov * Math.PI) / 360);
             
             // For a model standing at Y=0 with height H, its center is at H/2.
@@ -707,6 +714,7 @@
             // Position camera to look at the center of the model, but shifted by PAN_Y_OFFSET
             // Looking ABOVE the center pushes the model DOWN.
             const frameCenterY = modelCenterY + PAN_Y_OFFSET;
+            avatarMetrics.lookY = frameCenterY;
             const cameraY = frameCenterY + 0.05; // Maintain a slight downward tilt
             
             camera.position.set(avatarMetrics.centerX, cameraY, targetCameraZ);
@@ -834,9 +842,15 @@
                 }
                 orbitAngle = THREE.MathUtils.lerp(orbitAngle, orbitTarget, delta * 4.0);
                 const camY = camera.position.y;
-                camera.position.x = Math.sin(orbitAngle) * currentCameraZ + avatarMetrics.centerX;
-                camera.position.z = Math.cos(orbitAngle) * currentCameraZ;
-                camera.lookAt(avatarMetrics.centerX, avatarMetrics.centerY || camY, 0);
+                if (isDragging) {
+                    camera.position.x = Math.sin(orbitAngle) * currentCameraZ + avatarMetrics.centerX;
+                    camera.position.z = Math.cos(orbitAngle) * currentCameraZ;
+                } else {
+                    // Keep the avatar body locked to center after touch/orbit gestures.
+                    camera.position.x = avatarMetrics.centerX;
+                    camera.position.z = currentCameraZ;
+                }
+                camera.lookAt(avatarMetrics.centerX, avatarMetrics.lookY || camY, 0);
             } else {
                 camera.position.z = currentCameraZ;
             }
@@ -972,7 +986,7 @@
             }
 
             // --- SYNC HEAD POSITION TO FLUTTER ---
-            if (head && window.PlawieBridge) {
+            if (ENABLE_HEAD_POSITION_BRIDGE && head && window.PlawieBridge) {
                 const headWorldPos = new THREE.Vector3();
                 head.getWorldPosition(headWorldPos);
                 

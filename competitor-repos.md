@@ -38,6 +38,43 @@ Use this as a reference when fixing protocol-level issues in openclaw_final.
 ### Key Insight
 Uses **bootstrap tokens** (single-use, server-issued) for first-pair — avoids the approve-then-reconnect race. On subsequent connects the device is already approved, so the gateway issues a device token directly without another approval cycle.
 
+### 2026-05-25 Follow-up: Lessons for Plawie
+
+The current WakeHermesClaw README confirms a split architecture that matches
+where Plawie should land:
+
+- **Gateway WebSocket remains the primary OpenClaw lane.** It handles pairing,
+  QR/TLS, streaming, agent discovery, and node capabilities.
+- **OpenClaw HTTP is separate.** It is useful for direct chat, but it is not the
+  same as the full Gateway lane and should not be Plawie's default when tools
+  are expected.
+- **Mobile Bridge is optional and off by default.** It exposes local Android
+  capabilities through an authenticated HTTP service for Hermes-style agents,
+  but this is an extra bridge, not a replacement for OpenClaw's node protocol.
+- **Capability discovery is explicit.** Their bridge skill reads `/manifest`
+  first and refuses early if a capability is not enabled. Plawie should mirror
+  that idea for Gateway node tools: list/verify node commands before expecting
+  the model to call them.
+- **Risk is handled by grants and foreground gates.** Medium/high-risk bridge
+  actions require local approval; foreground-only OpenClaw node commands return
+  structured errors such as `NODE_BACKGROUND_UNAVAILABLE`.
+- **Debug commands are first-class in debug builds.** Their node command list
+  adds `debug.logs` and `debug.ed25519` only when `BuildConfig.DEBUG` is true.
+  This is a clean pattern for Plawie's live diagnostics: powerful visibility in
+  debug/test builds, not noisy production UI.
+
+Concrete Plawie alignment:
+
+- Keep cloud chat on Gateway WebSocket by default.
+- Keep NDK/offline mode clearly separate and tool-limited unless we later build
+  an explicit bridge.
+- Add/keep an in-app live diagnostics panel fed by Gateway activity, plus an
+  external ADB watcher for forensic captures.
+- Treat `talk.speak` as a separate Gateway Talk configuration problem, not as a
+  chat provider/API-key problem.
+- Avoid writing device capability names or npm skill slugs to `tools.allow`;
+  node capabilities belong in node connect metadata / capability manifests.
+
 ---
 
 ## 2. mithun50/openclaw-termux (Dart/Flutter + Kotlin, Android)

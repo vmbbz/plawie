@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Holographic orb that floats 50px above the avatar's head.
+/// Holographic orb for quick voice/persona access.
 ///
 /// Design: a small circular core surrounded by a breathing orbit ring and
 /// a soft bloom glow. Subtle at rest, cyan-lit when the avatar is speaking.
@@ -9,12 +9,14 @@ class AuraDot extends StatefulWidget {
   final Offset position;
   final VoidCallback onTap;
   final bool isSpeaking;
+  final Offset anchorOffset;
 
   const AuraDot({
     super.key,
     required this.position,
     required this.onTap,
     this.isSpeaking = false,
+    this.anchorOffset = const Offset(0, -50),
   });
 
   @override
@@ -44,15 +46,15 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     if (widget.position == Offset.zero) return const SizedBox.shrink();
 
-    // 44×44 hit target; visually centred over the avatar head, 50px above it
+    // 44×44 hit target; visually centred around the requested anchor.
     const double hitSize = 44.0;
-    const double coreR = 5.0;    // core dot radius
-    const double ringR = 13.0;   // orbit ring radius
+    const double coreR = 5.0; // core dot radius
+    const double ringR = 13.0; // orbit ring radius
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 80),
-      left: widget.position.dx - hitSize / 2,
-      top: widget.position.dy - hitSize / 2 - 50,
+      left: widget.position.dx + widget.anchorOffset.dx - hitSize / 2,
+      top: widget.position.dy + widget.anchorOffset.dy - hitSize / 2,
       child: GestureDetector(
         onTapDown: (_) => setState(() => _isPressed = true),
         onTapUp: (_) => setState(() => _isPressed = false),
@@ -75,11 +77,13 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                 : Colors.white.withValues(alpha: 0.28 + 0.10 * pulse);
 
             // Orbit ring breathes gently; brightens cyan when active
-            final ringOpacity = active ? 0.50 + 0.28 * pulse : 0.18 + 0.08 * pulse;
+            final ringOpacity =
+                active ? 0.50 + 0.28 * pulse : 0.18 + 0.08 * pulse;
             final ringColor = active ? Colors.cyanAccent : Colors.white;
 
             // Bloom glow
-            final glowAlpha = active ? 0.30 + 0.22 * pulse : 0.06 + 0.05 * pulse;
+            final glowAlpha =
+                active ? 0.30 + 0.22 * pulse : 0.06 + 0.05 * pulse;
             final glowColor = (active ? Colors.cyanAccent : Colors.white)
                 .withValues(alpha: glowAlpha);
 
@@ -134,7 +138,8 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                             boxShadow: active
                                 ? [
                                     BoxShadow(
-                                      color: Colors.cyanAccent.withValues(alpha: 0.55),
+                                      color: Colors.cyanAccent
+                                          .withValues(alpha: 0.55),
                                       blurRadius: 8,
                                       spreadRadius: 1,
                                     ),

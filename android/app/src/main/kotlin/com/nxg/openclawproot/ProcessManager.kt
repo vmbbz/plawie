@@ -457,6 +457,15 @@ class ProcessManager(
     // ================================================================
 
     fun startGateway(): Boolean {
+        if (isGatewayRunning()) {
+            android.util.Log.i(
+                "ProcessManager",
+                "Gateway process already running; attaching log stream instead of spawning another."
+            )
+            startLogStreaming(null)
+            return true
+        }
+
         // Direct execution matching openclaw-termux upstream.
         // NODE_OPTIONS is already injected by buildGatewayCommand() env vars,
         // so we don't need to export it again in the shell command.

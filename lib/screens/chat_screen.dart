@@ -123,6 +123,8 @@ class _ChatScreenState extends State<ChatScreen>
   bool _localChatModeEnabled = false;
   // Gateway state sync — keeps stale prefs from leaking into the model picker.
   StreamSubscription<GatewayState>? _gatewaySub;
+  // Live gateway activity bridge for the in-chat diagnostics panel.
+  StreamSubscription<String>? _gatewayActivitySub;
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
 
@@ -232,6 +234,7 @@ class _ChatScreenState extends State<ChatScreen>
     _loadChatHistory();
     // Fetch gateway agents after first frame — gateway may not be ready yet
     WidgetsBinding.instance.addPostFrameCallback((_) => _fetchDynamicAgents());
+    _wireGatewayDiagnostics();
 
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPModeChanged') {
@@ -406,6 +409,74 @@ class _ChatScreenState extends State<ChatScreen>
         );
       }
     });
+  }
+
+  void _wireGatewayDiagnostics() {
+    final gateway = GatewayService();
+    for (final event in gateway.recentActivity) {
+      if (_shouldShowGatewayDiagnostic(event)) {
+        _addDiagnosticLog('GW ${_sanitizeGatewayDiagnostic(event)}');
+      }
+    }
+    _gatewayActivitySub = gateway.chatActivityStream.listen((event) {
+      if (!mounted || !_shouldShowGatewayDiagnostic(event)) return;
+      _addDiagnosticLog('GW ${_sanitizeGatewayDiagnostic(event)}');
+    });
+  }
+
+  bool _shouldShowGatewayDiagnostic(String event) {
+    final lower = event.toLowerCase();
+    const prefixes = [
+      '[chat]',
+      '[node]',
+      '[health]',
+      '[sess]',
+      '[skills]',
+      '[tts]',
+      '[model]',
+      '[warn]',
+      '[error]',
+    ];
+    if (prefixes.any((prefix) => lower.startsWith(prefix))) return true;
+
+    const needles = [
+      'chat.send',
+      'first token',
+      'rate limit',
+      'model-fetch',
+      'stale',
+      'file lock',
+      'queued_work_without_active_run',
+      'talk.speak',
+      'talk provider',
+      'node required',
+      'missing node',
+      'tools.allow',
+      'websocket',
+      'event_loop',
+      'liveness warning',
+      'handshake timeout',
+    ];
+    return needles.any((needle) => lower.contains(needle));
+  }
+
+  String _sanitizeGatewayDiagnostic(String event) {
+    var output = event;
+    output = output.replaceAllMapped(
+      RegExp(
+        r'\b(api[_-]?key|authorization|bearer|deviceToken|token)\b\s*[:=]\s*[^,\s})]+',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}=<redacted>',
+    );
+    output = output.replaceAll(
+      RegExp(r'sk-[A-Za-z0-9_-]{10,}', caseSensitive: false),
+      'sk-<redacted>',
+    );
+    if (output.length > 800) {
+      output = '${output.substring(0, 800)}...';
+    }
+    return output;
   }
 
   Future<void> _syncOverlayState() async {
@@ -764,11 +835,12 @@ class _ChatScreenState extends State<ChatScreen>
     required bool isLocalModelSelected,
     required bool hasMediaAttachment,
   }) {
-    // Cloud text is always the Gateway lane. Binding every text turn to a
-    // mobile-owned session keeps Flutter chat away from agent:main:main, which
-    // is also used by the dashboard and can carry stale locks/history.
-    if (isLocalModelSelected || hasMediaAttachment) return false;
-    return text.trim().isNotEmpty;
+    // OpenClaw's current mobile gateway reliably dispatches chat on its
+    // default agent session. Dedicated mobile session keys can be accepted by
+    // sessions.create but then stall in "queued_work_without_active_run".
+    // Flutter still keeps per-chat history locally, so we avoid binding the
+    // gateway lane until the upstream session dispatcher is proven stable.
+    return false;
   }
 
   bool _isUnsafeGatewaySessionKey(String? key) {
@@ -886,6 +958,9 @@ class _ChatScreenState extends State<ChatScreen>
         isLocalModelSelected: isLocalModelSelected,
         hasMediaAttachment: imageBase64 != null || videoBase64 != null,
       );
+      if (!bindGatewaySession) {
+        streamSessionKey = null;
+      }
       _addDiagnosticLog(
         bindGatewaySession
             ? 'Gateway session preflight required for $_selectedModel'
@@ -2124,6 +2199,7 @@ class _ChatScreenState extends State<ChatScreen>
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
     _gatewaySub?.cancel();
+    _gatewayActivitySub?.cancel();
     _skillsSub?.cancel();
     _talkAudioStreamSub?.cancel();
     _talkEventSub?.cancel();
@@ -2686,15 +2762,14 @@ class _ChatScreenState extends State<ChatScreen>
                         border: Border.all(
                           color: _isChatCollapsed
                               ? Colors.white.withValues(alpha: 0.2)
-                              : AppColors.statusGreen.withValues(alpha: 0.18),
+                              : Colors.white.withValues(alpha: 0.10),
                           width: _isChatCollapsed ? 2 : 1.2,
                         ),
                         boxShadow: [
                           if (!_isChatCollapsed)
                             BoxShadow(
-                              color:
-                                  AppColors.statusGreen.withValues(alpha: 0.08),
-                              blurRadius: 28,
+                              color: Colors.black.withValues(alpha: 0.22),
+                              blurRadius: 18,
                               spreadRadius: -8,
                               offset: const Offset(0, -6),
                             ),
@@ -3368,6 +3443,7 @@ class _ChatScreenState extends State<ChatScreen>
           if (!_isPipMode && _isReady)
             AuraDot(
               position: Offset(size.width / 2, voiceOrbY),
+              anchorOffset: Offset.zero,
               isSpeaking: TtsService().isSpeaking,
               onTap: () => _showHolographicTtsMenu(context),
             ),
@@ -3486,8 +3562,6 @@ class _ChatScreenState extends State<ChatScreen>
     final selectedVoiceId = prefs.gatewayVoiceId.trim();
     final voices = <String>[];
     var talkConfigured = false;
-    var talkStatusMessage =
-        'Gateway Talk provider is not configured for speech output yet.';
 
     try {
       final providersFrame = await gatewayProvider.getTtsProviders();
@@ -3500,14 +3574,6 @@ class _ChatScreenState extends State<ChatScreen>
         }
       }
       activeProvider = (providersFrame['active'] ?? '').toString().trim();
-      for (final provider in providers) {
-        final id = provider['id']?.toString().trim() ?? '';
-        if (id == activeProvider && provider['configured'] == true) {
-          talkConfigured = true;
-          talkStatusMessage = 'Gateway Talk is configured.';
-          break;
-        }
-      }
     } catch (e) {
       _addDiagnosticLog('Voice provider lookup failed: $e');
     }
@@ -3532,17 +3598,33 @@ class _ChatScreenState extends State<ChatScreen>
       final talkCatalog = await gatewayProvider.getTalkCatalog();
       final speech = talkCatalog['speech'];
       if (speech is Map) {
+        final speechActive = (speech['activeProvider'] ??
+                speech['active'] ??
+                speech['provider'] ??
+                '')
+            .toString()
+            .trim();
+        if (speechActive.isNotEmpty) activeProvider = speechActive;
+
         final speechProviders = speech['providers'];
         if (speechProviders is List) {
+          final speechProviderEntries = <Map<String, dynamic>>[];
           Map<String, dynamic>? activeEntry;
           for (final item in speechProviders) {
             if (item is! Map) continue;
             final mapped = Map<String, dynamic>.from(item);
+            speechProviderEntries.add(mapped);
             final id = mapped['id']?.toString() ?? '';
             if (id == activeProvider) {
               activeEntry = mapped;
-              break;
             }
+          }
+          if (speechProviderEntries.isNotEmpty) {
+            // talk.catalog is authoritative for speech. tts.providers can reflect
+            // text/model providers, which made OpenRouter appear as a voice engine.
+            providers
+              ..clear()
+              ..addAll(speechProviderEntries);
           }
           if (activeEntry == null && speechProviders.isNotEmpty) {
             final fallback = speechProviders.first;
@@ -3555,11 +3637,8 @@ class _ChatScreenState extends State<ChatScreen>
           final rawVoices = activeEntry?['voices'];
           if (activeEntry?['configured'] == true) {
             talkConfigured = true;
-            talkStatusMessage = 'Gateway Talk is configured.';
           } else if (activeEntry != null) {
             talkConfigured = false;
-            talkStatusMessage =
-                'Selected Gateway Talk provider is not configured.';
           }
           if (rawVoices is List) {
             for (final voice in rawVoices) {
@@ -3603,7 +3682,6 @@ class _ChatScreenState extends State<ChatScreen>
       'selectedVoiceId': selectedVoiceId,
       'voices': dedupedVoices,
       'talkConfigured': talkConfigured,
-      'talkStatusMessage': talkStatusMessage,
     };
   }
 
@@ -3659,13 +3737,16 @@ class _ChatScreenState extends State<ChatScreen>
                     String selectedVoiceId =
                         (data['selectedVoiceId'] ?? '').toString();
                     final talkConfigured = data['talkConfigured'] == true;
-                    final talkStatusMessage = (data['talkStatusMessage'] ??
-                            'Gateway Talk provider is not configured.')
-                        .toString();
                     final speed = PreferencesService().ttsSpeed;
 
                     if (activeProvider.isEmpty && providers.isNotEmpty) {
                       activeProvider = providers.first['id']?.toString() ?? '';
+                    }
+                    if (selectedVoiceId.isNotEmpty &&
+                        !voices.any((voice) =>
+                            voice.toLowerCase() ==
+                            selectedVoiceId.toLowerCase())) {
+                      selectedVoiceId = '';
                     }
 
                     return BackdropFilter(
@@ -3914,34 +3995,6 @@ class _ChatScreenState extends State<ChatScreen>
                                   ),
                                   const SizedBox(height: 24),
                                 ],
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: (talkConfigured
-                                            ? Colors.greenAccent
-                                            : Colors.orangeAccent)
-                                        .withValues(alpha: 0.10),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: (talkConfigured
-                                              ? Colors.greenAccent
-                                              : Colors.orangeAccent)
-                                          .withValues(alpha: 0.35),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    talkStatusMessage,
-                                    style: TextStyle(
-                                      color: talkConfigured
-                                          ? Colors.greenAccent
-                                          : Colors.orangeAccent,
-                                      fontSize: 12,
-                                      height: 1.35,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
                                 Row(
                                   children: [
                                     const Icon(Icons.speed,

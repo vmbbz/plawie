@@ -101,6 +101,7 @@ class GatewayService {
   DateTime? _lastNodeAutoConnectAttemptAt;
   DateTime? _lastWsConnectAttemptAt;
   DateTime? _talkSpeakUnavailableUntil;
+  bool _talkSpeakBackoffAllowsNativeFallback = false;
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
   DateTime? _lastStartupHealthKickAt;
@@ -268,6 +269,142 @@ class GatewayService {
             .where((value) => value.isNotEmpty && value != profileId),
     ];
     order[normalizedProvider] = nextOrder;
+  }
+
+  static bool _configCredentialLooksSet(dynamic value) {
+    if (value == null) return false;
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isNotEmpty && trimmed != 'null';
+    }
+    if (value is Map || value is List) return value.isNotEmpty;
+    return false;
+  }
+
+  static bool _configHasProviderCredential(
+    Map<String, dynamic> config,
+    String provider,
+  ) {
+    final normalized = provider.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+
+    final providerConfig = config['models']?['providers']?[normalized];
+    if (providerConfig is Map &&
+        _configCredentialLooksSet(providerConfig['apiKey'])) {
+      return true;
+    }
+
+    final envKey = ModelProviderCatalog.envKeyForProvider(normalized);
+    final envVars = config['env']?['vars'];
+    if (envKey.isNotEmpty &&
+        envVars is Map &&
+        _configCredentialLooksSet(envVars[envKey])) {
+      return true;
+    }
+
+    final auth = config['auth'];
+    final profiles = auth is Map ? auth['profiles'] : null;
+    if (profiles is Map &&
+        profiles.containsKey(authProfileIdForProvider(normalized))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  static String _preferredSpeechProviderForConfig(Map<String, dynamic> config) {
+    final primary =
+        config['agents']?['defaults']?['model']?['primary']?.toString() ?? '';
+    final primaryProvider =
+        primary.contains('/') ? primary.split('/').first.toLowerCase() : '';
+
+    const keyedSpeechProviders = <String>{
+      'openrouter',
+      'openai',
+      'google',
+      'xai',
+    };
+
+    if (keyedSpeechProviders.contains(primaryProvider)) {
+      // Trust the selected model lane. Secrets can live in auth-profiles.json
+      // or SecretRef storage, so this top-level config may not visibly contain
+      // the API key even though the Gateway can resolve it at runtime.
+      return primaryProvider;
+    }
+
+    for (final provider in keyedSpeechProviders) {
+      if (_configHasProviderCredential(config, provider)) return provider;
+    }
+
+    // Official no-key fallback. Best-effort, but far better than an
+    // unconfigured Talk stack that spams talk.speak errors.
+    return 'microsoft';
+  }
+
+  /// Configure the OpenClaw speech-output half of Talk.
+  ///
+  /// Chat/model provider auth does not automatically make `talk.speak` usable.
+  /// OpenClaw resolves speech through `messages.tts`, so Plawie must keep this
+  /// block present during setup and hardening. `auto` remains off because the
+  /// Flutter chat explicitly calls `talk.speak`; enabling Auto-TTS here would
+  /// risk double speech.
+  static void ensureGatewayTalkTtsConfig(Map<String, dynamic> config) {
+    config['messages'] ??= <String, dynamic>{};
+    final messages = config['messages'];
+    if (messages is! Map) return;
+
+    messages['tts'] ??= <String, dynamic>{};
+    final tts = messages['tts'];
+    if (tts is! Map) return;
+
+    final currentAuto = tts['auto'];
+    if (currentAuto is! String || currentAuto.trim().isEmpty) {
+      tts['auto'] = 'off';
+    }
+
+    tts['providers'] ??= <String, dynamic>{};
+    final providers = tts['providers'];
+    if (providers is! Map) return;
+
+    void mergeProviderDefaults(String id, Map<String, dynamic> defaults) {
+      final existing = providers[id];
+      providers[id] = <String, dynamic>{
+        ...defaults,
+        if (existing is Map) ...existing,
+      };
+    }
+
+    mergeProviderDefaults('openrouter', <String, dynamic>{
+      'model': 'hexgrad/kokoro-82m',
+      'voice': 'af_alloy',
+      'responseFormat': 'mp3',
+    });
+    mergeProviderDefaults('openai', <String, dynamic>{
+      'model': 'gpt-4o-mini-tts',
+      'voice': 'alloy',
+    });
+    mergeProviderDefaults('google', <String, dynamic>{
+      'model': 'gemini-3.1-flash-tts-preview',
+      'voiceName': 'Kore',
+    });
+    mergeProviderDefaults('xai', <String, dynamic>{
+      'voiceId': 'eve',
+      'language': 'en',
+      'responseFormat': 'mp3',
+    });
+    mergeProviderDefaults('microsoft', <String, dynamic>{
+      'enabled': true,
+      'voice': 'en-US-MichelleNeural',
+      'lang': 'en-US',
+      'outputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+      'rate': '+0%',
+      'pitch': '+0%',
+    });
+
+    final currentProvider = tts['provider']?.toString().trim() ?? '';
+    if (currentProvider.isEmpty || !providers.containsKey(currentProvider)) {
+      tts['provider'] = _preferredSpeechProviderForConfig(config);
+    }
   }
 
   /// True when the connected gateway explicitly advertises [method].
@@ -665,14 +802,73 @@ class GatewayService {
     }
   }
 
-  Future<bool> _isGatewayHealthy() async {
-    // Quick health check without full reload
+  Future<bool> _isGatewayListenerAlive({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
     try {
-      return state.status == GatewayStatus.running &&
-          state.isWebsocketConnected;
+      final token = await retrieveTokenFromConfig()
+          .timeout(const Duration(seconds: 1), onTimeout: () => null);
+      final response = await _probeGatewayHealth(
+        token: token,
+        timeout: timeout,
+      );
+      return response.statusCode < 500;
     } catch (_) {
       return false;
     }
+  }
+
+  Future<bool> _attachToExistingGatewayAfterStartFailure(String reason) async {
+    var gatewayLooksAlive = false;
+    try {
+      gatewayLooksAlive = await checkHealth()
+          .timeout(const Duration(seconds: 6), onTimeout: () => false);
+    } catch (_) {}
+
+    if (!gatewayLooksAlive) {
+      try {
+        gatewayLooksAlive = await NativeBridge.isGatewayRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      } catch (_) {}
+    }
+
+    if (!gatewayLooksAlive) {
+      gatewayLooksAlive = await _isGatewayListenerAlive(
+        timeout: const Duration(seconds: 2),
+      );
+    }
+
+    if (!gatewayLooksAlive) return false;
+
+    _addActivity(
+        '[INFO] Gateway already listening; attaching instead of failing start.');
+    _rpcDiscoveryDone = false;
+    _connection?.dispose();
+    _connection = null;
+    _cachedToken = null;
+    _lastTokenFetch = null;
+    NodeService().clearCachedToken();
+
+    await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
+    _consecutiveFailures = 0;
+    _httpWaitingSince = null;
+    _markGatewaySettleWindow();
+    _subscribeLogs();
+    _startHealthCheck();
+
+    _updateState(_state.copyWith(
+      status: GatewayStatus.running,
+      clearError: true,
+      startedAt: _state.startedAt ?? DateTime.now(),
+      isReady: gatewayLooksAlive,
+      isInteractiveReady: false,
+      logs: [
+        ..._state.logs,
+        '[INFO] Attached to existing gateway after start collision: $reason',
+      ],
+    ));
+    unawaited(_checkHealth());
+    return true;
   }
 
   /// Unified entry point for starting or attaching to the gateway.
@@ -694,11 +890,22 @@ class GatewayService {
       return;
     }
 
-    // 1. ALWAYS check if already running and attach if so
-    final alreadyRunning = await NativeBridge.isGatewayRunning();
+    // 1. ALWAYS check if already running and attach if so. Android process
+    // discovery can miss the PRoot child even while :18789 is already bound,
+    // so the HTTP listener is also an ownership signal.
+    final processRunning = await NativeBridge.isGatewayRunning();
+    final listenerRunning = await _isGatewayListenerAlive();
+    final alreadyRunning = processRunning || listenerRunning;
 
-    if (alreadyRunning && await _isGatewayHealthy()) {
+    if (alreadyRunning && listenerRunning) {
       // FAST PATH: already healthy → skip config write + doctor + reload
+      if (_state.status != GatewayStatus.running) {
+        _updateState(_state.copyWith(
+          status: GatewayStatus.running,
+          startedAt: _state.startedAt ?? DateTime.now(),
+          clearError: true,
+        ));
+      }
       _subscribeLogs();
       _startHealthCheck();
       _markGatewaySettleWindow();
@@ -714,12 +921,15 @@ class GatewayService {
         return; // Already fully attached
       }
 
-      debugPrint('[GATEWAY] Process detected — attaching...');
+      debugPrint('[GATEWAY] Existing gateway detected — attaching...');
       _rpcDiscoveryDone = false;
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
         isInteractiveReady: false,
-        logs: [..._state.logs, '[INFO] Gateway process detected, attaching...'],
+        logs: [
+          ..._state.logs,
+          '[INFO] Existing gateway detected, attaching...'
+        ],
       ));
 
       // Attach path should be non-mutating.
@@ -848,6 +1058,9 @@ class GatewayService {
       _startHealthCheck();
       unawaited(_checkHealth());
     } catch (e) {
+      final attached =
+          await _attachToExistingGatewayAfterStartFailure(e.toString());
+      if (attached) return;
       _updateState(_state.copyWith(
         status: GatewayStatus.error,
         errorMessage: 'Failed to start: $e',
@@ -879,7 +1092,12 @@ class GatewayService {
       if (_state.status == GatewayStatus.running) break;
       final processAlive = await NativeBridge.isGatewayRunning()
           .timeout(const Duration(seconds: 3), onTimeout: () => false);
-      if (processAlive) {
+      final listenerAlive = processAlive
+          ? false
+          : await _isGatewayListenerAlive(
+              timeout: const Duration(seconds: 2),
+            );
+      if (processAlive || listenerAlive) {
         _updateState(_state.copyWith(
           status: GatewayStatus.running,
           startedAt: _state.startedAt ?? DateTime.now(),
@@ -1298,6 +1516,7 @@ HEARTBEAT_OK.
     // so returning installs cannot accidentally revive a removed runtime.
     _ensureCatalogProviderDefaults(config);
     _removeLegacyOllamaConfig(config);
+    ensureGatewayTalkTtsConfig(config);
 
     // Remove keys that have never been part of the OpenClaw schema.
     // These were written by earlier builds and must be stripped so the gateway
@@ -1323,6 +1542,7 @@ HEARTBEAT_OK.
     // The mobile default uses official groups plus stable primitives so device
     // actions remain available without loading every plugin/provider tool.
     GatewayToolCatalog.applyDefaultMobilePolicy(config);
+    ensureGatewayTalkTtsConfig(config);
     final gatewayConfig = config['gateway'];
     if (gatewayConfig is Map) {
       gatewayConfig.remove('startup');
@@ -1340,6 +1560,7 @@ HEARTBEAT_OK.
       }
     }
     _removeLegacyOllamaConfig(config);
+    ensureGatewayTalkTtsConfig(config);
 
     // Canonicalize legacy primary ids (for example "openclaw") before the
     // gateway reads config. Invalid/alias ids trigger startup warnings and can
@@ -1630,6 +1851,7 @@ HEARTBEAT_OK.
       apiKey: key,
     );
     ensureProviderAuthConfigBlock(config, openClawProvider);
+    ensureGatewayTalkTtsConfig(config);
 
     // Keep the local Control UI origin list explicit and minimal.
     config['gateway'] ??= {};
@@ -2696,7 +2918,12 @@ HEARTBEAT_OK.
 
         final processAlive = await NativeBridge.isGatewayRunning()
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
-        if (!processAlive && elapsed >= 10) {
+        final listenerAlive = processAlive
+            ? false
+            : await _isGatewayListenerAlive(
+                timeout: const Duration(seconds: 2),
+              );
+        if (!processAlive && !listenerAlive && elapsed >= 10) {
           _rpcDiscoveryDone = false;
           _addActivity(
               '[HEALTH] Gateway startup process disappeared; restarting cleanly.');
@@ -2717,7 +2944,12 @@ HEARTBEAT_OK.
         final wsAlive = _connection?.state == GatewayConnectionState.connected;
         final processAlive = await NativeBridge.isGatewayRunning()
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
-        if (wsAlive && processAlive) {
+        final listenerAlive = processAlive
+            ? false
+            : await _isGatewayListenerAlive(
+                timeout: const Duration(seconds: 2),
+              );
+        if (wsAlive && (processAlive || listenerAlive)) {
           _consecutiveFailures = 0;
           _addActivity(
               '[HEALTH] HTTP probe slow, but WebSocket/process are alive; treating gateway as busy.');
@@ -2728,7 +2960,7 @@ HEARTBEAT_OK.
             '[HEALTH] Probe failed ($_consecutiveFailures/$_healthFailureRestartThreshold): ${e.toString().split('\n').first}');
         if (_consecutiveFailures >= _healthFailureRestartThreshold &&
             !_isAutoHealingInProgress) {
-          if (processAlive) {
+          if (processAlive || listenerAlive) {
             unawaited(_restartHungGatewayAfterHealthFailures(
               reason: 'health-timeout',
               failureCount: _consecutiveFailures,
@@ -2740,7 +2972,13 @@ HEARTBEAT_OK.
       }
 
       // HTTP HEAD failed — check if gateway process is still alive
-      final isRunning = await NativeBridge.isGatewayRunning();
+      final processRunning = await NativeBridge.isGatewayRunning();
+      final listenerRunning = processRunning
+          ? false
+          : await _isGatewayListenerAlive(
+              timeout: const Duration(seconds: 2),
+            );
+      final isRunning = processRunning || listenerRunning;
       if (!isRunning && _state.status != GatewayStatus.stopped) {
         _updateState(_state.copyWith(
           status: GatewayStatus.stopped,
@@ -2941,6 +3179,148 @@ HEARTBEAT_OK.
     return normalized;
   }
 
+  bool _looksLikeMobileNodeToolRequest(String message) {
+    final lower = message.toLowerCase();
+    const toolHints = <String>[
+      'tool',
+      'skill',
+      'phone',
+      'device',
+      'node',
+      'android',
+      'camera',
+      'photo',
+      'picture',
+      'selfie',
+      'flashlight',
+      'torch',
+      'vibrate',
+      'haptic',
+      'sensor',
+      'accelerometer',
+      'gyro',
+      'gyroscope',
+      'location',
+      'gps',
+      'screen',
+      'canvas',
+      'browser',
+      'snapshot',
+      'javascript',
+      'open http',
+      'open https',
+    ];
+    return toolHints.any(lower.contains);
+  }
+
+  Future<String?> _resolveMobileNodeIdForToolRouting() async {
+    try {
+      final node = NodeService();
+      await node.init();
+      final stateId = node.state.deviceId?.trim() ?? '';
+      if (stateId.isNotEmpty) return stateId;
+    } catch (_) {}
+
+    try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      final prefId = prefs.nodeIdentityDeviceId?.trim() ?? '';
+      if (prefId.isNotEmpty) return prefId;
+    } catch (_) {}
+
+    try {
+      final pairedFile = File(
+        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/devices/paired.json',
+      );
+      if (!await pairedFile.exists()) return null;
+
+      final decoded = jsonDecode(await pairedFile.readAsString());
+      final nodeId = _findPairedAndroidNodeId(decoded);
+      if (nodeId != null && nodeId.isNotEmpty) return nodeId;
+    } catch (_) {}
+
+    return null;
+  }
+
+  String? _findPairedAndroidNodeId(Object? value) {
+    if (value is Map) {
+      final map = value.map((key, val) => MapEntry('$key', val));
+
+      final deviceId = (map['deviceId'] as String?)?.trim();
+      final platform = (map['platform'] as String?)?.toLowerCase().trim();
+      final role = (map['role'] as String?)?.toLowerCase().trim();
+      final clientMode = (map['clientMode'] as String?)?.toLowerCase().trim();
+      final clientId = (map['clientId'] as String?)?.toLowerCase().trim();
+      final displayName = (map['displayName'] as String?)?.toLowerCase().trim();
+      final roles = map['roles'];
+      final hasNodeRole = role == 'node' ||
+          clientMode == 'node' ||
+          clientId == 'node-host' ||
+          (roles is List &&
+              roles.map((r) => '$r'.toLowerCase()).contains('node'));
+      final isAndroidNode = platform == 'android' &&
+          hasNodeRole &&
+          deviceId != null &&
+          deviceId.isNotEmpty;
+      if (isAndroidNode) return deviceId;
+
+      // Older stores sometimes use the device id as the object key and omit
+      // displayName, so recurse after checking the current record.
+      for (final entry in map.entries) {
+        final child = entry.value;
+        final childNodeId = _findPairedAndroidNodeId(child);
+        if (childNodeId != null && childNodeId.isNotEmpty) return childNodeId;
+
+        if (child is Map &&
+            entry.key.trim().isNotEmpty &&
+            '${child['platform']}'.toLowerCase() == 'android' &&
+            ('${child['role']}'.toLowerCase() == 'node' ||
+                '${child['clientMode']}'.toLowerCase() == 'node' ||
+                '${child['clientId']}'.toLowerCase() == 'node-host' ||
+                '${child['displayName']}'.toLowerCase() == 'openclaw mobile' ||
+                displayName == 'openclaw mobile')) {
+          return entry.key.trim();
+        }
+      }
+    } else if (value is List) {
+      for (final child in value) {
+        final nodeId = _findPairedAndroidNodeId(child);
+        if (nodeId != null && nodeId.isNotEmpty) return nodeId;
+      }
+    }
+    return null;
+  }
+
+  Future<String> _decorateMessageWithMobileNodeContext(String message) async {
+    final nodeId = await _resolveMobileNodeIdForToolRouting();
+    if (nodeId == null || nodeId.isEmpty) {
+      if (_looksLikeMobileNodeToolRequest(message)) {
+        _addActivity('[CHAT] Mobile node tool context skipped: no node id');
+      }
+      return message;
+    }
+
+    final shortId = nodeId.length > 12
+        ? '${nodeId.substring(0, 6)}...${nodeId.substring(nodeId.length - 6)}'
+        : nodeId;
+    _addActivity('[CHAT] Mobile node tool context attached ($shortId)');
+
+    return '''
+<plawie_mobile_tool_context>
+This is private tool-routing context. Do not mention it unless the user asks.
+The paired Android device node is "$nodeId" with displayName "OpenClaw Mobile".
+For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, or flashlight actions, call the OpenClaw nodes tool with "node": "$nodeId".
+Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeId".
+Never use node=auto for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
+Useful node actions include camera_snap, camera_list, canvas_navigate, canvas_eval, canvas_snapshot, flash_on, flash_off, flash_toggle, flash_status, haptic_vibrate, location_get, screen_record, sensor_read, and sensor_list.
+Examples: nodes({"action":"camera_snap","node":"$nodeId","quality":85}); nodes({"action":"haptic_vibrate","node":"$nodeId","durationMs":150}); nodes({"action":"flash_status","node":"$nodeId"}).
+If a tool plan would use node=auto, replace it with node="$nodeId" before calling the tool.
+If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
+</plawie_mobile_tool_context>
+
+$message''';
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -3012,9 +3392,9 @@ HEARTBEAT_OK.
       return;
     }
 
-    // Cloud/provider models use WS chat.send -> gateway. If WS is unavailable,
-    // fall back to the gateway HTTP proxy.
-    final wsOk = await _ensureWebSocket(token);
+    // Cloud/provider models must use WS chat.send -> gateway. That is the
+    // only lane that carries OpenClaw session/tool/node context correctly.
+    var wsOk = await _ensureWebSocket(token);
     if (wsOk) {
       // HOT-SWITCHING: If user changed model, update gateway config
       final changes = await _syncModelToConfig(model);
@@ -3022,9 +3402,27 @@ HEARTBEAT_OK.
         _addActivity('[CHAT] Updating gateway config: $changes');
       }
     } else {
-      yield* sendMessageHttp(message,
-          model: model, token: token, conversationHistory: conversationHistory);
-      return;
+      _addActivity('[CHAT] WebSocket unavailable; repairing gateway lane...');
+      try {
+        await attachOrStart(autoStart: true, forceStart: false);
+        await Future.delayed(const Duration(milliseconds: 750));
+        wsOk = await _ensureWebSocket(token);
+      } catch (_) {
+        wsOk = false;
+      }
+      if (!wsOk) {
+        yield '[Error] Gateway WebSocket is still connecting.\n\n'
+            'Please wait a moment and try again. Plawie did not use the '
+            'fallback HTTP chat route because it bypasses OpenClaw tools and '
+            'mobile node context.';
+        return;
+      }
+
+      final changes = await _syncModelToConfig(model);
+      if (changes.isNotEmpty) {
+        _addActivity('[CHAT] Updating gateway config after WS repair: $changes');
+      }
+      _addActivity('[CHAT] WebSocket lane repaired; continuing.');
     }
 
     _addActivity('[CHAT] → Sending to $model');
@@ -3036,20 +3434,28 @@ HEARTBEAT_OK.
     // 1) explicit sessionKey from caller (per-chat session binding)
     // 2) agent/<id> model route
     // 3) isolated mobile default (never agent:main:main)
-    final resolvedSessionKey =
+    final requestedSessionKey =
         (sessionKey != null && sessionKey.trim().isNotEmpty)
             ? sessionKey.trim()
             : model.startsWith('agent/')
                 ? model.substring(6)
-                : '${_mobileChatSessionPrefix}default';
+                : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    if (resolvedSessionKey != requestedSessionKey) {
+      _addActivity('[SESS] normalized mobile chat session: '
+          '$requestedSessionKey -> $resolvedSessionKey');
+    }
 
-    const timeoutMs = 90000;
+    const timeoutMs = 300000;
+    final outboundMessage =
+        await _decorateMessageWithMobileNodeContext(message);
 
     final responseStream = _connection!.sendRequest({
       'method': 'chat.send',
       'params': {
         'sessionKey': resolvedSessionKey,
-        'message': message,
+        'message': outboundMessage,
         'idempotencyKey': const Uuid().v4(),
         'timeoutMs': timeoutMs,
       },
@@ -3064,6 +3470,28 @@ HEARTBEAT_OK.
     // (which may complete after our Flutter timeout) cannot close the next request's
     // stream before any content arrives.
     bool runStarted = false;
+    var assistantSnapshot = '';
+    String assistantDelta(String text) {
+      if (text.isEmpty) return '';
+      if (assistantSnapshot.isEmpty) {
+        assistantSnapshot = text;
+        return text;
+      }
+      if (text == assistantSnapshot || assistantSnapshot.endsWith(text)) {
+        return '';
+      }
+      if (text.startsWith(assistantSnapshot)) {
+        final delta = text.substring(assistantSnapshot.length);
+        assistantSnapshot = text;
+        return delta;
+      }
+
+      // Some gateway/model transports stream true deltas instead of snapshots.
+      // Preserve those while still de-duping the cumulative OpenClaw stream.
+      assistantSnapshot += text;
+      return text;
+    }
+
     late StreamSubscription frameSub;
     frameSub = responseStream.listen(
       (frame) {
@@ -3179,11 +3607,13 @@ HEARTBEAT_OK.
                   payload?['text'] ??
                   frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
+                final delta = assistantDelta(text);
+                if (delta.isEmpty) return;
                 if (firstToken) {
                   firstToken = false;
                   _addActivity('[CHAT] ✓ First token received');
                 }
-                chunkController.add(text);
+                chunkController.add(delta);
               }
             } else if (stream == 'tool_use') {
               if (activeRunId != null &&
@@ -3253,6 +3683,7 @@ HEARTBEAT_OK.
                 // Capture the real run ID from the first phase=start we see after our ACK.
                 if (agentRun != null) activeRunId = agentRun;
                 runStarted = true;
+                assistantSnapshot = '';
               } else if (phase == 'error') {
                 if (activeRunId != null &&
                     agentRun != null &&
@@ -3356,12 +3787,12 @@ HEARTBEAT_OK.
 
     try {
       await for (final chunk
-          in chunkController.stream.timeout(const Duration(seconds: 45))) {
+          in chunkController.stream.timeout(const Duration(seconds: 300))) {
         yield chunk;
       }
       _addActivity('[CHAT] ✓ Complete');
     } on TimeoutException {
-      yield '[Error] Gateway chat timed out after 45 seconds. '
+      yield '[Error] Gateway chat timed out after 300 seconds. '
           'Provider may be overloaded or rate-limited. Retry or switch provider/model.';
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
@@ -3440,21 +3871,16 @@ HEARTBEAT_OK.
     return <String, dynamic>{};
   }
 
-  String? _extractSessionKey(dynamic payload) {
-    if (payload is Map<String, dynamic>) {
-      final direct = payload['key'] ??
-          payload['sessionKey'] ??
-          payload['resolvedKey'] ??
-          payload['canonicalKey'];
-      if (direct is String && direct.isNotEmpty) return direct;
-
-      final session = payload['session'];
-      if (session is Map<String, dynamic>) {
-        final nested = session['key'] ?? session['sessionKey'];
-        if (nested is String && nested.isNotEmpty) return nested;
+  String _normalizeMobileChatSessionKey(String key) {
+    final trimmed = key.trim();
+    const canonicalAgentMainPrefix = 'agent:main:';
+    if (trimmed.startsWith(canonicalAgentMainPrefix)) {
+      final unscoped = trimmed.substring(canonicalAgentMainPrefix.length);
+      if (unscoped.startsWith(_mobileChatSessionPrefix)) {
+        return unscoped;
       }
     }
-    return null;
+    return trimmed;
   }
 
   /// Resolve (or create) a stable gateway session key for one local chat thread.
@@ -3463,59 +3889,11 @@ HEARTBEAT_OK.
     String? existingSessionKey,
     bool forceNew = false,
   }) async {
-    final existing = existingSessionKey?.trim() ?? '';
-    final existingLower = existing.toLowerCase();
-    final existingIsGlobalMain =
-        existingLower == 'main' || existingLower == 'agent:main:main';
-    if (existing.isNotEmpty && !existingIsGlobalMain && !forceNew) {
-      return existing;
-    }
-
-    final baseKey = '$_mobileChatSessionPrefix$localSessionId';
-    final candidateKey = forceNew
-        ? '$baseKey:${DateTime.now().millisecondsSinceEpoch}'
-        : baseKey;
-    final advertisedMethods = _connection?.supportedMethods ?? const <String>[];
-    final canResolve = advertisedMethods.isEmpty ||
-        advertisedMethods.contains('sessions.resolve');
-    final canCreate = advertisedMethods.isEmpty ||
-        advertisedMethods.contains('sessions.create');
-
-    // Fast path: if this key already exists, reuse it.
-    if (canResolve) {
-      try {
-        final resolveFrame =
-            await invoke('sessions.resolve', {'key': candidateKey});
-        final resolvePayload = _extractRpcPayload(resolveFrame);
-        final resolvedKey = _extractSessionKey(resolvePayload);
-        if (resolvedKey != null && resolvedKey.isNotEmpty) {
-          return resolvedKey;
-        }
-      } catch (_) {
-        // Older gateways may not expose sessions.resolve; creation path below handles that.
-      }
-    }
-
-    // Preferred path: create a dedicated session per local chat thread.
-    if (!canCreate) {
-      _addActivity(
-          '[SESS] sessions.create unavailable; using local mobile key $candidateKey');
-      return candidateKey;
-    }
-    try {
-      final createFrame = await invoke('sessions.create', {
-        'key': candidateKey,
-        'label': 'Mobile chat',
-      });
-      final createPayload = _extractRpcPayload(createFrame);
-      return _extractSessionKey(createPayload) ?? candidateKey;
-    } catch (e) {
-      // Never fall back to the global main lane for mobile chat. The main lane
-      // carries dashboard/agent history and can become stale or file-locked
-      // independently of the Flutter chat thread.
-      _addActivity('[SESS] sessions.create failed for $candidateKey: $e');
-      return candidateKey;
-    }
+    // Keep the gateway runtime on its proven default session lane. The app's
+    // visible chat threading is already handled by Flutter persistence; asking
+    // this OpenClaw build to dispatch arbitrary mobile session keys can leave a
+    // queued message without an active run.
+    return 'main';
   }
 
   /// Synthesize speech through modern gateway Talk RPC (`talk.speak`).
@@ -3535,9 +3913,9 @@ HEARTBEAT_OK.
 
     final unavailableUntil = _talkSpeakUnavailableUntil;
     if (unavailableUntil != null && DateTime.now().isBefore(unavailableUntil)) {
-      return const TalkSpeakPlayback(
+      return TalkSpeakPlayback(
         played: false,
-        allowNativeFallback: true,
+        allowNativeFallback: _talkSpeakBackoffAllowsNativeFallback,
       );
     }
 
@@ -3575,6 +3953,9 @@ HEARTBEAT_OK.
           lower.contains('talk provider not configured')) {
         const message =
             'Gateway Talk provider is not configured. Configure an OpenClaw Talk/TTS provider before testing Gateway Voice.';
+        _talkSpeakUnavailableUntil =
+            DateTime.now().add(_talkSpeakUnavailableBackoff);
+        _talkSpeakBackoffAllowsNativeFallback = false;
         _addActivity('[TTS] $message');
         return const TalkSpeakPlayback(
           played: false,
@@ -3588,6 +3969,7 @@ HEARTBEAT_OK.
       if (methodUnavailable) {
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
+        _talkSpeakBackoffAllowsNativeFallback = true;
         _addActivity(
             '[TTS] talk.speak unavailable; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m');
         return const TalkSpeakPlayback(
@@ -4418,6 +4800,15 @@ HEARTBEAT_OK.
     final hasNoLegacyOllamaAuth =
         (authProfiles is! Map || !authProfiles.containsKey('ollama:default')) &&
             (authOrder is! Map || !authOrder.containsKey('ollama'));
+    final messages = config['messages'];
+    final tts = messages is Map ? messages['tts'] : null;
+    final ttsProvider = tts is Map ? tts['provider'] : null;
+    final ttsProviders = tts is Map ? tts['providers'] : null;
+    final hasTalkTtsProvider = tts is Map &&
+        ttsProvider is String &&
+        ttsProvider.trim().isNotEmpty &&
+        ttsProviders is Map &&
+        ttsProviders.containsKey(ttsProvider.trim());
 
     return gateway['mode'] == 'local' &&
         gateway['bind'] == 'loopback' &&
@@ -4436,6 +4827,7 @@ HEARTBEAT_OK.
         !models.containsKey('startup') &&
         !gateway.containsKey('startup') &&
         !gateway.containsKey('sidecars') &&
+        hasTalkTtsProvider &&
         hasNoBootstrapBypass &&
         hasNoLegacyOllamaAuth &&
         !config.containsKey('ollama');
@@ -4494,6 +4886,7 @@ HEARTBEAT_OK.
         models['pricing'] = <String, dynamic>{'enabled': false};
       }
     }
+    ensureGatewayTalkTtsConfig(currentConfig);
     final primary = currentConfig['agents']?['defaults']?['model']?['primary'];
     currentConfig['agents'] ??= {};
     currentConfig['agents']['defaults'] ??= {};

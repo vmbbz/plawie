@@ -37,8 +37,8 @@ class PlawieForegroundService : Service() {
         
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds
-        private const val HEALTH_TIMEOUT_MS = 10_000         // 10s — a healthy local gateway should answer fast
-        private const val MAX_CONSECUTIVE_HTTP_FAILURES = 4  // ~2 minutes of HTTP misses before restart
+        private const val HEALTH_TIMEOUT_MS = 20_000         // A busy mobile gateway can stall /health during agent work
+        private const val MAX_CONSECUTIVE_HTTP_FAILURES = 10 // Report busy, but do not kill a live process mid-run
         private const val MAX_CONSECUTIVE_PROCESS_DOWN = 2   // Fast restart when process is truly dead
         private const val STARTUP_GRACE_MS = 180_000L        // 3 min grace after start/restart
         private const val MAX_RESTARTS_PER_HOUR = 3          // Cap restarts to avoid loops
@@ -213,7 +213,17 @@ class PlawieForegroundService : Service() {
                             if (uptimeMs >= STARTUP_GRACE_MS &&
                                 consecutiveHttpFailures >= MAX_CONSECUTIVE_HTTP_FAILURES
                             ) {
-                                attemptRestart("http_unresponsive")
+                                // A live OpenClaw process can stop answering /health while it is
+                                // preparing tools, flushing session files, or waiting on a provider.
+                                // Restarting here kills in-flight chat runs and creates WebSocket
+                                // 1006 churn. Only auto-restart when the process is actually gone;
+                                // keep sustained HTTP misses visible as "busy" for manual repair.
+                                Log.w(
+                                    TAG,
+                                    "Watchdog: gateway process is alive but HTTP remains slow; " +
+                                        "restart suppressed to protect in-flight agent work."
+                                )
+                                updateNotification("Gateway busy — preserving run")
                             }
                         } else {
                             consecutiveHttpFailures = 0
