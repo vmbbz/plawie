@@ -60,7 +60,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.transparent)
+      // Keep the Android WebView opaque. Transparent platform views are costly
+      // to composite under Flutter overlays and were producing grainy output.
+      ..setBackgroundColor(const Color(0xFF07111D))
       ..setNavigationDelegate(
         NavigationDelegate(
           onWebResourceError: (WebResourceError error) {
@@ -72,7 +74,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
       ..addJavaScriptChannel(
         'PlawieBridge',
         onMessageReceived: (JavaScriptMessage message) {
-          if (message.message == 'READY') {
+          final text = message.message;
+          if (text == 'READY') {
             if (mounted) {
               // Cancel fallback timer — JS bridge is confirmed working
               _readyFallbackTimer?.cancel();
@@ -82,17 +85,18 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
               _syncState();
             }
           }
-          if (message.message.startsWith('HEAD:')) {
-            final parts = message.message.split(':');
+          if (text.startsWith('HEAD:')) {
+            final parts = text.split(':');
             if (parts.length == 3) {
               final x = double.tryParse(parts[1]) ?? 0.0;
               final y = double.tryParse(parts[2]) ?? 0.0;
               widget.onHeadUpdate?.call(Offset(x, y));
             }
+            return;
           }
           // Propagate all logs to parent
           if (widget.onLog != null) {
-            widget.onLog!(message.message);
+            widget.onLog!(text);
           }
         },
       )

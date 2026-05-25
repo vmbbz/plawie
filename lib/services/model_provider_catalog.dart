@@ -321,6 +321,11 @@ class ModelProviderCatalog {
   static String canonicalizeModelId(String modelId) {
     final trimmed = modelId.trim();
     if (trimmed.startsWith('ollama/')) return defaultCloudFallbackModel;
+    if (trimmed == 'openclaw') return defaultCloudFallbackModel;
+    if (trimmed.startsWith('openclaw/')) {
+      final alias = trimmed.substring('openclaw/'.length).trim();
+      return alias.isEmpty ? defaultCloudFallbackModel : 'agent/$alias';
+    }
     switch (trimmed) {
       case 'anthropic/claude-opus-4.6':
         return 'anthropic/claude-opus-4-6';
@@ -333,6 +338,18 @@ class ModelProviderCatalog {
       default:
         return trimmed;
     }
+  }
+
+  /// Returns true when [modelId] routes to local on-device inference.
+  ///
+  /// This includes the direct local model ids (`local-llm/<gguf>`) and the
+  /// experimental gateway bridge alias (`plawie_ndk/local-llm`).
+  static bool isLocalModelId(String modelId) {
+    final trimmed = modelId.trim();
+    if (trimmed.startsWith('local-llm')) return true;
+    if (trimmed == '$plawieNdkProviderId/local-llm') return true;
+    if (trimmed.startsWith('$plawieNdkProviderId/local-llm/')) return true;
+    return false;
   }
 
   static String labelForModel(String modelId) {

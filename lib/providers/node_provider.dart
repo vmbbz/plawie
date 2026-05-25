@@ -6,6 +6,7 @@ import '../services/native_bridge.dart';
 import '../services/node_service.dart';
 import '../services/preferences_service.dart';
 import '../models/node_state.dart';
+import '../models/node_frame.dart';
 import '../models/gateway_state.dart';
 import 'gateway_provider.dart' as svc_gateway;
 import '../services/capabilities/camera_capability.dart';
@@ -15,6 +16,7 @@ import '../services/capabilities/screen_capability.dart';
 import '../services/capabilities/flash_capability.dart';
 import '../services/capabilities/vibration_capability.dart';
 import '../services/capabilities/sensor_capability.dart';
+import '../services/capabilities/capability_handler.dart';
 
 class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NodeService _nodeService = NodeService();
@@ -158,55 +160,133 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _registerCapabilities() {
-    _nodeService.registerCapability(
-      _cameraCapability.name,
-      _cameraCapability.commands
-          .map((c) => '${_cameraCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _cameraCapability.handleWithPermission(cmd, params),
+    _registerCapabilityWithAliases(
+      capability: _cameraCapability,
+      execute: (cmd, params) => _cameraCapability.handleWithPermission(
+        cmd,
+        params,
+      ),
+    );
+    _registerCapabilityWithAliases(
+      capability: _canvasCapability,
+      execute: (cmd, params) => _canvasCapability.handle(cmd, params),
+    );
+    _registerCapabilityWithAliases(
+      capability: _locationCapability,
+      execute: (cmd, params) => _locationCapability.handleWithPermission(
+        cmd,
+        params,
+      ),
+    );
+    _registerCapabilityWithAliases(
+      capability: _screenCapability,
+      execute: (cmd, params) => _screenCapability.handle(cmd, params),
+    );
+    _registerCapabilityWithAliases(
+      capability: _flashCapability,
+      execute: (cmd, params) => _flashCapability.handleWithPermission(
+        cmd,
+        params,
+      ),
+    );
+    _registerCapabilityWithAliases(
+      capability: _vibrationCapability,
+      execute: (cmd, params) => _vibrationCapability.handle(cmd, params),
+    );
+    _registerCapabilityWithAliases(
+      capability: _sensorCapability,
+      execute: (cmd, params) => _sensorCapability.handleWithPermission(
+        cmd,
+        params,
+      ),
+    );
+  }
+
+  void _registerCapabilityWithAliases({
+    required CapabilityHandler capability,
+    required Future<NodeFrame> Function(
+      String command,
+      Map<String, dynamic> params,
+    ) execute,
+  }) {
+    final declaredCommands = _declaredCapabilityAliases(
+      capability.name,
+      capability.commands,
     );
     _nodeService.registerCapability(
-      _canvasCapability.name,
-      _canvasCapability.commands
-          .map((c) => '${_canvasCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _canvasCapability.handle(cmd, params),
+      capability.name,
+      declaredCommands,
+      (incomingCommand, params) => execute(
+        _canonicalizeCapabilityCommand(
+          capabilityName: capability.name,
+          verbs: capability.commands,
+          incomingCommand: incomingCommand,
+        ),
+        params,
+      ),
     );
-    _nodeService.registerCapability(
-      _locationCapability.name,
-      _locationCapability.commands
-          .map((c) => '${_locationCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _locationCapability.handleWithPermission(cmd, params),
-    );
-    _nodeService.registerCapability(
-      _screenCapability.name,
-      _screenCapability.commands
-          .map((c) => '${_screenCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _screenCapability.handle(cmd, params),
-    );
-    _nodeService.registerCapability(
-      _flashCapability.name,
-      _flashCapability.commands
-          .map((c) => '${_flashCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _flashCapability.handleWithPermission(cmd, params),
-    );
-    _nodeService.registerCapability(
-      _vibrationCapability.name,
-      _vibrationCapability.commands
-          .map((c) => '${_vibrationCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _vibrationCapability.handle(cmd, params),
-    );
-    _nodeService.registerCapability(
-      _sensorCapability.name,
-      _sensorCapability.commands
-          .map((c) => '${_sensorCapability.name}.$c')
-          .toList(),
-      (cmd, params) => _sensorCapability.handleWithPermission(cmd, params),
-    );
+  }
+
+  List<String> _declaredCapabilityAliases(
+    String capabilityName,
+    List<String> verbs,
+  ) {
+    final commands = <String>{};
+    for (final verb in verbs) {
+      commands.add('$capabilityName.$verb');
+      commands.add('${capabilityName}_$verb');
+    }
+
+    if (capabilityName == 'haptic' && verbs.contains('vibrate')) {
+      commands.add('vibrate');
+      commands.add('haptic_vibrate');
+    }
+
+    if (capabilityName == 'flash') {
+      for (final verb in verbs) {
+        commands.add('torch.$verb');
+        commands.add('torch_$verb');
+      }
+    }
+
+    return commands.toList(growable: false);
+  }
+
+  String _canonicalizeCapabilityCommand({
+    required String capabilityName,
+    required List<String> verbs,
+    required String incomingCommand,
+  }) {
+    final command = incomingCommand.trim();
+    if (command.isEmpty) return command;
+
+    if (command.startsWith('$capabilityName.')) {
+      return command;
+    }
+
+    if (command.startsWith('${capabilityName}_')) {
+      final verb = command.substring(capabilityName.length + 1);
+      if (verbs.contains(verb)) {
+        return '$capabilityName.$verb';
+      }
+    }
+
+    if (capabilityName == 'haptic' && command == 'vibrate') {
+      return 'haptic.vibrate';
+    }
+
+    if (capabilityName == 'flash' &&
+        (command.startsWith('torch.') || command.startsWith('torch_'))) {
+      final separatorIndex = command.indexOf(RegExp(r'[._]'));
+      if (separatorIndex >= 0 && separatorIndex < command.length - 1) {
+        final verb = command.substring(separatorIndex + 1);
+        if (verbs.contains(verb)) {
+          return 'flash.$verb';
+        }
+      }
+    }
+
+    return command;
   }
 
   Future<void> _init() async {

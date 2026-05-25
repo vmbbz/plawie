@@ -47,6 +47,11 @@ build_trash/
 *.apk
 *.aab
 
+# Local release/test diagnostics. These can contain device logs, generated
+# gateway configs, and provider API keys captured during ADB sessions.
+test-watch/
+android/build/reports/
+
 # MLC-LLM Models (Huge binaries, usually excluded)
 # assets/mlc_models/
 # mlc_models/

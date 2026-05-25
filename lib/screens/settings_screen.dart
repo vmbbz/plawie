@@ -360,9 +360,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      _prefs.configuredModel
-                                                  ?.startsWith('local-llm/') ==
-                                              true
+                                      ModelProviderCatalog.isLocalModelId(
+                                              _prefs.configuredModel ?? '')
                                           ? 'ACTIVE'
                                           : 'READY',
                                       style: const TextStyle(
@@ -921,13 +920,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showPersonaPicker(BuildContext context) async {
-    final tts = TtsService();
+    final gateway = Provider.of<GatewayProvider>(context, listen: false);
+    var activePersona = _prefs.currentTtsPersona;
+    var personas = <String>[];
+    try {
+      final frame = await gateway.getTtsPersonas();
+      activePersona = (frame['active'] ?? activePersona).toString();
+      final raw = frame['personas'];
+      if (raw is List) {
+        personas = raw
+            .whereType<Map>()
+            .map((entry) => (entry['id'] ?? '').toString().trim())
+            .where((id) => id.isNotEmpty)
+            .toList(growable: false);
+      }
+    } catch (_) {}
+    if (personas.isEmpty) {
+      personas = TtsService().availablePersonas;
+    }
+    if (!context.mounted) return;
+
     final picked = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Voice Persona'),
-        children: tts.availablePersonas.map((p) {
-          final isSelected = tts.currentPersona == p;
+        children: personas.map((p) {
+          final isSelected = activePersona.toLowerCase() == p.toLowerCase();
           return SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, p),
             child: Row(
@@ -950,10 +968,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
 
-    if (picked != null && picked != tts.currentPersona) {
-      setState(() {}); // Refresh local UI state
-      await tts.setVoicePersona(picked);
-      if (mounted) setState(() {}); // Final refresh
+    if (picked != null && picked.toLowerCase() != activePersona.toLowerCase()) {
+      await gateway.setTtsPersona(picked);
+      _prefs.currentTtsPersona = picked;
+      if (mounted) setState(() {});
     }
   }
 
@@ -1086,7 +1104,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _getModelLabel(String modelId) {
     // Local LLM: look up friendly name from catalog
-    if (modelId.startsWith('local-llm/')) {
+    if (ModelProviderCatalog.isLocalModelId(modelId) &&
+        modelId.startsWith('local-llm/')) {
       final ggufId = modelId.replaceFirst('local-llm/', '');
       final match = LocalLlmService().catalog.where((m) => m.id == ggufId);
       if (match.isNotEmpty) return match.first.name;
@@ -1096,7 +1115,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _getProviderLabel(String modelId) {
-    if (modelId.startsWith('local-llm/')) return 'On-Device (Free)';
+    if (ModelProviderCatalog.isLocalModelId(modelId)) {
+      return 'On-Device (Free)';
+    }
     final model = ModelProviderCatalog.modelById(modelId);
     final provider = model == null
         ? null
@@ -1265,9 +1286,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (!context.mounted) return;
         _prefs.configuredModel = modelId;
         setState(() {});
+        final isLocal = ModelProviderCatalog.isLocalModelId(modelId);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Model set to $label. OpenClaw will hot-reload.')),
+            content: Text(isLocal
+                ? 'Model set to $label. Direct NDK mode will be used in Chat.'
+                : 'Model set to $label. OpenClaw will hot-reload.'),
+          ),
         );
       } catch (e) {
         if (!context.mounted) return;

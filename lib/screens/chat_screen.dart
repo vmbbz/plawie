@@ -88,6 +88,13 @@ class _ChatScreenState extends State<ChatScreen>
   final List<String> _ttsQueue = [];
   String? _gatewaySessionKey;
 
+  // Gateway readiness gate (C3): non-null message means cloud chat is blocked.
+  String? _gatewayReadinessMessage;
+
+  // Generating status hints (I1): shown below the message list during long waits.
+  String _generatingStatus = '';
+  Timer? _generatingStatusTimer;
+
   String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
   String _selectedModel = ModelProviderCatalog.defaultCloudFallbackModel;
@@ -197,8 +204,36 @@ class _ChatScreenState extends State<ChatScreen>
     });
     // React to gateway model changes. Legacy ollama/* preferences are migrated
     // out here so returning users do not get routed to the deprecated daemon.
-    _gatewaySub = GatewayService().stateStream.listen((_) {
+    _gatewaySub = GatewayService().stateStream.listen((gwState) {
       if (!mounted) return;
+
+      // ── C3 readiness gate ──────────────────────────────────────────────────
+      // Only cloud/gateway models need the gateway to be interactive.  Local
+      // NDK models bypass the gateway entirely so the gate stays open for them.
+      final isCloudModel =
+          !ModelProviderCatalog.isLocalModelId(_selectedModel);
+      String? readinessMsg;
+      if (isCloudModel) {
+        if (gwState.status == GatewayStatus.stopped ||
+            gwState.status == GatewayStatus.error) {
+          readinessMsg = '⚠️ Gateway offline — start it to chat';
+        } else if (gwState.status == GatewayStatus.starting) {
+          readinessMsg = '⏳ Gateway connecting…';
+        } else if (gwState.status == GatewayStatus.running &&
+            !gwState.isWebsocketConnected) {
+          readinessMsg = '⏳ Establishing WebSocket…';
+        } else if (gwState.status == GatewayStatus.running &&
+            gwState.isWebsocketConnected &&
+            !gwState.isInteractiveReady) {
+          readinessMsg = '⏳ Loading tools and skills…';
+        }
+        // readinessMsg == null means fully ready
+      }
+      if (readinessMsg != _gatewayReadinessMessage) {
+        setState(() => _gatewayReadinessMessage = readinessMsg);
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
       bool localModeEnabled = _localChatModeEnabled;
       try {
         localModeEnabled = PreferencesService().localChatModeEnabled;
@@ -230,8 +265,12 @@ class _ChatScreenState extends State<ChatScreen>
     });
     _initVoiceParams();
     _loadChatHistory();
-    // Fetch gateway agents after first frame — gateway may not be ready yet
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchDynamicAgents());
+    // After first frame: fetch agents AND eagerly resolve the gateway session
+    // key so the first message send never blocks on sessions.resolve RPC.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchDynamicAgents();
+      _preResolveGatewaySession();
+    });
 
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPModeChanged') {
@@ -322,6 +361,31 @@ class _ChatScreenState extends State<ChatScreen>
       }
     } catch (_) {
       // Gateway not ready — agents remain empty; will be populated on next health check
+    }
+  }
+
+  /// Pre-resolve the gateway session key eagerly so the first message send
+  /// never blocks on sessions.resolve / sessions.create RPC calls.
+  /// Called once via addPostFrameCallback after initState completes.
+  Future<void> _preResolveGatewaySession() async {
+    if (!_isUnsafeGatewaySessionKey(_gatewaySessionKey)) return;
+    try {
+      final localSessionId = _persistence.activeSessionId;
+      if (localSessionId == null || localSessionId.isEmpty) return;
+      if (!mounted) return;
+      final gw = context.read<GatewayProvider>();
+      final resolved = await gw.resolveOrCreateGatewaySessionKey(
+        localSessionId: localSessionId,
+        existingSessionKey: null,
+      );
+      if (resolved.isNotEmpty && mounted) {
+        _gatewaySessionKey = resolved;
+        await _persistence.setActiveGatewaySessionKey(resolved);
+        _addDiagnosticLog('Pre-resolved gateway session key: $resolved');
+      }
+    } catch (e) {
+      _addDiagnosticLog(
+          'Session pre-resolution deferred (will resolve on first send): $e');
     }
   }
 
@@ -795,6 +859,25 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
 
+    // C3 readiness gate: block cloud chat until the gateway is interactive.
+    // Local models bypass the gateway so they are always allowed through.
+    final isLocalNow =
+        ModelProviderCatalog.isLocalModelId(_selectedModel);
+    if (!isLocalNow && _gatewayReadinessMessage != null) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_gatewayReadinessMessage!),
+          backgroundColor: const Color(0xFF1A1A2E),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
+
     // Stop any in-progress TTS and clear the queue so the previous response
     // doesn't keep playing while the user has already sent a new message.
     _tts.stop();
@@ -981,6 +1064,20 @@ class _ChatScreenState extends State<ChatScreen>
               sessionKey: streamSessionKey);
         }
       }
+      // I1: Start a two-stage status timer so users see progress hints during
+      // long gateway cold-starts instead of a silent 45-second wait.
+      _generatingStatusTimer?.cancel();
+      _generatingStatusTimer = Timer(const Duration(seconds: 10), () {
+        if (!mounted || !_isGenerating) return;
+        setState(() => _generatingStatus = '⏳ Provider warming up…');
+        // Second stage fires 10 s later (20 s from send).
+        _generatingStatusTimer = Timer(const Duration(seconds: 10), () {
+          if (!mounted || !_isGenerating) return;
+          setState(() =>
+              _generatingStatus = '⏳ Taking longer than usual — may be rate limited');
+        });
+      });
+
       await for (final chunk in stream) {
         if (!mounted) break;
 
@@ -990,6 +1087,12 @@ class _ChatScreenState extends State<ChatScreen>
           loggedFirstAssistantChunk = true;
           _addDiagnosticLog(
               'First assistant chunk after ${sendStopwatch.elapsedMilliseconds}ms');
+          // First real token arrived — clear the status hint.
+          _generatingStatusTimer?.cancel();
+          _generatingStatusTimer = null;
+          if (_generatingStatus.isNotEmpty) {
+            setState(() => _generatingStatus = '');
+          }
         }
         _addDiagnosticLog('Chunk received: "$chunk"');
 
@@ -1111,7 +1214,10 @@ class _ChatScreenState extends State<ChatScreen>
     }
 
     if (mounted) {
+      _generatingStatusTimer?.cancel();
+      _generatingStatusTimer = null;
       setState(() {
+        _generatingStatus = '';
         _isThinking = false;
         _isGenerating = false;
         // Do NOT reset _speechIntensity here — TTS queue may still be draining.
@@ -2132,6 +2238,7 @@ class _ChatScreenState extends State<ChatScreen>
       unawaited(
           GatewayService().closeTalkSession(talkSessionId).catchError((_) {}));
     }
+    _generatingStatusTimer?.cancel();
     _glowController.dispose();
     _tts.stop();
     _audioRecorder.dispose();
@@ -2805,6 +2912,68 @@ class _ChatScreenState extends State<ChatScreen>
 
                               // Voice persona chips removed — accessible via the AuraDot orb above the avatar.
 
+                              // ── Readiness banner / generating-status strip ──
+                              // Shown above the input bar in three situations:
+                              //  1. Gateway not yet interactive (readiness gate)
+                              //  2. Long-running generation with no first token
+                              //  3. Both conditions simultaneously
+                              if (!_isChatCollapsed &&
+                                  (_gatewayReadinessMessage != null ||
+                                      _generatingStatus.isNotEmpty))
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: (_gatewayReadinessMessage != null
+                                            ? Colors.orangeAccent
+                                            : AppColors.statusGreen)
+                                        .withValues(alpha: 0.10),
+                                    border: Border(
+                                      top: BorderSide(
+                                        color: (_gatewayReadinessMessage != null
+                                                ? Colors.orangeAccent
+                                                : AppColors.statusGreen)
+                                            .withValues(alpha: 0.30),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        _gatewayReadinessMessage != null
+                                            ? Icons.warning_amber_rounded
+                                            : Icons.hourglass_top_rounded,
+                                        color: (_gatewayReadinessMessage != null
+                                                ? Colors.orangeAccent
+                                                : AppColors.statusGreen)
+                                            .withValues(alpha: 0.80),
+                                        size: 14,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          _gatewayReadinessMessage ??
+                                              _generatingStatus,
+                                          style: TextStyle(
+                                            color:
+                                                (_gatewayReadinessMessage != null
+                                                        ? Colors.orangeAccent
+                                                        : Colors.white)
+                                                    .withValues(alpha: 0.75),
+                                            fontSize: 12,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
                               Container(
                                 padding: EdgeInsets.symmetric(
                                     horizontal: _isChatCollapsed ? 0 : 12,
@@ -3273,8 +3442,16 @@ class _ChatScreenState extends State<ChatScreen>
                                           child: IconButton(
                                             icon: const Icon(Icons.send_rounded,
                                                 color: Colors.white, size: 20),
-                                            onPressed: () => _handleSubmit(
-                                                _textController.text),
+                                            // Disable send for cloud models
+                                            // until gateway is interactive.
+                                            onPressed: (!ModelProviderCatalog
+                                                            .isLocalModelId(
+                                                                _selectedModel) &&
+                                                        _gatewayReadinessMessage !=
+                                                            null)
+                                                ? null
+                                                : () => _handleSubmit(
+                                                    _textController.text),
                                           ),
                                         ),
                                       ],
@@ -3843,6 +4020,45 @@ class _ChatScreenState extends State<ChatScreen>
                                           });
                                         },
                                       ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 18),
+                                ] else if (!talkConfigured) ...[
+                                  // I4: No phantom voice dropdown when Talk is unconfigured.
+                                  // Show a clear action prompt instead.
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color: Colors.orangeAccent
+                                          .withValues(alpha: 0.08),
+                                      border: Border.all(
+                                          color: Colors.orangeAccent
+                                              .withValues(alpha: 0.30),
+                                          width: 1),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.info_outline,
+                                            color: Colors.orangeAccent,
+                                            size: 16),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Configure a Gateway Talk provider above to enable voice selection.',
+                                            style: TextStyle(
+                                              color: Colors.orangeAccent
+                                                  .withValues(alpha: 0.85),
+                                              fontSize: 12,
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   const SizedBox(height: 18),

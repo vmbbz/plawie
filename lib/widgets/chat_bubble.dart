@@ -36,22 +36,25 @@ class ChatBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.8,
         ),
         decoration: BoxDecoration(
-          color: isUser 
-              ? theme.colorScheme.primary.withValues(alpha: 0.15) 
+          color: isUser
+              ? theme.colorScheme.primary.withValues(alpha: 0.15)
               : Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(22).copyWith(
-            bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(22),
-            bottomLeft: isUser ? const Radius.circular(22) : const Radius.circular(4),
+            bottomRight:
+                isUser ? const Radius.circular(4) : const Radius.circular(22),
+            bottomLeft:
+                isUser ? const Radius.circular(22) : const Radius.circular(4),
           ),
           border: Border.all(
-            color: isUser 
-                ? theme.colorScheme.primary.withValues(alpha: 0.3) 
+            color: isUser
+                ? theme.colorScheme.primary.withValues(alpha: 0.3)
                 : Colors.white.withValues(alpha: 0.1),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: (isUser ? theme.colorScheme.primary : Colors.black).withValues(alpha: 0.1),
+              color: (isUser ? theme.colorScheme.primary : Colors.black)
+                  .withValues(alpha: 0.1),
               blurRadius: 10,
               spreadRadius: 1,
             ),
@@ -59,95 +62,121 @@ class ChatBubble extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(22).copyWith(
-            bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(22),
-            bottomLeft: isUser ? const Radius.circular(22) : const Radius.circular(4),
+            bottomRight:
+                isUser ? const Radius.circular(4) : const Radius.circular(22),
+            bottomLeft:
+                isUser ? const Radius.circular(22) : const Radius.circular(4),
           ),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.2), // Added a slight dark tint so text pops over bright avatars
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: isThinking
-                  ? const _TypingIndicator()
-                  : Column(
-                      crossAxisAlignment: isUser
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // ── Collapsible Reasoning section (Qwen/DeepSeek <think> blocks) ──
-                        // Shown only for assistant messages that emitted <think>…</think>
-                        // reasoning tokens. Collapsed by default to keep chat clean.
-                        if (!isUser && message.hasThinkContent) ...[
-                          _ReasoningTile(thinkContent: message.thinkContent!),
-                          const SizedBox(height: 8),
-                        ],
-                        // ── Tool call / result chips ──
-                        if (!isUser && message.hasToolEvents) ...[
-                          ...message.toolEvents!.map((e) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: _ToolEventChip(event: e),
-                          )),
-                          const SizedBox(height: 4),
-                        ],
-                        // Image thumbnail shown above text when message carries an image
-                        if (message.hasImage) ...[
-                          _ImageThumbnail(
-                            base64Data: message.imageBase64!,
-                            mimeType: message.imageMimeType ?? 'image/jpeg',
-                          ),
-                          if (message.text.isNotEmpty) const SizedBox(height: 8),
-                        ],
-                        // Text / markdown content
-                        if (message.text.isNotEmpty)
-                          if (isUser)
-                            Text(
-                              message.text,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.white,
-                                fontSize: 15,
-                                height: 1.4,
-                                letterSpacing: 0.2,
-                              ),
-                            )
-                          else
-                            MarkdownBody(
-                              data: message.text,
-                              selectable: true,
-                              styleSheet: MarkdownStyleSheet(
-                                p: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
-                                h1: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                                h2: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                                h3: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                em: const TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
-                                code: TextStyle(
-                                  color: Colors.cyanAccent.shade100,
-                                  backgroundColor: Colors.white.withValues(alpha: 0.08),
-                                  fontFamily: 'monospace',
-                                  fontSize: 13,
-                                ),
-                                codeblockDecoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                                ),
-                                codeblockPadding: const EdgeInsets.all(12),
-                                blockquoteDecoration: BoxDecoration(
-                                  border: Border(
-                                    left: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 3),
-                                  ),
-                                ),
-                                listBullet: const TextStyle(color: Colors.white70),
-                                a: const TextStyle(color: Colors.cyanAccent, decoration: TextDecoration.underline),
-                              ),
-                            ),
-                      ],
-                    ),
-            ),
-          ),
+          child: Platform.isAndroid
+              ? _bubbleContent(isThinking, isUser, theme)
+              : BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: _bubbleContent(isThinking, isUser, theme),
+                ),
         ),
       ),
+    );
+  }
+
+  Widget _bubbleContent(bool isThinking, bool isUser, ThemeData theme) {
+    return Container(
+      color: Colors.black.withValues(
+          alpha:
+              0.2), // Added a slight dark tint so text pops over bright avatars
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: isThinking
+          ? const _TypingIndicator()
+          : Column(
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Collapsible Reasoning section (Qwen/DeepSeek <think> blocks) ──
+                // Shown only for assistant messages that emitted <think>…</think>
+                // reasoning tokens. Collapsed by default to keep chat clean.
+                if (!isUser && message.hasThinkContent) ...[
+                  _ReasoningTile(thinkContent: message.thinkContent!),
+                  const SizedBox(height: 8),
+                ],
+                // ── Tool call / result chips ──
+                if (!isUser && message.hasToolEvents) ...[
+                  ...message.toolEvents!.map((e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: _ToolEventChip(event: e),
+                      )),
+                  const SizedBox(height: 4),
+                ],
+                // Image thumbnail shown above text when message carries an image
+                if (message.hasImage) ...[
+                  _ImageThumbnail(
+                    base64Data: message.imageBase64!,
+                    mimeType: message.imageMimeType ?? 'image/jpeg',
+                  ),
+                  if (message.text.isNotEmpty) const SizedBox(height: 8),
+                ],
+                // Text / markdown content
+                if (message.text.isNotEmpty)
+                  if (isUser)
+                    Text(
+                      message.text,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.4,
+                        letterSpacing: 0.2,
+                      ),
+                    )
+                  else
+                    MarkdownBody(
+                      data: message.text,
+                      selectable: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(
+                            color: Colors.white, fontSize: 15, height: 1.4),
+                        h1: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold),
+                        h2: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold),
+                        h3: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold),
+                        strong: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold),
+                        em: const TextStyle(
+                            color: Colors.white70, fontStyle: FontStyle.italic),
+                        code: TextStyle(
+                          color: Colors.cyanAccent.shade100,
+                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.1)),
+                        ),
+                        codeblockPadding: const EdgeInsets.all(12),
+                        blockquoteDecoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                width: 3),
+                          ),
+                        ),
+                        listBullet: const TextStyle(color: Colors.white70),
+                        a: const TextStyle(
+                            color: Colors.cyanAccent,
+                            decoration: TextDecoration.underline),
+                      ),
+                    ),
+              ],
+            ),
     );
   }
 }
@@ -170,7 +199,8 @@ class _ImageThumbnail extends StatelessWidget {
       try {
         dir = await getExternalStorageDirectory();
         if (dir != null) {
-          final pics = Directory('${dir.parent.parent.parent.parent.path}/Pictures/OpenClaw');
+          final pics = Directory(
+              '${dir.parent.parent.parent.parent.path}/Pictures/OpenClaw');
           await pics.create(recursive: true);
           dir = pics;
         }
@@ -237,7 +267,8 @@ class _ImageThumbnail extends StatelessWidget {
                         onTap: () => _download(ctx),
                         child: const Padding(
                           padding: EdgeInsets.all(10),
-                          child: Icon(Icons.download_rounded, color: Colors.white, size: 24),
+                          child: Icon(Icons.download_rounded,
+                              color: Colors.white, size: 24),
                         ),
                       ),
                     ),
@@ -251,7 +282,8 @@ class _ImageThumbnail extends StatelessWidget {
                         onTap: () => Navigator.of(ctx).pop(),
                         child: const Padding(
                           padding: EdgeInsets.all(10),
-                          child: Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                          child: Icon(Icons.close_rounded,
+                              color: Colors.white, size: 24),
                         ),
                       ),
                     ),
@@ -292,7 +324,8 @@ class _ImageThumbnail extends StatelessWidget {
                 color: Colors.black54,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.open_in_full_rounded, color: Colors.white, size: 16),
+              child: const Icon(Icons.open_in_full_rounded,
+                  color: Colors.white, size: 16),
             ),
           ),
         ],
@@ -335,7 +368,8 @@ class _ReasoningTileState extends State<_ReasoningTile> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.psychology_outlined, size: 14, color: Colors.white38),
+                  const Icon(Icons.psychology_outlined,
+                      size: 14, color: Colors.white38),
                   const SizedBox(width: 6),
                   Text(
                     'Reasoning  ·  $wordCount words',
@@ -393,7 +427,8 @@ class _ToolEventChipState extends State<_ToolEventChip> {
     final isCall = widget.event.type == 'tool_use';
     final color = isCall ? Colors.amber : AppColors.statusGreen;
     final icon = isCall ? Icons.build_outlined : Icons.check_circle_outline;
-    final label = isCall ? 'Tool  ${widget.event.name}' : 'Result  ${widget.event.name}';
+    final label =
+        isCall ? 'Tool  ${widget.event.name}' : 'Result  ${widget.event.name}';
 
     final detail = isCall
         ? (widget.event.input?.isNotEmpty == true
@@ -411,7 +446,9 @@ class _ToolEventChipState extends State<_ToolEventChip> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: detail != null ? () => setState(() => _expanded = !_expanded) : null,
+            onTap: detail != null
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
             borderRadius: BorderRadius.circular(10),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -422,11 +459,16 @@ class _ToolEventChipState extends State<_ToolEventChip> {
                   Expanded(
                     child: Text(
                       label,
-                      style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3),
                     ),
                   ),
                   if (detail != null)
-                    Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 14, color: color.withValues(alpha: 0.6)),
+                    Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 14, color: color.withValues(alpha: 0.6)),
                 ],
               ),
             ),
@@ -436,7 +478,11 @@ class _ToolEventChipState extends State<_ToolEventChip> {
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
               child: Text(
                 detail,
-                style: TextStyle(fontSize: 11, color: color.withValues(alpha: 0.7), fontFamily: 'monospace', height: 1.4),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: color.withValues(alpha: 0.7),
+                    fontFamily: 'monospace',
+                    height: 1.4),
               ),
             ),
         ],
@@ -452,7 +498,8 @@ class _TypingIndicator extends StatefulWidget {
   State<_TypingIndicator> createState() => _TypingIndicatorState();
 }
 
-class _TypingIndicatorState extends State<_TypingIndicator> with SingleTickerProviderStateMixin {
+class _TypingIndicatorState extends State<_TypingIndicator>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override
@@ -508,9 +555,11 @@ class _TypingIndicatorState extends State<_TypingIndicator> with SingleTickerPro
 class NebulaPainter extends CustomPainter {
   final double intensity; // 0.0 to 1.0 (isThinking)
   final double _time;
-  static final List<_Particle> _particles = List.generate(20, (_) => _Particle());
+  static final List<_Particle> _particles =
+      List.generate(20, (_) => _Particle());
 
-  NebulaPainter(this.intensity) : _time = DateTime.now().millisecondsSinceEpoch / 1000.0;
+  NebulaPainter(this.intensity)
+      : _time = DateTime.now().millisecondsSinceEpoch / 1000.0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -520,9 +569,10 @@ class NebulaPainter extends CustomPainter {
     for (var particle in _particles) {
       final double x = particle.x * size.width;
       final double y = particle.y * size.height;
-      
+
       // Calculate pulse/float based on time and intensity
-      final double pulse = sin(_time * particle.speed + particle.offset) * 0.5 + 0.5;
+      final double pulse =
+          sin(_time * particle.speed + particle.offset) * 0.5 + 0.5;
       final double scale = 1.0 + (intensity * 0.5 * pulse);
       final double opacity = (0.3 + (pulse * 0.4)) * (0.5 + intensity * 0.5);
 

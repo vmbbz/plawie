@@ -1707,7 +1707,7 @@ class _ToolsTabState extends State<_ToolsTab> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
             child: Text(
-              'Primitive capabilities the agent can invoke. Plawie defaults this to all-on with tools.allow = ["*"] after setup; use individual switches only when you want to lock a tool down.',
+              'Primitive capabilities the agent can invoke. Plawie defaults to a bounded Android tool policy: official OpenClaw groups for nodes, UI, web, memory, files, and runtime without loading every plugin/provider tool.',
               style: TextStyle(
                   fontSize: 11,
                   color: Colors.white.withValues(alpha: 0.38),

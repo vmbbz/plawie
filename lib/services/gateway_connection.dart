@@ -97,15 +97,32 @@ class GatewayConnection {
   Future<bool>? _connectFuture;
 
   /// Connect to the gateway with the given auth token.
-  Future<bool> connect(String token) async {
+  ///
+  /// The in-flight guard must be installed before any await. Startup can call
+  /// this from the health loop and setup waiter at the same time; if both calls
+  /// load identity first, they can open two sockets and leave one to hit the
+  /// gateway handshake timeout. Keep the whole connect sequence behind one
+  /// shared future.
+  Future<bool> connect(String token) {
     if (_state == GatewayConnectionState.connected && _token == token) {
-      return true; // Already connected
+      return Future.value(true); // Already connected
     }
 
     if (_connectFuture != null) {
       return _connectFuture!;
     }
 
+    final future = _connectWithIdentity(token);
+    _connectFuture = future;
+    future.whenComplete(() {
+      if (identical(_connectFuture, future)) {
+        _connectFuture = null;
+      }
+    });
+    return future;
+  }
+
+  Future<bool> _connectWithIdentity(String token) async {
     _token = token;
 
     // Cancel any pending auto-reconnect timer so it doesn't race with this
@@ -127,13 +144,7 @@ class GatewayConnection {
       _preferredProtocol = _sanitizeProtocol(storedProtocol);
     }
 
-    _connectFuture = _doConnect();
-    try {
-      final result = await _connectFuture!;
-      return result;
-    } finally {
-      _connectFuture = null;
-    }
+    return _doConnect();
   }
 
   Future<bool> _doConnect() async {
@@ -567,10 +578,13 @@ class GatewayConnection {
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
-      // Guard: skip if connect() already has a _connectFuture in flight.
-      // Without this, the timer and an explicit connect() call race and
-      // _cleanup() in the second _doConnect() tears down the first one's channel.
-      if (_connectFuture == null) _doConnect();
+      // Re-enter through connect() so all in-flight guards are applied.
+      // Calling _doConnect() directly bypasses _connectFuture protection and
+      // can create duplicate sockets during startup, leading to handshake timeouts.
+      final token = _token;
+      if (token != null) {
+        unawaited(connect(token));
+      }
     });
   }
 

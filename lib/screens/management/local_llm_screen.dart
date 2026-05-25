@@ -6,6 +6,7 @@ import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/ndk_gateway_bridge_service.dart';
 import 'package:clawa/services/native_bridge.dart';
+import 'package:clawa/services/preferences_service.dart';
 
 class LocalLlmScreen extends StatefulWidget {
   const LocalLlmScreen({super.key});
@@ -41,6 +42,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
   StreamSubscription? _bridgeSub;
   StreamSubscription<String>? _ndkTestSub;
   bool _isConfiguringBridge = false;
+  bool _localChatModeEnabled = false;
 
   @override
   void initState() {
@@ -56,6 +58,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
     });
     _checkDownloadedModels();
     _readCpuCoreCount();
+    _loadLocalChatMode();
     // Default selection to the recommended model
     final toolCatalog =
         _service.catalog.where((m) => m.supportsToolCalls).toList();
@@ -106,6 +109,31 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
         setState(() => _downloadedModels[m.id] = downloaded);
       }
     }
+  }
+
+  Future<void> _loadLocalChatMode() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    if (mounted) {
+      setState(() => _localChatModeEnabled = prefs.localChatModeEnabled);
+    }
+  }
+
+  Future<void> _setLocalChatMode(bool enabled) async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.localChatModeEnabled = enabled;
+    if (!mounted) return;
+    setState(() => _localChatModeEnabled = enabled);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          enabled
+              ? 'Local NDK chat enabled. Chat can now route to local-llm.'
+              : 'Local NDK chat disabled. Chat is now gateway/cloud only.',
+        ),
+      ),
+    );
   }
 
   Future<void> _toggleBridge() async {
@@ -1098,6 +1126,39 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
                     color: Colors.white60, fontSize: 12, height: 1.45),
               ),
               const SizedBox(height: 14),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.route_rounded,
+                        color: AppColors.statusGreen, size: 16),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Use Local NDK for Chat Routing',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Switch(
+                      value: _localChatModeEnabled,
+                      onChanged: _setLocalChatMode,
+                      activeThumbColor: AppColors.statusGreen,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               _buildModelActionRow(
                 icon: Icons.cloud_done_rounded,
                 title: 'Need tools, skills, or dashboard?',
@@ -1111,7 +1172,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
                 icon: Icons.phone_android_rounded,
                 title: 'Need private/offline chat?',
                 subtitle:
-                    'Download one GGUF above, activate it, then pick local-llm in Chat.',
+                    'Download a GGUF above, enable "Use Local NDK for Chat Routing", then pick local-llm in Chat.',
                 trailing: const Icon(Icons.lock_rounded,
                     color: AppColors.statusGreen, size: 18),
               ),

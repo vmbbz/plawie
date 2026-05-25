@@ -75,7 +75,7 @@ const _modelCatalog = [
         'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 400,
     requiredRamMb: 1500,
-    recommendedThreads: 4,
+    recommendedThreads: 2,
     quality: 'Minimum',
     contextWindow: 4096,
     supportsToolCalls: true,
@@ -89,7 +89,7 @@ const _modelCatalog = [
         'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     fileSizeMb: 1000,
     requiredRamMb: 3000,
-    recommendedThreads: 4,
+    recommendedThreads: 3,
     quality: 'Recommended',
     contextWindow: 4096,
     supportsToolCalls: true,
@@ -103,7 +103,7 @@ const _modelCatalog = [
         'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf',
     fileSizeMb: 1900,
     requiredRamMb: 4500,
-    recommendedThreads: 6,
+    recommendedThreads: 4,
     quality: 'Optimal',
     contextWindow: 4096,
     supportsToolCalls: true,
@@ -117,7 +117,7 @@ const _modelCatalog = [
         'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf',
     fileSizeMb: 1100,
     requiredRamMb: 3000,
-    recommendedThreads: 4,
+    recommendedThreads: 3,
     quality: 'Recommended',
     contextWindow: 4096,
     supportsToolCalls: true,
@@ -137,7 +137,7 @@ const _modelCatalog = [
     fileSizeMb: 1430,
     mmProjSizeMb: 295,
     requiredRamMb: 2800,
-    recommendedThreads: 4,
+    recommendedThreads: 3,
     quality: 'Recommended',
     contextWindow: 4096,
     isMultimodal: true,
@@ -291,6 +291,24 @@ class LocalLlmService {
     return baseContext.clamp(512, 4096);
   }
 
+  /// Mobile-safe thread cap. A stored high slider value can overwhelm the
+  /// gateway/WebView on average phones, so inference never exceeds the active
+  /// model's recommendation or four CPU threads.
+  int get _effectiveThreadCount {
+    final recommended = activeModel?.recommendedThreads ?? 2;
+    final maxThreads = recommended.clamp(1, 4).toInt();
+    return _state.threads.clamp(1, maxThreads).toInt();
+  }
+
+  /// Keep tiny local models from chaining tool calls until the phone runs out
+  /// of memory. Depth 0 is the initial model turn; depth 1 is the tool-result
+  /// explanation turn. Larger models get one extra repair turn.
+  int get _maxLocalToolDepth {
+    final id = (_state.activeModelId ?? '').toLowerCase();
+    if (id.contains('0.5b') || id.contains('500m')) return 1;
+    return 2;
+  }
+
   /// Mirrors fllamaChat() but injects numThreads from the user's thread setting.
   /// fllamaChat() hard-codes numThreads=2 and never exposes it via OpenAiRequest.
   FllamaInferenceRequest _buildInferenceRequest(OpenAiRequest req) {
@@ -305,7 +323,7 @@ class LocalLlmService {
       penaltyRepeat: req.presencePenalty,
       temperature: req.temperature,
       topP: req.topP,
-      numThreads: _state.threads,
+      numThreads: _effectiveThreadCount,
       openAiRequestJsonString: req.toJsonString(),
     );
   }
@@ -469,19 +487,25 @@ class LocalLlmService {
     _activeChatController = controller;
 
     final tools = _toolsForMessage(userMessage);
+    final capabilityQuestion = _isCapabilityQuestion(userMessage);
     final trimmed = _trimHistory(
       history,
       userMessage,
       toolCount: tools.length,
     );
     final toolNames = tools.map((t) => t.name).join(', ');
+    final toolInstruction = tools.isEmpty
+        ? capabilityQuestion
+            ? 'The user is asking about available abilities. Do not call tools. Explain that local mode can use time/date, battery, camera snapshots/lists, location, flashlight, haptics, sensors, screen recording, canvas browsing/snapshots, and avatar gestures/emotions when explicitly requested.'
+            : 'No native tool calls are attached for this turn; answer from normal reasoning only.'
+        : 'Native tools attached for this turn: $toolNames. Prefer a tool call for explicit device, camera, avatar, haptic, location, sensor, screen, or canvas requests. Use exact JSON schema and enum values only. After a tool result, briefly explain the real result.';
     final messages = [
       Message(
-          Role.system,
-          'You are Plawie, a helpful AI assistant running locally on this Android device. '
-          'Be concise and direct. '
-          'Never pretend a native action happened. '
-          '${tools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Prefer a tool call for explicit device, camera, avatar, haptic, location, sensor, screen, or canvas requests. Use exact JSON schema and enum values only. After a tool result, briefly explain the real result.'}'),
+        Role.system,
+        'You are Plawie, a helpful AI assistant running locally on this Android device. '
+        'Be concise and direct. '
+        'Never pretend a native action happened. $toolInstruction',
+      ),
       if (trimmed.summary != null && trimmed.summary!.isNotEmpty)
         Message(Role.system, trimmed.summary!),
       for (final m in trimmed.recent)
@@ -699,7 +723,6 @@ class LocalLlmService {
     final selected = <String>{};
 
     bool hasAny(Iterable<String> words) => words.any(lower.contains);
-    final asksAboutTools = hasAny(['tool', 'capabilit', 'what can you do']);
 
     if (hasAny(['time', 'date', 'today', 'now'])) {
       selected.add('get_current_datetime');
@@ -750,22 +773,19 @@ class LocalLlmService {
     ])) {
       selected.addAll(['avatar_gesture', 'avatar_emotion']);
     }
-    if (selected.isEmpty &&
-        (asksAboutTools ||
-            hasAny([
-              'use a tool',
-              'call a tool',
-              'native tool',
-              'what tools',
-              'which tools',
-              'capabilities',
-              'what can you do'
-            ]))) {
-      selected.addAll(_localTools.map((tool) => tool.name));
-    }
-
     if (selected.isEmpty) return const <Tool>[];
     return _localTools.where((tool) => selected.contains(tool.name)).toList();
+  }
+
+  bool _isCapabilityQuestion(String userMessage) {
+    final lower = userMessage.toLowerCase();
+    return lower.contains('what can you do') ||
+        lower.contains('what tools') ||
+        lower.contains('which tools') ||
+        lower.contains('capabilities') ||
+        lower.contains('native tool') ||
+        lower.contains('use a tool') ||
+        lower.contains('call a tool');
   }
 
   /// Dispatches a tool call through native app capabilities only.
@@ -781,6 +801,7 @@ class LocalLlmService {
     } catch (e) {
       return jsonEncode({'ok': false, 'error': 'Invalid tool JSON: $e'});
     }
+    args = _normalizeToolArguments(name, args);
     debugPrint('[NDK] dispatch tool name=$name args=${jsonEncode(args)}');
 
     switch (name) {
@@ -883,6 +904,125 @@ class LocalLlmService {
     return value;
   }
 
+  Map<String, dynamic> _normalizeToolArguments(
+      String name, Map<String, dynamic> args) {
+    switch (name) {
+      case 'camera_snap':
+        return {
+          'facing': _normalizeFacing(args['facing'] ?? args['camera']),
+        };
+      case 'flash_set':
+        return {
+          'action': _normalizeFlashAction(args['action'] ?? args['state']),
+        };
+      case 'haptic_vibrate':
+        return {
+          'durationMs': _normalizeInt(
+            args['durationMs'] ?? args['duration'] ?? args['ms'],
+            fallback: 200,
+            min: 50,
+            max: 2000,
+          ),
+        };
+      case 'sensor_read':
+        return {
+          'sensor': _normalizeSensor(args['sensor'] ?? args['name']),
+        };
+      case 'screen_record':
+        return {
+          'durationMs': _normalizeDurationMs(
+            args['durationMs'] ?? args['duration'] ?? args['seconds'],
+            fallback: 5000,
+            min: 1000,
+            max: 10000,
+          ),
+        };
+      case 'canvas_navigate':
+        return {
+          'url': _normalizeUrl(args['url'] ?? args['link'] ?? args['website']),
+        };
+      case 'avatar_gesture':
+        return {
+          'gesture': _normalizeAvatarGesture(args['gesture'] ?? args['name']),
+        };
+      case 'avatar_emotion':
+        return {
+          'emotion': _normalizeAvatarEmotion(args['emotion'] ?? args['name']),
+        };
+      default:
+        return args;
+    }
+  }
+
+  String _normalizeFacing(Object? raw) {
+    final value = raw?.toString().toLowerCase() ?? '';
+    return value.contains('front') || value.contains('selfie')
+        ? 'front'
+        : 'back';
+  }
+
+  String _normalizeFlashAction(Object? raw) {
+    final value = raw?.toString().toLowerCase() ?? '';
+    if (value.contains('status') || value.contains('check')) return 'status';
+    if (value.contains('off') || value.contains('disable')) return 'off';
+    if (value.contains('on') || value.contains('enable')) return 'on';
+    return 'toggle';
+  }
+
+  String _normalizeSensor(Object? raw) {
+    final value = raw?.toString().toLowerCase() ?? '';
+    if (value.contains('gyro')) return 'gyroscope';
+    if (value.contains('magnet') || value.contains('compass')) {
+      return 'magnetometer';
+    }
+    if (value.contains('baro') || value.contains('pressure')) {
+      return 'barometer';
+    }
+    return 'accelerometer';
+  }
+
+  String _normalizeAvatarEmotion(Object? raw) {
+    final value = raw?.toString().trim().toLowerCase() ?? '';
+    if (value.contains('smile') || value.contains('joy')) return 'happy';
+    if (value.contains('think')) return 'thinking';
+    if (value.contains('excite')) return 'excited';
+    if (value.contains('surprise')) return 'surprised';
+    if (value.contains('relax') || value.contains('calm')) return 'relaxed';
+    const allowed = {
+      'neutral',
+      'happy',
+      'sad',
+      'angry',
+      'surprised',
+      'relaxed',
+      'thinking',
+      'excited',
+    };
+    return allowed.contains(value) ? value : 'happy';
+  }
+
+  int _normalizeDurationMs(Object? raw,
+      {required int fallback, required int min, required int max}) {
+    if (raw is num && raw > 0 && raw < 60) {
+      return (raw * 1000).round().clamp(min, max).toInt();
+    }
+    return _normalizeInt(raw, fallback: fallback, min: min, max: max);
+  }
+
+  int _normalizeInt(Object? raw,
+      {required int fallback, required int min, required int max}) {
+    final parsed = raw is num ? raw.round() : int.tryParse('${raw ?? ''}');
+    return (parsed ?? fallback).clamp(min, max).toInt();
+  }
+
+  String _normalizeUrl(Object? raw) {
+    final value = raw?.toString().trim() ?? '';
+    if (value.isEmpty) return 'https://www.google.com';
+    final uri = Uri.tryParse(value);
+    if (uri != null && uri.hasScheme) return value;
+    return 'https://$value';
+  }
+
   Future<String> _dispatchCapability(
     CapabilityHandler handler,
     String command,
@@ -936,23 +1076,64 @@ class LocalLlmService {
     return jsonEncode({
       'ok': true,
       'tool': command,
-      'result': frame.payload ?? <String, dynamic>{},
+      'result': _compactToolPayload(frame.payload ?? <String, dynamic>{}),
     });
+  }
+
+  dynamic _compactToolPayload(dynamic value) {
+    if (value is Map) {
+      final out = <String, dynamic>{};
+      var omittedBinary = false;
+      value.forEach((key, item) {
+        final k = key.toString();
+        final lower = k.toLowerCase();
+        if (lower.contains('base64') ||
+            lower == 'data' ||
+            lower == 'bytes' ||
+            lower == 'image') {
+          omittedBinary = true;
+          return;
+        }
+        out[k] = _compactToolPayload(item);
+      });
+      if (omittedBinary) {
+        out['binaryOmitted'] = true;
+        out['binaryNote'] =
+            'Large binary payload was attached to the chat UI, not sent back into the local model context.';
+      }
+      return out;
+    }
+    if (value is List) {
+      return value.take(12).map(_compactToolPayload).toList();
+    }
+    if (value is String && value.length > 800) {
+      return '${value.substring(0, 800)} ... [truncated]';
+    }
+    return value;
   }
 
   /// Runs one inference turn with local tools.  Streams text deltas to
   /// [controller], then on completion checks for tool calls.  If the model
-  /// requested tool calls, dispatches them and recurses (depth-limited to 3).
+  /// requested tool calls, dispatches them and recurses with a mobile-safe
+  /// depth limit so small models cannot wedge the phone.
   Future<void> _runChatTurn(
       List<Message> messages, StreamController<String> controller,
       {int depth = 0, List<Tool>? tools}) async {
-    if (depth > 3 || controller.isClosed) return;
+    if (controller.isClosed) return;
+    if (depth > _maxLocalToolDepth) {
+      debugPrint(
+          '[NDK] tool chain stopped at depth=$depth max=$_maxLocalToolDepth model=${_state.activeModelId ?? 'unknown'}');
+      controller.add(
+          '[Tool limit] I stopped this local tool chain to keep the phone stable. Try the action again as one clear command, or use a larger local model for deeper tool repair.');
+      controller.close();
+      return;
+    }
     _isInferring = true;
     final startedAt = Stopwatch()..start();
     final effectiveTools = tools ?? _localTools;
     final toolCount = effectiveTools.length;
     debugPrint(
-        '[NDK] fllama turn start depth=$depth model=${_state.activeModelId ?? 'unknown'} messages=${messages.length} tools=$toolCount threads=${_state.threads} ctx=$_activeContextSize');
+        '[NDK] fllama turn start depth=$depth model=${_state.activeModelId ?? 'unknown'} messages=${messages.length} tools=$toolCount threads=$_effectiveThreadCount requestedThreads=${_state.threads} ctx=$_activeContextSize');
 
     // Per-turn tool call accumulator (index → {name, arguments, id}).
     final accToolCalls = <int, Map<String, String>>{};
@@ -1341,8 +1522,11 @@ class LocalLlmService {
   /// Store host model paths and flip state to ready — fllama needs no server process.
   Future<void> _activateFllama(LocalLlmModel model) async {
     final contextSize = model.contextWindow.clamp(512, 4096);
+    final effectiveThreads = _state.threads
+        .clamp(1, model.recommendedThreads.clamp(1, 4).toInt())
+        .toInt();
     debugPrint(
-        '[NDK] activating fllama model=${model.id} sizeMb=${model.fileSizeMb} threads=${_state.threads} ctx=$contextSize');
+        '[NDK] activating fllama model=${model.id} sizeMb=${model.fileSizeMb} threads=$effectiveThreads requestedThreads=${_state.threads} ctx=$contextSize');
     _updateState(_state.copyWith(
       status: LocalLlmStatus.starting,
       downloadProgress: 0.5,
@@ -1364,10 +1548,6 @@ class LocalLlmService {
       if (_activeMmprojPath != null && !File(_activeMmprojPath!).existsSync()) {
         _activeMmprojPath = null;
       }
-
-      final prefs = PreferencesService();
-      await prefs.init();
-      prefs.configuredModel = 'local-llm/${model.id}';
 
       _updateState(_state.copyWith(
         status: LocalLlmStatus.ready,

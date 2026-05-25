@@ -19,6 +19,9 @@ class PreferencesService {
   static const _keyGatewayToken = 'gateway_token';
   static const _keyLastApprovedRequestId = 'last_approved_request_id';
   static const _keySetupInProgress = 'setup_in_progress';
+  static const _keyNodeCommandContractHash = 'node_command_contract_hash';
+  static const _keyLocalChatModeEnabled = 'local_chat_mode_enabled';
+  static const _keyLastCloudModel = 'last_cloud_model';
 
   SharedPreferences? _prefs;
 
@@ -76,6 +79,16 @@ class PreferencesService {
     }
   }
 
+  String? get nodeCommandContractHash =>
+      _p.getString(_keyNodeCommandContractHash);
+  set nodeCommandContractHash(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyNodeCommandContractHash, value);
+    } else {
+      _p.remove(_keyNodeCommandContractHash);
+    }
+  }
+
   String? get nodeGatewayHost => _p.getString(_keyNodeGatewayHost);
   set nodeGatewayHost(String? value) {
     if (value != null) {
@@ -113,7 +126,13 @@ class PreferencesService {
   }
 
   /// The selected VRM avatar filename
-  String get selectedAvatar => _p.getString('selectedAvatar') ?? 'gemini.vrm';
+  String get selectedAvatar {
+    final value = _p.getString('selectedAvatar');
+    return value == null || value == 'default_avatar.vrm'
+        ? 'gemini.vrm'
+        : value;
+  }
+
   set selectedAvatar(String value) => _p.setString('selectedAvatar', value);
 
   /// Selected AI provider (claude, gemini, openai, groq)
@@ -141,6 +160,24 @@ class PreferencesService {
       _p.setString('configured_model', value);
     } else {
       _p.remove('configured_model');
+    }
+  }
+
+  /// Manual user switch from Local LLM page.
+  /// When false, chat must remain on gateway/cloud even if a local model id is selected.
+  bool get localChatModeEnabled =>
+      _p.getBool(_keyLocalChatModeEnabled) ?? false;
+  set localChatModeEnabled(bool value) =>
+      _p.setBool(_keyLocalChatModeEnabled, value);
+
+  /// Last known cloud model selected by the user.
+  /// Used as fallback when local mode is disabled.
+  String? get lastCloudModel => _p.getString(_keyLastCloudModel);
+  set lastCloudModel(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyLastCloudModel, value);
+    } else {
+      _p.remove(_keyLastCloudModel);
     }
   }
 
@@ -178,6 +215,18 @@ class PreferencesService {
   set currentTtsPersona(String value) =>
       _p.setString('current_tts_persona', value);
 
+  /// Preferred gateway Talk voice id override.
+  /// Empty means "let gateway/provider default decide".
+  String get gatewayVoiceId => _p.getString('gateway_voice_id') ?? '';
+  set gatewayVoiceId(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _p.remove('gateway_voice_id');
+    } else {
+      _p.setString('gateway_voice_id', trimmed);
+    }
+  }
+
   // ── Wake Word ───────────────────────────────────────────────────────────────
 
   /// Wake word mode: 'off' | 'foreground' | 'always'
@@ -199,9 +248,10 @@ class PreferencesService {
   // ── Local LLM ───────────────────────────────────────────────────────────────
 
   /// CPU thread count for local fllama inference.
-  /// Default 4: conservative for mainstream phones and safer for thermals.
+  /// Default 2: protects gateway health checks, WebView rendering, and thermals
+  /// on mainstream phones. Users can still raise this manually for benchmarks.
   static const _keyLlmThreads = 'llm_thread_count';
-  int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 4;
+  int get llmThreadCount => _p.getInt(_keyLlmThreads) ?? 2;
   set llmThreadCount(int v) => _p.setInt(_keyLlmThreads, v);
 
   String? get lastApprovedRequestId => _p.getString(_keyLastApprovedRequestId);

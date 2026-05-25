@@ -87,10 +87,15 @@ class OpenClawCommandService {
     return cmd;
   }
 
-  /// Returns the list of tool IDs in `tools.allow` from openclaw.json.
+  /// Returns enabled gateway primitive IDs. The release default is Plawie's
+  /// bounded Android tool policy, which maps official groups back to the
+  /// primitive switches shown in the UI.
   static Future<List<String>> getCoreTools() async {
     final config = await getOpenClawConfig();
     final allow = config?['tools']?['allow'];
+    if (allow == null) {
+      return GatewayToolCatalog.primitiveIds.toList(growable: false);
+    }
     return GatewayToolCatalog.normalizeAllowList(allow);
   }
 
@@ -158,8 +163,15 @@ class OpenClawCommandService {
       final config = await getOpenClawConfig();
       if (config == null || config.isEmpty) return false;
       final allowList = GatewayToolCatalog.toConfigAllowList(tools);
-      config['tools'] ??= <String, dynamic>{};
-      config['tools']['allow'] = allowList;
+      if (allowList.isEmpty ||
+          allowList.contains(GatewayToolCatalog.wildcard)) {
+        GatewayToolCatalog.applyDefaultMobilePolicy(config);
+      } else {
+        config['tools'] ??= <String, dynamic>{};
+        config['tools']['allow'] = allowList;
+        config['tools']['profile'] =
+            GatewayToolCatalog.profileForAllowList(allowList);
+      }
       final encoded = jsonEncode(config);
       final escaped = encoded.replaceAll("'", "'\\''");
       await _run(
