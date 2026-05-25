@@ -3368,7 +3368,6 @@ class _ChatScreenState extends State<ChatScreen>
           if (!_isPipMode && _isReady)
             AuraDot(
               position: Offset(size.width / 2, voiceOrbY),
-              anchorOffset: Offset.zero,
               isSpeaking: TtsService().isSpeaking,
               onTap: () => _showHolographicTtsMenu(context),
             ),

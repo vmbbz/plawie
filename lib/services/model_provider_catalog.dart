@@ -335,6 +335,14 @@ class ModelProviderCatalog {
     }
   }
 
+  static bool isLocalModelId(String modelId) {
+    final trimmed = modelId.trim();
+    if (trimmed.startsWith('local-llm')) return true;
+    if (trimmed == '$plawieNdkProviderId/local-llm') return true;
+    if (trimmed.startsWith('$plawieNdkProviderId/local-llm/')) return true;
+    return false;
+  }
+
   static String labelForModel(String modelId) {
     final model = modelById(modelId);
     if (model != null) return model.label;

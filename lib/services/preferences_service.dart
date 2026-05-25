@@ -19,6 +19,9 @@ class PreferencesService {
   static const _keyGatewayToken = 'gateway_token';
   static const _keyLastApprovedRequestId = 'last_approved_request_id';
   static const _keySetupInProgress = 'setup_in_progress';
+  static const _keyNodeCommandContractHash = 'node_command_contract_hash';
+  static const _keyLocalChatModeEnabled = 'local_chat_mode_enabled';
+  static const _keyLastCloudModel = 'last_cloud_model';
 
   SharedPreferences? _prefs;
 
@@ -73,6 +76,16 @@ class PreferencesService {
       _p.setString(_keyNodeIdentityDeviceId, value);
     } else {
       _p.remove(_keyNodeIdentityDeviceId);
+    }
+  }
+
+  String? get nodeCommandContractHash =>
+      _p.getString(_keyNodeCommandContractHash);
+  set nodeCommandContractHash(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyNodeCommandContractHash, value);
+    } else {
+      _p.remove(_keyNodeCommandContractHash);
     }
   }
 
@@ -144,6 +157,20 @@ class PreferencesService {
     }
   }
 
+  bool get localChatModeEnabled =>
+      _p.getBool(_keyLocalChatModeEnabled) ?? false;
+  set localChatModeEnabled(bool value) =>
+      _p.setBool(_keyLocalChatModeEnabled, value);
+
+  String? get lastCloudModel => _p.getString(_keyLastCloudModel);
+  set lastCloudModel(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyLastCloudModel, value);
+    } else {
+      _p.remove(_keyLastCloudModel);
+    }
+  }
+
   /// Skill Enablement Persistence
   bool isSkillEnabled(String skillId) =>
       _p.getBool('skill_enabled_$skillId') ?? false;
@@ -177,6 +204,16 @@ class PreferencesService {
       _p.getString('current_tts_persona') ?? 'default';
   set currentTtsPersona(String value) =>
       _p.setString('current_tts_persona', value);
+
+  String get gatewayVoiceId => _p.getString('gateway_voice_id') ?? '';
+  set gatewayVoiceId(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _p.remove('gateway_voice_id');
+    } else {
+      _p.setString('gateway_voice_id', trimmed);
+    }
+  }
 
   // ── Wake Word ───────────────────────────────────────────────────────────────
 
