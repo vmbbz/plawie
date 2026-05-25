@@ -1,6 +1,6 @@
 # Tools, Skills & Gateway Intelligence Architecture
 
-> **Last updated:** 2026-05-04
+> **Last updated:** 2026-05-25
 > **Scope:** How the OpenClaw gateway receives tool and skill context, what `tools.allow` does, which
 > commits broke full tool access, and how to avoid regressing it again.
 
@@ -15,8 +15,8 @@ read this before making changes.
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  LAYER 1 — Gateway Primitives  (tools.allow in openclaw.json)                │
 │  Built-in OS-level capabilities the gateway exposes directly to the AI.      │
-│  Valid IDs: browser · computer · files · memory · search · image · canvas · shell │
-│  With NO tools block in config → gateway defaults to ALL primitives allowed. │
+│  Valid mobile UI IDs: browser · files · search · image · shell              │
+│  Plawie writes a bounded Android policy and keeps device tools on nodes.    │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  LAYER 2 — npm Skills  (openclaw skills install <name>)                      │
 │  Node.js packages that give the AI new capabilities (weather, github, …).    │
@@ -38,17 +38,35 @@ read this before making changes.
 
 | State | Effect |
 |---|---|
-| Block absent (correct default) | AI has access to **all** built-in gateway primitives |
+| Block absent | Gateway uses OpenClaw's unrestricted/full default, which is too heavy for Plawie's Android release path |
 | `"allow": ["browser", "files"]` | AI can only use browser and files primitives |
 | `"allow": ["weather", "camera"]` | Gateway warns "unknown entries" — AI gets **zero** tools |
+| Plawie mobile default | `profile: full` plus a bounded allowlist for nodes, web, sessions, automation, messaging, files, runtime, and image |
 
-**The working state is NO `tools.allow` block.** The gateway's default is full access. Only write the
-block when you intentionally want to restrict primitives.
+**The release working state is Plawie's bounded Android policy.** OpenClaw applies
+`tools.profile` first, then `tools.allow` / `tools.deny` (`deny` wins). We use
+`profile: full` as the base because `minimal` only exposes `session_status`;
+then `tools.allow` narrows the visible set to official built-in groups. This
+avoids both extremes: true wildcard/plugin sprawl can load too much provider
+context on phones, while guessed skill slugs can hide the tools we actually need.
 
-### Valid primitive IDs (the only values that belong here)
+### Mobile `tools.allow` policy
+
+Do not write device commands or unavailable core primitives here. The May 25
+gateway logs showed warnings for `canvas`, `memory`, and `computer` on Android:
+those are not safe release defaults for the current runtime/provider combo.
 
 ```
-browser   computer   files   memory   search   image   canvas   shell
+profile: full
+allow:
+  group:nodes
+  group:runtime
+  group:sessions
+  group:automation
+  group:messaging
+  group:fs
+  group:web
+  image
 ```
 
 ### IDs that must NEVER be written to tools.allow
@@ -56,7 +74,7 @@ browser   computer   files   memory   search   image   canvas   shell
 | ID | Type | Correct home |
 |---|---|---|
 | weather, twilio, crypto, base, calculator, calendar | npm skill slugs | gateway auto-loads from npm |
-| camera, location, screen, haptic, sensor | device capabilities | `gateway.nodes.allowCommands` |
+| camera, canvas, flash, torch, location, screen, haptic, sensor | device capabilities | `gateway.nodes.allowCommands` |
 
 ---
 
@@ -96,45 +114,29 @@ npm-skill tool context, making weather/github/etc. invisible to the AI even if t
 Restored the `skills.register` guard. Also changed `config.remove('tools')` to a comment — but this
 preserved the already-poisoned `tools.allow` with invalid entries on disk.
 
-### Commit `(current HEAD)` — complete fix
+### Historical partial fix — sanitize UI writes
 
 Two targeted changes:
 
 **`lib/services/openclaw_service.dart` — `saveToolsAllow()` now filters to primitives only:**
 ```dart
 static const _kGatewayPrimitives = {
-  'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
+  'browser', 'files', 'search', 'image', 'shell',
 };
 
 static Future<bool> saveToolsAllow(List<String> tools) async {
-  final valid = tools.where(_kGatewayPrimitives.contains).toList()..sort();
-  if (valid.isEmpty) {
-    // Remove block entirely — gateway defaults to all tools allowed
-    config['tools']?.remove('allow');
-    if (config['tools'] is Map && config['tools'].isEmpty) config.remove('tools');
-  } else {
-    config['tools']['allow'] = valid;
-  }
+  final allowList = GatewayToolCatalog.toConfigAllowList(tools);
+  config['tools'] = {
+    'profile': 'full',
+    'allow': allowList,
+  };
   // write to disk ...
 }
 ```
 
 **`lib/services/gateway_service.dart` — gateway hardening sanitizes disk state on every write:**
 ```dart
-const validPrimitives = {
-  'browser', 'computer', 'files', 'memory', 'search', 'image', 'canvas', 'shell',
-};
-final existingAllow = config['tools']?['allow'];
-if (existingAllow is List) {
-  final sanitized = existingAllow.map((e) => e.toString())
-      .where(validPrimitives.contains).toList();
-  if (sanitized.isEmpty) {
-    config['tools']?.remove('allow');
-    if (config['tools'] is Map && config['tools'].isEmpty) config.remove('tools');
-  } else {
-    config['tools']['allow'] = sanitized;
-  }
-}
+GatewayToolCatalog.applyDefaultMobilePolicy(config);
 ```
 
 ---
@@ -197,7 +199,14 @@ Camera, location, sensor, haptic, and screen sharing are Android device capabili
 {
   "gateway": {
     "nodes": {
-      "allowCommands": ["camera", "flash", "location", "sensor", "haptic"]
+      "allowCommands": [
+        "camera.snap", "camera.clip", "camera.list",
+        "canvas.navigate", "canvas.eval", "canvas.snapshot",
+        "flash.on", "flash.off", "flash.toggle", "flash.status",
+        "torch.on", "torch.off", "torch.toggle", "torch.status",
+        "location.get", "screen.record",
+        "sensor.read", "sensor.list", "haptic.vibrate"
+      ]
     }
   }
 }
@@ -210,15 +219,16 @@ This is a completely separate section from `tools.allow`. Never put device capab
 
 ## Invariants to Never Break
 
-1. **No `tools.allow` block = correct default.** The gateway allows all primitives when the block is
-   absent. Only add the block to intentionally restrict.
+1. **Bounded Android policy = release default.** Plawie writes official groups/stable primitives, not
+   guessed npm skill slugs and not unrestricted/full.
 
 2. **`saveToolsAllow()` must filter.** If passing IDs from `_toolCatalog` (which mixes primitives,
    npm slugs, and device names), the function at `openclaw_service.dart` filters to `_kGatewayPrimitives`
    before writing. Do not bypass this filter.
 
-3. **Gateway hardening sanitizes on write.** Config hardening removes invalid `tools.allow`
-   entries and schema-invalid legacy keys before Gateway reads or reloads config.
+3. **Gateway hardening sanitizes on write.** Config hardening rewrites invalid `tools.allow`
+   entries to the bounded Android policy and removes schema-invalid legacy keys before Gateway reads
+   or reloads config.
 
 4. **`skills.register` is guarded.** The guard in `reregisterSkills()` and the connect handler checks
    `supported.contains('skills.register')` before calling. Removing this guard causes npm skill context

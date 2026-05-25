@@ -12,7 +12,6 @@ import '../utils/video_frame_extractor.dart';
 import '../models/agent_info.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../services/voice_persona_service.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
 import '../providers/gateway_provider.dart';
@@ -121,6 +120,7 @@ class _ChatScreenState extends State<ChatScreen>
   // Auto-sync model when local LLM starts/stops
   StreamSubscription<LocalLlmState>? _localLlmSub;
   LocalLlmState _localLlmState = const LocalLlmState();
+  bool _localChatModeEnabled = false;
   // Gateway state sync — keeps stale prefs from leaking into the model picker.
   StreamSubscription<GatewayState>? _gatewaySub;
   // Skills event bus — tracks executing/executed/error states
@@ -188,15 +188,9 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
       setState(() => _localLlmState = llmState);
 
-      if (llmState.status == LocalLlmStatus.ready &&
-          llmState.activeModelId != null) {
-        final localModel = 'local-llm/${llmState.activeModelId}';
-        if (_selectedModel != localModel) {
-          setState(() => _selectedModel = localModel);
-          PreferencesService().configuredModel = localModel;
-        }
-      } else if (llmState.status == LocalLlmStatus.idle &&
-          _selectedModel.startsWith('local-llm/')) {
+      if ((_localChatModeEnabled == false ||
+              llmState.status == LocalLlmStatus.idle) &&
+          ModelProviderCatalog.isLocalModelId(_selectedModel)) {
         setState(() => _selectedModel = _cloudFallbackModel);
         PreferencesService().configuredModel = _cloudFallbackModel;
       }
@@ -205,6 +199,13 @@ class _ChatScreenState extends State<ChatScreen>
     // out here so returning users do not get routed to the deprecated daemon.
     _gatewaySub = GatewayService().stateStream.listen((_) {
       if (!mounted) return;
+      bool localModeEnabled = _localChatModeEnabled;
+      try {
+        localModeEnabled = PreferencesService().localChatModeEnabled;
+      } catch (_) {}
+      if (localModeEnabled != _localChatModeEnabled) {
+        setState(() => _localChatModeEnabled = localModeEnabled);
+      }
 
       final prefsModel = PreferencesService().configuredModel;
       if (prefsModel != null &&
@@ -214,8 +215,15 @@ class _ChatScreenState extends State<ChatScreen>
         if (canonical != prefsModel) {
           PreferencesService().configuredModel = canonical;
         }
+        if (ModelProviderCatalog.isLocalModelId(canonical) &&
+            !localModeEnabled) {
+          setState(() => _selectedModel = _cloudFallbackModel);
+          PreferencesService().configuredModel = _cloudFallbackModel;
+          return;
+        }
         if (_availableModels.contains(canonical) ||
-            canonical.startsWith('local-llm/')) {
+            (ModelProviderCatalog.isLocalModelId(canonical) &&
+                LocalLlmService().state.status == LocalLlmStatus.ready)) {
           setState(() => _selectedModel = canonical);
         }
       }
@@ -325,6 +333,7 @@ class _ChatScreenState extends State<ChatScreen>
     final prefs = PreferencesService();
     await prefs.init();
     final storedConfigured = prefs.configuredModel;
+    final localModeEnabled = prefs.localChatModeEnabled;
     final canonicalConfigured = storedConfigured == null
         ? null
         : ModelProviderCatalog.canonicalizeModelId(storedConfigured);
@@ -337,6 +346,16 @@ class _ChatScreenState extends State<ChatScreen>
       setState(() {
         _agentName = prefs.agentName;
         _selectedAvatar = prefs.selectedAvatar;
+        _localChatModeEnabled = localModeEnabled;
+
+        final savedCloud = prefs.lastCloudModel;
+        if (savedCloud != null &&
+            savedCloud.isNotEmpty &&
+            !ModelProviderCatalog.isLocalModelId(savedCloud)) {
+          _cloudFallbackModel = ModelProviderCatalog.canonicalizeModelId(
+            savedCloud,
+          );
+        }
 
         // Derive the cloud fallback from the onboarding-chosen provider.
         final provider = prefs.apiProvider;
@@ -349,16 +368,25 @@ class _ChatScreenState extends State<ChatScreen>
         // Load the user's configured model (from setup or settings).
         final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
-          final isLocal = configured.startsWith('local-llm/');
-          if (_availableModels.contains(configured) || isLocal) {
+          final isLocal = ModelProviderCatalog.isLocalModelId(configured);
+          final localReady =
+              isLocal && LocalLlmService().state.status == LocalLlmStatus.ready;
+          if (isLocal && !localModeEnabled) {
+            _selectedModel = _cloudFallbackModel;
+            prefs.configuredModel = _cloudFallbackModel;
+          } else if (_availableModels.contains(configured) || localReady) {
             _selectedModel = configured;
+            if (!isLocal) {
+              prefs.lastCloudModel = configured;
+            }
+          } else if (isLocal) {
+            _selectedModel = _cloudFallbackModel;
+            prefs.configuredModel = _cloudFallbackModel;
           }
         }
       });
     }
   }
-
-  Offset _headPosition = Offset.zero;
 
   void _addDiagnosticLog(String log) {
     if (!mounted) return;
@@ -547,20 +575,24 @@ class _ChatScreenState extends State<ChatScreen>
         _isTtsSpeaking = false;
         return;
       }
-      if (_selectedModel.startsWith('local-llm/')) {
+      if (ModelProviderCatalog.isLocalModelId(_selectedModel)) {
         await _tts.speak(sentence);
         return;
       }
       final gatewayProvider =
           Provider.of<GatewayProvider>(context, listen: false);
-      final playedByTalk = await gatewayProvider.speakTextViaTalk(sentence);
-      if (!playedByTalk) {
-        // Legacy fallback path. If no playback started, release the queue immediately.
+      final playback = await gatewayProvider.speakTextViaTalk(sentence);
+      if (!playback.played && playback.allowNativeFallback) {
+        // Official fallback path: only when talk.speak is unavailable on this gateway.
         await _tts.speak(sentence);
         if (!_tts.isSpeaking) {
           _isTtsSpeaking = false;
           _processNextTtsInQueue();
         }
+      } else if (!playback.played && playback.errorMessage != null) {
+        _addDiagnosticLog('Gateway Talk voice error: ${playback.errorMessage}');
+        _isTtsSpeaking = false;
+        _processNextTtsInQueue();
       }
     } catch (_) {
       // Guarantee _isTtsSpeaking is cleared on error so queue isn't permanently jammed
@@ -727,6 +759,34 @@ class _ChatScreenState extends State<ChatScreen>
 
   // ---------------------------------------------------------------------------
 
+  bool _shouldUseGatewaySessionBindingForMessage({
+    required String text,
+    required bool isLocalModelSelected,
+    required bool hasMediaAttachment,
+  }) {
+    // Cloud text is always the Gateway lane. Binding every text turn to a
+    // mobile-owned session keeps Flutter chat away from agent:main:main, which
+    // is also used by the dashboard and can carry stale locks/history.
+    if (isLocalModelSelected || hasMediaAttachment) return false;
+    return text.trim().isNotEmpty;
+  }
+
+  bool _isUnsafeGatewaySessionKey(String? key) {
+    final normalized = key?.trim().toLowerCase() ?? '';
+    return normalized.isEmpty ||
+        normalized == 'main' ||
+        normalized == 'agent:main:main';
+  }
+
+  bool _isRecoverableGatewaySessionFailure(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('stale_session_state') ||
+        lower.contains('file lock stale') ||
+        lower.contains('queued_work_without_active_run') ||
+        lower.contains('session file repaired') ||
+        lower.contains('agent cleanup timed out');
+  }
+
   Future<void> _handleSubmit(String text) async {
     if ((text.trim().isEmpty &&
             _pendingImageBase64 == null &&
@@ -773,6 +833,8 @@ class _ChatScreenState extends State<ChatScreen>
     });
 
     String fullResponse = '';
+    final sendStopwatch = Stopwatch()..start();
+    var loggedFirstAssistantChunk = false;
     final List<ChatToolEvent> toolEvents = [];
     // <think> block parser state — strips Qwen/DeepSeek reasoning tokens from the
     // main response and accumulates them separately for the collapsible Reasoning UI.
@@ -814,16 +876,31 @@ class _ChatScreenState extends State<ChatScreen>
 
       // Route based on attachment type & model
       final Stream<String> stream;
-      final isLocalModelSelected = _selectedModel.startsWith('local-llm/');
-      String? streamSessionKey = _gatewaySessionKey;
+      final isLocalModelSelected =
+          ModelProviderCatalog.isLocalModelId(_selectedModel);
+      String? streamSessionKey = _isUnsafeGatewaySessionKey(_gatewaySessionKey)
+          ? null
+          : _gatewaySessionKey;
+      final bindGatewaySession = _shouldUseGatewaySessionBindingForMessage(
+        text: text,
+        isLocalModelSelected: isLocalModelSelected,
+        hasMediaAttachment: imageBase64 != null || videoBase64 != null,
+      );
+      _addDiagnosticLog(
+        bindGatewaySession
+            ? 'Gateway session preflight required for $_selectedModel'
+            : 'Gateway session preflight skipped for $_selectedModel',
+      );
 
-      if (!isLocalModelSelected) {
+      if (bindGatewaySession) {
         final localSessionId = _persistence.activeSessionId;
         if (localSessionId != null && localSessionId.isNotEmpty) {
           final resolvedSessionKey =
               await gatewayProvider.resolveOrCreateGatewaySessionKey(
             localSessionId: localSessionId,
-            existingSessionKey: _gatewaySessionKey,
+            existingSessionKey: _isUnsafeGatewaySessionKey(_gatewaySessionKey)
+                ? null
+                : _gatewaySessionKey,
           );
           if (resolvedSessionKey.isNotEmpty &&
               resolvedSessionKey != _gatewaySessionKey) {
@@ -907,6 +984,13 @@ class _ChatScreenState extends State<ChatScreen>
       await for (final chunk in stream) {
         if (!mounted) break;
 
+        if (!loggedFirstAssistantChunk &&
+            chunk.trim().isNotEmpty &&
+            !chunk.startsWith('\x00TOOL_')) {
+          loggedFirstAssistantChunk = true;
+          _addDiagnosticLog(
+              'First assistant chunk after ${sendStopwatch.elapsedMilliseconds}ms');
+        }
         _addDiagnosticLog('Chunk received: "$chunk"');
 
         // Tool call/result markers injected by gateway_service as \x00TOOL_USE:name:json\x00
@@ -959,7 +1043,15 @@ class _ChatScreenState extends State<ChatScreen>
             chunk.contains('rate limit reached') ||
             chunk.contains('API error')) {
           _addDiagnosticLog('Caught API Error in stream: $chunk');
-          final errorMsg = chunk.replaceAll('[Error]', '').trim();
+          var errorMsg = chunk.replaceAll('[Error]', '').trim();
+          if (_isRecoverableGatewaySessionFailure(errorMsg)) {
+            _gatewaySessionKey = null;
+            await _persistence.setActiveGatewaySessionKey(null);
+            errorMsg =
+                'Gateway session became stale and was reset. Please resend this message.';
+            _addDiagnosticLog(
+                'Cleared stale gateway session binding after gateway error.');
+          }
           setState(() {
             _isThinking = false;
             _isGenerating = false;
@@ -1087,7 +1179,7 @@ class _ChatScreenState extends State<ChatScreen>
     }
     _talkRelaySupportCheckedAt = now;
 
-    if (_selectedModel.startsWith('local-llm/')) {
+    if (ModelProviderCatalog.isLocalModelId(_selectedModel)) {
       _talkRelaySupported = false;
       return false;
     }
@@ -1563,13 +1655,14 @@ class _ChatScreenState extends State<ChatScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _selectedModel.startsWith('local-llm/')
+                          ModelProviderCatalog.isLocalModelId(_selectedModel)
                               ? 'LOCAL · ON-DEVICE'
                               : ModelProviderCatalog.labelForModel(
                                       _selectedModel)
                                   .toUpperCase(),
                           style: TextStyle(
-                            color: _selectedModel.startsWith('local-llm/')
+                            color: ModelProviderCatalog.isLocalModelId(
+                                    _selectedModel)
                                 ? const Color(0xFF00E5AA)
                                 : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
@@ -1672,7 +1765,8 @@ class _ChatScreenState extends State<ChatScreen>
         ),
         // --- INTELLIGENT LOCAL LLM ENTRY ---
         PopupMenuItem<String>(
-          value: _localLlmState.status == LocalLlmStatus.idle
+          value: _localLlmState.status == LocalLlmStatus.idle ||
+                  !_localChatModeEnabled
               ? 'setup_local_llm'
               : 'model:local-llm/${_localLlmState.activeModelId ?? 'llama-server'}',
           height: 48,
@@ -1681,16 +1775,20 @@ class _ChatScreenState extends State<ChatScreen>
               Icon(
                 _localLlmState.status == LocalLlmStatus.idle
                     ? Icons.install_mobile
-                    : (_selectedModel.startsWith('local-llm/')
-                        ? Icons.memory_rounded
-                        : Icons.phone_android),
-                color: _selectedModel.startsWith('local-llm/')
+                    : (!_localChatModeEnabled
+                        ? Icons.lock_outline_rounded
+                        : (ModelProviderCatalog.isLocalModelId(_selectedModel)
+                            ? Icons.memory_rounded
+                            : Icons.phone_android)),
+                color: ModelProviderCatalog.isLocalModelId(_selectedModel)
                     ? const Color(0xFF00E5AA)
-                    : (_localLlmState.status == LocalLlmStatus.starting
-                        ? Colors.amber
-                        : (_localLlmState.status == LocalLlmStatus.idle
-                            ? AppColors.statusAmber
-                            : Colors.white38)),
+                    : (!_localChatModeEnabled
+                        ? AppColors.statusAmber
+                        : (_localLlmState.status == LocalLlmStatus.starting
+                            ? Colors.amber
+                            : (_localLlmState.status == LocalLlmStatus.idle
+                                ? AppColors.statusAmber
+                                : Colors.white38))),
                 size: 18,
               ),
               const SizedBox(width: 10),
@@ -1704,15 +1802,17 @@ class _ChatScreenState extends State<ChatScreen>
                           ? 'Setup Local LLM'
                           : (_localLlmState.activeModelId ?? 'Local LLM'),
                       style: TextStyle(
-                        color: _selectedModel.startsWith('local-llm/')
-                            ? Colors.white
-                            : (_localLlmState.status == LocalLlmStatus.idle
-                                ? AppColors.statusAmber
-                                : Colors.white70),
+                        color:
+                            ModelProviderCatalog.isLocalModelId(_selectedModel)
+                                ? Colors.white
+                                : (_localLlmState.status == LocalLlmStatus.idle
+                                    ? AppColors.statusAmber
+                                    : Colors.white70),
                         fontSize: 13,
-                        fontWeight: _selectedModel.startsWith('local-llm/')
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        fontWeight:
+                            ModelProviderCatalog.isLocalModelId(_selectedModel)
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                       ),
                     ),
                     Text(
@@ -1720,20 +1820,28 @@ class _ChatScreenState extends State<ChatScreen>
                           ? 'WAKING UP...'
                           : (_localLlmState.status == LocalLlmStatus.error
                               ? 'ERROR: CHECK SETUP'
-                              : (_localLlmState.status == LocalLlmStatus.idle
-                                  ? 'Download free model'
-                                  : (_selectedModel.startsWith('local-llm/')
-                                      ? 'ACTIVE · ON-DEVICE'
-                                      : 'ON-DEVICE (READY)'))),
+                              : (!_localChatModeEnabled
+                                  ? 'NDK READY · CHAT MODE OFF'
+                                  : (_localLlmState.status ==
+                                          LocalLlmStatus.idle
+                                      ? 'Download free model'
+                                      : (ModelProviderCatalog.isLocalModelId(
+                                              _selectedModel)
+                                          ? 'ACTIVE · ON-DEVICE'
+                                          : 'ON-DEVICE (READY)')))),
                       style: TextStyle(
                         color: _localLlmState.status == LocalLlmStatus.starting
                             ? Colors.amber
-                            : (_selectedModel.startsWith('local-llm/')
-                                ? const Color(0xFF00E5AA)
-                                : (_localLlmState.status == LocalLlmStatus.idle
-                                    ? AppColors.statusAmber
-                                        .withValues(alpha: 0.6)
-                                    : Colors.white38)),
+                            : (!_localChatModeEnabled
+                                ? AppColors.statusAmber
+                                : (ModelProviderCatalog.isLocalModelId(
+                                        _selectedModel)
+                                    ? const Color(0xFF00E5AA)
+                                    : (_localLlmState.status ==
+                                            LocalLlmStatus.idle
+                                        ? AppColors.statusAmber
+                                            .withValues(alpha: 0.6)
+                                        : Colors.white38))),
                         fontSize: 8,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
@@ -1748,7 +1856,7 @@ class _ChatScreenState extends State<ChatScreen>
                     height: 14,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.amber))
-              else if (_selectedModel.startsWith('local-llm/'))
+              else if (ModelProviderCatalog.isLocalModelId(_selectedModel))
                 const Icon(Icons.check, color: Color(0xFF00E5AA), size: 18),
             ],
           ),
@@ -1903,17 +2011,36 @@ class _ChatScreenState extends State<ChatScreen>
       if (!context.mounted) return;
 
       if (value == 'setup_local_llm') {
-        Navigator.of(context).push(MaterialPageRoute(
+        await Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const LocalLlmScreen(),
         ));
+        _loadPreferences();
       } else if (value == 'avatar_forge') {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AvatarForgePage(),
         ));
       } else if (value.toString().startsWith('model:')) {
+        final prefs = PreferencesService();
+        await prefs.init();
         final model = ModelProviderCatalog.canonicalizeModelId(
             value.toString().substring(6));
-        final isNowCloud = !model.startsWith('local-llm/');
+        if (ModelProviderCatalog.isLocalModelId(model) &&
+            !prefs.localChatModeEnabled) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Local NDK chat is OFF. Enable it in Local LLM page first.',
+              ),
+            ),
+          );
+          await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const LocalLlmScreen(),
+          ));
+          _loadPreferences();
+          return;
+        }
+        final isNowCloud = !ModelProviderCatalog.isLocalModelId(model);
         final catalogModel = ModelProviderCatalog.modelById(model);
         if (isNowCloud && catalogModel != null) {
           final hasCredential = await GatewayService()
@@ -1934,13 +2061,16 @@ class _ChatScreenState extends State<ChatScreen>
         }
         setState(() {
           _selectedModel = model;
-          if (!model.startsWith('local-llm/')) {
+          if (!ModelProviderCatalog.isLocalModelId(model)) {
             _cloudFallbackModel = model;
           }
         });
-        PreferencesService().configuredModel = model;
+        prefs.configuredModel = model;
+        if (!ModelProviderCatalog.isLocalModelId(model)) {
+          prefs.lastCloudModel = model;
+        }
 
-        final needsReload = model.startsWith('local-llm');
+        final needsReload = ModelProviderCatalog.isLocalModelId(model);
         if (needsReload) {
           final modelId = model.split('/').last;
           final localModel =
@@ -2158,15 +2288,44 @@ class _ChatScreenState extends State<ChatScreen>
 
     // --- Dynamic Sizing for Floating Mic ---
     const double collapsedSize = 96.0;
-    // Removed the -24 margin to make chat container flush with screen edges
-    final double barWidth = _isChatCollapsed ? collapsedSize : size.width;
-
     // Adaptive height: Capped to avoid keyboard overflow on small screens
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final keyboardHeight =
+        MediaQuery.of(context).viewInsets.bottom.clamp(0.0, size.height * 0.7);
+    final keyboardVisible = keyboardHeight > 0;
+    final rawMaxExpandedHeight =
+        size.height - keyboardHeight - (keyboardVisible ? 78.0 : 190.0);
+    final maxExpandedHeight =
+        rawMaxExpandedHeight < 260.0 ? 260.0 : rawMaxExpandedHeight;
+    final targetExpandedHeight = size.height * (keyboardVisible ? 0.52 : 0.46);
+    final double barWidth = _isChatCollapsed
+        ? collapsedSize
+        : (size.width - 20).clamp(320.0, 620.0);
     final double barHeight = _isChatCollapsed
         ? collapsedSize
-        : (size.height * 0.6).clamp(320.0,
-            size.height - keyboardHeight - (keyboardHeight > 0 ? 80 : 160));
+        : targetExpandedHeight.clamp(260.0, maxExpandedHeight);
+    final chatTrayBottomMargin = _isChatCollapsed ? 40.0 : 10.0;
+    final chatTrayTopY =
+        size.height - keyboardHeight - chatTrayBottomMargin - barHeight;
+    final voiceOrbY = _isChatCollapsed
+        ? (size.height - keyboardHeight - chatTrayBottomMargin - 132.0)
+            .clamp(size.height * 0.46, size.height - keyboardHeight - 118.0)
+            .toDouble()
+        : (chatTrayTopY - 18.0).clamp(112.0, size.height - 96.0).toDouble();
+
+    Widget avatarSafeBackdrop({
+      required Widget child,
+      required double sigmaX,
+      required double sigmaY,
+    }) {
+      // Android WebView + WebGL behind a large BackdropFilter can allocate
+      // enormous offscreen graphics buffers. Keep the translucent glass look,
+      // but skip live backdrop blur where it would starve the gateway/runtime.
+      if (Platform.isAndroid) return child;
+      return BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
+        child: child,
+      );
+    }
 
     return Scaffold(
       key: _scaffoldKey,
@@ -2181,8 +2340,9 @@ class _ChatScreenState extends State<ChatScreen>
               backgroundColor: Colors.transparent,
               elevation: 0,
               flexibleSpace: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                child: avatarSafeBackdrop(
+                  sigmaX: 12.0,
+                  sigmaY: 12.0,
                   child: Container(
                     color: Colors.black.withValues(
                         alpha: 0.05), // Reduced alpha for more transparency
@@ -2236,11 +2396,13 @@ class _ChatScreenState extends State<ChatScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                _selectedModel.startsWith('local-llm/')
+                                ModelProviderCatalog.isLocalModelId(
+                                        _selectedModel)
                                     ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
                                     : '${_selectedAvatar.split('.').first.toUpperCase()} · ${ModelProviderCatalog.labelForModel(_selectedModel).toUpperCase()}',
                                 style: TextStyle(
-                                  color: _selectedModel.startsWith('local-llm/')
+                                  color: ModelProviderCatalog.isLocalModelId(
+                                          _selectedModel)
                                       ? (_localLlmState.status ==
                                               LocalLlmStatus.starting
                                           ? Colors.amber
@@ -2400,7 +2562,7 @@ class _ChatScreenState extends State<ChatScreen>
             ),
 
           // 2. Subtle animated nebula particles
-          if (!_isPipMode)
+          if (!_isPipMode && !Platform.isAndroid)
             Positioned.fill(
               child: Opacity(
                 opacity: 0.15,
@@ -2430,39 +2592,50 @@ class _ChatScreenState extends State<ChatScreen>
                   maxWidth: size.width.clamp(0.0, 600.0),
                   maxHeight: size.height,
                 ),
-                child: AnimatedSwitcher(
-                  duration:
-                      const Duration(milliseconds: 300), // Swifter transition
-                  transitionBuilder: (child, animation) {
-                    return ScaleTransition(
-                      scale: Tween<double>(begin: 0.95, end: 1.0)
-                          .animate(CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      )),
-                      child: FadeTransition(opacity: animation, child: child),
+                child: Builder(
+                  builder: (context) {
+                    final avatar = VrmAvatarWidget(
+                      key: ValueKey(_selectedAvatar),
+                      isThinking: _isThinking,
+                      speechIntensity: _speechIntensity,
+                      glowIntensity: _speechIntensity,
+                      avatarFileName: _selectedAvatar,
+                      isCinematic: _isCinematic,
+                      isPip: _isPipMode,
+                      gesture: _currentGesture,
+                      gestureMode: _currentGestureMode,
+                      onLog: (log) {
+                        if (log == 'READY') {
+                          setState(() => _isReady = true);
+                        }
+                        _addDiagnosticLog(log);
+                      },
+                    );
+
+                    // Android PlatformViews/WebView do not like being faded or
+                    // scaled under Flutter overlays. Keep avatar switches direct
+                    // so Chromium/WebGL owns one stable surface.
+                    if (Platform.isAndroid) return avatar;
+
+                    return AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) {
+                        return ScaleTransition(
+                          scale: Tween<double>(begin: 0.95, end: 1.0).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            ),
+                          ),
+                          child: FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: avatar,
                     );
                   },
-                  child: VrmAvatarWidget(
-                    key: ValueKey(_selectedAvatar),
-                    isThinking: _isThinking,
-                    speechIntensity: _speechIntensity,
-                    glowIntensity: _speechIntensity,
-                    avatarFileName: _selectedAvatar,
-                    isCinematic: _isCinematic,
-                    isPip: _isPipMode,
-                    gesture: _currentGesture,
-                    gestureMode: _currentGestureMode,
-                    onLog: (log) {
-                      if (log == 'READY') {
-                        setState(() => _isReady = true);
-                      }
-                      _addDiagnosticLog(log);
-                    },
-                    onHeadUpdate: (pos) {
-                      if (mounted) setState(() => _headPosition = pos);
-                    },
-                  ),
                 ),
               ),
             ),
@@ -2481,22 +2654,50 @@ class _ChatScreenState extends State<ChatScreen>
 
                     if (!_isChatCollapsed) const Spacer(flex: 3),
                     AnimatedContainer(
-                      duration: const Duration(milliseconds: 600),
-                      curve: Curves.elasticOut,
+                      duration: const Duration(milliseconds: 280),
+                      // Elastic curves overshoot and can briefly interpolate
+                      // EdgeInsets below zero during voice/full-chat toggles.
+                      curve: Curves.easeOutCubic,
                       width: barWidth,
                       height: barHeight,
-                      margin:
-                          EdgeInsets.only(bottom: _isChatCollapsed ? 40 : 0),
+                      margin: EdgeInsets.only(
+                        bottom: chatTrayBottomMargin,
+                        left: _isChatCollapsed ? 0 : 10,
+                        right: _isChatCollapsed ? 0 : 10,
+                      ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
+                        gradient: _isChatCollapsed
+                            ? null
+                            : LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.10),
+                                  Colors.black.withValues(alpha: 0.20),
+                                  Colors.black.withValues(alpha: 0.34),
+                                ],
+                                stops: const [0.0, 0.45, 1.0],
+                              ),
+                        color: _isChatCollapsed
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : null,
                         borderRadius: BorderRadius.circular(
-                            _isChatCollapsed ? collapsedSize / 2 : 24),
+                            _isChatCollapsed ? collapsedSize / 2 : 30),
                         border: Border.all(
-                          color: Colors.white
-                              .withValues(alpha: _isChatCollapsed ? 0.2 : 0.12),
-                          width: _isChatCollapsed ? 2 : 1.5,
+                          color: _isChatCollapsed
+                              ? Colors.white.withValues(alpha: 0.2)
+                              : AppColors.statusGreen.withValues(alpha: 0.18),
+                          width: _isChatCollapsed ? 2 : 1.2,
                         ),
                         boxShadow: [
+                          if (!_isChatCollapsed)
+                            BoxShadow(
+                              color:
+                                  AppColors.statusGreen.withValues(alpha: 0.08),
+                              blurRadius: 28,
+                              spreadRadius: -8,
+                              offset: const Offset(0, -6),
+                            ),
                           BoxShadow(
                             color: _isListening
                                 ? AppColors.statusGreen.withValues(alpha: 0.2)
@@ -2515,9 +2716,10 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(
-                            _isChatCollapsed ? collapsedSize / 2 : 32),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                            _isChatCollapsed ? collapsedSize / 2 : 30),
+                        child: avatarSafeBackdrop(
+                          sigmaX: 15,
+                          sigmaY: 15,
                           child: Column(
                             children: [
                               // ── Drag handle ──────────────────────────────────
@@ -2536,16 +2738,33 @@ class _ChatScreenState extends State<ChatScreen>
                                     }
                                   },
                                   child: Container(
-                                    height: 32, // Larger vertical hit area
+                                    height: 28,
                                     width: double.infinity,
                                     alignment: Alignment.center,
                                     child: Container(
-                                      width: 40,
-                                      height: 4,
+                                      width: 58,
+                                      height: 5,
                                       decoration: BoxDecoration(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.25),
-                                        borderRadius: BorderRadius.circular(2),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Colors.white
+                                                .withValues(alpha: 0.18),
+                                            AppColors.statusGreen
+                                                .withValues(alpha: 0.46),
+                                            Colors.white
+                                                .withValues(alpha: 0.18),
+                                          ],
+                                        ),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: AppColors.statusGreen
+                                                .withValues(alpha: 0.14),
+                                            blurRadius: 12,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -2568,7 +2787,8 @@ class _ChatScreenState extends State<ChatScreen>
                                     blendMode: BlendMode.dstIn,
                                     child: ListView.builder(
                                       controller: _scrollController,
-                                      padding: const EdgeInsets.all(20),
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 4, 16, 12),
                                       itemCount: _messages.length,
                                       itemBuilder: (context, i) {
                                         final msg = _messages[i];
@@ -2587,18 +2807,18 @@ class _ChatScreenState extends State<ChatScreen>
 
                               Container(
                                 padding: EdgeInsets.symmetric(
-                                    horizontal: _isChatCollapsed ? 0 : 16,
-                                    vertical: _isChatCollapsed ? 0 : 12),
+                                    horizontal: _isChatCollapsed ? 0 : 12,
+                                    vertical: _isChatCollapsed ? 0 : 10),
                                 decoration: BoxDecoration(
                                   color: _isChatCollapsed
                                       ? Colors.transparent
-                                      : Colors.black.withValues(alpha: 0.4),
+                                      : Colors.black.withValues(alpha: 0.22),
                                   border: _isChatCollapsed
                                       ? null
                                       : Border(
                                           top: BorderSide(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.08))),
+                                              color: AppColors.statusGreen
+                                                  .withValues(alpha: 0.10))),
                                 ),
                                 child: SafeArea(
                                   top: false,
@@ -2725,7 +2945,7 @@ class _ChatScreenState extends State<ChatScreen>
                                           ),
                                         ),
                                       if (!_isChatCollapsed) ...[
-                                        const SizedBox(width: 8),
+                                        const SizedBox(width: 4),
                                         Expanded(
                                           child: Column(
                                             mainAxisSize: MainAxisSize.min,
@@ -2962,11 +3182,12 @@ class _ChatScreenState extends State<ChatScreen>
                                                                     null
                                                                 ? "Ask about the image..."
                                                                 : "Message your companion...",
-                                                        hintStyle:
-                                                            const TextStyle(
-                                                                color: Colors
-                                                                    .white38,
-                                                                fontSize: 14),
+                                                        hintStyle: TextStyle(
+                                                            color: Colors.white
+                                                                .withValues(
+                                                                    alpha:
+                                                                        0.40),
+                                                            fontSize: 14),
                                                         border:
                                                             OutlineInputBorder(
                                                           borderRadius:
@@ -3005,14 +3226,15 @@ class _ChatScreenState extends State<ChatScreen>
                                                                   width: 1.0),
                                                         ),
                                                         filled: true,
-                                                        fillColor: Colors.white
+                                                        fillColor: Colors.black
                                                             .withValues(
-                                                                alpha: 0.05),
+                                                                alpha: 0.20),
                                                         contentPadding:
                                                             const EdgeInsets
                                                                 .symmetric(
-                                                                horizontal: 16,
-                                                                vertical: 8),
+                                                          horizontal: 16,
+                                                          vertical: 12,
+                                                        ),
                                                       ),
                                                       onSubmitted:
                                                           _handleSubmit,
@@ -3027,10 +3249,26 @@ class _ChatScreenState extends State<ChatScreen>
                                         Container(
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                                .withValues(alpha: 0.8),
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                              colors: [
+                                                AppColors.statusGreen
+                                                    .withValues(alpha: 0.95),
+                                                Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                    .withValues(alpha: 0.82),
+                                              ],
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: AppColors.statusGreen
+                                                    .withValues(alpha: 0.22),
+                                                blurRadius: 18,
+                                                spreadRadius: -2,
+                                              ),
+                                            ],
                                           ),
                                           child: IconButton(
                                             icon: const Icon(Icons.send_rounded,
@@ -3129,7 +3367,8 @@ class _ChatScreenState extends State<ChatScreen>
           // --- AURA DOT (Holographic Interface) ---
           if (!_isPipMode && _isReady)
             AuraDot(
-              position: _headPosition,
+              position: Offset(size.width / 2, voiceOrbY),
+              anchorOffset: Offset.zero,
               isSpeaking: TtsService().isSpeaking,
               onTap: () => _showHolographicTtsMenu(context),
             ),
@@ -3235,7 +3474,160 @@ class _ChatScreenState extends State<ChatScreen>
 
   // ── Holographic TTS Menu ───────────────────────────────────────────────────
 
+  Future<Map<String, dynamic>> _loadGatewayVoiceControlData() async {
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+    final prefs = PreferencesService();
+    await prefs.init();
+
+    var activeProvider = '';
+    final providers = <Map<String, dynamic>>[];
+    final personas = <Map<String, dynamic>>[];
+    var activePersona = prefs.currentTtsPersona.trim().toLowerCase();
+    final selectedVoiceId = prefs.gatewayVoiceId.trim();
+    final voices = <String>[];
+    var talkConfigured = false;
+    var talkStatusMessage =
+        'Gateway Talk provider is not configured for speech output yet.';
+
+    try {
+      final providersFrame = await gatewayProvider.getTtsProviders();
+      final rawProviders = providersFrame['providers'];
+      if (rawProviders is List) {
+        for (final item in rawProviders) {
+          if (item is Map) {
+            providers.add(Map<String, dynamic>.from(item));
+          }
+        }
+      }
+      activeProvider = (providersFrame['active'] ?? '').toString().trim();
+      for (final provider in providers) {
+        final id = provider['id']?.toString().trim() ?? '';
+        if (id == activeProvider && provider['configured'] == true) {
+          talkConfigured = true;
+          talkStatusMessage = 'Gateway Talk is configured.';
+          break;
+        }
+      }
+    } catch (e) {
+      _addDiagnosticLog('Voice provider lookup failed: $e');
+    }
+
+    try {
+      final personasFrame = await gatewayProvider.getTtsPersonas();
+      final rawPersonas = personasFrame['personas'];
+      if (rawPersonas is List) {
+        for (final item in rawPersonas) {
+          if (item is Map) {
+            personas.add(Map<String, dynamic>.from(item));
+          }
+        }
+      }
+      final active = personasFrame['active']?.toString().trim().toLowerCase();
+      if (active != null && active.isNotEmpty) activePersona = active;
+    } catch (e) {
+      _addDiagnosticLog('Voice persona lookup failed: $e');
+    }
+
+    try {
+      final talkCatalog = await gatewayProvider.getTalkCatalog();
+      final speech = talkCatalog['speech'];
+      if (speech is Map) {
+        final speechProviders = speech['providers'];
+        if (speechProviders is List) {
+          Map<String, dynamic>? activeEntry;
+          for (final item in speechProviders) {
+            if (item is! Map) continue;
+            final mapped = Map<String, dynamic>.from(item);
+            final id = mapped['id']?.toString() ?? '';
+            if (id == activeProvider) {
+              activeEntry = mapped;
+              break;
+            }
+          }
+          if (activeEntry == null && speechProviders.isNotEmpty) {
+            final fallback = speechProviders.first;
+            if (fallback is Map) {
+              activeEntry = Map<String, dynamic>.from(fallback);
+              activeProvider = activeEntry['id']?.toString() ?? activeProvider;
+            }
+          }
+
+          final rawVoices = activeEntry?['voices'];
+          if (activeEntry?['configured'] == true) {
+            talkConfigured = true;
+            talkStatusMessage = 'Gateway Talk is configured.';
+          } else if (activeEntry != null) {
+            talkConfigured = false;
+            talkStatusMessage =
+                'Selected Gateway Talk provider is not configured.';
+          }
+          if (rawVoices is List) {
+            for (final voice in rawVoices) {
+              final v = voice.toString().trim();
+              if (v.isNotEmpty) voices.add(v);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      _addDiagnosticLog('Talk catalog lookup failed: $e');
+    }
+
+    if (voices.isEmpty && activeProvider.isNotEmpty) {
+      final providerEntry = providers.cast<Map<String, dynamic>?>().firstWhere(
+            (entry) => entry?['id']?.toString() == activeProvider,
+            orElse: () => null,
+          );
+      final rawVoices = providerEntry?['voices'];
+      if (rawVoices is List) {
+        for (final voice in rawVoices) {
+          final v = voice.toString().trim();
+          if (v.isNotEmpty) voices.add(v);
+        }
+      }
+    }
+
+    final dedupedVoices = <String>[];
+    final seen = <String>{};
+    for (final voice in voices) {
+      if (seen.add(voice.toLowerCase())) {
+        dedupedVoices.add(voice);
+      }
+    }
+
+    return <String, dynamic>{
+      'activeProvider': activeProvider,
+      'providers': providers,
+      'personas': personas,
+      'activePersona': activePersona,
+      'selectedVoiceId': selectedVoiceId,
+      'voices': dedupedVoices,
+      'talkConfigured': talkConfigured,
+      'talkStatusMessage': talkStatusMessage,
+    };
+  }
+
+  Future<void> _applyGatewayPersona(String personaId) async {
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+    await gatewayProvider.setTtsPersona(personaId);
+    final prefs = PreferencesService();
+    await prefs.init();
+    prefs.currentTtsPersona = personaId.trim().toLowerCase().isEmpty
+        ? 'default'
+        : personaId.trim().toLowerCase();
+  }
+
+  Future<void> _applyGatewayProvider(String providerId) async {
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+    await gatewayProvider.setTtsProvider(providerId);
+  }
+
   void _showHolographicTtsMenu(BuildContext context) {
+    final dataFuture = _loadGatewayVoiceControlData();
+
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -3246,153 +3638,407 @@ class _ChatScreenState extends State<ChatScreen>
         return Center(
           child: Material(
             color: Colors.transparent,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.85,
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(28),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.cyanAccent.withValues(alpha: 0.1),
-                      blurRadius: 40,
-                      spreadRadius: 10,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.psychology_alt,
-                            color: Colors.cyanAccent, size: 20),
-                        const SizedBox(width: 12),
-                        Text(
-                          'VOICE PERSONA',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(Icons.close,
-                              color: Colors.white54, size: 20),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                    const Divider(color: Colors.white12, height: 32),
+            child: StatefulBuilder(
+              builder: (context, setModalState) {
+                return FutureBuilder<Map<String, dynamic>>(
+                  future: dataFuture,
+                  builder: (context, snapshot) {
+                    final data = snapshot.data ?? const <String, dynamic>{};
+                    final providers = (data['providers'] as List?)
+                            ?.cast<Map<String, dynamic>>() ??
+                        const <Map<String, dynamic>>[];
+                    final personas = (data['personas'] as List?)
+                            ?.cast<Map<String, dynamic>>() ??
+                        const <Map<String, dynamic>>[];
+                    final voices = (data['voices'] as List?)?.cast<String>() ??
+                        const <String>[];
 
-                    // Persona Grid
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: VoicePersonaService.commonPersonas.map((p) {
-                        final isSelected = TtsService().currentPersona == p;
-                        return GestureDetector(
-                          onTap: () async {
-                            await TtsService().setVoicePersona(p);
-                            if (!context.mounted) return;
-                            setState(() {});
-                            Navigator.pop(context);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.cyanAccent.withValues(alpha: 0.2)
-                                  : Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.cyanAccent
-                                    : Colors.white10,
-                                width: 1,
-                              ),
+                    String activeProvider =
+                        (data['activeProvider'] ?? '').toString();
+                    String activePersona =
+                        (data['activePersona'] ?? 'default').toString();
+                    String selectedVoiceId =
+                        (data['selectedVoiceId'] ?? '').toString();
+                    final talkConfigured = data['talkConfigured'] == true;
+                    final talkStatusMessage = (data['talkStatusMessage'] ??
+                            'Gateway Talk provider is not configured.')
+                        .toString();
+                    final speed = PreferencesService().ttsSpeed;
+
+                    if (activeProvider.isEmpty && providers.isNotEmpty) {
+                      activeProvider = providers.first['id']?.toString() ?? '';
+                    }
+
+                    return BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                      child: Container(
+                        width: MediaQuery.of(context).size.width * 0.88,
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(28),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.2)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.cyanAccent.withValues(alpha: 0.1),
+                              blurRadius: 40,
+                              spreadRadius: 10,
                             ),
-                            child: Text(
-                              p.toUpperCase(),
-                              style: GoogleFonts.outfit(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: isSelected
-                                    ? Colors.cyanAccent
-                                    : Colors.white70,
-                                letterSpacing: 1.0,
+                          ],
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.record_voice_over_rounded,
+                                      color: Colors.cyanAccent, size: 20),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'GATEWAY VOICE',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 2.0,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.close,
+                                        color: Colors.white54, size: 20),
+                                    onPressed: () => Navigator.pop(context),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // Speed Control
-                    Row(
-                      children: [
-                        const Icon(Icons.speed,
-                            color: Colors.white54, size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          'SPEECH VELOCITY',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white54,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.5,
+                              const Divider(color: Colors.white12, height: 24),
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 24),
+                                  child: Center(
+                                      child: CircularProgressIndicator(
+                                    color: Colors.cyanAccent,
+                                  )),
+                                )
+                              else ...[
+                                if (providers.isNotEmpty) ...[
+                                  Text(
+                                    'PROVIDER',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white54,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.05),
+                                      border: Border.all(
+                                          color: Colors.white12, width: 1),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: activeProvider.isEmpty
+                                            ? null
+                                            : activeProvider,
+                                        isExpanded: true,
+                                        dropdownColor: const Color(0xFF17181F),
+                                        items: providers.map((provider) {
+                                          final id =
+                                              provider['id']?.toString() ?? '';
+                                          final label = provider['name']
+                                                  ?.toString() ??
+                                              provider['label']?.toString() ??
+                                              id;
+                                          final configured =
+                                              provider['configured'] == true;
+                                          return DropdownMenuItem<String>(
+                                            value: id,
+                                            child: Text(
+                                              configured
+                                                  ? label
+                                                  : '$label (not configured)',
+                                              style: TextStyle(
+                                                color: configured
+                                                    ? Colors.white
+                                                    : Colors.white54,
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                        onChanged: (value) async {
+                                          if (value == null ||
+                                              value.trim().isEmpty) {
+                                            return;
+                                          }
+                                          await _applyGatewayProvider(value);
+                                          if (!mounted) return;
+                                          final refreshed =
+                                              await _loadGatewayVoiceControlData();
+                                          setModalState(() {
+                                            data
+                                              ..clear()
+                                              ..addAll(refreshed);
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 18),
+                                ],
+                                if (voices.isNotEmpty) ...[
+                                  Text(
+                                    'VOICE ID',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white54,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.05),
+                                      border: Border.all(
+                                          color: Colors.white12, width: 1),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: selectedVoiceId.isEmpty
+                                            ? null
+                                            : selectedVoiceId,
+                                        hint: const Text('Provider default',
+                                            style: TextStyle(
+                                                color: Colors.white54)),
+                                        isExpanded: true,
+                                        dropdownColor: const Color(0xFF17181F),
+                                        items: voices
+                                            .map((voice) => DropdownMenuItem(
+                                                  value: voice,
+                                                  child: Text(voice),
+                                                ))
+                                            .toList(),
+                                        onChanged: (value) async {
+                                          if (value == null) return;
+                                          final prefs = PreferencesService();
+                                          await prefs.init();
+                                          prefs.gatewayVoiceId = value;
+                                          setModalState(() {
+                                            data['selectedVoiceId'] = value;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 18),
+                                ],
+                                if (personas.isNotEmpty) ...[
+                                  Text(
+                                    'PERSONA',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white54,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: personas.map((entry) {
+                                      final id = (entry['id'] ?? '')
+                                          .toString()
+                                          .trim()
+                                          .toLowerCase();
+                                      if (id.isEmpty) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      final isSelected = id == activePersona;
+                                      return GestureDetector(
+                                        onTap: () async {
+                                          await _applyGatewayPersona(id);
+                                          if (!mounted) return;
+                                          setModalState(() {
+                                            data['activePersona'] = id;
+                                          });
+                                        },
+                                        child: AnimatedContainer(
+                                          duration:
+                                              const Duration(milliseconds: 200),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 14, vertical: 9),
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? Colors.cyanAccent
+                                                    .withValues(alpha: 0.2)
+                                                : Colors.white
+                                                    .withValues(alpha: 0.05),
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? Colors.cyanAccent
+                                                  : Colors.white10,
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            id.toUpperCase(),
+                                            style: GoogleFonts.outfit(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                              color: isSelected
+                                                  ? Colors.cyanAccent
+                                                  : Colors.white70,
+                                              letterSpacing: 1.0,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: (talkConfigured
+                                            ? Colors.greenAccent
+                                            : Colors.orangeAccent)
+                                        .withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: (talkConfigured
+                                              ? Colors.greenAccent
+                                              : Colors.orangeAccent)
+                                          .withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    talkStatusMessage,
+                                    style: TextStyle(
+                                      color: talkConfigured
+                                          ? Colors.greenAccent
+                                          : Colors.orangeAccent,
+                                      fontSize: 12,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.speed,
+                                        color: Colors.white54, size: 16),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'SPEECH SPEED',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white54,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 1.5,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      '${speed.toStringAsFixed(1)}X',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.cyanAccent,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    activeTrackColor: Colors.cyanAccent,
+                                    inactiveTrackColor: Colors.white10,
+                                    thumbColor: Colors.white,
+                                    trackHeight: 2,
+                                  ),
+                                  child: Slider(
+                                    value: speed,
+                                    min: 0.5,
+                                    max: 2.0,
+                                    onChanged: (v) {
+                                      setModalState(() {
+                                        PreferencesService().ttsSpeed = v;
+                                      });
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: !talkConfigured
+                                        ? null
+                                        : () async {
+                                            final gatewayProvider =
+                                                Provider.of<GatewayProvider>(
+                                                    context,
+                                                    listen: false);
+                                            final result = await gatewayProvider
+                                                .speakTextViaTalk(
+                                              'Voice check complete.',
+                                            );
+                                            if (!context.mounted) return;
+                                            if (!result.played &&
+                                                result.errorMessage != null) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                      result.errorMessage!),
+                                                  backgroundColor:
+                                                      Colors.orangeAccent,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                    icon: const Icon(Icons.graphic_eq_rounded),
+                                    label: const Text('Test Gateway Voice'),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Voice output is streamed from OpenClaw Talk. '
+                                  'Local system TTS is used only when talk.speak is unavailable.',
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 10,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        const Spacer(),
-                        Text(
-                          '${PreferencesService().ttsSpeed.toStringAsFixed(1)}X',
-                          style: GoogleFonts.outfit(
-                              color: Colors.cyanAccent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: Colors.cyanAccent,
-                        inactiveTrackColor: Colors.white10,
-                        thumbColor: Colors.white,
-                        trackHeight: 2,
                       ),
-                      child: Slider(
-                        value: PreferencesService().ttsSpeed,
-                        min: 0.5,
-                        max: 2.0,
-                        onChanged: (v) {
-                          setState(() {
-                            PreferencesService().ttsSpeed = v;
-                          });
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-                    Text(
-                      'AI Voice Personas are processed by OpenClaw Gateway.',
-                      style: TextStyle(
-                          color: Colors.white24,
-                          fontSize: 9,
-                          fontStyle: FontStyle.italic),
-                    ),
-                  ],
-                ),
-              ),
+                    );
+                  },
+                );
+              },
             ),
           ),
         );

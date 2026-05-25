@@ -1,24 +1,141 @@
 class GatewayToolCatalog {
   static const wildcard = '*';
+  static const mobileSafeProfile = 'full';
+  static const allToolsProfile = 'full';
 
   // OpenClaw gateway primitive IDs that are valid in tools.allow.
   // Device-native capabilities such as camera/location/sensors are exposed
   // through the paired node/custom skills, not through this allow list.
   static const primitiveIds = <String>[
     'browser',
-    'computer',
     'files',
-    'memory',
     'search',
     'image',
-    'canvas',
     'shell',
+  ];
+
+  static const mobileNodeAllowCommands = <String>[
+    'camera.snap',
+    'camera.clip',
+    'camera.list',
+    'camera_snap',
+    'camera_clip',
+    'camera_list',
+    'canvas.navigate',
+    'canvas.eval',
+    'canvas.snapshot',
+    'canvas_navigate',
+    'canvas_eval',
+    'canvas_snapshot',
+    'flash.on',
+    'flash.off',
+    'flash.toggle',
+    'flash.status',
+    'flash_on',
+    'flash_off',
+    'flash_toggle',
+    'flash_status',
+    'torch.on',
+    'torch.off',
+    'torch.toggle',
+    'torch.status',
+    'torch_on',
+    'torch_off',
+    'torch_toggle',
+    'torch_status',
+    'location.get',
+    'location_get',
+    'screen.record',
+    'screen_record',
+    'sensor.read',
+    'sensor.list',
+    'sensor_read',
+    'sensor_list',
+    'haptic.vibrate',
+    'haptic_vibrate',
+    'vibrate',
   ];
 
   static const validAllowEntries = <String>{
     wildcard,
     ...primitiveIds,
+    'exec',
+    'process',
+    'code_execution',
+    'read',
+    'write',
+    'edit',
+    'apply_patch',
+    'web_search',
+    'x_search',
+    'web_fetch',
+    'memory_search',
+    'memory_get',
+    'sessions_list',
+    'sessions_history',
+    'sessions_send',
+    'sessions_spawn',
+    'sessions_yield',
+    'subagents',
+    'session_status',
+    'message',
+    'cron',
+    'gateway',
+    'image_generate',
+    'music_generate',
+    'video_generate',
+    'group:runtime',
+    'group:fs',
+    'group:sessions',
+    'group:memory',
+    'group:web',
+    'group:ui',
+    'group:automation',
+    'group:messaging',
+    'group:nodes',
+    'group:media',
   };
+
+  static const uiAllowEntryAliases = <String, List<String>>{
+    'browser': ['browser'],
+    'files': ['group:fs'],
+    'search': ['group:web'],
+    'image': ['image'],
+    'shell': ['group:runtime'],
+  };
+
+  static const uiPrimitiveAliases = <String, List<String>>{
+    'group:fs': ['files'],
+    'group:web': ['browser', 'search'],
+    'group:runtime': ['shell'],
+    'group:media': ['image'],
+  };
+
+  /// Bounded Android default.
+  ///
+  /// OpenClaw applies tools.profile first, then tools.allow narrows that base.
+  /// Using profile=minimal here leaves only session_status, so an allowlist for
+  /// browser/canvas/nodes narrows the visible tool set to zero. Use profile=full
+  /// as the base and then narrow to built-in groups that matter on Android.
+  static const defaultMobileAllowList = <String>[
+    'group:nodes',
+    'group:runtime',
+    'group:sessions',
+    'group:automation',
+    'group:messaging',
+    'group:fs',
+    'group:web',
+    'image',
+  ];
+
+  static Map<String, dynamic> defaultMobileToolsConfig() => <String, dynamic>{
+        'profile': mobileSafeProfile,
+        'allow': defaultMobileAllowList.toList(growable: false),
+      };
+
+  static void applyDefaultMobilePolicy(Map<String, dynamic> config) {
+    config['tools'] = defaultMobileToolsConfig();
+  }
 
   static bool isValidAllowEntry(String id) =>
       validAllowEntries.contains(id.trim());
@@ -40,22 +157,50 @@ class GatewayToolCatalog {
           : const <String>[wildcard];
     }
 
-    final sorted = values.where((value) => value != wildcard).toList()..sort();
+    final expanded = <String>{};
+    for (final value in values.where((value) => value != wildcard)) {
+      if (primitiveIds.contains(value)) {
+        expanded.add(value);
+        continue;
+      }
+      final aliases = uiPrimitiveAliases[value];
+      if (aliases != null) expanded.addAll(aliases);
+    }
+
+    final sorted = expanded.toList()..sort();
     return sorted;
   }
 
   static List<String> toConfigAllowList(Iterable<String> selectedTools) {
+    final rawSelected = selectedTools
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet();
     final selected = selectedTools
         .map((value) => value.trim())
-        .where((value) => value.isNotEmpty && isValidAllowEntry(value))
-        .toSet();
+        .where((value) => value.isNotEmpty)
+        .expand((value) {
+      final aliases = uiAllowEntryAliases[value];
+      if (aliases != null) return aliases;
+      return isValidAllowEntry(value) ? [value] : const <String>[];
+    }).toSet();
 
-    if (selected.contains(wildcard) || primitiveIds.every(selected.contains)) {
-      return const <String>[wildcard];
+    if (rawSelected.contains(wildcard) ||
+        primitiveIds.every(rawSelected.contains)) {
+      return defaultMobileAllowList.toList(growable: false);
     }
 
     final sorted = selected.where((value) => value != wildcard).toList()
       ..sort();
     return sorted;
+  }
+
+  static bool isExplicitAllProfile(dynamic profile) {
+    final value = profile?.toString().trim().toLowerCase() ?? '';
+    return value == allToolsProfile || value == 'advanced' || value == 'all';
+  }
+
+  static String profileForAllowList(Iterable<String> allowList) {
+    return allowList.contains(wildcard) ? allToolsProfile : mobileSafeProfile;
   }
 }

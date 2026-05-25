@@ -8,6 +8,7 @@ import 'native_bridge.dart';
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import 'model_provider_catalog.dart';
+import 'gateway_tool_catalog.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'gateway_service.dart';
@@ -454,6 +455,7 @@ class BootstrapService {
       }
 
       await NativeBridge.createBinWrappers('openclaw');
+      await NativeBridge.ensureAgentSkillsAwareness();
       await _hardenOpenClawConfig();
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.80,
@@ -463,12 +465,13 @@ class BootstrapService {
       // Full onboard — AWAITED so it cannot race with config hardening below.
       // catchError makes it non-fatal; hardening overwrites any onboard defaults.
       await NativeBridge.runInProot(
-        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --skip-bootstrap --accept-risk',
-        timeout: 60,
+        'openclaw onboard --non-interactive --mode local --flow quickstart --auth-choice skip --skip-health --accept-risk',
+        timeout: 90,
       ).catchError((_) => '');
 
       // Re-harden after onboard: openclaw onboard writes its own defaults which may
-      // include messages.tts.personas.*.model — a key the gateway schema rejects.
+      // include messages.tts.personas.*.model or skipBootstrap — keys that either
+      // break strict schema validation or suppress default agent skill loading.
       await _hardenOpenClawConfig();
 
       // Bake API credentials collected in SetupFlowScreen BEFORE the gateway starts.
@@ -815,14 +818,9 @@ class BootstrapService {
       String content = await configFile.readAsString();
       Map<String, dynamic> config = json.decode(content);
 
-      // Force correct tools.allow (this fixes a major pain point)
-      if (config['tools'] == null || config['tools'] is! Map) {
-        config['tools'] = {
-          'allow': ['*']
-        };
-      } else {
-        (config['tools'] as Map)['allow'] = ['*'];
-      }
+      // Keep Android out of the unrestricted/full tool universe. This uses
+      // official groups/stable primitives, not guessed plugin slugs.
+      GatewayToolCatalog.applyDefaultMobilePolicy(config);
 
       // Ensure gateway is in correct mode
       config['gateway'] ??= {};
@@ -867,6 +865,9 @@ class BootstrapService {
       final preferredPrimaryModel =
           _resolveBootstrapPrimaryModel(prefs, existingConfig);
       final providerPatch = _buildProviderDefaultsPatch(existingConfig);
+      final filesDir = await NativeBridge.getFilesDir();
+      final configFile =
+          File('$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json');
 
       // 1. Core stability flags + provider defaults via CLI
       await NativeBridge.runInProot(
@@ -888,9 +889,12 @@ class BootstrapService {
       _applyExplicitAuthMode(workingConfig);
       _syncLocalGatewayRemoteCredentials(workingConfig);
       _sanitizeOpenClawSchema(workingConfig);
+      await _writeJsonAtomically(configFile, workingConfig);
       final authPatch = _buildSharedSecretAuthPatch(workingConfig);
       final remotePatch = _buildLocalGatewayRemotePatch(workingConfig);
       final rootAuthPatch = _buildRootAuthPatch(workingConfig);
+      final nodeAllowCommandsJson =
+          jsonEncode(GatewayToolCatalog.mobileNodeAllowCommands);
       final patchJson = '''
 {
   "gateway": {
@@ -905,12 +909,7 @@ class BootstrapService {
     "nodes": {
       "pairing": { "autoApproveCidrs": ["127.0.0.1/32"] },
       "denyCommands": [],
-      "allowCommands": [
-        "camera.snap","camera.clip","camera.list",
-        "canvas.navigate","canvas.eval","canvas.snapshot",
-        "flash.on","flash.off","flash.toggle","flash.status",
-        "location.get","screen.record","sensor.read","sensor.list","haptic.vibrate"
-      ]
+      "allowCommands": $nodeAllowCommandsJson
     },
     "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
   },
@@ -919,6 +918,7 @@ class BootstrapService {
     "wideArea": { "enabled": false }
   },
   "models": {
+    "pricing": { "enabled": false },
     "providers": ${jsonEncode(providerPatch)}
   },
   "auth": ${jsonEncode(rootAuthPatch)},
@@ -929,7 +929,7 @@ class BootstrapService {
       }
     }
   },
-  "tools": { "allow": ["*"] }
+  "tools": ${jsonEncode(GatewayToolCatalog.defaultMobileToolsConfig())}
 }
 ''';
       await NativeBridge.runInProot(
@@ -994,6 +994,9 @@ class BootstrapService {
       // 2. Default Agent configuration
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
+      if (config['agents']['defaults'] is Map) {
+        (config['agents']['defaults'] as Map).remove('skipBootstrap');
+      }
       config['agents']['defaults']['model'] ??= {};
       final currentPrimary =
           config['agents']['defaults']['model']['primary'] as String?;
@@ -1005,6 +1008,13 @@ class BootstrapService {
       // 3. Hardened provider defaults. Preserve user keys while ensuring every
       // provider exposed by the UI has model metadata and known base URLs.
       config['models'] ??= {};
+      config['models']['pricing'] ??= <String, dynamic>{};
+      final pricing = config['models']['pricing'];
+      if (pricing is Map) {
+        pricing['enabled'] = false;
+      } else {
+        config['models']['pricing'] = <String, dynamic>{'enabled': false};
+      }
       config['models']['providers'] ??= {};
       for (final provider in ModelProviderCatalog.providers) {
         final existing = config['models']['providers'][provider.id];
@@ -1027,8 +1037,9 @@ class BootstrapService {
         'wideArea': {'enabled': false},
       };
 
-      config['tools'] ??= <String, dynamic>{};
-      (config['tools'] as Map)['allow'] ??= ['*'];
+      // Bounded mobile policy: enough for nodes/UI/web/memory/runtime without
+      // loading every plugin/provider tool on phone startup.
+      GatewayToolCatalog.applyDefaultMobilePolicy(config);
 
       // Remove invalid TTS persona "model" keys — gateway schema rejects them.
       // Personas written by older versions of this code used "model" which is
@@ -1305,6 +1316,13 @@ class BootstrapService {
       // Model prewarm is no longer configured under models.startup in the
       // current strict schema.
       models.remove('startup');
+      models['pricing'] ??= <String, dynamic>{};
+      final pricing = models['pricing'];
+      if (pricing is Map) {
+        pricing['enabled'] = false;
+      } else {
+        models['pricing'] = <String, dynamic>{'enabled': false};
+      }
       final providers = models['providers'];
       if (providers is Map) providers.remove('ollama');
     }
@@ -1319,10 +1337,22 @@ class BootstrapService {
 
     final agentsDefaults = config['agents']?['defaults'];
     if (agentsDefaults is Map) {
+      agentsDefaults.remove('skipBootstrap');
       agentsDefaults.remove('provider');
       agentsDefaults.remove('tools');
       agentsDefaults.remove('timeoutMs');
       agentsDefaults.remove('systemPrompt');
+      final timeoutSeconds = agentsDefaults['timeoutSeconds'];
+      if (timeoutSeconds is! num || timeoutSeconds < 240) {
+        agentsDefaults['timeoutSeconds'] = 240;
+      }
+      final model = agentsDefaults['model'];
+      if (model is Map) {
+        final primary = model['primary'];
+        if (primary is String && primary.isNotEmpty) {
+          model['primary'] = ModelProviderCatalog.canonicalizeModelId(primary);
+        }
+      }
     }
 
     final skills = config['skills'];
@@ -1333,26 +1363,9 @@ class BootstrapService {
       if (skills.isEmpty) config.remove('skills');
     }
 
-    const validPrimitives = {
-      '*',
-      'browser',
-      'computer',
-      'files',
-      'memory',
-      'search',
-      'image',
-      'canvas',
-      'shell',
-    };
-    final existingAllow = config['tools']?['allow'];
-    if (existingAllow is List) {
-      final sanitized = existingAllow
-          .map((e) => e.toString())
-          .where(validPrimitives.contains)
-          .toList();
-      config['tools'] ??= <String, dynamic>{};
-      config['tools']['allow'] = sanitized.isEmpty ? ['*'] : sanitized;
-    }
+    // Default to the bounded Android tool policy. Device-native capabilities
+    // remain controlled under gateway.nodes.
+    GatewayToolCatalog.applyDefaultMobilePolicy(config);
 
     final ttsPersonas = (config['messages'] as Map?)?['tts']?['personas'];
     if (ttsPersonas is Map) {

@@ -23,6 +23,32 @@ import 'node_service.dart';
 import 'tts_service.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+class _FastCloudRoute {
+  final String provider;
+  final String model;
+  final String apiKey;
+  final String url;
+
+  const _FastCloudRoute({
+    required this.provider,
+    required this.model,
+    required this.apiKey,
+    required this.url,
+  });
+}
+
+class TalkSpeakPlayback {
+  final bool played;
+  final bool allowNativeFallback;
+  final String? errorMessage;
+
+  const TalkSpeakPlayback({
+    required this.played,
+    required this.allowNativeFallback,
+    this.errorMessage,
+  });
+}
+
 class GatewayService {
   static const List<String> localControlUiAllowedOrigins = <String>[
     'http://127.0.0.1:18789',
@@ -73,21 +99,28 @@ class GatewayService {
   DateTime? _lastProcessValidationAt;
   DateTime? _lastDisconnectContextAt;
   DateTime? _lastNodeAutoConnectAttemptAt;
+  DateTime? _lastWsConnectAttemptAt;
   DateTime? _talkSpeakUnavailableUntil;
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
+  DateTime? _lastStartupHealthKickAt;
   int _consecutiveProcessValidationMisses = 0;
   bool _processValidationInFlight = false;
   bool _nodeAutoConnectInFlight = false;
   bool _hungGatewayRestartInFlight = false;
+  bool _modelAliasRepairInFlight = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
+  static const Duration _startupHealthKickCooldown = Duration(seconds: 4);
+  static const Duration _gatewayHealthProbeTimeout = Duration(seconds: 45);
   static const Duration _disconnectContextCooldown = Duration(seconds: 20);
   static const Duration _nodeAutoConnectCooldown = Duration(seconds: 20);
+  static const Duration _wsConnectRetryCooldown = Duration(seconds: 8);
   static const Duration _talkSpeakUnavailableBackoff = Duration(minutes: 5);
   static const Duration _hungGatewayRestartCooldown = Duration(seconds: 90);
   static const int _hungGatewayForcedRestartFailures = 6;
+  static const int _healthFailureRestartThreshold = 6;
   static const Duration _startupPassiveHealGrace = Duration(seconds: 150);
   static const Duration _localInferenceHealthSkipLogCooldown =
       Duration(seconds: 60);
@@ -106,6 +139,18 @@ class GatewayService {
     _activityBuffer.add(event);
     if (_activityBuffer.length > 40) _activityBuffer.removeAt(0);
     _chatActivityController.add(event);
+  }
+
+  void _kickStartupHealthProbe(String reason) {
+    final now = DateTime.now();
+    final lastKick = _lastStartupHealthKickAt;
+    if (lastKick != null &&
+        now.difference(lastKick) < _startupHealthKickCooldown) {
+      return;
+    }
+    _lastStartupHealthKickAt = now;
+    debugPrint('[GATEWAY] Startup health probe kick ($reason)');
+    unawaited(_checkHealth());
   }
 
   /// Update the background repair status.
@@ -344,6 +389,7 @@ class GatewayService {
       );
       debugPrint('[GATEWAY] Path Diagnostic:\n$diag');
       await NativeBridge.createBinWrappers('openclaw');
+      await NativeBridge.ensureAgentSkillsAwareness();
     } catch (e) {
       debugPrint('[GATEWAY] Self-healing error: $e');
     }
@@ -388,26 +434,32 @@ class GatewayService {
 
   Future<void> _migrateLegacyModelIds(PreferencesService prefs) async {
     final configuredModel = (prefs.configuredModel ?? '').trim();
-    if (configuredModel.isEmpty) return;
-
-    final canonical = ModelProviderCatalog.canonicalizeModelId(configuredModel);
-    if (canonical == configuredModel) return;
-
-    prefs.configuredModel = canonical;
-    _addActivity(
-        '[MIGRATION] Updated legacy model id $configuredModel -> $canonical');
+    if (configuredModel.isNotEmpty) {
+      final canonical =
+          ModelProviderCatalog.canonicalizeModelId(configuredModel);
+      if (canonical != configuredModel) {
+        prefs.configuredModel = canonical;
+        _addActivity(
+            '[MIGRATION] Updated legacy model id $configuredModel -> $canonical');
+      }
+    }
 
     try {
       final running = await NativeBridge.isGatewayRunning();
       if (running) return;
       final config = await _readConfig();
       final primary = config['agents']?['defaults']?['model']?['primary'];
-      if (primary != configuredModel) return;
+      if (primary is! String || primary.trim().isEmpty) return;
+      final canonicalPrimary =
+          ModelProviderCatalog.canonicalizeModelId(primary);
+      if (canonicalPrimary == primary) return;
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
       config['agents']['defaults']['model'] ??= {};
-      config['agents']['defaults']['model']['primary'] = canonical;
+      config['agents']['defaults']['model']['primary'] = canonicalPrimary;
       await _writeConfig(config);
+      _addActivity(
+          '[MIGRATION] Updated gateway primary model id $primary -> $canonicalPrimary');
     } catch (_) {
       // Best effort migration; prefs drives the next model persist anyway.
     }
@@ -485,6 +537,40 @@ class GatewayService {
     if (log.contains('SyntaxError:')) {
       _addActivity(
           '[SYS] Gateway syntax error detected (possible corruption).');
+    }
+
+    // 3. Legacy model alias fallback warning from gateway.
+    // If we ever see this at runtime, force-canonicalize primary model so the
+    // next boot does not drift back to an unintended provider.
+    if (log.contains('Model "openclaw" specified without provider')) {
+      unawaited(_repairLegacyPrimaryModelAlias());
+    }
+  }
+
+  Future<void> _repairLegacyPrimaryModelAlias() async {
+    if (_modelAliasRepairInFlight) return;
+    _modelAliasRepairInFlight = true;
+    try {
+      final config = await _readConfig();
+      final currentPrimary =
+          config['agents']?['defaults']?['model']?['primary'];
+      if (currentPrimary is! String || currentPrimary.trim().isEmpty) return;
+      final canonical =
+          ModelProviderCatalog.canonicalizeModelId(currentPrimary);
+      if (canonical == currentPrimary) return;
+
+      config['agents'] ??= <String, dynamic>{};
+      config['agents']['defaults'] ??= <String, dynamic>{};
+      config['agents']['defaults']['model'] ??= <String, dynamic>{};
+      config['agents']['defaults']['model']['primary'] = canonical;
+      await _writeConfig(config);
+
+      _addActivity(
+          '[SYS] Repaired legacy model id "$currentPrimary" -> "$canonical".');
+    } catch (e) {
+      _addActivity('[SYS] Model alias repair failed (non-fatal): $e');
+    } finally {
+      _modelAliasRepairInFlight = false;
     }
   }
 
@@ -782,13 +868,25 @@ class GatewayService {
       {Duration timeout = const Duration(seconds: 120)}) async {
     final startTime = DateTime.now();
 
-    // 1. Wait for GatewayStatus.running (process started)
-    while (_state.status != GatewayStatus.running) {
+    // 1. Wait for the gateway process to exist.
+    // Do not depend only on the 15s health timer to flip status->running:
+    // that adds avoidable startup lag and can push setup into false 180s timeouts.
+    while (true) {
       if (DateTime.now().difference(startTime) > timeout) {
         throw TimeoutException(
             'Gateway process failed to start after ${timeout.inSeconds}s');
       }
-      await Future.delayed(const Duration(seconds: 1));
+      if (_state.status == GatewayStatus.running) break;
+      final processAlive = await NativeBridge.isGatewayRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      if (processAlive) {
+        _updateState(_state.copyWith(
+          status: GatewayStatus.running,
+          startedAt: _state.startedAt ?? DateTime.now(),
+        ));
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 600));
     }
 
     // 2. Wait for HTTP /health success (server listening)
@@ -807,6 +905,12 @@ class GatewayService {
         );
         if (resp.statusCode < 500) {
           listening = true;
+          if (_state.status != GatewayStatus.running) {
+            _updateState(_state.copyWith(
+              status: GatewayStatus.running,
+              startedAt: _state.startedAt ?? DateTime.now(),
+            ));
+          }
           debugPrint('✅ Gateway port listening');
         }
       } catch (_) {}
@@ -838,6 +942,7 @@ class GatewayService {
     // memory-core and the control websocket was still cycling.
     final operationalDeadline = DateTime.now().add(const Duration(seconds: 90));
     Object? lastOperationalError;
+    var minimalReadinessStreak = 0;
     while (DateTime.now().isBefore(operationalDeadline)) {
       if (DateTime.now().difference(startTime) > timeout) {
         break;
@@ -855,6 +960,24 @@ class GatewayService {
           debugPrint(
               '✅ Gateway operational: websocket, RPC, skills/tools ready');
           return;
+        }
+
+        final wsReady = _state.isWebsocketConnected ||
+            _connection?.state == GatewayConnectionState.connected;
+        final healthReady = _state.detailedHealth != null;
+        if (_state.isReady && wsReady && healthReady) {
+          minimalReadinessStreak++;
+          if (minimalReadinessStreak >= 2) {
+            unawaited(_ensureNodeConnectedAfterGatewayReady(
+              reason: 'startup-minimal-ready',
+              allowDuringWarmup: true,
+            ));
+            debugPrint(
+                '✅ Gateway minimally operational (ws+health); interactive discovery still warming, proceeding.');
+            return;
+          }
+        } else {
+          minimalReadinessStreak = 0;
         }
       } catch (e) {
         lastOperationalError = e;
@@ -887,6 +1010,11 @@ class GatewayService {
       // Strip ANSI codes first: gateway logs like "[36m[gateway][39m [36mready[39m"
       // prevent a direct contains('[gateway] ready') match.
       final strippedLog = log.replaceAll(AppConstants.ansiEscape, '');
+      final becameReady = !_state.isReady &&
+          (strippedLog.contains('[gateway] ready') ||
+              strippedLog.contains('gateway ready') ||
+              log.contains('http server listening') ||
+              strippedLog.contains('http server listening'));
       if (strippedLog.contains('[gateway] ready') ||
           strippedLog.contains('gateway ready') ||
           log.contains('http server listening') ||
@@ -898,6 +1026,9 @@ class GatewayService {
           status: GatewayStatus.running,
           startedAt: _state.startedAt ?? DateTime.now(),
         ));
+        if (becameReady) {
+          _kickStartupHealthProbe('ready-log');
+        }
       }
 
       // Detect restart signals to reset ready flag
@@ -1120,23 +1251,8 @@ HEARTBEAT_OK.
     config['gateway']['nodes']['pairing']
         ['autoApproveCidrs'] = ['127.0.0.1/32']; // Auto-approve localhost only
     config['gateway']['nodes']['denyCommands'] = [];
-    config['gateway']['nodes']['allowCommands'] = [
-      'camera.snap',
-      'camera.clip',
-      'camera.list',
-      'canvas.navigate',
-      'canvas.eval',
-      'canvas.snapshot',
-      'flash.on',
-      'flash.off',
-      'flash.toggle',
-      'flash.status',
-      'location.get',
-      'screen.record',
-      'sensor.read',
-      'sensor.list',
-      'haptic.vibrate',
-    ];
+    config['gateway']['nodes']['allowCommands'] =
+        GatewayToolCatalog.mobileNodeAllowCommands.toList(growable: false);
     config['gateway']['mode'] = 'local';
 
     // Keep Control UI origins explicit and loopback-only.
@@ -1188,6 +1304,7 @@ HEARTBEAT_OK.
     // passes schema validation instead of running in best-effort mode.
     final agentsDefaults = config['agents']?['defaults'];
     if (agentsDefaults is Map) {
+      agentsDefaults.remove('skipBootstrap');
       agentsDefaults.remove('provider'); // not in agents.defaults schema
       agentsDefaults.remove('tools'); // not in agents.defaults schema
       agentsDefaults.remove('timeoutMs'); // not in agents.defaults schema
@@ -1202,26 +1319,10 @@ HEARTBEAT_OK.
       if (skills.isEmpty) config.remove('skills'); // don't leave empty block
     }
 
-    config['tools'] ??= <String, dynamic>{};
-    (config['tools'] as Map)['allow'] ??= [GatewayToolCatalog.wildcard];
-
-    // Sanitize tools.allow: remove any entries that aren't valid gateway primitives.
-    // npm-skill slugs and device names cause the gateway to warn "unknown entries"
-    // and give the AI zero tools. ["*"] wildcard is preserved — it means all-allowed.
-    final existingAllow = config['tools']?['allow'];
-    if (existingAllow is List) {
-      final sanitized = GatewayToolCatalog.normalizeAllowList(
-        existingAllow,
-        expandWildcard: false,
-      );
-      if (sanitized.isEmpty && existingAllow.isNotEmpty) {
-        // Nothing valid — write explicit wildcard so AI keeps all tools.
-        config['tools'] ??= <String, dynamic>{};
-        config['tools']['allow'] = [GatewayToolCatalog.wildcard];
-      } else {
-        config['tools']['allow'] = sanitized;
-      }
-    }
+    // Keep the gateway out of the unrestricted/full tool universe on Android.
+    // The mobile default uses official groups plus stable primitives so device
+    // actions remain available without loading every plugin/provider tool.
+    GatewayToolCatalog.applyDefaultMobilePolicy(config);
     final gatewayConfig = config['gateway'];
     if (gatewayConfig is Map) {
       gatewayConfig.remove('startup');
@@ -1230,8 +1331,37 @@ HEARTBEAT_OK.
     final modelsConfig = config['models'];
     if (modelsConfig is Map) {
       _ensureCatalogProviderDefaults(config);
+      modelsConfig['pricing'] ??= <String, dynamic>{};
+      final pricing = modelsConfig['pricing'];
+      if (pricing is Map) {
+        pricing['enabled'] = false;
+      } else {
+        modelsConfig['pricing'] = <String, dynamic>{'enabled': false};
+      }
     }
     _removeLegacyOllamaConfig(config);
+
+    // Canonicalize legacy primary ids (for example "openclaw") before the
+    // gateway reads config. Invalid/alias ids trigger startup warnings and can
+    // resolve to an unintended provider.
+    final primary = config['agents']?['defaults']?['model']?['primary'];
+    config['agents'] ??= {};
+    config['agents']['defaults'] ??= {};
+    if (config['agents']['defaults'] is Map) {
+      (config['agents']['defaults'] as Map).remove('skipBootstrap');
+    }
+    config['agents']['defaults']['model'] ??= {};
+    if (primary is String && primary.trim().isNotEmpty) {
+      config['agents']['defaults']['model']['primary'] =
+          ModelProviderCatalog.canonicalizeModelId(primary);
+    } else {
+      config['agents']['defaults']['model']['primary'] =
+          ModelProviderCatalog.defaultCloudFallbackModel;
+    }
+    final timeoutSeconds = config['agents']['defaults']['timeoutSeconds'];
+    if (timeoutSeconds is! num || timeoutSeconds < 240) {
+      config['agents']['defaults']['timeoutSeconds'] = 240;
+    }
 
     // NOTE: agents.defaults.systemPrompt is NOT a valid gateway schema field.
     // The gateway rejects it with "Unrecognized keys" and breaks config hot-reload.
@@ -1328,9 +1458,17 @@ HEARTBEAT_OK.
 
   Future<void> persistModel(String model) async {
     final canonical = ModelProviderCatalog.canonicalizeModelId(model);
+    if (ModelProviderCatalog.isLocalModelId(canonical)) {
+      _addActivity(
+          '[MODEL] Selected direct NDK model $canonical without changing gateway primary.');
+      return;
+    }
     final config = await _readConfig();
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
+    if (config['agents']['defaults'] is Map) {
+      (config['agents']['defaults'] as Map).remove('skipBootstrap');
+    }
     config['agents']['defaults']['model'] ??= {};
     config['agents']['defaults']['model']['primary'] = canonical;
     await _writeConfig(config);
@@ -1381,7 +1519,7 @@ HEARTBEAT_OK.
       return trimmed.isNotEmpty && trimmed != 'null';
     }
     if (value is Map || value is List) return value.isNotEmpty;
-    return true;
+    return false;
   }
 
   void _removeLegacyOllamaConfig(Map<String, dynamic> config) {
@@ -1595,10 +1733,12 @@ HEARTBEAT_OK.
 
   Future<void> reregisterSkills() async {
     if (!_state.isRunning) return;
-    // Only call skills.register when the gateway explicitly supports it.
-    // Calling it blindly can overwrite upstream/default tool context.
+    // Prefer explicit capability advertisement, but keep a compatibility
+    // fallback for gateway builds that omit features.methods.
     final supported = _connection?.supportedMethods ?? const <String>[];
-    if (!supported.contains('skills.register')) return;
+    final methodAdvertised = supported.contains('skills.register');
+    final discoveryUnknown = supported.isEmpty;
+    if (!methodAdvertised && !discoveryUnknown) return;
     try {
       final catalog = SkillsService().getToolsCatalog();
       if (catalog.isNotEmpty) {
@@ -1611,7 +1751,14 @@ HEARTBEAT_OK.
         );
       }
     } catch (e) {
-      _addActivity('[SKILLS] skills.register failed: $e');
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('unknown method') ||
+          msg.contains('method unavailable') ||
+          msg.contains('not supported')) {
+        _addActivity('[SKILLS] skills.register unavailable on this gateway');
+      } else {
+        _addActivity('[SKILLS] skills.register failed: $e');
+      }
     }
   }
 
@@ -1858,14 +2005,32 @@ HEARTBEAT_OK.
   /// needed, wires up the state listener, resets backoff, and connects.
   /// Returns true if the WS is (or became) connected.
   Future<bool> _ensureWebSocket(String token) async {
-    if (_connection?.state == GatewayConnectionState.connected) return true;
+    final currentState = _connection?.state;
+    if (currentState == GatewayConnectionState.connected) return true;
+    if (currentState == GatewayConnectionState.connecting ||
+        currentState == GatewayConnectionState.handshaking) {
+      return false;
+    }
+    final now = DateTime.now();
+    final lastWsAttempt = _lastWsConnectAttemptAt;
+    if (lastWsAttempt != null &&
+        now.difference(lastWsAttempt) < _wsConnectRetryCooldown) {
+      return false;
+    }
+    _lastWsConnectAttemptAt = now;
 
     if (_connection == null) {
       _connection = GatewayConnection();
       _connection!.stateStream.listen((wsState) {
         final connected = wsState == GatewayConnectionState.connected;
         final disconnected = wsState == GatewayConnectionState.disconnected;
-        if (connected) _pairingResolveAttempted = false; // Reset on success
+        if (connected) {
+          _pairingResolveAttempted = false; // Reset on success
+          _lastWsConnectAttemptAt = null;
+          if (!_rpcDiscoveryDone) {
+            _kickStartupHealthProbe('ws-connected');
+          }
+        }
         final closeCode = _connection?.lastCloseCode;
         final closeReasonRaw = (_connection?.lastCloseReason ?? '').trim();
         final closeReason = _describeWsClose(closeCode, closeReasonRaw);
@@ -2325,7 +2490,7 @@ HEARTBEAT_OK.
 
       final response = await _probeGatewayHealth(
         token: token,
-        timeout: const Duration(seconds: 8),
+        timeout: _gatewayHealthProbeTimeout,
       );
 
       if (response.statusCode < 500) {
@@ -2370,6 +2535,14 @@ HEARTBEAT_OK.
         }
 
         if (_pairingResolveAttempted) {
+          return;
+        }
+
+        final startedAt = _state.startedAt;
+        final startupAge = startedAt == null
+            ? Duration.zero
+            : DateTime.now().difference(startedAt);
+        if (!_state.isReady && startupAge < const Duration(seconds: 20)) {
           return;
         }
 
@@ -2465,7 +2638,8 @@ HEARTBEAT_OK.
             skillsDiscoverySatisfied = true;
           }
 
-          // Bug 2 fix: Capabilities (tools.allow) discovery from config since capabilities.list RPC doesn't exist
+          // Capabilities discovery: map the bounded Android tool policy back
+          // to the primitive switches shown by the UI.
           try {
             final cfg = await _readConfig();
             if (cfg['tools'] is Map && cfg['tools']['allow'] is List) {
@@ -2474,10 +2648,16 @@ HEARTBEAT_OK.
               );
               _updateState(_state.copyWith(capabilities: toolsList));
             } else {
-              _updateState(_state.copyWith(capabilities: []));
+              _updateState(_state.copyWith(
+                capabilities:
+                    GatewayToolCatalog.primitiveIds.toList(growable: false),
+              ));
             }
           } catch (_) {
-            _updateState(_state.copyWith(capabilities: []));
+            _updateState(_state.copyWith(
+              capabilities:
+                  GatewayToolCatalog.primitiveIds.toList(growable: false),
+            ));
           }
 
           // Re-register device skills so the AI always has the current enabled set.
@@ -2534,11 +2714,20 @@ HEARTBEAT_OK.
           _triggerPassiveAutoHeal();
         }
       } else if (_state.status == GatewayStatus.running) {
+        final wsAlive = _connection?.state == GatewayConnectionState.connected;
+        final processAlive = await NativeBridge.isGatewayRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+        if (wsAlive && processAlive) {
+          _consecutiveFailures = 0;
+          _addActivity(
+              '[HEALTH] HTTP probe slow, but WebSocket/process are alive; treating gateway as busy.');
+          return;
+        }
+
         _addActivity(
-            '[HEALTH] Probe failed ($_consecutiveFailures/3): ${e.toString().split('\n').first}');
-        if (_consecutiveFailures >= 3 && !_isAutoHealingInProgress) {
-          final processAlive = await NativeBridge.isGatewayRunning()
-              .timeout(const Duration(seconds: 3), onTimeout: () => false);
+            '[HEALTH] Probe failed ($_consecutiveFailures/$_healthFailureRestartThreshold): ${e.toString().split('\n').first}');
+        if (_consecutiveFailures >= _healthFailureRestartThreshold &&
+            !_isAutoHealingInProgress) {
           if (processAlive) {
             unawaited(_restartHungGatewayAfterHealthFailures(
               reason: 'health-timeout',
@@ -2578,7 +2767,7 @@ HEARTBEAT_OK.
           .timeout(const Duration(seconds: 3), onTimeout: () => null);
       final response = await _probeGatewayHealth(
         token: token,
-        timeout: const Duration(seconds: 8),
+        timeout: _gatewayHealthProbeTimeout,
       );
       return response.statusCode < 500;
     } catch (_) {
@@ -2588,7 +2777,7 @@ HEARTBEAT_OK.
 
   Future<http.Response> _probeGatewayHealth({
     String? token,
-    Duration timeout = const Duration(seconds: 8),
+    Duration timeout = _gatewayHealthProbeTimeout,
   }) async {
     final client = HttpClient()
       ..connectionTimeout = timeout
@@ -2673,11 +2862,20 @@ HEARTBEAT_OK.
 
   Future<void> _ensureNodeConnectedAfterGatewayReady({
     required String reason,
+    bool allowDuringWarmup = false,
   }) async {
     if (_nodeAutoConnectInFlight) return;
-    if (!_rpcDiscoveryDone ||
-        _connection?.state != GatewayConnectionState.connected ||
-        !_state.isInteractiveReady) {
+    final wsConnected =
+        _connection?.state == GatewayConnectionState.connected ||
+            _state.isWebsocketConnected;
+    if (!wsConnected) {
+      return;
+    }
+    if (!allowDuringWarmup &&
+        (!_rpcDiscoveryDone || !_state.isInteractiveReady)) {
+      return;
+    }
+    if (allowDuringWarmup && !_state.isReady) {
       return;
     }
     final now = DateTime.now();
@@ -2715,10 +2913,39 @@ HEARTBEAT_OK.
     }
   }
 
+  String _formatGatewayProviderError(String rawError) {
+    final normalized = rawError.trim();
+    if (normalized.isEmpty || normalized.toLowerCase() == 'null') {
+      return 'Provider unavailable — please retry in a moment.';
+    }
+
+    final lower = normalized.toLowerCase();
+    if (lower.contains('file lock stale') ||
+        lower.contains('stale_session_state') ||
+        lower.contains('queued_work_without_active_run')) {
+      return normalized;
+    }
+    if (lower.contains('free-models-per-day') ||
+        lower.contains('rate limit') ||
+        lower.contains('429')) {
+      return 'OpenRouter free quota is exhausted. Use another provider/model or add OpenRouter credits, then retry.';
+    }
+    if (lower.contains('auth') ||
+        lower.contains('invalid api key') ||
+        lower.contains('unauthorized')) {
+      return 'Cloud model authentication failed. Update your provider API key in Settings and retry.';
+    }
+    if (lower.contains('timeout') || lower.contains('timed out')) {
+      return 'Cloud provider did not respond in time. Retry or switch model/provider.';
+    }
+    return normalized;
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
-  /// • local-llm/ → fllama NDK (on-device inference, no network, no gateway)
-  /// • cloud      → WS chat.send → gateway agent loop → visible in dashboard
+  /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
+  /// • cloud/provider models → gateway chat.send (tool-capable lane)
+  /// • tool/agent cloud → WS chat.send → gateway agent loop
   Stream<String> sendMessage(
     String message, {
     String? model,
@@ -2731,9 +2958,24 @@ HEARTBEAT_OK.
     // autostart, WS setup, or provider sync so NDK mode stays lightweight and
     // cannot accidentally trigger OpenClaw plugin hooks while the phone is
     // already doing local inference.
-    if (model.startsWith('local-llm')) {
+    if (ModelProviderCatalog.isLocalModelId(model)) {
       yield* LocalLlmService().chat(conversationHistory ?? [], message);
       return;
+    }
+
+    // Default behavior: keep cloud traffic on the gateway lane so tool/skill
+    // execution is always available and diagnostics stay consistent.
+    // A manual fast lane is still possible via the "/fast " prefix.
+    if (_shouldUseFastCloudChat(message, model)) {
+      final route = await _resolveFastCloudRoute(model);
+      if (route != null) {
+        yield* _sendFastCloudMessage(
+          route: route,
+          message: message,
+          conversationHistory: conversationHistory,
+        );
+        return;
+      }
     }
 
     // Retrieve auth token
@@ -2793,13 +3035,13 @@ HEARTBEAT_OK.
     // Session routing priority:
     // 1) explicit sessionKey from caller (per-chat session binding)
     // 2) agent/<id> model route
-    // 3) gateway main session default
+    // 3) isolated mobile default (never agent:main:main)
     final resolvedSessionKey =
         (sessionKey != null && sessionKey.trim().isNotEmpty)
             ? sessionKey.trim()
             : model.startsWith('agent/')
                 ? model.substring(6)
-                : (_connection!.mainSessionKey ?? 'main');
+                : '${_mobileChatSessionPrefix}default';
 
     const timeoutMs = 90000;
 
@@ -3026,11 +3268,32 @@ HEARTBEAT_OK.
                   error = 'This model does not support tool use. '
                       'Tap the TOOLS button in the model selector to disable it, then try again.';
                 } else {
-                  error = rawError;
+                  error = _formatGatewayProviderError(rawError);
                 }
                 _addActivity('[CHAT] ✗ $error');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $error');
+                  chunkController.close();
+                }
+              } else if (phase == 'end') {
+                if (activeRunId != null &&
+                    agentRun != null &&
+                    agentRun != activeRunId) {
+                  return;
+                }
+                if (firstToken && !chunkController.isClosed) {
+                  final rawError = (innerData?['error'] ??
+                              payload?['error'] ??
+                              innerData?['reason'] ??
+                              payload?['reason'] ??
+                              frame['error'])
+                          ?.toString() ??
+                      '';
+                  final msg = _formatGatewayProviderError(rawError);
+                  _addActivity('[CHAT] ✗ $msg');
+                  chunkController.add('[Error] $msg');
+                }
+                if (!chunkController.isClosed) {
                   chunkController.close();
                 }
               }
@@ -3064,9 +3327,7 @@ HEARTBEAT_OK.
                 }
                 return;
               }
-              final error = rawErr.isNotEmpty
-                  ? rawErr
-                  : 'Provider unavailable — if using local LLM, the model may still be loading. Try again in a moment.';
+              final error = _formatGatewayProviderError(rawErr);
               _addActivity('[CHAT] ✗ $error');
               if (!chunkController.isClosed) {
                 chunkController.add('[Error] $error');
@@ -3095,12 +3356,13 @@ HEARTBEAT_OK.
 
     try {
       await for (final chunk
-          in chunkController.stream.timeout(const Duration(seconds: 90))) {
+          in chunkController.stream.timeout(const Duration(seconds: 45))) {
         yield chunk;
       }
       _addActivity('[CHAT] ✓ Complete');
     } on TimeoutException {
-      yield '[Error] Gateway chat timed out after 90 seconds.';
+      yield '[Error] Gateway chat timed out after 45 seconds. '
+          'Provider may be overloaded or rate-limited. Retry or switch provider/model.';
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
       yield '[Error] WebSocket chat error: $e';
@@ -3156,10 +3418,19 @@ HEARTBEAT_OK.
 
     final ok = frame['ok'] as bool? ?? false;
     if (!ok) {
+      final directMessage = frame['errorMessage']?.toString();
+      if (directMessage != null && directMessage.isNotEmpty) {
+        throw Exception(directMessage);
+      }
+
       final error = frame['error'];
       if (error is Map<String, dynamic>) {
         final msg = error['message']?.toString() ?? error.toString();
         throw Exception(msg);
+      }
+      final directCode = frame['errorCode']?.toString();
+      if (directCode != null && directCode.isNotEmpty) {
+        throw Exception(directCode);
       }
       throw Exception(error?.toString() ?? 'Gateway RPC rejected');
     }
@@ -3190,11 +3461,20 @@ HEARTBEAT_OK.
   Future<String> resolveOrCreateGatewaySessionKey({
     required String localSessionId,
     String? existingSessionKey,
+    bool forceNew = false,
   }) async {
     final existing = existingSessionKey?.trim() ?? '';
-    if (existing.isNotEmpty) return existing;
+    final existingLower = existing.toLowerCase();
+    final existingIsGlobalMain =
+        existingLower == 'main' || existingLower == 'agent:main:main';
+    if (existing.isNotEmpty && !existingIsGlobalMain && !forceNew) {
+      return existing;
+    }
 
-    final candidateKey = '$_mobileChatSessionPrefix$localSessionId';
+    final baseKey = '$_mobileChatSessionPrefix$localSessionId';
+    final candidateKey = forceNew
+        ? '$baseKey:${DateTime.now().millisecondsSinceEpoch}'
+        : baseKey;
     final advertisedMethods = _connection?.supportedMethods ?? const <String>[];
     final canResolve = advertisedMethods.isEmpty ||
         advertisedMethods.contains('sessions.resolve');
@@ -3218,7 +3498,9 @@ HEARTBEAT_OK.
 
     // Preferred path: create a dedicated session per local chat thread.
     if (!canCreate) {
-      return _connection?.mainSessionKey ?? 'main';
+      _addActivity(
+          '[SESS] sessions.create unavailable; using local mobile key $candidateKey');
+      return candidateKey;
     }
     try {
       final createFrame = await invoke('sessions.create', {
@@ -3228,54 +3510,164 @@ HEARTBEAT_OK.
       final createPayload = _extractRpcPayload(createFrame);
       return _extractSessionKey(createPayload) ?? candidateKey;
     } catch (e) {
-      // Safe fallback: stay operational on older gateway builds.
+      // Never fall back to the global main lane for mobile chat. The main lane
+      // carries dashboard/agent history and can become stale or file-locked
+      // independently of the Flutter chat thread.
       _addActivity('[SESS] sessions.create failed for $candidateKey: $e');
-      return _connection?.mainSessionKey ?? 'main';
+      return candidateKey;
     }
   }
 
   /// Synthesize speech through modern gateway Talk RPC (`talk.speak`).
-  /// Returns true when playback started; false means caller should use legacy fallback.
-  Future<bool> speakTextViaTalk(String text) async {
+  ///
+  /// Policy:
+  /// - Cloud/Gateway mode should use Talk voice as the primary path.
+  /// - Native fallback is allowed only when `talk.speak` is unavailable on this
+  ///   gateway version (method unavailable / unknown method).
+  Future<TalkSpeakPlayback> speakTextViaTalk(String text) async {
     final input = text.trim();
-    if (input.isEmpty) return false;
+    if (input.isEmpty) {
+      return const TalkSpeakPlayback(
+        played: false,
+        allowNativeFallback: false,
+      );
+    }
 
     final unavailableUntil = _talkSpeakUnavailableUntil;
     if (unavailableUntil != null && DateTime.now().isBefore(unavailableUntil)) {
-      return false;
+      return const TalkSpeakPlayback(
+        played: false,
+        allowNativeFallback: true,
+      );
     }
+
+    final prefs = PreferencesService();
+    await prefs.init();
+    final selectedVoiceId = prefs.gatewayVoiceId.trim();
+    final speed = prefs.ttsSpeed.clamp(0.5, 2.0);
 
     try {
       final frame = await invoke('talk.speak', {
         'text': input,
-        'outputFormat': 'mp3',
+        'outputFormat': 'mp3_44100_128',
+        'speed': speed,
+        if (selectedVoiceId.isNotEmpty) 'voiceId': selectedVoiceId,
       });
-      final payload = _extractRpcPayload(frame);
+      final payload = _extractTalkSpeakPayload(frame);
       final audioBase64 = payload['audioBase64'] as String?;
-      if (audioBase64 == null || audioBase64.isEmpty) return false;
+      if (audioBase64 == null || audioBase64.isEmpty) {
+        return const TalkSpeakPlayback(
+          played: false,
+          allowNativeFallback: false,
+          errorMessage: 'talk.speak returned empty audio payload.',
+        );
+      }
       final audioBytes = base64Decode(audioBase64);
       await TtsService().speakBytes(audioBytes);
-      return true;
+      return const TalkSpeakPlayback(
+        played: true,
+        allowNativeFallback: false,
+      );
     } catch (e) {
-      final msg = e.toString().toLowerCase();
-      final unsupported = msg.contains('unknown method') ||
-          msg.contains('talk.speak unavailable') ||
-          msg.contains('method unavailable') ||
-          msg.contains('fallbackeligible');
-      if (unsupported) {
+      final err = e.toString();
+      final lower = err.toLowerCase();
+      if (lower.contains('talk_unconfigured') ||
+          lower.contains('talk provider not configured')) {
+        const message =
+            'Gateway Talk provider is not configured. Configure an OpenClaw Talk/TTS provider before testing Gateway Voice.';
+        _addActivity('[TTS] $message');
+        return const TalkSpeakPlayback(
+          played: false,
+          allowNativeFallback: false,
+          errorMessage: message,
+        );
+      }
+      final methodUnavailable = lower.contains('unknown method') ||
+          lower.contains('method unavailable') ||
+          lower.contains('reason=method_unavailable');
+      if (methodUnavailable) {
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _addActivity(
             '[TTS] talk.speak unavailable; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m');
-      } else {
-        _addActivity('[TTS] talk.speak failed: $e');
+        return const TalkSpeakPlayback(
+          played: false,
+          allowNativeFallback: true,
+        );
       }
-      return false;
+      _addActivity('[TTS] talk.speak failed: $e');
+      return TalkSpeakPlayback(
+        played: false,
+        allowNativeFallback: false,
+        errorMessage: err,
+      );
     }
+  }
+
+  Map<String, dynamic> _extractTalkSpeakPayload(Map<String, dynamic> frame) {
+    if (frame['type'] == 'error') {
+      final payload = frame['payload'];
+      final msg = payload is Map
+          ? (payload['message']?.toString() ?? payload.toString())
+          : (payload?.toString() ?? 'talk.speak error');
+      final reason = payload is Map
+          ? (payload['details']?['reason'] ??
+                  payload['data']?['details']?['reason'])
+              ?.toString()
+          : null;
+      throw Exception(
+        reason == null || reason.isEmpty ? msg : '$msg (reason=$reason)',
+      );
+    }
+
+    final ok = frame['ok'] as bool? ?? false;
+    if (!ok) {
+      final err = frame['error'];
+      if (err is Map) {
+        final msg = err['message']?.toString() ?? err.toString();
+        final reason =
+            (err['details']?['reason'] ?? err['data']?['details']?['reason'])
+                ?.toString();
+        throw Exception(
+          reason == null || reason.isEmpty ? msg : '$msg (reason=$reason)',
+        );
+      }
+      throw Exception(frame['errorMessage']?.toString() ??
+          err?.toString() ??
+          'talk.speak rejected');
+    }
+
+    final payload = frame['payload'];
+    if (payload is Map<String, dynamic>) return payload;
+    return const <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> getTalkCatalog() async {
     final frame = await invoke('talk.catalog', {});
+    return _extractRpcPayload(frame);
+  }
+
+  Future<Map<String, dynamic>> getTtsProviders() async {
+    final frame = await invoke('tts.providers', {});
+    return _extractRpcPayload(frame);
+  }
+
+  Future<Map<String, dynamic>> getTtsPersonas() async {
+    final frame = await invoke('tts.personas', {});
+    return _extractRpcPayload(frame);
+  }
+
+  Future<Map<String, dynamic>> setTtsProvider(String providerId) async {
+    final frame = await invoke('tts.setProvider', {'provider': providerId});
+    return _extractRpcPayload(frame);
+  }
+
+  Future<Map<String, dynamic>> setTtsPersona(String? personaId) async {
+    final normalized = (personaId ?? '').trim().toLowerCase();
+    final frame = await invoke('tts.setPersona', {
+      'persona':
+          normalized.isEmpty || normalized == 'default' ? null : normalized,
+    });
     return _extractRpcPayload(frame);
   }
 
@@ -3318,6 +3710,175 @@ HEARTBEAT_OK.
     await invoke('talk.session.close', {'sessionId': sessionId});
   }
 
+  String _gatewayHttpModel(String model) {
+    final trimmed = model.trim();
+    if (trimmed.startsWith('openclaw/')) return trimmed;
+    if (trimmed.startsWith('agent/')) {
+      final agentId = trimmed.substring('agent/'.length).trim();
+      return agentId.isEmpty ? 'openclaw' : 'openclaw/$agentId';
+    }
+    // The gateway's OpenAI-compatible proxy intentionally accepts OpenClaw
+    // agent routes, not provider ids such as openrouter/openrouter/free.
+    return 'openclaw';
+  }
+
+  bool _shouldUseFastCloudChat(String message, String model) {
+    // Production policy: cloud chat stays on gateway by default so tools and
+    // skills remain available in one consistent execution lane.
+    //
+    // Local chat is handled separately by explicit local-llm model routing
+    // gated through Local Chat Mode in preferences.
+    return false;
+  }
+
+  Future<_FastCloudRoute?> _resolveFastCloudRoute(String model) async {
+    final canonical = ModelProviderCatalog.canonicalizeModelId(model);
+    final option = ModelProviderCatalog.modelById(canonical);
+    final provider = option?.providerId ??
+        (canonical.contains('/') ? canonical.split('/').first : '');
+    if (provider != 'openrouter') return null;
+
+    try {
+      final config = await _readConfig();
+      final apiKey = _extractProviderApiKey(config, provider);
+      if (apiKey == null || apiKey.isEmpty) return null;
+
+      final providerConfig = config['models']?['providers']?[provider];
+      final baseUrl =
+          providerConfig is Map ? providerConfig['baseUrl']?.toString() : null;
+      final providerPrefix = '$provider/';
+      final modelId =
+          option?.providerModelId ?? canonical.substring(providerPrefix.length);
+      return _FastCloudRoute(
+        provider: provider,
+        model: modelId,
+        apiKey: apiKey,
+        url:
+            '${(baseUrl == null || baseUrl.isEmpty) ? 'https://openrouter.ai/api/v1' : baseUrl}/chat/completions',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _extractProviderApiKey(Map<String, dynamic> config, String provider) {
+    final providerConfig = config['models']?['providers']?[provider];
+    if (providerConfig is Map) {
+      final key = providerConfig['apiKey']?.toString().trim();
+      if (key != null && key.isNotEmpty) return key;
+    }
+
+    final envKey = ModelProviderCatalog.envKeyForProvider(provider);
+    final envVars = config['env']?['vars'];
+    if (envVars is Map && envKey.isNotEmpty) {
+      final key = envVars[envKey]?.toString().trim();
+      if (key != null && key.isNotEmpty) return key;
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _boundedFastCloudMessages(
+    String message,
+    List<Map<String, dynamic>>? conversationHistory,
+  ) {
+    final bounded = <Map<String, dynamic>>[
+      {
+        'role': 'system',
+        'content':
+            'You are Plawie, a warm concise mobile AI companion. Reply directly and keep answers useful.',
+      }
+    ];
+
+    final history = conversationHistory ?? const <Map<String, dynamic>>[];
+    final recent =
+        history.length > 10 ? history.sublist(history.length - 10) : history;
+    for (final item in recent) {
+      final role = item['role']?.toString();
+      final content = item['content']?.toString();
+      if ((role == 'user' || role == 'assistant') &&
+          content != null &&
+          content.trim().isNotEmpty) {
+        bounded.add({
+          'role': role,
+          'content':
+              content.length > 1800 ? content.substring(0, 1800) : content,
+        });
+      }
+    }
+    bounded.add({'role': 'user', 'content': message});
+    return bounded;
+  }
+
+  Stream<String> _sendFastCloudMessage({
+    required _FastCloudRoute route,
+    required String message,
+    List<Map<String, dynamic>>? conversationHistory,
+  }) async* {
+    final client = http.Client();
+    try {
+      _addActivity('[CHAT] → Fast cloud lane ${route.provider}/${route.model}');
+      final request = http.Request('POST', Uri.parse(route.url))
+        ..headers.addAll({
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${route.apiKey}',
+          'HTTP-Referer': 'https://github.com/vmbbz/plawie',
+          'X-Title': 'Plawie',
+        })
+        ..body = jsonEncode({
+          'model': route.model,
+          'messages': _boundedFastCloudMessages(message, conversationHistory),
+          'stream': true,
+        });
+
+      final response =
+          await client.send(request).timeout(const Duration(seconds: 45));
+      if (response.statusCode != 200) {
+        final body = await response.stream.bytesToString();
+        _addActivity('[CHAT] ✗ Fast cloud HTTP ${response.statusCode}');
+        yield '[Error] Cloud provider error ${response.statusCode}: $body';
+        return;
+      }
+
+      var sawText = false;
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 45))) {
+        if (line.isEmpty || !line.startsWith('data: ')) continue;
+        final data = line.substring(6).trim();
+        if (data == '[DONE]') break;
+        try {
+          final decoded = jsonDecode(data);
+          if (decoded is! Map<String, dynamic>) continue;
+          final choices = decoded['choices'];
+          if (choices is! List || choices.isEmpty) continue;
+          final choice = choices.first;
+          if (choice is! Map) continue;
+          final delta = choice['delta'];
+          final messageObj = choice['message'];
+          final content = (delta is Map ? delta['content'] : null) ??
+              (messageObj is Map ? messageObj['content'] : null);
+          if (content is String && content.isNotEmpty) {
+            if (!sawText) {
+              sawText = true;
+              _addActivity('[CHAT] ✓ Fast cloud first token');
+            }
+            yield content;
+          }
+        } catch (_) {
+          // Ignore malformed provider keepalive chunks.
+        }
+      }
+      _addActivity('[CHAT] ✓ Fast cloud complete');
+    } on TimeoutException {
+      yield '[Error] Cloud provider timed out. Try again in a moment.';
+    } catch (e) {
+      yield '[Error] Fast cloud chat failed: $e';
+    } finally {
+      client.close();
+    }
+  }
+
   /// HTTP fallback: POST to /v1/chat/completions with STREAMING support.
   ///
   /// Used for specific model overrides (like Local LLM) where the WS RPC
@@ -3354,7 +3915,7 @@ HEARTBEAT_OK.
                 {'role': 'user', 'content': message}
               ];
 
-    final effectiveModel = model;
+    final effectiveModel = isDirectEndpoint ? model : _gatewayHttpModel(model);
 
     final client = http.Client();
     try {
@@ -3374,7 +3935,7 @@ HEARTBEAT_OK.
 
       final timeoutDuration = isDirectEndpoint
           ? const Duration(seconds: 240)
-          : const Duration(seconds: 90);
+          : const Duration(seconds: 240);
 
       if (isDirectEndpoint) {
         _addActivity('[CHAT] → Sending to $effectiveModel');
@@ -3563,7 +4124,7 @@ HEARTBEAT_OK.
               'Authorization': 'Bearer $token',
             },
             body: jsonEncode({
-              'model': await _resolveModel(null),
+              'model': _gatewayHttpModel(await _resolveModel(null)),
               'messages': [
                 {
                   'role': 'user',
@@ -3638,7 +4199,7 @@ HEARTBEAT_OK.
               'Authorization': 'Bearer $token',
             },
             body: jsonEncode({
-              'model': await _resolveModel(null),
+              'model': _gatewayHttpModel(await _resolveModel(null)),
               'messages': [
                 {
                   'role': 'user',
@@ -3696,6 +4257,9 @@ HEARTBEAT_OK.
 
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
+    if (config['agents']['defaults'] is Map) {
+      (config['agents']['defaults'] as Map).remove('skipBootstrap');
+    }
     config['agents']['defaults']['model'] ??= {};
 
     final current = config['agents']['defaults']['model']['primary'] as String?;
@@ -3716,13 +4280,13 @@ HEARTBEAT_OK.
     return changedMetadata;
   }
 
-  /// Resolves the intended model ID, falling back to preferences then openclaw.json defaults.
-  /// Also normalizes cloud/agent IDs into the required `'openclaw'` or `'openclaw/<agentId>'` format.
+  /// Resolves the intended model ID, falling back to preferences then
+  /// openclaw.json defaults.
   Future<String> _resolveModel(String? model) async {
     String m = model ?? '';
+    final prefs = PreferencesService();
+    await prefs.init();
     if (m.isEmpty) {
-      final prefs = PreferencesService();
-      await prefs.init();
       m = prefs.configuredModel ?? '';
     }
     if (m.isEmpty) {
@@ -3734,16 +4298,19 @@ HEARTBEAT_OK.
     }
     m = ModelProviderCatalog.canonicalizeModelId(m);
 
-    // PRODUCTION FIX: Force OpenClaw model format for gateway compatibility.
-    // Cloud/provider models are persisted in openclaw.json; chat.send receives
-    // 'openclaw' (primary) or 'openclaw/<agentId>' (agent routing).
-    if (!m.startsWith('local-llm/')) {
-      if (m.startsWith('agent/')) {
-        return 'openclaw/${m.substring(6)}';
+    // Force cloud/gateway lane unless the user explicitly enabled local chat
+    // from the Local LLM page.
+    if (ModelProviderCatalog.isLocalModelId(m) && !prefs.localChatModeEnabled) {
+      final lastCloud = prefs.lastCloudModel;
+      final fallback = (lastCloud != null && lastCloud.isNotEmpty)
+          ? ModelProviderCatalog.canonicalizeModelId(lastCloud)
+          : ModelProviderCatalog.defaultCloudFallbackModel;
+      if (!ModelProviderCatalog.isLocalModelId(fallback)) {
+        m = fallback;
+      } else {
+        m = ModelProviderCatalog.defaultCloudFallbackModel;
       }
-      return 'openclaw';
     }
-
     return m;
   }
 
@@ -3837,6 +4404,9 @@ HEARTBEAT_OK.
             remotePassword == authPassword));
 
     final discovery = config['discovery'];
+    final agentsDefaults = config['agents']?['defaults'];
+    final hasNoBootstrapBypass =
+        agentsDefaults is! Map || agentsDefaults['skipBootstrap'] != true;
     final models = config['models'];
     final providers = models is Map ? models['providers'] : null;
     final hasCatalogProviders = providers is Map &&
@@ -3866,6 +4436,7 @@ HEARTBEAT_OK.
         !models.containsKey('startup') &&
         !gateway.containsKey('startup') &&
         !gateway.containsKey('sidecars') &&
+        hasNoBootstrapBypass &&
         hasNoLegacyOllamaAuth &&
         !config.containsKey('ollama');
   }
@@ -3912,6 +4483,36 @@ HEARTBEAT_OK.
     _ensurePersistentGatewayToken(currentConfig);
     _applyExplicitAuthMode(currentConfig);
     _syncLocalGatewayRemoteCredentials(currentConfig);
+    currentConfig['models'] ??= <String, dynamic>{};
+    final models = currentConfig['models'];
+    if (models is Map) {
+      models['pricing'] ??= <String, dynamic>{};
+      final pricing = models['pricing'];
+      if (pricing is Map) {
+        pricing['enabled'] = false;
+      } else {
+        models['pricing'] = <String, dynamic>{'enabled': false};
+      }
+    }
+    final primary = currentConfig['agents']?['defaults']?['model']?['primary'];
+    currentConfig['agents'] ??= {};
+    currentConfig['agents']['defaults'] ??= {};
+    if (currentConfig['agents']['defaults'] is Map) {
+      (currentConfig['agents']['defaults'] as Map).remove('skipBootstrap');
+    }
+    if (primary is String && primary.trim().isNotEmpty) {
+      currentConfig['agents']['defaults']['model'] ??= {};
+      currentConfig['agents']['defaults']['model']['primary'] =
+          ModelProviderCatalog.canonicalizeModelId(primary);
+    }
+    final agentsDefaults = currentConfig['agents']['defaults'];
+    if (agentsDefaults is Map) {
+      final timeoutSeconds = agentsDefaults['timeoutSeconds'];
+      if (timeoutSeconds is! num || timeoutSeconds < 240) {
+        agentsDefaults['timeoutSeconds'] = 240;
+      }
+    }
+    GatewayToolCatalog.applyDefaultMobilePolicy(currentConfig);
     _ensureCatalogProviderDefaults(currentConfig);
     final currentGateway = currentConfig['gateway'];
     if (currentGateway is Map) {

@@ -148,18 +148,32 @@ class GatewayProvider extends ChangeNotifier {
   Future<String> resolveOrCreateGatewaySessionKey({
     required String localSessionId,
     String? existingSessionKey,
+    bool forceNew = false,
   }) {
     return _gatewayService.resolveOrCreateGatewaySessionKey(
       localSessionId: localSessionId,
       existingSessionKey: existingSessionKey,
+      forceNew: forceNew,
     );
   }
 
-  Future<bool> speakTextViaTalk(String text) =>
+  Future<svc.TalkSpeakPlayback> speakTextViaTalk(String text) =>
       _gatewayService.speakTextViaTalk(text);
 
   Future<Map<String, dynamic>> getTalkCatalog() =>
       _gatewayService.getTalkCatalog();
+
+  Future<Map<String, dynamic>> getTtsProviders() =>
+      _gatewayService.getTtsProviders();
+
+  Future<Map<String, dynamic>> getTtsPersonas() =>
+      _gatewayService.getTtsPersonas();
+
+  Future<Map<String, dynamic>> setTtsProvider(String providerId) =>
+      _gatewayService.setTtsProvider(providerId);
+
+  Future<Map<String, dynamic>> setTtsPersona(String? personaId) =>
+      _gatewayService.setTtsPersona(personaId);
 
   Future<Map<String, dynamic>> createTalkRealtimeRelaySession({
     String? provider,

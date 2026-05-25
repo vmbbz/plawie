@@ -81,6 +81,7 @@ class NodeService {
     await _identity.init();
     final prefs = PreferencesService();
     await prefs.init();
+    await _ensurePairingMatchesDeclaredCommands(prefs);
     // Reset pairing state on each fresh init — the singleton persists across
     // gateway restarts and a stale _pairingResolveAttempted=true would silently
     // block all subsequent connect() calls.
@@ -121,6 +122,66 @@ class NodeService {
         }
       }
     });
+  }
+
+  Future<void> _ensurePairingMatchesDeclaredCommands(
+    PreferencesService prefs,
+  ) async {
+    if (_capabilityHandlers.isEmpty) {
+      return;
+    }
+
+    final signature = _declaredCommandContractSignature();
+    final previousSignature = prefs.nodeCommandContractHash;
+
+    if (previousSignature == signature) {
+      return;
+    }
+
+    prefs.nodeCommandContractHash = signature;
+
+    // OpenClaw stores command allow/deny expectations at pairing time. When we
+    // change the declared command surface, the old node token can stay "paired"
+    // while invoke calls are rejected. Force a clean re-pair once per contract
+    // revision so the gateway refreshes the command snapshot.
+    prefs.nodeDeviceToken = null;
+    _gatewayAuthToken = null;
+
+    final deviceId = _identity.deviceId ?? '';
+    if (deviceId.isEmpty) {
+      return;
+    }
+
+    log('[NODE] Command contract changed; refreshing gateway pairing snapshot.');
+    try {
+      await NativeBridge.runInProot(
+        '$kOpenClawCommand devices remove ${NativeBridge.shellQuote(deviceId)} --json',
+        timeout: 20,
+      );
+      log('[NODE] Cleared stale paired-node record for updated command contract');
+    } catch (_) {
+      try {
+        await NativeBridge.runInProot(
+          '$kOpenClawCommand devices remove ${NativeBridge.shellQuote(deviceId)}',
+          timeout: 20,
+        );
+      } catch (_) {
+        // Best effort only; if remove isn't available or record doesn't exist,
+        // token reset above still triggers requestId-based approval flow.
+      }
+    }
+  }
+
+  String _declaredCommandContractSignature() {
+    final commands = _capabilityHandlers.keys.toList()..sort();
+    return 'v2:${commands.join('|')}';
+  }
+
+  String _capFamilyForCommand(String command) {
+    final normalized = command.trim().toLowerCase().replaceAll('_', '.');
+    final family = normalized.split('.').first;
+    if (family == 'vibrate') return 'haptic';
+    return family;
   }
 
   Future<void> connect({String? host, int? port}) async {
@@ -256,6 +317,11 @@ class NodeService {
 
   Future<void> _handleSocketReconnectReady() async {
     if (_state.status == NodeStatus.disabled || _pairingResolveAttempted) {
+      return;
+    }
+    // Reconnect callbacks can arrive after a successful pair if the socket
+    // layer briefly flaps. Avoid re-running handshake while already healthy.
+    if (_state.status == NodeStatus.paired && _ws.isConnected) {
       return;
     }
     if (_connectInFlight) {
@@ -441,8 +507,8 @@ class NodeService {
     final signature = await _identity.sign(authPayload) ?? '';
 
     // Build caps (unique capability names) and commands from registered handlers
-    final commands = _capabilityHandlers.keys.toList();
-    final caps = commands.map((c) => c.split('.').first).toSet().toList();
+    final commands = _capabilityHandlers.keys.toList()..sort();
+    final caps = commands.map(_capFamilyForCommand).toSet().toList()..sort();
     log('[NODE] Declaring ${commands.length} commands: $commands');
 
     final connectProtocol = _preferredConnectProtocol > 0

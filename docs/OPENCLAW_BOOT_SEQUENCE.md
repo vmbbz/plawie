@@ -1,6 +1,6 @@
 # OpenClaw Boot Sequence
 
-Last updated: 2026-05-23
+Last updated: 2026-05-25
 
 This is the production startup contract for Plawie on Android.
 
@@ -37,7 +37,12 @@ Pre-start hardening writes:
 - `gateway.mode = local`
 - local persistent Gateway auth token
 - local dashboard allowed origins
-- `tools.allow = ["*"]`
+- A bounded Android `tools` policy by default: `profile: full` as the base,
+  narrowed only by official groups/stable primitives for nodes, runtime,
+  sessions, automation, messaging, files, web, and image.
+- The Skills > Tools page can restore this mobile default with Enable All.
+  Custom restrictions must be based on runtime-discovered tool IDs or official
+  groups, never guessed skill/plugin slugs.
 - model provider defaults for the providers exposed in UI
 - schema cleanup for legacy invalid keys
 
@@ -54,13 +59,94 @@ Pre-start hardening writes:
 
 | Selection | Runtime | Gateway dependency |
 | --- | --- | --- |
-| Cloud provider model | OpenClaw Gateway | Required |
+| Plain cloud chat | OpenClaw Gateway agent loop | Required |
+| Cloud tool/agent request | OpenClaw Gateway agent loop | Required |
 | `local-llm/...` | fllama NDK | Bypassed |
 | Legacy `ollama/...` | Migrated to fallback | Not started |
+
+Cloud chat is Gateway-first by default. This keeps skills, tool visibility,
+Talk/TTS, session memory, and node actions in one official OpenClaw lane.
+Direct provider routing is not the release default because it bypasses the
+Gateway surfaces users expect when they ask what tools or skills are available.
+
+Every Gateway-routed mobile chat must bind to a mobile-owned session key such
+as `mobile:chat:<localChatId>`. Flutter chat must never silently reuse
+`main` or `agent:main:main`, because the global main lane is also used by
+dashboard/operator flows and can create stale file locks under retry pressure.
+
+If Gateway reports `file lock stale`, `stale_session_state`,
+`queued_work_without_active_run`, or similar stale-session recovery logs, the
+Chat screen should clear the stored mobile session key and ask the user to
+resend instead of repeatedly pushing new work into the same poisoned lane.
 
 NDK mode intentionally bypasses Gateway token lookup, WebSocket setup, and
 Gateway TTS. This protects pairing and health checks when local inference is
 heavy.
+
+## Tool Policy
+
+OpenClaw's official tool policy applies `tools.profile` first, then
+`tools.allow` / `tools.deny`; `deny` wins. Plawie therefore uses `profile: full`
+as the base and narrows it with official groups/stable primitives. `minimal`
+cannot be used here because it exposes only `session_status`, and a later
+allowlist for browser/canvas/nodes narrows that to zero callable tools.
+
+The release default is a bounded mobile policy, not unrestricted/full:
+
+```json
+{
+  "profile": "full",
+  "allow": [
+    "group:nodes",
+    "group:runtime",
+    "group:sessions",
+    "group:automation",
+    "group:messaging",
+    "group:fs",
+    "group:web",
+    "image"
+  ]
+}
+```
+
+This keeps mobile node/web/file/session tools available while avoiding guessed
+entries that OpenClaw warns about. Do not write device feature names such as
+`camera`, `canvas`, `flash`, `torch`, `location`, `screen`, `sensor`, or
+`haptic` into `tools.allow`; those are node-side commands/capabilities declared
+by the Android node, not top-level Gateway tool IDs.
+
+The Android node allow-command list must be explicit and include aliases used
+by the Gateway/model, including `camera.*`, `canvas.*`, `flash.*`, `torch.*`,
+`location.*`, `screen.*`, `sensor.*`, `haptic.vibrate`, and `vibrate`.
+
+Healthy tool logs should not include:
+
+```text
+tools.allow allowlist contains unknown entries (canvas, memory, computer)
+```
+
+If that warning returns, the pre-start config writer and runtime hardener have
+drifted again.
+
+## Gateway Talk / TTS
+
+Android Talk should follow the OpenClaw Talk contract:
+
+- Local speech recognition captures the user.
+- Gateway chat handles the model turn.
+- `talk.speak` plays the reply through the configured Gateway Talk provider.
+
+The app must not show Gateway Voice as ready when `talk.catalog`,
+`talk.status`, or `providers.status` says the active provider is not configured.
+In that state, the Test Gateway Voice button should be disabled with a clear
+message. A raw snackbar such as this is an alarm, not a usable UX:
+
+```text
+talk.speak unavailable: talk provider not configured
+```
+
+Native Android system TTS is only a fallback when the `talk.speak` RPC is truly
+unavailable. It is not a substitute for a missing Gateway Talk provider.
 
 ## Dashboard Pairing
 
@@ -109,6 +195,15 @@ Investigate immediately if logs show:
 - Skills never load after Gateway health is OK.
 - Node repeatedly loses nonce/challenge state after successful pairing.
 - Dashboard keeps asking for a new request ID after auto-approval.
+- Mobile chat uses `main` or `agent:main:main` instead of `mobile:chat:*`.
+- Gateway logs `file lock stale`, `stale_session_state`,
+  `queued_work_without_active_run`, or long-lived `processing` on a mobile chat
+  session after the UI has already timed out.
+- Gateway logs unknown `tools.allow` entries such as `canvas`, `memory`, or
+  `computer`.
+- Gateway Voice allows a test while Talk provider status is unconfigured.
+- `node command not allowed` or `did not declare any supported commands` after
+  pairing succeeds (this usually means stale command snapshot; trigger re-pair).
 - Any code path tries to download/start Ollama during setup or dashboard open.
 - The NDK bridge appears in Gateway logs without the user manually enabling the
   bridge experiment.
@@ -118,4 +213,9 @@ Investigate immediately if logs show:
 - Prefer attach over restart when Gateway is already running.
 - Do not write config while Gateway is settling unless the user explicitly repairs.
 - Regenerate Node auth token only for real pairing loops; it intentionally resets active sessions.
+- If node command declarations change between app versions, force a fresh
+  node pairing so Gateway updates its stored command snapshot.
 - Treat NDK memory pressure separately from Gateway stability.
+- If a mobile chat session becomes stale, clear only that mobile chat session
+  binding and resend into a fresh `mobile:chat:*` key. Do not restart Gateway as
+  the first recovery step.
