@@ -15,6 +15,7 @@ class AudioPlaybackService {
 
   final AudioPlayer _player = AudioPlayer();
   bool _isPlaying = false;
+  bool _hasActivePlayback = false;
   bool get isPlaying => _isPlaying;
 
   // Callbacks for UI/VRM synchronization (e.g. lip-sync)
@@ -40,25 +41,41 @@ class AudioPlaybackService {
     );
 
     _player.onPlayerStateChanged.listen((state) {
-      _isPlaying = state == PlayerState.playing;
       if (state == PlayerState.playing) {
+        _isPlaying = true;
+        _hasActivePlayback = true;
         onStart?.call();
-      } else if (state == PlayerState.completed ||
-          state == PlayerState.stopped) {
-        onComplete?.call();
+      } else if (state == PlayerState.completed) {
+        _markComplete();
+      } else if (state == PlayerState.stopped) {
+        // Programmatic stops happen while replacing audio sources. The caller
+        // decides whether that stop means "speech is done" via stop().
+        _isPlaying = false;
       }
     });
+  }
+
+  void _markComplete() {
+    final shouldNotify = _hasActivePlayback || _isPlaying;
+    _isPlaying = false;
+    _hasActivePlayback = false;
+    if (shouldNotify) {
+      onComplete?.call();
+    }
   }
 
   /// Play audio from a URL (e.g., from the OpenClaw Gateway media server)
   Future<void> playUrl(String url) async {
     try {
       debugPrint('AudioPlaybackService: Playing URL: $url');
-      await _player.stop();
+      _hasActivePlayback = true;
+      if (_isPlaying) {
+        await _player.stop();
+      }
       await _player.play(UrlSource(url));
     } catch (e) {
       debugPrint('AudioPlaybackService Error (playUrl): $e');
-      onComplete?.call();
+      _markComplete();
     }
   }
 
@@ -66,11 +83,14 @@ class AudioPlaybackService {
   Future<void> playFile(String path) async {
     try {
       debugPrint('AudioPlaybackService: Playing File: $path');
-      await _player.stop();
+      _hasActivePlayback = true;
+      if (_isPlaying) {
+        await _player.stop();
+      }
       await _player.play(DeviceFileSource(path));
     } catch (e) {
       debugPrint('AudioPlaybackService Error (playFile): $e');
-      onComplete?.call();
+      _markComplete();
     }
   }
 
@@ -78,18 +98,20 @@ class AudioPlaybackService {
   Future<void> playBytes(Uint8List bytes) async {
     try {
       debugPrint('AudioPlaybackService: Playing bytes (${bytes.length} bytes)');
-      await _player.stop();
+      _hasActivePlayback = true;
+      if (_isPlaying) {
+        await _player.stop();
+      }
       await _player.play(BytesSource(bytes));
     } catch (e) {
       debugPrint('AudioPlaybackService Error (playBytes): $e');
-      onComplete?.call();
+      _markComplete();
     }
   }
 
   Future<void> stop() async {
     await _player.stop();
-    _isPlaying = false;
-    onComplete?.call();
+    _markComplete();
   }
 
   void dispose() {
