@@ -664,6 +664,11 @@ class _ChatScreenState extends State<ChatScreen>
         _addDiagnosticLog('Gateway Talk voice error: ${playback.errorMessage}');
         _isTtsSpeaking = false;
         _processNextTtsInQueue();
+      } else if (!playback.played) {
+        // Backoff/skip responses (for example temporary Talk suppression) must
+        // release the queue lock, otherwise viseme + speech state can freeze.
+        _isTtsSpeaking = false;
+        _processNextTtsInQueue();
       }
     } catch (_) {
       // Guarantee _isTtsSpeaking is cleared on error so queue isn't permanently jammed

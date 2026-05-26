@@ -344,10 +344,11 @@ class GatewayService {
   /// Configure the OpenClaw speech-output half of Talk.
   ///
   /// Chat/model provider auth does not automatically make `talk.speak` usable.
-  /// OpenClaw resolves speech through `messages.tts`, so Plawie must keep this
-  /// block present during setup and hardening. `auto` remains off because the
-  /// Flutter chat explicitly calls `talk.speak`; enabling Auto-TTS here would
-  /// risk double speech.
+  /// OpenClaw keeps separate config surfaces for Messages TTS and Talk speech,
+  /// so Plawie must keep both in sync during setup + hardening.
+  ///
+  /// `auto` remains off because the Flutter chat explicitly calls `talk.speak`;
+  /// enabling Auto-TTS here would risk double speech.
   static void ensureGatewayTalkTtsConfig(Map<String, dynamic> config) {
     config['messages'] ??= <String, dynamic>{};
     final messages = config['messages'];
@@ -365,6 +366,10 @@ class GatewayService {
     tts['providers'] ??= <String, dynamic>{};
     final providers = tts['providers'];
     if (providers is! Map) return;
+
+    Map<String, dynamic> asStringKeyedMap(Map source) {
+      return source.map((key, value) => MapEntry(key.toString(), value));
+    }
 
     void mergeProviderDefaults(String id, Map<String, dynamic> defaults) {
       final existing = providers[id];
@@ -404,6 +409,46 @@ class GatewayService {
     final currentProvider = tts['provider']?.toString().trim() ?? '';
     if (currentProvider.isEmpty || !providers.containsKey(currentProvider)) {
       tts['provider'] = _preferredSpeechProviderForConfig(config);
+    }
+
+    final resolvedTtsProvider = tts['provider']?.toString().trim() ?? '';
+
+    // Keep Talk speech provider config aligned with messages.tts so
+    // talk.speak doesn't fail with "talk provider not configured".
+    config['talk'] ??= <String, dynamic>{};
+    final talk = config['talk'];
+    if (talk is! Map) return;
+
+    talk['providers'] ??= <String, dynamic>{};
+    final talkProviders = talk['providers'];
+    if (talkProviders is! Map) return;
+
+    for (final entry in providers.entries) {
+      final providerId = entry.key.toString().trim();
+      if (providerId.isEmpty) continue;
+      final sourceConfig = entry.value;
+      final existingConfig = talkProviders[providerId];
+      if (sourceConfig is Map) {
+        talkProviders[providerId] = <String, dynamic>{
+          ...asStringKeyedMap(sourceConfig),
+          if (existingConfig is Map) ...asStringKeyedMap(existingConfig),
+        };
+      } else if (!talkProviders.containsKey(providerId)) {
+        talkProviders[providerId] = sourceConfig;
+      }
+    }
+
+    final currentTalkProvider = talk['provider']?.toString().trim() ?? '';
+    if (currentTalkProvider.isEmpty ||
+        !talkProviders.containsKey(currentTalkProvider)) {
+      if (resolvedTtsProvider.isNotEmpty &&
+          talkProviders.containsKey(resolvedTtsProvider)) {
+        talk['provider'] = resolvedTtsProvider;
+      } else if (talkProviders.containsKey('microsoft')) {
+        talk['provider'] = 'microsoft';
+      } else if (talkProviders.isNotEmpty) {
+        talk['provider'] = talkProviders.keys.first.toString();
+      }
     }
   }
 
@@ -1955,12 +2000,11 @@ HEARTBEAT_OK.
 
   Future<void> reregisterSkills() async {
     if (!_state.isRunning) return;
-    // Prefer explicit capability advertisement, but keep a compatibility
-    // fallback for gateway builds that omit features.methods.
+    // Compatibility first: always attempt skills.register and swallow unknown
+    // method errors. Some gateway builds expose partial features.methods during
+    // startup, so relying only on method advertisement can skip registration.
     final supported = _connection?.supportedMethods ?? const <String>[];
     final methodAdvertised = supported.contains('skills.register');
-    final discoveryUnknown = supported.isEmpty;
-    if (!methodAdvertised && !discoveryUnknown) return;
     try {
       final catalog = SkillsService().getToolsCatalog();
       if (catalog.isNotEmpty) {
@@ -1977,7 +2021,10 @@ HEARTBEAT_OK.
       if (msg.contains('unknown method') ||
           msg.contains('method unavailable') ||
           msg.contains('not supported')) {
-        _addActivity('[SKILLS] skills.register unavailable on this gateway');
+        // Keep logging concise when the gateway explicitly omitted the method.
+        if (methodAdvertised || supported.isEmpty) {
+          _addActivity('[SKILLS] skills.register unavailable on this gateway');
+        }
       } else {
         _addActivity('[SKILLS] skills.register failed: $e');
       }
@@ -2851,9 +2898,14 @@ HEARTBEAT_OK.
                     '[INFO] Active skills: ${parsedIds.isEmpty ? 'none' : parsedIds.join(', ')}'
                   ],
                 ));
-                skillsDiscoverySatisfied = parsedSkills.isNotEmpty;
+                // Do not block interactive readiness on a non-empty list.
+                // Empty results can be transient while sidecars finish loading.
+                skillsDiscoverySatisfied = true;
               }
-            } catch (_) {}
+            } catch (_) {
+              // Keep node/tool readiness from stalling if skills.status lags.
+              skillsDiscoverySatisfied = true;
+            }
           } else {
             // Older gateways may not expose skills.status. Do not block
             // discovery forever if the method is genuinely absent.
@@ -2865,10 +2917,25 @@ HEARTBEAT_OK.
           try {
             final cfg = await _readConfig();
             if (cfg['tools'] is Map && cfg['tools']['allow'] is List) {
+              final rawAllow =
+                  List<dynamic>.from(cfg['tools']['allow'] as List<dynamic>);
               final toolsList = GatewayToolCatalog.normalizeAllowList(
-                cfg['tools']['allow'],
+                rawAllow,
               );
-              _updateState(_state.copyWith(capabilities: toolsList));
+              if (toolsList.isEmpty && rawAllow.isNotEmpty) {
+                // Repair drifted allowlists (e.g. old plugin-only ids) so the
+                // gateway retains a known-good mobile tool policy.
+                GatewayToolCatalog.applyDefaultMobilePolicy(cfg);
+                await _writeConfig(cfg);
+                _updateState(_state.copyWith(
+                  capabilities:
+                      GatewayToolCatalog.primitiveIds.toList(growable: false),
+                ));
+                _addActivity(
+                    '[TOOLS] Repaired invalid tools.allow entries with mobile defaults.');
+              } else {
+                _updateState(_state.copyWith(capabilities: toolsList));
+              }
             } else {
               _updateState(_state.copyWith(
                 capabilities:
@@ -2904,6 +2971,18 @@ HEARTBEAT_OK.
           unawaited(_ensureNodeConnectedAfterGatewayReady(
             reason: 'gateway-rpc-ready',
           ));
+        } else {
+          // Warm fallback: if WS + HTTP are already healthy, allow node reconnect
+          // attempts while skills discovery catches up.
+          final wsConnected =
+              _connection?.state == GatewayConnectionState.connected ||
+                  _state.isWebsocketConnected;
+          if (_state.isReady && wsConnected && _state.detailedHealth != null) {
+            unawaited(_ensureNodeConnectedAfterGatewayReady(
+              reason: 'gateway-minimal-ready',
+              allowDuringWarmup: true,
+            ));
+          }
         }
       }
     } catch (e) {
@@ -3420,7 +3499,8 @@ $message''';
 
       final changes = await _syncModelToConfig(model);
       if (changes.isNotEmpty) {
-        _addActivity('[CHAT] Updating gateway config after WS repair: $changes');
+        _addActivity(
+            '[CHAT] Updating gateway config after WS repair: $changes');
       }
       _addActivity('[CHAT] WebSocket lane repaired; continuing.');
     }
@@ -4040,8 +4120,37 @@ $message''';
   }
 
   Future<Map<String, dynamic>> setTtsProvider(String providerId) async {
-    final frame = await invoke('tts.setProvider', {'provider': providerId});
-    return _extractRpcPayload(frame);
+    final normalizedProvider = providerId.trim();
+    final frame =
+        await invoke('tts.setProvider', {'provider': normalizedProvider});
+    final payload = _extractRpcPayload(frame);
+
+    // Keep Talk's active provider aligned with TTS selection so talk.speak
+    // remains configured on gateways that validate talk.* separately.
+    await _syncTalkProviderSelectionInConfig(normalizedProvider);
+    return payload;
+  }
+
+  Future<void> _syncTalkProviderSelectionInConfig(String providerId) async {
+    if (providerId.isEmpty) return;
+    try {
+      final config = await _readConfig();
+      ensureGatewayTalkTtsConfig(config);
+
+      final talk = config['talk'];
+      if (talk is! Map) return;
+      final talkProviders = talk['providers'];
+      if (talkProviders is! Map || !talkProviders.containsKey(providerId)) {
+        return;
+      }
+
+      final current = talk['provider']?.toString().trim() ?? '';
+      if (current == providerId) return;
+      talk['provider'] = providerId;
+      await _writeConfig(config);
+    } catch (e) {
+      _addActivity('[TTS] Talk provider sync skipped: $e');
+    }
   }
 
   Future<Map<String, dynamic>> setTtsPersona(String? personaId) async {
@@ -4804,11 +4913,19 @@ $message''';
     final tts = messages is Map ? messages['tts'] : null;
     final ttsProvider = tts is Map ? tts['provider'] : null;
     final ttsProviders = tts is Map ? tts['providers'] : null;
-    final hasTalkTtsProvider = tts is Map &&
+    final hasMessagesTtsProvider = tts is Map &&
         ttsProvider is String &&
         ttsProvider.trim().isNotEmpty &&
         ttsProviders is Map &&
         ttsProviders.containsKey(ttsProvider.trim());
+    final talk = config['talk'];
+    final talkProvider = talk is Map ? talk['provider'] : null;
+    final talkProviders = talk is Map ? talk['providers'] : null;
+    final hasActiveTalkProvider = talk is Map &&
+        talkProvider is String &&
+        talkProvider.trim().isNotEmpty &&
+        talkProviders is Map &&
+        talkProviders.containsKey(talkProvider.trim());
 
     return gateway['mode'] == 'local' &&
         gateway['bind'] == 'loopback' &&
@@ -4827,7 +4944,8 @@ $message''';
         !models.containsKey('startup') &&
         !gateway.containsKey('startup') &&
         !gateway.containsKey('sidecars') &&
-        hasTalkTtsProvider &&
+        hasMessagesTtsProvider &&
+        hasActiveTalkProvider &&
         hasNoBootstrapBypass &&
         hasNoLegacyOllamaAuth &&
         !config.containsKey('ollama');

@@ -309,18 +309,36 @@
                     vrm.scene.scale.set(scaleFactor, scaleFactor, scaleFactor);
                     vrm.scene.updateMatrixWorld(true);
 
-                    // Re-measure after scaling
+                    // Re-center around humanoid bones, not raw mesh bounds.
+                    // Some avatars have asymmetrical hair/clothes offsets that
+                    // bias the box center and push framing to one side.
+                    const head = vrm.humanoid.getNormalizedBoneNode('head');
+                    const hips = vrm.humanoid.getNormalizedBoneNode('hips');
+                    const headPos = new THREE.Vector3();
+                    const hipsPos = new THREE.Vector3();
+                    const rawCenter = new THREE.Box3()
+                        .setFromObject(vrm.scene)
+                        .getCenter(new THREE.Vector3());
+                    if (head) head.getWorldPosition(headPos);
+                    if (hips) hips.getWorldPosition(hipsPos);
+                    const bodyAnchorX = head && hips
+                        ? (headPos.x * 0.62 + hipsPos.x * 0.38)
+                        : head ? headPos.x
+                        : hips ? hipsPos.x
+                        : rawCenter.x;
+                    vrm.scene.position.x -= bodyAnchorX;
+                    vrm.scene.updateMatrixWorld(true);
+
+                    // Re-measure after scaling and re-centering.
                     const newBox = new THREE.Box3().setFromObject(vrm.scene);
                     const newSize = newBox.getSize(new THREE.Vector3());
                     const newCenter = newBox.getCenter(new THREE.Vector3());
-                    const head = vrm.humanoid.getNormalizedBoneNode('head');
-                    const headPos = new THREE.Vector3();
                     if (head) head.getWorldPosition(headPos);
 
                     avatarMetrics = {
                         height: newSize.y,
                         width: newSize.x,
-                        centerX: newCenter.x, // Frame the body center, not the model origin
+                        centerX: 0.0,
                         headY: head ? headPos.y : 1.6,
                         lookY: newCenter.y,
                     };
@@ -774,6 +792,8 @@
         // ── Touch orbit + pinch zoom ──────────────────────────────────────────
         let orbitAngle = 0, orbitTarget = 0, lastOrbitTime = -100, isDragging = false, dragStartX = 0;
         const ORBIT_DRAG_SENSITIVITY = 0.01;
+        const ENABLE_ORBIT_AUTO_RECENTER = false;
+        const ORBIT_AUTO_RECENTER_DELAY = 4.0;
 
         document.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
@@ -837,19 +857,14 @@
             const isOverlayAnim = urlParamsAnim.get('overlay') === 'true' || dynamicPip;
             if (!isOverlayAnim) {
                 const timeSinceOrbit = time - lastOrbitTime;
-                if (!isDragging && timeSinceOrbit > 4.0) {
+                if (ENABLE_ORBIT_AUTO_RECENTER && !isDragging && timeSinceOrbit > ORBIT_AUTO_RECENTER_DELAY) {
                     orbitTarget = THREE.MathUtils.lerp(orbitTarget, 0, delta * 2.0);
                 }
                 orbitAngle = THREE.MathUtils.lerp(orbitAngle, orbitTarget, delta * 4.0);
                 const camY = camera.position.y;
-                if (isDragging) {
-                    camera.position.x = Math.sin(orbitAngle) * currentCameraZ + avatarMetrics.centerX;
-                    camera.position.z = Math.cos(orbitAngle) * currentCameraZ;
-                } else {
-                    // Keep the avatar body locked to center after touch/orbit gestures.
-                    camera.position.x = avatarMetrics.centerX;
-                    camera.position.z = currentCameraZ;
-                }
+                // Keep manual orbit after drag release (no snap-back to front view).
+                camera.position.x = Math.sin(orbitAngle) * currentCameraZ + avatarMetrics.centerX;
+                camera.position.z = Math.cos(orbitAngle) * currentCameraZ;
                 camera.lookAt(avatarMetrics.centerX, avatarMetrics.lookY || camY, 0);
             } else {
                 camera.position.z = currentCameraZ;

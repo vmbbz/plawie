@@ -40,7 +40,8 @@ class NodeService {
   String? _cachedChallengeNonce;
   DateTime? _cachedChallengeReceivedAt;
   Future<void>? _initFuture;
-  static const Duration _challengeNonceTtl = Duration(seconds: 10);
+  static const Duration _challengeNonceTtl = Duration(seconds: 5);
+  static const Duration _challengeWaitTimeout = Duration(seconds: 12);
   static final _uuidPattern =
       RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
 
@@ -242,7 +243,7 @@ class NodeService {
 
       // Latest gateways require a fresh challenge nonce for node connects.
       // Never send a no-nonce connect frame; it is rejected with 1008.
-      await _sendConnectWithFreshNonce(const Duration(seconds: 6));
+      await _sendConnectWithFreshNonce(_challengeWaitTimeout);
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
@@ -307,6 +308,8 @@ class NodeService {
   Future<bool> _sendConnectWithFreshNonce(Duration timeout) async {
     final challengeNonce = await _awaitChallengeNonce(timeout);
     if (challengeNonce.isEmpty) {
+      _cachedChallengeNonce = null;
+      _cachedChallengeReceivedAt = null;
       log('[NODE] Challenge nonce not received; reopening socket before secure connect.');
       await _ws.forceReconnect(reason: 'missing-connect-challenge');
       return false;
@@ -338,7 +341,7 @@ class NodeService {
       log('[NODE] WebSocket reconnected, completing handshake...');
       _challengeCompleter = null;
       _challengeCompleter = Completer<String?>();
-      await _sendConnectWithFreshNonce(const Duration(seconds: 6));
+      await _sendConnectWithFreshNonce(_challengeWaitTimeout);
     } catch (e) {
       _updateState(_state.copyWith(
         status: NodeStatus.error,
@@ -571,6 +574,11 @@ class NodeService {
       final code = errPayload['code'] as String? ?? '';
       final message = errPayload['message'] as String? ?? 'Connect failed';
       final details = errPayload['details'];
+      final detailCode =
+          details is Map ? details['code']?.toString() ?? '' : '';
+      final detailReason = details is Map
+          ? details['reason']?.toString().toLowerCase() ?? ''
+          : '';
       final normalizedMessage = message.toLowerCase();
 
       if (code == 'INVALID_REQUEST' &&
@@ -604,6 +612,16 @@ class NodeService {
           normalizedMessage.contains("required property 'nonce'")) {
         log('[NODE] Gateway required a fresh nonce; reopening socket for secure reconnect.');
         await _ws.forceReconnect(reason: 'gateway-required-nonce');
+      } else if (code == 'DEVICE_AUTH_NONCE_MISMATCH' ||
+          detailCode == 'DEVICE_AUTH_NONCE_MISMATCH' ||
+          detailReason == 'device-nonce-mismatch' ||
+          normalizedMessage.contains('nonce mismatch')) {
+        // Explicit recovery path for nonce drift across reconnect churn.
+        _cachedChallengeNonce = null;
+        _cachedChallengeReceivedAt = null;
+        _challengeCompleter = null;
+        log('[NODE] Nonce mismatch from gateway; clearing cached nonce and retrying handshake.');
+        await _ws.forceReconnect(reason: 'device-nonce-mismatch');
       } else {
         _updateState(_state.copyWith(
           status: NodeStatus.error,
