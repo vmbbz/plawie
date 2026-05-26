@@ -5,7 +5,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/native_bridge.dart';
 import '../services/node_service.dart';
 import '../services/preferences_service.dart';
+import '../services/capabilities/capability_handler.dart';
 import '../models/node_state.dart';
+import '../models/node_frame.dart';
 import '../models/gateway_state.dart';
 import 'gateway_provider.dart' as svc_gateway;
 import '../services/capabilities/camera_capability.dart';
@@ -157,54 +159,72 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
-  void _registerCapabilities() {
+  void _registerCapabilityAliases(
+    CapabilityHandler capability,
+    Future<NodeFrame> Function(String command, Map<String, dynamic> params)
+        handler,
+  ) {
+    final commands = <String>{};
+    for (final command in capability.commands) {
+      final canonical = '${capability.name}.$command';
+      commands.add(canonical);
+      commands.add('${capability.name}_$command');
+
+      // OpenClaw commonly exposes haptics as both haptic.vibrate and vibrate.
+      if (capability.name == 'haptic' && command == 'vibrate') {
+        commands.add('vibrate');
+      }
+    }
+
     _nodeService.registerCapability(
-      _cameraCapability.name,
-      _cameraCapability.commands
-          .map((c) => '${_cameraCapability.name}.$c')
-          .toList(),
+      capability.name,
+      commands.toList()..sort(),
+      (command, params) =>
+          handler(_canonicalNodeCommand(capability.name, command), params),
+    );
+  }
+
+  String _canonicalNodeCommand(String capabilityName, String command) {
+    final trimmed = command.trim();
+    if (capabilityName == 'haptic' && trimmed == 'vibrate') {
+      return 'haptic.vibrate';
+    }
+
+    final aliasPrefix = '${capabilityName}_';
+    if (trimmed.startsWith(aliasPrefix)) {
+      return '$capabilityName.${trimmed.substring(aliasPrefix.length)}';
+    }
+
+    return trimmed;
+  }
+
+  void _registerCapabilities() {
+    _registerCapabilityAliases(
+      _cameraCapability,
       (cmd, params) => _cameraCapability.handleWithPermission(cmd, params),
     );
-    _nodeService.registerCapability(
-      _canvasCapability.name,
-      _canvasCapability.commands
-          .map((c) => '${_canvasCapability.name}.$c')
-          .toList(),
+    _registerCapabilityAliases(
+      _canvasCapability,
       (cmd, params) => _canvasCapability.handle(cmd, params),
     );
-    _nodeService.registerCapability(
-      _locationCapability.name,
-      _locationCapability.commands
-          .map((c) => '${_locationCapability.name}.$c')
-          .toList(),
+    _registerCapabilityAliases(
+      _locationCapability,
       (cmd, params) => _locationCapability.handleWithPermission(cmd, params),
     );
-    _nodeService.registerCapability(
-      _screenCapability.name,
-      _screenCapability.commands
-          .map((c) => '${_screenCapability.name}.$c')
-          .toList(),
+    _registerCapabilityAliases(
+      _screenCapability,
       (cmd, params) => _screenCapability.handle(cmd, params),
     );
-    _nodeService.registerCapability(
-      _flashCapability.name,
-      _flashCapability.commands
-          .map((c) => '${_flashCapability.name}.$c')
-          .toList(),
+    _registerCapabilityAliases(
+      _flashCapability,
       (cmd, params) => _flashCapability.handleWithPermission(cmd, params),
     );
-    _nodeService.registerCapability(
-      _vibrationCapability.name,
-      _vibrationCapability.commands
-          .map((c) => '${_vibrationCapability.name}.$c')
-          .toList(),
+    _registerCapabilityAliases(
+      _vibrationCapability,
       (cmd, params) => _vibrationCapability.handle(cmd, params),
     );
-    _nodeService.registerCapability(
-      _sensorCapability.name,
-      _sensorCapability.commands
-          .map((c) => '${_sensorCapability.name}.$c')
-          .toList(),
+    _registerCapabilityAliases(
+      _sensorCapability,
       (cmd, params) => _sensorCapability.handleWithPermission(cmd, params),
     );
   }
