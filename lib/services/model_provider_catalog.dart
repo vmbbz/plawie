@@ -62,7 +62,8 @@ class ProviderOption {
 }
 
 class ModelProviderCatalog {
-  static const String defaultCloudFallbackModel = 'openrouter/openrouter/free';
+  static const String defaultCloudFallbackModel =
+      'openrouter/openai/gpt-oss-20b:free';
   static const String setupSafeGatewayModel = defaultCloudFallbackModel;
 
   static const String plawieNdkProviderId = 'plawie_ndk';
@@ -116,7 +117,7 @@ class ModelProviderCatalog {
       envKey: 'OPENROUTER_API_KEY',
       keyHint: 'sk-or-...',
       keyPrefix: 'sk-or-',
-      defaultModel: 'openrouter/openrouter/free',
+      defaultModel: defaultCloudFallbackModel,
       description: 'One account for free community models and paid fallbacks.',
     ),
     ProviderOption(
@@ -206,13 +207,23 @@ class ModelProviderCatalog {
       category: 'Code',
     ),
     ModelOption(
+      id: 'openrouter/openai/gpt-oss-20b:free',
+      label: 'GPT-OSS 20B Free via OpenRouter',
+      providerId: 'openrouter',
+      route: ModelRouteKind.cloud,
+      description: 'Free OpenRouter model that advertises tool-call support.',
+      category: 'Free',
+      recommended: true,
+    ),
+    ModelOption(
       id: 'openrouter/openrouter/free',
       label: 'OpenRouter Free Router',
       providerId: 'openrouter',
       route: ModelRouteKind.cloud,
-      description: 'Routes to currently available free OpenRouter models.',
+      description:
+          'Routes to available free models; tool-call support is not guaranteed.',
       category: 'Free',
-      recommended: true,
+      supportsToolCalls: false,
     ),
     ModelOption(
       id: 'openrouter/auto',
@@ -330,6 +341,8 @@ class ModelProviderCatalog {
         return 'xai/grok-4';
       case 'groq/llama-3.1-405b':
         return 'groq/llama-3.3-70b-versatile';
+      case 'openrouter/openrouter/free':
+        return defaultCloudFallbackModel;
       default:
         return trimmed;
     }

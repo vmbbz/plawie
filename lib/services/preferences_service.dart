@@ -186,8 +186,11 @@ class PreferencesService {
 
   // ── Voice & Speech ──────────────────────────────────────────────────────────
 
-  /// Speech speed multiplier (0.5–2.0). Default 1.2 to match competitor default.
-  double get ttsSpeed => _p.getDouble('tts_speed') ?? 1.2;
+  /// Speech speed multiplier (0.5–2.0). Keep provider-native speech at 1.0
+  /// unless the user explicitly changes it; some streamed providers artifact
+  /// when every request is forced through a speed override.
+  bool get hasTtsSpeedOverride => _p.containsKey('tts_speed');
+  double get ttsSpeed => _p.getDouble('tts_speed') ?? 1.0;
   set ttsSpeed(double value) => _p.setDouble('tts_speed', value);
 
   /// Auto-restart STT after TTS finishes

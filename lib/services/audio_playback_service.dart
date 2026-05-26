@@ -22,14 +22,15 @@ class AudioPlaybackService {
   VoidCallback? onComplete;
 
   void _init() {
+    unawaited(_player.setReleaseMode(ReleaseMode.stop));
     _player.setAudioContext(
       AudioContext(
         android: AudioContextAndroid(
           isSpeakerphoneOn: false,
           stayAwake: false,
           contentType: AndroidContentType.speech,
-          usageType: AndroidUsageType.assistanceSonification,
-          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.gainTransient,
         ),
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.playback,

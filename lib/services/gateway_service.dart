@@ -2000,11 +2000,17 @@ HEARTBEAT_OK.
 
   Future<void> reregisterSkills() async {
     if (!_state.isRunning) return;
-    // Compatibility first: always attempt skills.register and swallow unknown
-    // method errors. Some gateway builds expose partial features.methods during
-    // startup, so relying only on method advertisement can skip registration.
+    // Only register device-native skills when the gateway advertises the RPC.
+    // Calling this on newer gateways that omit skills.register can collapse the
+    // broader tool context down to just Plawie's bundled skills.
     final supported = _connection?.supportedMethods ?? const <String>[];
     final methodAdvertised = supported.contains('skills.register');
+    final discoveryUnknown = supported.isEmpty;
+    if (!methodAdvertised && !discoveryUnknown) {
+      _addActivity(
+          '[SKILLS] skills.register not advertised; preserving gateway tool catalog');
+      return;
+    }
     try {
       final catalog = SkillsService().getToolsCatalog();
       if (catalog.isNotEmpty) {
@@ -4003,12 +4009,13 @@ $message''';
     await prefs.init();
     final selectedVoiceId = prefs.gatewayVoiceId.trim();
     final speed = prefs.ttsSpeed.clamp(0.5, 2.0);
+    final hasSpeedOverride = prefs.hasTtsSpeedOverride;
 
     try {
       final frame = await invoke('talk.speak', {
         'text': input,
-        'outputFormat': 'mp3_44100_128',
-        'speed': speed,
+        'outputFormat': 'mp3',
+        if (hasSpeedOverride && (speed - 1.0).abs() > 0.01) 'speed': speed,
         if (selectedVoiceId.isNotEmpty) 'voiceId': selectedVoiceId,
       });
       final payload = _extractTalkSpeakPayload(frame);
@@ -5075,7 +5082,9 @@ $message''';
     "nodes": {
       "pairing": {
         "autoApproveCidrs": ["127.0.0.1/32"]
-      }
+      },
+      "denyCommands": [],
+      "allowCommands": ${jsonEncode(GatewayToolCatalog.mobileNodeAllowCommands.toList(growable: false))}
     },
     "http": { "endpoints": { "chatCompletions": { "enabled": true } } },
     "mode": "local",

@@ -250,6 +250,51 @@
 
         let targetCameraZ = 1.6;
         let currentCameraZ = 1.6;
+        let needsPostIdleRecenter = false;
+        const _anchorHeadPos = new THREE.Vector3();
+        const _anchorHipsPos = new THREE.Vector3();
+        const _anchorRawCenter = new THREE.Vector3();
+
+        function getHumanoidAnchorX(vrm) {
+            if (!vrm || !vrm.humanoid) return 0.0;
+            const head = vrm.humanoid.getNormalizedBoneNode('head');
+            const hips = vrm.humanoid.getNormalizedBoneNode('hips');
+            if (head) head.getWorldPosition(_anchorHeadPos);
+            if (hips) hips.getWorldPosition(_anchorHipsPos);
+            new THREE.Box3()
+                .setFromObject(vrm.scene)
+                .getCenter(_anchorRawCenter);
+            return head && hips
+                ? (_anchorHeadPos.x * 0.62 + _anchorHipsPos.x * 0.38)
+                : head ? _anchorHeadPos.x
+                : hips ? _anchorHipsPos.x
+                : _anchorRawCenter.x;
+        }
+
+        function recenterVrmOnHumanoidAnchor(vrm) {
+            const anchorX = getHumanoidAnchorX(vrm);
+            if (Number.isFinite(anchorX)) {
+                vrm.scene.position.x -= anchorX;
+                vrm.scene.updateMatrixWorld(true);
+            }
+        }
+
+        function measureAvatarMetrics(vrm, fallbackHeadY = 1.6) {
+            const box = new THREE.Box3().setFromObject(vrm.scene);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const head = vrm.humanoid.getNormalizedBoneNode('head');
+            const headPos = new THREE.Vector3();
+            if (head) head.getWorldPosition(headPos);
+
+            return {
+                height: size.y,
+                width: size.x,
+                centerX: 0.0,
+                headY: head ? headPos.y : fallbackHeadY,
+                lookY: center.y,
+            };
+        }
 
         function disposeCurrentAvatar() {
             if (mixer) {
@@ -260,6 +305,7 @@
             idleAction = null;
             currentAction = null;
             talkGestureActive = false;
+            needsPostIdleRecenter = false;
             for (const key of Object.keys(gestures)) delete gestures[key];
             for (const key of Object.keys(pendingGestureLoads)) delete pendingGestureLoads[key];
 
@@ -309,39 +355,10 @@
                     vrm.scene.scale.set(scaleFactor, scaleFactor, scaleFactor);
                     vrm.scene.updateMatrixWorld(true);
 
-                    // Re-center around humanoid bones, not raw mesh bounds.
-                    // Some avatars have asymmetrical hair/clothes offsets that
-                    // bias the box center and push framing to one side.
-                    const head = vrm.humanoid.getNormalizedBoneNode('head');
-                    const hips = vrm.humanoid.getNormalizedBoneNode('hips');
-                    const headPos = new THREE.Vector3();
-                    const hipsPos = new THREE.Vector3();
-                    const rawCenter = new THREE.Box3()
-                        .setFromObject(vrm.scene)
-                        .getCenter(new THREE.Vector3());
-                    if (head) head.getWorldPosition(headPos);
-                    if (hips) hips.getWorldPosition(hipsPos);
-                    const bodyAnchorX = head && hips
-                        ? (headPos.x * 0.62 + hipsPos.x * 0.38)
-                        : head ? headPos.x
-                        : hips ? hipsPos.x
-                        : rawCenter.x;
-                    vrm.scene.position.x -= bodyAnchorX;
-                    vrm.scene.updateMatrixWorld(true);
-
-                    // Re-measure after scaling and re-centering.
-                    const newBox = new THREE.Box3().setFromObject(vrm.scene);
-                    const newSize = newBox.getSize(new THREE.Vector3());
-                    const newCenter = newBox.getCenter(new THREE.Vector3());
-                    if (head) head.getWorldPosition(headPos);
-
-                    avatarMetrics = {
-                        height: newSize.y,
-                        width: newSize.x,
-                        centerX: 0.0,
-                        headY: head ? headPos.y : 1.6,
-                        lookY: newCenter.y,
-                    };
+                    // Re-center around the humanoid body anchor, not raw mesh
+                    // origin/bounds. This keeps different rigs visually centered.
+                    recenterVrmOnHumanoidAnchor(vrm);
+                    avatarMetrics = measureAvatarMetrics(vrm);
 
                     if (vrm.expressionManager) {
                         const exprNames = Object.keys(vrm.expressionManager.expressionMap);
@@ -368,6 +385,9 @@
                         idleAction = mixer.clipAction(clip);
                         idleAction.play();
                         currentAction = idleAction;
+                        // The first mixer update can introduce a one-time root
+                        // offset from the idle clip. Re-center once right after.
+                        needsPostIdleRecenter = true;
 
                         // Keep startup light: talk is preloaded for TTS lips/body,
                         // all other gestures are lazy-loaded the first time an
@@ -849,12 +869,20 @@
             if (!currentVrm) return;
 
             if (mixer) mixer.update(delta);
+            if (needsPostIdleRecenter && currentVrm) {
+                recenterVrmOnHumanoidAnchor(currentVrm);
+                avatarMetrics = measureAvatarMetrics(currentVrm, avatarMetrics.headY);
+                updateCameraFraming(document.body.clientWidth, document.body.clientHeight);
+                currentCameraZ = targetCameraZ;
+                needsPostIdleRecenter = false;
+            }
             if (window.SparkleManager) window.SparkleManager.update(delta);
 
             // Camera lerp + orbit
             currentCameraZ = THREE.MathUtils.lerp(currentCameraZ, targetCameraZ, delta * 3.0);
             const urlParamsAnim = new URLSearchParams(window.location.search);
             const isOverlayAnim = urlParamsAnim.get('overlay') === 'true' || dynamicPip;
+
             if (!isOverlayAnim) {
                 const timeSinceOrbit = time - lastOrbitTime;
                 if (ENABLE_ORBIT_AUTO_RECENTER && !isDragging && timeSinceOrbit > ORBIT_AUTO_RECENTER_DELAY) {
