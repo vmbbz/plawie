@@ -449,7 +449,7 @@ class LocalLlmService {
   /// Full chat with conversation history — used by GatewayService for local-llm routing.
   /// Supports multi-turn local tool calls (get_current_datetime, etc.) with depth limit 3.
   /// [history] is a list of {role, content} maps (OpenAI format).
-  Stream<String> chat(List<Map<String, dynamic>> history, String userMessage) {
+  Stream<String> chat(List<Map<String, dynamic>> history, String userMessage, {List<Tool>? tools, bool yieldToolCalls = false}) {
     final controller = StreamController<String>();
     debugPrint(
         '[NDK] chat requested status=${_state.status.name} model=${_state.activeModelId ?? 'none'} history=${history.length} chars=${userMessage.length}');
@@ -468,20 +468,20 @@ class LocalLlmService {
     _activeChatController?.close();
     _activeChatController = controller;
 
-    final tools = _toolsForMessage(userMessage);
+    final effectiveTools = tools ?? _toolsForMessage(userMessage);
     final trimmed = _trimHistory(
       history,
       userMessage,
-      toolCount: tools.length,
+      toolCount: effectiveTools.length,
     );
-    final toolNames = tools.map((t) => t.name).join(', ');
+    final toolNames = effectiveTools.map((t) => t.name).join(', ');
     final messages = [
       Message(
           Role.system,
           'You are Plawie, a helpful AI assistant running locally on this Android device. '
           'Be concise and direct. '
           'Never pretend a native action happened. '
-          '${tools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Prefer a tool call for explicit device, camera, avatar, haptic, location, sensor, screen, or canvas requests. Use exact JSON schema and enum values only. After a tool result, briefly explain the real result.'}'),
+          '${effectiveTools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Prefer a tool call for explicit device, camera, avatar, haptic, location, sensor, screen, or canvas requests. Use exact JSON schema and enum values only. After a tool result, briefly explain the real result.'}'),
       if (trimmed.summary != null && trimmed.summary!.isNotEmpty)
         Message(Role.system, trimmed.summary!),
       for (final m in trimmed.recent)
@@ -495,9 +495,7 @@ class LocalLlmService {
         ),
       Message(Role.user, userMessage),
     ];
-    debugPrint(
-        '[NDK] tool gate selected=${tools.length}/${_localTools.length}${tools.isEmpty ? '' : ' names=$toolNames'}');
-    _runChatTurn(messages, controller, tools: tools);
+    _runChatTurn(messages, controller, tools: effectiveTools, yieldToolCalls: yieldToolCalls);
     return controller.stream;
   }
 
@@ -945,7 +943,7 @@ class LocalLlmService {
   /// requested tool calls, dispatches them and recurses (depth-limited to 3).
   Future<void> _runChatTurn(
       List<Message> messages, StreamController<String> controller,
-      {int depth = 0, List<Tool>? tools}) async {
+      {int depth = 0, List<Tool>? tools, bool yieldToolCalls = false}) async {
     if (depth > 3 || controller.isClosed) return;
     _isInferring = true;
     final startedAt = Stopwatch()..start();
@@ -1080,6 +1078,13 @@ class LocalLlmService {
               },
             })
         .toList();
+
+    if (yieldToolCalls) {
+      controller.add('\x00TOOL_CALLS:${jsonEncode(toolCallsList)}\x00');
+      controller.close();
+      return;
+    }
+
     final toolResultMessages =
         await Future.wait(sorted.map((e) async => Message(
               Role.tool,
@@ -1092,7 +1097,7 @@ class LocalLlmService {
       Message(Role.assistant, '', toolCalls: toolCallsList),
       ...toolResultMessages,
     ];
-    await _runChatTurn(updated, controller, depth: depth + 1, tools: tools);
+    await _runChatTurn(updated, controller, depth: depth + 1, tools: tools, yieldToolCalls: yieldToolCalls);
   }
 
   /// Returns fllama engine status (replaces HTTP health probe).
