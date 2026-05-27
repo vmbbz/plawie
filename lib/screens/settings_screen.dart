@@ -1097,6 +1097,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _getProviderLabel(String modelId) {
     if (modelId.startsWith('local-llm/')) return 'On-Device (Free)';
+    if (modelId.startsWith('plawie_ndk/')) return 'Plawie NDK Bridge';
     final model = ModelProviderCatalog.modelById(modelId);
     final provider = model == null
         ? null

@@ -192,7 +192,7 @@ class _ChatScreenState extends State<ChatScreen>
 
       if ((_localChatModeEnabled == false ||
               llmState.status == LocalLlmStatus.idle) &&
-          ModelProviderCatalog.isLocalModelId(_selectedModel)) {
+          ModelProviderCatalog.isDirectLocalModelId(_selectedModel)) {
         setState(() => _selectedModel = _cloudFallbackModel);
         PreferencesService().configuredModel = _cloudFallbackModel;
       }
@@ -217,14 +217,14 @@ class _ChatScreenState extends State<ChatScreen>
         if (canonical != prefsModel) {
           PreferencesService().configuredModel = canonical;
         }
-        if (ModelProviderCatalog.isLocalModelId(canonical) &&
+        if (ModelProviderCatalog.isDirectLocalModelId(canonical) &&
             !localModeEnabled) {
           setState(() => _selectedModel = _cloudFallbackModel);
           PreferencesService().configuredModel = _cloudFallbackModel;
           return;
         }
         if (_availableModels.contains(canonical) ||
-            (ModelProviderCatalog.isLocalModelId(canonical) &&
+            (ModelProviderCatalog.isDirectLocalModelId(canonical) &&
                 LocalLlmService().state.status == LocalLlmStatus.ready)) {
           setState(() => _selectedModel = canonical);
         }
@@ -354,7 +354,7 @@ class _ChatScreenState extends State<ChatScreen>
         final savedCloud = prefs.lastCloudModel;
         if (savedCloud != null &&
             savedCloud.isNotEmpty &&
-            !ModelProviderCatalog.isLocalModelId(savedCloud)) {
+            !ModelProviderCatalog.isDirectLocalModelId(savedCloud)) {
           _cloudFallbackModel = ModelProviderCatalog.canonicalizeModelId(
             savedCloud,
           );
@@ -371,7 +371,7 @@ class _ChatScreenState extends State<ChatScreen>
         // Load the user's configured model (from setup or settings).
         final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
-          final isLocal = ModelProviderCatalog.isLocalModelId(configured);
+          final isLocal = ModelProviderCatalog.isDirectLocalModelId(configured);
           final localReady =
               isLocal && LocalLlmService().state.status == LocalLlmStatus.ready;
           if (isLocal && !localModeEnabled) {
@@ -2104,7 +2104,7 @@ class _ChatScreenState extends State<ChatScreen>
         await prefs.init();
         final model = ModelProviderCatalog.canonicalizeModelId(
             value.toString().substring(6));
-        if (ModelProviderCatalog.isLocalModelId(model) &&
+        if (ModelProviderCatalog.isDirectLocalModelId(model) &&
             !prefs.localChatModeEnabled) {
           if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2120,7 +2120,7 @@ class _ChatScreenState extends State<ChatScreen>
           _loadPreferences();
           return;
         }
-        final isNowCloud = !ModelProviderCatalog.isLocalModelId(model);
+        final isNowCloud = !ModelProviderCatalog.isDirectLocalModelId(model);
         final catalogModel = ModelProviderCatalog.modelById(model);
         if (isNowCloud && catalogModel != null) {
           final hasCredential = await GatewayService()
@@ -2141,16 +2141,16 @@ class _ChatScreenState extends State<ChatScreen>
         }
         setState(() {
           _selectedModel = model;
-          if (!ModelProviderCatalog.isLocalModelId(model)) {
+          if (!ModelProviderCatalog.isDirectLocalModelId(model)) {
             _cloudFallbackModel = model;
           }
         });
         prefs.configuredModel = model;
-        if (!ModelProviderCatalog.isLocalModelId(model)) {
+        if (!ModelProviderCatalog.isDirectLocalModelId(model)) {
           prefs.lastCloudModel = model;
         }
 
-        final needsReload = ModelProviderCatalog.isLocalModelId(model);
+        final needsReload = ModelProviderCatalog.isDirectLocalModelId(model);
         if (needsReload) {
           final modelId = model.split('/').last;
           final localModel =

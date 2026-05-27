@@ -258,6 +258,14 @@ class ModelProviderCatalog {
       description: 'Very fast lightweight Groq route.',
       category: 'Fast',
     ),
+    ModelOption(
+      id: 'plawie_ndk/local-llm',
+      label: 'Plawie NDK Bridge (Local Gateway)',
+      providerId: 'plawie_ndk',
+      route: ModelRouteKind.cloud,
+      description: 'Routes gateway prompts to the on-device NDK model.',
+      category: 'Bridge',
+    ),
   ];
 
   static List<String> get cloudModelIds =>
@@ -350,10 +358,21 @@ class ModelProviderCatalog {
 
   static bool isLocalModelId(String modelId) {
     final trimmed = modelId.trim();
+    // plawie_ndk/local-llm routes through the OpenClaw gateway — NOT the local
+    // fllama engine. isLocalModelId must return false so chat_screen routes it
+    // to PATH B (gateway lane) instead of PATH A (direct local bypass).
+    if (trimmed == '$plawieNdkProviderId/local-llm') return false;
+    if (trimmed.startsWith('$plawieNdkProviderId/local-llm/')) return false;
     if (trimmed.startsWith('local-llm')) return true;
-    if (trimmed == '$plawieNdkProviderId/local-llm') return true;
-    if (trimmed.startsWith('$plawieNdkProviderId/local-llm/')) return true;
     return false;
+  }
+
+
+  static bool isDirectLocalModelId(String modelId) {
+    final trimmed = modelId.trim();
+    if (trimmed == '$plawieNdkProviderId/local-llm') return false;
+    if (trimmed.startsWith('$plawieNdkProviderId/local-llm/')) return false;
+    return trimmed.startsWith('local-llm');
   }
 
   static String labelForModel(String modelId) {
@@ -400,6 +419,15 @@ class ModelProviderCatalog {
       case 'openrouter':
         return {
           'baseUrl': 'https://openrouter.ai/api/v1',
+          'models': models,
+        };
+      case 'plawie_ndk':
+        // The gateway schema strictly validates the 'api' field.
+        // Always start the merge with the correct value so a stale on-disk
+        // 'openai' value cannot survive through _ensureCatalogProviderDefaults.
+        return {
+          'api': 'openai-completions',
+          'baseUrl': plawieNdkBaseUrl,
           'models': models,
         };
       default:

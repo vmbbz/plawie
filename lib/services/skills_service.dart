@@ -274,7 +274,7 @@ class SkillsService {
   // ── Mappings and Executors (Kept for runtime functionality) ───────────────
 
   final Map<String, String> _fullBodyMap = {
-    'dance': 'assets/vrm/animations/gesture_dance.vrma',
+    'dance': 'assets/vrm/animations/dance_picatrix.vrma',
     'spin': 'assets/vrm/animations/gesture_spin.vrma',
     'greeting': 'assets/vrm/animations/gesture_greeting.vrma',
     'squat': 'assets/vrm/animations/gesture_squat.vrma',

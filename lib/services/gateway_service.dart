@@ -1724,7 +1724,7 @@ HEARTBEAT_OK.
 
   Future<void> persistModel(String model) async {
     final canonical = ModelProviderCatalog.canonicalizeModelId(model);
-    if (ModelProviderCatalog.isLocalModelId(canonical)) {
+    if (ModelProviderCatalog.isDirectLocalModelId(canonical)) {
       _addActivity(
           '[MODEL] Selected direct NDK model $canonical without changing gateway primary.');
       return;
@@ -1813,6 +1813,22 @@ HEARTBEAT_OK.
     }
     final providers = models['providers'] as Map;
     for (final provider in ModelProviderCatalog.providers) {
+      // plawie_ndk is written exclusively by configureNdkGatewayBridge().
+      // Merging it here with generic defaults can clobber the gateway-validated
+      // 'api' field or overwrite the baseUrl on unrelated config writes.
+      // Always re-merge it with the correct defaults so a stale on-disk
+      // 'openai' value is healed on every write cycle.
+      if (provider.id == ModelProviderCatalog.plawieNdkProviderId) {
+        final existing = providers[provider.id];
+        if (existing is Map) {
+          // Only heal — never inject when the block doesn't exist yet.
+          providers[provider.id] = ModelProviderCatalog.mergeProviderConfig(
+            provider.id,
+            existing,
+          );
+        }
+        continue;
+      }
       final existing = providers[provider.id];
       providers[provider.id] = ModelProviderCatalog.mergeProviderConfig(
         provider.id,
@@ -1820,6 +1836,7 @@ HEARTBEAT_OK.
       );
     }
   }
+
 
   /// Map a provider name to its default model string (provider/model).
   /// Public so GatewayProvider can call it during configureAndStart.
@@ -1961,7 +1978,7 @@ HEARTBEAT_OK.
     config['models'] ??= <String, dynamic>{};
     config['models']['providers'] ??= <String, dynamic>{};
     config['models']['providers'][provider] = <String, dynamic>{
-      'api': 'openai',
+      'api': 'openai-completions',
       'apiKey': bridgeKey,
       'baseUrl': ModelProviderCatalog.plawieNdkBaseUrl,
       'models': [
@@ -3397,8 +3414,8 @@ The paired Android device node is "$nodeId" with displayName "OpenClaw Mobile".
 For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, or flashlight actions, call the OpenClaw nodes tool with "node": "$nodeId".
 Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeId".
 Never use node=auto for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
-Useful node actions include camera_snap, camera_list, canvas_navigate, canvas_eval, canvas_snapshot, flash_on, flash_off, flash_toggle, flash_status, haptic_vibrate, location_get, screen_record, sensor_read, and sensor_list.
-Examples: nodes({"action":"camera_snap","node":"$nodeId","quality":85}); nodes({"action":"haptic_vibrate","node":"$nodeId","durationMs":150}); nodes({"action":"flash_status","node":"$nodeId"}).
+Useful node actions use canonical dotted command names: camera.snap, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, location.get, screen.record, sensor.read, and sensor.list.
+Examples: nodes({"action":"camera.snap","node":"$nodeId","quality":85}); nodes({"action":"haptic.vibrate","node":"$nodeId","durationMs":150}); nodes({"action":"flash.status","node":"$nodeId"}).
 If a tool plan would use node=auto, replace it with node="$nodeId" before calling the tool.
 If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
 </plawie_mobile_tool_context>
@@ -3423,7 +3440,7 @@ $message''';
     // autostart, WS setup, or provider sync so NDK mode stays lightweight and
     // cannot accidentally trigger OpenClaw plugin hooks while the phone is
     // already doing local inference.
-    if (ModelProviderCatalog.isLocalModelId(model)) {
+    if (ModelProviderCatalog.isDirectLocalModelId(model)) {
       yield* LocalLlmService().chat(conversationHistory ?? [], message);
       return;
     }
@@ -3707,6 +3724,7 @@ $message''';
                   agentRun != activeRunId) {
                 return;
               }
+              assistantSnapshot = ''; // Reset snapshot on tool use so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -3722,6 +3740,7 @@ $message''';
                   agentRun != activeRunId) {
                 return;
               }
+              assistantSnapshot = ''; // Reset snapshot on tool result so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -4798,12 +4817,12 @@ $message''';
 
     // Force cloud/gateway lane unless the user explicitly enabled local chat
     // from the Local LLM page.
-    if (ModelProviderCatalog.isLocalModelId(m) && !prefs.localChatModeEnabled) {
+    if (ModelProviderCatalog.isDirectLocalModelId(m) && !prefs.localChatModeEnabled) {
       final lastCloud = prefs.lastCloudModel;
       final fallback = (lastCloud != null && lastCloud.isNotEmpty)
           ? ModelProviderCatalog.canonicalizeModelId(lastCloud)
           : ModelProviderCatalog.defaultCloudFallbackModel;
-      if (!ModelProviderCatalog.isLocalModelId(fallback)) {
+      if (!ModelProviderCatalog.isDirectLocalModelId(fallback)) {
         m = fallback;
       } else {
         m = ModelProviderCatalog.defaultCloudFallbackModel;

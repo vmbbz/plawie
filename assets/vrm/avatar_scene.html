@@ -139,7 +139,10 @@
             const path = `animations/${name}.vrma`;
             GESTURE_FILE_MAP[name] = path;
             if (name.startsWith('gesture_')) {
-                GESTURE_FILE_MAP[name.replace('gesture_', '')] = path;
+                const short = name.replace('gesture_', '');
+                if (!GESTURE_FILE_MAP[short]) {
+                    GESTURE_FILE_MAP[short] = path;
+                }
             } else if (name === 'dance_picatrix') {
                 GESTURE_FILE_MAP['dance'] = path;
             }
@@ -312,7 +315,9 @@
             if (currentVrm) {
                 try {
                     scene.remove(currentVrm.scene);
-                    currentVrm.dispose();
+                    if (typeof currentVrm.dispose === 'function') {
+                        currentVrm.dispose();
+                    }
                 } catch (e) {
                     console.warn('Avatar dispose failed', e);
                 }
@@ -531,8 +536,10 @@
                 }
             }
 
-            if (!isSpeaking && wasSpeaking && talkGestureActive) {
-                _returnToIdle(0.5);
+            if (!isSpeaking && wasSpeaking) {
+                if (talkGestureActive || (gestureMode === 'dance' && currentAction === gestures['dance'])) {
+                    _returnToIdle(0.5);
+                }
             }
         };
 
@@ -598,8 +605,16 @@
             const anim = gltf.userData.vrmAnimations[0];
             const clip = createVRMAnimationClip(anim, currentVrm);
             const action = mixer.clipAction(clip);
-            const isTalk = alias === 'talk' || alias === 'gesture_talk' || path.includes('gesture_talk');
-            if (isTalk) {
+            action.alias = alias;
+            action.path = path;
+            const isLooping = alias === 'talk' || 
+                              alias === 'gesture_talk' || 
+                              path.includes('gesture_talk') ||
+                              alias === 'dance' ||
+                              alias === 'gesture_dance' ||
+                              path.includes('dance_picatrix') ||
+                              path.includes('gesture_dance');
+            if (isLooping) {
                 action.setLoop(THREE.LoopRepeat, Infinity);
             } else {
                 action.setLoop(THREE.LoopOnce);
@@ -677,8 +692,9 @@
 
             if (currentAction && currentAction !== action) currentAction.fadeOut(0.3);
 
-            if (n === 'talk') {
-                talkGestureActive = true;
+            const isLooping = n === 'talk' || n === 'dance' || n === 'gesture_talk' || n === 'gesture_dance';
+            if (isLooping) {
+                talkGestureActive = (n === 'talk' || n === 'gesture_talk');
                 action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.3).play();
                 currentAction = action;
             } else {
@@ -913,7 +929,20 @@
             // playing, scaling procedural bone overrides to near-zero lets the VRMA
             // keyframes drive the skeleton without fighting each other.
             const isVrmaActive = currentAction && currentAction !== idleAction && currentAction.isRunning();
-            const blendTarget = isVrmaActive ? 0.04 : 1.0;
+            let isSubtleGesture = false;
+            if (isVrmaActive && currentAction) {
+                const alias = currentAction.alias || '';
+                const path = currentAction.path || '';
+                isSubtleGesture = alias === 'talk' || 
+                                  alias === 'ready' || 
+                                  alias === 'gesture_talk' || 
+                                  alias === 'gesture_ready' ||
+                                  path.includes('gesture_talk') || 
+                                  path.includes('gesture_ready') ||
+                                  path.includes('talk') || 
+                                  path.includes('ready');
+            }
+            const blendTarget = (isVrmaActive && !isSubtleGesture) ? 0.04 : 1.0;
             proceduralBlend = THREE.MathUtils.lerp(proceduralBlend, blendTarget, delta * 6.0);
 
             const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
@@ -922,7 +951,7 @@
             const head = currentVrm.humanoid.getNormalizedBoneNode('head');
 
             // Gaze: disable during active VRMA so it doesn't fight head animations
-            const isGesturePlaying = isVrmaActive;
+            const isGesturePlaying = isVrmaActive && !isSubtleGesture;
             const isGazing = (time - lastGazeTime) < 4.0 && !isGesturePlaying;
             const finalTargetX = isGazing ? targetLookX : 0;
             const finalTargetY = isGazing ? targetLookY : 0;

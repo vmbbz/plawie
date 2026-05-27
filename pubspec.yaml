@@ -81,6 +81,7 @@ flutter:
     - assets/vrm/gemini.vrm
     - assets/vrm/boruto.vrm
     - assets/vrm/animations/
+    - assets/vrm/animations/limbs/
     - assets/vrm/lib/
     - assets/vrm/utils/
     - assets/openclaw/skills/battery.md

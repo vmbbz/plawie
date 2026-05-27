@@ -44,6 +44,8 @@ class NodeService {
   static const Duration _challengeWaitTimeout = Duration(seconds: 12);
   static final _uuidPattern =
       RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
+  static final _uuidSearchPattern =
+      RegExp(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}');
 
   Stream<NodeState> get stateStream => _stateController.stream;
   NodeState get state => _state;
@@ -175,7 +177,10 @@ class NodeService {
 
   String _declaredCommandContractSignature() {
     final commands = _capabilityHandlers.keys.toList()..sort();
-    return 'v2:${commands.join('|')}';
+    // Bump this when the gateway-visible node snapshot shape changes, not only
+    // when the command names change. v3 pairs with the operator handshake fix
+    // that stops sending empty caps/commands from the UI connection.
+    return 'v3:${commands.join('|')}';
   }
 
   String _capFamilyForCommand(String command) {
@@ -602,8 +607,12 @@ class NodeService {
       if (code == 'TOKEN_INVALID' ||
           code == 'NOT_PAIRED' ||
           code == 'DEVICE_NOT_PAIRED') {
-        log('[NODE] Pairing requested; waiting for gateway close to approve by requestId...');
-        // Do nothing — await the 1008 close event to trigger _handleNodePairingRequired
+        final requestId = _extractPairingRequestId(details);
+        final label = requestId == null || requestId.isEmpty
+            ? 'latest pending node request'
+            : requestId;
+        log('[NODE] Pairing requested by connect response; approving $label now.');
+        await _handleNodePairingRequired(requestId);
       } else if (code == 'UNAVAILABLE') {
         log('[NODE] Gateway is warming up (UNAVAILABLE). Entering grace period...');
         _updateState(_state.copyWith(status: NodeStatus.warmingUp));
@@ -670,6 +679,37 @@ class NodeService {
       return '[NODE] Pairing required$suffix';
     }
     return '[NODE] Connect rejected: $code - $message';
+  }
+
+  String? _extractPairingRequestId(dynamic details) {
+    if (details is Map) {
+      const keys = [
+        'requestId',
+        'requestID',
+        'request_id',
+        'pairingRequestId',
+        'pairing_request_id',
+        'id',
+      ];
+      for (final key in keys) {
+        final value = details[key]?.toString().trim();
+        if (value != null && _uuidPattern.hasMatch(value)) {
+          return value;
+        }
+      }
+      for (final value in details.values) {
+        final nested = _extractPairingRequestId(value);
+        if (nested != null && nested.isNotEmpty) return nested;
+      }
+    } else if (details is List) {
+      for (final value in details) {
+        final nested = _extractPairingRequestId(value);
+        if (nested != null && nested.isNotEmpty) return nested;
+      }
+    } else if (details != null) {
+      return _uuidSearchPattern.firstMatch(details.toString())?.group(0);
+    }
+    return null;
   }
 
   int? _extractExpectedProtocol(dynamic details) {
@@ -876,7 +916,7 @@ class NodeService {
     final requestLabel = requestId == null || requestId.isEmpty
         ? 'latest pending node request'
         : requestId;
-    log('[NODE] Pairing required (1008) — approving $requestLabel via OpenClaw CLI...');
+    log('[NODE] Pairing required — approving $requestLabel via OpenClaw CLI...');
     _gatewayAuthToken ??= await _readGatewayToken();
     final gatewayUrl =
         'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
@@ -901,14 +941,15 @@ class NodeService {
     // local CLI session scope.
     if (gatewayToken != null && gatewayToken.isNotEmpty) {
       try {
-        await NativeBridge.runInProot(
+        final output = await NativeBridge.runInProot(
           '$kOpenClawCommand devices approve $requestIdToApprove '
           '--url ${NativeBridge.shellQuote(gatewayUrl)} '
           '--token ${NativeBridge.shellQuote(gatewayToken)} '
           '--json',
           timeout: 40,
         );
-        return _readApprovedNodeTokenFromStore();
+        return _tokenFromApprovalOutput(output) ??
+            await _readApprovedNodeTokenFromStore();
       } catch (e) {
         if (_isUnknownRequestIdError(e)) {
           final refreshedId = await _resolvePendingNodeRequestId(
@@ -918,14 +959,15 @@ class NodeService {
           );
           if (refreshedId != null && refreshedId != requestIdToApprove) {
             requestIdToApprove = refreshedId;
-            await NativeBridge.runInProot(
+            final output = await NativeBridge.runInProot(
               '$kOpenClawCommand devices approve $requestIdToApprove '
               '--url ${NativeBridge.shellQuote(gatewayUrl)} '
               '--token ${NativeBridge.shellQuote(gatewayToken)} '
               '--json',
               timeout: 40,
             );
-            return _readApprovedNodeTokenFromStore();
+            return _tokenFromApprovalOutput(output) ??
+                await _readApprovedNodeTokenFromStore();
           }
         }
         log('[NODE] Explicit approval failed ($e); retrying with local CLI session...');
@@ -934,10 +976,12 @@ class NodeService {
 
     // Fallback path: local CLI session, with one stale-request recovery attempt.
     try {
-      await NativeBridge.runInProot(
+      final output = await NativeBridge.runInProot(
         '$kOpenClawCommand devices approve $requestIdToApprove --json',
         timeout: 40,
       );
+      return _tokenFromApprovalOutput(output) ??
+          await _readApprovedNodeTokenFromStore();
     } catch (e) {
       if (_isUnknownRequestIdError(e)) {
         final refreshedId = await _resolvePendingNodeRequestId(
@@ -947,10 +991,12 @@ class NodeService {
         );
         if (refreshedId != null && refreshedId != requestIdToApprove) {
           requestIdToApprove = refreshedId;
-          await NativeBridge.runInProot(
+          final output = await NativeBridge.runInProot(
             '$kOpenClawCommand devices approve $requestIdToApprove --json',
             timeout: 40,
           );
+          return _tokenFromApprovalOutput(output) ??
+              await _readApprovedNodeTokenFromStore();
         } else {
           rethrow;
         }
@@ -958,8 +1004,21 @@ class NodeService {
         rethrow;
       }
     }
+  }
 
-    return _readApprovedNodeTokenFromStore();
+  String? _tokenFromApprovalOutput(String output) {
+    if (output.trim().isEmpty) return null;
+    try {
+      return _findAnyToken(jsonDecode(output));
+    } catch (_) {
+      final jsonStart = output.indexOf(RegExp(r'[\{\[]'));
+      if (jsonStart < 0) return null;
+      try {
+        return _findAnyToken(jsonDecode(output.substring(jsonStart)));
+      } catch (_) {
+        return null;
+      }
+    }
   }
 
   Future<String?> _resolvePendingNodeRequestId({

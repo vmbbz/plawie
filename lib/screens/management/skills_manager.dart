@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/gateway_provider.dart';
+import '../../providers/node_provider.dart';
 import '../../models/gateway_state.dart';
 import '../../models/clawhub_skill.dart';
 import '../../app.dart';
@@ -1321,6 +1322,59 @@ const _customSkills = <_CustomSkillInfo>[
   ),
 ];
 
+const _nodeCapabilityCatalog = <_NodeCapabilityInfo>[
+  _NodeCapabilityInfo(
+    id: 'camera',
+    label: 'Camera',
+    description: 'Capture photos, clips, and list available cameras.',
+    icon: Icons.camera_alt_rounded,
+    commands: ['camera.snap', 'camera.clip', 'camera.list'],
+  ),
+  _NodeCapabilityInfo(
+    id: 'canvas',
+    label: 'Canvas / Web UI',
+    description: 'Navigate, evaluate JavaScript, and snapshot the chat canvas.',
+    icon: Icons.draw_rounded,
+    commands: ['canvas.navigate', 'canvas.eval', 'canvas.snapshot'],
+  ),
+  _NodeCapabilityInfo(
+    id: 'flash',
+    label: 'Flashlight',
+    description:
+        'Turn the phone flashlight on, off, toggle it, or read status.',
+    icon: Icons.flashlight_on_rounded,
+    commands: ['flash.on', 'flash.off', 'flash.toggle', 'flash.status'],
+  ),
+  _NodeCapabilityInfo(
+    id: 'haptic',
+    label: 'Haptics',
+    description: 'Trigger vibration and haptic patterns on the Android device.',
+    icon: Icons.vibration_rounded,
+    commands: ['haptic.vibrate'],
+  ),
+  _NodeCapabilityInfo(
+    id: 'location',
+    label: 'Location',
+    description: 'Read current Android GPS/location coordinates.',
+    icon: Icons.location_on_rounded,
+    commands: ['location.get'],
+  ),
+  _NodeCapabilityInfo(
+    id: 'screen',
+    label: 'Screen',
+    description: 'Record or capture device screen context when permitted.',
+    icon: Icons.screen_share_rounded,
+    commands: ['screen.record'],
+  ),
+  _NodeCapabilityInfo(
+    id: 'sensor',
+    label: 'Sensors',
+    description: 'List and read accelerometer, gyroscope, and related sensors.',
+    icon: Icons.sensors_rounded,
+    commands: ['sensor.list', 'sensor.read'],
+  ),
+];
+
 class _CustomSkillInfo {
   final String id;
   final String label;
@@ -1333,6 +1387,22 @@ class _CustomSkillInfo {
     required this.description,
     required this.icon,
     required this.actions,
+  });
+}
+
+class _NodeCapabilityInfo {
+  final String id;
+  final String label;
+  final String description;
+  final IconData icon;
+  final List<String> commands;
+
+  const _NodeCapabilityInfo({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.commands,
   });
 }
 
@@ -1444,7 +1514,9 @@ class _ToolsTabState extends State<_ToolsTab> {
   @override
   Widget build(BuildContext context) {
     final gatewayState = context.watch<GatewayProvider>().state;
+    final nodeState = context.watch<NodeProvider>().state;
     final isOffline = gatewayState.status == GatewayStatus.stopped;
+    final nodePaired = nodeState.isPaired;
 
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
@@ -1578,6 +1650,74 @@ class _ToolsTabState extends State<_ToolsTab> {
                 child: _CustomSkillCard(info: _customSkills[i]),
               ),
               childCount: _customSkills.length,
+            ),
+          ),
+        ),
+
+        // -- Android node capabilities -----------------------------------
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+            child: Row(
+              children: [
+                Expanded(child: _sectionLabel('ANDROID NODE CAPABILITIES')),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: (nodePaired
+                            ? AppColors.statusGreen
+                            : AppColors.statusAmber)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: (nodePaired
+                              ? AppColors.statusGreen
+                              : AppColors.statusAmber)
+                          .withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    nodePaired ? 'NODE PAIRED' : nodeState.statusText,
+                    style: TextStyle(
+                      color: nodePaired
+                          ? AppColors.statusGreen
+                          : AppColors.statusAmber,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+            child: Text(
+              'Phone hardware commands declared by the Android node-host connection. These are not written into tools.allow; they are exposed through gateway.nodes.allowCommands and the paired node snapshot.',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.38),
+                  height: 1.5),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _NodeCapabilityCard(
+                  info: _nodeCapabilityCatalog[i],
+                  isPaired: nodePaired,
+                  statusText: nodeState.statusText,
+                ),
+              ),
+              childCount: _nodeCapabilityCatalog.length,
             ),
           ),
         ),
@@ -2664,6 +2804,116 @@ class _ToolCard extends StatelessWidget {
                   size: 18, color: Colors.white.withValues(alpha: 0.18)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _NodeCapabilityCard extends StatelessWidget {
+  final _NodeCapabilityInfo info;
+  final bool isPaired;
+  final String statusText;
+
+  const _NodeCapabilityCard({
+    required this.info,
+    required this.isPaired,
+    required this.statusText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xFFFF9800);
+    final statusColor =
+        isPaired ? AppColors.statusGreen : AppColors.statusAmber;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(info.icon, size: 16, color: color),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      info.label,
+                      style: GoogleFonts.outfit(
+                          fontSize: 13, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      info.description,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.42),
+                          height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border:
+                      Border.all(color: statusColor.withValues(alpha: 0.24)),
+                ),
+                child: Text(
+                  isPaired ? 'DECLARED' : statusText.toUpperCase(),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: info.commands
+                .map(
+                  (command) => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Text(
+                      command,
+                      style: GoogleFonts.firaCode(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
       ),
     );
   }

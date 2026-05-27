@@ -281,11 +281,9 @@ class GatewayConnection {
         },
         'locale': 'en-US',
         'userAgent': 'plawie-android/${AppConstants.version}',
-        'caps': const <String>[],
-        'commands': const <String>[],
-        'permissions': const <String, dynamic>{},
-        // caps/commands belong ONLY on the role=node connection (NodeService/NodeWsService).
-        // Declaring them on the operator role produces gateway warnings and is ignored.
+        // Do not send caps/commands from the operator connection. The Android
+        // node-host connection declares phone capabilities; empty arrays here
+        // can overwrite or shadow that node snapshot on some gateway builds.
       },
     };
 
