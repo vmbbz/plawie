@@ -1,0 +1,77 @@
+# Research Log
+
+Last updated: 2026-05-28
+
+This log records source-backed facts used by the native Gateway track.
+
+## Source-Backed Facts
+
+### PRoot
+
+PRoot is a user-space implementation of Linux filesystem/process environment
+features such as `chroot`, bind mounts, and related behavior without requiring
+root privileges. That is why it is useful on Android, but also why it is not a
+zero-cost native runtime.
+
+Source: https://proot-me.github.io/
+
+### Node.js On Android
+
+The Node.js source tree contains Android build-related guidance, but Android is
+not treated like the normal officially distributed desktop/server platforms.
+For Plawie this means native Node is possible but should be treated as our own
+supported runtime target, with pinned versions and device testing.
+
+Source: https://github.com/nodejs/node/blob/main/BUILDING.md
+
+### Android Native Runtime
+
+Android NDK applications use Android native runtime assumptions, including
+Bionic/libc++ behavior rather than a standard glibc Linux userspace. This is why
+a Bionic-native runtime is preferred over a glibc compatibility strategy for a
+production mobile app.
+
+Sources:
+
+- https://developer.android.com/ndk/guides/cpp-support
+- https://android.googlesource.com/platform/bionic/
+
+### Embedded Node Proof
+
+`nodejs-mobile` demonstrates that running Node.js inside Android apps is a
+practical pattern. It is not automatically a drop-in for OpenClaw Gateway, but
+it is strong evidence that the runtime shape is feasible.
+
+Source: https://nodejs-mobile.github.io/docs/guide/guide-android/getting-started/
+
+## Working Assumptions
+
+- OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
+  its runtime dependencies are pure JS or Android-compatible.
+- The biggest unknown is not "can Node start on Android"; it is whether the
+  OpenClaw dependency graph assumes GNU/Linux behavior in ways that matter.
+- A native runtime is only worth promoting if it improves startup, memory,
+  lifecycle control, and timeout behavior without damaging Gateway semantics.
+
+## Open Questions
+
+1. Which exact Node major version should be pinned for native Android?
+2. Does OpenClaw depend on native npm modules in the current mobile bundle?
+3. Does OpenClaw call shell utilities during normal Gateway boot or only during
+   install/repair workflows?
+4. Can the native runtime be isolated in a separate Android process?
+5. What is the smallest bundle that supports Gateway, dashboard, Talk, tools,
+   sessions, and node pairing?
+6. Can the native runtime share the current app-owned config writer without
+   any runtime-side writes during boot?
+7. Which devices/ABIs should be in the minimum native runtime test matrix?
+
+## Immediate Research Tasks
+
+- Produce a dependency inventory for the OpenClaw Gateway package currently
+  installed in PRoot.
+- Identify all GatewayService calls into `NativeBridge` that assume PRoot.
+- Measure current PRoot cold start, returning attach, memory, and first-token
+  baseline before implementing native prototypes.
+- Prototype a native Node health endpoint on a non-production port.
+

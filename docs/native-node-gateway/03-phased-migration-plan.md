@@ -1,0 +1,161 @@
+# Phased Migration Plan
+
+Last updated: 2026-05-28
+
+This plan is intentionally conservative. Each phase should leave the app
+shippable with PRoot as the default runtime.
+
+## Phase 0: Documentation And Branch Setup
+
+Status: in progress
+
+Goals:
+
+- Create `native-node-gateway-research` branch.
+- Define current Gateway contract and regression alarms.
+- Document runtime options, risks, validation matrix, and source-backed facts.
+
+Exit gate:
+
+- Docs committed and pushed.
+- No runtime code changes.
+
+## Phase 1: Runtime Interface Extraction
+
+Goals:
+
+- Introduce `GatewayRuntime` interface.
+- Move current PRoot process operations behind `ProotGatewayRuntime`.
+- Keep public `GatewayService` behavior identical.
+- Add runtime diagnostics that identify which runtime is active.
+
+Constraints:
+
+- PRoot remains default.
+- No native Node code.
+- No changes to config schema or model/tool policy.
+- Existing boot logs should remain semantically identical.
+
+Exit gate:
+
+- Fresh install and returning-user startup match `docs/OPENCLAW_BOOT_SEQUENCE.md`.
+- Gateway starts, dashboard opens, operator WebSocket connects, node pairs, and
+  chat/tool calls work exactly as before.
+
+## Phase 2: Native Node Smoke Runtime
+
+Goals:
+
+- Add hidden `NativeNodeGatewayRuntime` behind a developer flag.
+- Start a minimal native Node process or embedded Node runtime.
+- Serve a simple local health endpoint on a non-production port.
+- Capture stdout/stderr/logcat diagnostics.
+
+Constraints:
+
+- Must not bind `18789`.
+- Must not run OpenClaw yet.
+- Must not change production Gateway state.
+
+Exit gate:
+
+- Native runtime can start, report health, stop, and restart without affecting
+  PRoot Gateway.
+- PRoot fallback still works after native runtime failure.
+
+## Phase 3: OpenClaw Bundle Feasibility
+
+Goals:
+
+- Package OpenClaw JavaScript assets for native runtime.
+- Audit dependencies for native modules, shell calls, filesystem assumptions,
+  dynamic downloads, and Linux-only behavior.
+- Identify required replacements or shims.
+
+Constraints:
+
+- Native runtime may run OpenClaw only on an alternate port.
+- No app UI should route user chat to native runtime.
+
+Exit gate:
+
+- Native OpenClaw can boot to HTTP health on an alternate port.
+- Missing dependencies are documented with owner/mitigation.
+
+## Phase 4: Shadow Gateway Parity
+
+Goals:
+
+- Run native OpenClaw in shadow mode.
+- Compare health, config load, dashboard token creation, RPC discovery, skills
+  status, and logs against PRoot.
+
+Constraints:
+
+- Shadow runtime does not accept user chat by default.
+- Node pairing remains with PRoot.
+- PRoot remains the only production Gateway.
+
+Exit gate:
+
+- Shadow native runtime passes repeated boot/stop/restart cycles.
+- No cross-talk with PRoot port, config, sessions, or node pairing.
+
+## Phase 5: Hidden Canary Runtime
+
+Goals:
+
+- Allow developer-only runtime selection.
+- Let native runtime bind production port only when PRoot is stopped.
+- Run full Gateway startup sequence through `GatewayService`.
+
+Constraints:
+
+- Runtime switch requires explicit developer action.
+- PRoot fallback must be one tap/action away.
+- Runtime selection must not rewrite provider/model/tool config.
+
+Exit gate:
+
+- Cloud chat streams.
+- Dashboard opens.
+- Operator WebSocket works.
+- Android node pairs with full command snapshot.
+- Camera, avatar gesture, haptic, screen/canvas, and TTS tests pass.
+
+## Phase 6: User-Facing Beta
+
+Goals:
+
+- Offer native runtime as an experimental setting.
+- Keep PRoot as default and fallback.
+- Collect structured diagnostics and performance data.
+
+Exit gate:
+
+- Native runtime shows materially better startup/latency/resource behavior.
+- Failure rate is lower than or comparable to PRoot.
+- No known data loss, config corruption, or pairing regression remains.
+
+## Phase 7: Default Candidate
+
+Goals:
+
+- Make native runtime default only for devices/ABIs that pass eligibility checks.
+- Keep PRoot installation path as compatibility fallback.
+
+Exit gate:
+
+- Multiple device classes pass validation.
+- Upgrade/rollback path is tested.
+- Release notes clearly explain runtime selection and fallback behavior.
+
+## Always-On Rollback Rule
+
+At every phase:
+
+```text
+If native runtime fails, stop native runtime, restore PRoot runtime selection,
+attach/start PRoot Gateway, and continue with existing Gateway sequence.
+```
+

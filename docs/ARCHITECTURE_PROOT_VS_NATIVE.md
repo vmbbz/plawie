@@ -2,6 +2,10 @@
 
 Last updated: 2026-05-28
 
+Native Gateway replacement research now lives under
+`docs/native-node-gateway/`. This document describes the current production
+split; the research track documents the phased migration path and guardrails.
+
 ## Current Split
 
 | Layer | Runtime | Responsibility |
