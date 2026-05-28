@@ -46,7 +46,9 @@ and Node packaging plan, not a blind reuse of the PRoot `node_modules` tree.
 A dormant native Node process slot now exists for that next step. It expects a
 future Android arm64 Node executable packaged as `libplawie_node.so`, runs only
 on `127.0.0.1:18790`, and reports a clear diagnostic skip while the binary is
-not present.
+not present. Phase 3 now also includes a binary acquisition gate and local
+packaging helper so we can test a real candidate without committing an
+unreviewed runtime artifact.
 
 PRoot command execution and bootstrap/repair are still direct native bridge
 calls by design, because those need a dependency/CLI inventory before they can
@@ -66,6 +68,7 @@ be safely generalized.
 | [08-phase-2-native-smoke.md](08-phase-2-native-smoke.md) | Isolated native smoke endpoint and test result |
 | [09-openclaw-bundle-inventory.md](09-openclaw-bundle-inventory.md) | Read-only inventory of the installed OpenClaw package |
 | [10-native-node-packaging-plan.md](10-native-node-packaging-plan.md) | Native Node packaging strategy and gates |
+| [11-native-node-binary-gate.md](11-native-node-binary-gate.md) | Node binary sourcing, packaging, and diagnostic gate |
 
 ## Work Rules
 

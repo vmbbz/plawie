@@ -118,7 +118,7 @@ Smoke result:
 
 ## Phase 3: OpenClaw Bundle Feasibility
 
-Status: inventory started
+Status: inventory and binary gate started
 
 Implemented in this phase so far:
 
@@ -131,6 +131,9 @@ Implemented in this phase so far:
   Node binary packaged as `libplawie_node.so`, run a JS health server on
   `127.0.0.1:18790`, capture stdout/stderr, and fail clearly while the binary
   is absent.
+- Added a local-only packaging helper for candidate Node binaries. It records
+  SHA-256, refuses unpinned candidates unless explicitly allowed, and keeps the
+  binary ignored by git until provenance and licensing are reviewed.
 
 Goals:
 
@@ -156,6 +159,9 @@ Current blocker:
   replace, disable, or route around those surfaces before OpenClaw can be
   treated as portable.
 - The repo does not yet contain a packaged Android-native Node executable.
+- Official Node 22 distribution metadata does not provide an Android binary, so
+  this phase requires a custom Bionic-native build or a trusted mobile fork at
+  Node `>=22.19.0`.
 
 ## Phase 4: Shadow Gateway Parity
 

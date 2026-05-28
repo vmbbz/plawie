@@ -28,6 +28,17 @@ Current check: Node's BUILDING.md still states Android is not a supported
 platform. That does not block a custom runtime, but it means Plawie owns the
 runtime QA burden rather than inheriting normal nodejs.org binary support.
 
+2026-05-29 binary check: the latest Node 22 LTS metadata returned `v22.22.3`
+with official files for AIX, Linux, macOS, Windows, headers, and source, but no
+Android runtime artifact. `nodejs-mobile` latest release metadata returned
+`v18.20.4`, which is useful integration evidence but below OpenClaw's
+`>=22.19.0` engine floor.
+
+Sources:
+
+- https://nodejs.org/dist/index.json
+- https://github.com/nodejs-mobile/nodejs-mobile/releases
+
 ### Android Native Runtime
 
 Android NDK applications use Android native runtime assumptions, including
@@ -76,6 +87,10 @@ The repo now has the Android/Dart lifecycle slot for a future real Node binary:
 The slot currently reports a clean skip because no Android-native Node
 executable is packaged yet.
 
+A local packaging helper now exists at
+`scripts/native_node/package_native_node_candidate.ps1`. It is intentionally
+hash-first and local-only so a research binary cannot be silently promoted.
+
 ## Working Assumptions
 
 - OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
@@ -100,6 +115,9 @@ executable is packaged yet.
 6. Can the native runtime share the current app-owned config writer without
    any runtime-side writes during boot?
 7. Which devices/ABIs should be in the minimum native runtime test matrix?
+8. Should the first Node `>=22.19.0` candidate be built directly from
+   `nodejs/node`, forked from `nodejs-mobile`, or produced by a dedicated
+   Android runtime build repo?
 
 ## Immediate Research Tasks
 
@@ -111,3 +129,5 @@ executable is packaged yet.
   baseline before implementing native prototypes.
 - Replace the Phase 2 Android smoke endpoint with a real native/embedded Node
   health endpoint on the same non-production port.
+- Produce or obtain a trustworthy Node `>=22.19.0` Android arm64 executable and
+  run it through the binary gate.

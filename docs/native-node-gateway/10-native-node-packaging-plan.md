@@ -52,12 +52,15 @@ Source-backed constraints:
 
 ## Phase 3 Work Order
 
-1. Build or source a Node `>=22.19.0` Android arm64 runtime.
-2. Package that executable in `android/app/src/main/jniLibs/arm64-v8a/` as
+1. Build or source a trustworthy Node `>=22.19.0` Android arm64 runtime.
+2. Run the candidate through
+   `scripts/native_node/package_native_node_candidate.ps1`, preferably with an
+   expected SHA-256.
+3. Package that executable in `android/app/src/main/jniLibs/arm64-v8a/` as
    `libplawie_node.so`.
-3. Use the `NativeNodeSmokeProcess` slot to run a real Node process on
+4. Use the `NativeNodeSmokeProcess` slot to run a real Node process on
    `127.0.0.1:18790`.
-4. First Node smoke payload must return:
+5. First Node smoke payload must return:
 
 ```json
 {
@@ -71,25 +74,25 @@ Source-backed constraints:
 }
 ```
 
-5. Add stdout/stderr capture to the existing native smoke logs.
-6. Add stop/restart tests that prove no orphan process remains.
-7. Create a curated OpenClaw mobile bundle:
+6. Add stdout/stderr capture to the existing native smoke logs.
+7. Add stop/restart tests that prove no orphan process remains.
+8. Create a curated OpenClaw mobile bundle:
    - `openclaw.mjs`
    - required `dist/` chunks for Gateway boot
    - dashboard/static assets needed by Gateway
    - provider extensions used by Plawie install/chat model list
    - node pairing/RPC/device tooling paths
    - mobile skills catalog
-8. Gate or remove incompatible modules for first boot:
+9. Gate or remove incompatible modules for first boot:
    - browser automation
    - desktop clipboard
    - Ollama daemon management
    - Bonjour/Avahi discovery
    - host shell/exec unless routed through an Android/PRoot compatibility lane
-9. Try `openclaw --version` on native Node.
-10. Try `openclaw gateway --port 18790 --bind loopback` only after the version
+10. Try `openclaw --version` on native Node.
+11. Try `openclaw gateway --port 18790 --bind loopback` only after the version
    command works.
-11. Keep all UI and chat traffic on PRoot until shadow parity passes.
+12. Keep all UI and chat traffic on PRoot until shadow parity passes.
 
 ## Native Node Process Slot
 
@@ -112,6 +115,13 @@ When the binary is present, the runner:
 - verifies `/health`;
 - stops it with SIGTERM and force-kills only if needed;
 - keeps PRoot on `18789`.
+
+Candidate binaries and local manifests are ignored by git:
+
+```text
+android/app/src/main/jniLibs/arm64-v8a/libplawie_node.so
+android/app/src/main/jniLibs/arm64-v8a/libplawie_node.so.manifest.json
+```
 
 ## Shim Candidates
 
