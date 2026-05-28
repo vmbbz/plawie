@@ -72,6 +72,22 @@ Smoke result:
 
 ## Phase 2: Native Node Smoke Runtime
 
+Status: isolated smoke endpoint passed
+
+Implemented in this phase so far:
+
+- Added `NativeNodeGatewayRuntime` as a hidden, non-production runtime object.
+- Added Android `NativeGatewaySmokeServer` on `127.0.0.1:18790`.
+- Added MethodChannel start/stop/is-running/log hooks.
+- Added Dart self-test gated by
+  `--dart-define=PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`.
+
+Important scope note:
+
+- This is not yet a bundled Node binary and does not run OpenClaw. It is a
+  native Android lifecycle/HTTP/logging smoke endpoint that reserves the shape
+  real native Node must satisfy.
+
 Goals:
 
 - Add hidden `NativeNodeGatewayRuntime` behind a developer flag.
@@ -90,6 +106,15 @@ Exit gate:
 - Native runtime can start, report health, stop, and restart without affecting
   PRoot Gateway.
 - PRoot fallback still works after native runtime failure.
+
+Smoke result:
+
+- Diagnostics build started the smoke endpoint on port `18790`.
+- `/health` returned `runtime=native-gateway-smoke`,
+  `productionGatewayPort=18789`, `openclawStarted=false`, and
+  `nodeStarted=false`.
+- The self-test stopped, restarted, and stopped the smoke endpoint cleanly.
+- The production PRoot Gateway then reached RPC discovery and node pairing.
 
 ## Phase 3: OpenClaw Bundle Feasibility
 

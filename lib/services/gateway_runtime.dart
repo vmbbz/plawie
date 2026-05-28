@@ -48,8 +48,43 @@ class ProotGatewayRuntime implements GatewayRuntime {
   }
 }
 
+class NativeNodeGatewayRuntime implements GatewayRuntime {
+  const NativeNodeGatewayRuntime();
+
+  @override
+  String get id => 'native-node-smoke';
+
+  @override
+  String get label => 'Native Node Gateway Smoke Runtime';
+
+  @override
+  Stream<String> get logStream => const Stream<String>.empty();
+
+  @override
+  Future<bool> start({bool allowDuringSetup = false}) {
+    return NativeBridge.startNativeGatewaySmokeRuntime();
+  }
+
+  @override
+  Future<bool> stop() {
+    return NativeBridge.stopNativeGatewaySmokeRuntime();
+  }
+
+  @override
+  Future<bool> isRunning() {
+    return NativeBridge.isNativeGatewaySmokeRuntimeRunning();
+  }
+
+  @override
+  Future<String> getLogs() {
+    return NativeBridge.getNativeGatewaySmokeRuntimeLogs();
+  }
+}
+
 class GatewayRuntimeRegistry {
   GatewayRuntimeRegistry._();
 
   static final GatewayRuntime current = const ProotGatewayRuntime();
+  static final GatewayRuntime nativeNodeSmoke =
+      const NativeNodeGatewayRuntime();
 }

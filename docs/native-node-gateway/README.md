@@ -37,8 +37,10 @@ Flutter UI
 
 ## Current Branch Status
 
-Phase 1 has a passing debug smoke test for the extracted process lifecycle
-path. The first code extraction covers Gateway process lifecycle and logs only.
+Phase 2 has an isolated native smoke endpoint behind a Dart define. It proves
+native Android start/health/stop/restart plumbing on `127.0.0.1:18790` without
+running OpenClaw, binding `18789`, or routing chat/dashboard/node traffic.
+
 PRoot command execution and bootstrap/repair are still direct native bridge
 calls by design, because those need a dependency/CLI inventory before they can
 be safely generalized.
@@ -54,6 +56,7 @@ be safely generalized.
 | [05-validation-matrix.md](05-validation-matrix.md) | Required parity tests before promoting native runtime |
 | [06-research-log.md](06-research-log.md) | Source-backed research notes and open questions |
 | [07-phase-1-smoke-test.md](07-phase-1-smoke-test.md) | Debug APK smoke result for the runtime abstraction |
+| [08-phase-2-native-smoke.md](08-phase-2-native-smoke.md) | Isolated native smoke endpoint and test result |
 
 ## Work Rules
 

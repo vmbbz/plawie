@@ -17,6 +17,7 @@ import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'gateway_tool_catalog.dart';
+import 'native_gateway_smoke_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
@@ -663,6 +664,9 @@ class GatewayService {
   /// and sync UI state accordingly.
   Future<void> init() async {
     _logRuntimeOnce();
+    unawaited(NativeGatewaySmokeService.runStartupSelfTestIfEnabled(
+      log: _addActivity,
+    ));
     final isComplete = await NativeBridge.isBootstrapComplete();
     if (!isComplete) {
       _addActivity('[SYS] Bootstrap incomplete. Awaiting setup...');

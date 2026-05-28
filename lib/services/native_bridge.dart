@@ -281,6 +281,29 @@ class NativeBridge {
     return await _channel.invokeMethod<String>('getGatewayLogs') ?? '';
   }
 
+  static Future<bool> startNativeGatewaySmokeRuntime() async {
+    return await _channel
+            .invokeMethod<bool>('startNativeGatewaySmokeRuntime') ??
+        false;
+  }
+
+  static Future<bool> stopNativeGatewaySmokeRuntime() async {
+    return await _channel.invokeMethod<bool>('stopNativeGatewaySmokeRuntime') ??
+        false;
+  }
+
+  static Future<bool> isNativeGatewaySmokeRuntimeRunning() async {
+    return await _channel
+            .invokeMethod<bool>('isNativeGatewaySmokeRuntimeRunning') ??
+        false;
+  }
+
+  static Future<String> getNativeGatewaySmokeRuntimeLogs() async {
+    return await _channel
+            .invokeMethod<String>('getNativeGatewaySmokeRuntimeLogs') ??
+        '';
+  }
+
   static Future<bool> setupDirs() async {
     return await _channel.invokeMethod('setupDirs');
   }

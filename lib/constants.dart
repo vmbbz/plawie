@@ -15,6 +15,9 @@ class AppConstants {
   static const int gatewayPort = 18789;
   static const String gatewayUrl = 'http://$gatewayHost:$gatewayPort';
   static const String gatewayWsUrl = 'ws://$gatewayHost:$gatewayPort';
+  static const int nativeGatewaySmokePort = 18790;
+  static const String nativeGatewaySmokeUrl =
+      'http://$gatewayHost:$nativeGatewaySmokePort';
 
   static const String ubuntuRootfsUrl =
       'https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-';

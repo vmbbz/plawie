@@ -52,6 +52,9 @@ Source: https://nodejs-mobile.github.io/docs/guide/guide-android/getting-started
   OpenClaw dependency graph assumes GNU/Linux behavior in ways that matter.
 - A native runtime is only worth promoting if it improves startup, memory,
   lifecycle control, and timeout behavior without damaging Gateway semantics.
+- The first Phase 2 smoke target should validate native lifecycle and loopback
+  health without bundling a Node binary yet. That keeps production Gateway
+  untouched while we prepare the real Node packaging step.
 
 ## Open Questions
 
@@ -73,5 +76,5 @@ Source: https://nodejs-mobile.github.io/docs/guide/guide-android/getting-started
 - Identify all GatewayService calls into `NativeBridge` that assume PRoot.
 - Measure current PRoot cold start, returning attach, memory, and first-token
   baseline before implementing native prototypes.
-- Prototype a native Node health endpoint on a non-production port.
-
+- Replace the Phase 2 Android smoke endpoint with a real native/embedded Node
+  health endpoint on the same non-production port.

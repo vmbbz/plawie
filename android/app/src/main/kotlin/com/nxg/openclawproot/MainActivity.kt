@@ -309,6 +309,18 @@ class MainActivity : FlutterActivity() {
                 "getGatewayLogs" -> {
                     result.success(processManager.getRecentLogs())
                 }
+                "startNativeGatewaySmokeRuntime" -> {
+                    result.success(NativeGatewaySmokeServer.startServer(applicationContext))
+                }
+                "stopNativeGatewaySmokeRuntime" -> {
+                    result.success(NativeGatewaySmokeServer.stopServer())
+                }
+                "isNativeGatewaySmokeRuntimeRunning" -> {
+                    result.success(NativeGatewaySmokeServer.isRunning())
+                }
+                "getNativeGatewaySmokeRuntimeLogs" -> {
+                    result.success(NativeGatewaySmokeServer.getRecentLogs())
+                }
                 "startTerminalService" -> {
                     try {
                         TerminalSessionService.start(applicationContext)
