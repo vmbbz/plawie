@@ -18,6 +18,7 @@ import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
+import '../services/ui_chrome_service.dart';
 import '../widgets/glass_card.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
@@ -37,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _prefs = PreferencesService();
   bool _autoStart = false;
   bool _nodeEnabled = false;
+  bool _immersiveUi = false;
   bool _batteryOptimized = true;
   String _arch = '';
   String _prootPath = '';
@@ -86,6 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     bool autoStart = _autoStart;
     bool nodeEnabled = _nodeEnabled;
+    bool immersiveUi = _immersiveUi;
     bool batteryOptimized = _batteryOptimized;
     String arch = _arch;
     String prootPath = _prootPath;
@@ -105,6 +108,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _safeCall(_prefs.init(), null);
       autoStart = _prefs.autoStartGateway;
       nodeEnabled = _prefs.nodeEnabled;
+      immersiveUi = _prefs.immersiveUiEnabled;
       selectedAvatar = _prefs.selectedAvatar;
       ttsSpeed = _prefs.ttsSpeed;
       continuousMode = _prefs.continuousMode;
@@ -142,6 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() {
           _autoStart = autoStart;
           _nodeEnabled = nodeEnabled;
+          _immersiveUi = immersiveUi;
           _batteryOptimized = batteryOptimized;
           _arch = arch;
           _prootPath = prootPath;
@@ -218,6 +223,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: (value) {
                           setState(() => _autoStart = value);
                           _prefs.autoStartGateway = value;
+                        },
+                      ),
+                      SwitchListTile(
+                        title: const Text('Immersive app mode'),
+                        subtitle: const Text(
+                            'Hide Android status and navigation bars while using Plawie'),
+                        secondary: const Icon(Icons.fullscreen_rounded),
+                        value: _immersiveUi,
+                        onChanged: (value) async {
+                          setState(() => _immersiveUi = value);
+                          await UiChromeService.setImmersive(value);
                         },
                       ),
                       ListTile(

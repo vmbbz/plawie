@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -140,12 +141,14 @@ class _ChatScreenState extends State<ChatScreen>
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
   bool _isChatCollapsed = false; // Expanded by default
+  bool _chatPinnedToBottom = true;
   late AnimationController _glowController;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scrollController.addListener(_handleChatScroll);
     // Wire AgentSkillServer callbacks so agent-controlled avatar changes
     // reflect immediately in the live chat UI (singleton shares state with main()).
     AgentSkillServer.instance.onAvatarChanged = (file) {
@@ -735,24 +738,62 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _scrollToBottom({bool instant = false}) {
-    // Use two nested post-frame callbacks: the first waits for setState to rebuild
-    // the list, the second waits for the new layout to be measured. This guarantees
-    // maxScrollExtent reflects the real list height and the scroll lands at the bottom.
+    _chatPinnedToBottom = true;
+    _scheduleScrollToBottom(instant: instant, remainingAttempts: 8);
+  }
+
+  void _scheduleScrollToBottom({
+    required bool instant,
+    required int remainingAttempts,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
-        final max = _scrollController.position.maxScrollExtent;
-        if (instant) {
-          _scrollController.jumpTo(max);
-        } else {
-          _scrollController.animateTo(
-            max,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
+        if (!mounted) return;
+        if (!_scrollController.hasClients) {
+          if (remainingAttempts > 0) {
+            _scheduleScrollToBottom(
+                instant: instant, remainingAttempts: remainingAttempts - 1);
+          }
+          return;
+        }
+
+        final position = _scrollController.position;
+        final max = position.maxScrollExtent;
+        if (!max.isFinite) return;
+        final target = max.clamp(position.minScrollExtent, max).toDouble();
+
+        if ((position.pixels - target).abs() > 1.0) {
+          if (instant || remainingAttempts > 4) {
+            _scrollController.jumpTo(target);
+          } else {
+            unawaited(_scrollController.animateTo(
+              target,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+            ));
+          }
+        }
+
+        if (remainingAttempts > 0) {
+          _scheduleScrollToBottom(
+              instant: instant, remainingAttempts: remainingAttempts - 1);
         }
       });
     });
+  }
+
+  void _handleChatScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    _chatPinnedToBottom = position.maxScrollExtent - position.pixels < 96.0;
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (_chatPinnedToBottom || !_isChatCollapsed) {
+      _scrollToBottom(instant: true);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2232,6 +2273,10 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _scrollToBottom(instant: true);
+    }
+
     final mode = PreferencesService().wakeWordMode;
     if (mode == 'off') return;
     if (state == AppLifecycleState.paused ||
@@ -2266,6 +2311,7 @@ class _ChatScreenState extends State<ChatScreen>
     _skillsSub?.cancel();
     _talkAudioStreamSub?.cancel();
     _talkEventSub?.cancel();
+    _scrollController.removeListener(_handleChatScroll);
     final talkSessionId = _talkRelaySessionId;
     if (talkSessionId != null && talkSessionId.isNotEmpty) {
       unawaited(
@@ -2424,32 +2470,52 @@ class _ChatScreenState extends State<ChatScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
+    final viewportWidth = math.max(1.0, size.width);
+    final viewportHeight = math.max(1.0, size.height);
+    double orderedClamp(double value, double lower, double upper) {
+      final lo = math.min(lower, upper);
+      final hi = math.max(lower, upper);
+      return value.clamp(lo, hi).toDouble();
+    }
 
     // --- Dynamic Sizing for Floating Mic ---
     const double collapsedSize = 96.0;
     // Adaptive height: Capped to avoid keyboard overflow on small screens
-    final keyboardHeight =
-        MediaQuery.of(context).viewInsets.bottom.clamp(0.0, size.height * 0.7);
+    final keyboardHeight = MediaQuery.of(context)
+        .viewInsets
+        .bottom
+        .clamp(0.0, viewportHeight * 0.7)
+        .toDouble();
     final keyboardVisible = keyboardHeight > 0;
     final rawMaxExpandedHeight =
-        size.height - keyboardHeight - (keyboardVisible ? 78.0 : 190.0);
+        viewportHeight - keyboardHeight - (keyboardVisible ? 78.0 : 190.0);
+    final isTinyViewport =
+        _isPipMode || viewportWidth < 320.0 || viewportHeight < 420.0;
     final maxExpandedHeight =
-        rawMaxExpandedHeight < 260.0 ? 260.0 : rawMaxExpandedHeight;
-    final targetExpandedHeight = size.height * (keyboardVisible ? 0.52 : 0.46);
+        math.max(isTinyViewport ? 96.0 : 260.0, rawMaxExpandedHeight);
+    final minExpandedHeight =
+        math.min(isTinyViewport ? 96.0 : 260.0, maxExpandedHeight);
+    final targetExpandedHeight =
+        viewportHeight * (keyboardVisible ? 0.52 : 0.46);
+    final expandedHorizontalMargin = viewportWidth < 340.0 ? 0.0 : 10.0;
+    final expandedWidth = math.min(
+        620.0, math.max(1.0, viewportWidth - expandedHorizontalMargin * 2));
     final double barWidth = _isChatCollapsed
-        ? collapsedSize
-        : (size.width - 20).clamp(320.0, 620.0);
+        ? math.min(collapsedSize, viewportWidth)
+        : expandedWidth;
     final double barHeight = _isChatCollapsed
         ? collapsedSize
-        : targetExpandedHeight.clamp(260.0, maxExpandedHeight);
+        : orderedClamp(
+            targetExpandedHeight, minExpandedHeight, maxExpandedHeight);
     final chatTrayBottomMargin = _isChatCollapsed ? 40.0 : 10.0;
     final chatTrayTopY =
-        size.height - keyboardHeight - chatTrayBottomMargin - barHeight;
+        viewportHeight - keyboardHeight - chatTrayBottomMargin - barHeight;
     final voiceOrbY = _isChatCollapsed
-        ? (size.height - keyboardHeight - chatTrayBottomMargin - 132.0)
-            .clamp(size.height * 0.46, size.height - keyboardHeight - 118.0)
-            .toDouble()
-        : (chatTrayTopY - 18.0).clamp(112.0, size.height - 96.0).toDouble();
+        ? orderedClamp(
+            viewportHeight - keyboardHeight - chatTrayBottomMargin - 132.0,
+            viewportHeight * 0.46,
+            viewportHeight - keyboardHeight - 118.0)
+        : orderedClamp(chatTrayTopY - 18.0, 112.0, viewportHeight - 96.0);
 
     Widget avatarSafeBackdrop({
       required Widget child,
@@ -2727,7 +2793,6 @@ class _ChatScreenState extends State<ChatScreen>
               transformAlignment: Alignment.bottomCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minWidth: size.width,
                   maxWidth: size.width.clamp(0.0, 600.0),
                   maxHeight: size.height,
                 ),
@@ -2807,8 +2872,8 @@ class _ChatScreenState extends State<ChatScreen>
                       height: barHeight,
                       margin: EdgeInsets.only(
                         bottom: chatTrayBottomMargin,
-                        left: _isChatCollapsed ? 0 : 10,
-                        right: _isChatCollapsed ? 0 : 10,
+                        left: _isChatCollapsed ? 0 : expandedHorizontalMargin,
+                        right: _isChatCollapsed ? 0 : expandedHorizontalMargin,
                       ),
                       decoration: BoxDecoration(
                         gradient: _isChatCollapsed
@@ -2879,6 +2944,7 @@ class _ChatScreenState extends State<ChatScreen>
                                     } else if (details.primaryVelocity! <
                                         -400) {
                                       setState(() => _isChatCollapsed = false);
+                                      _scrollToBottom(instant: true);
                                     }
                                   },
                                   child: Container(
@@ -3026,6 +3092,7 @@ class _ChatScreenState extends State<ChatScreen>
                                                 -400) {
                                               setState(() =>
                                                   _isChatCollapsed = false);
+                                              _scrollToBottom(instant: true);
                                             }
                                           },
                                           child: Column(

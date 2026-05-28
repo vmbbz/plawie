@@ -5,10 +5,13 @@ import 'app.dart';
 import 'services/agent_skill_server.dart';
 import 'services/skills_service.dart';
 import 'services/native_bridge.dart';
+import 'services/preferences_service.dart';
+import 'services/ui_chrome_service.dart';
 
-
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await PreferencesService().init();
+  await UiChromeService.applyFromPreferences();
   NativeBridge.init();
 
   runApp(const PlawieApp());

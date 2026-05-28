@@ -669,29 +669,54 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
                   color: Colors.white54, fontSize: 11, height: 1.4),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                _specChip('${model.fileSizeMb} MB download'),
-                const SizedBox(width: 6),
-                _specChip(
-                    '${(model.requiredRamMb / 1024).toStringAsFixed(1)} GB RAM'),
-                const SizedBox(width: 6),
-                _specChip('${model.contextWindow ~/ 1024}K ctx'),
-                const Spacer(),
-                if (isDownloading)
-                  SizedBox(
-                    width: 80,
-                    child: LinearProgressIndicator(
-                      value: _state.downloadProgress,
-                      backgroundColor: Colors.white10,
-                      valueColor:
-                          const AlwaysStoppedAnimation(Colors.blueAccent),
-                      minHeight: 4,
-                    ),
-                  )
-                else
-                  _buildActionButton(model, isDownloaded, isActive),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final action = isDownloading
+                    ? SizedBox(
+                        width: 104,
+                        child: LinearProgressIndicator(
+                          value: _state.downloadProgress,
+                          backgroundColor: Colors.white10,
+                          valueColor:
+                              const AlwaysStoppedAnimation(Colors.blueAccent),
+                          minHeight: 4,
+                        ),
+                      )
+                    : _buildActionButton(model, isDownloaded, isActive);
+
+                if (constraints.maxWidth < 430) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          _specChip('${model.fileSizeMb} MB download'),
+                          _specChip(
+                              '${(model.requiredRamMb / 1024).toStringAsFixed(1)} GB RAM'),
+                          _specChip('${model.contextWindow ~/ 1024}K ctx'),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Align(alignment: Alignment.centerRight, child: action),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    _specChip('${model.fileSizeMb} MB download'),
+                    const SizedBox(width: 6),
+                    _specChip(
+                        '${(model.requiredRamMb / 1024).toStringAsFixed(1)} GB RAM'),
+                    const SizedBox(width: 6),
+                    _specChip('${model.contextWindow ~/ 1024}K ctx'),
+                    const Spacer(),
+                    action,
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -719,36 +744,43 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
 
     // Active model → Stop
     if (isActive) {
-      return TextButton.icon(
+      return _compactModelButton(
         onPressed: _service.stop,
-        icon: const Icon(Icons.stop_rounded, size: 14, color: Colors.redAccent),
-        label: const Text('Stop',
-            style: TextStyle(color: Colors.redAccent, fontSize: 11)),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          backgroundColor: Colors.red.withValues(alpha: 0.1),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
+        icon: Icons.stop_rounded,
+        label: 'Stop',
+        color: Colors.redAccent,
       );
     }
 
     // Starting spinner
     if (isStartingThis) {
-      return TextButton.icon(
-        onPressed: null,
-        icon: const SizedBox(
+      return SizedBox(
+        width: 122,
+        height: 44,
+        child: TextButton.icon(
+          onPressed: null,
+          icon: const SizedBox(
             width: 14,
             height: 14,
-            child:
-                CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
-        label: const Text('Starting...',
-            style: TextStyle(color: Colors.amber, fontSize: 11)),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          backgroundColor: Colors.amber.withValues(alpha: 0.1),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.amber,
+            ),
+          ),
+          label: const FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'Starting...',
+              maxLines: 1,
+              style: TextStyle(color: Colors.amber, fontSize: 11),
+            ),
+          ),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            backgroundColor: Colors.amber.withValues(alpha: 0.1),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
         ),
       );
     }
@@ -756,35 +788,21 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
     // Downloaded → Start or Switch
     if (isDownloaded) {
       final isSwitch = anotherModelRunning;
-      return TextButton.icon(
+      return _compactModelButton(
         onPressed: _state.status == LocalLlmStatus.starting
             ? null
             : () {
                 setState(() => _selectedModel = model);
                 _service.startWithModel(model);
               },
-        icon: Icon(
-            isSwitch ? Icons.swap_horiz_rounded : Icons.play_arrow_rounded,
-            size: 14,
-            color: isSwitch ? Colors.amber : AppColors.statusGreen),
-        label: Text(
-          isSwitch ? 'Switch' : 'Start',
-          style: TextStyle(
-              color: isSwitch ? Colors.amber : AppColors.statusGreen,
-              fontSize: 11),
-        ),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          backgroundColor: (isSwitch ? Colors.amber : AppColors.statusGreen)
-              .withValues(alpha: 0.1),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
+        icon: isSwitch ? Icons.swap_horiz_rounded : Icons.play_arrow_rounded,
+        label: isSwitch ? 'Switch' : 'Start',
+        color: isSwitch ? Colors.amber : AppColors.statusGreen,
       );
     }
 
     // Not downloaded → Download
-    return TextButton.icon(
+    return _compactModelButton(
       onPressed: _state.status == LocalLlmStatus.idle ||
               _state.status == LocalLlmStatus.error
           ? () {
@@ -792,14 +810,41 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
               _service.downloadAndStart(model);
             }
           : null,
-      icon: const Icon(Icons.cloud_download_rounded,
-          size: 14, color: Colors.blueAccent),
-      label: const Text('Download',
-          style: TextStyle(color: Colors.blueAccent, fontSize: 11)),
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        backgroundColor: Colors.blueAccent.withValues(alpha: 0.1),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      icon: Icons.cloud_download_rounded,
+      label: 'Download',
+      color: Colors.blueAccent,
+      width: 128,
+    );
+  }
+
+  Widget _compactModelButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    double width = 104,
+  }) {
+    return SizedBox(
+      width: width,
+      height: 44,
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 15, color: color),
+        label: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(color: color, fontSize: 11),
+          ),
+        ),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          backgroundColor: color.withValues(alpha: 0.11),
+          disabledForegroundColor: color.withValues(alpha: 0.35),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       ),
     );
   }
@@ -1182,53 +1227,50 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
                       ),
                     ],
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _toggleBridge,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _bridgeState.isRunning
-                                  ? Colors.redAccent
-                                  : Colors.blueAccent,
-                              side: BorderSide(
-                                color: (_bridgeState.isRunning
-                                        ? Colors.redAccent
-                                        : Colors.blueAccent)
-                                    .withValues(alpha: 0.45),
-                              ),
-                            ),
-                            child: Text(
-                              _bridgeState.isRunning
-                                  ? 'Stop Bridge'
-                                  : 'Start Bridge',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _isConfiguringBridge
-                                ? null
-                                : _configureGatewayBridge,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  Colors.blueAccent.withValues(alpha: 0.18),
-                              foregroundColor: Colors.blueAccent,
-                            ),
-                            child: _isConfiguringBridge
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.blueAccent,
-                                    ),
-                                  )
-                                : const Text('Use In Gateway'),
-                          ),
-                        ),
-                      ],
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final startButton = _bridgeControlButton(
+                          onPressed: _toggleBridge,
+                          icon: _bridgeState.isRunning
+                              ? Icons.stop_rounded
+                              : Icons.play_arrow_rounded,
+                          label: _bridgeState.isRunning
+                              ? 'Stop Bridge'
+                              : 'Start Bridge',
+                          color: _bridgeState.isRunning
+                              ? Colors.redAccent
+                              : Colors.blueAccent,
+                          outlined: true,
+                        );
+
+                        final gatewayButton = _bridgeControlButton(
+                          onPressed: _isConfiguringBridge
+                              ? null
+                              : _configureGatewayBridge,
+                          icon: Icons.route_rounded,
+                          label: 'Use in Gateway',
+                          color: Colors.blueAccent,
+                          loading: _isConfiguringBridge,
+                        );
+
+                        if (constraints.maxWidth < 360) {
+                          return Column(
+                            children: [
+                              startButton,
+                              const SizedBox(height: 10),
+                              gatewayButton,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: startButton),
+                            const SizedBox(width: 10),
+                            Expanded(child: gatewayButton),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -1237,6 +1279,64 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _bridgeControlButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool outlined = false,
+    bool loading = false,
+  }) {
+    final borderColor = color.withValues(alpha: outlined ? 0.48 : 0.20);
+    return SizedBox(
+      height: 46,
+      child: TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          backgroundColor: outlined
+              ? Colors.transparent
+              : color.withValues(alpha: onPressed == null ? 0.08 : 0.16),
+          foregroundColor: color,
+          disabledForegroundColor: color.withValues(alpha: 0.45),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: borderColor),
+          ),
+        ),
+        child: loading
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: color,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 17),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 

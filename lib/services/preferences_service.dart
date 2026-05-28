@@ -22,6 +22,7 @@ class PreferencesService {
   static const _keyNodeCommandContractHash = 'node_command_contract_hash';
   static const _keyLocalChatModeEnabled = 'local_chat_mode_enabled';
   static const _keyLastCloudModel = 'last_cloud_model';
+  static const _keyImmersiveUiEnabled = 'immersive_ui_enabled';
 
   SharedPreferences? _prefs;
 
@@ -60,6 +61,10 @@ class PreferencesService {
 
   bool get nodeEnabled => _p.getBool(_keyNodeEnabled) ?? true;
   set nodeEnabled(bool value) => _p.setBool(_keyNodeEnabled, value);
+
+  bool get immersiveUiEnabled => _p.getBool(_keyImmersiveUiEnabled) ?? false;
+  set immersiveUiEnabled(bool value) =>
+      _p.setBool(_keyImmersiveUiEnabled, value);
 
   String? get nodeDeviceToken => _p.getString(_keyNodeDeviceToken);
   set nodeDeviceToken(String? value) {
