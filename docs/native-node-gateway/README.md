@@ -35,6 +35,13 @@ Flutter UI
 `ProotGatewayRuntime` remains the production implementation until
 `NativeNodeGatewayRuntime` passes the validation matrix.
 
+## Current Branch Status
+
+Phase 1 has begun. The first code extraction covers Gateway process lifecycle
+and logs only. PRoot command execution and bootstrap/repair are still direct
+native bridge calls by design, because those need a dependency/CLI inventory
+before they can be safely generalized.
+
 ## Documents
 
 | Document | Role |
@@ -58,4 +65,3 @@ Flutter UI
 - Every phase must be reversible by switching runtime preference back to PRoot.
 - Native runtime failures must surface as diagnostics, not as silent fallback
   corruption or Gateway config churn.
-

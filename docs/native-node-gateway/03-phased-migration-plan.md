@@ -22,6 +22,24 @@ Exit gate:
 
 ## Phase 1: Runtime Interface Extraction
 
+Status: started
+
+Implemented in this phase so far:
+
+- Added `GatewayRuntime`.
+- Added production `ProotGatewayRuntime`.
+- Routed `GatewayService` process lifecycle checks through the runtime:
+  `start`, `stop`, `isRunning`, process log stream, and raw log retrieval.
+
+Still intentionally not extracted:
+
+- `runInProot(...)` OpenClaw CLI calls.
+- PRoot bootstrap/install/repair workflows.
+- Native bridge file-directory and rootfs helpers.
+- Node service lifecycle.
+
+Those stay untouched until the OpenClaw command/dependency inventory is done.
+
 Goals:
 
 - Introduce `GatewayRuntime` interface.
@@ -158,4 +176,3 @@ At every phase:
 If native runtime fails, stop native runtime, restore PRoot runtime selection,
 attach/start PRoot Gateway, and continue with existing Gateway sequence.
 ```
-

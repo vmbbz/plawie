@@ -11,6 +11,7 @@ import '../constants.dart';
 import '../models/gateway_state.dart';
 import '../models/agent_info.dart';
 import 'gateway_connection.dart';
+import 'gateway_runtime.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'local_llm_service.dart';
@@ -64,6 +65,7 @@ class GatewayService {
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
   StreamSubscription<Map<String, dynamic>>? _gatewayEventSubscription;
+  final GatewayRuntime _runtime = GatewayRuntimeRegistry.current;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
   bool _rpcDiscoveryDone =
@@ -220,7 +222,8 @@ class GatewayService {
       }
 
       try {
-        final running = await NativeBridge.isGatewayRunning()
+        final running = await _runtime
+            .isRunning()
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
         if (!running) {
           await attachOrStart(autoStart: true, forceStart: false)
@@ -596,7 +599,7 @@ class GatewayService {
     }
     _lastDisconnectContextAt = now;
     try {
-      final running = await NativeBridge.isGatewayRunning();
+      final running = await _runtime.isRunning();
       final contextMessage = running
           ? '[HEALTH] WS dropped but gateway process is alive (likely temporary overload/reload).'
           : '[HEALTH] WS dropped and gateway process is down.';
@@ -630,7 +633,7 @@ class GatewayService {
     _processValidationInFlight = true;
     _lastProcessValidationAt = now;
     try {
-      final running = await NativeBridge.isGatewayRunning();
+      final running = await _runtime.isRunning();
       if (!running) {
         _consecutiveProcessValidationMisses++;
         if (_consecutiveProcessValidationMisses >= 2 &&
@@ -704,7 +707,7 @@ class GatewayService {
     _addActivity(
         '[MIGRATION] Deprecated Ollama route $configuredModel detected; switching to $fallback');
 
-    final running = await NativeBridge.isGatewayRunning();
+    final running = await _runtime.isRunning();
     if (running) return;
 
     try {
@@ -736,7 +739,7 @@ class GatewayService {
     }
 
     try {
-      final running = await NativeBridge.isGatewayRunning();
+      final running = await _runtime.isRunning();
       if (running) return;
       final config = await _readConfig();
       final primary = config['agents']?['defaults']?['model']?['primary'];
@@ -981,7 +984,8 @@ class GatewayService {
 
     if (!gatewayLooksAlive) {
       try {
-        gatewayLooksAlive = await NativeBridge.isGatewayRunning()
+        gatewayLooksAlive = await _runtime
+            .isRunning()
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
       } catch (_) {}
     }
@@ -1047,7 +1051,7 @@ class GatewayService {
     // 1. ALWAYS check if already running and attach if so. Android process
     // discovery can miss the PRoot child even while :18789 is already bound,
     // so the HTTP listener is also an ownership signal.
-    final processRunning = await NativeBridge.isGatewayRunning();
+    final processRunning = await _runtime.isRunning();
     final listenerRunning = await _isGatewayListenerAlive();
     final alreadyRunning = processRunning || listenerRunning;
 
@@ -1161,7 +1165,7 @@ class GatewayService {
       await _configureGateway();
 
       await Future.delayed(const Duration(milliseconds: 300));
-      final success = await NativeBridge.startGateway(
+      final success = await _runtime.start(
         allowDuringSetup: prefs.setupInProgress && forceStart,
       );
 
@@ -1244,7 +1248,8 @@ class GatewayService {
             'Gateway process failed to start after ${timeout.inSeconds}s');
       }
       if (_state.status == GatewayStatus.running) break;
-      final processAlive = await NativeBridge.isGatewayRunning()
+      final processAlive = await _runtime
+          .isRunning()
           .timeout(const Duration(seconds: 3), onTimeout: () => false);
       final listenerAlive = processAlive
           ? false
@@ -1369,7 +1374,7 @@ class GatewayService {
 
   void _subscribeLogs() {
     _logSubscription?.cancel();
-    _logSubscription = NativeBridge.gatewayLogStream.listen((log) {
+    _logSubscription = _runtime.logStream.listen((log) {
       // Append log in-place on a capped list; no O(n) spread clone per line.
       final logs = _state.logs.length < 500
           ? [..._state.logs, log]
@@ -1851,7 +1856,7 @@ HEARTBEAT_OK.
     config['agents']['defaults']['model']['primary'] = canonical;
     _ensureCatalogProviderDefaults(config);
     try {
-      if (await NativeBridge.isGatewayRunning()) {
+      if (await _runtime.isRunning()) {
         _beginGatewayConfigTransition(
           'model selection update',
           minimumSettle: _gatewayConfigSoftSettle,
@@ -2049,7 +2054,7 @@ HEARTBEAT_OK.
 
     var gatewayRunningForCredentialChange = false;
     try {
-      gatewayRunningForCredentialChange = await NativeBridge.isGatewayRunning();
+      gatewayRunningForCredentialChange = await _runtime.isRunning();
       if (gatewayRunningForCredentialChange) {
         _beginGatewayConfigTransition('provider credential update');
       }
@@ -2079,7 +2084,7 @@ HEARTBEAT_OK.
 
     // 4. Trigger reload only when a gateway process is running.
     try {
-      final running = await NativeBridge.isGatewayRunning();
+      final running = await _runtime.isRunning();
       if (running) {
         if (!gatewayRunningForCredentialChange) {
           _beginGatewayConfigTransition('provider credential update');
@@ -2134,7 +2139,7 @@ HEARTBEAT_OK.
     var gatewayRunningForBridgeUpdate = false;
     if (reloadIfRunning) {
       try {
-        gatewayRunningForBridgeUpdate = await NativeBridge.isGatewayRunning();
+        gatewayRunningForBridgeUpdate = await _runtime.isRunning();
         if (gatewayRunningForBridgeUpdate) {
           _beginGatewayConfigTransition('NDK bridge provider update');
         }
@@ -2150,7 +2155,7 @@ HEARTBEAT_OK.
     var reloadRunningGateway = gatewayRunningForBridgeUpdate;
     if (reloadIfRunning && !reloadRunningGateway) {
       try {
-        reloadRunningGateway = await NativeBridge.isGatewayRunning();
+        reloadRunningGateway = await _runtime.isRunning();
       } catch (_) {}
     }
 
@@ -2411,10 +2416,10 @@ HEARTBEAT_OK.
     _lastTokenFetch = null;
 
     try {
-      await NativeBridge.stopGateway();
+      await _runtime.stop();
       for (var attempt = 0; attempt < 8; attempt++) {
         final stillRunning =
-            await NativeBridge.isGatewayRunning().catchError((_) => false);
+            await _runtime.isRunning().catchError((_) => false);
         if (!stillRunning) break;
         await Future.delayed(const Duration(milliseconds: 350));
       }
@@ -3177,7 +3182,8 @@ HEARTBEAT_OK.
         final elapsed = DateTime.now().difference(_httpWaitingSince!).inSeconds;
         _addActivity('[INFO] Gateway starting up... (${elapsed}s)');
 
-        final processAlive = await NativeBridge.isGatewayRunning()
+        final processAlive = await _runtime
+            .isRunning()
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
         final listenerAlive = processAlive
             ? false
@@ -3203,7 +3209,8 @@ HEARTBEAT_OK.
         }
       } else if (_state.status == GatewayStatus.running) {
         final wsAlive = _connection?.state == GatewayConnectionState.connected;
-        final processAlive = await NativeBridge.isGatewayRunning()
+        final processAlive = await _runtime
+            .isRunning()
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
         final listenerAlive = processAlive
             ? false
@@ -3233,7 +3240,7 @@ HEARTBEAT_OK.
       }
 
       // HTTP HEAD failed — check if gateway process is still alive
-      final processRunning = await NativeBridge.isGatewayRunning();
+      final processRunning = await _runtime.isRunning();
       final listenerRunning = processRunning
           ? false
           : await _isGatewayListenerAlive(
@@ -5065,7 +5072,7 @@ $message''';
 
     if (needsSync) {
       try {
-        if (await NativeBridge.isGatewayRunning()) {
+        if (await _runtime.isRunning()) {
           _beginGatewayConfigTransition(
             'chat model hot-switch',
             minimumSettle: _gatewayConfigSoftSettle,
@@ -5422,7 +5429,7 @@ $message''';
 ''';
 
     try {
-      final alreadyRunning = await NativeBridge.isGatewayRunning();
+      final alreadyRunning = await _runtime.isRunning();
       final shouldReload =
           allowReload && alreadyRunning && !_isInGatewaySettleWindow;
       final reloadSuffix =

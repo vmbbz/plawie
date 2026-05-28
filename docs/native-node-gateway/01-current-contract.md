@@ -70,6 +70,11 @@ abstract interface class GatewayRuntime {
 `GatewayService` should call the interface. The initial implementation should
 wrap the existing PRoot path exactly.
 
+Phase 1 has started with a lifecycle-only extraction. Gateway start, stop,
+running-state checks, and process logs now flow through `GatewayRuntime`.
+OpenClaw CLI execution remains on direct PRoot calls until the command surface
+is inventoried.
+
 ## Non-Goals During Research
 
 - Replacing OpenClaw Gateway logic.
@@ -91,4 +96,3 @@ Stop native runtime work and repair the production path if any phase causes:
 - NDK bridge activation without user action.
 - Chat tool calls disappearing from cloud Gateway lane.
 - PRoot fallback failing after native runtime errors.
-
