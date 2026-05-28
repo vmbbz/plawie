@@ -1,6 +1,6 @@
 # Native Node Gateway Research Track
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 Branch: `native-node-gateway-research`
 
@@ -37,9 +37,11 @@ Flutter UI
 
 ## Current Branch Status
 
-Phase 2 has an isolated native smoke endpoint behind a Dart define. It proves
-native Android start/health/stop/restart plumbing on `127.0.0.1:18790` without
-running OpenClaw, binding `18789`, or routing chat/dashboard/node traffic.
+Phase 3 inventory has begun. The current OpenClaw package can be inspected
+read-only from the app sandbox, and the first pass shows the real migration
+risk: the installed Gateway tree includes Linux/glibc native addons and
+host-tool assumptions. The next native step must therefore be a curated bundle
+and Node packaging plan, not a blind reuse of the PRoot `node_modules` tree.
 
 PRoot command execution and bootstrap/repair are still direct native bridge
 calls by design, because those need a dependency/CLI inventory before they can
@@ -57,6 +59,8 @@ be safely generalized.
 | [06-research-log.md](06-research-log.md) | Source-backed research notes and open questions |
 | [07-phase-1-smoke-test.md](07-phase-1-smoke-test.md) | Debug APK smoke result for the runtime abstraction |
 | [08-phase-2-native-smoke.md](08-phase-2-native-smoke.md) | Isolated native smoke endpoint and test result |
+| [09-openclaw-bundle-inventory.md](09-openclaw-bundle-inventory.md) | Read-only inventory of the installed OpenClaw package |
+| [10-native-node-packaging-plan.md](10-native-node-packaging-plan.md) | Native Node packaging strategy and gates |
 
 ## Work Rules
 

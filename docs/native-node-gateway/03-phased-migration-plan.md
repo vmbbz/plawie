@@ -1,6 +1,6 @@
 # Phased Migration Plan
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 This plan is intentionally conservative. Each phase should leave the app
 shippable with PRoot as the default runtime.
@@ -118,6 +118,16 @@ Smoke result:
 
 ## Phase 3: OpenClaw Bundle Feasibility
 
+Status: inventory started
+
+Implemented in this phase so far:
+
+- Read-only inventory of the installed OpenClaw package from the debug device.
+- Documented package size, Node version requirement, dependency counts, native
+  addon risk, and host-tool assumptions.
+- Defined a native Node packaging strategy that starts with a curated
+  non-production bundle instead of the full PRoot `node_modules` tree.
+
 Goals:
 
 - Package OpenClaw JavaScript assets for native runtime.
@@ -134,6 +144,13 @@ Exit gate:
 
 - Native OpenClaw can boot to HTTP health on an alternate port.
 - Missing dependencies are documented with owner/mitigation.
+
+Current blocker:
+
+- The installed OpenClaw tree contains Linux/glibc native addons and code paths
+  that spawn Linux host tools. A native Android runtime must either rebuild,
+  replace, disable, or route around those surfaces before OpenClaw can be
+  treated as portable.
 
 ## Phase 4: Shadow Gateway Parity
 

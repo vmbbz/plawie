@@ -1,6 +1,6 @@
 # Research Log
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 This log records source-backed facts used by the native Gateway track.
 
@@ -24,6 +24,10 @@ supported runtime target, with pinned versions and device testing.
 
 Source: https://github.com/nodejs/node/blob/main/BUILDING.md
 
+Current check: Node's BUILDING.md still states Android is not a supported
+platform. That does not block a custom runtime, but it means Plawie owns the
+runtime QA burden rather than inheriting normal nodejs.org binary support.
+
 ### Android Native Runtime
 
 Android NDK applications use Android native runtime assumptions, including
@@ -43,6 +47,22 @@ practical pattern. It is not automatically a drop-in for OpenClaw Gateway, but
 it is strong evidence that the runtime shape is feasible.
 
 Source: https://nodejs-mobile.github.io/docs/guide/guide-android/getting-started/
+
+### Installed OpenClaw Package Inventory
+
+The device inventory on `RZCX30KA9AW` found:
+
+- `openclaw` version `2026.5.20`
+- Node engine requirement `>=22.19.0`
+- ESM package with `openclaw.mjs` as the CLI bin
+- 50 direct dependencies, 2 optional dependencies, and 251 discovered
+  `package.json` files under `node_modules` at depth 2
+- installed package size: about `668M`, with about `551M` in `node_modules`
+- native addon files for Linux/glibc or Linux/musl packages, including canvas,
+  sharp, node-pty, tree-sitter-bash, koffi, and clipboard packages
+
+Implication: native Android cannot safely reuse the installed PRoot
+`node_modules` tree as-is.
 
 ## Working Assumptions
 
@@ -72,7 +92,8 @@ Source: https://nodejs-mobile.github.io/docs/guide/guide-android/getting-started
 ## Immediate Research Tasks
 
 - Produce a dependency inventory for the OpenClaw Gateway package currently
-  installed in PRoot.
+  installed in PRoot. Initial pass complete; keep expanding it as the bundle is
+  narrowed.
 - Identify all GatewayService calls into `NativeBridge` that assume PRoot.
 - Measure current PRoot cold start, returning attach, memory, and first-token
   baseline before implementing native prototypes.
