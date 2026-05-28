@@ -116,8 +116,16 @@ class GatewayProvider extends ChangeNotifier {
   }
 
   /// Write an API key without starting the gateway.
-  Future<void> configureApiKey(String provider, String key) async {
-    await _gatewayService.configureApiKey(provider, key);
+  Future<void> configureApiKey(
+    String provider,
+    String key, {
+    bool runBackgroundOnboard = true,
+  }) async {
+    await _gatewayService.configureApiKey(
+      provider,
+      key,
+      runBackgroundOnboard: runBackgroundOnboard,
+    );
   }
 
   /// Retrieve the authenticated Dashboard URL containing the ?token= query parameter.

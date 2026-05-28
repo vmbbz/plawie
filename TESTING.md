@@ -88,18 +88,20 @@ For logcat: `adb logcat -s flutter 2>&1 | grep -E "SKILLS|SYNC|TTS|ClawHub|error
 
 ---
 
-## Test 7 — Ollama Cloud Model: No Local Sync
+## Test 7 — Cloud Model: No Local Daemon
 
 **Steps**
-1. Select any cloud Ollama model from the model picker
-   (e.g. `ollama/qwen3-coder:480b-cloud`)
+1. Select a catalog cloud model from the model picker
+   (for example `openrouter/openai/gpt-oss-20b:free`)
 2. Open the activity panel
 
-**Pass** — Activity log shows:
-`[SYNC] Cloud model active — skipping local model sync to save RAM`
+**Pass**
+- Chat routes through the Gateway provider lane.
+- No Ollama daemon starts.
+- No `127.0.0.1:11434` activity appears.
 
-**Fail** — Log shows local models being registered
-(e.g. `[INFO] Registered qwen2.5-0.5b-instruct as qwen2.5-0.5b-instruct:q4_k_m`)
+**Fail** — Log shows Ollama, local daemon sync, or unexpected local model
+registration during cloud-provider chat.
 
 **Share:** Screenshot or copy-paste of activity log after model switch
 

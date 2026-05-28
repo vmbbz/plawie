@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -8,6 +9,7 @@ import 'capability_handler.dart';
 
 class CameraCapability extends CapabilityHandler {
   List<CameraDescription>? _cameras;
+  Future<void> _cameraQueue = Future.value();
 
   /// Fired after every successful camera.snap. Listeners (e.g. chat_screen)
   /// can attach the image to the current bot message for inline display.
@@ -33,6 +35,58 @@ class CameraCapability extends CapabilityHandler {
     return status.isGranted;
   }
 
+  bool _isPermissionProtectedCommand(String command) {
+    return command == 'camera.snap' ||
+        command == 'camera.clip' ||
+        command == 'camera.list';
+  }
+
+  Future<T> _runExclusive<T>(Future<T> Function() operation) {
+    final previous = _cameraQueue;
+    final gate = Completer<void>();
+    _cameraQueue = gate.future;
+
+    return (() async {
+      await previous.catchError((_) {});
+      try {
+        return await operation();
+      } finally {
+        if (!gate.isCompleted) gate.complete();
+      }
+    })();
+  }
+
+  @override
+  Future<NodeFrame> handleWithPermission(
+      String command, Map<String, dynamic> params) async {
+    if (!_isPermissionProtectedCommand(command)) {
+      return super.handleWithPermission(command, params);
+    }
+
+    return _runExclusive(() async {
+      if (!await checkPermission()) {
+        for (final perm in requiredPermissions) {
+          if (await perm.isPermanentlyDenied) {
+            return NodeFrame.response('', error: {
+              'code': 'PERMISSION_PERMANENTLY_DENIED',
+              'message':
+                  '$name permission permanently denied. Enable it in Android Settings > Apps > Plawie > Permissions.',
+            });
+          }
+        }
+
+        final granted = await requestPermission();
+        if (!granted) {
+          return NodeFrame.response('', error: {
+            'code': 'PERMISSION_DENIED',
+            'message': '$name permission not granted',
+          });
+        }
+      }
+      return _handleUnlocked(command, params);
+    });
+  }
+
   /// Create a fresh controller for each operation. The caller MUST dispose it
   /// when done so the camera hardware is released immediately.
   Future<CameraController> _createController({String? facing}) async {
@@ -47,13 +101,32 @@ class CameraCapability extends CapabilityHandler {
       orElse: () => _cameras!.first,
     );
 
-    final controller = CameraController(target, ResolutionPreset.medium);
+    final controller = CameraController(
+      target,
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
     await controller.initialize();
     return controller;
   }
 
+  Future<void> _disposeController(CameraController? controller) async {
+    if (controller == null) return;
+    try {
+      await controller.dispose();
+    } catch (_) {
+      // Android may already be tearing the camera session down after permission
+      // or lifecycle transitions. Disposal is best-effort cleanup.
+    }
+  }
+
   @override
   Future<NodeFrame> handle(String command, Map<String, dynamic> params) async {
+    return _runExclusive(() => _handleUnlocked(command, params));
+  }
+
+  Future<NodeFrame> _handleUnlocked(
+      String command, Map<String, dynamic> params) async {
     switch (command) {
       case 'camera.snap':
         return _snap(params);
@@ -72,10 +145,14 @@ class CameraCapability extends CapabilityHandler {
   Future<NodeFrame> _list() async {
     try {
       _cameras ??= await availableCameras();
-      final cameraList = _cameras!.map((c) => {
-        'id': c.name,
-        'facing': c.lensDirection == CameraLensDirection.front ? 'front' : 'back',
-      }).toList();
+      final cameraList = _cameras!
+          .map((c) => {
+                'id': c.name,
+                'facing': c.lensDirection == CameraLensDirection.front
+                    ? 'front'
+                    : 'back',
+              })
+          .toList();
       return NodeFrame.response('', payload: {
         'cameras': cameraList,
       });
@@ -126,7 +203,7 @@ class CameraCapability extends CapabilityHandler {
       });
     } finally {
       // Always release the camera
-      await controller?.dispose();
+      await _disposeController(controller);
     }
   }
 
@@ -155,7 +232,7 @@ class CameraCapability extends CapabilityHandler {
       });
     } finally {
       // Always release the camera
-      await controller?.dispose();
+      await _disposeController(controller);
     }
   }
 

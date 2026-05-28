@@ -1194,7 +1194,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 try {
                   final gw = context.read<GatewayProvider>();
-                  await gw.configureApiKey(selectedProvider, key);
+                  await gw.configureApiKey(
+                    selectedProvider,
+                    key,
+                    runBackgroundOnboard: false,
+                  );
                   if (!context.mounted) return;
                   _prefs.apiProvider = selectedProvider;
                   _prefs.apiKeyConfigured = true;
@@ -1203,7 +1207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                         content: Text(
-                            'API key updated! OpenClaw will hot-reload the config.')),
+                            'API key updated. Gateway may restart briefly before reconnecting.')),
                   );
                 } catch (e) {
                   if (!context.mounted) return;

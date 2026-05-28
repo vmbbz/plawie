@@ -1,29 +1,32 @@
 # Plawie Model Provider Implementation
 
-Last updated: 2026-05-23
+Last updated: 2026-05-28
 
 This document is the implementation contract for model selection, provider keys,
-Gateway routing, and private offline inference in Plawie.
+Gateway routing, local NDK inference, and the manual NDK Gateway bridge.
 
 ## Current Product Contract
 
-Plawie now exposes two production inference paths:
+Plawie exposes three model execution lanes:
 
-| Mode | Model IDs | Runtime | Gateway | Best for |
+| Lane | Model IDs | Runtime | Gateway | Best for |
 | --- | --- | --- | --- | --- |
-| Cloud Agent Mode | `google/...`, `anthropic/...`, `openai/...`, `xai/...`, `openrouter/...`, `groq/...` | OpenClaw Gateway | Yes | Tools, skills, dashboard, multi-step agent work |
-| Private Offline Mode | `local-llm/...` | fllama / llama.cpp NDK | No | Offline chat, privacy, lightweight direct app actions |
+| Cloud Agent Mode | `google/...`, `anthropic/...`, `openai/...`, `xai/...`, `openrouter/...`, `groq/...` | OpenClaw Gateway | Yes | Tools, skills, dashboard, Talk, multi-step agent work |
+| Private Offline Mode | `local-llm/...` | fllama / llama.cpp NDK | No | Offline chat, privacy, local Dart actions |
+| Compact NDK Bridge | `plawie_ndk/local-llm` | Gateway -> Dart bridge -> fllama | Yes | Manual experiment: local model through Gateway tool transport |
 
-Embedded Ollama Local and Ollama Cloud are deprecated for the Play Store launch
-path. They are hidden from setup, chat, and settings because the optional daemon
-runtime is about 1.30 GB and can overwhelm average Android devices when combined
-with Flutter, OpenClaw, and the paired node.
+Embedded Ollama Local and Ollama Cloud are deprecated for the launch path. They
+are hidden from setup, chat, and settings. Stale `ollama/...` model IDs migrate
+to the safe catalog fallback.
 
-## Central Source
+## Central Sources
 
-Model/provider knowledge is centralized in:
+Provider and model knowledge is split deliberately:
 
-- `lib/services/model_provider_catalog.dart`
+| File | Responsibility |
+| --- | --- |
+| `lib/services/model_execution_policy.dart` | Execution lanes, tool policy, context windows, safe output caps, bridge limits |
+| `lib/services/model_provider_catalog.dart` | Provider defaults, model IDs, labels, capability labels, config merge/healing |
 
 User-facing surfaces should use the catalog instead of hardcoded provider lists:
 
@@ -39,140 +42,114 @@ User-facing surfaces should use the catalog instead of hardcoded provider lists:
 
 | Provider | Default model | Credential | Runtime route |
 | --- | --- | --- | --- |
-| Google Gemini | `google/gemini-3.1-pro-preview` | `GOOGLE_API_KEY` | OpenClaw Gateway provider |
-| Anthropic Claude | `anthropic/claude-opus-4-6` | `ANTHROPIC_API_KEY` | OpenClaw Gateway provider |
-| OpenAI | `openai/gpt-5.4` | `OPENAI_API_KEY` | OpenClaw Gateway provider |
-| xAI / Grok | `xai/grok-4` | `XAI_API_KEY` | OpenClaw Gateway provider |
-| OpenRouter | `openrouter/openrouter/free` | `OPENROUTER_API_KEY` | OpenClaw Gateway provider |
-| Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | OpenClaw Gateway provider |
+| Google Gemini | `google/gemini-3.1-pro-preview` | `GOOGLE_API_KEY` | Gateway provider |
+| Anthropic Claude | `anthropic/claude-opus-4-6` | `ANTHROPIC_API_KEY` | Gateway provider |
+| OpenAI | `openai/gpt-5.4` | `OPENAI_API_KEY` | Gateway provider |
+| xAI / Grok | `xai/grok-4` | `XAI_API_KEY` | Gateway provider |
+| OpenRouter | `openrouter/openai/gpt-oss-20b:free` | `OPENROUTER_API_KEY` | Gateway provider |
+| Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | Gateway provider |
+| Plawie NDK bridge | `plawie_ndk/local-llm` | local placeholder key | Manual Gateway bridge |
 
-Compatibility aliases are migrated by the app where safe:
+Known model entries include `contextWindow` and `maxTokens` so Gateway/provider
+requests leave room for system prompt, tool schemas, tool results, reasoning,
+and normal assistant output.
 
-| Legacy ID | Canonical ID |
+## Capability Labels
+
+The catalog exposes user-facing route labels:
+
+| Label | Meaning |
+| --- | --- |
+| `FULL TOOLS` | Cloud Gateway lane and known tool-capable model metadata |
+| `VARIABLE TOOLS` | Router or bridge route where actual tool support depends on selected upstream/local model behavior |
+| `CHAT ONLY` | Do not present as a reliable tool-calling route |
+| `ON DEVICE` | Direct `local-llm/...`, bypasses Gateway |
+| `COMPACT BRIDGE` | Manual `plawie_ndk/local-llm` bridge |
+
+The labels are guardrails, not model IQ scores. Tool success depends on context,
+provider support, model formatting, and the model's ability to decide when to
+use a tool.
+
+## Catalog Highlights
+
+Examples of current model metadata:
+
+| Model | Context policy | Output policy | Tool policy |
+| --- | --- | --- | --- |
+| Gemini 3.1 Pro Preview | 1,048,576 | extended safe cap | reliable |
+| GPT-5.4 | 1,050,000 | extended safe cap | reliable |
+| GPT-4o | 128,000 | standard safe cap | reliable |
+| Claude Opus/Sonnet 4.6 | 1,000,000 | extended safe cap | reliable |
+| Grok 4 / 4.1 Fast | 1,000,000 / 2,000,000 | extended safe cap | reliable |
+| Grok Code Fast 1 | 256,000 | standard safe cap | reliable |
+| OpenRouter GPT-OSS 20B Free | 131,072 | compact safe cap | reliable metadata |
+| OpenRouter Free Router | 200,000 | compact safe cap | disabled/chat only |
+| OpenRouter Auto | 2,000,000 | standard safe cap | variable |
+| Kimi K2.6 via OpenRouter | 262,144 | standard safe cap | reliable metadata |
+| Groq Llama routes | 131,072 | compact safe cap | variable; full tools require enough Groq TPM |
+| Plawie NDK bridge | 4,096 | 768 | variable |
+
+## Compatibility Aliases
+
+| Legacy ID | Canonical behavior |
 | --- | --- |
 | `anthropic/claude-opus-4.6` | `anthropic/claude-opus-4-6` |
 | `anthropic/claude-sonnet-4.6` | `anthropic/claude-sonnet-4-6` |
 | `xai/grok-4.3` | `xai/grok-4` |
 | `groq/llama-3.1-405b` | `groq/llama-3.3-70b-versatile` |
-| any `ollama/...` | `google/gemini-3.1-pro-preview` |
-
-## Routing Rules
-
-| Selected model | Required preparation | Failure prevented |
-| --- | --- | --- |
-| `local-llm/...` | Start native fllama model in Local LLM | Avoids Gateway dependency for private/offline chat |
-| API-key cloud model | Verify provider credential exists before switching | Prevents silent Gateway provider failure |
-| Dynamic OpenClaw agent | Persist model key and reconnect WS | Lets Gateway route by current agent config |
-| Legacy `ollama/...` | Migrate to safe cloud fallback | Prevents daemon autostart, `127.0.0.1:11434` errors, and surprise downloads |
-
-## Fresh Setup Contract
-
-First-run setup exposes Gateway cloud providers only:
-
-- Gemini, Claude, OpenAI, Grok/xAI, OpenRouter, Groq.
-- Users may skip API-key setup and add a key later from Settings.
-- Private Offline Mode is configured later from Local LLM by downloading a GGUF
-  and selecting the resulting `local-llm/...` model in Chat.
-
-Setup stores:
-
-- `pendingProvider`: selected cloud provider.
-- `apiProvider`: normalized provider used by Settings and Gateway credentials.
-- `configuredModel`: setup-safe gateway model for first boot.
-
-Bootstrap then bakes provider config before the first Gateway start, preventing
-post-start reload churn that can break pairing.
+| any `ollama/...` | `openrouter/openai/gpt-oss-20b:free` |
 
 ## Runtime Guardrails
 
 Implemented guardrails:
 
-- Chat model picker blocks known cloud provider models when the provider key is missing.
-- Settings model picker also blocks known cloud provider models without credentials.
-- Stale `ollama/...` preferences migrate to the safe cloud fallback.
-- Local LLM page no longer offers an Ollama runtime install path in normal UI.
-- NDK local mode bypasses Gateway token lookup, WebSocket setup, and `talk.speak`.
-- Camera/canvas captures attach to the chat bubble instead of forcing a full-screen overlay.
+- Setup exposes cloud Gateway providers only.
+- Chat/settings block known cloud models when the provider key is missing.
+- Stale `ollama/...` preferences migrate through catalog canonicalization.
+- Local LLM page is NDK/offline focused.
+- Direct `local-llm/...` bypasses Gateway token lookup, WebSocket setup, and
+  Gateway Talk.
+- Known provider config entries are healed with catalog `contextWindow` and
+  `maxTokens` values.
+- Cloud chat stays on Gateway by default so tools, node context, sessions,
+  dashboard, and diagnostics remain aligned.
 
-## Native NDK Gateway Bridge Status
+## NDK Gateway Bridge
 
-Goal: expose native fllama as an OpenAI-compatible local provider so OpenClaw can
-route through it without the PRoot Ollama memory overhead.
+The bridge registers:
 
-Current experiment:
+```text
+Provider ID: plawie_ndk
+Model ID:    plawie_ndk/local-llm
+Base URL:    http://127.0.0.1:11435/v1
+API field:   openai-completions
+```
 
-| Field | Value |
-| --- | --- |
-| Provider ID | `plawie_ndk` |
-| Model ID | `plawie_ndk/local-llm` |
-| Base URL | `http://127.0.0.1:11435/v1` |
-| Health | `GET /v1/health` |
-| Models | `GET /v1/models` |
-| Chat | `POST /v1/chat/completions` |
+It is started manually from Local LLM. `configureNdkGatewayBridge()` writes a
+Gateway provider block using `ModelProviderCatalog.mergeProviderConfig()` so the
+bridge always has the correct API type, base URL, context window, and max token
+cap.
 
-Do not enable this as a default Gateway provider yet. The app already has a
-stable direct `local-llm/...` native path. The Gateway bridge must first prove:
+Bridge tool-call behavior is implemented:
 
-- OpenClaw accepts the provider config on Android.
-- Streaming Server-Sent Events match OpenAI-compatible expectations.
-- Tool calls return to Gateway instead of being consumed only by local fllama.
-- Startup/shutdown is lifecycle-safe and does not compete with Flutter/Gateway memory.
+1. Gateway sends OpenAI-style messages and `tools`.
+2. Bridge compacts context and converts tools to native fllama `Tool` objects.
+3. Local fllama yields OpenAI-shaped `tool_calls`.
+4. Bridge returns those tool calls to Gateway.
+5. Gateway executes the tool and sends the result back.
+6. Bridge preserves the result and asks the model to answer from it.
 
-Until that validation is complete, Plawie keeps native fllama as the direct
-private path and cloud providers as the full Gateway tool-use path.
-
-## Free/Hosted Provider Strategy
-
-Research snapshot on 2026-05-23:
-
-| Option | Fit for Plawie | Notes |
-| --- | --- | --- |
-| OpenRouter OAuth/PKCE | Best near-term user-owned account flow | OpenRouter supports app authorization that returns a user-controlled API key and exposes free-model quotas. This avoids Plawie silently creating accounts. |
-| OpenRouter BYOK | Good power-user route | A single key can route many providers/models. OpenClaw has an official OpenRouter provider. |
-| Groq | Strong free/low-friction BYOK candidate | Very fast OpenAI-compatible API with published free-plan rate limits. User still creates/owns their Groq key. |
-| Gemini | Good BYOK candidate | Google exposes free-tier/project rate limits in AI Studio, but limits vary by model/project. User still creates/owns the key. |
-| Cloudflare Workers AI | Possible future Plawie-hosted broker | Has daily free allocation, but it belongs to the Cloudflare account/project. Suitable only if Plawie operates a backend with quotas/abuse controls. |
-| Together AI | Not a free-default route | Official docs say access currently requires a minimum credit purchase. |
-| Plawie Cloud Credits | Future product, not app-only | Would require a Plawie backend, auth, rate limits, abuse monitoring, billing controls, and terms. |
-
-Recommendation:
-
-- Do not auto-create provider accounts or hidden keys for users.
-- OpenRouter is now a first-class provider with `openrouter/openrouter/free` as
-  the default low-friction route.
-- Fresh setup and Settings should link mainstream users directly to
-  `https://openrouter.ai/settings/keys`. OpenRouter's docs describe API-key
-  auth as a Bearer token flow and allow users to create keys with optional
-  credit limits, which makes it easier to explain than separate keys for every
-  upstream model provider.
-- Later, build "Plawie Cloud Credits" only as a hosted backend with explicit
-  sign-in, quota, abuse controls, billing controls, and terms.
-- Keep direct provider BYOK for Gemini, Claude, OpenAI, xAI/Grok, OpenRouter,
-  and Groq.
-
-## NDK Tool And Avatar Regression Notes
-
-- The Gateway/OpenClaw path remained structurally intact; the local NDK path was
-  the weaker link. Direct shortcut answers/actions bypassed inference and made
-  the assistant feel hardcoded.
-- `TtsService.speak()` had become a Gateway-only no-op after talk-mode changes,
-  and Chat skipped local-llm speech entirely. Local NDK now uses Android native
-  TTS for offline speech while Gateway models still use talk-mode audio bytes.
-- Avatar VRMA assets from the neon animation work were still present, but the
-  bridge rejected `play_vrma_composite` and the WebView only loaded top-level
-  full-body gestures. The bridge now accepts composite actions and the WebView
-  loads common limb/wave/bow VRMAs for actual playback.
-- Local NDK tool schemas now constrain avatar gesture/emotion arguments so small
-  models have exact values instead of inventing unsupported gesture names.
+It remains a manual route because small local models may still be unreliable at
+complex tool planning.
 
 ## Release Checklist
 
 - Fresh install with Gemini/Claude/OpenAI/Grok/OpenRouter/Groq selected.
-- App update with existing `ollama/kimi...` preference.
+- App update with existing `ollama/...` preference.
 - Chat cloud model with missing key blocks clearly.
-- Settings model picker lists cloud models plus active local-llm only.
-- Local LLM page shows NDK/offline guidance only.
-- NDK camera/canvas captures attach inline and do not trap the UI.
-- Gateway/node logs remain stable when no NDK model is actively inferring.
-- Bridge experiment: start NDK model, start bridge, configure `plawie_ndk`, send
-  one Gateway chat, then confirm no `11434` or Ollama daemon path appears.
+- Settings model picker lists catalog models plus active direct local model.
+- Local LLM page shows NDK/offline guidance.
+- Direct local model can chat without Gateway.
+- Gateway bridge starts only after explicit user action.
+- Bridge tool test shows either a real Gateway tool round trip or a clear model
+  limitation.

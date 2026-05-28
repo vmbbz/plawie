@@ -5,6 +5,11 @@
 **Component:** `lib/screens/management/skills_manager.dart` + `lib/services/openclaw_service.dart`
 **Severity:** P1 — Premium skill installation non-functional; all 4 premium skills fail to install
 
+> Status as of 2026-05-28: historical investigation. Verify all skill-install
+> and tool-policy claims against the current code before acting on this file.
+> Current tool architecture is documented in
+> `docs/TOOLS_SKILLS_GATEWAY_ARCHITECTURE.md`.
+
 ---
 
 ## 1. Current Architecture

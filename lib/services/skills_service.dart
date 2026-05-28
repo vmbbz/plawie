@@ -9,6 +9,7 @@ import 'preferences_service.dart';
 import 'gateway_skill_proxy.dart';
 import 'base_service.dart';
 import 'gateway_service.dart';
+import 'avatar_gesture_catalog.dart';
 import '../constants/openclaw_paths.dart';
 
 /// Skills System — Thin UI + Native Bridge architecture.
@@ -273,66 +274,6 @@ class SkillsService {
 
   // ── Mappings and Executors (Kept for runtime functionality) ───────────────
 
-  final Map<String, String> _fullBodyMap = {
-    'dance': 'assets/vrm/animations/dance_picatrix.vrma',
-    'spin': 'assets/vrm/animations/gesture_spin.vrma',
-    'greeting': 'assets/vrm/animations/gesture_greeting.vrma',
-    'squat': 'assets/vrm/animations/gesture_squat.vrma',
-    'fight': 'assets/vrm/animations/gesture_fight.vrma',
-    'cute': 'assets/vrm/animations/gesture_cute.vrma',
-    'elegant': 'assets/vrm/animations/gesture_elegant.vrma',
-    'peacesign': 'assets/vrm/animations/gesture_peacesign.vrma',
-    'pose': 'assets/vrm/animations/gesture_pose.vrma',
-    'powerful': 'assets/vrm/animations/gesture_powerful.vrma',
-    'ready': 'assets/vrm/animations/gesture_ready.vrma',
-    'shoot': 'assets/vrm/animations/gesture_shoot.vrma',
-    'talk': 'assets/vrm/animations/gesture_talk.vrma',
-    'dance_picatrix': 'assets/vrm/animations/dance_picatrix.vrma',
-    'idle': 'assets/vrm/animations/idle_loop.vrma',
-  };
-
-  final Map<String, String> _limbMap = {
-    'cheerful wave left':
-        'assets/vrm/animations/limbs/Cheerful_Wave_Left_01.vrma',
-    'cheerful wave right':
-        'assets/vrm/animations/limbs/Cheerful_Wave_Right_01.vrma',
-    'light wave left': 'assets/vrm/animations/limbs/Light_Wave_Left_01.vrma',
-    'light wave right': 'assets/vrm/animations/limbs/Light_Wave_Right_01.vrma',
-    'excited wave left':
-        'assets/vrm/animations/limbs/Excited_Wave_Left_01.vrma',
-    'excited wave right':
-        'assets/vrm/animations/limbs/Excited_Wave_Right_01.vrma',
-    'shy wave left': 'assets/vrm/animations/limbs/Shy_Wave_Left_01.vrma',
-    'shy wave right': 'assets/vrm/animations/limbs/Shy_Wave_Right_01.vrma',
-    'bowing': 'assets/vrm/animations/limbs/Bowing_01.vrma',
-    'bowing 2': 'assets/vrm/animations/limbs/Bowing_02.vrma',
-    'bowing 3': 'assets/vrm/animations/limbs/Bowing_03.vrma',
-    'both wave cheer': 'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
-    'both wave cheer 2': 'assets/vrm/animations/limbs/Both_Wave_Cheer_02.vrma',
-    'chill sit': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
-    'cross leg sit':
-        'assets/vrm/animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
-    'excited sit': 'assets/vrm/animations/limbs/Excited_Sitting_Wave_01.vrma',
-    'sitting wave': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
-    'sitting wave left':
-        'assets/vrm/animations/limbs/Sitting_Wave_Left_01.vrma',
-    'sitting wave right':
-        'assets/vrm/animations/limbs/Sitting_Wave_Right_01.vrma',
-    'exaggerated wave':
-        'assets/vrm/animations/limbs/Exaggerated_Wave_Both_01.vrma',
-    'exaggerated wave left':
-        'assets/vrm/animations/limbs/Exaggerated_Wave_Left_01.vrma',
-    'exaggerated wave right':
-        'assets/vrm/animations/limbs/Exaggerated_Wave_Right_01.vrma',
-    'fearful wave': 'assets/vrm/animations/limbs/Fearful_Wave_01.vrma',
-    'stylized wave': 'assets/vrm/animations/limbs/Stylized_Wave_Left_01.vrma',
-    'stylized wave right':
-        'assets/vrm/animations/limbs/Stylized_Wave_Right_01.vrma',
-    'both wave': 'assets/vrm/animations/limbs/Wave_Both_01.vrma',
-    'wave left': 'assets/vrm/animations/limbs/Wave_Left_01.vrma',
-    'wave right': 'assets/vrm/animations/limbs/Wave_Right_01.vrma',
-  };
-
   Future<SkillResult> _executeAvatarControlSkill(Skill skill,
       Map<String, dynamic> params, Map<String, dynamic> ctx) async {
     final body = Map<String, dynamic>.from(params);
@@ -344,20 +285,8 @@ class SkillsService {
           params['value'] ??
           params['text'];
       if (raw != null) {
-        final lower = raw.toLowerCase();
-        String base = _fullBodyMap['cute']!;
-        List<String> layers = [];
-        for (var e in _fullBodyMap.entries) {
-          if (lower.contains(e.key)) {
-            base = e.value;
-            break;
-          }
-        }
-        for (var e in _limbMap.entries) {
-          if (lower.contains(e.key)) {
-            layers.add(e.value);
-          }
-        }
+        final base = AvatarGestureCatalog.fullBodyPathForText(raw);
+        final layers = AvatarGestureCatalog.limbPathsForText(raw);
         body['action'] = 'play_vrma_composite';
         body['base'] = base;
         body['layers'] = layers;
@@ -660,17 +589,10 @@ class SkillsService {
   Map<String, dynamic> _toolDefinitionForSkill(Skill skill) {
     switch (skill.id) {
       case 'avatar-control':
-        final gestures = {
-          ..._fullBodyMap.keys,
-          ..._limbMap.keys,
-          'wave',
-          'bow',
-        }.toList()
-          ..sort();
         return {
           'name': skill.id,
           'description':
-              'Control Plawie avatar model, facial emotion, speaking style, and VRMA gestures/animations.',
+              'Control Plawie avatar model, facial emotion, speaking style, and exact VRMA full-body or limb gestures.',
           'input_schema': {
             'type': 'object',
             'properties': {
@@ -689,9 +611,9 @@ class SkillsService {
               },
               'gesture': {
                 'type': 'string',
-                'enum': gestures,
+                'enum': AvatarGestureCatalog.toolGestureNames,
                 'description':
-                    'Exact gesture name. Examples: greeting, talk, dance, wave right, both wave, bowing.'
+                    'Exact gesture name. Examples: dance, spin, greeting, wave right, cheerful wave left, bowing 4, exaggerated wave right.'
               },
               'emotion': {
                 'type': 'string',

@@ -105,6 +105,8 @@ class GatewayService {
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
   DateTime? _lastStartupHealthKickAt;
+  DateTime? _gatewayConfigTransitionUntil;
+  String? _gatewayConfigTransitionReason;
   int _consecutiveProcessValidationMisses = 0;
   bool _processValidationInFlight = false;
   bool _nodeAutoConnectInFlight = false;
@@ -127,6 +129,9 @@ class GatewayService {
       Duration(seconds: 60);
   static const Duration _dashboardPairingApprovalCooldown =
       Duration(seconds: 8);
+  static const Duration _gatewayConfigReloadSettle = Duration(seconds: 8);
+  static const Duration _gatewayConfigSoftSettle = Duration(seconds: 3);
+  static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 90);
 
   /// Live stream of human-readable chat and gateway events.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -152,6 +157,110 @@ class GatewayService {
     _lastStartupHealthKickAt = now;
     debugPrint('[GATEWAY] Startup health probe kick ($reason)');
     unawaited(_checkHealth());
+  }
+
+  void _beginGatewayConfigTransition(
+    String reason, {
+    Duration minimumSettle = _gatewayConfigReloadSettle,
+  }) {
+    final until = DateTime.now().add(minimumSettle);
+    if (_gatewayConfigTransitionUntil == null ||
+        until.isAfter(_gatewayConfigTransitionUntil!)) {
+      _gatewayConfigTransitionUntil = until;
+    }
+    _gatewayConfigTransitionReason = reason;
+    _rpcDiscoveryDone = false;
+    _updateState(_state.copyWith(isInteractiveReady: false));
+    _addActivity(
+        '[Gateway] Applying $reason; chat is paused until Gateway settles.');
+  }
+
+  bool get _hasGatewayConfigTransition {
+    final until = _gatewayConfigTransitionUntil;
+    if (until != null && DateTime.now().isBefore(until)) return true;
+    return _gatewayConfigTransitionReason != null &&
+        (!_state.isInteractiveReady ||
+            _connection?.state != GatewayConnectionState.connected);
+  }
+
+  void _clearGatewayConfigTransitionIfReady() {
+    final until = _gatewayConfigTransitionUntil;
+    final minimumSettled = until == null || !DateTime.now().isBefore(until);
+    final wsReady = _connection?.state == GatewayConnectionState.connected;
+    if (minimumSettled && wsReady && _state.isInteractiveReady) {
+      if (!_state.isWebsocketConnected) {
+        _updateState(_state.copyWith(isWebsocketConnected: true));
+      }
+      _gatewayConfigTransitionUntil = null;
+      _gatewayConfigTransitionReason = null;
+    }
+  }
+
+  Future<String?> _waitForGatewayChatLaneReady(
+    String? token, {
+    Duration timeout = _gatewayChatLaneSettleTimeout,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    final transitionReason = _gatewayConfigTransitionReason;
+    if (_hasGatewayConfigTransition) {
+      _addActivity('[CHAT] Waiting for Gateway to settle'
+          '${transitionReason == null ? '' : ' after $transitionReason'}...');
+    }
+
+    while (DateTime.now().isBefore(deadline)) {
+      final until = _gatewayConfigTransitionUntil;
+      if (until != null && DateTime.now().isBefore(until)) {
+        final delay = until.difference(DateTime.now());
+        await Future.delayed(
+          delay > const Duration(milliseconds: 750)
+              ? const Duration(milliseconds: 750)
+              : delay,
+        );
+        continue;
+      }
+
+      try {
+        final running = await NativeBridge.isGatewayRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+        if (!running) {
+          await attachOrStart(autoStart: true, forceStart: false)
+              .timeout(const Duration(seconds: 25));
+        }
+      } catch (_) {}
+
+      try {
+        token ??= await retrieveTokenFromConfig(force: true)
+            .timeout(const Duration(seconds: 5), onTimeout: () => null);
+      } catch (_) {}
+
+      if (token != null && token.isNotEmpty) {
+        try {
+          await _ensureWebSocket(token).timeout(const Duration(seconds: 20));
+        } catch (_) {}
+      }
+
+      try {
+        await _checkHealth().timeout(const Duration(seconds: 25));
+      } catch (_) {}
+
+      _clearGatewayConfigTransitionIfReady();
+      final wsReady = _connection?.state == GatewayConnectionState.connected;
+      if (wsReady && _state.isInteractiveReady) {
+        return token;
+      }
+
+      // If no explicit config transition is active, avoid turning an ordinary
+      // transient health lag into a long blocking wait. The caller can still
+      // attempt normal WS repair below.
+      if (!_hasGatewayConfigTransition &&
+          _state.status != GatewayStatus.starting) {
+        return token;
+      }
+
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
+    return null;
   }
 
   /// Update the background repair status.
@@ -1297,6 +1406,9 @@ class GatewayService {
       // Detect restart signals to reset ready flag
       if (log.contains('signal SIGUSR1 received') ||
           log.contains('restarting')) {
+        if (_gatewayConfigTransitionReason == null) {
+          _beginGatewayConfigTransition('gateway restart');
+        }
         _rpcDiscoveryDone = false;
         _updateState(_state.copyWith(
           isReady: false,
@@ -1737,6 +1849,15 @@ HEARTBEAT_OK.
     }
     config['agents']['defaults']['model'] ??= {};
     config['agents']['defaults']['model']['primary'] = canonical;
+    _ensureCatalogProviderDefaults(config);
+    try {
+      if (await NativeBridge.isGatewayRunning()) {
+        _beginGatewayConfigTransition(
+          'model selection update',
+          minimumSettle: _gatewayConfigSoftSettle,
+        );
+      }
+    } catch (_) {}
     await _writeConfig(config);
   }
 
@@ -1837,7 +1958,6 @@ HEARTBEAT_OK.
     }
   }
 
-
   /// Map a provider name to its default model string (provider/model).
   /// Public so GatewayProvider can call it during configureAndStart.
   String getModelForProvider(String provider) {
@@ -1927,6 +2047,14 @@ HEARTBEAT_OK.
     (config['gateway']['auth'] as Map).remove('unauthenticatedLocalhost');
     _applyExplicitAuthMode(config);
 
+    var gatewayRunningForCredentialChange = false;
+    try {
+      gatewayRunningForCredentialChange = await NativeBridge.isGatewayRunning();
+      if (gatewayRunningForCredentialChange) {
+        _beginGatewayConfigTransition('provider credential update');
+      }
+    } catch (_) {}
+
     await _writeConfig(config);
     _addActivity('[Gateway] Fast-path API key config complete.');
 
@@ -1953,11 +2081,18 @@ HEARTBEAT_OK.
     try {
       final running = await NativeBridge.isGatewayRunning();
       if (running) {
+        if (!gatewayRunningForCredentialChange) {
+          _beginGatewayConfigTransition('provider credential update');
+        }
         await NativeBridge.runInProot(
           'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
           'openclaw reload || openclaw gateway config apply',
           timeout: 10,
         );
+        _addActivity(
+            '[Gateway] Reload requested; credential changes may briefly restart Gateway.');
+        invalidateTokenCache();
+        disconnectWebSocket();
       }
     } catch (_) {}
   }
@@ -1996,13 +2131,33 @@ HEARTBEAT_OK.
       prefs.configuredModel = '$provider/local-llm';
     }
 
+    var gatewayRunningForBridgeUpdate = false;
+    if (reloadIfRunning) {
+      try {
+        gatewayRunningForBridgeUpdate = await NativeBridge.isGatewayRunning();
+        if (gatewayRunningForBridgeUpdate) {
+          _beginGatewayConfigTransition('NDK bridge provider update');
+        }
+      } catch (_) {}
+    }
+
     await _writeConfig(config);
     await _writeApiKeyAuthProfile(provider: provider, key: bridgeKey);
     _addActivity(
       '[NDK-BRIDGE] Gateway provider configured at ${ModelProviderCatalog.plawieNdkBaseUrl}',
     );
 
-    if (reloadIfRunning && await NativeBridge.isGatewayRunning()) {
+    var reloadRunningGateway = gatewayRunningForBridgeUpdate;
+    if (reloadIfRunning && !reloadRunningGateway) {
+      try {
+        reloadRunningGateway = await NativeBridge.isGatewayRunning();
+      } catch (_) {}
+    }
+
+    if (reloadIfRunning && reloadRunningGateway) {
+      if (!gatewayRunningForBridgeUpdate) {
+        _beginGatewayConfigTransition('NDK bridge provider update');
+      }
       await NativeBridge.runInProot(
         'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
@@ -2296,7 +2451,12 @@ HEARTBEAT_OK.
   /// Returns true if the WS is (or became) connected.
   Future<bool> _ensureWebSocket(String token) async {
     final currentState = _connection?.state;
-    if (currentState == GatewayConnectionState.connected) return true;
+    if (currentState == GatewayConnectionState.connected) {
+      if (!_state.isWebsocketConnected) {
+        _updateState(_state.copyWith(isWebsocketConnected: true));
+      }
+      return true;
+    }
     if (currentState == GatewayConnectionState.connecting ||
         currentState == GatewayConnectionState.handshaking) {
       return false;
@@ -2982,6 +3142,7 @@ HEARTBEAT_OK.
           if (_rpcDiscoveryDone) {
             _addActivity(
                 '[INFO] Gateway RPC discovery complete; node auto-connect released.');
+            _clearGatewayConfigTransitionIfReady();
           } else {
             _addActivity(
                 '[INFO] Gateway RPC discovery still warming; retrying on next health tick.');
@@ -3231,10 +3392,14 @@ HEARTBEAT_OK.
 
       final node = NodeService();
       await node.init();
-      if (node.state.isPaired || node.state.isConnecting) return;
+      if (node.state.isConnecting) return;
 
-      _addActivity(
-          '[NODE] Gateway ready; ensuring node is connected ($reason)');
+      if (!(node.state.isPaired &&
+          node.isConnected &&
+          !node.isConnectionStale)) {
+        _addActivity(
+            '[NODE] Gateway ready; ensuring node is connected ($reason)');
+      }
       try {
         final running = await NativeBridge.isNodeServiceRunning();
         if (!running) {
@@ -3251,22 +3416,38 @@ HEARTBEAT_OK.
     }
   }
 
-  String _formatGatewayProviderError(String rawError) {
+  String _formatGatewayProviderError(String rawError, {String? model}) {
     final normalized = rawError.trim();
     if (normalized.isEmpty || normalized.toLowerCase() == 'null') {
       return 'Provider unavailable — please retry in a moment.';
     }
 
     final lower = normalized.toLowerCase();
+    final lowerModel = (model ?? '').toLowerCase();
+    final isGroqModel = lowerModel.startsWith('groq/');
+    final isOpenRouterModel = lowerModel.startsWith('openrouter/');
     if (lower.contains('file lock stale') ||
         lower.contains('stale_session_state') ||
         lower.contains('queued_work_without_active_run')) {
       return normalized;
     }
+    final looksLikeRateLimit = lower.contains('rate limit') ||
+        lower.contains('429') ||
+        lower.contains('tokens per minute') ||
+        lower.contains(' tpm') ||
+        lower.contains('request too large for model');
+    if (isGroqModel &&
+        (looksLikeRateLimit ||
+            lower.contains('groq') ||
+            lower.contains('request too large'))) {
+      return 'Groq rejected the full Gateway request because this key/org TPM limit is too low for the current tool context. Use a higher-tier Groq key or switch to a full-context provider.';
+    }
     if (lower.contains('free-models-per-day') ||
-        lower.contains('rate limit') ||
-        lower.contains('429')) {
+        (isOpenRouterModel && looksLikeRateLimit)) {
       return 'OpenRouter free quota is exhausted. Use another provider/model or add OpenRouter credits, then retry.';
+    }
+    if (looksLikeRateLimit) {
+      return 'Provider rate limit reached. Retry later, reduce the request size, or switch provider/model.';
     }
     if (lower.contains('auth') ||
         lower.contains('invalid api key') ||
@@ -3288,6 +3469,15 @@ HEARTBEAT_OK.
       'device',
       'node',
       'android',
+      'avatar',
+      'gesture',
+      'wave',
+      'bow',
+      'bowing',
+      'dance',
+      'spin',
+      'peacesign',
+      'peace sign',
       'camera',
       'photo',
       'picture',
@@ -3304,6 +3494,8 @@ HEARTBEAT_OK.
       'gps',
       'screen',
       'canvas',
+      'notification',
+      'notifications',
       'browser',
       'snapshot',
       'javascript',
@@ -3313,19 +3505,21 @@ HEARTBEAT_OK.
     return toolHints.any(lower.contains);
   }
 
-  Future<String?> _resolveMobileNodeIdForToolRouting() async {
+  Future<String?> _resolveMobileNodeHandleForToolRouting() async {
+    const gatewayNodeHandle = 'OpenClaw Mobile';
+
     try {
       final node = NodeService();
       await node.init();
       final stateId = node.state.deviceId?.trim() ?? '';
-      if (stateId.isNotEmpty) return stateId;
+      if (stateId.isNotEmpty) return gatewayNodeHandle;
     } catch (_) {}
 
     try {
       final prefs = PreferencesService();
       await prefs.init();
       final prefId = prefs.nodeIdentityDeviceId?.trim() ?? '';
-      if (prefId.isNotEmpty) return prefId;
+      if (prefId.isNotEmpty) return gatewayNodeHandle;
     } catch (_) {}
 
     try {
@@ -3336,7 +3530,7 @@ HEARTBEAT_OK.
 
       final decoded = jsonDecode(await pairedFile.readAsString());
       final nodeId = _findPairedAndroidNodeId(decoded);
-      if (nodeId != null && nodeId.isNotEmpty) return nodeId;
+      if (nodeId != null && nodeId.isNotEmpty) return gatewayNodeHandle;
     } catch (_) {}
 
     return null;
@@ -3392,29 +3586,29 @@ HEARTBEAT_OK.
   }
 
   Future<String> _decorateMessageWithMobileNodeContext(String message) async {
-    final nodeId = await _resolveMobileNodeIdForToolRouting();
-    if (nodeId == null || nodeId.isEmpty) {
+    final nodeHandle = await _resolveMobileNodeHandleForToolRouting();
+    if (nodeHandle == null || nodeHandle.isEmpty) {
       if (_looksLikeMobileNodeToolRequest(message)) {
         _addActivity('[CHAT] Mobile node tool context skipped: no node id');
       }
       return message;
     }
 
-    final shortId = nodeId.length > 12
-        ? '${nodeId.substring(0, 6)}...${nodeId.substring(nodeId.length - 6)}'
-        : nodeId;
-    _addActivity('[CHAT] Mobile node tool context attached ($shortId)');
+    _addActivity('[CHAT] Mobile node tool context attached ($nodeHandle)');
 
     return '''
 <plawie_mobile_tool_context>
 This is private tool-routing context. Do not mention it unless the user asks.
-The paired Android device node is "$nodeId" with displayName "OpenClaw Mobile".
-For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, or flashlight actions, call the OpenClaw nodes tool with "node": "$nodeId".
-Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeId".
-Never use node=auto for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
-Useful node actions use canonical dotted command names: camera.snap, camera.list, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, location.get, screen.record, sensor.read, and sensor.list.
-Examples: nodes({"action":"camera.snap","node":"$nodeId","quality":85}); nodes({"action":"haptic.vibrate","node":"$nodeId","durationMs":150}); nodes({"action":"flash.status","node":"$nodeId"}).
-If a tool plan would use node=auto, replace it with node="$nodeId" before calling the tool.
+The paired Android device node gateway handle is "$nodeHandle".
+For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, flashlight, or avatar gesture actions, call the OpenClaw nodes tool with "node": "$nodeHandle".
+Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeHandle".
+Never use node=auto or the raw Android device identity hash for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
+Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
+For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, chill sit wave, cross leg sitting wave, excited sitting wave, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.mode, avatar.model, avatar.status, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
+Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
+Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
+If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
 If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
 </plawie_mobile_tool_context>
 
@@ -3492,14 +3686,24 @@ $message''';
       return;
     }
 
+    token = await _waitForGatewayChatLaneReady(token);
+    if (token == null || token.isEmpty) {
+      yield '[Error] Gateway is applying provider/model changes.\n\n'
+          'Please wait a moment and send again. Your message was not sent '
+          'into the Gateway while it was reloading.';
+      return;
+    }
+
     // Cloud/provider models must use WS chat.send -> gateway. That is the
     // only lane that carries OpenClaw session/tool/node context correctly.
     var wsOk = await _ensureWebSocket(token);
+    Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
     if (wsOk) {
       // HOT-SWITCHING: If user changed model, update gateway config
       final changes = await _syncModelToConfig(model);
       if (changes.isNotEmpty) {
         _addActivity('[CHAT] Updating gateway config: $changes');
+        modelSyncChanges = changes;
       }
     } else {
       _addActivity('[CHAT] WebSocket unavailable; repairing gateway lane...');
@@ -3522,8 +3726,27 @@ $message''';
       if (changes.isNotEmpty) {
         _addActivity(
             '[CHAT] Updating gateway config after WS repair: $changes');
+        modelSyncChanges = changes;
       }
       _addActivity('[CHAT] WebSocket lane repaired; continuing.');
+    }
+
+    if (modelSyncChanges.isNotEmpty) {
+      await _patchActiveGatewaySessionModel(modelSyncChanges);
+      token = await _waitForGatewayChatLaneReady(token);
+      if (token == null || token.isEmpty) {
+        yield '[Error] Gateway is applying the selected model/provider.\n\n'
+            'Please retry in a moment. Your message was not sent during the '
+            'Gateway reload window.';
+        return;
+      }
+      wsOk = await _ensureWebSocket(token);
+      if (!wsOk) {
+        yield '[Error] Gateway WebSocket is reconnecting after the model/provider update.\n\n'
+            'Please retry in a moment. Your message was not sent during the '
+            'Gateway reload window.';
+        return;
+      }
     }
 
     _addActivity('[CHAT] → Sending to $model');
@@ -3602,8 +3825,9 @@ $message''';
           // Gateway-level error (e.g. rate limit, provider failure)
           if (type == 'error') {
             final payload = frame['payload'] as Map<String, dynamic>?;
-            final errMsg =
+            final rawMsg =
                 payload?['message'] as String? ?? 'API Error encountered';
+            final errMsg = _formatGatewayProviderError(rawMsg, model: model);
             _addActivity('[CHAT] ✗ $errMsg');
             if (!chunkController.isClosed) {
               chunkController.add('[Error] $errMsg');
@@ -3621,9 +3845,10 @@ $message''';
             if (errStr.toLowerCase().contains('rate limit') ||
                 errStr.toLowerCase().contains('api') ||
                 errStr.toLowerCase().contains('invalid')) {
-              _addActivity('[CHAT] ✗ $errStr');
+              final errMsg = _formatGatewayProviderError(errStr, model: model);
+              _addActivity('[CHAT] ✗ $errMsg');
               if (!chunkController.isClosed) {
-                chunkController.add('[Error] $errStr');
+                chunkController.add('[Error] $errMsg');
                 chunkController.close();
               }
               return;
@@ -3722,7 +3947,8 @@ $message''';
                   agentRun != activeRunId) {
                 return;
               }
-              assistantSnapshot = ''; // Reset snapshot on tool use so next assistant turn gets correctly de-duplicated
+              assistantSnapshot =
+                  ''; // Reset snapshot on tool use so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -3738,7 +3964,8 @@ $message''';
                   agentRun != activeRunId) {
                 return;
               }
-              assistantSnapshot = ''; // Reset snapshot on tool result so next assistant turn gets correctly de-duplicated
+              assistantSnapshot =
+                  ''; // Reset snapshot on tool result so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -3802,7 +4029,7 @@ $message''';
                   error = 'This model does not support tool use. '
                       'Tap the TOOLS button in the model selector to disable it, then try again.';
                 } else {
-                  error = _formatGatewayProviderError(rawError);
+                  error = _formatGatewayProviderError(rawError, model: model);
                 }
                 _addActivity('[CHAT] ✗ $error');
                 if (!chunkController.isClosed) {
@@ -3815,15 +4042,32 @@ $message''';
                     agentRun != activeRunId) {
                   return;
                 }
-                if (firstToken && !chunkController.isClosed) {
-                  final rawError = (innerData?['error'] ??
-                              payload?['error'] ??
-                              innerData?['reason'] ??
-                              payload?['reason'] ??
-                              frame['error'])
-                          ?.toString() ??
-                      '';
-                  final msg = _formatGatewayProviderError(rawError);
+                final rawEndSignal = (innerData?['error'] ??
+                            payload?['error'] ??
+                            innerData?['reason'] ??
+                            payload?['reason'] ??
+                            frame['error'] ??
+                            frame['reason'])
+                        ?.toString()
+                        .trim() ??
+                    '';
+                final normalizedEndSignal = rawEndSignal.toLowerCase();
+                final hasMeaningfulEndSignal = rawEndSignal.isNotEmpty &&
+                    normalizedEndSignal != 'null' &&
+                    normalizedEndSignal != 'completed' &&
+                    normalizedEndSignal != 'run_completed';
+                final endedWithError = innerData?['isError'] == true ||
+                    payload?['isError'] == true ||
+                    frame['isError'] == true ||
+                    innerData?['aborted'] == true ||
+                    payload?['aborted'] == true ||
+                    frame['aborted'] == true ||
+                    hasMeaningfulEndSignal;
+                if (firstToken && endedWithError && !chunkController.isClosed) {
+                  final msg = _formatGatewayProviderError(
+                    rawEndSignal.isEmpty ? 'Unknown API error' : rawEndSignal,
+                    model: model,
+                  );
                   _addActivity('[CHAT] ✗ $msg');
                   chunkController.add('[Error] $msg');
                 }
@@ -3861,7 +4105,7 @@ $message''';
                 }
                 return;
               }
-              final error = _formatGatewayProviderError(rawErr);
+              final error = _formatGatewayProviderError(rawErr, model: model);
               _addActivity('[CHAT] ✗ $error');
               if (!chunkController.isClosed) {
                 chunkController.add('[Error] $error');
@@ -4625,6 +4869,12 @@ $message''';
       yield '[Error] No auth token — cannot send video to gateway.';
       return;
     }
+    token = await _waitForGatewayChatLaneReady(token);
+    if (token == null || token.isEmpty) {
+      yield '[Error] Gateway is applying provider/model changes. '
+          'Video was not sent during the reload window.';
+      return;
+    }
 
     final effectivePrompt = prompt.trim().isEmpty
         ? 'Describe what is happening in this video.'
@@ -4700,6 +4950,12 @@ $message''';
       yield '[Error] No auth token — cannot send image to gateway.';
       return;
     }
+    token = await _waitForGatewayChatLaneReady(token);
+    if (token == null || token.isEmpty) {
+      yield '[Error] Gateway is applying provider/model changes. '
+          'Image was not sent during the reload window.';
+      return;
+    }
 
     final effectivePrompt = prompt.trim().isEmpty
         ? 'Describe what you see in this image.'
@@ -4769,6 +5025,7 @@ $message''';
 
     final Map<String, dynamic> changedMetadata = {};
     final config = await _readConfig();
+    _ensureCatalogProviderDefaults(config);
 
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
@@ -4786,6 +5043,14 @@ $message''';
     }
 
     if (needsSync) {
+      try {
+        if (await NativeBridge.isGatewayRunning()) {
+          _beginGatewayConfigTransition(
+            'chat model hot-switch',
+            minimumSettle: _gatewayConfigSoftSettle,
+          );
+        }
+      } catch (_) {}
       await _writeConfig(config);
       _addActivity('[MODEL] syncToConfig: $model');
 
@@ -4793,6 +5058,21 @@ $message''';
     }
 
     return changedMetadata;
+  }
+
+  Future<void> _patchActiveGatewaySessionModel(
+    Map<String, dynamic> changedMetadata,
+  ) async {
+    if (changedMetadata.isEmpty || _connection == null) return;
+    try {
+      await _connection!.patchSessionMetadata(changedMetadata);
+      _addActivity('[MODEL] active gateway session patched: $changedMetadata');
+      // sessions.patch is fire-and-forget on the socket. Give the gateway a
+      // short turn to apply it before chat.send enters the agent lane.
+      await Future.delayed(const Duration(milliseconds: 350));
+    } catch (e) {
+      _addActivity('[MODEL] active session model patch skipped: $e');
+    }
   }
 
   /// Resolves the intended model ID, falling back to preferences then
@@ -4815,7 +5095,8 @@ $message''';
 
     // Force cloud/gateway lane unless the user explicitly enabled local chat
     // from the Local LLM page.
-    if (ModelProviderCatalog.isDirectLocalModelId(m) && !prefs.localChatModeEnabled) {
+    if (ModelProviderCatalog.isDirectLocalModelId(m) &&
+        !prefs.localChatModeEnabled) {
       final lastCloud = prefs.lastCloudModel;
       final fallback = (lastCloud != null && lastCloud.isNotEmpty)
           ? ModelProviderCatalog.canonicalizeModelId(lastCloud)

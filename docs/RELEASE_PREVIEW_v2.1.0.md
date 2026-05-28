@@ -1,38 +1,26 @@
-# 🚀 Release Preview: Plawie v2.1.0 — "Project Aegis"
+# Release Preview: Plawie v2.1.0 - Project Aegis
 
-<p align="center">
-  <img src="assets/images/release_banner_v2.jpg" alt="Aegis Preview" width="800"/>
-</p>
+Last updated: 2026-05-28
 
-> [!IMPORTANT]
-> **The Weightless Evolution is Coming.**
-> We are building the next generation of Plawie architecture. "Project Aegis" replaces the heavy Linux PRoot environment with a precision, high-performance glibc-wrapper. 
+## Status
 
----
+Historical preview copy, not current product architecture.
 
-## 🍃 1. Weightless Architecture (-1.5 GB)
-Plawie is dropping its "PRoot" luggage. By migrating to a native glibc-runner, we have slashed the app footprint by over **80%**. 
-- **Atomic Download**: Initial setup is now faster than ever with a consolidated 180MB package.
-- **Legacy Purge**: One-tap migration to reclaim nearly **2 GB** of phone storage.
+The current app still uses the PRoot-hosted OpenClaw Gateway. Project Aegis
+claims about replacing PRoot with a glibc-wrapper, reclaiming storage, and
+achieving sub-10-second Gateway cold boot are proposal copy only.
 
-## ⚡ 2. Instant-On Gateway (Cold Boot < 10s)
-The wait is over. The "2-minute cold boot" has been engineered out of existence.
-- **Native Execution**: The OpenClaw gateway now launches directly against the Android kernel.
-- **Zero-Lag Handshake**: WebSocket connectivity is established almost the moment you tap "Start".
+For current architecture, read:
 
-## 🛡️ 3. Native Performance & Stability
-By removing the PRoot ptrace interception layer, we have unlocked the full potential of your device.
-- **~15% CPU Gain**: Faster inference, faster tool execution, and zero syscall latency.
-- **Hardened Security**: A leaner environment means fewer moving parts and unparalleled stability for background tasks.
+- `ARCHITECTURE_REPORT.md`
+- `docs/OPENCLAW_BOOT_SEQUENCE.md`
+- `docs/PROVIDER_SIMPLIFICATION_OVERHAUL.md`
 
----
+## Current User-Facing Architecture
 
-### 🗺️ The Roadmap
-- **Tonight**: Implementation of the glibc-bridge and Kotlin process management.
-- **Tomorrow**: Alpha testing of the "Instant-On" gateway.
-- **Next Week**: Public v2.1.0-alpha rollout.
+- Cloud Agent Mode: OpenClaw Gateway in PRoot with provider keys.
+- Private Offline Mode: direct fllama/NDK local models via `local-llm/...`.
+- Compact Bridge Mode: manual `plawie_ndk/local-llm` bridge on
+  `127.0.0.1:11435`.
 
-<p align="center">
-  <sub><i>"Same Immersive Experience. Same Sovereign Control. 10x Faster."</i></sub><br/>
-  <b>Project Aegis — The Next Generation of Plawie.</b>
-</p>
+Keep this file only as historical release planning context.

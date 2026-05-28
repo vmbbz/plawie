@@ -15,6 +15,7 @@ import 'capabilities/location_capability.dart';
 import 'capabilities/screen_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
+import 'avatar_gesture_catalog.dart';
 
 // ---------------------------------------------------------------------------
 // Model Catalog
@@ -713,10 +714,9 @@ class LocalLlmService {
     ),
     Tool(
       name: 'avatar_gesture',
-      jsonSchema:
-          '{"type":"object","properties":{"gesture":{"type":"string","enum":["greeting","talk","ready","dance","spin","cute","elegant","fight","peacesign","pose","powerful","shoot","squat","wave","wave left","wave right","both wave","cheerful wave left","cheerful wave right","excited wave left","excited wave right","bowing","sitting wave","exaggerated wave","stylized wave","fearful wave"]}},"required":["gesture"]}',
+      jsonSchema: AvatarGestureCatalog.toolJsonSchema,
       description:
-          'Makes the Plawie avatar play an exact gesture/VRMA animation. Use wave right or both wave for waving; use bowing for bow.',
+          'Makes the Plawie avatar play an exact gesture/VRMA animation. Use rich names like wave right, cheerful wave left, bowing 4, or exaggerated wave right.',
     ),
     Tool(
       name: 'avatar_emotion',
@@ -778,9 +778,16 @@ class LocalLlmService {
       'animate',
       'wave',
       'bow',
+      'bowing',
       'dance',
       'spin',
       'point',
+      'peace',
+      'greeting',
+      'pose',
+      'cheerful',
+      'exaggerated',
+      'stylized',
       'emotion',
       'smile',
       'face'
@@ -897,27 +904,7 @@ class LocalLlmService {
   }
 
   String _normalizeAvatarGesture(Object? raw) {
-    final value = raw?.toString().trim().toLowerCase() ?? '';
-    if (value.isEmpty) return 'wave right';
-    if (value.contains('both') && value.contains('wave')) return 'both wave';
-    if (value.contains('left') && value.contains('wave')) return 'wave left';
-    if (value.contains('right') && value.contains('wave')) return 'wave right';
-    if (value == 'wave' || value.contains('hello') || value.contains('hi')) {
-      return 'wave right';
-    }
-    if (value.contains('bow')) return 'bowing';
-    if (value.contains('nod')) return 'greeting';
-    if (value.contains('point') || value.contains('peace')) return 'peacesign';
-    if (value.contains('talk') || value.contains('speak')) return 'talk';
-    if (value.contains('dance')) return 'dance';
-    if (value.contains('spin')) return 'spin';
-    if (value.contains('cute')) return 'cute';
-    if (value.contains('ready')) return 'ready';
-    if (value.contains('fight')) return 'fight';
-    if (value.contains('power')) return 'powerful';
-    if (value.contains('shoot')) return 'shoot';
-    if (value.contains('squat') || value.contains('sit')) return 'squat';
-    return value;
+    return AvatarGestureCatalog.normalize(raw);
   }
 
   Future<String> _dispatchCapability(

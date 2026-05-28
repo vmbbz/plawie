@@ -1,62 +1,31 @@
-# Tools, Skills & Gateway Intelligence Architecture
+# Tools, Skills, And Gateway Intelligence Architecture
 
-> **Last updated:** 2026-05-25
-> **Scope:** How the OpenClaw gateway receives tool and skill context, what `tools.allow` does, which
-> commits broke full tool access, and how to avoid regressing it again.
+Last updated: 2026-05-28
 
-Engineers touching `gateway_service.dart`, `openclaw_service.dart`, or the Skills Manager screen must
-read this before making changes.
+Engineers touching `gateway_service.dart`, `openclaw_service.dart`,
+`model_provider_catalog.dart`, `local_llm_service.dart`, or the Skills Manager
+screen should read this before changing tool behavior.
 
----
+## The Four Tool Layers
 
-## The Three Layers (Do Not Confuse Them)
+| Layer | Owner | Purpose | Config / transport |
+| --- | --- | --- | --- |
+| Gateway primitives | OpenClaw Gateway | Built-in tool groups such as web/files/runtime/nodes | `tools.profile`, `tools.allow`, `tools.deny` |
+| OpenClaw/npm skills | OpenClaw skills runtime | Installed skills and Gateway-managed capabilities | Gateway skill loading |
+| Android node capabilities | Plawie node / capability bridge | Camera, canvas, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
+| Direct local tools | Dart local NDK loop | Lightweight local actions when using `local-llm/...` | `LocalLlmService` native fllama tools |
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 1 — Gateway Primitives  (tools.allow in openclaw.json)                │
-│  Built-in OS-level capabilities the gateway exposes directly to the AI.      │
-│  Valid mobile UI IDs: browser · files · search · image · shell              │
-│  Plawie writes a bounded Android policy and keeps device tools on nodes.    │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  LAYER 2 — npm Skills  (openclaw skills install <name>)                      │
-│  Node.js packages that give the AI new capabilities (weather, github, …).    │
-│  These are NOT gateway primitives. Do NOT write their slugs to tools.allow.  │
-│  The gateway loads them via its own npm registry at startup.                 │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  LAYER 3 — Device-native Skills  (skills.register RPC + AgentSkillServer)   │
-│  Flutter-side capabilities wired to Android hardware (avatar, TTS, camera).  │
-│  Registered over WebSocket via skills.register when the gateway supports it. │
-│  Callback URL: http://127.0.0.1:8765  (AgentSkillServer on port 8765)       │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+Do not mix these layers. A string that is valid as an Android node command is
+not automatically valid in `tools.allow`.
 
----
+## Gateway `tools.allow`
 
-## `tools.allow` — The Strict Gateway Allowlist
+`tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`
+first, then narrows with `allow` and `deny`.
 
-`tools.allow` in `/root/.openclaw/openclaw.json` is a **strict allowlist** of gateway primitive IDs.
+Plawie's current mobile default:
 
-| State | Effect |
-|---|---|
-| Block absent | Gateway uses OpenClaw's unrestricted/full default, which is too heavy for Plawie's Android release path |
-| `"allow": ["browser", "files"]` | AI can only use browser and files primitives |
-| `"allow": ["weather", "camera"]` | Gateway warns "unknown entries" — AI gets **zero** tools |
-| Plawie mobile default | `profile: full` plus a bounded allowlist for nodes, web, sessions, automation, messaging, files, runtime, and image |
-
-**The release working state is Plawie's bounded Android policy.** OpenClaw applies
-`tools.profile` first, then `tools.allow` / `tools.deny` (`deny` wins). We use
-`profile: full` as the base because `minimal` only exposes `session_status`;
-then `tools.allow` narrows the visible set to official built-in groups. This
-avoids both extremes: true wildcard/plugin sprawl can load too much provider
-context on phones, while guessed skill slugs can hide the tools we actually need.
-
-### Mobile `tools.allow` policy
-
-Do not write device commands or unavailable core primitives here. The May 25
-gateway logs showed warnings for `canvas`, `memory`, and `computer` on Android:
-those are not safe release defaults for the current runtime/provider combo.
-
-```
+```text
 profile: full
 allow:
   group:nodes
@@ -69,171 +38,124 @@ allow:
   image
 ```
 
-### IDs that must NEVER be written to tools.allow
+Why this shape:
 
-| ID | Type | Correct home |
-|---|---|---|
-| weather, twilio, crypto, base, calculator, calendar | npm skill slugs | gateway auto-loads from npm |
-| camera, canvas, flash, torch, location, screen, haptic, sensor | device capabilities | `gateway.nodes.allowCommands` |
+- `minimal` exposes too little for the mobile agent lane.
+- An unrestricted/full wildcard can add too much provider context on phones.
+- Guessed skill slugs can cause Gateway warnings and hide the tools we need.
 
----
+## IDs That Must Not Go Into `tools.allow`
 
-## The Regression — Exact Commits and Diffs
+| ID family | Correct home |
+| --- | --- |
+| `weather`, `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
+| `camera`, `canvas`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| local NDK helper names | `LocalLlmService` direct local tool schemas |
 
-### Commit `35be95e` (2026-05-04 00:01) — root cause introduced
+If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
+config as poisoned and let the hardener restore the bounded mobile policy.
 
-`lib/screens/management/skills_manager.dart` renamed `'solana'` to `'base'` in `_toolCatalog` and
-added it alongside `calculator`, `calendar`, `weather`, `twilio`, `crypto`, `camera`, `location`,
-`screen`, `haptic`, `sensor` — all mixed into the same catalog as real gateway primitives.
+## Android Node Commands
 
-`_toggle()` in `_ToolsTabState` writes **every toggled ID** straight to `tools.allow` with no filter:
-```dart
-await OpenClawCommandService.saveToolsAllow(newSet.toList()..sort());
-```
+Device capabilities belong in node command policy, for example:
 
-When the user opened the Tools tab and toggled anything, npm-skill slugs landed in `tools.allow`.
-The gateway then warned on every agent run:
-```
-tools.allow allowlist contains unknown entries (base, calculator, calendar, crypto, sensor, twilio, weather)
-```
-and the AI received **zero tools** — every run produced only a single text chunk with no tool calls.
-
-### Commit `a924f55` (2026-05-01 00:31) — compounding regression
-
-`gateway_service.dart` removed the `supported.contains('skills.register')` guard:
-```dart
-- if (catalog.isNotEmpty && supported.contains('skills.register')) {
-+ if (catalog.isNotEmpty) {
-```
-This caused every 30-second health check to call `skills.register` unconditionally, registering only
-our 3–4 device skills (avatar, TTS, camera). On gateways that do support the RPC, this overwrote the
-npm-skill tool context, making weather/github/etc. invisible to the AI even if tools.allow was clean.
-
-### Commit `a976510` (2026-05-04 03:58) — partial fix (guard restored, but tools.allow still broken)
-
-Restored the `skills.register` guard. Also changed `config.remove('tools')` to a comment — but this
-preserved the already-poisoned `tools.allow` with invalid entries on disk.
-
-### Historical partial fix — sanitize UI writes
-
-Two targeted changes:
-
-**`lib/services/openclaw_service.dart` — `saveToolsAllow()` now filters to primitives only:**
-```dart
-static const _kGatewayPrimitives = {
-  'browser', 'files', 'search', 'image', 'shell',
-};
-
-static Future<bool> saveToolsAllow(List<String> tools) async {
-  final allowList = GatewayToolCatalog.toConfigAllowList(tools);
-  config['tools'] = {
-    'profile': 'full',
-    'allow': allowList,
-  };
-  // write to disk ...
-}
-```
-
-**`lib/services/gateway_service.dart` — gateway hardening sanitizes disk state on every write:**
-```dart
-GatewayToolCatalog.applyDefaultMobilePolicy(config);
-```
-
----
-
-## Log Signatures — Working vs Broken
-
-### Working state (May 1 at 2AM — commit `2555bb0` and earlier)
-
-```
-[CONN] Gateway connected
-[SKILLS] Registered 3 device skills with gateway
-[AGENT] Run started — model: openclaw
-[TOOL] browser: fetching https://...
-[TOOL] search: query="..."
-[AGENT] Run complete
-```
-
-Key: tool call entries appear in the run. No `tools.allow` warnings.
-The openclaw.json at this state had **no `tools.allow` block** and device capabilities in
-`gateway.nodes.allowCommands`.
-
-### Broken state (after commit `35be95e` with Tools tab toggling)
-
-```
-[WARN] tools.allow allowlist contains unknown entries (base, calculator, calendar, crypto, sensor, twilio, weather)
-[AGENT] Run started — model: openclaw
-[AGENT] Run complete
-```
-
-Key: **no `[TOOL]` lines at all** between Run started and Run complete. Single text chunk output.
-AI says "I don't have tool access" or similar. The warning above fires on every single agent run.
-
----
-
-## `skills.register` — When to Call It
-
-The `skills.register` RPC registers device-native skills (avatar, TTS, hardware) with the gateway so
-the AI can invoke them via tool calls dispatched to `AgentSkillServer` on port 8765.
-
-**Rule:** Only call it when the gateway explicitly declares support:
-```dart
-final supported = _connection?.supportedMethods ?? const <String>[];
-if (!supported.contains('skills.register')) return;
-```
-
-**Why this guard matters:** Calling unconditionally on gateways that DO support the RPC overwrites the
-session's full npm-skill tool context (weather, github, etc.) with only our 3–4 device skills. The
-guard ensures we only call when safe and supported.
-
-**`reregisterSkills()`** in `gateway_service.dart` is called:
-- On every successful gateway connect
-- When a skill is toggled in the Skills Manager (via `skillToggled` event)
-
----
-
-## Device Capabilities — Correct Config Section
-
-Camera, location, sensor, haptic, and screen sharing are Android device capabilities. They belong in:
 ```json
 {
   "gateway": {
     "nodes": {
       "allowCommands": [
-        "camera.snap", "camera.clip", "camera.list",
-        "canvas.navigate", "canvas.eval", "canvas.snapshot",
-        "flash.on", "flash.off", "flash.toggle", "flash.status",
-        "torch.on", "torch.off", "torch.toggle", "torch.status",
-        "location.get", "screen.record",
-        "sensor.read", "sensor.list", "haptic.vibrate"
+        "camera.snap",
+        "camera.clip",
+        "camera.list",
+        "canvas.navigate",
+        "canvas.eval",
+        "canvas.snapshot",
+        "flash.on",
+        "flash.off",
+        "flash.toggle",
+        "flash.status",
+        "torch.on",
+        "torch.off",
+        "torch.toggle",
+        "torch.status",
+        "location.get",
+        "screen.record",
+        "sensor.read",
+        "sensor.list",
+        "haptic.vibrate",
+        "vibrate"
       ]
     }
   }
 }
 ```
 
-This is a completely separate section from `tools.allow`. Never put device capability names in
-`tools.allow`.
+Node command declarations and Gateway tool allowlists are separate contracts.
 
----
+## Direct Local NDK Tools
 
-## Invariants to Never Break
+For `local-llm/...`, Gateway is bypassed. `LocalLlmService` attaches native
+fllama tools for selected local actions. If fllama returns `tool_calls`, Dart
+executes local tools and recurses with a depth limit of 3.
 
-1. **Bounded Android policy = release default.** Plawie writes official groups/stable primitives, not
-   guessed npm skill slugs and not unrestricted/full.
+This path is private and lightweight, but it does not expose the full OpenClaw
+Gateway skill universe.
 
-2. **`saveToolsAllow()` must filter.** If passing IDs from `_toolCatalog` (which mixes primitives,
-   npm slugs, and device names), the function at `openclaw_service.dart` filters to `_kGatewayPrimitives`
-   before writing. Do not bypass this filter.
+## NDK Gateway Bridge Tool Transport
 
-3. **Gateway hardening sanitizes on write.** Config hardening rewrites invalid `tools.allow`
-   entries to the bounded Android policy and removes schema-invalid legacy keys before Gateway reads
-   or reloads config.
+For `plawie_ndk/local-llm`, Gateway remains the tool owner.
 
-4. **`skills.register` is guarded.** The guard in `reregisterSkills()` and the connect handler checks
-   `supported.contains('skills.register')` before calling. Removing this guard causes npm skill context
-   to be overwritten with only device skills.
+Flow:
 
-5. **`agents.defaults.systemPrompt` must never be written to config.** The gateway rejects it with
-   "Unrecognized keys" and skips the entire config hot-reload. Context is injected per-message via
-   `_buildSystemContext()` instead.
+```text
+Gateway sends tools array
+  -> NdkGatewayBridgeService converts to fllama Tool objects
+  -> LocalLlmService.chat(..., yieldToolCalls: true)
+  -> fllama emits tool_calls
+  -> bridge returns OpenAI tool_calls chunk
+  -> Gateway executes the tool
+  -> Gateway sends tool result back in next request
+  -> bridge preserves tool result and asks model to answer
+```
+
+The bridge does not execute Gateway tools. It only preserves the OpenAI tool
+protocol while shrinking context for the local model.
+
+## Model Policy And Tool Expectations
+
+`ModelProviderCatalog` labels models as `FULL TOOLS`, `VARIABLE TOOLS`, or
+`CHAT ONLY`. This controls user expectations and routing. It does not guarantee
+the model will make good tool decisions.
+
+Use these rules:
+
+- Cloud known tool-capable models can use the full Gateway lane.
+- Router/free routes should be `VARIABLE TOOLS` or `CHAT ONLY` unless the exact
+  selected upstream model is known.
+- Groq routes are `VARIABLE TOOLS`: they can execute through Gateway, but
+  low-tier TPM limits may reject the full system prompt and tool schema payload.
+- The NDK bridge is `VARIABLE TOOLS`.
+- Direct local NDK is `ON DEVICE`, not full Gateway.
+
+## Regression History To Remember
+
+Two classes of regressions have broken tool access before:
+
+- Writing skill slugs or device names into `tools.allow`, causing Gateway to
+  warn about unknown entries and expose zero usable tools.
+- Registering device-native skills in a way that overwrote or narrowed the
+  Gateway's broader tool context.
+
+The invariant is simple: sanitize config writes, keep layers separate, and test
+with a real tool-call prompt after every tool-policy change.
+
+## Required Smoke Tests
+
+1. Cloud model: "List the phone tools you can use right now. Do not invent tools."
+2. Cloud model: "Vibrate the phone once briefly."
+3. Cloud model: "Open https://example.com in canvas and report the title."
+4. Direct local NDK: "Explain what you can and cannot do in offline mode."
+5. NDK bridge: "Try to vibrate the phone once, then answer from the tool result."
+
+For bridge failures, record whether the local model produced valid `tool_calls`
+before blaming Gateway.

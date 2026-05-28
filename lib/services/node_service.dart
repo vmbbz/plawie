@@ -28,6 +28,7 @@ class NodeService {
   bool _pairingResolveAttempted = false;
   bool _connectInFlight = false;
   bool _pendingReconnectHandshake = false;
+  bool _pairingSnapshotRepairInFlight = false;
   int _preferredConnectProtocol = AppConstants.wsProtocolMaxVersion;
   DateTime? _pairingRetryNotBefore;
   int _pairingApprovalFailureCount = 0;
@@ -50,6 +51,7 @@ class NodeService {
   Stream<NodeState> get stateStream => _stateController.stream;
   NodeState get state => _state;
   bool get isConnectionStale => _ws.isStale;
+  bool get isConnected => _ws.isConnected;
 
   void clearCachedToken() => _gatewayAuthToken = null;
 
@@ -141,6 +143,11 @@ class NodeService {
       return;
     }
 
+    if (await _pairedNodeCommandsCoverDeclared()) {
+      prefs.nodeCommandContractHash = signature;
+      return;
+    }
+
     prefs.nodeCommandContractHash = signature;
 
     // OpenClaw stores command allow/deny expectations at pairing time. When we
@@ -156,31 +163,298 @@ class NodeService {
     }
 
     log('[NODE] Command contract changed; refreshing gateway pairing snapshot.');
+    await _removePairedGatewayDevice(
+      deviceId,
+      successLog:
+          '[NODE] Cleared stale paired-node record for updated command contract',
+    );
+  }
+
+  Future<void> _repairPairedNodeSnapshot(PreferencesService prefs) async {
+    if (_pairingSnapshotRepairInFlight) return;
+    _pairingSnapshotRepairInFlight = true;
+    try {
+      if (!await _pairedNodeSnapshotNeedsCommandRepair()) return;
+
+      log('[NODE] Paired gateway snapshot is missing node commands; repairing pairing snapshot.');
+      _gatewayAuthToken = null;
+      _pairingResolveAttempted = false;
+
+      if (await _approvePendingNodePairingSnapshot(prefs)) {
+        return;
+      }
+
+      prefs.nodeDeviceToken = null;
+      prefs.nodeCommandContractHash = null;
+      try {
+        final approvedToken = await _approveNodeViaDevicePairing(null);
+        if (approvedToken != null && approvedToken.isNotEmpty) {
+          prefs.nodeDeviceToken = approvedToken;
+          final preview = approvedToken.length > 8
+              ? '${approvedToken.substring(0, 8)}...'
+              : approvedToken;
+          log('[NODE] Approved pending node command snapshot ($preview)');
+        } else {
+          log('[NODE] Pending node snapshot approved; token will be learned on reconnect');
+        }
+
+        await Future.delayed(const Duration(milliseconds: 250));
+        if (!await _pairedNodeSnapshotNeedsCommandRepair()) {
+          prefs.nodeCommandContractHash = _declaredCommandContractSignature();
+          return;
+        }
+        log('[NODE] Pending approval did not refresh command snapshot; removing stale paired record');
+      } catch (e) {
+        log('[NODE] Pending node snapshot approval unavailable: $e');
+      }
+
+      prefs.nodeDeviceToken = null;
+      _gatewayAuthToken = null;
+      final deviceId = _identity.deviceId ?? '';
+      if (deviceId.isNotEmpty) {
+        await _removePairedGatewayDevice(
+          deviceId,
+          successLog:
+              '[NODE] Removed stale paired-node snapshot missing commands',
+        );
+      }
+    } finally {
+      _pairingSnapshotRepairInFlight = false;
+    }
+  }
+
+  Future<bool> _removePairedGatewayDevice(
+    String deviceId, {
+    String? successLog,
+  }) async {
+    if (deviceId.isEmpty) return false;
     try {
       await NativeBridge.runInProot(
         '$kOpenClawCommand devices remove ${NativeBridge.shellQuote(deviceId)} --json',
         timeout: 20,
       );
-      log('[NODE] Cleared stale paired-node record for updated command contract');
+      if (successLog != null) log(successLog);
+      return true;
     } catch (_) {
       try {
         await NativeBridge.runInProot(
           '$kOpenClawCommand devices remove ${NativeBridge.shellQuote(deviceId)}',
           timeout: 20,
         );
+        if (successLog != null) log(successLog);
+        return true;
       } catch (_) {
-        // Best effort only; if remove isn't available or record doesn't exist,
-        // token reset above still triggers requestId-based approval flow.
+        // Best effort only; if remove is unavailable or the record does not
+        // exist, token reset still forces the requestId-based approval path.
+        return false;
       }
     }
+  }
+
+  Future<bool> _pairedNodeSnapshotNeedsCommandRepair() async {
+    if (_capabilityHandlers.isEmpty) return false;
+    final deviceId = _identity.deviceId ?? '';
+    if (deviceId.isEmpty) return false;
+
+    try {
+      if (await _pairedNodeCommandsCoverDeclared()) return false;
+      if (await _readPendingNodePairingRequestIdFromStore() != null) {
+        return true;
+      }
+
+      final filesDir = await NativeBridge.getFilesDir();
+      final pairedPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/devices/paired.json';
+      final pairedFile = File(pairedPath);
+      if (!await pairedFile.exists()) return false;
+
+      final decoded = jsonDecode(await pairedFile.readAsString());
+      final record = _findDeviceRecord(decoded, deviceId);
+      if (record == null) return false;
+      if (!_recordHasRole(record, AppConstants.nodeRole)) return false;
+
+      final declaredCommands = _capabilityHandlers.keys.toSet();
+      final pairedCommands = _stringSet(record['commands']);
+      if (pairedCommands.isEmpty) return true;
+      return !declaredCommands.every(pairedCommands.contains);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _pairedNodeCommandsCoverDeclared() async {
+    final declaredCommands = _capabilityHandlers.keys.toSet();
+    if (declaredCommands.isEmpty) return false;
+
+    final nodeCommands = await _readPairedNodeCommandSet();
+    if (nodeCommands != null && nodeCommands.isNotEmpty) {
+      return declaredCommands.every(nodeCommands.contains);
+    }
+
+    final deviceCommands = await _readPairedDeviceCommandSet();
+    if (deviceCommands != null && deviceCommands.isNotEmpty) {
+      return declaredCommands.every(deviceCommands.contains);
+    }
+    return false;
+  }
+
+  Future<Set<String>?> _readPairedNodeCommandSet() async {
+    final deviceId = _identity.deviceId ?? '';
+    if (deviceId.isEmpty) return null;
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final pairedPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/paired.json';
+      final pairedFile = File(pairedPath);
+      if (!await pairedFile.exists()) return null;
+
+      final decoded = jsonDecode(await pairedFile.readAsString());
+      final record = _findDeviceRecord(decoded, deviceId);
+      if (record == null) return null;
+      return _stringSet(record['commands']);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Set<String>?> _readPairedDeviceCommandSet() async {
+    final deviceId = _identity.deviceId ?? '';
+    if (deviceId.isEmpty) return null;
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final pairedPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/devices/paired.json';
+      final pairedFile = File(pairedPath);
+      if (!await pairedFile.exists()) return null;
+
+      final decoded = jsonDecode(await pairedFile.readAsString());
+      final record = _findDeviceRecord(decoded, deviceId);
+      if (record == null) return null;
+      if (!_recordHasRole(record, AppConstants.nodeRole)) return null;
+      return _stringSet(record['commands']);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _approvePendingNodePairingSnapshot(
+    PreferencesService prefs,
+  ) async {
+    final requestId = await _readPendingNodePairingRequestIdFromStore();
+    if (requestId == null || requestId.isEmpty) return false;
+
+    log('[NODE] Approving pending node command snapshot $requestId via OpenClaw nodes CLI...');
+    _gatewayAuthToken ??= await _readGatewayToken();
+    final gatewayUrl =
+        'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
+    final gatewayToken = _gatewayAuthToken;
+
+    Future<void> approveWith(String extraArgs) async {
+      await NativeBridge.runInProot(
+        '$kOpenClawCommand nodes approve $requestId$extraArgs --json',
+        timeout: 40,
+      );
+    }
+
+    try {
+      if (gatewayToken != null && gatewayToken.isNotEmpty) {
+        try {
+          await approveWith(
+            ' --url ${NativeBridge.shellQuote(gatewayUrl)}'
+            ' --token ${NativeBridge.shellQuote(gatewayToken)}',
+          );
+        } catch (e) {
+          log('[NODE] Explicit node pairing approval failed ($e); retrying with local CLI session...');
+          await approveWith('');
+        }
+      } else {
+        await approveWith('');
+      }
+
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (await _pairedNodeCommandsCoverDeclared()) {
+        prefs.nodeCommandContractHash = _declaredCommandContractSignature();
+        log('[NODE] Approved node command snapshot');
+        return true;
+      }
+      log('[NODE] Node pairing approval completed but command snapshot is still missing');
+    } catch (e) {
+      log('[NODE] Node pairing approval failed: $e');
+    }
+    return false;
+  }
+
+  Future<String?> _readPendingNodePairingRequestIdFromStore() async {
+    final deviceId = _identity.deviceId ?? '';
+    if (deviceId.isEmpty) return null;
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final pendingPath =
+          '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/pending.json';
+      final pendingFile = File(pendingPath);
+      if (!await pendingFile.exists()) return null;
+
+      final content = await pendingFile.readAsString();
+      return NativeBridge.extractPendingDeviceRequestId(
+        content,
+        deviceId: deviceId,
+        role: AppConstants.nodeRole,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _findDeviceRecord(Object? value, String deviceId) {
+    if (deviceId.isEmpty) return null;
+    if (value is Map) {
+      final map = value.map((key, val) => MapEntry('$key', val));
+      if (map.containsKey(deviceId) && map[deviceId] is Map) {
+        return Map<String, dynamic>.from(map[deviceId] as Map);
+      }
+      if (_containsStringValue(map, deviceId)) {
+        final directDeviceId = map['deviceId']?.toString();
+        final directNodeId = map['nodeId']?.toString();
+        if (directDeviceId == deviceId || directNodeId == deviceId) {
+          return Map<String, dynamic>.from(map);
+        }
+      }
+      for (final child in map.values) {
+        final record = _findDeviceRecord(child, deviceId);
+        if (record != null) return record;
+      }
+    } else if (value is List) {
+      for (final child in value) {
+        final record = _findDeviceRecord(child, deviceId);
+        if (record != null) return record;
+      }
+    }
+    return null;
+  }
+
+  bool _recordHasRole(Map<String, dynamic> record, String role) {
+    if (role.isEmpty) return false;
+    if (record['role']?.toString() == role) return true;
+    final roles = record['roles'];
+    if (roles is List && roles.any((value) => value?.toString() == role)) {
+      return true;
+    }
+    return false;
+  }
+
+  Set<String> _stringSet(Object? value) {
+    if (value is! List) return const <String>{};
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toSet();
   }
 
   String _declaredCommandContractSignature() {
     final commands = _capabilityHandlers.keys.toList()..sort();
     // Bump this when the gateway-visible node snapshot shape changes, not only
-    // when the command names change. v3 pairs with the operator handshake fix
-    // that stops sending empty caps/commands from the UI connection.
-    return 'v3:${commands.join('|')}';
+    // when the command names change. v5 adds avatar node commands.
+    return 'v5:${commands.join('|')}';
   }
 
   String _capFamilyForCommand(String command) {
@@ -191,8 +465,19 @@ class NodeService {
   }
 
   Future<void> connect({String? host, int? port}) async {
-    if (_state.status == NodeStatus.paired && _ws.isConnected) {
+    if (_capabilityHandlers.isEmpty) {
+      log('[NODE] Connect deferred: no device capabilities registered yet');
       return;
+    }
+    final needsSnapshotRepair = await _pairedNodeSnapshotNeedsCommandRepair();
+    if (_state.status == NodeStatus.paired && _ws.isConnected) {
+      if (!needsSnapshotRepair && !_ws.isStale) {
+        return;
+      }
+      log(needsSnapshotRepair
+          ? '[NODE] Connected gateway node snapshot is missing commands; reconnecting to refresh pairing'
+          : '[NODE] Existing WebSocket is stale; reconnecting to refresh node commands');
+      await _ws.disconnect();
     }
     if (_connectInFlight) {
       log('[NODE] Connect already in progress — skipping duplicate request');
@@ -225,6 +510,11 @@ class NodeService {
 
       final prefs = PreferencesService();
       await prefs.init();
+      await _ensurePairingMatchesDeclaredCommands(prefs);
+      if (needsSnapshotRepair ||
+          await _pairedNodeSnapshotNeedsCommandRepair()) {
+        await _repairPairedNodeSnapshot(prefs);
+      }
 
       final targetHost =
           host ?? prefs.nodeGatewayHost ?? AppConstants.gatewayHost;
@@ -574,6 +864,9 @@ class NodeService {
         prefs.nodeDeviceToken = deviceToken;
       }
       _onConnected(response);
+      if (await _pairedNodeSnapshotNeedsCommandRepair()) {
+        await _approvePendingNodePairingSnapshot(prefs);
+      }
     } else if (response.isError) {
       final errPayload = response.payload ?? response.error ?? {};
       final code = errPayload['code'] as String? ?? '';
@@ -1035,15 +1328,47 @@ class NodeService {
         '$kOpenClawCommand devices list --json$explicitArgs',
         timeout: 20,
       );
-      return NativeBridge.extractPendingDeviceRequestId(
+      final cliRequestId = NativeBridge.extractPendingDeviceRequestId(
         output,
         requestedId: fallbackRequestId,
         deviceId: _identity.deviceId,
         role: AppConstants.nodeRole,
       );
-    } catch (_) {
-      return null;
-    }
+      if (cliRequestId != null && cliRequestId.isNotEmpty) {
+        return cliRequestId;
+      }
+    } catch (_) {}
+
+    return _readPendingNodeRequestIdFromStore(
+      fallbackRequestId: fallbackRequestId,
+    );
+  }
+
+  Future<String?> _readPendingNodeRequestIdFromStore({
+    required String fallbackRequestId,
+  }) async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final paths = [
+        '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/pending.json',
+        '$filesDir/rootfs/ubuntu/root/.openclaw/devices/pending.json',
+      ];
+      for (final path in paths) {
+        final pendingFile = File(path);
+        if (!await pendingFile.exists()) continue;
+        final content = await pendingFile.readAsString();
+        final requestId = NativeBridge.extractPendingDeviceRequestId(
+          content,
+          requestedId: fallbackRequestId,
+          deviceId: _identity.deviceId,
+          role: AppConstants.nodeRole,
+        );
+        if (requestId != null && requestId.isNotEmpty) {
+          return requestId;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   bool _isUnknownRequestIdError(Object error) {

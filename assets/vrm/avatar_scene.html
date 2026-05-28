@@ -123,16 +123,58 @@
             'wave right': 'animations/limbs/Wave_Right_01.vrma',
             'wave left': 'animations/limbs/Wave_Left_01.vrma',
             'both wave': 'animations/limbs/Wave_Both_01.vrma',
-            'cheerful wave left': 'animations/limbs/Cheerful_Wave_Left_01.vrma',
-            'cheerful wave right': 'animations/limbs/Cheerful_Wave_Right_01.vrma',
-            'excited wave left': 'animations/limbs/Excited_Wave_Left_01.vrma',
-            'excited wave right': 'animations/limbs/Excited_Wave_Right_01.vrma',
+            'wave both': 'animations/limbs/Wave_Both_01.vrma',
+            'both wave cheer': 'animations/limbs/Both_Wave_Cheer_01.vrma',
+            'both wave cheer 1': 'animations/limbs/Both_Wave_Cheer_01.vrma',
+            'both wave cheer 01': 'animations/limbs/Both_Wave_Cheer_01.vrma',
+            'both wave cheer 2': 'animations/limbs/Both_Wave_Cheer_02.vrma',
+            'both wave cheer 02': 'animations/limbs/Both_Wave_Cheer_02.vrma',
             'bow': 'animations/limbs/Bowing_01.vrma',
             'bowing': 'animations/limbs/Bowing_01.vrma',
+            'bowing 1': 'animations/limbs/Bowing_01.vrma',
+            'bowing 01': 'animations/limbs/Bowing_01.vrma',
+            'bowing 2': 'animations/limbs/Bowing_02.vrma',
+            'bowing 02': 'animations/limbs/Bowing_02.vrma',
+            'bowing 3': 'animations/limbs/Bowing_03.vrma',
+            'bowing 03': 'animations/limbs/Bowing_03.vrma',
+            'bowing 4': 'animations/limbs/Bowing_04.vrma',
+            'bowing 04': 'animations/limbs/Bowing_04.vrma',
+            'bowing 5': 'animations/limbs/Bowing_05.vrma',
+            'bowing 05': 'animations/limbs/Bowing_05.vrma',
+            'cheerful wave left': 'animations/limbs/Cheerful_Wave_Left_01.vrma',
+            'cheerful wave right': 'animations/limbs/Cheerful_Wave_Right_01.vrma',
+            'chill sit': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'chill sit wave': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'cross leg sit': 'animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
+            'cross leg sitting wave': 'animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
+            'excited sit': 'animations/limbs/Excited_Sitting_Wave_01.vrma',
+            'excited sitting wave': 'animations/limbs/Excited_Sitting_Wave_01.vrma',
+            'excited wave left': 'animations/limbs/Excited_Wave_Left_01.vrma',
+            'excited wave right': 'animations/limbs/Excited_Wave_Right_01.vrma',
+            'light wave left': 'animations/limbs/Light_Wave_Left_01.vrma',
+            'light wave right': 'animations/limbs/Light_Wave_Right_01.vrma',
+            'shy wave left': 'animations/limbs/Shy_Wave_Left_01.vrma',
+            'shy wave right': 'animations/limbs/Shy_Wave_Right_01.vrma',
+            'sitting both wave': 'animations/limbs/Sitting_Both_Wave_01.vrma',
             'sitting wave': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'sitting wave left': 'animations/limbs/Sitting_Wave_Left_01.vrma',
+            'sitting wave right': 'animations/limbs/Sitting_Wave_Right_01.vrma',
             'exaggerated wave': 'animations/limbs/Exaggerated_Wave_Both_01.vrma',
+            'exaggerated wave both': 'animations/limbs/Exaggerated_Wave_Both_01.vrma',
+            'exaggerated wave left': 'animations/limbs/Exaggerated_Wave_Left_01.vrma',
+            'exaggerated wave right': 'animations/limbs/Exaggerated_Wave_Right_01.vrma',
             'stylized wave': 'animations/limbs/Stylized_Wave_Left_01.vrma',
+            'stylized wave left': 'animations/limbs/Stylized_Wave_Left_01.vrma',
+            'stylized wave right': 'animations/limbs/Stylized_Wave_Right_01.vrma',
             'fearful wave': 'animations/limbs/Fearful_Wave_01.vrma',
+        };
+        const FULL_BODY_GESTURE_ALIASES = {
+            'dance picatrix': 'animations/dance_picatrix.vrma',
+            'picatrix dance': 'animations/dance_picatrix.vrma',
+            'dance alt': 'animations/gesture_dance.vrma',
+            'dance_alt': 'animations/gesture_dance.vrma',
+            'gesture dance': 'animations/gesture_dance.vrma',
+            'peace sign': 'animations/gesture_peacesign.vrma',
         };
         const GESTURE_FILE_MAP = {};
         GESTURE_PATHS.forEach(name => {
@@ -151,6 +193,9 @@
             GESTURE_FILE_MAP[alias] = path;
             GESTURE_FILE_MAP[path.toLowerCase()] = path;
             GESTURE_FILE_MAP[path.split('/').pop().replace('.vrma', '').toLowerCase().replaceAll('_', ' ')] = path;
+        });
+        Object.entries(FULL_BODY_GESTURE_ALIASES).forEach(([alias, path]) => {
+            GESTURE_FILE_MAP[alias] = path;
         });
         const pendingGestureLoads = {};
         let currentAnimationLoader = null;

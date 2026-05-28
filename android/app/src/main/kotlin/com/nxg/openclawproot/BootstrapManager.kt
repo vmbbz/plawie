@@ -1602,22 +1602,30 @@ os.networkInterfaces = () => ({});
                     - shoot
                     - talk
                     - dance_picatrix
+                    - dance alt / gesture_dance
 
                     **Limb layering (add these on top of any full-body animation):**
                     - Cheerful Wave Left / Right
                     - Light Wave Left / Right
                     - Excited Wave Left / Right
                     - Shy Wave Left / Right
-                    - Bowing (1, 2, 3)
+                    - Bowing (1, 2, 3, 4, 5)
                     - Both Wave Cheer (1, 2)
-                    - Chill Sit
-                    - Cross Leg Sit
-                    - Excited Sit
+                    - Chill Sit Wave
+                    - Cross Leg Sitting Wave
+                    - Excited Sitting Wave
                     - Sitting Wave (Both, Left, Right)
                     - Exaggerated Wave (Both, Left, Right)
                     - Fearful Wave
                     - Stylized Wave (Left, Right)
                     - Basic Wave (Both, Left, Right)
+
+                    Preferred exact tool names include:
+                    wave right, wave left, both wave, cheerful wave left/right,
+                    light wave left/right, excited wave left/right, shy wave left/right,
+                    bowing 1 through bowing 5, both wave cheer 1/2, chill sit wave,
+                    cross leg sitting wave, excited sitting wave, sitting wave left/right,
+                    exaggerated wave left/right, fearful wave, stylized wave left/right.
 
                     **Natural examples the agent now understands perfectly:**
                     - "Plawie do the dance while waving cheerfully with your left arm"

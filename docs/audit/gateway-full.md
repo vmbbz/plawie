@@ -1,155 +1,29 @@
-import 'dart:io';
-import 'package:flutter/services.dart';
+# Audit: Gateway Full Runtime
 
-class BootstrapService {
-  static final BootstrapService instance = BootstrapService._internal();
-  BootstrapService._internal();
+Last updated: 2026-05-28
 
-  // Progress callback used by UI
-  Function(SetupStep step, double progress, String message)? onProgress;
+## Status
 
-  // ==================== MAIN BOOTSTRAP ENTRY POINT ====================
-  Future<void> bootstrap() async {
-    _log('🚀 Starting OpenClaw bootstrap...');
+Historical scratch file replaced with current audit notes. The previous content
+was a pasted bootstrap code sketch, not a reliable architecture document.
 
-    final rootfsDir = await getRootfsDirectory();
+## Current Gateway Runtime Contract
 
-    // 1. Ensure minimal rootfs
-    await _ensureMinimalRootfs(rootfsDir);
+- OpenClaw Gateway runs in PRoot on `127.0.0.1:18789`.
+- Android capability bridge runs on `127.0.0.1:8765`.
+- Cloud models stay on the Gateway lane by default.
+- Direct local NDK models use `local-llm/...` and bypass Gateway.
+- Manual NDK Gateway bridge uses `plawie_ndk/local-llm` on
+  `127.0.0.1:11435/v1`.
+- Ollama `11434` and PRoot `llama-server` `8081` are not production
+  dependencies.
 
-    // 2. Extract pre-bundled openclaw (fast path)
-    await _extractPrebundledOpenClaw(rootfsDir);
+## Audit Checks
 
-    // 3. Ensure openclaw package is present
-    await _ensureOpenClawPackageExists(rootfsDir);
-
-    // 4. Final cleanup
-    await _performFinalCleanup(rootfsDir);
-
-    _log('✅ Bootstrap completed successfully');
-  }
-
-  // ==================== MINIMAL ROOTFS ====================
-  Future<void> _ensureMinimalRootfs(String rootfsDir) async {
-    if (await Directory(rootfsDir).exists() && 
-        await File('$rootfsDir/etc/os-release').exists()) {
-      _log('✅ Minimal rootfs already present');
-      return;
-    }
-
-    _updateProgress(SetupStep.downloadingRootfs, 0.0, 'Downloading minimal Ubuntu arm64 rootfs...');
-
-    // You can host this on your GitHub releases or use a public minimal one
-    const minimalUrl = 'https://github.com/vmbbz/plawie/releases/download/v2026.5/minimal-ubuntu-24.04-arm64-rootfs.tar.gz';
-
-    final tarFile = File('$rootfsDir/rootfs.tar.gz');
-    await _downloadFile(minimalUrl, tarFile);
-
-    await _extractTarGz(tarFile.path, rootfsDir);
-    await tarFile.delete();
-
-    _log('✅ Minimal rootfs extracted (~150 MB)');
-  }
-
-  // ==================== PRE-BUNDLED OPENCLAW ====================
-  Future<void> _extractPrebundledOpenClaw(String rootfsDir) async {
-    final bundledTar = File('assets/openclaw-node-modules.tar.gz');
-    if (!await bundledTar.exists()) {
-      _log('⚠️ No pre-bundled node_modules found (fallback to runtime install)');
-      return;
-    }
-
-    final targetDir = '$rootfsDir/usr/local/lib/node_modules';
-    await Directory(targetDir).create(recursive: true);
-
-    await _extractTarGz(bundledTar.path, targetDir);
-    _log('✅ Pre-bundled openclaw node_modules extracted (fast path)');
-  }
-
-  // ==================== ENSURE OPENCLAW PACKAGE ====================
-  Future<void> _ensureOpenClawPackageExists(String rootfsDir) async {
-    final openclawDir = Directory('$rootfsDir/usr/local/lib/node_modules/openclaw');
-
-    if (await openclawDir.exists()) {
-      _log('✅ openclaw package ready');
-      return;
-    }
-
-    _log('🚨 openclaw missing — performing minimal install...');
-
-    // Install build tools only if needed
-    await _installMinimalBuildTools(rootfsDir);
-
-    await NativeBridge.runInProot(
-      'npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --ignore-scripts --production',
-      timeout: const Duration(minutes: 2),
-    );
-
-    // Purge build tools immediately after
-    await _purgeBuildTools(rootfsDir);
-  }
-
-  // ==================== BUILD TOOLS (OPTIONAL) ====================
-  Future<void> _installMinimalBuildTools(String rootfsDir) async {
-    await NativeBridge.runInProot('''
-      apt-get update -qq &&
-      apt-get install -y --no-install-recommends build-essential python3 &&
-      apt-get clean
-    ''');
-  }
-
-  Future<void> _purgeBuildTools(String rootfsDir) async {
-    await NativeBridge.runInProot('''
-      apt-get purge -y build-essential python3 &&
-      apt-get autoremove -y &&
-      apt-get clean &&
-      rm -rf /var/lib/apt/lists/*
-    ''');
-  }
-
-  // ==================== FINAL CLEANUP ====================
-  Future<void> _performFinalCleanup(String rootfsDir) async {
-    await NativeBridge.runInProot('''
-      npm cache clean --force &&
-      rm -rf /root/.npm/_cacache /root/.npm/_logs &&
-      apt-get clean &&
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/*
-    ''');
-    _log('✅ Heavy caches cleaned (size optimization)');
-  }
-
-  // ==================== HELPERS ====================
-  Future<Directory> getRootfsDirectory() async {
-    // Your existing implementation
-    final dir = Directory('/data/user/0/com.nxg.openclawproot/files/rootfs/ubuntu');
-    await dir.create(recursive: true);
-    return dir;
-  }
-
-  Future<void> _downloadFile(String url, File destination, {Function(double)? onProgress}) async {
-    // Your existing download logic (keep it)
-    // ...
-  }
-
-  Future<void> _extractTarGz(String tarPath, String targetDir) async {
-    // Your existing tar extraction logic
-    // ...
-  }
-
-  void _log(String message, {Object? error}) {
-    print('[BootstrapService] $message');
-    if (error != null) print(error);
-  }
-
-  void _updateProgress(SetupStep step, double progress, String message) {
-    onProgress?.call(step, progress, message);
-  }
-}
-
-enum SetupStep {
-  downloadingRootfs,
-  extractingRootfs,
-  installingOpenClaw,
-  cleanup,
-  complete,
-}
+1. Gateway health and operator WebSocket complete before node pairing.
+2. Default skills and tool discovery complete before releasing node auto-connect.
+3. Provider config contains catalog-safe `contextWindow` and `maxTokens` values.
+4. `tools.allow` contains only official groups/stable primitives.
+5. Device commands are declared through node command policy, not `tools.allow`.
+6. Direct local chat works without Gateway.
+7. Bridge chat appears only after the user starts the bridge.

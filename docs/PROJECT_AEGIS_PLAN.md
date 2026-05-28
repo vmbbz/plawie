@@ -1,53 +1,43 @@
-# 🛡️ Project Aegis: Technical Implementation Plan
-**Status:** DRAFT / PRE-IMPLEMENTATION (Phase 1 Start Tonight)
-**Architecture:** Hybrid glibc-Wrapper (AidanPark Evolution)
+# Project Aegis Plan
 
-## 🎯 Objective
-Replace the legacy 1.5GB PRoot Ubuntu environment with a lightweight, high-performance glibc-runner bridge. Reduce storage footprint by 80% and gateway boot time by 90%.
+Last updated: 2026-05-28
 
----
+## Status
 
-## 🏗️ Phase 1: Native & Bootstrap Refactor (Tonight)
+Historical proposal, not current implementation.
 
-### 1. Kotlin Layer (Process Management)
-- **Target**: `android/app/src/main/kotlin/com/nxg/openclawproot/ProcessManager.kt`
-- **Action**: Implement `buildGlibcCommand()`. 
-- **Logic**: Use `ld-linux-aarch64.so.1` to execute the Node.js binary directly from app-internal storage.
-- **Goal**: Eliminate `ptrace` (PRoot) syscall interception.
+The current production architecture still runs OpenClaw Gateway inside the PRoot
+Linux userland. The app has not migrated Gateway execution to a glibc-runner.
+Do not use this file as an implementation contract for boot, storage, pairing,
+or provider routing.
 
-### 2. Bootstrap Layer (Asset Management)
-- **Target**: `android/app/src/main/kotlin/com/nxg/openclawproot/BootstrapManager.kt`
-- **Action**: Add logic to handle the `glibc-bridge.tar.gz` (Atomic 200MB package).
-- **Migration**: Check for existing `/rootfs` and provide a `purgeLegacyRootfs()` method to reclaim ~1.5GB.
+## Current Source Of Truth
 
-### 3. Dart Layer (Bridge Interface)
-- **Target**: `lib/services/native_bridge.dart`
-- **Action**: Generalize `runInProot()` to `runNativeCommand()`.
-- **Logic**: The bridge will now intelligently route commands to the glibc loader.
+- `ARCHITECTURE_REPORT.md`
+- `docs/OPENCLAW_BOOT_SEQUENCE.md`
+- `docs/PROVIDER_SIMPLIFICATION_OVERHAUL.md`
 
----
+## What Remains Useful
 
-## 🏗️ Phase 2: OpenClaw Compatibility (Post-Migration)
+The original Aegis idea remains a possible future research direction:
 
-### 1. The Bionic Bridge
-- Ensure `bionic-bypass.js` is updated to handle DNS and Socket translation for the native glibc environment.
-- Verify `OLLAMA_HOST` routing is preserved across the new bridge.
+- Reduce rootfs size.
+- Reduce PRoot syscall overhead.
+- Launch Gateway faster.
+- Simplify OpenClaw process management.
 
-### 2. Monitoring & Watchdog
-- Update the `GatewayService` watchdog to poll at **1-second intervals** initially, as boot will be near-instant.
+Any revival needs a fresh design review against the current code, especially:
 
----
+- `android/app/src/main/kotlin/com/nxg/openclawproot/ProcessManager.kt`
+- `android/app/src/main/kotlin/com/nxg/openclawproot/BootstrapManager.kt`
+- `lib/services/native_bridge.dart`
+- `lib/services/gateway_service.dart`
 
-## 📊 Performance Targets
-| Metric | PRoot (Old) | Aegis (New) |
-| :--- | :--- | :--- |
-| **Asset Download** | ~700 MB | **~180 MB** |
-| **Disk Footprint** | ~1.8 GB | **<300 MB** |
-| **Cold Boot** | 120–240s | **<10s** |
-| **CPU Overhead** | ~15% (Ptrace) | **~0% (Native)** |
+## Non-Current Claims
 
----
+The following claims from the old proposal are not production facts today:
 
-## ⚠️ Known Risks
-- **Library Mismatch**: Ensuring the glibc shim includes all `libssl`, `libcrypto`, and `libstdc++` dependencies required by Node.js 22.
-- **Permission Scope**: Ensuring the `ld.so` has execution permissions on Android 14+ (Targeting `/data/user/0/com.nxg.openclawproot/files/`).
+- Gateway boot under 10 seconds through glibc-runner.
+- Removal of the PRoot rootfs.
+- 80 percent storage reduction from Aegis.
+- Watchdog changes based on near-instant boot.

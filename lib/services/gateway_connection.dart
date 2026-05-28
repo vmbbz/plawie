@@ -682,17 +682,23 @@ class GatewayConnection {
 
   /// Update session metadata (e.g. primaryModel, contextWindow) in-memory.
   /// Prevents the need for a 10-minute gateway restart on model switch.
-  Future<void> patchSessionMetadata(Map<String, dynamic> metadata) async {
+  Future<void> patchSessionMetadata(
+    Map<String, dynamic> metadata, {
+    String? sessionKey,
+  }) async {
     if (_state != GatewayConnectionState.connected) return;
 
     // Gateway schema: params must have 'key' (not 'sessionKey'), no 'patch' wrapper.
     // Metadata fields go directly alongside 'key' in params.
+    final key = (sessionKey != null && sessionKey.trim().isNotEmpty)
+        ? sessionKey.trim()
+        : mainSessionKey ?? 'main';
     final payload = {
       'type': 'req',
       'method': 'sessions.patch',
       'id': const Uuid().v4(),
       'params': {
-        'key': mainSessionKey ?? 'main',
+        'key': key,
         ...metadata,
       },
     };

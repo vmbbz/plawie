@@ -42,6 +42,9 @@ class ModelOption {
   /// Most providers use one segment after the provider prefix, but OpenRouter
   /// preserves nested upstream ids such as `openrouter/free`.
   String get providerModelId {
+    if (providerId == 'openrouter' && id == 'openrouter/auto') {
+      return 'openrouter/auto';
+    }
     final prefix = '$providerId/';
     return id.startsWith(prefix) ? id.substring(prefix.length) : shortId;
   }
@@ -300,19 +303,23 @@ class ModelProviderCatalog {
       label: 'Llama 3.3 70B Versatile',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
-      description: 'Low-latency hosted model.',
+      description:
+          'Low-latency hosted model; full Gateway tools need enough Groq TPM.',
       category: 'Fast',
       recommended: true,
+      toolPolicy: ModelToolPolicy.variable,
       contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
-      maxTokens: ModelExecutionPolicy.standardOutputTokens,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
       id: 'groq/llama-3.1-8b-instant',
       label: 'Llama 3.1 8B Instant',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
-      description: 'Very fast lightweight Groq route.',
+      description:
+          'Very fast lightweight Groq route; best for short cloud turns.',
       category: 'Fast',
+      toolPolicy: ModelToolPolicy.variable,
       contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
@@ -557,10 +564,14 @@ class ModelProviderCatalog {
       );
       final id = normalized['id']?.toString();
       if (id == null || id.trim().isEmpty) continue;
+      final canonicalId = _canonicalProviderModelId(provider, id);
+      if (canonicalId.isEmpty || seen.contains(canonicalId)) continue;
+      if (canonicalId != id) normalized['id'] = canonicalId;
 
-      final defaultsForModel = defaultsById[id];
+      final defaultsForModel = defaultsById[canonicalId];
       if (defaultsForModel == null) {
         merged.add(normalized);
+        seen.add(canonicalId);
       } else {
         final healed = <String, dynamic>{...normalized};
         for (final field in const ['id', 'name']) {
@@ -572,7 +583,7 @@ class ModelProviderCatalog {
           }
         }
         merged.add(healed);
-        seen.add(id);
+        seen.add(canonicalId);
       }
     }
 
@@ -581,5 +592,17 @@ class ModelProviderCatalog {
       if (id != null && !seen.contains(id)) merged.add(entry);
     }
     return merged;
+  }
+
+  static String _canonicalProviderModelId(String provider, String id) {
+    final normalizedProvider = normalizeProvider(provider);
+    final trimmed = id.trim();
+    if (normalizedProvider == 'openrouter' && trimmed == 'auto') {
+      return 'openrouter/auto';
+    }
+    if (normalizedProvider == 'openrouter' && trimmed == 'free') {
+      return 'openrouter/free';
+    }
+    return trimmed;
   }
 }

@@ -10,6 +10,7 @@ import '../models/node_state.dart';
 import '../models/node_frame.dart';
 import '../models/gateway_state.dart';
 import 'gateway_provider.dart' as svc_gateway;
+import '../services/capabilities/avatar_capability.dart';
 import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/capabilities/location_capability.dart';
@@ -29,6 +30,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _permissionRequestInFlight = false;
 
   // Capabilities
+  final _avatarCapability = AvatarCapability();
   final _cameraCapability = CameraCapability();
   final _canvasCapability = CanvasCapability();
   final _flashCapability = FlashCapability();
@@ -200,6 +202,21 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _registerCapabilities() {
     _registerCapabilityAliases(
+      _avatarCapability,
+      (cmd, params) => _avatarCapability.handle(cmd, params),
+    );
+    _nodeService.registerCapability(
+      'avatar-gesture-compat',
+      const ['gesture.wave', 'gestures.wave', 'wave'],
+      (_, params) => _avatarCapability.handle(
+        'avatar.gesture',
+        {
+          ...params,
+          if (!params.containsKey('gesture')) 'gesture': 'wave right',
+        },
+      ),
+    );
+    _registerCapabilityAliases(
       _cameraCapability,
       (cmd, params) => _cameraCapability.handleWithPermission(cmd, params),
     );
@@ -270,6 +287,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
         'platform': Platform.isAndroid ? 'android' : 'ios',
         'arch': arch,
         'capabilities': [
+          'avatar.gesture',
+          'avatar.mode',
+          'avatar.model',
+          'avatar.status',
           'camera.snap',
           'camera.clip',
           'camera.list',

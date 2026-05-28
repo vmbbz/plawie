@@ -1,99 +1,81 @@
 # Local LLM Architecture
 
-Last updated: 2026-05-23
+Last updated: 2026-05-28
 
 ## Decision
 
-Plawie local inference is now NDK Direct only. Embedded Ollama Local and Ollama
-Cloud are legacy implementation paths and are hidden from normal UI.
+Plawie local inference is NDK/fllama based. Embedded Ollama and PRoot
+`llama-server` paths are legacy incident history, not current architecture.
 
-## Production Mode
+| Mode | Prefix | Runtime | Gateway | Intended use |
+| --- | --- | --- | --- | --- |
+| NDK Direct | `local-llm/...` | fllama / llama.cpp NDK | No | Private/offline chat and local Dart actions |
+| Cloud Agent | `google/...`, `anthropic/...`, `openai/...`, `xai/...`, `openrouter/...`, `groq/...` | OpenClaw Gateway | Yes | Full Gateway tools, skills, dashboard, Talk, sessions |
+| NDK Gateway Bridge | `plawie_ndk/local-llm` | OpenAI-compatible bridge to fllama | Yes | Manual local-model experiment through Gateway tools |
 
-| Mode | Prefix | Runtime | Gateway | Network | Intended use |
-| --- | --- | --- | --- | --- | --- |
-| NDK Direct | `local-llm/...` | fllama / llama.cpp NDK | No | No | Private/offline chat and direct app actions |
-| Cloud Agent | `google/...`, `anthropic/...`, `openai/...`, `xai/...`, `openrouter/...`, `groq/...` | OpenClaw Gateway | Yes | Yes | Tools, skills, dashboard, multi-step agent workflows |
-
-## Why Ollama Is Deprecated
-
-The embedded Ollama daemon requires a large ARM64 runtime, adds another process
-beside Flutter, PRoot, OpenClaw, and the paired node, and can push average phones
-into memory pressure during chat. It also blurred the product promise because
-Ollama Cloud still needed a local daemon proxy.
-
-Current behavior:
-
-- Fresh setup does not offer Ollama Local or Ollama Cloud.
-- Chat/settings do not list `ollama/...` models.
-- Stale `ollama/...` preferences migrate to the safe cloud fallback.
-- Legacy daemon install/start/stop methods have been removed from Dart and
-  Android. Remaining `ollama` references are migration/removal guards only.
-
-## NDK Direct Flow
+## Current Local Flow
 
 ```text
 Flutter Chat
   -> GatewayService.sendMessage()
   -> local-llm prefix detected
   -> LocalLlmService.chat()
-  -> fllama / llama.cpp NDK
-  -> GGUF model file in app storage
+  -> fllamaInference()
+  -> GGUF model in app storage
 ```
 
 Important properties:
 
 - No Gateway token lookup.
-- No WebSocket connection.
-- No `talk.speak` Gateway TTS call.
-- No Ollama daemon, no `127.0.0.1:11434` dependency.
-- App actions are handled directly by Dart capabilities when deterministic.
+- No Gateway WebSocket setup.
+- No Ollama daemon or `127.0.0.1:11434`.
+- No PRoot `llama-server` or `127.0.0.1:8081`.
+- Local tools are Dart-side actions with a depth-limited fllama tool loop.
 
-## Thread Policy
+## Context Policy
 
-The safe default is 4 CPU threads. Older persisted values above 4 are clamped
-back to 4 when the Local LLM page opens and inference is idle. Users can still
-raise the slider manually, but the UI warns that high thread counts can slow
-Flutter, Gateway health checks, and pairing.
+`lib/services/model_execution_policy.dart` owns shared context and output
+budgets. Direct local fllama activation clamps context to a phone-safe 512-4096
+range. The bridge advertises a 4096-token context and 768-token output cap to
+Gateway so small local models do not receive cloud-scale prompts.
 
-## Capture UX
+`LocalLlmService` also trims history, preserves assistant `tool_calls`, and
+summarizes dropped history before inference.
 
-Camera and canvas captures from local tools attach to the assistant chat bubble.
-They do not auto-open a full-screen hologram overlay, because that trapped the
-user during local-tool tests.
+## NDK Gateway Bridge
 
-## Experimental NDK Gateway Bridge
-
-A local OpenAI-compatible HTTP bridge exists as an explicit experiment:
+The bridge is explicit and manual:
 
 ```text
 Provider: plawie_ndk
 Model:    plawie_ndk/local-llm
 Base URL: http://127.0.0.1:11435/v1
-GET  http://127.0.0.1:11435/v1/models
-POST http://127.0.0.1:11435/v1/chat/completions
 ```
 
-It is started manually from Local LLM -> Gateway Bridge Experiment and can then
-write a temporary OpenClaw provider config. It is not part of fresh setup and is
-not enabled by default.
+It replaces the large Gateway system prompt with a compact local prompt, converts
+the Gateway `tools` array into native fllama `Tool` objects, and asks
+`LocalLlmService.chat(..., yieldToolCalls: true)` to yield tool calls instead of
+executing them locally.
 
-Expected confidence signals:
+When a local model emits tool calls, the bridge returns standard OpenAI
+`tool_calls` chunks to Gateway. Gateway executes the actual tool and sends the
+tool result back on the next completion request. The bridge preserves that
+tool-result context and asks the local model to answer from it.
 
-- Local LLM model is `ready` before bridge use.
-- Bridge status is `running`.
-- `/v1/health` returns `ok: true`, `runtime: fllama`, and the active model ID.
-- Gateway config contains `models.providers.plawie_ndk.baseUrl =
-  http://127.0.0.1:11435/v1`.
-- Gateway logs show a request to the `plawie_ndk/local-llm` model without
-  trying `127.0.0.1:11434`.
-- A chat turn either produces assistant text or returns a clear bridge HTTP
-  error such as `model_not_ready`.
+## Tool Reality
 
-Do not promote it to a production default until it proves:
+The shared policy system does not exist to promise that every model is good at
+tools. It exists to route safely and keep prompt/output budgets realistic. Tool
+success still depends on the selected model's instruction following, tool-call
+format support, and available context.
 
-- Streaming Server-Sent Events match OpenAI-compatible expectations.
-- Tool calls either round-trip through Gateway correctly or are explicitly
-  disabled for bridge-routed local models.
-- Startup/shutdown is lifecycle-safe.
-- NDK inference does not compete with Gateway/node stability under memory
-  pressure on 8 GB phones.
+## Deprecated
+
+Fresh setup, chat, settings, and Gateway boot must not offer or start:
+
+- Embedded Ollama Local.
+- Ollama Cloud through a local daemon.
+- `ollama/...` as a normal model choice.
+- PRoot `llama-server`.
+
+Remaining `ollama` references are migration/removal guards.
