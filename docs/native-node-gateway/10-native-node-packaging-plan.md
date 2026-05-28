@@ -53,6 +53,9 @@ Source-backed constraints:
 ## Phase 3 Work Order
 
 1. Build or source a trustworthy Node `>=22.19.0` Android arm64 runtime.
+   The preferred first attempt is
+   `scripts/native_node/build_node_android_arm64.sh`, pinned to Node
+   `v22.22.3` source and its official SHA-256.
 2. Run the candidate through
    `scripts/native_node/package_native_node_candidate.ps1`, preferably with an
    expected SHA-256.

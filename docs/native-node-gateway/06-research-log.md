@@ -91,6 +91,12 @@ A local packaging helper now exists at
 `scripts/native_node/package_native_node_candidate.ps1`. It is intentionally
 hash-first and local-only so a research binary cannot be silently promoted.
 
+The first reproducible build scaffold now exists at
+`scripts/native_node/build_node_android_arm64.sh`. It downloads Node
+`v22.22.3` source from nodejs.org, verifies the official source SHA-256
+`f3e6a578db1ab335a4a72785c1e87ad18a2cf6d2fc25747a1d741fb34af0bd0f`, and runs
+Node's Android configure path for arm64.
+
 ## Working Assumptions
 
 - OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
@@ -118,6 +124,8 @@ hash-first and local-only so a research binary cannot be silently promoted.
 8. Should the first Node `>=22.19.0` candidate be built directly from
    `nodejs/node`, forked from `nodejs-mobile`, or produced by a dedicated
    Android runtime build repo?
+9. Does upstream Node `v22.22.3` build cleanly with Android NDK
+   `28.2.13676358` for arm64, or do we need a patch/fork?
 
 ## Immediate Research Tasks
 
@@ -131,3 +139,5 @@ hash-first and local-only so a research binary cannot be silently promoted.
   health endpoint on the same non-production port.
 - Produce or obtain a trustworthy Node `>=22.19.0` Android arm64 executable and
   run it through the binary gate.
+- Run the source-build helper on Linux/WSL with the Android NDK and record the
+  first build result.

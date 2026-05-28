@@ -118,7 +118,7 @@ Smoke result:
 
 ## Phase 3: OpenClaw Bundle Feasibility
 
-Status: inventory and binary gate started
+Status: inventory, binary gate, and build scaffold started
 
 Implemented in this phase so far:
 
@@ -134,6 +134,9 @@ Implemented in this phase so far:
 - Added a local-only packaging helper for candidate Node binaries. It records
   SHA-256, refuses unpinned candidates unless explicitly allowed, and keeps the
   binary ignored by git until provenance and licensing are reviewed.
+- Added a Linux/WSL source-build helper pinned to Node `v22.22.3` and the
+  official source tarball SHA-256, so the first Android arm64 candidate can be
+  produced from verified source rather than an opaque binary.
 
 Goals:
 
