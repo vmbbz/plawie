@@ -1977,14 +1977,12 @@ HEARTBEAT_OK.
     final config = await _readConfig();
     config['models'] ??= <String, dynamic>{};
     config['models']['providers'] ??= <String, dynamic>{};
-    config['models']['providers'][provider] = <String, dynamic>{
-      'api': 'openai-completions',
-      'apiKey': bridgeKey,
-      'baseUrl': ModelProviderCatalog.plawieNdkBaseUrl,
-      'models': [
-        {'id': 'local-llm', 'name': 'Plawie NDK Bridge'}
-      ],
-    };
+    config['models']['providers'][provider] =
+        ModelProviderCatalog.mergeProviderConfig(
+      provider,
+      null,
+      apiKey: bridgeKey,
+    );
     ensureProviderAuthConfigBlock(config, provider);
 
     if (setAsPrimary) {

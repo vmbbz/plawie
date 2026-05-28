@@ -1,3 +1,5 @@
+import 'model_execution_policy.dart';
+
 enum ModelRouteKind {
   onDevice,
   cloud,
@@ -13,6 +15,11 @@ class ModelOption {
   final bool recommended;
   final bool supportsToolCalls;
   final bool supportsVision;
+  final ModelToolPolicy toolPolicy;
+  final int? contextWindow;
+
+  /// Safe per-request output cap written to the gateway config.
+  final int? maxTokens;
 
   const ModelOption({
     required this.id,
@@ -24,6 +31,9 @@ class ModelOption {
     this.recommended = false,
     this.supportsToolCalls = true,
     this.supportsVision = false,
+    this.toolPolicy = ModelToolPolicy.reliable,
+    this.contextWindow,
+    this.maxTokens,
   });
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
@@ -34,6 +44,24 @@ class ModelOption {
   String get providerModelId {
     final prefix = '$providerId/';
     return id.startsWith(prefix) ? id.substring(prefix.length) : shortId;
+  }
+
+  Map<String, dynamic> get providerConfig {
+    final config = <String, dynamic>{
+      'id': providerModelId,
+      'name': label,
+    };
+    if (contextWindow != null) config['contextWindow'] = contextWindow;
+    if (maxTokens != null) config['maxTokens'] = maxTokens;
+    return config;
+  }
+
+  String get gatewayCapabilityLabel {
+    if (!supportsToolCalls || toolPolicy == ModelToolPolicy.disabled) {
+      return 'CHAT ONLY';
+    }
+    if (toolPolicy == ModelToolPolicy.variable) return 'VARIABLE TOOLS';
+    return 'FULL TOOLS';
   }
 }
 
@@ -142,6 +170,8 @@ class ModelProviderCatalog {
       category: 'Multimodal',
       recommended: true,
       supportsVision: true,
+      contextWindow: ModelExecutionPolicy.googleGemini31ProContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
       id: 'anthropic/claude-opus-4-6',
@@ -151,6 +181,8 @@ class ModelProviderCatalog {
       description: 'Premium reasoning and agent planning.',
       category: 'Reasoning',
       recommended: true,
+      contextWindow: ModelExecutionPolicy.anthropicClaude46ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
       id: 'anthropic/claude-sonnet-4-6',
@@ -159,6 +191,8 @@ class ModelProviderCatalog {
       route: ModelRouteKind.cloud,
       description: 'Balanced Anthropic model.',
       category: 'Reasoning',
+      contextWindow: ModelExecutionPolicy.anthropicClaude46ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
       id: 'openai/gpt-5.4',
@@ -169,6 +203,8 @@ class ModelProviderCatalog {
       category: 'General',
       recommended: true,
       supportsVision: true,
+      contextWindow: ModelExecutionPolicy.openAiGpt54ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
       id: 'openai/gpt-4o',
@@ -178,6 +214,8 @@ class ModelProviderCatalog {
       description: 'Legacy-compatible multimodal fallback.',
       category: 'Multimodal',
       supportsVision: true,
+      contextWindow: ModelExecutionPolicy.openAiGpt4oContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
       id: 'xai/grok-4',
@@ -188,6 +226,8 @@ class ModelProviderCatalog {
       category: 'Reasoning',
       recommended: true,
       supportsVision: true,
+      contextWindow: ModelExecutionPolicy.xaiGrok4ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
       id: 'xai/grok-4-1-fast',
@@ -197,6 +237,8 @@ class ModelProviderCatalog {
       description: 'Fast xAI model for responsive chat.',
       category: 'Fast',
       supportsVision: true,
+      contextWindow: ModelExecutionPolicy.xaiGrok41FastContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
       id: 'xai/grok-code-fast-1',
@@ -205,6 +247,8 @@ class ModelProviderCatalog {
       route: ModelRouteKind.cloud,
       description: 'xAI coding model.',
       category: 'Code',
+      contextWindow: ModelExecutionPolicy.xaiGrokCodeFastContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
       id: 'openrouter/openai/gpt-oss-20b:free',
@@ -214,6 +258,8 @@ class ModelProviderCatalog {
       description: 'Free OpenRouter model that advertises tool-call support.',
       category: 'Free',
       recommended: true,
+      contextWindow: ModelExecutionPolicy.openRouterGptOss20bContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
       id: 'openrouter/openrouter/free',
@@ -224,6 +270,9 @@ class ModelProviderCatalog {
           'Routes to available free models; tool-call support is not guaranteed.',
       category: 'Free',
       supportsToolCalls: false,
+      toolPolicy: ModelToolPolicy.disabled,
+      contextWindow: ModelExecutionPolicy.openRouterFreeContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
       id: 'openrouter/auto',
@@ -232,6 +281,9 @@ class ModelProviderCatalog {
       route: ModelRouteKind.cloud,
       description: 'OpenRouter automatic routing across supported models.',
       category: 'Router',
+      toolPolicy: ModelToolPolicy.variable,
+      contextWindow: ModelExecutionPolicy.openRouterAutoContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
       id: 'openrouter/moonshotai/kimi-k2.6',
@@ -240,6 +292,8 @@ class ModelProviderCatalog {
       route: ModelRouteKind.cloud,
       description: 'Strong long-context agent model through OpenRouter.',
       category: 'Agent',
+      contextWindow: ModelExecutionPolicy.openRouterKimiK26ContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
       id: 'groq/llama-3.3-70b-versatile',
@@ -249,6 +303,8 @@ class ModelProviderCatalog {
       description: 'Low-latency hosted model.',
       category: 'Fast',
       recommended: true,
+      contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
       id: 'groq/llama-3.1-8b-instant',
@@ -257,6 +313,8 @@ class ModelProviderCatalog {
       route: ModelRouteKind.cloud,
       description: 'Very fast lightweight Groq route.',
       category: 'Fast',
+      contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
       id: 'plawie_ndk/local-llm',
@@ -265,6 +323,9 @@ class ModelProviderCatalog {
       route: ModelRouteKind.cloud,
       description: 'Routes gateway prompts to the on-device NDK model.',
       category: 'Bridge',
+      toolPolicy: ModelToolPolicy.variable,
+      contextWindow: ModelExecutionPolicy.ndkBridgeContextWindow,
+      maxTokens: ModelExecutionPolicy.ndkBridgeMaxTokens,
     ),
   ];
 
@@ -329,7 +390,7 @@ class ModelProviderCatalog {
     final normalized = normalizeProvider(provider);
     final models = cloudModels
         .where((model) => model.providerId == normalized)
-        .map((model) => {'id': model.providerModelId, 'name': model.label})
+        .map((model) => model.providerConfig)
         .toList(growable: false);
     if (models.isNotEmpty) return models;
     return const [
@@ -349,8 +410,6 @@ class ModelProviderCatalog {
         return 'xai/grok-4';
       case 'groq/llama-3.1-405b':
         return 'groq/llama-3.3-70b-versatile';
-      case 'openrouter/openrouter/free':
-        return defaultCloudFallbackModel;
       default:
         return trimmed;
     }
@@ -366,7 +425,6 @@ class ModelProviderCatalog {
     if (trimmed.startsWith('local-llm')) return true;
     return false;
   }
-
 
   static bool isDirectLocalModelId(String modelId) {
     final trimmed = modelId.trim();
@@ -390,10 +448,31 @@ class ModelProviderCatalog {
 
   static String routeLabelForModel(String modelId) {
     if (modelId.startsWith('local-llm/')) return 'ON DEVICE';
-    if (modelId == '$plawieNdkProviderId/local-llm') return 'EXPERIMENT';
+    if (modelId == '$plawieNdkProviderId/local-llm') return 'COMPACT BRIDGE';
     if (modelId.startsWith('ollama/')) return 'LEGACY';
     final model = modelById(modelId);
+    if (model != null) {
+      return '${model.category.toUpperCase()} - ${model.gatewayCapabilityLabel}';
+    }
     return model?.category.toUpperCase() ?? 'CLOUD';
+  }
+
+  static ModelExecutionLane executionLaneForModel(String modelId) {
+    final canonical = canonicalizeModelId(modelId);
+    if (isDirectLocalModelId(canonical)) return ModelExecutionLane.directLocal;
+    if (canonical == '$plawieNdkProviderId/local-llm') {
+      return ModelExecutionLane.ndkGatewayBridge;
+    }
+    return ModelExecutionLane.cloudFullGateway;
+  }
+
+  static bool canUseFullGatewayTools(String modelId) {
+    final canonical = canonicalizeModelId(modelId);
+    final model = modelById(canonical);
+    return executionLaneForModel(canonical) ==
+            ModelExecutionLane.cloudFullGateway &&
+        (model?.supportsToolCalls ?? true) &&
+        model?.toolPolicy != ModelToolPolicy.disabled;
   }
 
   static Map<String, dynamic> providerConfigDefaults(String provider) {
@@ -425,11 +504,17 @@ class ModelProviderCatalog {
         // The gateway schema strictly validates the 'api' field.
         // Always start the merge with the correct value so a stale on-disk
         // 'openai' value cannot survive through _ensureCatalogProviderDefaults.
+        // contextWindow tells the gateway the real token budget so it
+        // pre-truncates the system prompt before reaching the bridge.
+        // Qwen 1.5B / 3B are comfortable at 4096; bridge also trims aggressively.
         return {
           'api': 'openai-completions',
           'baseUrl': plawieNdkBaseUrl,
+          'contextWindow': ModelExecutionPolicy.ndkBridgeContextWindow,
+          'maxTokens': ModelExecutionPolicy.ndkBridgeMaxTokens,
           'models': models,
         };
+
       default:
         return {'models': models};
     }
@@ -440,13 +525,61 @@ class ModelProviderCatalog {
     Map<dynamic, dynamic>? existing, {
     String? apiKey,
   }) {
+    final existingModels = existing?['models'];
     final merged = <String, dynamic>{
       ...providerConfigDefaults(provider),
       if (existing != null)
         ...existing.map((key, value) => MapEntry(key.toString(), value)),
       if (apiKey != null && apiKey.trim().isNotEmpty) 'apiKey': apiKey.trim(),
     };
+    merged['models'] = _mergeModelDefaults(provider, existingModels);
     merged.removeWhere((_, value) => value == null);
+    return merged;
+  }
+
+  static List<Map<String, dynamic>> _mergeModelDefaults(
+    String provider,
+    dynamic existingModels,
+  ) {
+    final defaults = defaultModelsForProvider(provider);
+    if (existingModels is! List) return defaults;
+
+    final defaultsById = <String, Map<String, dynamic>>{
+      for (final model in defaults) model['id'].toString(): model,
+    };
+    final seen = <String>{};
+    final merged = <Map<String, dynamic>>[];
+
+    for (final entry in existingModels) {
+      if (entry is! Map) continue;
+      final normalized = entry.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final id = normalized['id']?.toString();
+      if (id == null || id.trim().isEmpty) continue;
+
+      final defaultsForModel = defaultsById[id];
+      if (defaultsForModel == null) {
+        merged.add(normalized);
+      } else {
+        final healed = <String, dynamic>{...normalized};
+        for (final field in const ['id', 'name']) {
+          healed.putIfAbsent(field, () => defaultsForModel[field]);
+        }
+        for (final field in const ['contextWindow', 'maxTokens']) {
+          if (defaultsForModel.containsKey(field)) {
+            healed[field] = defaultsForModel[field];
+          }
+        }
+        merged.add(healed);
+        seen.add(id);
+      }
+    }
+
+    for (final entry in defaults) {
+      final id = entry['id']?.toString();
+      if (id != null && !seen.contains(id)) merged.add(entry);
+    }
     return merged;
   }
 }

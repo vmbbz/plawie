@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fllama/fllama.dart';
 import 'local_llm_service.dart';
+import 'model_execution_policy.dart';
 import 'model_provider_catalog.dart';
 
 enum NdkGatewayBridgeStatus {
@@ -44,6 +45,16 @@ class NdkGatewayBridgeState {
   bool get isRunning => status == NdkGatewayBridgeStatus.running;
 }
 
+class _BridgeChatTurn {
+  final List<Map<String, dynamic>> history;
+  final String userMessage;
+
+  const _BridgeChatTurn({
+    required this.history,
+    required this.userMessage,
+  });
+}
+
 /// Experimental OpenAI-compatible loopback bridge for routing Gateway traffic
 /// into the active fllama/NDK model without a PRoot daemon.
 ///
@@ -63,14 +74,10 @@ class NdkGatewayBridgeService {
   /// it with a compact fallback. 0 = always replace with compact prompt.
   static const int _maxSystemPromptChars = 0;
 
-  /// Compact system prompt injected when the gateway system prompt is too large.
-  static const String _compactSystemPrompt =
-      'You are Plawie, a helpful AI assistant running locally on this device. '
-      'Be concise and helpful. You do not have access to tools in this mode.';
-
   /// Maximum number of recent conversation turns (user+assistant pairs) to
   /// forward to fllama. Older turns are dropped to stay within context budget.
-  static const int _maxHistoryTurns = 3;
+  static const int _maxHistoryTurns =
+      ModelExecutionPolicy.ndkBridgeMaxHistoryTurns;
 
   final _stateController = StreamController<NdkGatewayBridgeState>.broadcast();
   NdkGatewayBridgeState _state = const NdkGatewayBridgeState();
@@ -207,8 +214,20 @@ class NdkGatewayBridgeService {
     }
 
     final messages = _parseMessages(decoded['messages']);
-    final userMessage = _lastUserMessage(messages);
-    if (userMessage.trim().isEmpty) {
+    final tools = _parseTools(decoded['tools']);
+
+    // Context trimming:
+    // The gateway sends a ~25K-char system prompt and full tool definitions.
+    // Small models (Qwen 1.5B, 3B) overflow immediately. We:
+    //   1. Replace or truncate the system prompt to a compact bridge prompt.
+    //   2. Preserve recent assistant tool_calls and matching tool results.
+    //   3. Keep only the latest bounded conversation slice.
+    final trimmedMessages = _trimForSmallModel(
+      messages,
+      toolsAvailable: tools.isNotEmpty,
+    );
+    final chatTurn = _chatTurnFromTrimmedMessages(trimmedMessages);
+    if (chatTurn.userMessage.trim().isEmpty) {
       request.response.statusCode = HttpStatus.badRequest;
       await _writeJson(request.response, {
         'error': {
@@ -225,18 +244,6 @@ class NdkGatewayBridgeService {
         ? decoded['model'].toString()
         : 'local-llm';
     final stream = decoded['stream'] == true;
-    final tools = _parseTools(decoded['tools']);
-
-    // ── Context trimming ────────────────────────────────────────────────────
-    // The gateway sends a ~25K-char system prompt and full tool definitions.
-    // Small models (Qwen 1.5B, 3B) overflow immediately. We:
-    //   1. Replace or truncate the system prompt to _compactSystemPrompt.
-    //   2. Drop tool/function messages entirely.
-    //   3. Keep only the last _maxHistoryTurns user+assistant pairs.
-    final trimmedMessages = _trimForSmallModel(messages);
-    final history = trimmedMessages.length > 1
-        ? trimmedMessages.sublist(0, trimmedMessages.length - 1)
-        : <Map<String, dynamic>>[];
 
     _updateState(_state.copyWith(requestCount: _state.requestCount + 1));
 
@@ -245,13 +252,18 @@ class NdkGatewayBridgeService {
         request.response,
         requestId: requestId,
         model: model,
-        history: history,
-        userMessage: userMessage,
+        history: chatTurn.history,
+        userMessage: chatTurn.userMessage,
         tools: tools.isNotEmpty ? tools : null,
       );
     } else {
       final buffer = StringBuffer();
-      await for (final token in local.chat(history, userMessage, tools: tools.isNotEmpty ? tools : null, yieldToolCalls: true)) {
+      await for (final token in local.chat(
+        chatTurn.history,
+        chatTurn.userMessage,
+        tools: tools.isNotEmpty ? tools : null,
+        yieldToolCalls: true,
+      )) {
         if (token.startsWith('\x00TOOL_CALLS:') && token.endsWith('\x00')) {
           final callsJson = token.substring(12, token.length - 1);
           final calls = jsonDecode(callsJson) as List<dynamic>;
@@ -293,7 +305,8 @@ class NdkGatewayBridgeService {
     response.headers.set(HttpHeaders.connectionHeader, 'keep-alive');
 
     bool handledToolCall = false;
-    await for (final token in LocalLlmService().chat(history, userMessage, tools: tools, yieldToolCalls: true)) {
+    await for (final token in LocalLlmService()
+        .chat(history, userMessage, tools: tools, yieldToolCalls: true)) {
       if (token.startsWith('\x00TOOL_CALLS:') && token.endsWith('\x00')) {
         final callsJson = token.substring(12, token.length - 1);
         final calls = jsonDecode(callsJson) as List<dynamic>;
@@ -302,6 +315,7 @@ class NdkGatewayBridgeService {
           model: model,
           toolCalls: calls,
         ))}\n\n');
+        await response.flush();
         handledToolCall = true;
         break; // Stream ends after tool call
       }
@@ -437,44 +451,62 @@ class NdkGatewayBridgeService {
 
   List<Tool> _parseTools(dynamic raw) {
     if (raw is! List) return const <Tool>[];
-    return raw.whereType<Map>().map((m) {
-      final function = m['function'];
-      if (function is! Map) return null;
-      return Tool(
-        name: function['name']?.toString() ?? '',
-        description: function['description']?.toString() ?? '',
-        jsonSchema: jsonEncode(function['parameters'] ?? {}),
-      );
-    }).whereType<Tool>().toList();
-  }
-
-  List<Map<String, dynamic>> _parseMessages(dynamic raw) {
-    if (raw is! List) return const <Map<String, dynamic>>[]; 
     return raw
         .whereType<Map>()
         .map((m) {
-          final role = m['role']?.toString() ?? 'user';
-          return {
-            'role': role,
-            'content': _stringifyContent(m['content']),
-          };
+          final function = m['function'];
+          if (function is! Map) return null;
+          return Tool(
+            name: function['name']?.toString() ?? '',
+            description: function['description']?.toString() ?? '',
+            jsonSchema: jsonEncode(function['parameters'] ?? {}),
+          );
         })
-        .where((m) => (m['content'] as String).trim().isNotEmpty)
-        .toList(growable: false);
+        .whereType<Tool>()
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _parseMessages(dynamic raw) {
+    if (raw is! List) return const <Map<String, dynamic>>[];
+    return raw.whereType<Map>().map((m) {
+      final role = m['role']?.toString() ?? 'user';
+      final parsed = <String, dynamic>{
+        'role': role,
+        'content': _stringifyContent(m['content']),
+      };
+      final toolCalls = m['tool_calls'];
+      if (toolCalls is List && toolCalls.isNotEmpty) {
+        parsed['tool_calls'] = toolCalls;
+      }
+      final toolCallId = m['tool_call_id'];
+      if (toolCallId != null) parsed['tool_call_id'] = toolCallId.toString();
+      final name = m['name'];
+      if (name != null) parsed['name'] = name.toString();
+      return parsed;
+    }).where((m) {
+      final content = (m['content'] as String).trim();
+      final hasToolCalls = m['tool_calls'] is List;
+      final hasToolMeta = m['tool_call_id'] != null ||
+          (m['name'] as String?)?.isNotEmpty == true;
+      return content.isNotEmpty || hasToolCalls || hasToolMeta;
+    }).toList(growable: false);
   }
 
   /// Trim the message list to fit a small-context model:
-  ///   - System prompt is replaced with _compactSystemPrompt (or truncated
+  ///   - System prompt is replaced with a compact bridge prompt (or truncated
   ///     if _maxSystemPromptChars > 0 and the original is short enough).
-  ///   - tool / function messages are dropped.
-  ///   - Conversation is capped to the last _maxHistoryTurns turn-pairs
-  ///     (each pair = one user + one assistant message) plus the final user msg.
+  ///   - Recent tool calls and tool results are preserved.
+  ///   - Conversation is capped to a small recent window.
   List<Map<String, dynamic>> _trimForSmallModel(
-    List<Map<String, dynamic>> messages,
-  ) {
+    List<Map<String, dynamic>> messages, {
+    required bool toolsAvailable,
+  }) {
     // 1. Separate system from conversation.
-    String systemContent = _compactSystemPrompt;
+    String systemContent = ModelExecutionPolicy.ndkBridgeCompactPrompt(
+      toolsAvailable: toolsAvailable,
+    );
     final convo = <Map<String, dynamic>>[];
+    final toolNamesById = <String, String>{};
 
     for (final msg in messages) {
       final role = msg['role'] as String;
@@ -487,23 +519,48 @@ class NdkGatewayBridgeService {
         // else keep compact prompt
         continue;
       }
-      // Drop tool/function messages — fllama doesn't support them.
-      if (role == 'tool' || role == 'function') continue;
-      convo.add(msg);
+      final normalized = <String, dynamic>{...msg};
+
+      if (role == 'assistant') {
+        final toolCalls = normalized['tool_calls'];
+        if (toolCalls is List) {
+          for (final call in toolCalls.whereType<Map>()) {
+            final id = call['id']?.toString();
+            final function = call['function'];
+            final name = function is Map ? function['name']?.toString() : null;
+            if (id != null &&
+                id.isNotEmpty &&
+                name != null &&
+                name.isNotEmpty) {
+              toolNamesById[id] = name;
+            }
+          }
+        }
+      }
+
+      if (role == 'tool' || role == 'function') {
+        final toolCallId = normalized['tool_call_id']?.toString();
+        final name = normalized['name']?.toString();
+        if ((name == null || name.isEmpty) &&
+            toolCallId != null &&
+            toolNamesById.containsKey(toolCallId)) {
+          normalized['name'] = toolNamesById[toolCallId];
+        }
+        normalized['content'] = _truncateBridgeContent(
+          normalized['content']?.toString() ?? '',
+          ModelExecutionPolicy.ndkBridgeMaxToolResultChars,
+        );
+      }
+
+      convo.add(normalized);
     }
 
-    // 2. Keep only the last _maxHistoryTurns pairs from the conversation,
-    //    preserving the final user message.
+    // 2. Keep only the last bounded slice from the conversation. A recent tool
+    //    turn can include user + assistant tool_calls + tool result.
     final List<Map<String, dynamic>> trimmed;
-    if (_maxHistoryTurns > 0 && convo.length > _maxHistoryTurns * 2 + 1) {
-      // Always keep the last message (user query), then walk back for pairs.
-      final last = convo.last;
-      final rest = convo.sublist(0, convo.length - 1);
-      final keepCount = (_maxHistoryTurns * 2).clamp(0, rest.length);
-      trimmed = [
-        ...rest.sublist(rest.length - keepCount),
-        last,
-      ];
+    final maxConversationMessages = _maxHistoryTurns * 3 + 2;
+    if (_maxHistoryTurns > 0 && convo.length > maxConversationMessages) {
+      trimmed = convo.sublist(convo.length - maxConversationMessages);
     } else {
       trimmed = List.of(convo);
     }
@@ -513,6 +570,52 @@ class NdkGatewayBridgeService {
       {'role': 'system', 'content': systemContent},
       ...trimmed,
     ];
+  }
+
+  _BridgeChatTurn _chatTurnFromTrimmedMessages(
+    List<Map<String, dynamic>> messages,
+  ) {
+    if (messages.isEmpty) {
+      return const _BridgeChatTurn(
+        history: <Map<String, dynamic>>[],
+        userMessage: '',
+      );
+    }
+    if (!messages.any((m) => m['role'] != 'system')) {
+      return const _BridgeChatTurn(
+        history: <Map<String, dynamic>>[],
+        userMessage: '',
+      );
+    }
+
+    final last = messages.last;
+    final role = last['role'] as String? ?? 'user';
+    if (role == 'user') {
+      return _BridgeChatTurn(
+        history: messages.length > 1
+            ? messages.sublist(0, messages.length - 1)
+            : <Map<String, dynamic>>[],
+        userMessage: last['content'] as String? ?? '',
+      );
+    }
+
+    if (role == 'tool' || role == 'function') {
+      final toolName = last['name'] as String?;
+      final target = toolName != null && toolName.isNotEmpty
+          ? 'the $toolName tool result'
+          : 'the tool result';
+      return _BridgeChatTurn(
+        history: messages,
+        userMessage:
+            'Using $target above, answer the user now. Do not repeat the same tool call unless another real action is required.',
+      );
+    }
+
+    final lastUser = _lastUserMessage(messages);
+    return _BridgeChatTurn(
+      history: messages,
+      userMessage: lastUser.isNotEmpty ? lastUser : '',
+    );
   }
 
   String _lastUserMessage(List<Map<String, dynamic>> messages) {
@@ -539,6 +642,12 @@ class NdkGatewayBridgeService {
           .join('\n');
     }
     return content?.toString() ?? '';
+  }
+
+  String _truncateBridgeContent(String input, int maxChars) {
+    final clean = input.trim();
+    if (clean.length <= maxChars) return clean;
+    return '${clean.substring(0, maxChars - 24).trim()} ... [truncated]';
   }
 
   void _addCorsHeaders(HttpResponse response) {

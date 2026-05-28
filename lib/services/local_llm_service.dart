@@ -449,7 +449,8 @@ class LocalLlmService {
   /// Full chat with conversation history — used by GatewayService for local-llm routing.
   /// Supports multi-turn local tool calls (get_current_datetime, etc.) with depth limit 3.
   /// [history] is a list of {role, content} maps (OpenAI format).
-  Stream<String> chat(List<Map<String, dynamic>> history, String userMessage, {List<Tool>? tools, bool yieldToolCalls = false}) {
+  Stream<String> chat(List<Map<String, dynamic>> history, String userMessage,
+      {List<Tool>? tools, bool yieldToolCalls = false}) {
     final controller = StreamController<String>();
     debugPrint(
         '[NDK] chat requested status=${_state.status.name} model=${_state.activeModelId ?? 'none'} history=${history.length} chars=${userMessage.length}');
@@ -484,18 +485,11 @@ class LocalLlmService {
           '${effectiveTools.isEmpty ? 'No native tool calls are attached for this turn; answer from normal reasoning only.' : 'Native tools attached for this turn: $toolNames. Prefer a tool call for explicit device, camera, avatar, haptic, location, sensor, screen, or canvas requests. Use exact JSON schema and enum values only. After a tool result, briefly explain the real result.'}'),
       if (trimmed.summary != null && trimmed.summary!.isNotEmpty)
         Message(Role.system, trimmed.summary!),
-      for (final m in trimmed.recent)
-        Message(
-          (m['role'] as String?) == 'assistant'
-              ? Role.assistant
-              : (m['role'] as String?) == 'system'
-                  ? Role.system
-                  : Role.user,
-          (m['content'] as String?) ?? '',
-        ),
+      for (final m in trimmed.recent) _messageFromHistoryMap(m),
       Message(Role.user, userMessage),
     ];
-    _runChatTurn(messages, controller, tools: effectiveTools, yieldToolCalls: yieldToolCalls);
+    _runChatTurn(messages, controller,
+        tools: effectiveTools, yieldToolCalls: yieldToolCalls);
     return controller.stream;
   }
 
@@ -536,14 +530,24 @@ class LocalLlmService {
       if (result.length >= maxRecentMessages) break;
       final role = (msg['role'] as String?) ?? 'user';
       var content = (msg['content'] as String?) ?? '';
-      if (content.trim().isEmpty) continue;
+      final hasToolCalls =
+          msg['tool_calls'] is List && (msg['tool_calls'] as List).isNotEmpty;
+      if (content.trim().isEmpty && !hasToolCalls) continue;
       final perMessageCap = role == 'assistant'
           ? (tinyModel ? 420 : 900)
-          : (tinyModel ? 320 : 700);
+          : (role == 'tool' || role == 'function')
+              ? (tinyModel ? 420 : 900)
+              : (tinyModel ? 320 : 700);
       content = _truncateForPrompt(content, perMessageCap);
-      chars += content.length;
+      final toolCallChars =
+          hasToolCalls ? jsonEncode(msg['tool_calls']).length : 0;
+      chars += content.length + toolCallChars;
       if (chars > budget) break;
-      result.insert(0, {'role': role, 'content': content});
+      result.insert(0, {
+        ...msg,
+        'role': role,
+        'content': content,
+      });
     }
 
     final keptCount = result.length;
@@ -557,6 +561,41 @@ class LocalLlmService {
     debugPrint(
         '[NDK] context packed model=$modelId kept=$keptCount dropped=${olderCount.clamp(0, history.length)} budgetChars=$budget tools=$toolCount newChars=${newMessage.length}');
     return _TrimmedLocalHistory(recent: result, summary: summary);
+  }
+
+  Message _messageFromHistoryMap(Map<String, dynamic> message) {
+    final role = (message['role'] as String?) ?? 'user';
+    final content = (message['content'] as String?) ?? '';
+    switch (role) {
+      case 'assistant':
+        return Message(
+          Role.assistant,
+          content,
+          toolCalls: _normalizedToolCalls(message['tool_calls']),
+        );
+      case 'system':
+        return Message(Role.system, content);
+      case 'tool':
+      case 'function':
+        final name = (message['name'] as String?)?.trim();
+        return Message(
+          Role.tool,
+          content,
+          toolResponseName: name != null && name.isNotEmpty ? name : null,
+        );
+      default:
+        return Message(Role.user, content);
+    }
+  }
+
+  List<Map<String, dynamic>>? _normalizedToolCalls(dynamic raw) {
+    if (raw is! List) return null;
+    final calls = raw
+        .whereType<Map>()
+        .map(
+            (call) => call.map((key, value) => MapEntry(key.toString(), value)))
+        .toList(growable: false);
+    return calls.isEmpty ? null : calls;
   }
 
   int get _responseTokenLimit {
@@ -1070,7 +1109,9 @@ class LocalLlmService {
       ..sort((a, b) => a.key.compareTo(b.key));
     final toolCallsList = sorted
         .map((e) => <String, dynamic>{
-              'id': e.value['id'],
+              'id': e.value['id']?.isNotEmpty == true
+                  ? e.value['id']
+                  : 'call_${DateTime.now().microsecondsSinceEpoch}_${e.key}',
               'type': 'function',
               'function': {
                 'name': e.value['name'],
@@ -1097,7 +1138,8 @@ class LocalLlmService {
       Message(Role.assistant, '', toolCalls: toolCallsList),
       ...toolResultMessages,
     ];
-    await _runChatTurn(updated, controller, depth: depth + 1, tools: tools, yieldToolCalls: yieldToolCalls);
+    await _runChatTurn(updated, controller,
+        depth: depth + 1, tools: tools, yieldToolCalls: yieldToolCalls);
   }
 
   /// Returns fllama engine status (replaces HTTP health probe).
