@@ -52,6 +52,7 @@ class _ChatScreenState extends State<ChatScreen>
   final ScrollController _logScrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   final ChatPersistenceService _persistence = ChatPersistenceService();
+  final VrmAvatarController _avatarController = VrmAvatarController();
 
   // Scaffold key to allow opening the end drawer from anywhere (e.g. PopupMenu overlays)
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -150,12 +151,10 @@ class _ChatScreenState extends State<ChatScreen>
     AgentSkillServer.instance.onAvatarChanged = (file) {
       if (mounted) setState(() => _selectedAvatar = file);
     };
+    AgentSkillServer.instance.onAvatarGestureRequested =
+        _handleAvatarGestureRequest;
     AgentSkillServer.instance.onGesturePlayed = (gesture) {
-      if (!mounted) return;
-      setState(() => _currentGesture = null);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _currentGesture = gesture);
-      });
+      unawaited(_handleAvatarGestureRequest({'gesture': gesture}));
     };
     AgentSkillServer.instance.onGestureModeChanged = (mode) {
       if (mounted) setState(() => _currentGestureMode = mode);
@@ -287,6 +286,38 @@ class _ChatScreenState extends State<ChatScreen>
         GatewayService().reregisterSkills();
       }
     });
+  }
+
+  Future<Map<String, dynamic>> _handleAvatarGestureRequest(
+      Map<String, dynamic> request) async {
+    final command = Map<String, dynamic>.from(request);
+    final gesture = command['gesture'] ??
+        command['name'] ??
+        command['value'] ??
+        command['text'];
+    if (gesture == null || gesture.toString().trim().isEmpty) {
+      return {
+        'status': 'failed',
+        'reason': 'avatar.gesture requires a gesture name.',
+      };
+    }
+    command['gesture'] = gesture.toString();
+
+    final started = await _avatarController
+        .playGestureCommand(command)
+        .timeout(const Duration(seconds: 8), onTimeout: () {
+      return {
+        'status': 'queued',
+        'gesture': command['gesture'],
+        'reason':
+            'Avatar renderer accepted the request but has not started it yet.',
+      };
+    });
+
+    _addDiagnosticLog(
+      'Avatar gesture ${started['status']}: ${started['gesture'] ?? command['gesture']}',
+    );
+    return started;
   }
 
   Future<void> _loadChatHistory() async {
@@ -1061,8 +1092,24 @@ class _ChatScreenState extends State<ChatScreen>
               sessionKey: streamSessionKey);
         }
       }
+      void applyChatUpdate(
+        VoidCallback update, {
+        bool syncOverlay = false,
+        bool scroll = false,
+      }) {
+        if (mounted) {
+          setState(update);
+          if (syncOverlay) _syncOverlayState();
+          if (scroll) _scrollToBottom();
+        } else {
+          update();
+        }
+      }
+
       await for (final chunk in stream) {
-        if (!mounted) break;
+        // Keep consuming the backend stream even if the user navigates away.
+        // The widget may be unmounted, but this async turn can still update
+        // in-memory history and persist the final assistant message.
 
         if (!loggedFirstAssistantChunk &&
             chunk.trim().isNotEmpty &&
@@ -1087,7 +1134,7 @@ class _ChatScreenState extends State<ChatScreen>
             } catch (_) {
               toolEvents.add(ChatToolEvent(type: 'tool_use', name: name));
             }
-            setState(() {
+            applyChatUpdate(() {
               _messages.last = ChatMessage(
                 text: fullResponse,
                 isUser: false,
@@ -1106,7 +1153,7 @@ class _ChatScreenState extends State<ChatScreen>
             final resultJson = inner.substring(colonIdx + 1);
             toolEvents.add(ChatToolEvent(
                 type: 'tool_result', name: name, result: resultJson));
-            setState(() {
+            applyChatUpdate(() {
               _messages.last = ChatMessage(
                 text: fullResponse,
                 isUser: false,
@@ -1132,7 +1179,7 @@ class _ChatScreenState extends State<ChatScreen>
             _addDiagnosticLog(
                 'Cleared stale gateway session binding after gateway error.');
           }
-          setState(() {
+          applyChatUpdate(() {
             _isThinking = false;
             _isGenerating = false;
             if (fullResponse.isEmpty) {
@@ -1154,28 +1201,30 @@ class _ChatScreenState extends State<ChatScreen>
           _enqueueTtsFromStream(fullResponse.substring(oldLen));
         }
 
-        setState(() {
-          _isThinking = false; // Stopped thinking, started talking
-          // _speechIntensity is driven ONLY by _tts.onStart/onComplete — not chunk arrival
+        applyChatUpdate(
+          () {
+            _isThinking = false; // Stopped thinking, started talking
+            // _speechIntensity is driven ONLY by _tts.onStart/onComplete — not chunk arrival
 
-          // Check for (gesture: name) in bot response
-          if (chunk.contains('(gesture:')) {
-            final match = RegExp(r'\(gesture:\s*(\w+)\)').firstMatch(chunk);
-            if (match != null) {
-              _currentGesture = match.group(1);
+            // Check for (gesture: name) in bot response
+            if (chunk.contains('(gesture:')) {
+              final match = RegExp(r'\(gesture:\s*(\w+)\)').firstMatch(chunk);
+              if (match != null) {
+                _currentGesture = match.group(1);
+              }
             }
-          }
 
-          _messages.last = ChatMessage(
-            text: fullResponse,
-            isUser: false,
-            thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
-            toolEvents:
-                toolEvents.isNotEmpty ? List.unmodifiable(toolEvents) : null,
-          );
-        });
-        _syncOverlayState();
-        _scrollToBottom();
+            _messages.last = ChatMessage(
+              text: fullResponse,
+              isUser: false,
+              thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
+              toolEvents:
+                  toolEvents.isNotEmpty ? List.unmodifiable(toolEvents) : null,
+            );
+          },
+          syncOverlay: true,
+          scroll: true,
+        );
       }
       // Speak any remaining buffered text
       await _flushTtsQueue();
@@ -1187,42 +1236,50 @@ class _ChatScreenState extends State<ChatScreen>
           fullResponse += '\n\n[Error: $e]';
           _messages.last = ChatMessage(text: fullResponse, isUser: false);
         });
+      } else if (_messages.isNotEmpty) {
+        _isThinking = false;
+        fullResponse += '\n\n[Error: $e]';
+        _messages.last = ChatMessage(text: fullResponse, isUser: false);
+      }
+    }
+
+    void finishTurnState() {
+      _isThinking = false;
+      _isGenerating = false;
+      // Do NOT reset _speechIntensity here — TTS queue may still be draining.
+      // onComplete fires when the last sentence finishes and will close the mouth.
+
+      // Empty stream: model may still be loading, gateway unavailable, or provider error.
+      if (fullResponse.trim().isEmpty) {
+        fullResponse =
+            '⚠️ No response received. The model may still be loading — please try again in a moment.';
+        _messages.last = ChatMessage(text: fullResponse, isUser: false);
+      }
+
+      // If the AI called camera.snap during this turn, attach the image to the bot reply
+      final snapImage = _pendingAiSnapBase64;
+      final snapMime = _pendingAiSnapMimeType ?? 'image/jpeg';
+      if (snapImage != null && _messages.isNotEmpty) {
+        _messages.last = ChatMessage(
+          text: _messages.last.text,
+          isUser: false,
+          thinkContent: _messages.last.thinkContent,
+          toolEvents: _messages.last.toolEvents,
+          imageBase64: snapImage,
+          imageMimeType: snapMime,
+        );
+        _pendingAiSnapBase64 = null;
+        _pendingAiSnapMimeType = null;
       }
     }
 
     if (mounted) {
-      setState(() {
-        _isThinking = false;
-        _isGenerating = false;
-        // Do NOT reset _speechIntensity here — TTS queue may still be draining.
-        // onComplete fires when the last sentence finishes and will close the mouth.
-        _syncOverlayState();
-
-        // Empty stream: model may still be loading, gateway unavailable, or provider error.
-        if (fullResponse.trim().isEmpty) {
-          fullResponse =
-              '⚠️ No response received. The model may still be loading — please try again in a moment.';
-          _messages.last = ChatMessage(text: fullResponse, isUser: false);
-        }
-
-        // If the AI called camera.snap during this turn, attach the image to the bot reply
-        final snapImage = _pendingAiSnapBase64;
-        final snapMime = _pendingAiSnapMimeType ?? 'image/jpeg';
-        if (snapImage != null && _messages.isNotEmpty) {
-          _messages.last = ChatMessage(
-            text: _messages.last.text,
-            isUser: false,
-            thinkContent: _messages.last.thinkContent,
-            toolEvents: _messages.last.toolEvents,
-            imageBase64: snapImage,
-            imageMimeType: snapMime,
-          );
-          _pendingAiSnapBase64 = null;
-          _pendingAiSnapMimeType = null;
-        }
-      });
+      setState(finishTurnState);
+      _syncOverlayState();
       _addDiagnosticLog(
           'Generation completed. Total length: ${fullResponse.length}');
+    } else {
+      finishTurnState();
     }
     // Persist the completed assistant turn (including error fallback messages).
     // The earlier _saveChatHistory() at send-time only captures the user message;
@@ -2191,6 +2248,7 @@ class _ChatScreenState extends State<ChatScreen>
     if (wakeMode != 'off') NativeBridge.stopHotword();
     WidgetsBinding.instance.removeObserver(this);
     AgentSkillServer.instance.onAvatarChanged = null;
+    AgentSkillServer.instance.onAvatarGestureRequested = null;
     AgentSkillServer.instance.onGesturePlayed = null;
     AgentSkillServer.instance.onEmotionSet = null;
     // Clear static callbacks set during initState so they don't reference this
@@ -2685,6 +2743,12 @@ class _ChatScreenState extends State<ChatScreen>
                       isPip: _isPipMode,
                       gesture: _currentGesture,
                       gestureMode: _currentGestureMode,
+                      controller: _avatarController,
+                      onGestureResult: (result) {
+                        _addDiagnosticLog(
+                          'Avatar gesture result: ${jsonEncode(result)}',
+                        );
+                      },
                       onLog: (log) {
                         if (log == 'READY') {
                           setState(() => _isReady = true);

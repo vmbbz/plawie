@@ -40,6 +40,8 @@ class AgentSkillServer {
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI
   void Function(String avatarFile)? onAvatarChanged;
+  Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
+      onAvatarGestureRequested;
   void Function(String gesture)? onGesturePlayed;
   void Function(String emotion)? onEmotionSet;
   void Function(String mode)? onGestureModeChanged;
@@ -183,8 +185,11 @@ class AgentSkillServer {
         if (gesture == null) {
           return _sendError(request, 'Missing gesture parameter');
         }
-        onGesturePlayed?.call(gesture);
-        _sendJson(request, {'success': true, 'gesture': gesture});
+        final result = await _requestAvatarGesture({
+          ...data,
+          'gesture': gesture,
+        });
+        _sendJson(request, {'success': true, ...result});
 
       case 'play_vrma':
       case 'play_vrma_composite':
@@ -200,14 +205,14 @@ class AgentSkillServer {
         if (target == null || target.trim().isEmpty) {
           return _sendError(request, 'Missing base/gesture/layers parameter');
         }
-        onGesturePlayed?.call(target);
-        _sendJson(request, {
-          'success': true,
+        final result = await _requestAvatarGesture({
+          ...data,
           'gesture': target,
           'base': base,
           'layers': layers,
           'blendTime': data['blendTime'] ?? 0.4,
         });
+        _sendJson(request, {'success': true, ...result});
 
       case 'set_emotion':
         final emotion = data['emotion'] as String?;
@@ -238,6 +243,27 @@ class AgentSkillServer {
       default:
         _sendError(request, 'Unknown avatar action: $action');
     }
+  }
+
+  Future<Map<String, dynamic>> _requestAvatarGesture(
+      Map<String, dynamic> request) async {
+    final callback = onAvatarGestureRequested;
+    if (callback != null) {
+      return callback(request);
+    }
+    final gesture = request['gesture']?.toString();
+    if (gesture != null && gesture.isNotEmpty) {
+      onGesturePlayed?.call(gesture);
+      return {
+        'status': 'queued',
+        'gesture': gesture,
+        'reason': 'Legacy avatar gesture callback was used.',
+      };
+    }
+    return {
+      'status': 'failed',
+      'reason': 'Missing gesture parameter.',
+    };
   }
 
   // Legacy /api/avatar/equip — kept for backward compat with old gateway skills

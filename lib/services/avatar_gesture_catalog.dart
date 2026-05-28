@@ -32,14 +32,10 @@ class AvatarGestureCatalog {
 
   static const Map<String, String> limbPaths = {
     'both wave cheer': 'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
-    'both wave cheer 1':
-        'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
-    'both wave cheer 01':
-        'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
-    'both wave cheer 2':
-        'assets/vrm/animations/limbs/Both_Wave_Cheer_02.vrma',
-    'both wave cheer 02':
-        'assets/vrm/animations/limbs/Both_Wave_Cheer_02.vrma',
+    'both wave cheer 1': 'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
+    'both wave cheer 01': 'assets/vrm/animations/limbs/Both_Wave_Cheer_01.vrma',
+    'both wave cheer 2': 'assets/vrm/animations/limbs/Both_Wave_Cheer_02.vrma',
+    'both wave cheer 02': 'assets/vrm/animations/limbs/Both_Wave_Cheer_02.vrma',
     'bow': 'assets/vrm/animations/limbs/Bowing_01.vrma',
     'bowing': 'assets/vrm/animations/limbs/Bowing_01.vrma',
     'bowing 1': 'assets/vrm/animations/limbs/Bowing_01.vrma',
@@ -56,15 +52,26 @@ class AvatarGestureCatalog {
         'assets/vrm/animations/limbs/Cheerful_Wave_Left_01.vrma',
     'cheerful wave right':
         'assets/vrm/animations/limbs/Cheerful_Wave_Right_01.vrma',
+    'sit': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'sit down': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'sitting': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'sitting gesture': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'seated': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'seated wave': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
     'chill sit wave': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
     'chill sit': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'chill sitting': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'chill sitting wave': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
     'cross leg sitting wave':
         'assets/vrm/animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
     'cross leg sit':
         'assets/vrm/animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
+    'cross leg sitting':
+        'assets/vrm/animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
     'excited sitting wave':
         'assets/vrm/animations/limbs/Excited_Sitting_Wave_01.vrma',
-    'excited sit':
+    'excited sit': 'assets/vrm/animations/limbs/Excited_Sitting_Wave_01.vrma',
+    'excited sitting':
         'assets/vrm/animations/limbs/Excited_Sitting_Wave_01.vrma',
     'excited wave left':
         'assets/vrm/animations/limbs/Excited_Wave_Left_01.vrma',
@@ -80,8 +87,7 @@ class AvatarGestureCatalog {
         'assets/vrm/animations/limbs/Exaggerated_Wave_Right_01.vrma',
     'fearful wave': 'assets/vrm/animations/limbs/Fearful_Wave_01.vrma',
     'light wave left': 'assets/vrm/animations/limbs/Light_Wave_Left_01.vrma',
-    'light wave right':
-        'assets/vrm/animations/limbs/Light_Wave_Right_01.vrma',
+    'light wave right': 'assets/vrm/animations/limbs/Light_Wave_Right_01.vrma',
     'shy wave left': 'assets/vrm/animations/limbs/Shy_Wave_Left_01.vrma',
     'shy wave right': 'assets/vrm/animations/limbs/Shy_Wave_Right_01.vrma',
     'sitting both wave':
@@ -140,6 +146,7 @@ class AvatarGestureCatalog {
     for (final name in _searchNames) {
       if (value.contains(name)) return name;
     }
+    if (value.contains('sit') || value.contains('seated')) return 'sitting';
     return value;
   }
 

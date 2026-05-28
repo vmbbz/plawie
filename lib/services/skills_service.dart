@@ -613,7 +613,7 @@ class SkillsService {
                 'type': 'string',
                 'enum': AvatarGestureCatalog.toolGestureNames,
                 'description':
-                    'Exact gesture name. Examples: dance, spin, greeting, wave right, cheerful wave left, bowing 4, exaggerated wave right.'
+                    'Exact gesture name. Examples: dance, spin, greeting, sitting, chill sit wave, wave right, cheerful wave left, bowing 4, exaggerated wave right.'
               },
               'emotion': {
                 'type': 'string',

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../models/node_frame.dart';
 import '../agent_skill_server.dart';
 import '../avatar_gesture_catalog.dart';
@@ -37,8 +39,10 @@ class AvatarCapability extends CapabilityHandler {
   }
 
   Future<NodeFrame> _gesture(Map<String, dynamic> params) async {
-    final rawGesture =
-        params['gesture'] ?? params['name'] ?? params['value'] ?? params['text'];
+    final rawGesture = params['gesture'] ??
+        params['name'] ??
+        params['value'] ??
+        params['text'];
     if (rawGesture == null || rawGesture.toString().trim().isEmpty) {
       return NodeFrame.response('', error: {
         'code': 'MISSING_PARAM',
@@ -47,19 +51,69 @@ class AvatarCapability extends CapabilityHandler {
     }
     final gesture = AvatarGestureCatalog.normalize(rawGesture);
 
-    final callback = AgentSkillServer.instance.onGesturePlayed;
-    if (callback == null) {
+    final requestCallback = AgentSkillServer.instance.onAvatarGestureRequested;
+    final legacyCallback = AgentSkillServer.instance.onGesturePlayed;
+    if (requestCallback == null && legacyCallback == null) {
       return NodeFrame.response('', error: {
         'code': 'AVATAR_NOT_READY',
         'message': 'Avatar UI is not ready. Open the Chat screen and retry.',
       });
     }
 
-    callback(gesture);
+    if (requestCallback != null) {
+      try {
+        final durationMs =
+            _intParam(params, ['durationMs', 'duration_ms', 'duration']);
+        final interrupt = _boolParam(params, ['interrupt']);
+        final result = await requestCallback({
+          'gesture': gesture,
+          if (durationMs != null) 'durationMs': durationMs,
+          if (interrupt != null) 'interrupt': interrupt,
+        }).timeout(const Duration(seconds: 9));
+        return NodeFrame.response('', payload: {
+          'status': result['status'] ?? 'queued',
+          'gesture': result['gesture'] ?? gesture,
+          ...result,
+        });
+      } on TimeoutException {
+        return NodeFrame.response('', payload: {
+          'status': 'queued',
+          'gesture': gesture,
+          'reason': 'Avatar renderer did not confirm start before timeout.',
+        });
+      }
+    }
+
+    legacyCallback?.call(gesture);
     return NodeFrame.response('', payload: {
-      'status': 'played',
+      'status': 'queued',
       'gesture': gesture,
+      'reason': 'Legacy avatar gesture callback was used.',
     });
+  }
+
+  int? _intParam(Map<String, dynamic> params, List<String> keys) {
+    for (final key in keys) {
+      final value = params[key];
+      if (value == null) continue;
+      if (value is int) return value;
+      if (value is num) return value.round();
+      final parsed = int.tryParse(value.toString());
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  bool? _boolParam(Map<String, dynamic> params, List<String> keys) {
+    for (final key in keys) {
+      final value = params[key];
+      if (value == null) continue;
+      if (value is bool) return value;
+      final lower = value.toString().trim().toLowerCase();
+      if (lower == 'true' || lower == '1' || lower == 'yes') return true;
+      if (lower == 'false' || lower == '0' || lower == 'no') return false;
+    }
+    return null;
   }
 
   Future<NodeFrame> _mode(Map<String, dynamic> params) async {

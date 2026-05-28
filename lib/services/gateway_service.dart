@@ -3604,10 +3604,10 @@ For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, 
 Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeHandle".
 Never use node=auto or the raw Android device identity hash for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
-For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, chill sit wave, cross leg sitting wave, excited sitting wave, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.
+For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, sitting, chill sit wave, cross leg sitting wave, excited sitting wave, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.
 For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.mode, avatar.model, avatar.status, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
-Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
+Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"dance\\",\\"durationMs\\":60000}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
 If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
 </plawie_mobile_tool_context>
@@ -3751,8 +3751,16 @@ $message''';
 
     _addActivity('[CHAT] → Sending to $model');
 
+    const timeoutMs = 300000;
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
+    final chatInactivityTimeout = Duration(milliseconds: timeoutMs);
+    var lastGatewayActivityAt = DateTime.now();
+    Timer? inactivityWatchdog;
+
+    void markGatewayActivity() {
+      lastGatewayActivityAt = DateTime.now();
+    }
 
     // Session routing priority:
     // 1) explicit sessionKey from caller (per-chat session binding)
@@ -3771,7 +3779,6 @@ $message''';
           '$requestedSessionKey -> $resolvedSessionKey');
     }
 
-    const timeoutMs = 300000;
     final outboundMessage =
         await _decorateMessageWithMobileNodeContext(message);
 
@@ -3816,10 +3823,27 @@ $message''';
       return text;
     }
 
+    inactivityWatchdog = Timer.periodic(const Duration(seconds: 15), (timer) {
+      if (chunkController.isClosed) {
+        timer.cancel();
+        return;
+      }
+      final idleFor = DateTime.now().difference(lastGatewayActivityAt);
+      if (idleFor <= chatInactivityTimeout) return;
+      _addActivity('[CHAT] ✗ No gateway activity for '
+          '${chatInactivityTimeout.inSeconds}s');
+      chunkController.add('[Error] Gateway chat timed out after '
+          '${chatInactivityTimeout.inSeconds} seconds with no backend activity. '
+          'Retry or switch provider/model.');
+      chunkController.close();
+      timer.cancel();
+    });
+
     late StreamSubscription frameSub;
     frameSub = responseStream.listen(
       (frame) {
         try {
+          markGatewayActivity();
           final type = frame['type'] as String?;
 
           // Gateway-level error (e.g. rate limit, provider failure)
@@ -4133,18 +4157,15 @@ $message''';
     );
 
     try {
-      await for (final chunk
-          in chunkController.stream.timeout(const Duration(seconds: 300))) {
+      await for (final chunk in chunkController.stream) {
         yield chunk;
       }
       _addActivity('[CHAT] ✓ Complete');
-    } on TimeoutException {
-      yield '[Error] Gateway chat timed out after 300 seconds. '
-          'Provider may be overloaded or rate-limited. Retry or switch provider/model.';
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
       yield '[Error] WebSocket chat error: $e';
     } finally {
+      inactivityWatchdog.cancel();
       frameSub.cancel();
     }
   }

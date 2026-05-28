@@ -143,11 +143,21 @@
             'bowing 05': 'animations/limbs/Bowing_05.vrma',
             'cheerful wave left': 'animations/limbs/Cheerful_Wave_Left_01.vrma',
             'cheerful wave right': 'animations/limbs/Cheerful_Wave_Right_01.vrma',
+            'sit': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'sit down': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'sitting': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'sitting gesture': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'seated': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'seated wave': 'animations/limbs/Chill_Sit_Wave_01.vrma',
             'chill sit': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'chill sitting': 'animations/limbs/Chill_Sit_Wave_01.vrma',
             'chill sit wave': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'chill sitting wave': 'animations/limbs/Chill_Sit_Wave_01.vrma',
             'cross leg sit': 'animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
+            'cross leg sitting': 'animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
             'cross leg sitting wave': 'animations/limbs/Cross_Leg_Sitting_Wave_01.vrma',
             'excited sit': 'animations/limbs/Excited_Sitting_Wave_01.vrma',
+            'excited sitting': 'animations/limbs/Excited_Sitting_Wave_01.vrma',
             'excited sitting wave': 'animations/limbs/Excited_Sitting_Wave_01.vrma',
             'excited wave left': 'animations/limbs/Excited_Wave_Left_01.vrma',
             'excited wave right': 'animations/limbs/Excited_Wave_Right_01.vrma',
@@ -199,52 +209,78 @@
         });
         const pendingGestureLoads = {};
         let currentAnimationLoader = null;
+        let avatarReady = false;
+        const gestureQueue = [];
+        let activeGestureCommand = null;
+        let activeGestureTimer = null;
+        let gestureCommandSequence = 0;
+        const DEFAULT_LOOP_GESTURE_MS = 15000;
+        const MAX_GESTURE_MS = 120000;
 
         let neonStool = null;
-        let stoolSeat, stoolLegs = [];
+        let stoolSeat = null;
 
         function createNeonStool() {
-            // Seat (thick glowing disk)
-            const seatGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.08, 32);
-            const seatMat = new THREE.MeshPhongMaterial({
-                color: 0x112233,
-                emissive: 0x00FFFF,      // neon cyan
-                emissiveIntensity: 1.2,
-                shininess: 100,
+            const seat = new THREE.Group();
+
+            const glassMat = new THREE.MeshPhongMaterial({
+                color: 0x7ffcff,
+                emissive: 0x103a5f,
+                emissiveIntensity: 0.65,
+                shininess: 120,
                 transparent: true,
-                opacity: 0.95
+                opacity: 0.32,
+                depthWrite: false,
+                side: THREE.DoubleSide
             });
-            stoolSeat = new THREE.Mesh(seatGeo, seatMat);
-            stoolSeat.rotation.x = Math.PI / 2; // make it flat
+            stoolSeat = new THREE.Mesh(new THREE.SphereGeometry(0.34, 48, 24), glassMat);
+            stoolSeat.scale.set(1.0, 0.42, 0.92);
+            seat.add(stoolSeat);
 
-            // Visible neon edges (glowing outline)
-            const edgesGeo = new THREE.EdgesGeometry(seatGeo);
-            const edgesMat = new THREE.LineBasicMaterial({
-                color: 0xFF00FF,         // hot magenta edges
-                linewidth: 4
+            const coreMat = new THREE.MeshBasicMaterial({
+                color: 0x42f6ff,
+                transparent: true,
+                opacity: 0.16,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
             });
-            const edges = new THREE.LineSegments(edgesGeo, edgesMat);
-            stoolSeat.add(edges);
+            const core = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 16), coreMat);
+            core.scale.set(1.0, 0.38, 0.9);
+            seat.add(core);
 
-            // 4 thin glowing legs
-            const legGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.45, 16);
-            const legMat = new THREE.MeshPhongMaterial({
-                emissive: 0x00FFFF,
-                emissiveIntensity: 0.8
+            const cyanRingMat = new THREE.MeshBasicMaterial({
+                color: 0x69f7ff,
+                transparent: true,
+                opacity: 0.72,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            const magentaRingMat = new THREE.MeshBasicMaterial({
+                color: 0xd66bff,
+                transparent: true,
+                opacity: 0.52,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
             });
 
-            for (let i = 0; i < 4; i++) {
-                const leg = new THREE.Mesh(legGeo, legMat);
-                leg.position.set(
-                    Math.cos(i * Math.PI / 2) * 0.25,
-                    -0.25,
-                    Math.sin(i * Math.PI / 2) * 0.25
-                );
-                stoolSeat.add(leg);
-                stoolLegs.push(leg);
-            }
+            const equator = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.008, 10, 96), cyanRingMat);
+            equator.rotation.x = Math.PI / 2;
+            seat.add(equator);
 
-            neonStool = stoolSeat;
+            const meridianA = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.005, 8, 80), magentaRingMat);
+            meridianA.scale.y = 0.42;
+            seat.add(meridianA);
+
+            const meridianB = meridianA.clone();
+            meridianB.rotation.y = Math.PI / 2;
+            seat.add(meridianB);
+
+            const hoverHalo = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.009, 8, 80), cyanRingMat);
+            hoverHalo.position.y = -0.16;
+            hoverHalo.rotation.x = Math.PI / 2;
+            seat.add(hoverHalo);
+
+            neonStool = seat;
             neonStool.visible = false;
             scene.add(neonStool);
         }
@@ -345,6 +381,12 @@
         }
 
         function disposeCurrentAvatar() {
+            avatarReady = false;
+            activeGestureCommand = null;
+            if (activeGestureTimer) {
+                clearTimeout(activeGestureTimer);
+                activeGestureTimer = null;
+            }
             if (mixer) {
                 try { mixer.stopAllAction(); } catch (_) {}
                 mixer = null;
@@ -443,6 +485,11 @@
                         // all other gestures are lazy-loaded the first time an
                         // agent asks for them.
                         loadGestureAction('talk');
+                        avatarReady = true;
+                        if (window.PlawieBridge) {
+                            window.PlawieBridge.postMessage('LOG: [JS] Avatar animation graph ready');
+                        }
+                        processGestureQueue();
                     });
                 },
                 (progress) => {
@@ -629,10 +676,6 @@
             ready: 'relaxed', pose: 'relaxed', elegant: 'relaxed',
         };
 
-        window.playGesture = (name) => {
-            window.playCompositeGesture(name);
-        };
-
         function normalizeGestureName(input) {
             return String(input || '')
                 .toLowerCase()
@@ -705,14 +748,79 @@
             return pendingGestureLoads[key];
         }
 
-        window.playCompositeGesture = async (baseClipName, layerClipNames = [], options = {}) => {
+        function postGestureResult(result) {
+            if (!window.PlawieBridge) return;
+            try {
+                window.PlawieBridge.postMessage('GESTURE_RESULT:' + JSON.stringify(result));
+            } catch (e) {
+                window.PlawieBridge.postMessage('WARN: [JS] gesture result encode failed: ' + e);
+            }
+        }
+
+        function isAvatarReadyForGesture() {
+            return !!(avatarReady && currentVrm && mixer && idleAction && currentAnimationLoader && !rendererDisposed);
+        }
+
+        function boundedDurationMs(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed) || parsed <= 0) return null;
+            const ms = parsed < 1000 ? parsed * 1000 : parsed;
+            return Math.max(250, Math.min(MAX_GESTURE_MS, Math.round(ms)));
+        }
+
+        function isLoopingGesture(n, action) {
+            const alias = action?.alias || n || '';
+            const path = action?.path || '';
+            return alias === 'talk' ||
+                   alias === 'dance' ||
+                   alias === 'gesture_talk' ||
+                   alias === 'gesture_dance' ||
+                   path.includes('gesture_talk') ||
+                   path.includes('dance_picatrix') ||
+                   path.includes('gesture_dance');
+        }
+
+        function resolveGestureName(baseClipName, layerClipNames = []) {
             const candidates = [baseClipName, ...(Array.isArray(layerClipNames) ? layerClipNames : [])]
                 .map(normalizeGestureName)
                 .filter(Boolean);
-            const n = candidates.find(name =>
+            return candidates.find(name =>
                 gestures[name] ||
                 GESTURE_FILE_MAP[name] ||
                 GESTURE_FILE_MAP['gesture_' + name]) || candidates[0] || 'ready';
+        }
+
+        function finishActiveGesture(command, action, status = 'completed') {
+            if (activeGestureCommand !== command) return;
+            if (status === 'completed') {
+                if (isSpeaking && gestures['talk'] && gestureMode !== 'subtle') {
+                    talkGestureActive = true;
+                    if (action) action.fadeOut(0.4);
+                    gestures['talk'].reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.4).play();
+                    currentAction = gestures['talk'];
+                } else {
+                    _returnToIdle(0.5);
+                }
+            }
+            postGestureResult({
+                id: command.id,
+                status,
+                gesture: command.resolvedGesture || command.gesture,
+                queueDepth: gestureQueue.length,
+            });
+            activeGestureCommand = null;
+            activeGestureTimer = null;
+            processGestureQueue();
+        }
+
+        async function startGestureCommand(command) {
+            if (!isAvatarReadyForGesture()) {
+                gestureQueue.unshift(command);
+                return;
+            }
+
+            const n = resolveGestureName(command.gesture, command.layers);
+            command.resolvedGesture = n;
             targetEmotion = GESTURE_EMOTIONS[n] || 'neutral';
 
             // Auto-stool logic
@@ -722,24 +830,64 @@
                 if (isSitting && currentVrm) {
                     neonStool.position.set(
                         currentVrm.scene.position.x,
-                        currentVrm.scene.position.y - 0.05,
-                        currentVrm.scene.position.z - 0.95
+                        currentVrm.scene.position.y + 0.44,
+                        currentVrm.scene.position.z - 0.42
                     );
                     neonStool.rotation.y = currentVrm.scene.rotation.y;
                 }
             }
 
-            if (n === 'idle') { _returnToIdle(0.5); return; }
+            if (n === 'idle') {
+                _returnToIdle(0.5);
+                postGestureResult({
+                    id: command.id,
+                    status: 'started',
+                    gesture: n,
+                    durationMs: 0,
+                    queueDepth: gestureQueue.length,
+                });
+                finishActiveGesture(command, null);
+                return;
+            }
 
             const action = await loadGestureAction(n);
-            if (!action || !currentVrm || !idleAction) return;
-            if (currentAction === action && action.isRunning()) return;
+            if (!action || !currentVrm || !idleAction) {
+                postGestureResult({
+                    id: command.id,
+                    status: 'failed',
+                    gesture: n,
+                    reason: 'Gesture clip is unavailable or avatar is not ready.',
+                    queueDepth: gestureQueue.length,
+                });
+                activeGestureCommand = null;
+                processGestureQueue();
+                return;
+            }
+            if (currentAction === action && action.isRunning()) {
+                postGestureResult({
+                    id: command.id,
+                    status: 'started',
+                    gesture: n,
+                    path: action.path || null,
+                    alreadyRunning: true,
+                    queueDepth: gestureQueue.length,
+                });
+                activeGestureCommand = null;
+                processGestureQueue();
+                return;
+            }
 
             if (currentAction && currentAction !== action) currentAction.fadeOut(0.3);
 
-            const isLooping = n === 'talk' || n === 'dance' || n === 'gesture_talk' || n === 'gesture_dance';
+            const isLooping = isLoopingGesture(n, action);
+            const requestedDurationMs = boundedDurationMs(command.durationMs ?? command.duration ?? command.duration_ms);
+            const duration = action.getClip().duration;
+            const naturalDurationMs = Math.max((duration * 1000) - 350, 100);
+            const playDurationMs = requestedDurationMs || (isLooping ? DEFAULT_LOOP_GESTURE_MS : naturalDurationMs);
+
             if (isLooping) {
                 talkGestureActive = (n === 'talk' || n === 'gesture_talk');
+                action.setLoop(THREE.LoopRepeat, Infinity);
                 action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.3).play();
                 currentAction = action;
             } else {
@@ -748,21 +896,87 @@
                 action.clampWhenFinished = true;
                 action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.3).play();
                 currentAction = action;
-
-                const duration = action.getClip().duration;
-                const returnDelay = Math.max((duration * 1000) - 350, 100);
-                setTimeout(() => {
-                    if (currentAction !== action) return;
-                    if (isSpeaking && gestures['talk'] && gestureMode !== 'subtle') {
-                        talkGestureActive = true;
-                        action.fadeOut(0.4);
-                        gestures['talk'].reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(0.4).play();
-                        currentAction = gestures['talk'];
-                    } else {
-                        _returnToIdle(0.5);
-                    }
-                }, returnDelay);
             }
+
+            if (n !== 'talk' && n !== 'gesture_talk' && n !== 'ready' && n !== 'gesture_ready') {
+                proceduralBlend = 0.0;
+            }
+
+            postGestureResult({
+                id: command.id,
+                status: 'started',
+                gesture: n,
+                path: action.path || null,
+                looping: isLooping,
+                durationMs: playDurationMs,
+                queueDepth: gestureQueue.length,
+            });
+
+            if (activeGestureTimer) clearTimeout(activeGestureTimer);
+            activeGestureTimer = setTimeout(() => {
+                if (currentAction !== action) {
+                    finishActiveGesture(command, action, 'interrupted');
+                    return;
+                }
+                finishActiveGesture(command, action);
+            }, playDurationMs);
+        }
+
+        function processGestureQueue() {
+            if (activeGestureCommand || !isAvatarReadyForGesture()) return;
+            const command = gestureQueue.shift();
+            if (!command) return;
+            activeGestureCommand = command;
+            startGestureCommand(command).catch(err => {
+                postGestureResult({
+                    id: command.id,
+                    status: 'failed',
+                    gesture: command.gesture,
+                    reason: String(err),
+                    queueDepth: gestureQueue.length,
+                });
+                activeGestureCommand = null;
+                processGestureQueue();
+            });
+        }
+
+        window.playGestureCommand = (rawCommand = {}) => {
+            const command = typeof rawCommand === 'string'
+                ? { gesture: rawCommand }
+                : { ...rawCommand };
+            command.id = command.id || ('js_gesture_' + Date.now() + '_' + (gestureCommandSequence++));
+            command.gesture = command.gesture || command.name || command.value || 'ready';
+
+            if (command.interrupt === true) {
+                gestureQueue.length = 0;
+                if (activeGestureTimer) {
+                    clearTimeout(activeGestureTimer);
+                    activeGestureTimer = null;
+                }
+                activeGestureCommand = null;
+            }
+
+            gestureQueue.push(command);
+            postGestureResult({
+                id: command.id,
+                status: 'queued',
+                gesture: command.gesture,
+                queueDepth: gestureQueue.length,
+                ready: isAvatarReadyForGesture(),
+            });
+            processGestureQueue();
+        };
+
+        window.playGesture = (name) => {
+            window.playGestureCommand({ gesture: name, source: 'legacy' });
+        };
+
+        window.playCompositeGesture = (baseClipName, layerClipNames = [], options = {}) => {
+            window.playGestureCommand({
+                ...options,
+                gesture: baseClipName,
+                layers: Array.isArray(layerClipNames) ? layerClipNames : [],
+            });
         };
 
         // ── Camera framing ────────────────────────────────────────────────────
@@ -987,7 +1201,7 @@
                                   path.includes('talk') || 
                                   path.includes('ready');
             }
-            const blendTarget = (isVrmaActive && !isSubtleGesture) ? 0.04 : 1.0;
+            const blendTarget = (isVrmaActive && !isSubtleGesture) ? 0.0 : 1.0;
             proceduralBlend = THREE.MathUtils.lerp(proceduralBlend, blendTarget, delta * 6.0);
 
             const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
@@ -1006,29 +1220,31 @@
             const breathOsc = Math.sin(time * 1.5);
             const pb = proceduralBlend;
 
-            if (upperChest) upperChest.rotation.x = breathOsc * 0.015 * pb;
-            if (spine) {
-                spine.rotation.z = Math.sin(time * 0.8) * 0.005 * pb;
-                spine.rotation.y = currentLookX * 0.25 * pb;
-            }
-            if (head) {
-                head.rotation.set(0, 0, 0);
-                const saccadeX = Math.sin(time * 2.1) * Math.sin(time * 1.3 + 1.0);
-                const saccadeY = Math.sin(time * 1.7) * Math.cos(time * 2.5 + 2.0);
-                head.rotation.y = ((saccadeX * 0.02) + currentLookX * 0.6) * pb;
-                head.rotation.x = ((saccadeY * 0.015) + currentLookY * 0.6) * pb;
-                if (isThinking) {
-                    head.rotation.z += Math.sin(time * 1.5) * 0.01 * pb;
-                    head.rotation.x += Math.sin(time * 0.8) * 0.02 * pb;
+            if (pb > 0.001) {
+                if (upperChest) upperChest.rotation.x = breathOsc * 0.015 * pb;
+                if (spine) {
+                    spine.rotation.z = Math.sin(time * 0.8) * 0.005 * pb;
+                    spine.rotation.y = currentLookX * 0.25 * pb;
                 }
-                head.rotation.y = Math.max(-0.8, Math.min(0.8, head.rotation.y));
-                head.rotation.x = Math.max(-0.9, Math.min(0.9, head.rotation.x));
-            }
-            if (neck) {
-                neck.rotation.set(0, 0, 0);
-                const saccadeX = Math.sin(time * 2.1) * Math.sin(time * 1.3 + 1.0);
-                neck.rotation.y = ((saccadeX * 0.01) + currentLookX * 0.15) * pb;
-                neck.rotation.x = (currentLookY * 0.3) * pb;
+                if (head) {
+                    head.rotation.set(0, 0, 0);
+                    const saccadeX = Math.sin(time * 2.1) * Math.sin(time * 1.3 + 1.0);
+                    const saccadeY = Math.sin(time * 1.7) * Math.cos(time * 2.5 + 2.0);
+                    head.rotation.y = ((saccadeX * 0.02) + currentLookX * 0.6) * pb;
+                    head.rotation.x = ((saccadeY * 0.015) + currentLookY * 0.6) * pb;
+                    if (isThinking) {
+                        head.rotation.z += Math.sin(time * 1.5) * 0.01 * pb;
+                        head.rotation.x += Math.sin(time * 0.8) * 0.02 * pb;
+                    }
+                    head.rotation.y = Math.max(-0.8, Math.min(0.8, head.rotation.y));
+                    head.rotation.x = Math.max(-0.9, Math.min(0.9, head.rotation.x));
+                }
+                if (neck) {
+                    neck.rotation.set(0, 0, 0);
+                    const saccadeX = Math.sin(time * 2.1) * Math.sin(time * 1.3 + 1.0);
+                    neck.rotation.y = ((saccadeX * 0.01) + currentLookX * 0.15) * pb;
+                    neck.rotation.x = (currentLookY * 0.3) * pb;
+                }
             }
 
             // ── Smooth blinking (unaffected by proceduralBlend — always blinks) ──

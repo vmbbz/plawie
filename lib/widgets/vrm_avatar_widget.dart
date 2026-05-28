@@ -1,9 +1,36 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../app.dart';
 import '../services/vrm_asset_server.dart';
+
+class VrmAvatarController {
+  Future<Map<String, dynamic>> Function(Map<String, dynamic> command)? _play;
+
+  Future<Map<String, dynamic>> playGestureCommand(
+      Map<String, dynamic> command) {
+    final play = _play;
+    if (play == null) {
+      return Future.value({
+        'status': 'unavailable',
+        'reason': 'Avatar renderer is not attached.',
+      });
+    }
+    return play(command);
+  }
+
+  void _attach(
+      Future<Map<String, dynamic>> Function(Map<String, dynamic>) play) {
+    _play = play;
+  }
+
+  void _detach(
+      Future<Map<String, dynamic>> Function(Map<String, dynamic>) play) {
+    if (_play == play) _play = null;
+  }
+}
 
 /// Renders a VRM 3D avatar using WebView + Three.js + @pixiv/three-vrm.
 ///
@@ -21,6 +48,8 @@ class VrmAvatarWidget extends StatefulWidget {
   /// Agent-controlled gesture mode: 'normal' | 'expressive' | 'dance' | 'subtle'
   final String? gestureMode;
   final Function(String)? onLog;
+  final Function(Map<String, dynamic>)? onGestureResult;
+  final VrmAvatarController? controller;
   final Function(Offset)? onHeadUpdate;
   final bool isOverlay;
   final bool isPip;
@@ -35,6 +64,8 @@ class VrmAvatarWidget extends StatefulWidget {
     this.gesture,
     this.gestureMode,
     this.onLog,
+    this.onGestureResult,
+    this.controller,
     this.onHeadUpdate,
     this.isOverlay = false,
     this.isPip = false,
@@ -49,6 +80,9 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
   late final WebViewController _controller;
   final VrmAssetServer _server = VrmAssetServer();
   bool _isReady = false;
+  int _gestureSequence = 0;
+  final Map<String, Completer<Map<String, dynamic>>> _gestureCompleters = {};
+  final List<Map<String, dynamic>> _deferredGestureCommands = [];
   // Fallback timer: re-nudges the JS to send READY if the first attempt was
   // missed due to a PlawieBridge injection race on some Android WebView versions.
   Timer? _readyFallbackTimer;
@@ -57,6 +91,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.controller?._attach(_playGestureCommand);
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -80,7 +115,11 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
               _controller.runJavaScript(
                   "window.loadVrmAvatar('${widget.avatarFileName}');");
               _syncState();
+              _flushDeferredGestureCommands();
             }
+          }
+          if (message.message.startsWith('GESTURE_RESULT:')) {
+            _handleGestureResult(message.message.substring(15));
           }
           if (message.message.startsWith('HEAD:')) {
             final parts = message.message.split(':');
@@ -135,7 +174,17 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.controller?._detach(_playGestureCommand);
     _readyFallbackTimer?.cancel();
+    for (final completer in _gestureCompleters.values) {
+      if (!completer.isCompleted) {
+        completer.complete({
+          'status': 'failed',
+          'reason': 'Avatar renderer disposed.',
+        });
+      }
+    }
+    _gestureCompleters.clear();
     unawaited(_controller
         .runJavaScript(
             'if (window.disposePlawieAvatar) window.disposePlawieAvatar();')
@@ -193,13 +242,17 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
   @override
   void didUpdateWidget(VrmAvatarWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(_playGestureCommand);
+      widget.controller?._attach(_playGestureCommand);
+    }
     if (!_isReady) return;
 
     // Gesture and gestureMode are checked independently so they always fire
     // even when no other widget property changed — the old code gated these
     // inside an unrelated if-block which silently dropped most gesture calls.
     if (widget.gesture != null && widget.gesture != oldWidget.gesture) {
-      _controller.runJavaScript("window.playGesture('${widget.gesture}');");
+      unawaited(_playGestureCommand({'gesture': widget.gesture}));
     }
     if (widget.gestureMode != null &&
         widget.gestureMode != oldWidget.gestureMode) {
@@ -233,6 +286,82 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
       if (window.setPipMode) window.setPipMode(${widget.isPip});
       $modeJs
     ''');
+  }
+
+  Future<Map<String, dynamic>> _playGestureCommand(
+      Map<String, dynamic> rawCommand) {
+    final command = Map<String, dynamic>.from(rawCommand);
+    final id = (command['id']?.toString().trim().isNotEmpty ?? false)
+        ? command['id'].toString()
+        : 'gesture_${DateTime.now().millisecondsSinceEpoch}_${_gestureSequence++}';
+    command['id'] = id;
+
+    final completer = Completer<Map<String, dynamic>>();
+    _gestureCompleters[id] = completer;
+
+    if (_isReady) {
+      _sendGestureCommand(command);
+    } else {
+      _deferredGestureCommands.add(command);
+      widget.onLog?.call('GESTURE_RESULT:${jsonEncode({
+            'id': id,
+            'status': 'queued',
+            'reason': 'Avatar WebView is still loading.',
+          })}');
+    }
+
+    return completer.future;
+  }
+
+  void _flushDeferredGestureCommands() {
+    if (!_isReady || _deferredGestureCommands.isEmpty) return;
+    final pending = List<Map<String, dynamic>>.from(_deferredGestureCommands);
+    _deferredGestureCommands.clear();
+    for (final command in pending) {
+      _sendGestureCommand(command);
+    }
+  }
+
+  void _sendGestureCommand(Map<String, dynamic> command) {
+    final payload = jsonEncode(command);
+    unawaited(_controller.runJavaScript('''
+      if (window.playGestureCommand) {
+        window.playGestureCommand($payload);
+      } else if (window.playGesture) {
+        window.playGesture(${jsonEncode(command['gesture']?.toString() ?? '')});
+      }
+    ''').catchError((e) {
+      final id = command['id']?.toString();
+      if (id != null) {
+        _completeGesture(id, {
+          'id': id,
+          'status': 'failed',
+          'reason': 'Failed to invoke avatar JavaScript: $e',
+        });
+      }
+    }));
+  }
+
+  void _handleGestureResult(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson);
+      if (decoded is! Map) return;
+      final result = Map<String, dynamic>.from(decoded);
+      widget.onGestureResult?.call(result);
+      final id = result['id']?.toString();
+      final status = result['status']?.toString();
+      if (id == null || status == 'queued') return;
+      _completeGesture(id, result);
+    } catch (e) {
+      widget.onLog?.call('WARN: Gesture result parse failed: $e');
+    }
+  }
+
+  void _completeGesture(String id, Map<String, dynamic> result) {
+    final completer = _gestureCompleters.remove(id);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(result);
+    }
   }
 
   @override

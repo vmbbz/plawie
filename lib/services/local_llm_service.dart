@@ -716,7 +716,7 @@ class LocalLlmService {
       name: 'avatar_gesture',
       jsonSchema: AvatarGestureCatalog.toolJsonSchema,
       description:
-          'Makes the Plawie avatar play an exact gesture/VRMA animation. Use rich names like wave right, cheerful wave left, bowing 4, or exaggerated wave right.',
+          'Makes the Plawie avatar play an exact gesture/VRMA animation. Use rich names like wave right, sitting, chill sit wave, cheerful wave left, bowing 4, or exaggerated wave right.',
     ),
     Tool(
       name: 'avatar_emotion',
@@ -781,6 +781,10 @@ class LocalLlmService {
       'bowing',
       'dance',
       'spin',
+      'sit',
+      'sitting',
+      'seated',
+      'squat',
       'point',
       'peace',
       'greeting',
