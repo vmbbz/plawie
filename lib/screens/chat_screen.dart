@@ -31,8 +31,8 @@ import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
+import '../services/chat_runtime_service.dart';
 import '../services/hologram_service.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
@@ -53,6 +53,7 @@ class _ChatScreenState extends State<ChatScreen>
   final ScrollController _logScrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   final ChatPersistenceService _persistence = ChatPersistenceService();
+  final ChatRuntimeService _chatRuntime = ChatRuntimeService();
   final VrmAvatarController _avatarController = VrmAvatarController();
 
   // Scaffold key to allow opening the end drawer from anywhere (e.g. PopupMenu overlays)
@@ -149,6 +150,7 @@ class _ChatScreenState extends State<ChatScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_handleChatScroll);
+    _chatRuntime.addListener(_syncChatRuntimeState);
     // Wire AgentSkillServer callbacks so agent-controlled avatar changes
     // reflect immediately in the live chat UI (singleton shares state with main()).
     AgentSkillServer.instance.onAvatarChanged = (file) {
@@ -164,12 +166,6 @@ class _ChatScreenState extends State<ChatScreen>
     };
     AgentSkillServer.instance.onEmotionSet =
         (_) {}; // handled by avatar_scene.html
-    // When the AI calls camera.snap, store the result so we can show it inline in chat
-    CameraCapability.onSnapTaken = (b64, mime) {
-      _pendingAiSnapBase64 = b64;
-      _pendingAiSnapMimeType = mime;
-    };
-
     // Canvas WebView is created lazily on first tool use. Keeping it out of
     // idle chat avoids holding a second Android WebView/GL context all day.
     CanvasCapability.onActivationRequested = _ensureCanvasController;
@@ -324,26 +320,43 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadChatHistory() async {
+    await _chatRuntime.init();
     await _persistence.init();
-    final history = await _persistence.loadMessages();
+    await _chatRuntime.reloadActiveSession();
     _gatewaySessionKey = _persistence.activeGatewaySessionKey;
     final prefs = PreferencesService();
     await prefs.init();
     _agentName = prefs.agentName;
 
     if (mounted) {
-      setState(() {
-        _messages.clear();
-        if (history.isNotEmpty) {
-          _messages.addAll(history);
-        } else {
-          _messages.add(ChatMessage(
-              text:
-                  "Hello! I'm $_agentName, your fully local AI companion. How can I help you today?",
-              isUser: false));
-        }
-      });
+      _syncChatRuntimeState(scrollInstantly: true);
       _scrollToBottom(instant: true);
+    }
+  }
+
+  void _syncChatRuntimeState({bool scrollInstantly = false}) {
+    if (!mounted) return;
+    final wasGenerating = _isGenerating;
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(_chatRuntime.messages);
+      for (final log in _chatRuntime.diagnostics) {
+        if (!_diagnosticLogs.contains(log)) {
+          _diagnosticLogs.add(log);
+        }
+      }
+      if (_diagnosticLogs.length > 200) {
+        _diagnosticLogs.removeRange(0, _diagnosticLogs.length - 200);
+      }
+      _isThinking = _chatRuntime.isThinking;
+      _isGenerating = _chatRuntime.isGenerating;
+    });
+    if (_chatPinnedToBottom ||
+        scrollInstantly ||
+        _isGenerating ||
+        wasGenerating) {
+      _scrollToBottom(instant: scrollInstantly);
     }
   }
 
@@ -363,7 +376,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _saveChatHistory() async {
-    await _persistence.saveMessages(_messages);
+    await _chatRuntime.persistNow();
   }
 
   void _loadPreferences() async {
@@ -937,6 +950,34 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _handleSubmit(String text) async {
+    if ((text.trim().isEmpty &&
+            _pendingImageBase64 == null &&
+            _pendingVideoBase64 == null) ||
+        _chatRuntime.isGenerating) {
+      return;
+    }
+
+    final imageBase64 = _pendingImageBase64;
+    final videoBase64 = _pendingVideoBase64;
+    _textController.clear();
+    setState(() {
+      _pendingImageBase64 = null;
+      _pendingVideoBase64 = null;
+      _speechIntensity = 0.0;
+    });
+    _syncOverlayState();
+    _scrollToBottom();
+
+    unawaited(_chatRuntime.sendMessage(
+      text: text,
+      model: _selectedModel,
+      imageBase64: imageBase64,
+      videoBase64: videoBase64,
+    ));
+  }
+
+  // ignore: unused_element
+  Future<void> _handleSubmitLegacy(String text) async {
     if ((text.trim().isEmpty &&
             _pendingImageBase64 == null &&
             _pendingVideoBase64 == null) ||
@@ -2298,7 +2339,6 @@ class _ChatScreenState extends State<ChatScreen>
     AgentSkillServer.instance.onEmotionSet = null;
     // Clear static callbacks set during initState so they don't reference this
     // widget after it's been disposed — prevents stale closure crashes.
-    CameraCapability.onSnapTaken = null;
     CanvasCapability.onVisibilityChanged = null;
     CanvasCapability.onSnapshotTaken = null;
     HologramService.instance.dismiss();
@@ -2311,6 +2351,7 @@ class _ChatScreenState extends State<ChatScreen>
     _skillsSub?.cancel();
     _talkAudioStreamSub?.cancel();
     _talkEventSub?.cancel();
+    _chatRuntime.removeListener(_syncChatRuntimeState);
     _scrollController.removeListener(_handleChatScroll);
     final talkSessionId = _talkRelaySessionId;
     if (talkSessionId != null && talkSessionId.isNotEmpty) {
@@ -2318,7 +2359,6 @@ class _ChatScreenState extends State<ChatScreen>
           GatewayService().closeTalkSession(talkSessionId).catchError((_) {}));
     }
     _glowController.dispose();
-    _tts.stop();
     _audioRecorder.dispose();
     _textController.dispose();
     _scrollController.dispose();

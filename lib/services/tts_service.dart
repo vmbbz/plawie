@@ -13,8 +13,8 @@ class TtsService {
   factory TtsService() => _instance;
 
   TtsService._internal() {
-    _playback.onStart = () => onStart?.call();
-    _playback.onComplete = () => onComplete?.call();
+    _playback.onStart = _notifyStart;
+    _playback.onComplete = _notifyComplete;
   }
 
   final AudioPlaybackService _playback = AudioPlaybackService();
@@ -28,6 +28,40 @@ class TtsService {
 
   /// Fires when TTS finishes speaking (used by VRM + continuous mode).
   Function? onComplete;
+  final List<VoidCallback> _startListeners = [];
+  final List<VoidCallback> _completeListeners = [];
+
+  void addStartListener(VoidCallback listener) {
+    if (!_startListeners.contains(listener)) _startListeners.add(listener);
+  }
+
+  void removeStartListener(VoidCallback listener) {
+    _startListeners.remove(listener);
+  }
+
+  void addCompleteListener(VoidCallback listener) {
+    if (!_completeListeners.contains(listener)) {
+      _completeListeners.add(listener);
+    }
+  }
+
+  void removeCompleteListener(VoidCallback listener) {
+    _completeListeners.remove(listener);
+  }
+
+  void _notifyStart() {
+    onStart?.call();
+    for (final listener in List<VoidCallback>.from(_startListeners)) {
+      listener();
+    }
+  }
+
+  void _notifyComplete() {
+    onComplete?.call();
+    for (final listener in List<VoidCallback>.from(_completeListeners)) {
+      listener();
+    }
+  }
 
   // ── Voice Persona Support ──────────────────────────────────────────────────
 
@@ -52,7 +86,7 @@ class TtsService {
     if (clean.isEmpty) return;
     debugPrint('TtsService: Speaking via native Android TTS: $clean');
     _nativeSpeaking = true;
-    onStart?.call();
+    _notifyStart();
     try {
       await _nativeTtsChannel.invokeMethod('speak', {
         'text': clean,
@@ -62,7 +96,7 @@ class TtsService {
       debugPrint('TtsService: Native TTS failed: $e');
     } finally {
       _nativeSpeaking = false;
-      onComplete?.call();
+      _notifyComplete();
     }
   }
 
