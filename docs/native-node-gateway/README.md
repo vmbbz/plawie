@@ -37,10 +37,11 @@ Flutter UI
 
 ## Current Branch Status
 
-Phase 1 has begun. The first code extraction covers Gateway process lifecycle
-and logs only. PRoot command execution and bootstrap/repair are still direct
-native bridge calls by design, because those need a dependency/CLI inventory
-before they can be safely generalized.
+Phase 1 has a passing debug smoke test for the extracted process lifecycle
+path. The first code extraction covers Gateway process lifecycle and logs only.
+PRoot command execution and bootstrap/repair are still direct native bridge
+calls by design, because those need a dependency/CLI inventory before they can
+be safely generalized.
 
 ## Documents
 
@@ -52,6 +53,7 @@ before they can be safely generalized.
 | [04-risk-register.md](04-risk-register.md) | Risks, severity, mitigations, and exit gates |
 | [05-validation-matrix.md](05-validation-matrix.md) | Required parity tests before promoting native runtime |
 | [06-research-log.md](06-research-log.md) | Source-backed research notes and open questions |
+| [07-phase-1-smoke-test.md](07-phase-1-smoke-test.md) | Debug APK smoke result for the runtime abstraction |
 
 ## Work Rules
 

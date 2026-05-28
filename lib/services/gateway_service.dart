@@ -114,6 +114,7 @@ class GatewayService {
   bool _nodeAutoConnectInFlight = false;
   bool _hungGatewayRestartInFlight = false;
   bool _modelAliasRepairInFlight = false;
+  bool _runtimeLogged = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
@@ -175,6 +176,12 @@ class GatewayService {
     _updateState(_state.copyWith(isInteractiveReady: false));
     _addActivity(
         '[Gateway] Applying $reason; chat is paused until Gateway settles.');
+  }
+
+  void _logRuntimeOnce() {
+    if (_runtimeLogged) return;
+    _runtimeLogged = true;
+    _addActivity('[RUNTIME] Gateway runtime: ${_runtime.label}');
   }
 
   bool get _hasGatewayConfigTransition {
@@ -655,6 +662,7 @@ class GatewayService {
   /// Check if gateway is already running (e.g. after app restart)
   /// and sync UI state accordingly.
   Future<void> init() async {
+    _logRuntimeOnce();
     final isComplete = await NativeBridge.isBootstrapComplete();
     if (!isComplete) {
       _addActivity('[SYS] Bootstrap incomplete. Awaiting setup...');
@@ -1033,6 +1041,7 @@ class GatewayService {
   /// Prevents double-spawns and handles self-healing.
   Future<void> attachOrStart(
       {bool autoStart = false, bool forceStart = false}) async {
+    _logRuntimeOnce();
     // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
 

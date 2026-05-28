@@ -22,7 +22,7 @@ Exit gate:
 
 ## Phase 1: Runtime Interface Extraction
 
-Status: started
+Status: smoke passed with observation
 
 Implemented in this phase so far:
 
@@ -59,6 +59,16 @@ Exit gate:
 - Fresh install and returning-user startup match `docs/OPENCLAW_BOOT_SEQUENCE.md`.
 - Gateway starts, dashboard opens, operator WebSocket connects, node pairs, and
   chat/tool calls work exactly as before.
+
+Smoke result:
+
+- Debug APK installed on device `RZCX30KA9AW`.
+- Runtime diagnostic reported `PRoot Gateway Runtime`.
+- Gateway started, RPC discovery completed, and node pairing declared 42
+  commands.
+- A transient node reconnect timeout recovered on the next backoff cycle and
+  paired again. Track this during Phase 2, but it is not a runtime abstraction
+  blocker.
 
 ## Phase 2: Native Node Smoke Runtime
 
