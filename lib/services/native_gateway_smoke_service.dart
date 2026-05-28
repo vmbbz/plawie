@@ -8,12 +8,14 @@ import 'gateway_runtime.dart';
 
 class NativeGatewaySmokeReport {
   final bool passed;
+  final bool skipped;
   final String message;
   final Map<String, dynamic>? health;
 
   const NativeGatewaySmokeReport({
     required this.passed,
     required this.message,
+    this.skipped = false,
     this.health,
   });
 }
@@ -33,6 +35,8 @@ class NativeGatewaySmokeService {
   );
 
   static final GatewayRuntime _runtime = GatewayRuntimeRegistry.nativeNodeSmoke;
+  static final GatewayRuntime _nodeRuntime =
+      GatewayRuntimeRegistry.nativeNodeProcessSmoke;
 
   static Future<void> runStartupSelfTestIfEnabled({
     required void Function(String message) log,
@@ -42,12 +46,67 @@ class NativeGatewaySmokeService {
     log('[NATIVE-SMOKE] Diagnostics enabled; testing isolated native runtime.');
     final first = await runLifecycleSmokeTest(log: log, label: 'first');
     final second = await runLifecycleSmokeTest(log: log, label: 'restart');
+    final node = await runNativeNodeProcessSmokeTest(log: log);
 
-    if (first.passed && second.passed) {
-      log('[NATIVE-SMOKE] Native smoke runtime start/health/stop/restart passed.');
+    if (first.passed && second.passed && node.passed) {
+      log('[NATIVE-SMOKE] Native smoke runtime and native Node process diagnostics passed.');
+    } else if (first.passed && second.passed && node.skipped) {
+      log('[NATIVE-SMOKE] Native Android smoke passed; native Node process skipped: ${node.message}');
+    } else if (first.passed && second.passed) {
+      log('[NATIVE-SMOKE] Native Android smoke passed; native Node process failed: ${node.message}');
     } else {
       log('[NATIVE-SMOKE] Native smoke runtime diagnostics failed: '
-          '${first.message}; ${second.message}');
+          '${first.message}; ${second.message}; ${node.message}');
+    }
+  }
+
+  static Future<NativeGatewaySmokeReport> runNativeNodeProcessSmokeTest({
+    required void Function(String message) log,
+  }) async {
+    try {
+      await _nodeRuntime.stop();
+      final started = await _nodeRuntime.start();
+      if (!started) {
+        final logs = await _nodeRuntime.getLogs();
+        final missing = logs.contains('native Node executable missing');
+        return NativeGatewaySmokeReport(
+          passed: false,
+          skipped: missing,
+          message: missing
+              ? 'libplawie_node.so is not packaged yet'
+              : 'native Node process did not start',
+        );
+      }
+
+      final health = await _probeHealth(expectedRuntime: 'native-node');
+      final ok = health['ok'] == true &&
+          health['runtime'] == 'native-node' &&
+          health['port'] == AppConstants.nativeGatewaySmokePort &&
+          health['productionGatewayPort'] == AppConstants.gatewayPort &&
+          health['openclawStarted'] == false;
+      log('[NATIVE-NODE] health: ${jsonEncode(health)}');
+
+      final stopped = await _nodeRuntime.stop();
+      final stillRunning = await _nodeRuntime.isRunning();
+      if (!stopped || stillRunning) {
+        return NativeGatewaySmokeReport(
+          passed: false,
+          message: 'native Node process did not stop cleanly',
+          health: health,
+        );
+      }
+
+      return NativeGatewaySmokeReport(
+        passed: ok,
+        message: ok ? 'ok' : 'unexpected native Node health payload',
+        health: health,
+      );
+    } catch (e) {
+      unawaited(_nodeRuntime.stop());
+      return NativeGatewaySmokeReport(
+        passed: false,
+        message: e.toString(),
+      );
     }
   }
 
@@ -65,7 +124,9 @@ class NativeGatewaySmokeService {
         );
       }
 
-      final health = await _probeHealth();
+      final health = await _probeHealth(
+        expectedRuntime: 'native-gateway-smoke',
+      );
       final ok = health['ok'] == true &&
           health['runtime'] == 'native-gateway-smoke' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
@@ -97,20 +158,36 @@ class NativeGatewaySmokeService {
     }
   }
 
-  static Future<Map<String, dynamic>> _probeHealth() async {
+  static Future<Map<String, dynamic>> _probeHealth({
+    required String expectedRuntime,
+  }) async {
     final client = http.Client();
     try {
-      final response = await client
-          .get(Uri.parse('${AppConstants.nativeGatewaySmokeUrl}/health'))
-          .timeout(const Duration(seconds: 3));
-      if (response.statusCode != 200) {
-        throw StateError('HTTP ${response.statusCode}: ${response.body}');
+      Object? lastError;
+      for (var attempt = 0; attempt < 12; attempt++) {
+        try {
+          final response = await client
+              .get(Uri.parse('${AppConstants.nativeGatewaySmokeUrl}/health'))
+              .timeout(const Duration(seconds: 2));
+          if (response.statusCode != 200) {
+            throw StateError('HTTP ${response.statusCode}: ${response.body}');
+          }
+          final decoded = jsonDecode(response.body);
+          if (decoded is! Map<String, dynamic>) {
+            throw StateError('Health payload was not a JSON object');
+          }
+          if (decoded['runtime'] != expectedRuntime) {
+            throw StateError(
+              'Expected $expectedRuntime health, got ${decoded['runtime']}',
+            );
+          }
+          return decoded;
+        } catch (e) {
+          lastError = e;
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
       }
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic>) {
-        throw StateError('Health payload was not a JSON object');
-      }
-      return decoded;
+      throw StateError('Health probe failed: $lastError');
     } finally {
       client.close();
     }

@@ -127,6 +127,10 @@ Implemented in this phase so far:
   addon risk, and host-tool assumptions.
 - Defined a native Node packaging strategy that starts with a curated
   non-production bundle instead of the full PRoot `node_modules` tree.
+- Added a native Node process slot that will execute a future Android arm64
+  Node binary packaged as `libplawie_node.so`, run a JS health server on
+  `127.0.0.1:18790`, capture stdout/stderr, and fail clearly while the binary
+  is absent.
 
 Goals:
 
@@ -151,6 +155,7 @@ Current blocker:
   that spawn Linux host tools. A native Android runtime must either rebuild,
   replace, disable, or route around those surfaces before OpenClaw can be
   treated as portable.
+- The repo does not yet contain a packaged Android-native Node executable.
 
 ## Phase 4: Shadow Gateway Parity
 

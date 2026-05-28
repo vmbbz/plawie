@@ -81,10 +81,45 @@ class NativeNodeGatewayRuntime implements GatewayRuntime {
   }
 }
 
+class NativeNodeProcessGatewayRuntime implements GatewayRuntime {
+  const NativeNodeProcessGatewayRuntime();
+
+  @override
+  String get id => 'native-node-process-smoke';
+
+  @override
+  String get label => 'Native Node Process Smoke Runtime';
+
+  @override
+  Stream<String> get logStream => const Stream<String>.empty();
+
+  @override
+  Future<bool> start({bool allowDuringSetup = false}) {
+    return NativeBridge.startNativeNodeSmokeRuntime();
+  }
+
+  @override
+  Future<bool> stop() {
+    return NativeBridge.stopNativeNodeSmokeRuntime();
+  }
+
+  @override
+  Future<bool> isRunning() {
+    return NativeBridge.isNativeNodeSmokeRuntimeRunning();
+  }
+
+  @override
+  Future<String> getLogs() {
+    return NativeBridge.getNativeNodeSmokeRuntimeLogs();
+  }
+}
+
 class GatewayRuntimeRegistry {
   GatewayRuntimeRegistry._();
 
   static final GatewayRuntime current = const ProotGatewayRuntime();
   static final GatewayRuntime nativeNodeSmoke =
       const NativeNodeGatewayRuntime();
+  static final GatewayRuntime nativeNodeProcessSmoke =
+      const NativeNodeProcessGatewayRuntime();
 }

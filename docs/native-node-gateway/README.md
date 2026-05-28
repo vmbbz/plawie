@@ -43,6 +43,11 @@ risk: the installed Gateway tree includes Linux/glibc native addons and
 host-tool assumptions. The next native step must therefore be a curated bundle
 and Node packaging plan, not a blind reuse of the PRoot `node_modules` tree.
 
+A dormant native Node process slot now exists for that next step. It expects a
+future Android arm64 Node executable packaged as `libplawie_node.so`, runs only
+on `127.0.0.1:18790`, and reports a clear diagnostic skip while the binary is
+not present.
+
 PRoot command execution and bootstrap/repair are still direct native bridge
 calls by design, because those need a dependency/CLI inventory before they can
 be safely generalized.

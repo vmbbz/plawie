@@ -61,6 +61,7 @@ class MainActivity : FlutterActivity() {
 
     private lateinit var bootstrapManager: BootstrapManager
     private lateinit var processManager: ProcessManager
+    private lateinit var nativeNodeSmokeProcess: NativeNodeSmokeProcess
     private var screenCaptureResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
     private var wakeLock: PowerManager.WakeLock? = null
@@ -114,6 +115,7 @@ class MainActivity : FlutterActivity() {
 
         processManager = ProcessManager(applicationContext, filesDir, nativeLibDir)
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
+        nativeNodeSmokeProcess = NativeNodeSmokeProcess(applicationContext, nativeLibDir)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
         MethodChannel(
@@ -320,6 +322,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "getNativeGatewaySmokeRuntimeLogs" -> {
                     result.success(NativeGatewaySmokeServer.getRecentLogs())
+                }
+                "startNativeNodeSmokeRuntime" -> {
+                    result.success(nativeNodeSmokeProcess.start())
+                }
+                "stopNativeNodeSmokeRuntime" -> {
+                    result.success(nativeNodeSmokeProcess.stop())
+                }
+                "isNativeNodeSmokeRuntimeRunning" -> {
+                    result.success(nativeNodeSmokeProcess.isRunning())
+                }
+                "getNativeNodeSmokeRuntimeLogs" -> {
+                    result.success(nativeNodeSmokeProcess.getRecentLogs())
                 }
                 "startTerminalService" -> {
                     try {

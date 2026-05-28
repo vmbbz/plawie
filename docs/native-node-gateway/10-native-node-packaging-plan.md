@@ -53,9 +53,11 @@ Source-backed constraints:
 ## Phase 3 Work Order
 
 1. Build or source a Node `>=22.19.0` Android arm64 runtime.
-2. Replace the Phase 2 NanoHTTPD smoke endpoint with a real Node process on
+2. Package that executable in `android/app/src/main/jniLibs/arm64-v8a/` as
+   `libplawie_node.so`.
+3. Use the `NativeNodeSmokeProcess` slot to run a real Node process on
    `127.0.0.1:18790`.
-3. First Node smoke payload must return:
+4. First Node smoke payload must return:
 
 ```json
 {
@@ -69,25 +71,47 @@ Source-backed constraints:
 }
 ```
 
-4. Add stdout/stderr capture to the existing native smoke logs.
-5. Add stop/restart tests that prove no orphan process remains.
-6. Create a curated OpenClaw mobile bundle:
+5. Add stdout/stderr capture to the existing native smoke logs.
+6. Add stop/restart tests that prove no orphan process remains.
+7. Create a curated OpenClaw mobile bundle:
    - `openclaw.mjs`
    - required `dist/` chunks for Gateway boot
    - dashboard/static assets needed by Gateway
    - provider extensions used by Plawie install/chat model list
    - node pairing/RPC/device tooling paths
    - mobile skills catalog
-7. Gate or remove incompatible modules for first boot:
+8. Gate or remove incompatible modules for first boot:
    - browser automation
    - desktop clipboard
    - Ollama daemon management
    - Bonjour/Avahi discovery
    - host shell/exec unless routed through an Android/PRoot compatibility lane
-8. Try `openclaw --version` on native Node.
-9. Try `openclaw gateway --port 18790 --bind loopback` only after the version
+9. Try `openclaw --version` on native Node.
+10. Try `openclaw gateway --port 18790 --bind loopback` only after the version
    command works.
-10. Keep all UI and chat traffic on PRoot until shadow parity passes.
+11. Keep all UI and chat traffic on PRoot until shadow parity passes.
+
+## Native Node Process Slot
+
+The app now contains a dormant process runner:
+
+```text
+NativeNodeSmokeProcess
+  -> nativeLibraryDir/libplawie_node.so
+  -> files/native-node-smoke/server.mjs
+  -> http://127.0.0.1:18790/health
+```
+
+When `libplawie_node.so` is absent, diagnostics report the missing binary and
+skip the Node-process portion without touching production Gateway state.
+
+When the binary is present, the runner:
+
+- starts it with the generated smoke JS file;
+- captures stdout/stderr into Android logs;
+- verifies `/health`;
+- stops it with SIGTERM and force-kills only if needed;
+- keeps PRoot on `18789`.
 
 ## Shim Candidates
 

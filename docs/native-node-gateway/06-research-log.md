@@ -64,6 +64,18 @@ The device inventory on `RZCX30KA9AW` found:
 Implication: native Android cannot safely reuse the installed PRoot
 `node_modules` tree as-is.
 
+### Native Node Process Slot
+
+The repo now has the Android/Dart lifecycle slot for a future real Node binary:
+
+- Android runner: `NativeNodeSmokeProcess`
+- expected executable: `nativeLibraryDir/libplawie_node.so`
+- generated script: `files/native-node-smoke/server.mjs`
+- health URL: `http://127.0.0.1:18790/health`
+
+The slot currently reports a clean skip because no Android-native Node
+executable is packaged yet.
+
 ## Working Assumptions
 
 - OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
