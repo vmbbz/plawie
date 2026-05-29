@@ -152,6 +152,10 @@ Implemented in this phase so far:
   skills/control reference. It is not a Gateway runtime candidate, but it
   informs Termux sidecar, Gateway WebSocket client, extension, and
   virtual-display bridge design.
+- Added reproducible nodejs-mobile rebase probes. The broad rebase onto Node
+  `v22.22.3` failed at commit `2/148` with `11589` conflicted files; the
+  surgical Android/core patch probe reduced the real manual port surface to
+  `common.gypi` and `node.gyp`.
 
 Goals:
 
@@ -183,8 +187,9 @@ Current blocker:
 - The `nodejs-mobile` path likely requires a separate embedded-runtime smoke
   runner, because its Android artifact is `libnode.so` loaded through JNI, not
   an executable process launched through `ProcessBuilder`.
-- External rebase advice is promising but unproven. It must be converted into
-  recorded build facts before any artifact reaches the app tree.
+- External broad-rebase advice was tested and did not hold up. The remaining
+  embedded path is a manual Android build-patch port, followed by NDK builds
+  only after the patch applies cleanly.
 
 ## Phase 4: Shadow Gateway Parity
 

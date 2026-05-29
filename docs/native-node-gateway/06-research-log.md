@@ -165,6 +165,49 @@ Implication: create a controlled rebase experiment before adding any native
 artifact to Plawie. Do not copy generated binaries into git or production
 `jniLibs`.
 
+Nodejs-mobile rebase probe on 2026-05-29:
+
+- Added `scripts/native_node/probe_nodejs_mobile_rebase.sh` to test the broad
+  rebase claim without touching app runtime code.
+- The probe rebased `nodejs-mobile/update22-9-0` commit
+  `106c51f95d55d1010de56a2ffd09bfb4ba819a47` onto upstream Node `v22.22.3`
+  commit `fdfa0ff0dbaf0fbf4d7d6d89a2ab807f3177fa5c`.
+- The rebase stopped at commit `2/148` with `11589` conflicted files.
+
+Implication: a blind mobile-fork rebase is not viable for Plawie. The next
+embedded Node step must be a surgical Android patch port, not broad conflict
+resolution.
+
+Nodejs-mobile surgical patch probe on 2026-05-29:
+
+- Added `scripts/native_node/probe_nodejs_mobile_core_patch.sh` to extract only
+  the Android/core build patch surface from mobile Node `22.9.0` and test it
+  against upstream Node `v22.22.3`.
+- The generated patch was `718` lines across `8` files.
+- `android_configure.py` and
+  `deps/v8/src/trap-handler/trap-handler.h` applied cleanly.
+- `common.gypi` and `node.gyp` did not apply and need manual porting.
+
+Implication: the embedded `libnode.so` path is still alive, but the next useful
+work is hand-porting the two drifted build files and then running NDK builds.
+This is much smaller than the broad rebase, but it is not a copy-paste rebase.
+
+Nodejs-mobile reject-apply inspection on 2026-05-29:
+
+- A disposable `git apply --reject` pass applied most of the Android/core patch
+  to upstream Node `v22.22.3`.
+- The remaining reject files were `common.gypi.rej` and `node.gyp.rej`.
+- The Android-relevant `node.gyp` hunk that skips `cctest` for
+  `OS in ("win", "android") and node_shared=="true"` applied.
+- The remaining `node.gyp` rejects are mostly iOS/static-library carry-over or
+  non-Android cleanup.
+- The `common.gypi` reject is the
+  `-Wno-enum-constexpr-conversion` warning flag, whose context drifted because
+  upstream Node added `openharmony` to the OS list.
+
+Implication: do an Android-first manual port. Avoid importing iOS-only mobile
+patches unless an Android `libnode.so` build proves they are required.
+
 AVF repository audit on 2026-05-29:
 
 - `https://github.com/justforfun-2025/androidclaw` has a public `main` branch
@@ -262,8 +305,8 @@ PRoot replacement.
 11. Should the next attempt patch Node/V8 gyp host rules, or pivot to a
     `nodejs-mobile` style fork that already carries Android build-system
     patches?
-12. Can the `nodejs-mobile` Android patches be rebased cleanly onto Node
-    `v22.22.3` without disabling Intl?
+12. Can the Android-first subset of the `nodejs-mobile` patch build Node
+    `v22.22.3` as `libnode.so` while keeping Intl enabled?
 13. Should embedded Node run in the main app process for smoke only, then move
     to an isolated Android process before any OpenClaw boot attempt?
 14. Which Plawie target devices expose Android Terminal/AVF VM support?
@@ -295,6 +338,8 @@ PRoot replacement.
 - Build or rebase a Node `>=22.19.0` embedded `libnode.so` candidate and add a
   hidden embedded smoke runner that is distinct from the executable process
   slot.
+- Manually reconcile the Android-first nodejs-mobile patch subset on upstream
+  Node `v22.22.3`, then run an arm64 NDK build.
 - Run `scripts/avf/check_avf_eligibility.ps1` when a device is connected and
   record the first AVF eligibility snapshot.
 - Produce an Android capability bridge design that uses AndyClaw only as a

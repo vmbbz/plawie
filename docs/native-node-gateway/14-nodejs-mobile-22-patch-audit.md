@@ -111,18 +111,59 @@ Keep both research paths, but change priority:
    executable packaging helper. It is the wrong artifact shape and below the
    OpenClaw engine floor.
 
+## Rebase Probe Result
+
+The first live probe disproved the optimistic "small rebase" assumption.
+
+`scripts/native_node/probe_nodejs_mobile_rebase.sh` attempted to rebase
+`nodejs-mobile/update22-9-0` directly onto upstream Node `v22.22.3`.
+It stopped at commit `2/148` with `11589` conflicted files. That path is too
+wide for Plawie's production-risk posture.
+
+`scripts/native_node/probe_nodejs_mobile_core_patch.sh` then extracted only the
+Android/core build patch surface from mobile Node `22.9.0` and applied it to
+clean upstream Node `v22.22.3`. That narrowed the real patch work:
+
+- generated patch size: `718` lines across `8` files;
+- `android_configure.py` applied cleanly;
+- `deps/v8/src/trap-handler/trap-handler.h` applied cleanly;
+- `common.gypi` and `node.gyp` need manual porting.
+
+The right next step is not broad rebase conflict resolution. It is a deliberate
+manual port of those build-system changes, then an NDK arm64 build attempt.
+
+Follow-up reject inspection narrowed the port further:
+
+- `git apply --reject` applied most hunks to a disposable Node `v22.22.3`
+  checkout;
+- only `common.gypi.rej` and `node.gyp.rej` remained;
+- the Android shared-Node `cctest` skip already applied;
+- the remaining `node.gyp` rejects are mostly iOS/static-library carry-over or
+  secondary cleanup;
+- the `common.gypi` reject is a compiler-warning flag whose context drifted
+  because upstream added `openharmony`.
+
+This means the next candidate should be Android-first. Avoid carrying iOS-only
+patches into Plawie unless a build error proves they are coupled to Android.
+
 ## Next Implementation Slice
 
-The next safe slice is a hidden embedded smoke runtime, not native Gateway boot:
+The next safe slice remains hidden embedded smoke work, but the artifact source
+must first be made real:
 
-1. Add a separate Android-side runner contract for embedded `libnode.so`.
-2. Keep it disabled unless
+1. Apply the mobile Android/core patch to upstream Node `v22.22.3` with
+   rejects in a disposable worktree.
+2. Reconcile the Android-first rejects instead of importing every iOS mobile
+   hunk.
+3. Build an Android arm64 `libnode.so` candidate with explicit NDK and Intl
+   settings.
+4. Record the candidate version, build inputs, output path, and SHA-256.
+5. Add a separate Android-side runner contract for embedded `libnode.so`.
+6. Keep it disabled unless
    `PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`.
-3. Load only a smoke script that serves `/health` on `127.0.0.1:18790`.
-4. Capture stdout/stderr into Android logs.
-5. Prove start/stop/restart behavior.
-6. Only after that works, rebase the mobile Android patches to a Node
-   `>=22.19.0` source tree and repeat the smoke.
+7. Load only a smoke script that serves `/health` on `127.0.0.1:18790`.
+8. Capture stdout/stderr into Android logs.
+9. Prove start/stop/restart behavior.
 
 ## Risks Added By The Embedded Path
 

@@ -54,19 +54,92 @@ Verify:
 - whether the resulting library reports Node `>=22.19.0`;
 - whether the embedded library can start a tiny `/health` server on device.
 
+## Probe Result: 2026-05-29
+
+Two source-control probes were run. No app runtime code or native artifact was
+changed.
+
+### Broad Rebase Probe
+
+Script: `scripts/native_node/probe_nodejs_mobile_rebase.sh`
+
+Result: failed as a practical path.
+
+Observed facts:
+
+- base branch: `nodejs-mobile/update22-9-0`
+- base commit: `106c51f95d55d1010de56a2ffd09bfb4ba819a47`
+- base Node version: `22.9.0`
+- target tag: upstream Node `v22.22.3`
+- target commit: `fdfa0ff0dbaf0fbf4d7d6d89a2ab807f3177fa5c`
+- rebase stopped at commit `2/148`
+- conflicted file count: `11589`
+
+Conclusion: a blind `git rebase` of the mobile fork onto `v22.22.3` is not the
+right engineering path. The external claim that this would be a small rebase
+was not supported by the probe.
+
+### Surgical Core Patch Probe
+
+Script: `scripts/native_node/probe_nodejs_mobile_core_patch.sh`
+
+Result: closer, but not clean yet.
+
+Observed facts:
+
+- generated a `718` line patch across `8` Android/core build files;
+- `android_configure.py` applied cleanly;
+- `deps/v8/src/trap-handler/trap-handler.h` applied cleanly;
+- `common.gypi` failed at patch hunk line `488`;
+- `node.gyp` failed at patch hunk line `746`;
+- Git reported no merge-conflict files because the patch failed before leaving
+  conflict markers.
+
+Conclusion: the viable embedded path is a manual, file-by-file port of the
+small Android build patch surface, starting with `common.gypi` and `node.gyp`.
+That is materially better than resolving thousands of broad-rebase conflicts,
+but it still needs deliberate build-system work before any NDK build is worth
+running.
+
+### Reject-Apply Inspection
+
+A disposable `git apply --reject` pass showed that most of the patch can be
+applied to Node `v22.22.3`:
+
+- modified cleanly or with offsets: `android_configure.py`,
+  `deps/v8/src/trap-handler/trap-handler.h`,
+  `tools/v8_gypfiles/toolchain.gypi`, and `tools/v8_gypfiles/v8.gyp`;
+- created cleanly: `tools/android_build.sh` and
+  `tools/copy_libnode_headers.sh`;
+- remaining rejects: `common.gypi.rej` and `node.gyp.rej`.
+
+The important Android-specific `node.gyp` hunk that skips `cctest` while
+building shared Node for Android applied. The remaining `node.gyp` rejects are
+mostly iOS/static-library carry-over or secondary cleanup. The `common.gypi`
+reject is the compiler warning flag
+`-Wno-enum-constexpr-conversion`, where upstream context drifted because Node
+`v22.22.3` added `openharmony` to the same OS list.
+
+Conclusion: the next manual port should be Android-only first. Do not carry
+iOS-only patches unless a build failure proves they are required for shared
+Android `libnode.so`.
+
 ## Recommended Experiment Order
 
-Run this outside the production app build:
+The original broad rebase order is now demoted to historical context. The next
+order should be:
 
-1. Clone `nodejs-mobile`.
-2. Check out `update22-9-0`.
-3. Create a local experiment branch.
-4. Add upstream `nodejs/node`.
-5. Rebase onto `v22.22.3`.
-6. Resolve conflicts by preserving Android-specific configure/build patches.
-7. Build only Android arm64.
-8. Record NDK version, Node version, output path, and SHA-256.
-9. Do not copy the artifact into the app until the provenance and smoke plan
+1. Start from clean upstream Node `v22.22.3`.
+2. Apply the nodejs-mobile Android/core patch with rejects into a disposable
+   worktree.
+3. Manually reconcile the Android-relevant `common.gypi` warning flag and any
+   Android build failure surfaced from `node.gyp`.
+4. Keep iOS-only rejects out of the Android candidate unless proven necessary.
+5. Keep Intl policy explicit; target `small-icu` or `full-icu`, not silent
+   `none`.
+6. Build only Android arm64 after the patch applies cleanly.
+7. Record NDK version, Node version, output path, and SHA-256.
+8. Do not copy the artifact into the app until the provenance and smoke plan
    are documented.
 
 If `v22.22.3` fails for reasons unrelated to Android patches, retry `v22.19.0`
