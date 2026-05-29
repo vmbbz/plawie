@@ -1,6 +1,6 @@
 # Runtime Options
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 This compares practical ways to run OpenClaw Gateway on Android.
 
@@ -124,3 +124,77 @@ GatewayService
 PRoot remains default until native runtime passes the validation matrix.
 glibc compatibility stays a research note, not the north-star.
 
+## Option E: Termux Sidecar
+
+### Summary
+
+Use the user-installed Termux app as an optional Linux command sidecar through
+Android intents. AndyClaw demonstrates this as a skills capability: the app
+checks whether Termux is installed, asks the user to grant the RUN_COMMAND
+permission, sends commands to Termux, and receives results through callbacks.
+
+### Pros
+
+- Works on more stock Android devices than AVF.
+- Gives access to a persistent Linux-like package environment.
+- Useful for optional CLI skills, diagnostics, and user-installed tools.
+- Does not require bundling a large Linux rootfs inside Plawie.
+
+### Cons
+
+- Requires separate Termux installation and user setup.
+- Can hang or time out during package installs or interactive prompts.
+- Harder to guarantee provenance and repeatability.
+- Not app-owned enough for core Gateway startup.
+- Still does not provide a bundled OpenClaw Gateway runtime.
+
+### Best Use
+
+Optional capability/tool lane, not Gateway runtime replacement.
+
+## Option F: Android Capability Bridge
+
+### Summary
+
+Keep OpenClaw Gateway where it belongs for each runtime lane, but expose Android
+capabilities through a clean app-native bridge. AndyClaw is a useful reference
+for this layer: Gateway WebSocket sessions, `node.invoke` callbacks,
+permission-aware skills, extension manifests, and virtual-display tools.
+
+### Pros
+
+- Directly improves the tool/skills side of Plawie.
+- Complements PRoot, AVF, and embedded Node instead of competing with them.
+- Helps a VM-hosted Gateway call back into app-native camera, avatar, TTS,
+  screen, haptics, and device capabilities.
+- Lets Plawie keep privileged or risky functionality behind explicit gates.
+
+### Cons
+
+- It is not a Node runtime.
+- Requires careful permission, safety, and persistence design.
+- Cross-app extension loading increases security review scope.
+- Privileged screen/input control patterns are not shippable for normal users
+  without special device support.
+
+### Best Use
+
+Shared Android node/capability architecture for all runtime lanes.
+
+## Updated Direction: AVF As Full-Fidelity Lane
+
+After auditing `justforfun-2025/androidclaw`, AVF should be treated as a
+separate full-fidelity runtime lane, not as a replacement for embedded Node.
+
+The product strategy becomes:
+
+| Runtime | Best for | Tradeoff |
+| --- | --- | --- |
+| PRoot | Universal support and current production stability | Existing overhead and lifecycle complexity |
+| AVF Linux VM | Full upstream OpenClaw, Node 22, native modules, Playwright | Limited device support, higher resource use, separate VM lifecycle |
+| Embedded `libnode.so` | Broad-device lightweight native runtime | Requires Node 22 rebase and cannot automatically support Linux desktop modules |
+| Termux sidecar | Optional Linux CLI capability on stock Android | User-installed, setup-heavy, not a core Gateway runtime |
+| Android capability bridge | Shared app-native tools for PRoot/AVF/native lanes | Requires permission and security polish |
+
+AVF is the fastest route to full OpenClaw parity on eligible devices. Embedded
+Node remains the likely broad-device route if AVF is unavailable.

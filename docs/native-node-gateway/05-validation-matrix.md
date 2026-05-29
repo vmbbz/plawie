@@ -16,6 +16,7 @@ The native runtime cannot become default until it passes this matrix.
 | Dashboard token | Authenticated dashboard URL works | Same |
 | Runtime artifact type | PRoot process is known | Native diagnostics identify executable-process vs embedded-libnode path |
 | Missing native artifact | Not applicable | Missing executable or `libnode.so` reports a clean diagnostic skip |
+| AVF eligibility | Not applicable | Device capability, VM package, endpoint, and readiness are reported without changing runtime |
 
 ## WebSocket And RPC
 
@@ -27,6 +28,7 @@ The native runtime cannot become default until it passes this matrix.
 | Skills status | Active skills visible |
 | Tool discovery | Mobile tool policy visible |
 | Pairing recovery | Stale token/device recovery still works |
+| AVF endpoint probe | Configured VM Gateway is reachable or reports inactive cleanly |
 
 ## Node Capabilities
 
@@ -73,6 +75,21 @@ The native runtime cannot become default until it passes this matrix.
 | App foreground/background | No unexpected Gateway restart |
 | Device lock/unlock | Runtime either survives or recovers with clear diagnostics |
 | Embedded runtime crash | App and PRoot Gateway remain recoverable |
+| AVF VM stopped | Plawie reports inactive VM and keeps PRoot chat usable |
+| Termux missing | Optional Termux capability reports unavailable; core chat/tools continue |
+| Extension unavailable | Optional extension capability reports unavailable; core tools continue |
+
+## Android Capability Bridge
+
+| Test | Required result |
+| --- | --- |
+| Capability snapshot | Tool names, descriptions, permission requirements, and runtime lane are visible |
+| App-native node invoke | Gateway can invoke Android tools without privileged/system-app assumptions |
+| VM-to-app node invoke | AVF Gateway can call back into Plawie app-native tools in shadow mode |
+| Termux sidecar probe | Reports installed/version/permission/setup state without starting Gateway |
+| Termux command timeout | Long commands return precise timeout/error and do not break chat stream |
+| Extension manifest scan | Disabled by default; when enabled, functions require explicit approval |
+| Virtual-display tool gate | Privileged actions are hidden or marked developer/special-device only |
 
 ## Performance Metrics
 

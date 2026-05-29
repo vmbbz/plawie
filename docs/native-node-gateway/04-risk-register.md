@@ -21,6 +21,13 @@ Last updated: 2026-05-29
 | R15 | Embedded Node crashes the Flutter process | Critical | Medium | Keep embedded runtime smoke-only at first; move to a separate Android process before canary | Forced crash test leaves UI and PRoot Gateway alive |
 | R16 | Executable Node and embedded libnode artifacts are confused | High | Medium | Keep separate scripts, docs, diagnostics, and packaging helpers | Wrong artifact type is rejected before APK packaging |
 | R17 | Mobile fork lags OpenClaw's Node engine requirement | High | High | Rebase mobile Android patches to Node `>=22.19.0` or wait for matching branch | Native runtime reports a compliant Node version |
+| R18 | AVF works only on eligible devices | High | High | Gate AVF with device diagnostics and keep PRoot default | Non-eligible devices never see AVF as required |
+| R19 | AVF VM lifecycle is not app-owned | High | Medium | Start with manual setup/probe; automate only after API viability is proven | Missing/stopped VM reports a clean inactive state |
+| R20 | VM-to-Android device skills require privileged bridge | Critical | Medium | Reuse Plawie's existing app-native node bridge where possible; do not ship shell/system-app proxy requirements | Device skills work without privileged install or are clearly unavailable |
+| R21 | Provider keys leak into VM filesystem | Critical | Medium | Require explicit user consent and scoped secret sync | Keys are not copied to VM during diagnostics |
+| R22 | Termux sidecar becomes mistaken for core Gateway runtime | High | Medium | Keep Termux capability disabled by default and separate from runtime selection | Core chat/tools work without Termux installed |
+| R23 | GPL reference code contaminates Plawie implementation | Critical | Low | Treat AndyClaw as architecture reference only unless legal review approves reuse | New implementation is original or explicitly license-reviewed |
+| R24 | Cross-app extension or virtual-display control expands unsafe tool surface | Critical | Medium | Require explicit approval, capability tiers, and normal-app permission gates | Security review passes before any user-facing extension lane |
 
 ## Critical Risk Principle
 

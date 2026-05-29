@@ -144,6 +144,14 @@ Implemented in this phase so far:
 - Defined the embedded `libnode.so` smoke design, including separate artifact
   names, isolated-service requirement before OpenClaw boot, and diagnostics
   naming so it cannot be confused with the executable process lane.
+- Defined a controlled `nodejs-mobile` rebase experiment from Node `22.9.0` to
+  `v22.22.3` or `v22.19.0`, with explicit NDK and Intl verification gates.
+- Audited the public `justforfun-2025/androidclaw` repository and added AVF as
+  a third runtime lane for full-fidelity OpenClaw on eligible Android devices.
+- Audited the public `EthereumPhone/AndyClaw` repository as an Android
+  skills/control reference. It is not a Gateway runtime candidate, but it
+  informs Termux sidecar, Gateway WebSocket client, extension, and
+  virtual-display bridge design.
 
 Goals:
 
@@ -175,12 +183,14 @@ Current blocker:
 - The `nodejs-mobile` path likely requires a separate embedded-runtime smoke
   runner, because its Android artifact is `libnode.so` loaded through JNI, not
   an executable process launched through `ProcessBuilder`.
+- External rebase advice is promising but unproven. It must be converted into
+  recorded build facts before any artifact reaches the app tree.
 
 ## Phase 4: Shadow Gateway Parity
 
 Goals:
 
-- Run native OpenClaw in shadow mode.
+- Run native or AVF OpenClaw in shadow mode.
 - Compare health, config load, dashboard token creation, RPC discovery, skills
   status, and logs against PRoot.
 
@@ -189,11 +199,50 @@ Constraints:
 - Shadow runtime does not accept user chat by default.
 - Node pairing remains with PRoot.
 - PRoot remains the only production Gateway.
+- AVF shadow runtime must be explicitly configured and eligibility-gated.
 
 Exit gate:
 
 - Shadow native runtime passes repeated boot/stop/restart cycles.
 - No cross-talk with PRoot port, config, sessions, or node pairing.
+
+## Phase 3A: AVF Eligibility And Probe
+
+Status: planned
+
+Goals:
+
+- Detect whether the connected device exposes AVF/Terminal VM signals.
+- Add a hidden probe for an already-running VM Gateway on `192.168.0.2:18790`
+  or a user-configured endpoint.
+- Keep all user traffic on PRoot.
+
+Exit gate:
+
+- AVF-capable and non-AVF devices both report clear diagnostics.
+- Missing VM/Gateway is a clean skip, not an error loop.
+- PRoot boot, chat, tools, skills, and node pairing remain unchanged.
+
+## Phase 3B: Android Capability Bridge Reference
+
+Status: planned
+
+Goals:
+
+- Map Plawie's existing Android node tools against AndyClaw-style capability
+  tiers, permission gates, and user-facing descriptions.
+- Decide whether Termux should be offered as an optional sidecar capability.
+- Design VM-to-app `node.invoke` handling for the AVF lane without privileged
+  system-app assumptions.
+- Identify which virtual-display/screen-control ideas are shippable with normal
+  app permissions and which require developer/special-device mode.
+
+Exit gate:
+
+- No production tool names or behavior change.
+- Capability taxonomy and permission wording are documented.
+- Any Termux or extension work is explicitly opt-in and disabled by default.
+- GPL-licensed code from reference repos is not copied without review.
 
 ## Phase 5: Hidden Canary Runtime
 

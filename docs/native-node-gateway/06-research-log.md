@@ -151,6 +151,83 @@ Implication: Plawie should keep the direct executable path alive, but the next
 practical experiment is a separate embedded `libnode.so` smoke lane that can be
 rebased to Node `>=22.19.0`.
 
+Nodejs-mobile rebase advice captured on 2026-05-29:
+
+- External research suggested rebasing `nodejs-mobile` `update22-9-0` onto
+  upstream Node `v22.22.3`, building Android arm64 with the repo's Android
+  helper, and testing NDK r24/r26-style toolchains before r28.
+- Treat this as a hypothesis. The actual work must record conflicts, NDK
+  version, Intl configuration, output path, reported Node version, and SHA-256.
+- The result, if any, is embedded `libnode.so`; it belongs to the embedded
+  smoke lane and still needs an app-owned JNI bridge.
+
+Implication: create a controlled rebase experiment before adding any native
+artifact to Plawie. Do not copy generated binaries into git or production
+`jniLibs`.
+
+AVF repository audit on 2026-05-29:
+
+- `https://github.com/justforfun-2025/androidclaw` has a public `main` branch
+  at `da863001763003030d29ea2808ddba3a6cccdea2`.
+- Its root README documents the current AVF/Debian VM architecture with Node
+  `22.22.0`, OpenClaw `2026.2.9`, Playwright + Chromium, and VM Gateway port
+  `18790` on the AVF bridge address `192.168.0.2`.
+- The same repo keeps an archived `app-nodejs-mobile` directory. Its README
+  says the embedded Node 18 path worked for basic chat but was abandoned
+  because Playwright/Chromium, native modules, ICU, and lifecycle behavior were
+  too constrained.
+- The `app-proxy` directory documents a VM-to-Android control proxy, but it
+  requires privileged/system-app installation as shell UID. That is useful
+  research evidence, not a normal-user Plawie shipping path.
+
+Implication: AVF is the strongest known full-fidelity OpenClaw path on devices
+that support it. It should become a gated runtime lane alongside PRoot and
+embedded Node, not a universal replacement.
+
+First AVF eligibility probe on 2026-05-29:
+
+- Connected device: `RZCX30KA9AW`
+- Manufacturer/model: Samsung `SM-A556E`
+- Android release/API: Android `14`, SDK `34`
+- Hypervisor support props inspected by the script were empty.
+- `com.android.virtualmachine.res` was present, but no Terminal/VM Gateway was
+  reachable at `192.168.0.2:18790`.
+
+Implication: the current test phone should be treated as a non-AVF or
+not-yet-AVF-ready device for Plawie runtime work. AVF remains a high-end /
+eligible-device lane, while PRoot and embedded Node remain necessary for broad
+support.
+
+AndyClaw repository audit on 2026-05-29:
+
+- `https://github.com/EthereumPhone/AndyClaw` has a public `main` branch at
+  commit `55c490890a129ed3e52358caab04ca0e2159941a`.
+- Its README describes an Android APK assistant with open stock-Android mode,
+  privileged ethOS mode, local Qwen 1.5B, OpenRouter/Tinfoil providers,
+  skills, heartbeat, Termux integration, and extensions.
+- `NodeRuntime.kt` is an Android/Kotlin assistant runtime for skills,
+  heartbeat, and agent loops. It is not a Node.js runtime.
+- `TermuxSkill.kt` and `TermuxCommandRunner.kt` show an optional Termux
+  sidecar pattern using the Termux `RUN_COMMAND` service and callback result
+  intents.
+- `GatewayDiscovery.kt` and `GatewaySession.kt` show Android-side OpenClaw
+  Gateway discovery, WebSocket connect/auth, reconnect, request/response,
+  `node.event`, and `node.invoke.request` handling.
+- The shared `AndyClaw/src/main/java/.../skills` package mirrors SKILL.md
+  frontmatter, skill registry, execution metadata, and command specs in
+  Kotlin.
+- `ExtensionExample/README.md` documents APK extension discovery through
+  manifest metadata and IPC bridge options.
+- `AGENT_DISPLAY_API.md` and `AGENT_VIRTUAL_DISPLAY.md` document virtual
+  display and screen-control patterns.
+- The repository is GPL-3.0 licensed, so implementation copying requires
+  license review.
+
+Implication: AndyClaw is valuable as a reference for Android-side capabilities,
+Termux, extension, Gateway client, and virtual-display design. It is not a
+Node `>=22.19.0` Gateway runtime source and should not be classified as a
+PRoot replacement.
+
 ## Working Assumptions
 
 - OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
@@ -189,6 +266,17 @@ rebased to Node `>=22.19.0`.
     `v22.22.3` without disabling Intl?
 13. Should embedded Node run in the main app process for smoke only, then move
     to an isolated Android process before any OpenClaw boot attempt?
+14. Which Plawie target devices expose Android Terminal/AVF VM support?
+15. Can Plawie start/stop the AVF VM programmatically, or must setup remain a
+    manual/user-driven beta flow?
+16. Can Android node/device capabilities connect to a VM Gateway without a
+    privileged proxy app?
+17. Should Plawie expose Termux as an optional sidecar capability, and what
+    setup/error UX keeps it from being confused with core Gateway runtime?
+18. Which Android capability metadata should become shared across PRoot, AVF,
+    embedded Node, and local-only model lanes?
+19. Can VM-to-app `node.invoke` be implemented entirely through Plawie's normal
+    app permissions and current node bridge?
 
 ## Immediate Research Tasks
 
@@ -207,3 +295,7 @@ rebased to Node `>=22.19.0`.
 - Build or rebase a Node `>=22.19.0` embedded `libnode.so` candidate and add a
   hidden embedded smoke runner that is distinct from the executable process
   slot.
+- Run `scripts/avf/check_avf_eligibility.ps1` when a device is connected and
+  record the first AVF eligibility snapshot.
+- Produce an Android capability bridge design that uses AndyClaw only as a
+  reference and keeps Termux/extensions disabled by default.

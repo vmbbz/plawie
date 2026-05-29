@@ -57,6 +57,15 @@ useful Android `libnode.so` shape, but its inspected Node 22 branch is only
 `22.9.0` and must become a separate embedded-runtime lane rather than being
 mixed into the executable-process slot.
 
+An AVF/Debian VM lane is now tracked as a third option. It is the most
+promising full-fidelity OpenClaw path on eligible Android devices, but it is
+not universal and must be gated separately from PRoot and embedded Node.
+
+AndyClaw has also been audited as a reference architecture. It does not provide
+a Node `>=22.19.0` Gateway runtime, but it is valuable for Android-side skills,
+Termux sidecar execution, Gateway WebSocket client behavior, extension
+discovery, and virtual-display agent controls.
+
 PRoot command execution and bootstrap/repair are still direct native bridge
 calls by design, because those need a dependency/CLI inventory before they can
 be safely generalized.
@@ -80,6 +89,9 @@ be safely generalized.
 | [13-node-22-android-build-attempt.md](13-node-22-android-build-attempt.md) | Local Node 22 Android build result and current blocker |
 | [14-nodejs-mobile-22-patch-audit.md](14-nodejs-mobile-22-patch-audit.md) | Nodejs-mobile Node 22 Android patch audit and embedded-runtime decision |
 | [15-embedded-libnode-smoke-design.md](15-embedded-libnode-smoke-design.md) | Separate embedded `libnode.so` smoke runner design |
+| [16-avf-linux-vm-runtime-option.md](16-avf-linux-vm-runtime-option.md) | AVF/Debian VM lane, eligibility, and integration plan |
+| [17-andyclaw-reference-audit.md](17-andyclaw-reference-audit.md) | AndyClaw skills, Termux, extension, and Android control reference audit |
+| [18-nodejs-mobile-rebase-experiment.md](18-nodejs-mobile-rebase-experiment.md) | Controlled Node `>=22.19.0` embedded `libnode.so` rebase experiment |
 
 ## Work Rules
 
