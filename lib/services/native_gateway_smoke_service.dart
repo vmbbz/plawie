@@ -85,7 +85,8 @@ class NativeGatewaySmokeService {
           health['runtime'] == 'native-node-embedded' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
           health['productionGatewayPort'] == AppConstants.gatewayPort &&
-          health['openclawStarted'] == false;
+          health['openclawStarted'] == false &&
+          _preflightPassed(health['preflight']);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
 
       final stopped = await _nodeRuntime.stop();
@@ -158,6 +159,32 @@ class NativeGatewaySmokeService {
         message: e.toString(),
       );
     }
+  }
+
+  static bool _preflightPassed(Object? value) {
+    if (value is! Map<String, dynamic>) return false;
+
+    final builtins = value['builtinModules'];
+    final builtinsOk = builtins is Map<String, dynamic> &&
+        builtins.values.every((entry) => entry == true);
+
+    final bridgeTools = value['bridgeToolNames'];
+    final bridgeToolsOk = bridgeTools is List &&
+        bridgeTools.contains('get_battery') &&
+        bridgeTools.contains('read_sensor') &&
+        bridgeTools.contains('vibrate');
+
+    final skillCount = value['skillCount'];
+    return value['passed'] == true &&
+        value['engineOk'] == true &&
+        value['nodeModulesTarAssetPresent'] == true &&
+        value['openclawStarted'] == false &&
+        skillCount is num &&
+        skillCount >= 4 &&
+        value['bridgeToolsLoaded'] == true &&
+        value['intlOk'] == true &&
+        builtinsOk &&
+        bridgeToolsOk;
   }
 
   static Future<Map<String, dynamic>> _probeHealth({

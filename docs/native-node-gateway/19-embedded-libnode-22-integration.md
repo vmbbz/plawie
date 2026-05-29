@@ -151,6 +151,9 @@ PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true
 
 ## Next Gate
 
-The next phase can replace the health-only script with a minimal OpenClaw
-bootstrap probe that still binds to `18790`, does not touch production `18789`,
-and continues to fall back to PRoot for the real Gateway lane.
+The health-only script has graduated to the mobile OpenClaw preflight described
+in [20-embedded-openclaw-preflight.md](20-embedded-openclaw-preflight.md).
+
+The next gate is a curated Gateway bootstrap probe that still binds to `18790`,
+does not touch production `18789`, and continues to fall back to PRoot for the
+real Gateway lane.

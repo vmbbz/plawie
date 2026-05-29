@@ -1,6 +1,6 @@
 # Native Node Gateway Research Track
 
-Last updated: 2026-05-29
+Last updated: 2026-05-30
 
 Branch: `native-node-gateway-research`
 
@@ -46,6 +46,9 @@ current branch by an embedded `libnode.so` diagnostic lane. The app can now
 package a locally built Android arm64 Node `22.22.3` `libnode.so`, build a tiny
 `libplawie_node_bridge.so` JNI wrapper, and start a `/health` server on
 `127.0.0.1:18790` inside an isolated `:native_node_smoke` Android process.
+That lane now also runs a mobile OpenClaw preflight: it copies curated
+OpenClaw assets, loads Android bridge tooling, counts bundled skills, verifies
+Node built-ins and Intl, and reports readiness without starting OpenClaw.
 Production Gateway startup still remains PRoot.
 
 The first direct Node 22 Android build attempt proved the official source path
@@ -90,6 +93,7 @@ be safely generalized.
 | [17-andyclaw-reference-audit.md](17-andyclaw-reference-audit.md) | AndyClaw skills, Termux, extension, and Android control reference audit |
 | [18-nodejs-mobile-rebase-experiment.md](18-nodejs-mobile-rebase-experiment.md) | Controlled Node `>=22.19.0` embedded `libnode.so` rebase experiment |
 | [19-embedded-libnode-22-integration.md](19-embedded-libnode-22-integration.md) | Node `22.22.3` `libnode.so` packaging, JNI bridge, isolated service, and build result |
+| [20-embedded-openclaw-preflight.md](20-embedded-openclaw-preflight.md) | Embedded Node mobile OpenClaw preflight contract and device result |
 
 ## Work Rules
 

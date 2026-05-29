@@ -84,6 +84,7 @@ flutter:
     - assets/vrm/animations/limbs/
     - assets/vrm/lib/
     - assets/vrm/utils/
+    - assets/openclaw/android_bridge_tools.js
     - assets/openclaw/skills/battery.md
     - assets/openclaw/skills/vibrate.md
     - assets/openclaw/skills/sensors.md

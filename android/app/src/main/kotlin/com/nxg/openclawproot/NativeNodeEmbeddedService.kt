@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -17,6 +18,11 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class NativeNodeEmbeddedService : Service() {
     private val startedAtMs = SystemClock.elapsedRealtime()
+
+    private data class PreflightBundle(
+        val root: File,
+        val manifest: File
+    )
 
     companion object {
         private const val TAG = "NativeNodeEmbedded"
@@ -68,7 +74,8 @@ class NativeNodeEmbeddedService : Service() {
             return
         }
 
-        val script = writeSmokeScript()
+        val preflight = preparePreflightBundle()
+        val script = writeSmokeScript(preflight)
         appendLog("starting embedded Node health runtime on http://$HOST:$PORT")
 
         val args = arrayOf("plawie-native-node", script.absolutePath)
@@ -103,21 +110,172 @@ class NativeNodeEmbeddedService : Service() {
         }
     }
 
-    private fun writeSmokeScript(): File {
+    private fun preparePreflightBundle(): PreflightBundle {
+        val dir = File(workDir(applicationContext), "mobile-openclaw-preflight")
+        if (dir.exists()) dir.deleteRecursively()
+        dir.mkdirs()
+
+        val copied = JSONObject()
+        val missing = mutableListOf<String>()
+
+        fun copyAsset(assetPath: String, target: File) {
+            try {
+                target.parentFile?.mkdirs()
+                assets.open(assetPath).use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                copied.put(assetPath, target.relativeTo(dir).path.replace(File.separatorChar, '/'))
+            } catch (e: Exception) {
+                missing.add(assetPath)
+                appendLog("preflight asset missing $assetPath: ${e.message}")
+            }
+        }
+
+        fun assetExists(assetPath: String): Boolean {
+            return try {
+                assets.open(assetPath).use { true }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        copyAsset(
+            "flutter_assets/assets/openclaw/android_bridge_tools.js",
+            File(dir, "android_bridge_tools.js")
+        )
+
+        listOf("avatar_forge.md", "battery.md", "sensors.md", "vibrate.md").forEach { name ->
+            copyAsset(
+                "flutter_assets/assets/openclaw/skills/$name",
+                File(File(dir, "skills"), name)
+            )
+        }
+
+        val manifest = File(dir, "preflight_manifest.json")
+        manifest.writeText(
+            JSONObject()
+                .put("bundleKind", "mobile-openclaw-preflight")
+                .put("bundleRoot", dir.absolutePath)
+                .put("copiedAssets", copied)
+                .put("missingAssets", JSONArray(missing))
+                .put(
+                    "nodeModulesTarAssetPresent",
+                    assetExists("flutter_assets/assets/openclaw-node-modules.tar.gz")
+                )
+                .put("productionGatewayPort", 18789)
+                .put("smokePort", PORT)
+                .toString()
+        )
+
+        appendLog(
+            "prepared mobile OpenClaw preflight bundle copied=${copied.length()} " +
+                "missing=${missing.size}"
+        )
+        return PreflightBundle(dir, manifest)
+    }
+
+    private fun writeSmokeScript(preflight: PreflightBundle): File {
         val dir = workDir(applicationContext)
         dir.mkdirs()
         val script = File(dir, "server.mjs")
+        val bundleRoot = JSONObject.quote(preflight.root.absolutePath)
+        val manifestPath = JSONObject.quote(preflight.manifest.absolutePath)
         script.writeText(
             """
             import http from "node:http";
+            import fs from "node:fs";
+            import path from "node:path";
             import process from "node:process";
+            import { createRequire } from "node:module";
+
+            const require = createRequire(import.meta.url);
+            const bundleRoot = $bundleRoot;
+            const manifestPath = $manifestPath;
 
             const host = "$HOST";
             const port = $PORT;
             const startedAt = Date.now();
 
+            function versionAtLeast(actual, minimum) {
+              const parse = (value) => String(value).replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+              const a = parse(actual);
+              const b = parse(minimum);
+              for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+                const left = a[i] || 0;
+                const right = b[i] || 0;
+                if (left > right) return true;
+                if (left < right) return false;
+              }
+              return true;
+            }
+
+            function runPreflight() {
+              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+              const skillsDir = path.join(bundleRoot, "skills");
+              const skillFiles = fs.existsSync(skillsDir)
+                ? fs.readdirSync(skillsDir).filter((name) => name.endsWith(".md")).sort()
+                : [];
+
+              let bridgeToolsLoaded = false;
+              let bridgeToolNames = [];
+              let bridgeToolsError = null;
+              try {
+                const bridgeTools = require(path.join(bundleRoot, "android_bridge_tools.js"));
+                bridgeToolNames = Object.keys(bridgeTools).sort();
+                bridgeToolsLoaded = ["get_battery", "read_sensor", "vibrate"]
+                  .every((name) => typeof bridgeTools[name] === "function");
+              } catch (error) {
+                bridgeToolsError = error?.message || String(error);
+              }
+
+              const builtinModules = {
+                fs: typeof fs.readFileSync === "function",
+                http: typeof http.createServer === "function",
+                crypto: typeof require("node:crypto").createHash === "function",
+                module: typeof createRequire === "function"
+              };
+
+              const intlOk = typeof Intl?.DateTimeFormat === "function" &&
+                new Intl.DateTimeFormat("en-US", { timeZone: "UTC" }).format(new Date(0)).length > 0;
+
+              const missingAssets = Array.isArray(manifest.missingAssets) ? manifest.missingAssets : [];
+              const engineOk = versionAtLeast(process.versions.node, "22.19.0");
+              const passed = engineOk &&
+                bridgeToolsLoaded &&
+                skillFiles.length >= 4 &&
+                missingAssets.length === 0 &&
+                manifest.nodeModulesTarAssetPresent === true &&
+                Object.values(builtinModules).every(Boolean) &&
+                intlOk === true;
+
+              return {
+                passed,
+                kind: manifest.bundleKind,
+                bundleRoot,
+                engineOk,
+                minimumNode: "22.19.0",
+                node: process.version,
+                platform: process.platform,
+                arch: process.arch,
+                skillCount: skillFiles.length,
+                skillFiles,
+                bridgeToolsLoaded,
+                bridgeToolNames,
+                bridgeToolsError,
+                builtinModules,
+                intlOk,
+                nodeModulesTarAssetPresent: manifest.nodeModulesTarAssetPresent === true,
+                missingAssets,
+                productionGatewayPort: manifest.productionGatewayPort,
+                smokePort: manifest.smokePort,
+                openclawStarted: false
+              };
+            }
+
+            const preflight = runPreflight();
+
             const server = http.createServer((req, res) => {
-              if (req.url === "/health" || req.url === "/") {
+              if (req.url === "/health" || req.url === "/" || req.url === "/preflight") {
                 const body = JSON.stringify({
                   ok: true,
                   runtime: "native-node-embedded",
@@ -128,6 +286,7 @@ class NativeNodeEmbeddedService : Service() {
                   port,
                   productionGatewayPort: 18789,
                   openclawStarted: false,
+                  preflight,
                   pid: process.pid,
                   uptimeMs: Date.now() - startedAt
                 });
