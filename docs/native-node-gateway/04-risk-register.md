@@ -1,6 +1,6 @@
 # Native Node Gateway Risk Register
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 | ID | Risk | Severity | Likelihood | Mitigation | Exit Gate |
 | --- | --- | --- | --- | --- | --- |
@@ -18,6 +18,9 @@ Last updated: 2026-05-28
 | R12 | Performance gains are not worth risk | Medium | Medium | Capture boot time, memory, CPU, first-token, and restart data | Native materially improves target metrics |
 | R13 | Foreground/background lifecycle remains unreliable | High | Medium | Add process supervision after runtime parity, not before | Runtime survives app route changes and lock/unlock tests |
 | R14 | Security surface grows from bundled Node/runtime assets | High | Medium | Keep loopback binding; retain auth; document asset provenance | Threat review before user-facing beta |
+| R15 | Embedded Node crashes the Flutter process | Critical | Medium | Keep embedded runtime smoke-only at first; move to a separate Android process before canary | Forced crash test leaves UI and PRoot Gateway alive |
+| R16 | Executable Node and embedded libnode artifacts are confused | High | Medium | Keep separate scripts, docs, diagnostics, and packaging helpers | Wrong artifact type is rejected before APK packaging |
+| R17 | Mobile fork lags OpenClaw's Node engine requirement | High | High | Rebase mobile Android patches to Node `>=22.19.0` or wait for matching branch | Native runtime reports a compliant Node version |
 
 ## Critical Risk Principle
 
@@ -25,4 +28,3 @@ The current PRoot path is slow but understood. Native Node should reduce
 latency and operational weirdness only if it keeps the exact same Gateway
 contract. A faster runtime that destabilizes tools, pairing, or config is a
 regression.
-

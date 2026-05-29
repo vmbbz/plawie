@@ -50,6 +50,13 @@ not present. Phase 3 now also includes a binary acquisition gate and local
 packaging helper so we can test a real candidate without committing an
 unreviewed runtime artifact.
 
+The first direct Node 22 Android build attempt proved the official source path
+can configure and produce major artifacts, but it also exposed a V8 host/target
+build split blocker. A follow-up audit found that `nodejs-mobile` carries a
+useful Android `libnode.so` shape, but its inspected Node 22 branch is only
+`22.9.0` and must become a separate embedded-runtime lane rather than being
+mixed into the executable-process slot.
+
 PRoot command execution and bootstrap/repair are still direct native bridge
 calls by design, because those need a dependency/CLI inventory before they can
 be safely generalized.
@@ -71,6 +78,7 @@ be safely generalized.
 | [11-native-node-binary-gate.md](11-native-node-binary-gate.md) | Node binary sourcing, packaging, and diagnostic gate |
 | [12-node-android-build-recipe.md](12-node-android-build-recipe.md) | Verified source-build recipe for the first Node Android candidate |
 | [13-node-22-android-build-attempt.md](13-node-22-android-build-attempt.md) | Local Node 22 Android build result and current blocker |
+| [14-nodejs-mobile-22-patch-audit.md](14-nodejs-mobile-22-patch-audit.md) | Nodejs-mobile Node 22 Android patch audit and embedded-runtime decision |
 
 ## Work Rules
 

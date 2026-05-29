@@ -118,7 +118,7 @@ Smoke result:
 
 ## Phase 3: OpenClaw Bundle Feasibility
 
-Status: inventory, binary gate, and build scaffold started
+Status: inventory, binary gate, build scaffold, and mobile patch audit started
 
 Implemented in this phase so far:
 
@@ -137,6 +137,10 @@ Implemented in this phase so far:
 - Added a Linux/WSL source-build helper pinned to Node `v22.22.3` and the
   official source tarball SHA-256, so the first Android arm64 candidate can be
   produced from verified source rather than an opaque binary.
+- Audited the `nodejs-mobile` `update22-9-0` branch against upstream Node
+  `v22.9.0`. It proves an embedded Android `libnode.so` runtime shape, but is
+  below OpenClaw's `>=22.19.0` engine floor and is not interchangeable with the
+  current executable-process smoke slot.
 
 Goals:
 
@@ -165,6 +169,9 @@ Current blocker:
 - Official Node 22 distribution metadata does not provide an Android binary, so
   this phase requires a custom Bionic-native build or a trusted mobile fork at
   Node `>=22.19.0`.
+- The `nodejs-mobile` path likely requires a separate embedded-runtime smoke
+  runner, because its Android artifact is `libnode.so` loaded through JNI, not
+  an executable process launched through `ProcessBuilder`.
 
 ## Phase 4: Shadow Gateway Parity
 

@@ -28,6 +28,10 @@ That means the app can already manage a second runtime lifecycle without
 touching the real Gateway. It can start, stop, log, and probe the native lane,
 and it fails closed when the Node binary is absent.
 
+This document is about the executable-process lane. A `nodejs-mobile`
+`libnode.so` artifact is a different embedded-library lane and must not be fed
+into this packaging helper.
+
 ## Source-Backed Findings
 
 - The latest Node 22 LTS metadata checked on 2026-05-29 was `v22.22.3`.
@@ -67,6 +71,10 @@ android/app/src/main/jniLibs/arm64-v8a/libplawie_node.so
 The file name uses the Android `jniLibs` packaging convention so Gradle places
 the binary in `nativeLibraryDir`. It is treated as an executable by
 `NativeNodeSmokeProcess`, not as a loaded JNI library.
+
+Do not package a mobile `libnode.so` here. If the runtime artifact is meant to
+be loaded with JNI and started through `node::Start(argc, argv)`, it belongs in
+the future embedded-runtime smoke lane, not this process slot.
 
 The local packaging helper is:
 

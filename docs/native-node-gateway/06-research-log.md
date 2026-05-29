@@ -133,6 +133,24 @@ and produce major artifacts, but the V8 host/target split is not clean under
 this direct `android-configure` path. The next fix likely requires a V8/Node
 build-configuration patch, not more shell setup.
 
+Nodejs-mobile branch audit on 2026-05-29:
+
+- `nodejs-mobile/nodejs-mobile` has an `update22-9-0` branch at commit
+  `106c51f95d55d1010de56a2ffd09bfb4ba819a47`.
+- The branch reports Node `22.9.0`, which is below OpenClaw's `>=22.19.0`
+  engine floor.
+- Compared with upstream Node `v22.9.0`, the mobile branch adds Android
+  build-system patches that produce `out_android/<abi>/libnode.so`.
+- Its Android build path configures Node with `--shared`, `--with-intl=none`,
+  and `--openssl-no-asm`, sets host compiler variables, and includes an Android
+  JNI test app that calls `node::Start(argc, argv)`.
+- This is a strong embedded-runtime proof, but not a drop-in candidate for the
+  current `NativeNodeSmokeProcess` executable slot.
+
+Implication: Plawie should keep the direct executable path alive, but the next
+practical experiment is a separate embedded `libnode.so` smoke lane that can be
+rebased to Node `>=22.19.0`.
+
 ## Working Assumptions
 
 - OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
@@ -167,6 +185,10 @@ build-configuration patch, not more shell setup.
 11. Should the next attempt patch Node/V8 gyp host rules, or pivot to a
     `nodejs-mobile` style fork that already carries Android build-system
     patches?
+12. Can the `nodejs-mobile` Android patches be rebased cleanly onto Node
+    `v22.22.3` without disabling Intl?
+13. Should embedded Node run in the main app process for smoke only, then move
+    to an isolated Android process before any OpenClaw boot attempt?
 
 ## Immediate Research Tasks
 
@@ -182,3 +204,6 @@ build-configuration patch, not more shell setup.
   run it through the binary gate.
 - Run the source-build helper on Linux/WSL with the Android NDK and record the
   first build result.
+- Build or rebase a Node `>=22.19.0` embedded `libnode.so` candidate and add a
+  hidden embedded smoke runner that is distinct from the executable process
+  slot.

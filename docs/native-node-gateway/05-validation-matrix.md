@@ -1,6 +1,6 @@
 # Native Gateway Validation Matrix
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 The native runtime cannot become default until it passes this matrix.
 
@@ -14,6 +14,7 @@ The native runtime cannot become default until it passes this matrix.
 | App restart attach | Detects running Gateway | Same |
 | Gateway logs | Logs visible in app | Same or better |
 | Dashboard token | Authenticated dashboard URL works | Same |
+| Runtime artifact type | PRoot process is known | Native diagnostics identify executable-process vs embedded-libnode path |
 
 ## WebSocket And RPC
 
@@ -70,6 +71,7 @@ The native runtime cannot become default until it passes this matrix.
 | Enter PiP | No invalid sizing crash |
 | App foreground/background | No unexpected Gateway restart |
 | Device lock/unlock | Runtime either survives or recovers with clear diagnostics |
+| Embedded runtime crash | App and PRoot Gateway remain recoverable |
 
 ## Performance Metrics
 
@@ -85,4 +87,3 @@ Collect both PRoot and native values:
 | Peak RSS/memory | Gateway + app |
 | APK/AAB size delta | Per ABI |
 | Stop/restart time | User stop/start loop |
-
