@@ -5,202 +5,123 @@ import android.os.SystemClock
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentLinkedDeque
-import java.util.concurrent.TimeUnit
 
 /**
- * Phase 3 native Node process slot.
+ * Controller for the embedded libnode smoke lane.
  *
- * This does not ship a Node binary by itself. It defines the exact lifecycle
- * contract for a future Bionic-native Node executable packaged as a jniLibs
- * file named libplawie_node.so.
+ * The actual Node runtime is loaded inside NativeNodeEmbeddedService, which is
+ * declared in an isolated Android process. This keeps native crashes away from
+ * Flutter and the production PRoot Gateway path.
  */
 class NativeNodeSmokeProcess(
     private val context: Context,
     private val nativeLibDir: String
 ) {
-    private val workDir = File(context.filesDir, "native-node-smoke")
-    private val scriptFile = File(workDir, "server.mjs")
-    private val nodeExecutable = File(nativeLibDir, "libplawie_node.so")
     private val logs = ConcurrentLinkedDeque<String>()
     private val startedAtMs = SystemClock.elapsedRealtime()
-
-    @Volatile
-    private var process: Process? = null
+    private val libnode = File(nativeLibDir, "libnode.so")
+    private val bridge = File(nativeLibDir, "libplawie_node_bridge.so")
 
     companion object {
         private const val TAG = "NativeNodeSmoke"
-        const val HOST = "127.0.0.1"
-        const val PORT = 18790
+        const val HOST = NativeNodeEmbeddedService.HOST
+        const val PORT = NativeNodeEmbeddedService.PORT
         private const val MAX_LOG_LINES = 300
     }
 
     fun start(): Boolean {
-        val existing = process
-        if (existing?.isAlive == true) {
-            appendLog("start ignored; native Node smoke process already alive")
+        if (isRunning()) {
+            appendLog("start ignored; embedded Node smoke runtime already alive")
             return true
         }
 
-        if (!nodeExecutable.exists()) {
+        if (!libnode.exists()) {
             appendLog(
-                "native Node executable missing at ${nodeExecutable.absolutePath}; " +
-                    "package a Node >=22.19.0 Android arm64 binary as libplawie_node.so"
+                "embedded libnode.so is not packaged at ${libnode.absolutePath}; " +
+                    "package Node >=22.19.0 as jniLibs/arm64-v8a/libnode.so"
+            )
+            return false
+        }
+
+        if (!bridge.exists()) {
+            appendLog(
+                "embedded Node bridge is not packaged at ${bridge.absolutePath}; " +
+                    "run a debug build so CMake emits libplawie_node_bridge.so"
             )
             return false
         }
 
         return try {
-            writeSmokeScript()
-            if (!nodeExecutable.canExecute()) {
-                nodeExecutable.setExecutable(true, false)
-            }
-
-            val pb = ProcessBuilder(nodeExecutable.absolutePath, scriptFile.absolutePath)
-            pb.directory(workDir)
-            pb.redirectErrorStream(false)
-            pb.environment().apply {
-                put("HOME", workDir.absolutePath)
-                put("TMPDIR", context.cacheDir.absolutePath)
-                put("NODE_ENV", "production")
-                put("PLAWIE_NATIVE_SMOKE_HOST", HOST)
-                put("PLAWIE_NATIVE_SMOKE_PORT", PORT.toString())
-            }
-
-            val child = pb.start()
-            process = child
-            appendLog(
-                "started native Node smoke process on http://$HOST:$PORT"
-            )
-            streamProcessOutput(child)
+            NativeNodeEmbeddedService.start(context.applicationContext)
+            appendLog("requested embedded Node smoke service start")
             true
         } catch (e: Exception) {
             appendLog("start failed: ${e.message}")
-            Log.e(TAG, "Failed to start native Node smoke process", e)
-            process = null
+            Log.e(TAG, "Failed to start embedded Node smoke service", e)
             false
         }
     }
 
     fun stop(): Boolean {
-        val child = process
-        if (child == null) {
-            appendLog("stop ignored; native Node smoke process was not running")
-            return true
-        }
-
         return try {
-            child.destroy()
-            if (!child.waitFor(2, TimeUnit.SECONDS)) {
-                appendLog("native Node smoke process ignored SIGTERM; forcing kill")
-                child.destroyForcibly()
-                child.waitFor(2, TimeUnit.SECONDS)
+            NativeNodeEmbeddedService.stop(context.applicationContext)
+            appendLog("requested embedded Node smoke service stop")
+
+            val deadline = SystemClock.elapsedRealtime() + 2500L
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (!isRunning()) return true
+                Thread.sleep(100)
             }
-            appendLog("stopped native Node smoke process")
-            process = null
-            true
+            !isRunning()
         } catch (e: Exception) {
             appendLog("stop failed: ${e.message}")
-            Log.e(TAG, "Failed to stop native Node smoke process", e)
+            Log.e(TAG, "Failed to stop embedded Node smoke service", e)
             false
         }
     }
 
-    fun isRunning(): Boolean = process?.isAlive == true
+    fun isRunning(): Boolean {
+        return probeHealth()?.optString("runtime") == "native-node-embedded"
+    }
 
     fun getRecentLogs(): String {
-        return if (logs.isEmpty()) {
-            "Native Node smoke process has no logs yet."
-        } else {
-            logs.joinToString("\n")
+        val serviceLogs = readServiceLogs()
+        val localLogs = if (logs.isEmpty()) "" else logs.joinToString("\n")
+        return listOf(localLogs, serviceLogs)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .ifBlank { "Embedded native Node smoke runtime has no logs yet." }
+    }
+
+    private fun probeHealth(): JSONObject? {
+        return try {
+            val connection = URL("http://$HOST:$PORT/health").openConnection() as HttpURLConnection
+            connection.connectTimeout = 300
+            connection.readTimeout = 300
+            connection.useCaches = false
+            connection.inputStream.bufferedReader().use { reader ->
+                if (connection.responseCode != 200) return null
+                JSONObject(reader.readText())
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
-    private fun writeSmokeScript() {
-        workDir.mkdirs()
-        scriptFile.writeText(
-            """
-            import http from "node:http";
-            import process from "node:process";
+    private fun readServiceLogs(): String {
+        val file = NativeNodeEmbeddedService.logFile(context.applicationContext)
+        if (!file.exists()) return ""
 
-            const host = process.env.PLAWIE_NATIVE_SMOKE_HOST || "127.0.0.1";
-            const port = Number(process.env.PLAWIE_NATIVE_SMOKE_PORT || "18790");
-            const startedAt = Date.now();
-
-            const server = http.createServer((req, res) => {
-              if (req.url === "/health" || req.url === "/") {
-                const body = JSON.stringify({
-                  ok: true,
-                  runtime: "native-node",
-                  node: process.version,
-                  platform: process.platform,
-                  arch: process.arch,
-                  host,
-                  port,
-                  productionGatewayPort: 18789,
-                  openclawStarted: false,
-                  uptimeMs: Date.now() - startedAt
-                });
-                res.writeHead(200, {
-                  "content-type": "application/json",
-                  "cache-control": "no-store"
-                });
-                res.end(body);
-                return;
-              }
-              res.writeHead(404, { "content-type": "application/json" });
-              res.end(JSON.stringify({ ok: false, error: "not_found", path: req.url }));
-            });
-
-            server.listen(port, host, () => {
-              console.log(`[NATIVE-NODE] listening on http://${'$'}{host}:${'$'}{port}`);
-            });
-
-            const shutdown = () => {
-              server.close(() => process.exit(0));
-              setTimeout(() => process.exit(1), 1500).unref();
-            };
-
-            process.on("SIGTERM", shutdown);
-            process.on("SIGINT", shutdown);
-            """.trimIndent()
-        )
-    }
-
-    private fun streamProcessOutput(child: Process) {
-        Thread {
-            child.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { appendLog("stdout: $it") }
-            }
-        }.apply {
-            name = "NativeNodeSmoke-stdout"
-            isDaemon = true
-            start()
-        }
-
-        Thread {
-            child.errorStream.bufferedReader().useLines { lines ->
-                lines.forEach { appendLog("stderr: $it") }
-            }
-        }.apply {
-            name = "NativeNodeSmoke-stderr"
-            isDaemon = true
-            start()
-        }
-
-        Thread {
-            val code = child.waitFor()
-            appendLog("native Node smoke process exited code=$code")
-            if (process == child) {
-                process = null
-            }
-        }.apply {
-            name = "NativeNodeSmoke-exit"
-            isDaemon = true
-            start()
+        return try {
+            file.readLines().takeLast(MAX_LOG_LINES).joinToString("\n")
+        } catch (e: Exception) {
+            "Could not read embedded native Node logs: ${e.message}"
         }
     }
 
@@ -208,7 +129,7 @@ class NativeNodeSmokeProcess(
         val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         val payload = JSONObject()
             .put("time", stamp)
-            .put("tag", "NATIVE-NODE")
+            .put("tag", "NATIVE-NODE-EMBEDDED")
             .put("message", message)
             .put("elapsedMs", SystemClock.elapsedRealtime() - startedAtMs)
             .toString()

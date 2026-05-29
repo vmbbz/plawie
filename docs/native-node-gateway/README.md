@@ -37,25 +37,22 @@ Flutter UI
 
 ## Current Branch Status
 
-Phase 3 inventory has begun. The current OpenClaw package can be inspected
-read-only from the app sandbox, and the first pass shows the real migration
-risk: the installed Gateway tree includes Linux/glibc native addons and
-host-tool assumptions. The next native step must therefore be a curated bundle
-and Node packaging plan, not a blind reuse of the PRoot `node_modules` tree.
+Phase 3 inventory proved that the installed Gateway tree includes Linux/glibc
+native addons and host-tool assumptions. Native migration therefore remains a
+curated-runtime effort, not a blind reuse of the PRoot `node_modules` tree.
 
-A dormant native Node process slot now exists for that next step. It expects a
-future Android arm64 Node executable packaged as `libplawie_node.so`, runs only
-on `127.0.0.1:18790`, and reports a clear diagnostic skip while the binary is
-not present. Phase 3 now also includes a binary acquisition gate and local
-packaging helper so we can test a real candidate without committing an
-unreviewed runtime artifact.
+The executable-style native Node process slot has been superseded for the
+current branch by an embedded `libnode.so` diagnostic lane. The app can now
+package a locally built Android arm64 Node `22.22.3` `libnode.so`, build a tiny
+`libplawie_node_bridge.so` JNI wrapper, and start a `/health` server on
+`127.0.0.1:18790` inside an isolated `:native_node_smoke` Android process.
+Production Gateway startup still remains PRoot.
 
 The first direct Node 22 Android build attempt proved the official source path
-can configure and produce major artifacts, but it also exposed a V8 host/target
-build split blocker. A follow-up audit found that `nodejs-mobile` carries a
-useful Android `libnode.so` shape, but its inspected Node 22 branch is only
-`22.9.0` and must become a separate embedded-runtime lane rather than being
-mixed into the executable-process slot.
+can configure and produce major artifacts. The follow-up offline build produced
+a real Android arm64 `libnode.so` from Node `22.22.3`. The broad
+`nodejs-mobile` rebase remains non-viable as a blanket strategy, but the
+embedded-runtime lane is now proven at the packaging and debug-build level.
 
 An AVF/Debian VM lane is now tracked as a third option. It is the most
 promising full-fidelity OpenClaw path on eligible Android devices, but it is
@@ -92,6 +89,7 @@ be safely generalized.
 | [16-avf-linux-vm-runtime-option.md](16-avf-linux-vm-runtime-option.md) | AVF/Debian VM lane, eligibility, and integration plan |
 | [17-andyclaw-reference-audit.md](17-andyclaw-reference-audit.md) | AndyClaw skills, Termux, extension, and Android control reference audit |
 | [18-nodejs-mobile-rebase-experiment.md](18-nodejs-mobile-rebase-experiment.md) | Controlled Node `>=22.19.0` embedded `libnode.so` rebase experiment |
+| [19-embedded-libnode-22-integration.md](19-embedded-libnode-22-integration.md) | Node `22.22.3` `libnode.so` packaging, JNI bridge, isolated service, and build result |
 
 ## Work Rules
 

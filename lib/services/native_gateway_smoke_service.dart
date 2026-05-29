@@ -49,11 +49,11 @@ class NativeGatewaySmokeService {
     final node = await runNativeNodeProcessSmokeTest(log: log);
 
     if (first.passed && second.passed && node.passed) {
-      log('[NATIVE-SMOKE] Native smoke runtime and native Node process diagnostics passed.');
+      log('[NATIVE-SMOKE] Native smoke runtime and embedded Node diagnostics passed.');
     } else if (first.passed && second.passed && node.skipped) {
-      log('[NATIVE-SMOKE] Native Android smoke passed; native Node process skipped: ${node.message}');
+      log('[NATIVE-SMOKE] Native Android smoke passed; embedded Node skipped: ${node.message}');
     } else if (first.passed && second.passed) {
-      log('[NATIVE-SMOKE] Native Android smoke passed; native Node process failed: ${node.message}');
+      log('[NATIVE-SMOKE] Native Android smoke passed; embedded Node failed: ${node.message}');
     } else {
       log('[NATIVE-SMOKE] Native smoke runtime diagnostics failed: '
           '${first.message}; ${second.message}; ${node.message}');
@@ -68,37 +68,39 @@ class NativeGatewaySmokeService {
       final started = await _nodeRuntime.start();
       if (!started) {
         final logs = await _nodeRuntime.getLogs();
-        final missing = logs.contains('native Node executable missing');
+        final missing = logs.contains('embedded libnode.so is not packaged') ||
+            logs.contains('embedded Node bridge is not packaged');
         return NativeGatewaySmokeReport(
           passed: false,
           skipped: missing,
           message: missing
-              ? 'libplawie_node.so is not packaged yet'
-              : 'native Node process did not start',
+              ? 'embedded libnode.so or bridge is not packaged yet'
+              : 'embedded native Node did not start',
         );
       }
 
-      final health = await _probeHealth(expectedRuntime: 'native-node');
+      final health =
+          await _probeHealth(expectedRuntime: 'native-node-embedded');
       final ok = health['ok'] == true &&
-          health['runtime'] == 'native-node' &&
+          health['runtime'] == 'native-node-embedded' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
           health['productionGatewayPort'] == AppConstants.gatewayPort &&
           health['openclawStarted'] == false;
-      log('[NATIVE-NODE] health: ${jsonEncode(health)}');
+      log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
 
       final stopped = await _nodeRuntime.stop();
       final stillRunning = await _nodeRuntime.isRunning();
       if (!stopped || stillRunning) {
         return NativeGatewaySmokeReport(
           passed: false,
-          message: 'native Node process did not stop cleanly',
+          message: 'embedded native Node did not stop cleanly',
           health: health,
         );
       }
 
       return NativeGatewaySmokeReport(
         passed: ok,
-        message: ok ? 'ok' : 'unexpected native Node health payload',
+        message: ok ? 'ok' : 'unexpected embedded native Node health payload',
         health: health,
       );
     } catch (e) {

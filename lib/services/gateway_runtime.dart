@@ -85,10 +85,10 @@ class NativeNodeProcessGatewayRuntime implements GatewayRuntime {
   const NativeNodeProcessGatewayRuntime();
 
   @override
-  String get id => 'native-node-process-smoke';
+  String get id => 'native-node-embedded-smoke';
 
   @override
-  String get label => 'Native Node Process Smoke Runtime';
+  String get label => 'Embedded Native Node Smoke Runtime';
 
   @override
   Stream<String> get logStream => const Stream<String>.empty();

@@ -74,6 +74,11 @@
             android:foregroundServiceType="specialUse" />
 
         <service
+            android:name=".NativeNodeEmbeddedService"
+            android:exported="false"
+            android:process=":native_node_smoke" />
+
+        <service
             android:name=".PlawieForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />

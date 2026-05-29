@@ -36,6 +36,14 @@ android {
             // Excluding it halves fllama's NDK build time and reduces APK size.
             abiFilters += listOf("arm64-v8a")
         }
+
+        externalNativeBuild {
+            cmake {
+                abiFilters += listOf("arm64-v8a")
+                arguments += listOf("-DANDROID_STL=c++_shared")
+                cppFlags += listOf("-std=c++17")
+            }
+        }
     }
 
     buildTypes {
@@ -59,6 +67,12 @@ android {
         getByName("main") {
             jniLibs.srcDir("src/main/jniLibs")
             assets.setSrcDirs(listOf("src/main/assets"))
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
         }
     }
 }

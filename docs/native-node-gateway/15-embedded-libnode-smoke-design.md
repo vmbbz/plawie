@@ -6,7 +6,7 @@ Branch: `native-node-gateway-research`
 
 ## Purpose
 
-This document defines the safe implementation shape for a future embedded
+This document defines the safe implementation shape for the embedded
 `libnode.so` smoke runtime.
 
 It exists because the `nodejs-mobile` Android path produces a shared library,
@@ -19,13 +19,13 @@ The app currently has:
 
 - Kotlin Android application code;
 - `jniLibs` packaging for prebuilt native assets;
-- no app-owned `externalNativeBuild` / CMake bridge;
-- no app-owned JNI wrapper for `node::Start`;
-- an executable-style smoke slot:
-  `NativeNodeSmokeProcess -> ProcessBuilder(libplawie_node.so, server.mjs)`.
+- app-owned `externalNativeBuild` / CMake for the bridge;
+- app-owned JNI wrapper for `node::Start`;
+- an embedded smoke slot:
+  `NativeNodeSmokeProcess -> NativeNodeEmbeddedService -> NativeNodeBridge`.
 
-The current `jniLibs` setup is enough to package an already-built executable or
-shared library, but not enough to call C++ Node APIs from Kotlin.
+The current `jniLibs` setup packages the already-built `libnode.so`, while
+CMake builds `libplawie_node_bridge.so` against that local artifact.
 
 ## Artifact Names
 
@@ -41,10 +41,10 @@ Do not feed `libnode.so` into `package_native_node_candidate.ps1`.
 
 ## Recommended Runner Shape
 
-The embedded lane should be a new diagnostic-only runtime:
+The embedded lane is a diagnostic-only runtime:
 
 ```text
-NativeEmbeddedNodeSmokeRuntime
+NativeNodeSmokeProcess
   -> isolated Android service/process
   -> System.loadLibrary("node")
   -> System.loadLibrary("plawie_node_bridge")
@@ -72,15 +72,11 @@ The bridge must copy Java strings into contiguous native memory before calling
 
 ## Isolation Rule
 
-For first smoke only, embedded Node may run in the app process if that is the
-smallest possible proof.
-
-Before any OpenClaw boot attempt, embedded Node must move to an isolated Android
-process, for example:
+Embedded Node is isolated before any OpenClaw boot attempt:
 
 ```xml
 <service
-    android:name=".EmbeddedNodeSmokeService"
+    android:name=".NativeNodeEmbeddedService"
     android:exported="false"
     android:process=":native_node_smoke" />
 ```
@@ -115,23 +111,25 @@ This avoids confusing:
 
 ## CMake Introduction Gate
 
-Do not add `externalNativeBuild` until all are true:
+`externalNativeBuild` is now allowed on this branch because all are true:
 
 - a candidate `libnode.so` is available locally;
 - the bridge source is tiny and app-owned;
-- Gradle debug build still passes without `libnode.so` present;
-- release builds do not accidentally require native Node artifacts;
+- Gradle debug build passes with the local artifact packaged;
+- the bridge degrades to a diagnostic load failure if `libnode.so` is absent;
 - all native Node artifacts remain ignored unless provenance is approved.
 
 This keeps normal APK builds stable while the native runtime is still research.
 
 ## Build Order
 
-1. Produce or rebase Android `libnode.so` at Node `>=22.19.0`.
-2. Package `libnode.so` locally under `jniLibs/arm64-v8a/`.
-3. Add `libplawie_node_bridge.so` source via CMake.
-4. Add an isolated Android service that calls the bridge.
-5. Add Dart diagnostics methods distinct from the executable process slot.
+1. Produce Android `libnode.so` at Node `>=22.19.0`. Done for `22.22.3`.
+2. Package `libnode.so` locally under `jniLibs/arm64-v8a/`. Done via
+   `scripts/native_node/package_libnode_candidate.ps1`.
+3. Add `libplawie_node_bridge.so` source via CMake. Done.
+4. Add an isolated Android service that calls the bridge. Done.
+5. Add Dart diagnostics methods distinct from the placeholder HTTP smoke slot.
+   Done by preserving the native Node smoke runtime boundary.
 6. Run `/health` smoke with
    `PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`.
 7. Prove repeated start/stop/restart and app-process crash containment.
