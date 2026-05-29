@@ -56,6 +56,9 @@ Source-backed constraints:
    The preferred first attempt is
    `scripts/native_node/build_node_android_arm64.sh`, pinned to Node
    `v22.22.3` source and its official SHA-256.
+   If building from WSL, first run
+   `scripts/native_node/prepare_android_ndk_linux.sh` because the Android
+   Studio NDK installed on Windows may only contain the Windows host toolchain.
 2. Run the candidate through
    `scripts/native_node/package_native_node_candidate.ps1`, preferably with an
    expected SHA-256.

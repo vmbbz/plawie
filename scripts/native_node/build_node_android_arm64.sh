@@ -13,6 +13,9 @@ JOBS="${JOBS:-4}"
 WORK_DIR="${WORK_DIR:-$(pwd)/build/native-node/${NODE_VERSION}-${TARGET_ARCH}}"
 OUTPUT_DIR="${OUTPUT_DIR:-${WORK_DIR}/output}"
 ANDROID_NDK_PATH="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+HOST_CC="${HOST_CC:-gcc}"
+HOST_CXX="${HOST_CXX:-g++}"
+CLEAN_HOST_OBJECTS="${CLEAN_HOST_OBJECTS:-0}"
 
 if [[ -z "${ANDROID_NDK_PATH}" ]]; then
   cat >&2 <<'EOF'
@@ -30,6 +33,40 @@ for tool in curl cut make tar sha256sum; do
     exit 2
   fi
 done
+
+for tool in "${HOST_CC}" "${HOST_CXX}"; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    echo "Missing host compiler: ${tool}" >&2
+    exit 2
+  fi
+done
+
+HOST_TAG="linux-x86_64"
+TOOLCHAIN_BIN="${ANDROID_NDK_PATH}/toolchains/llvm/prebuilt/${HOST_TAG}/bin"
+TARGET_CXX="${TOOLCHAIN_BIN}/aarch64-linux-android${ANDROID_SDK_VERSION}-clang++"
+
+if [[ ! -x "${TARGET_CXX}" ]]; then
+  cat >&2 <<EOF
+The configured NDK is not usable from this Linux/WSL shell.
+
+Expected compiler:
+  ${TARGET_CXX}
+
+If your installed NDK only contains a Windows prebuilt toolchain, prepare a
+Linux-host NDK first:
+
+  ./scripts/native_node/prepare_android_ndk_linux.sh
+  export ANDROID_NDK_HOME="\$HOME/.plawie/android/android-ndk-r28c"
+
+Then rerun this build helper.
+EOF
+  exit 2
+fi
+
+if [[ "$(pwd)" == /mnt/* ]]; then
+  echo "[native-node] Note: repo is on a Windows mount. For speed and disk headroom, consider WORK_DIR under the WSL filesystem, for example:"
+  echo "  WORK_DIR=\"\$HOME/plawie-native-node-build/${NODE_VERSION}-${TARGET_ARCH}\" ./scripts/native_node/build_node_android_arm64.sh"
+fi
 
 case "${TARGET_ARCH}" in
   arm64|aarch64) ;;
@@ -66,8 +103,20 @@ pushd "${SOURCE_DIR}" >/dev/null
 echo "[native-node] Configuring Node ${NODE_VERSION} for Android ${TARGET_ARCH} SDK ${ANDROID_SDK_VERSION}"
 ./android-configure "${ANDROID_NDK_PATH}" "${ANDROID_SDK_VERSION}" "${TARGET_ARCH}"
 
+echo "[native-node] Removing Android-only flags from generated host makefiles"
+find out -name "*.host.mk" -type f -print0 |
+  xargs -0 sed -i '/-mbranch-protection=standard[[:space:]]*\\/d'
+
+if [[ "${CLEAN_HOST_OBJECTS}" == "1" && -d out/Release/obj.host ]]; then
+  echo "[native-node] Removing stale host objects before rebuilding with ${HOST_CC}/${HOST_CXX}"
+  rm -rf out/Release/obj.host
+fi
+
 echo "[native-node] Building with make -j${JOBS}"
-make -j"${JOBS}"
+make -j"${JOBS}" \
+  CC.host="${HOST_CC}" \
+  CXX.host="${HOST_CXX}" \
+  LINK.host="${HOST_CXX}"
 popd >/dev/null
 
 if [[ ! -f "${SOURCE_DIR}/out/Release/node" ]]; then

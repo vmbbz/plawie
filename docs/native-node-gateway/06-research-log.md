@@ -97,6 +97,42 @@ The first reproducible build scaffold now exists at
 `f3e6a578db1ab335a4a72785c1e87ad18a2cf6d2fc25747a1d741fb34af0bd0f`, and runs
 Node's Android configure path for arm64.
 
+Local preflight on 2026-05-29 found WSL Ubuntu `24.04.2 LTS` and the app's
+Windows NDK at `C:\Users\cosyc\AppData\Local\Android\Sdk\ndk\28.2.13676358`.
+That NDK contains only `toolchains/llvm/prebuilt/windows-x86_64`, so it is not
+usable from WSL. Added
+`scripts/native_node/prepare_android_ndk_linux.sh` to fetch the matching Linux
+NDK `r28c` package from Google's Android repository and verify the SHA-1 listed
+by the Android NDK wiki.
+
+Source:
+
+- https://github.com/android/ndk/wiki/Unsupported-Downloads
+
+First Node build attempt on 2026-05-29:
+
+- Node configure completed for Android arm64.
+- NDK `r28c` initially extracted with Python's default zip path, which lost
+  symlinks such as `clang -> clang-19`. The prep helper now preserves symlinks.
+- After fixing the NDK extraction, the build reached V8 host objects but failed
+  because `CC.host` and `CXX.host` were still the Android target compilers. The
+  helper now forces `CC.host=gcc`, `CXX.host=g++`, and `LINK.host=g++` during
+  `make`.
+- With Linux host compilers, the next blocker was Android arm64-only
+  `-mbranch-protection=standard` leaking into `*.host.mk`. The helper now
+  removes that flag from host makefiles after `android-configure`.
+- After that, the build produced host generator tools (`node_js2c`, `torque`,
+  ICU tools) and target `libnode.a`, but final executable build did not
+  complete. The next hard blocker is V8 host makefiles compiling ARM64 assembly
+  (`deps/v8/src/heap/base/asm/arm64/push_registers_asm`) with the x86_64 host
+  assembler, producing errors for ARM64 instructions such as `stp`, `blr`, and
+  `ldp`.
+
+Implication: upstream Node 22 Android cross-build is close enough to configure
+and produce major artifacts, but the V8 host/target split is not clean under
+this direct `android-configure` path. The next fix likely requires a V8/Node
+build-configuration patch, not more shell setup.
+
 ## Working Assumptions
 
 - OpenClaw Gateway can eventually run from a bundled JavaScript asset tree if
@@ -126,6 +162,11 @@ Node's Android configure path for arm64.
    Android runtime build repo?
 9. Does upstream Node `v22.22.3` build cleanly with Android NDK
    `28.2.13676358` for arm64, or do we need a patch/fork?
+10. Does Node 22 build successfully with NDK r28c on WSL once the Linux-host
+    NDK is installed?
+11. Should the next attempt patch Node/V8 gyp host rules, or pivot to a
+    `nodejs-mobile` style fork that already carries Android build-system
+    patches?
 
 ## Immediate Research Tasks
 

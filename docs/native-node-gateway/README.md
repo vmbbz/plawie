@@ -70,6 +70,7 @@ be safely generalized.
 | [10-native-node-packaging-plan.md](10-native-node-packaging-plan.md) | Native Node packaging strategy and gates |
 | [11-native-node-binary-gate.md](11-native-node-binary-gate.md) | Node binary sourcing, packaging, and diagnostic gate |
 | [12-node-android-build-recipe.md](12-node-android-build-recipe.md) | Verified source-build recipe for the first Node Android candidate |
+| [13-node-22-android-build-attempt.md](13-node-22-android-build-attempt.md) | Local Node 22 Android build result and current blocker |
 
 ## Work Rules
 

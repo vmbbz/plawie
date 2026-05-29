@@ -38,15 +38,40 @@ Expected tools:
 - `sha256sum`
 - `make`
 - a Python version accepted by Node's `android-configure`
-- Android NDK
+- Linux-host Android NDK
+- Linux host compilers `gcc` and `g++`
+
+Important: if the NDK was installed from Windows Android Studio, it may contain
+only `toolchains/llvm/prebuilt/windows-x86_64`. WSL needs
+`toolchains/llvm/prebuilt/linux-x86_64`.
+
+## Prepare Linux NDK
+
+The app currently pins Gradle to NDK `28.2.13676358`, which maps to NDK `r28c`.
+Android's unsupported downloads wiki lists the Linux package as:
+
+| Field | Value |
+| --- | --- |
+| File | `android-ndk-r28c-linux.zip` |
+| Size | `722261334` bytes |
+| SHA-1 | `a7b54a5de87fecd125a17d54f73c446199e72a64` |
+| Source | `https://github.com/android/ndk/wiki/Unsupported-Downloads` |
+
+From WSL:
+
+```bash
+./scripts/native_node/prepare_android_ndk_linux.sh
+export ANDROID_NDK_HOME="$HOME/.plawie/android/android-ndk-r28c"
+```
 
 ## Command
 
 From the repo root inside Linux/WSL:
 
 ```bash
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-JOBS=4 ./scripts/native_node/build_node_android_arm64.sh
+export ANDROID_NDK_HOME="$HOME/.plawie/android/android-ndk-r28c"
+WORK_DIR="$HOME/plawie-native-node-build/v22.22.3-arm64" \
+  JOBS=4 ./scripts/native_node/build_node_android_arm64.sh
 ```
 
 The helper:
@@ -54,10 +79,28 @@ The helper:
 - downloads the official source tarball if missing;
 - verifies the pinned source SHA-256 before extraction;
 - runs Node's `android-configure` for Android arm64;
+- forces host build tools through Linux `gcc/g++` while target code uses the
+  Android NDK compiler;
+- removes Android arm64-only flags from generated `*.host.mk` files;
 - runs `make`;
 - copies the built candidate to `build/native-node/.../output`;
 - writes a SHA-256 file for the candidate;
 - prints the PowerShell packaging command for the APK slot.
+
+The `WORK_DIR` example intentionally uses the WSL filesystem instead of the
+Windows-mounted repo path. The current Windows drive may have limited free
+space, and native compilation is faster away from `/mnt/c`.
+
+If host objects were previously compiled with the wrong compiler, force a
+host-object rebuild once:
+
+```bash
+CLEAN_HOST_OBJECTS=1 \
+  WORK_DIR="$HOME/plawie-native-node-build/v22.22.3-arm64" \
+  JOBS=4 ./scripts/native_node/build_node_android_arm64.sh
+```
+
+Leave `CLEAN_HOST_OBJECTS` unset for normal resume attempts.
 
 ## Package And Smoke
 
@@ -92,6 +135,13 @@ If the build fails, capture:
 
 - exact Node version;
 - NDK version;
+- NDK host tag, especially whether `linux-x86_64` exists;
+- whether `CC.host`/`CXX.host` were Linux host compilers or Android target
+  compilers;
+- whether generated host makefiles still contain target-only flags such as
+  `-mbranch-protection=standard`;
+- whether V8 host makefiles are compiling target-architecture assembly such as
+  `deps/v8/src/heap/base/asm/arm64/push_registers_asm`.
 - Android SDK version passed to `android-configure`;
 - host OS/WSL distro;
 - first compiler or linker error;
