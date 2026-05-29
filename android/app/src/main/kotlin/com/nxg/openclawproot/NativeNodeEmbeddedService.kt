@@ -13,6 +13,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 class NativeNodeEmbeddedService : Service() {
     private val startedAtMs = SystemClock.elapsedRealtime()
@@ -23,6 +24,7 @@ class NativeNodeEmbeddedService : Service() {
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         const val HOST = "127.0.0.1"
         const val PORT = 18790
+        private val lifecycleGeneration = AtomicInteger(0)
 
         fun start(context: Context) {
             context.startService(Intent(context, NativeNodeEmbeddedService::class.java).apply {
@@ -47,7 +49,7 @@ class NativeNodeEmbeddedService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopEmbeddedRuntime()
+            ACTION_STOP -> stopEmbeddedRuntime(startId)
             else -> startEmbeddedRuntime()
         }
         return START_NOT_STICKY
@@ -59,6 +61,8 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     private fun startEmbeddedRuntime() {
+        lifecycleGeneration.incrementAndGet()
+
         if (NativeNodeBridge.running()) {
             appendLog("start ignored; embedded Node already running")
             return
@@ -76,14 +80,19 @@ class NativeNodeEmbeddedService : Service() {
         }
     }
 
-    private fun stopEmbeddedRuntime() {
+    private fun stopEmbeddedRuntime(startId: Int) {
+        val stopGeneration = lifecycleGeneration.incrementAndGet()
         appendLog("stop requested; terminating isolated native Node process")
-        stopSelf()
+        stopSelf(startId)
 
         if (Application.getProcessName().contains(":native_node_smoke")) {
             Thread {
                 Thread.sleep(150)
-                Process.killProcess(Process.myPid())
+                if (lifecycleGeneration.get() == stopGeneration) {
+                    Process.killProcess(Process.myPid())
+                } else {
+                    appendLog("stop kill cancelled because a newer start arrived")
+                }
             }.apply {
                 name = "NativeNodeEmbedded-kill"
                 isDaemon = true

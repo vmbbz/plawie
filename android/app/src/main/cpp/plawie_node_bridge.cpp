@@ -10,12 +10,6 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-#if PLAWIE_NODE_HAS_LIBNODE
-namespace node {
-int Start(int argc, char* argv[]);
-}
-#endif
-
 namespace {
 std::atomic<bool> g_running{false};
 std::atomic<int> g_last_exit_code{-999};
@@ -43,6 +37,12 @@ std::vector<std::string> copy_java_args(JNIEnv* env, jobjectArray java_args) {
     return copied;
 }
 }  // namespace
+
+#if PLAWIE_NODE_HAS_LIBNODE
+namespace node {
+int Start(int argc, char* argv[]);
+}
+#endif
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_nxg_openclawproot_NativeNodeBridge_startNode(

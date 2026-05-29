@@ -14,12 +14,11 @@ object NativeNodeBridge {
 
     init {
         try {
-            System.loadLibrary("node")
             System.loadLibrary("plawie_node_bridge")
-            Log.i(TAG, "Loaded libnode.so and libplawie_node_bridge.so")
+            Log.i(TAG, "Loaded libplawie_node_bridge.so")
         } catch (e: Throwable) {
             loadFailure = e.message ?: e.javaClass.simpleName
-            Log.e(TAG, "Failed to load embedded Node libraries", e)
+            Log.e(TAG, "Failed to load embedded Node bridge", e)
         }
     }
 
@@ -35,6 +34,7 @@ object NativeNodeBridge {
                 1 -> NativeNodeBridgeStartResult(code, "already running")
                 -2 -> NativeNodeBridgeStartResult(code, "libnode.so missing at bridge build time")
                 -3 -> NativeNodeBridgeStartResult(code, "no argv supplied")
+                -5 -> NativeNodeBridgeStartResult(code, "failed to load embedded Node runtime")
                 else -> NativeNodeBridgeStartResult(code, "start failed")
             }
         } catch (e: Throwable) {

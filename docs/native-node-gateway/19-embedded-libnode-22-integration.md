@@ -1,6 +1,6 @@
 # Embedded Libnode 22 Integration
 
-Last updated: 2026-05-29
+Last updated: 2026-05-30
 
 Branch: `native-node-gateway-research`
 
@@ -74,11 +74,20 @@ Flutter diagnostics
   -> MainActivity
   -> NativeNodeSmokeProcess
   -> NativeNodeEmbeddedService in :native_node_smoke
-  -> System.loadLibrary("node")
   -> System.loadLibrary("plawie_node_bridge")
+  -> Android loads bridge dependencies:
+       libnode.so
+       libplawie_cpufeatures.so
+       libc++_shared.so
   -> node::Start("plawie-native-node", server.mjs)
   -> http://127.0.0.1:18790/health
 ```
+
+`libplawie_cpufeatures.so` is built from the Android NDK cpufeatures source.
+It is required because the Node 22.22.3 Android shared library references
+`android_getCpuFeatures`. Loading it as a direct bridge dependency keeps symbol
+resolution in one Android linker group; preloading it separately was not enough
+on the tested device.
 
 The isolated service is declared as:
 
@@ -89,8 +98,10 @@ The isolated service is declared as:
     android:process=":native_node_smoke" />
 ```
 
-This lets the first stop path kill only the isolated native process, not the
-Flutter UI or production PRoot Gateway.
+This lets the stop path kill only the isolated native process, not the Flutter
+UI or production PRoot Gateway. The service uses a lifecycle generation guard so
+the diagnostic "stop then start" sequence cannot let an older delayed stop kill
+a newer embedded Node start.
 
 ## Health Payload
 
@@ -119,28 +130,27 @@ Completed:
   `.\gradlew.bat :app:clean :app:assembleDebug --offline --no-daemon`
 - APK contains:
   - `lib/arm64-v8a/libnode.so`
+  - `lib/arm64-v8a/libplawie_cpufeatures.so`
   - `lib/arm64-v8a/libplawie_node_bridge.so`
   - `lib/arm64-v8a/libc++_shared.so`
 - no extra ABI copies of `libplawie_node_bridge.so` remain in the APK
+- device runtime diagnostic on Samsung SM-A556E / Android 14:
+  - native Android placeholder smoke passed;
+  - embedded Node answered `/health`;
+  - health payload reported `node: v22.22.3`, `platform: android`,
+    `arch: arm64`;
+  - isolated `:native_node_smoke` process stopped after the smoke run;
+  - Flutter UI process remained alive;
+  - PRoot Gateway startup continued afterwards.
 
-Not completed:
-
-- device runtime `/health` test, because `adb devices` showed no connected
-  Android device during this phase.
-
-## Next Gate
-
-Install the debug APK on a connected arm64 Android device and run diagnostics
-with:
+Diagnostic build flag:
 
 ```text
 PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true
 ```
 
-Pass criteria:
+## Next Gate
 
-- embedded Node starts in `:native_node_smoke`;
-- `/health` returns `runtime: native-node-embedded`;
-- stop terminates the isolated process;
-- the Flutter UI process remains alive;
-- PRoot Gateway startup still works afterwards.
+The next phase can replace the health-only script with a minimal OpenClaw
+bootstrap probe that still binds to `18790`, does not touch production `18789`,
+and continues to fall back to PRoot for the real Gateway lane.
