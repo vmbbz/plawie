@@ -17,6 +17,23 @@ ZIP_PATH="${CACHE_DIR}/${NDK_ZIP_NAME}"
 INSTALL_DIR="${INSTALL_ROOT}/android-ndk-${NDK_RELEASE}"
 TARGET_COMPILER="${INSTALL_DIR}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
 CLANG_LINK="${INSTALL_DIR}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+ALLOW_NETWORK="${PLAWIE_ALLOW_NETWORK:-0}"
+
+require_network() {
+  if [[ "${ALLOW_NETWORK}" != "1" ]]; then
+    cat >&2 <<EOF
+Refusing network download.
+
+This helper may download ${NDK_ZIP_NAME} from:
+  ${NDK_URL}
+
+Estimated download: ${NDK_SIZE_BYTES} bytes.
+
+Set PLAWIE_ALLOW_NETWORK=1 only after confirming data/disk budget.
+EOF
+    exit 3
+  fi
+}
 
 for tool in curl python3 sha1sum; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
@@ -28,6 +45,7 @@ done
 mkdir -p "${CACHE_DIR}" "${INSTALL_ROOT}"
 
 if [[ ! -f "${ZIP_PATH}" ]]; then
+  require_network
   echo "[native-node] Downloading Android NDK ${NDK_RELEASE} for Linux"
   echo "[native-node] ${NDK_URL}"
   curl --fail --location --output "${ZIP_PATH}" "${NDK_URL}"

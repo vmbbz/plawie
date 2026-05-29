@@ -16,6 +16,21 @@ ANDROID_NDK_PATH="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
 HOST_CC="${HOST_CC:-gcc}"
 HOST_CXX="${HOST_CXX:-g++}"
 CLEAN_HOST_OBJECTS="${CLEAN_HOST_OBJECTS:-0}"
+ALLOW_NETWORK="${PLAWIE_ALLOW_NETWORK:-0}"
+
+require_network() {
+  if [[ "${ALLOW_NETWORK}" != "1" ]]; then
+    cat >&2 <<EOF
+Refusing network download.
+
+This helper may download Node source from:
+  ${SOURCE_URL}
+
+Set PLAWIE_ALLOW_NETWORK=1 only after confirming data/disk budget.
+EOF
+    exit 3
+  fi
+}
 
 if [[ -z "${ANDROID_NDK_PATH}" ]]; then
   cat >&2 <<'EOF'
@@ -84,6 +99,7 @@ OUTPUT_NODE="${OUTPUT_DIR}/node-${NODE_VERSION}-android-${TARGET_ARCH}"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}"
 
 if [[ ! -f "${TARBALL}" ]]; then
+  require_network
   echo "[native-node] Downloading ${SOURCE_URL}"
   curl --fail --location --output "${TARBALL}" "${SOURCE_URL}"
 else

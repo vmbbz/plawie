@@ -4,7 +4,8 @@ param(
     [string]$MobileRef = "106c51f95d55d1010de56a2ffd09bfb4ba819a47",
     [string]$UpstreamRepo = "https://github.com/nodejs/node.git",
     [string]$UpstreamTag = "v22.9.0",
-    [string]$OutputDir = "build\native-node\nodejs-mobile-audit"
+    [string]$OutputDir = "build\native-node\nodejs-mobile-audit",
+    [switch]$AllowNetwork
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,20 +24,49 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "git is required for this audit helper."
 }
 
+function Require-Network([string]$Reason) {
+    if ($AllowNetwork -or $env:PLAWIE_ALLOW_NETWORK -eq "1") {
+        return
+    }
+
+    throw @"
+Refusing network access.
+
+$Reason
+
+This helper may clone/fetch from:
+  $MobileRepo
+  $UpstreamRepo
+
+Pass -AllowNetwork or set PLAWIE_ALLOW_NETWORK=1 only after confirming data/disk budget.
+"@
+}
+
 if (-not (Test-Path $resolvedWorkDir)) {
+    Require-Network "Missing local nodejs-mobile audit checkout: $resolvedWorkDir"
     New-Item -ItemType Directory -Path (Split-Path $resolvedWorkDir -Parent) -Force | Out-Null
     git clone --depth 1 $MobileRepo $resolvedWorkDir
 }
 
-git -C $resolvedWorkDir fetch --depth 1 origin $MobileRef
-git -C $resolvedWorkDir checkout --detach FETCH_HEAD
+git -C $resolvedWorkDir cat-file -e "$MobileRef^{commit}" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Require-Network "Missing local mobile ref: $MobileRef"
+    git -C $resolvedWorkDir fetch --depth 1 origin $MobileRef
+    git -C $resolvedWorkDir checkout --detach FETCH_HEAD
+} else {
+    git -C $resolvedWorkDir checkout --detach $MobileRef
+}
 
 $upstreamExists = git -C $resolvedWorkDir remote | Select-String -SimpleMatch "upstream"
 if (-not $upstreamExists) {
     git -C $resolvedWorkDir remote add upstream $UpstreamRepo
 }
 
-git -C $resolvedWorkDir fetch --depth 1 upstream $UpstreamTag
+git -C $resolvedWorkDir rev-parse --verify $UpstreamTag 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Require-Network "Missing local upstream tag: $UpstreamTag"
+    git -C $resolvedWorkDir fetch --depth 1 upstream $UpstreamTag
+}
 
 New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
 

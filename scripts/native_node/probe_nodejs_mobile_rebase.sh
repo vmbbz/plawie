@@ -19,6 +19,22 @@ CONFLICTS_FILE="${REPORT_DIR}/conflicts-${TARGET_NODE_TAG}.txt"
 SUMMARY_FILE="${REPORT_DIR}/summary-${TARGET_NODE_TAG}.txt"
 EXPERIMENT_BRANCH="${EXPERIMENT_BRANCH:-plawie-rebase-${TARGET_NODE_TAG}}"
 CONFLICT_PRINT_LIMIT="${CONFLICT_PRINT_LIMIT:-120}"
+ALLOW_NETWORK="${PLAWIE_ALLOW_NETWORK:-0}"
+
+require_network() {
+  if [[ "${ALLOW_NETWORK}" != "1" ]]; then
+    cat >&2 <<EOF
+Refusing network access.
+
+This probe may clone/fetch from:
+  ${MOBILE_REPO}
+  ${UPSTREAM_REPO}
+
+Set PLAWIE_ALLOW_NETWORK=1 only after confirming data/disk budget.
+EOF
+    exit 3
+  fi
+}
 
 for tool in git sed tee; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
@@ -30,6 +46,7 @@ done
 mkdir -p "${WORK_DIR}" "${REPORT_DIR}"
 
 if [[ ! -d "${SOURCE_DIR}/.git" ]]; then
+  require_network
   echo "[nodejs-mobile-rebase] Cloning ${MOBILE_REPO}"
   git clone --filter=blob:none --single-branch --branch "${MOBILE_BASE_REF}" "${MOBILE_REPO}" "${SOURCE_DIR}"
 else
@@ -50,6 +67,7 @@ else
 fi
 
 echo "[nodejs-mobile-rebase] Fetching mobile base ${MOBILE_BASE_REF}"
+require_network
 git fetch --no-tags origin "refs/heads/${MOBILE_BASE_REF}:refs/remotes/origin/${MOBILE_BASE_REF}"
 git checkout -B "${EXPERIMENT_BRANCH}" "origin/${MOBILE_BASE_REF}"
 
@@ -61,6 +79,7 @@ base_commit="$(git rev-parse HEAD)"
 base_version="$(sed -n 's/^#define NODE_MAJOR_VERSION[[:space:]]*//p' src/node_version.h).$(sed -n 's/^#define NODE_MINOR_VERSION[[:space:]]*//p' src/node_version.h).$(sed -n 's/^#define NODE_PATCH_VERSION[[:space:]]*//p' src/node_version.h)"
 
 echo "[nodejs-mobile-rebase] Fetching upstream tag ${TARGET_NODE_TAG}"
+require_network
 git fetch --no-tags upstream "refs/tags/${TARGET_NODE_TAG}:refs/tags/${TARGET_NODE_TAG}"
 target_commit="$(git rev-list -n 1 "${TARGET_NODE_TAG}")"
 

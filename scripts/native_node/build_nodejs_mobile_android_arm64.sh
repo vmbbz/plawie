@@ -12,6 +12,21 @@ TARGET_ARCH="${TARGET_ARCH:-arm64}"
 WORK_DIR="${WORK_DIR:-$(pwd)/build/native-node/nodejs-mobile-${TARGET_ARCH}}"
 OUTPUT_DIR="${OUTPUT_DIR:-${WORK_DIR}/output}"
 ANDROID_NDK_PATH="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+ALLOW_NETWORK="${PLAWIE_ALLOW_NETWORK:-0}"
+
+require_network() {
+  if [[ "${ALLOW_NETWORK}" != "1" ]]; then
+    cat >&2 <<EOF
+Refusing network access.
+
+This helper may clone/fetch nodejs-mobile from:
+  ${MOBILE_REPO}
+
+Set PLAWIE_ALLOW_NETWORK=1 only after confirming data/disk budget.
+EOF
+    exit 3
+  fi
+}
 
 if [[ -z "${ANDROID_NDK_PATH}" ]]; then
   cat >&2 <<'EOF'
@@ -53,14 +68,20 @@ OUTPUT_LIB="${OUTPUT_DIR}/libnode-nodejs-mobile-v22.9.0-android-arm64.so"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}"
 
 if [[ ! -d "${SOURCE_DIR}/.git" ]]; then
+  require_network
   echo "[nodejs-mobile] Cloning ${MOBILE_REPO}"
   git clone "${MOBILE_REPO}" "${SOURCE_DIR}"
 fi
 
 pushd "${SOURCE_DIR}" >/dev/null
 echo "[nodejs-mobile] Checking out ${MOBILE_REF}"
-git fetch --depth 1 origin "${MOBILE_REF}"
-git checkout --detach FETCH_HEAD
+if ! git cat-file -e "${MOBILE_REF}^{commit}" >/dev/null 2>&1; then
+  require_network
+  git fetch --depth 1 origin "${MOBILE_REF}"
+  git checkout --detach FETCH_HEAD
+else
+  git checkout --detach "${MOBILE_REF}"
+fi
 
 echo "[nodejs-mobile] Building Android ${TARGET_ARCH} shared library"
 ./tools/android_build.sh "${ANDROID_NDK_PATH}" "${ANDROID_SDK_VERSION}" "${TARGET_ARCH}"

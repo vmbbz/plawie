@@ -29,6 +29,22 @@ SUMMARY_FILE="${REPORT_DIR}/summary-${TARGET_NODE_TAG}.txt"
 EXPERIMENT_BRANCH="${EXPERIMENT_BRANCH:-plawie-core-patch-${TARGET_NODE_TAG}}"
 CONFLICT_PRINT_LIMIT="${CONFLICT_PRINT_LIMIT:-120}"
 RUN_REJECT_INSPECTION="${RUN_REJECT_INSPECTION:-1}"
+ALLOW_NETWORK="${PLAWIE_ALLOW_NETWORK:-0}"
+
+require_network() {
+  if [[ "${ALLOW_NETWORK}" != "1" ]]; then
+    cat >&2 <<EOF
+Refusing network access.
+
+This probe may clone/fetch from:
+  ${MOBILE_REPO}
+  ${UPSTREAM_REPO}
+
+Set PLAWIE_ALLOW_NETWORK=1 only after confirming data/disk budget.
+EOF
+    exit 3
+  fi
+}
 
 CORE_PATHS=(
   android_configure.py
@@ -52,6 +68,7 @@ done
 mkdir -p "${WORK_DIR}" "${REPORT_DIR}"
 
 if [[ ! -d "${MOBILE_DIR}/.git" ]]; then
+  require_network
   echo "[nodejs-mobile-core] Cloning mobile branch ${MOBILE_BASE_REF}"
   git clone --filter=blob:none --single-branch --branch "${MOBILE_BASE_REF}" "${MOBILE_REPO}" "${MOBILE_DIR}"
 else
@@ -64,10 +81,12 @@ if ! git remote get-url upstream >/dev/null 2>&1; then
 else
   git remote set-url upstream "${UPSTREAM_REPO}"
 fi
+require_network
 git fetch --no-tags origin "refs/heads/${MOBILE_BASE_REF}:refs/remotes/origin/${MOBILE_BASE_REF}"
 git checkout -B "plawie-mobile-source-${SOURCE_BASE_TAG}" "origin/${MOBILE_BASE_REF}"
 git reset --hard HEAD
 git clean -fdx
+require_network
 git fetch --no-tags upstream "refs/tags/${SOURCE_BASE_TAG}:refs/tags/${SOURCE_BASE_TAG}"
 mobile_commit="$(git rev-parse HEAD)"
 base_commit="$(git rev-list -n 1 "${SOURCE_BASE_TAG}")"
@@ -80,6 +99,7 @@ if [[ ! -s "${PATCH_PATH}" ]]; then
 fi
 
 if [[ ! -d "${NODE_DIR}/.git" ]]; then
+  require_network
   echo "[nodejs-mobile-core] Cloning upstream Node"
   git clone --filter=blob:none "${UPSTREAM_REPO}" "${NODE_DIR}"
 else
@@ -90,6 +110,7 @@ pushd "${NODE_DIR}" >/dev/null
 if [[ -d ".git/rebase-merge" || -d ".git/rebase-apply" ]]; then
   git rebase --abort || true
 fi
+require_network
 git fetch --no-tags origin "refs/tags/${TARGET_NODE_TAG}:refs/tags/${TARGET_NODE_TAG}"
 git checkout -B "${EXPERIMENT_BRANCH}" "${TARGET_NODE_TAG}"
 git reset --hard HEAD
