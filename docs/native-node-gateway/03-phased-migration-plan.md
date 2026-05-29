@@ -141,6 +141,9 @@ Implemented in this phase so far:
   `v22.9.0`. It proves an embedded Android `libnode.so` runtime shape, but is
   below OpenClaw's `>=22.19.0` engine floor and is not interchangeable with the
   current executable-process smoke slot.
+- Defined the embedded `libnode.so` smoke design, including separate artifact
+  names, isolated-service requirement before OpenClaw boot, and diagnostics
+  naming so it cannot be confused with the executable process lane.
 
 Goals:
 

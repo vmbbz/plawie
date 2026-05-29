@@ -15,6 +15,7 @@ The native runtime cannot become default until it passes this matrix.
 | Gateway logs | Logs visible in app | Same or better |
 | Dashboard token | Authenticated dashboard URL works | Same |
 | Runtime artifact type | PRoot process is known | Native diagnostics identify executable-process vs embedded-libnode path |
+| Missing native artifact | Not applicable | Missing executable or `libnode.so` reports a clean diagnostic skip |
 
 ## WebSocket And RPC
 

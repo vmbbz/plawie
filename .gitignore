@@ -55,6 +55,10 @@ build_trash/
 # Package locally for diagnostics, but do not commit an unreviewed binary.
 android/app/src/main/jniLibs/arm64-v8a/libplawie_node.so
 android/app/src/main/jniLibs/arm64-v8a/libplawie_node.so.manifest.json
+android/app/src/main/jniLibs/arm64-v8a/libnode.so
+android/app/src/main/jniLibs/arm64-v8a/libnode.so.manifest.json
+android/app/src/main/jniLibs/arm64-v8a/libplawie_node_bridge.so
+android/app/src/main/jniLibs/arm64-v8a/libplawie_node_bridge.so.manifest.json
 
 # Local native Node source/build products stay outside version control.
 build/native-node/

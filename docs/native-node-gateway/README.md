@@ -79,6 +79,7 @@ be safely generalized.
 | [12-node-android-build-recipe.md](12-node-android-build-recipe.md) | Verified source-build recipe for the first Node Android candidate |
 | [13-node-22-android-build-attempt.md](13-node-22-android-build-attempt.md) | Local Node 22 Android build result and current blocker |
 | [14-nodejs-mobile-22-patch-audit.md](14-nodejs-mobile-22-patch-audit.md) | Nodejs-mobile Node 22 Android patch audit and embedded-runtime decision |
+| [15-embedded-libnode-smoke-design.md](15-embedded-libnode-smoke-design.md) | Separate embedded `libnode.so` smoke runner design |
 
 ## Work Rules
 
