@@ -3822,6 +3822,33 @@ $message''';
     return null;
   }
 
+  String? _nativeDartBridgeReadOnlyPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const command = '/native-dart-bridge-readonly';
+    final lower = trimmedLeft.toLowerCase();
+    if (lower == command) {
+      return 'flash.status and sensor.list native bridge canary';
+    }
+    if (lower.startsWith('$command ')) {
+      final payload = trimmedLeft.substring(command.length).trimLeft();
+      return payload.isEmpty
+          ? 'flash.status and sensor.list native bridge canary'
+          : payload;
+    }
+    return null;
+  }
+
+  String _compactJsonValue(dynamic value) {
+    if (value == null) return 'null';
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      return value.toString();
+    }
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -6232,6 +6259,218 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeDartBridgeReadOnlyMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final readOnlyMessage = _nativeDartBridgeReadOnlyPayload(message);
+    if (readOnlyMessage == null) return;
+    final canaryPrompt = readOnlyMessage.trim().isEmpty
+        ? 'flash.status sensor.list native bridge canary'
+        : 'flash.status sensor.list ${readOnlyMessage.trim()}';
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: canaryPrompt,
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-DART-BRIDGE-READONLY] -> Opening real read-only bridge canary',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamNativeDartBridgeReadOnlyCanaryChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        _addActivity('[NATIVE-DART-BRIDGE-READONLY] OK ACK received');
+        yield [
+          'Native bridge read-only canary started',
+          '',
+          'parsed: ${ack['parsed'] == true}',
+          'routeStatus: ${ack['routeStatus'] ?? 'unknown'}',
+          'hashMatches: ${ack['hashMatches'] == true}',
+          'readOnlyPlanHash: ${ack['readOnlyPlanHash'] ?? 'unknown'}',
+          'selectedToolCount: ${ack['selectedToolCount'] ?? 'unknown'}',
+          'forcedToolNames: ${_compactJsonValue(ack['forcedToolNames'])}',
+          'canaryAllowlistOk: ${ack['canaryAllowlistOk'] == true}',
+          'providerCallsEnabled: ${ack['providerCallsEnabled'] == true}',
+          'executionEnabled: ${ack['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${ack['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_plan_summary') {
+        yield [
+          'Native read-only canary plan',
+          '',
+          'readOnlyPlanHash: ${event['readOnlyPlanHash'] ?? 'unknown'}',
+          'orderCount: ${event['orderCount'] ?? 0}',
+          'expectedOrder: ${_compactJsonValue(event['expectedOrder'])}',
+          'fixtureParityOk: ${event['fixtureParityOk'] == true}',
+          'dispatchParityOk: ${event['dispatchParityOk'] == true}',
+          'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'executionEnabled: ${event['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_execute_request') {
+        final bridgeRequest = event['bridgeRequest'] is Map
+            ? Map<String, dynamic>.from(event['bridgeRequest'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Native read-only execute request sent',
+          '',
+          'orderIndex: ${event['orderIndex'] ?? 'unknown'}',
+          'method: ${bridgeRequest['method'] ?? 'unknown'}',
+          'capability: ${bridgeRequest['capability'] ?? 'unknown'}',
+          'endpoint: ${event['endpoint'] ?? 'unknown'}',
+          'inputKeys: ${_compactJsonValue((bridgeRequest['input'] is Map) ? (bridgeRequest['input'] as Map).keys.toList() : const [])}',
+          'dryRun: ${bridgeRequest['dryRun'] == true}',
+          'providerCallsEnabled: ${bridgeRequest['providerCallsEnabled'] == true}',
+          'executionEnabled: ${bridgeRequest['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${bridgeRequest['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${bridgeRequest['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_execute_ack') {
+        final executeAck = event['executeAck'] is Map
+            ? Map<String, dynamic>.from(event['executeAck'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Dart bridge read-only execute ACK',
+          '',
+          'orderIndex: ${event['orderIndex'] ?? 'unknown'}',
+          'ok: ${executeAck['ok'] == true}',
+          'accepted: ${executeAck['accepted'] == true}',
+          'executed: ${executeAck['executed'] == true}',
+          'command: ${executeAck['command'] ?? 'unknown'}',
+          'resultStatus: ${event['resultStatus'] ?? executeAck['resultStatus'] ?? 'unknown'}',
+          'resultShapeOk: ${event['resultShapeOk'] == true}',
+          'executeParityOk: ${event['executeParityOk'] == true}',
+          'executeAckHash: ${event['executeAckHash'] ?? 'unknown'}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_use_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final input = frame['input'] is Map
+            ? Map<String, dynamic>.from(frame['input'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        continue;
+      }
+
+      if (eventType == 'tool_result_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final result = frame['result'] is Map
+            ? Map<String, dynamic>.from(frame['result'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        continue;
+      }
+
+      if (eventType == 'readonly_canary_summary') {
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-READONLY] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native bridge read-only canary summary',
+          '',
+          'commandCount: ${event['commandCount'] ?? 0}',
+          'expectedOrder: ${_compactJsonValue(event['expectedOrder'])}',
+          'observedOrder: ${_compactJsonValue(event['observedOrder'])}',
+          'resultStatuses: ${_compactJsonValue(event['resultStatuses'])}',
+          'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+          'executeParityOk: ${event['executeParityOk'] == true}',
+          'validationOk: ${event['validationOk'] == true}',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'executionEnabled: ${event['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-READONLY] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native bridge read-only canary complete',
+            '',
+            'finishReason: $finishReason',
+            'commandCount: ${event['commandCount'] ?? 0}',
+            'expectedOrder: ${_compactJsonValue(event['expectedOrder'])}',
+            'observedOrder: ${_compactJsonValue(event['observedOrder'])}',
+            'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+            'executeParityOk: ${event['executeParityOk'] == true}',
+            'validationOk: ${event['validationOk'] == true}',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'executionEnabled: ${event['executionEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+            'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-DART-BRIDGE-READONLY] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native Dart bridge read-only canary ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6256,6 +6495,15 @@ $message''';
 
     if (_nativeDartBridgeHapticPayload(message) != null) {
       yield* _sendNativeDartBridgeHapticMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
+
+    if (_nativeDartBridgeReadOnlyPayload(message) != null) {
+      yield* _sendNativeDartBridgeReadOnlyMessage(
         message,
         model: model,
         sessionKey: sessionKey,

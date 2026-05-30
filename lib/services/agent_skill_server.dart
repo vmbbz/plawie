@@ -8,6 +8,7 @@ import 'skills_service.dart';
 import 'tts_service.dart';
 import 'gateway_tool_catalog.dart';
 import 'capabilities/flash_capability.dart';
+import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
 
 class _NativeGatewayDryRunArgumentValidation {
@@ -55,6 +56,7 @@ class AgentSkillServer {
   HttpServer? _server;
   Future<void>? _startFuture;
   final FlashCapability _flashCapability = FlashCapability();
+  final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI
@@ -318,29 +320,41 @@ class AgentSkillServer {
           GatewayToolCatalog.mobileNodeAllowCommands.contains(command);
       final argumentValidation =
           _validateNativeGatewayDryRunArguments(command, input);
-      final canaryAllowlistOk =
-          allowlist.length == 1 && allowlist.single == 'haptic.vibrate';
-      final durationValidation = _nativeGatewayHapticCanaryDuration(
-          input['durationMs'] ?? input['duration_ms']);
+      final hapticCanary = canaryMode == 'native-dart-bridge-haptic-canary';
+      final readOnlyCanary = canaryMode == 'native-dart-bridge-readonly-canary';
+      final canaryAllowlistOk = _nativeGatewayExecuteCanaryAllowlistOk(
+        canaryMode,
+        allowlist,
+        command,
+      );
+      final durationValidation = hapticCanary
+          ? _nativeGatewayHapticCanaryDuration(
+              input['durationMs'] ?? input['duration_ms'],
+            )
+          : null;
       final patternRejected = input.containsKey('pattern');
+      final hapticInputOk =
+          !hapticCanary || (durationValidation != null && !patternRejected);
+      final readOnlyInputOk = !readOnlyCanary || input.isEmpty;
+      final commandAllowedForMode =
+          _nativeGatewayExecuteCanaryCommandAllowed(canaryMode, command);
       final accepted = dryRunDisabled &&
           executionRequested &&
           providerCallsDisabled &&
-          canaryMode == 'native-dart-bridge-haptic-canary' &&
-          command == 'haptic.vibrate' &&
+          commandAllowedForMode &&
           commandKnown &&
           argumentValidation.ok &&
           canaryAllowlistOk &&
-          durationValidation != null &&
-          !patternRejected;
+          hapticInputOk &&
+          readOnlyInputOk;
 
       var executed = false;
       var result = <String, dynamic>{};
       Map<String, dynamic>? error;
       if (accepted) {
-        final frame = await _vibrationCapability.handle(
-          'haptic.vibrate',
-          {'durationMs': durationValidation},
+        final frame = await _executeNativeGatewayCanaryCommand(
+          command,
+          hapticDurationMs: durationValidation,
         );
         executed = frame.isOk;
         if (frame.payload != null) {
@@ -350,6 +364,11 @@ class AgentSkillServer {
           error = Map<String, dynamic>.from(frame.error!);
         }
       }
+      final routePrefix = readOnlyCanary
+          ? 'native_dart_bridge_readonly_canary'
+          : 'native_dart_bridge_haptic_canary';
+      final resultStatus =
+          result['status']?.toString() ?? (executed ? 'ok' : 'not_executed');
 
       _sendJson(request, {
         'ok': accepted && executed,
@@ -358,11 +377,11 @@ class AgentSkillServer {
         'dryRun': false,
         'runtime': 'flutter-dart',
         'bridge': 'AgentSkillServer',
-        'source': 'native-dart-bridge-haptic-canary',
+        'source': canaryMode,
         'canaryMode': canaryMode,
         'routeStatus': accepted && executed
-            ? 'native_dart_bridge_haptic_canary_ack'
-            : 'native_dart_bridge_haptic_canary_rejected',
+            ? '${routePrefix}_ack'
+            : '${routePrefix}_rejected',
         'command': command ?? rawCommand ?? 'unknown',
         'rawCommand': rawCommand,
         'commandKnown': commandKnown,
@@ -375,11 +394,14 @@ class AgentSkillServer {
         'inputKeys': input.keys.map((key) => key.toString()).toList()..sort(),
         'argumentValidation': argumentValidation.toJson(),
         'durationMs': durationValidation,
-        'durationBounded': durationValidation != null &&
+        'durationBounded': hapticCanary &&
+            durationValidation != null &&
             durationValidation > 0 &&
             durationValidation <= 150,
         'patternRejected': patternRejected,
+        'readOnlyInputOk': readOnlyInputOk,
         'result': result,
+        'resultStatus': resultStatus,
         if (error != null) 'error': error,
         'requestHash': body['requestHash'],
         'dispatchHash': body['dispatchHash'],
@@ -411,6 +433,61 @@ class AgentSkillServer {
     if (parsed > 150) return 150;
     if (parsed < 10) return 10;
     return parsed;
+  }
+
+  bool _nativeGatewayExecuteCanaryAllowlistOk(
+    String? canaryMode,
+    List<String> allowlist,
+    String? command,
+  ) {
+    if (canaryMode == 'native-dart-bridge-haptic-canary') {
+      return allowlist.length == 1 &&
+          allowlist.single == 'haptic.vibrate' &&
+          command == 'haptic.vibrate';
+    }
+
+    if (canaryMode == 'native-dart-bridge-readonly-canary') {
+      const expected = {'flash.status', 'sensor.list'};
+      final actual = allowlist.toSet();
+      return actual.length == expected.length &&
+          actual.containsAll(expected) &&
+          command != null &&
+          expected.contains(command);
+    }
+
+    return false;
+  }
+
+  bool _nativeGatewayExecuteCanaryCommandAllowed(
+    String? canaryMode,
+    String? command,
+  ) {
+    if (canaryMode == 'native-dart-bridge-haptic-canary') {
+      return command == 'haptic.vibrate';
+    }
+    if (canaryMode == 'native-dart-bridge-readonly-canary') {
+      return command == 'flash.status' || command == 'sensor.list';
+    }
+    return false;
+  }
+
+  Future<dynamic> _executeNativeGatewayCanaryCommand(
+    String command, {
+    int? hapticDurationMs,
+  }) {
+    switch (command) {
+      case 'haptic.vibrate':
+        return _vibrationCapability.handle(
+          'haptic.vibrate',
+          {'durationMs': hapticDurationMs ?? 90},
+        );
+      case 'flash.status':
+        return _flashCapability.handle('flash.status', const {});
+      case 'sensor.list':
+        return _sensorCapability.handle('sensor.list', const {});
+      default:
+        throw StateError('Unsupported native gateway canary command: $command');
+    }
   }
 
   String? _canonicalNativeGatewayCommand(String? command) {
