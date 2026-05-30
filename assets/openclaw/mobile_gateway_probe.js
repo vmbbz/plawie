@@ -490,6 +490,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-send-canary-stream",
     "/gateway/chat-route-skeleton-stream",
     "/gateway/chat-route-skeleton-cancel",
+    "/gateway/chat-provider-shell-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -996,6 +997,111 @@ function createMobileGatewayProbe({
     };
   }
 
+  function providerShellEnvelope(payload, shape, queued) {
+    const params = payload && typeof payload.params === "object" && payload.params !== null
+      ? payload.params
+      : {};
+    const requestedModel = typeof params.model === "string" && params.model.trim().length > 0
+      ? params.model.trim()
+      : "openrouter/auto";
+    const explicitProvider = typeof params.provider === "string" && params.provider.trim().length > 0
+      ? params.provider.trim()
+      : null;
+    const slashIndex = requestedModel.indexOf("/");
+    const inferredProvider = slashIndex > 0
+      ? requestedModel.slice(0, slashIndex)
+      : "unknown";
+    const provider = explicitProvider || inferredProvider;
+    const providerModel = slashIndex > 0
+      ? requestedModel.slice(slashIndex + 1)
+      : requestedModel;
+    const openAiCompatible = [
+      "openrouter",
+      "openai",
+      "groq",
+      "together",
+      "deepseek",
+      "gemini"
+    ].includes(provider);
+    const transport = openAiCompatible
+      ? "openai-compatible-chat-completions"
+      : "provider-adapter-chat";
+    const endpoint = provider === "openrouter"
+      ? "https://openrouter.ai/api/v1/chat/completions"
+      : `provider://${provider}/chat/completions`;
+    const envelopeShape = {
+      provider,
+      requestedModel,
+      providerModel,
+      transport,
+      endpointRedacted: endpoint,
+      method: "POST",
+      stream: true,
+      outboundNetworkEnabled: false,
+      authMaterialPresent: false,
+      bodyShape: {
+        model: providerModel,
+        messages: [
+          {
+            role: "user",
+            content: "<redacted>"
+          }
+        ],
+        stream: true,
+        tools: [],
+        tool_choice: "none"
+      },
+      headersShape: {
+        authorization: "<redacted-or-missing>",
+        contentType: "application/json",
+        referer: "<redacted-or-missing>",
+        title: "<redacted-or-missing>"
+      },
+      request: {
+        metadataHash: shape.metadataHash,
+        messageChars: shape.messageChars,
+        sessionKey: shape.sessionKey,
+        mobileToolHints: shape.mobileToolHints
+      },
+      run: {
+        requestId: queued.requestId,
+        runId: queued.runId
+      },
+      errorContract: {
+        event: "provider_error",
+        fields: [
+          "ok",
+          "runtime",
+          "source",
+          "canaryMode",
+          "runId",
+          "provider",
+          "statusCode",
+          "rawError",
+          "normalizedError.type",
+          "normalizedError.code",
+          "normalizedError.message"
+        ],
+        rawProviderErrorForwarding: true
+      }
+    };
+
+    return {
+      ...envelopeShape,
+      envelopeHash: metadataHash({
+        provider: envelopeShape.provider,
+        requestedModel: envelopeShape.requestedModel,
+        providerModel: envelopeShape.providerModel,
+        transport: envelopeShape.transport,
+        endpointRedacted: envelopeShape.endpointRedacted,
+        stream: envelopeShape.stream,
+        outboundNetworkEnabled: envelopeShape.outboundNetworkEnabled,
+        bodyShape: envelopeShape.bodyShape,
+        request: envelopeShape.request
+      })
+    };
+  }
+
   async function handleChatRouteSkeletonStream(req, res) {
     const source = "routing-skeleton";
     const canaryMode = "routing-skeleton";
@@ -1369,6 +1475,268 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderShellStream(req, res) {
+    const source = "provider-adapter-shell";
+    const canaryMode = "provider-shell";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const ack = {
+        parsed,
+        route: "disabled",
+        routeStatus: "blocked_before_outbound_provider",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "provider adapter shell built a redacted outbound envelope; outbound network remains disabled",
+        provider: envelope.provider,
+        requestedModel: envelope.requestedModel,
+        providerModel: envelope.providerModel,
+        transport: envelope.transport,
+        envelopeHash: envelope.envelopeHash,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-shell"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: "disabled",
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: false,
+        acceptedForQueue: true,
+        queuedForDryRun: true,
+        queueStatus: "parsed_disabled",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      const steps = [
+        {
+          event: "provider_envelope",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            envelope
+          }
+        },
+        {
+          event: "provider_gate",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            gate: {
+              enabled: false,
+              status: "blocked",
+              reason: "outbound_provider_network_disabled_until_canary_gate",
+              wouldCallProvider: envelope.provider,
+              wouldUseTransport: envelope.transport
+            },
+            providerCallsEnabled: false
+          }
+        },
+        {
+          event: "provider_error_contract",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            provider: envelope.provider,
+            errorContract: envelope.errorContract
+          }
+        },
+        {
+          event: "delta",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 1,
+            text:
+              "Native provider shell built the redacted provider envelope. "
+          }
+        },
+        {
+          event: "delta",
+          delay: 140,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 2,
+            text:
+              "Outbound provider network, billing, and tool execution are still disabled."
+          }
+        },
+        {
+          event: "end",
+          delay: 80,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: ack.routeStatus,
+            finishReason: "provider_shell_complete",
+            provider: envelope.provider,
+            requestedModel: envelope.requestedModel,
+            providerCallsEnabled: false,
+            executionEnabled: false
+          }
+        }
+      ];
+
+      for (const step of steps) {
+        await delayMs(step.delay);
+        writeEvent(step.event, step.payload);
+        if (step.event === "end") {
+          res.end();
+          return;
+        }
+      }
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_provider_shell_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_shell_failed",
+          message: error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -1501,6 +1869,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-route-skeleton-cancel") {
       handleChatRouteSkeletonCancel(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-shell-stream") {
+      handleChatProviderShellStream(req, res);
       return true;
     }
 

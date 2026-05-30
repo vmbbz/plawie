@@ -3705,19 +3705,40 @@ $message''';
     return null;
   }
 
+  String? _nativeProviderShellPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-provider ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
+    String? model,
+    String? provider,
   }) {
+    final params = <String, dynamic>{
+      'sessionKey': sessionKey,
+      'message': message,
+      'idempotencyKey': const Uuid().v4(),
+      'timeoutMs': 300000,
+    };
+    if (model != null && model.trim().isNotEmpty) {
+      params['model'] = model.trim();
+    }
+    if (provider != null && provider.trim().isNotEmpty) {
+      params['provider'] = provider.trim();
+    }
+
     return <String, dynamic>{
       'type': 'req',
       'method': 'chat.send',
-      'params': {
-        'sessionKey': sessionKey,
-        'message': message,
-        'idempotencyKey': const Uuid().v4(),
-        'timeoutMs': 300000,
-      },
+      'params': params,
       'id': const Uuid().v4(),
     };
   }
@@ -4020,6 +4041,145 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProviderShellMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final providerMessage = _nativeProviderShellPayload(message);
+    if (providerMessage == null) return;
+    if (providerMessage.trim().isEmpty) {
+      yield '[Error] Native provider shell needs a message after /native-provider.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final outboundMessage =
+        await _decorateMessageWithMobileNodeContext(providerMessage);
+    final providerHint =
+        model.contains('/') ? model.split('/').first.trim() : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: outboundMessage,
+      sessionKey: resolvedSessionKey,
+      model: model,
+      provider: providerHint,
+    );
+
+    _addActivity(
+      '[NATIVE-PROVIDER-SHELL] -> Opening embedded Node provider shell',
+    );
+
+    var sawAck = false;
+    await for (final event
+        in NativeGatewayShadowParityService.streamProviderShellChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final provider = ack['provider']?.toString() ?? 'unknown';
+        final requestedModel = ack['requestedModel']?.toString() ?? 'unknown';
+        final transport = ack['transport']?.toString() ?? 'unknown';
+        final envelopeHash = ack['envelopeHash']?.toString() ?? 'unknown';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-PROVIDER-SHELL] OK ACK received');
+        yield [
+          'Native provider shell started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'provider: $provider',
+          'model: $requestedModel',
+          'transport: $transport',
+          'envelopeHash: $envelopeHash',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_envelope') {
+        final envelope = event['envelope'] is Map
+            ? Map<String, dynamic>.from(event['envelope'] as Map)
+            : <String, dynamic>{};
+        final provider = envelope['provider']?.toString() ?? 'unknown';
+        final requestedModel =
+            envelope['requestedModel']?.toString() ?? 'unknown';
+        final providerModel =
+            envelope['providerModel']?.toString() ?? 'unknown';
+        final transport = envelope['transport']?.toString() ?? 'unknown';
+        final endpoint = envelope['endpointRedacted']?.toString() ?? 'unknown';
+        final outbound =
+            envelope['outboundNetworkEnabled'] == true ? 'enabled' : 'disabled';
+        _addActivity('[NATIVE-PROVIDER-SHELL] OK provider envelope received');
+        yield [
+          'Native provider envelope',
+          '',
+          'provider: $provider',
+          'requestedModel: $requestedModel',
+          'providerModel: $providerModel',
+          'transport: $transport',
+          'endpoint: $endpoint',
+          'outboundNetwork: $outbound',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_gate') {
+        final gate = event['gate'] is Map
+            ? Map<String, dynamic>.from(event['gate'] as Map)
+            : <String, dynamic>{};
+        final reason = gate['reason']?.toString() ?? 'provider gate closed';
+        _addActivity('[NATIVE-PROVIDER-SHELL] provider gate closed: $reason');
+        continue;
+      }
+
+      if (eventType == 'provider_error_contract') {
+        final provider = event['provider']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-PROVIDER-SHELL] provider error contract ready: $provider',
+        );
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'end') {
+        _addActivity('[NATIVE-PROVIDER-SHELL] OK shell complete');
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-PROVIDER-SHELL] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native provider shell ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -4032,6 +4192,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProviderShellPayload(message) != null) {
+      yield* _sendNativeProviderShellMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeRoutingSkeletonPayload(message) != null) {
       yield* _sendNativeRoutingSkeletonMessage(

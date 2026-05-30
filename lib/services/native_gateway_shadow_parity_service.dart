@@ -457,6 +457,124 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamProviderShellChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-provider-shell-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native provider shell HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-PROVIDER-SHELL] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'provider': ack['provider'],
+                  'requestedModel': ack['requestedModel'],
+                  'transport': ack['transport'],
+                  'envelopeHash': ack['envelopeHash'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'provider_envelope') {
+          final envelope = decoded['envelope'] is Map
+              ? Map<String, dynamic>.from(decoded['envelope'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-PROVIDER-SHELL] envelope: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': envelope['provider'],
+                  'requestedModel': envelope['requestedModel'],
+                  'providerModel': envelope['providerModel'],
+                  'transport': envelope['transport'],
+                  'outboundNetworkEnabled':
+                      envelope['outboundNetworkEnabled'] == true,
+                  'envelopeHash': envelope['envelopeHash'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_gate') {
+          final gate = decoded['gate'] is Map
+              ? Map<String, dynamic>.from(decoded['gate'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-PROVIDER-SHELL] provider gate: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'enabled': gate['enabled'] == true,
+                  'status': gate['status'],
+                  'reason': gate['reason'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeProviderShellSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -670,6 +788,11 @@ class NativeGatewayShadowParityService {
       'sessionAccepted': ack['sessionAccepted'],
       'sessionCompleted': ack['sessionCompleted'],
       'sessionDuplicate': ack['sessionDuplicate'],
+      'provider': ack['provider'],
+      'requestedModel': ack['requestedModel'],
+      'providerModel': ack['providerModel'],
+      'transport': ack['transport'],
+      'envelopeHash': ack['envelopeHash'],
       'duplicate': ack['duplicate'] == true,
       'duplicateOfRequestId': ack['duplicateOfRequestId'],
       'queuedAt': ack['queuedAt'],
@@ -809,6 +932,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-ROUTE-SKELETON] native routing skeleton failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeProviderShellSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-PROVIDER-SHELL] native provider shell failed '
       '(${error.runtimeType})',
     );
   }
