@@ -116,6 +116,9 @@ function createDryRunQueue() {
     const idempotencyKey = typeof payload?.params?.idempotencyKey === "string"
       ? payload.params.idempotencyKey
       : null;
+    const idempotencyScopeKey = idempotencyKey
+      ? `${source}:${canaryMode}:${idempotencyKey}`
+      : null;
     const requestId = typeof payload?.id === "string"
       ? payload.id
       : stableId("native-request", {
@@ -123,8 +126,8 @@ function createDryRunQueue() {
           sequence: sequence + 1,
           metadataHash: shape.metadataHash
         });
-    const duplicateOf = idempotencyKey
-      ? session.idempotencyKeys.get(idempotencyKey)
+    const duplicateOf = idempotencyScopeKey
+      ? session.idempotencyKeys.get(idempotencyScopeKey)
       : null;
 
     const queueDepthBefore = session.inFlight;
@@ -167,8 +170,8 @@ function createDryRunQueue() {
     session.accepted += duplicateOf == null ? 1 : 0;
     session.completed += 1;
     session.duplicate += duplicateOf == null ? 0 : 1;
-    if (idempotencyKey && duplicateOf == null) {
-      session.idempotencyKeys.set(idempotencyKey, {
+    if (idempotencyScopeKey && duplicateOf == null) {
+      session.idempotencyKeys.set(idempotencyScopeKey, {
         requestId,
         runId,
         firstSeenAt: queuedAt

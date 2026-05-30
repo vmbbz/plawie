@@ -22,8 +22,8 @@ This remains a dry-run lane:
 
 `POST /gateway/chat-send-dry-run` now does more than parse the frame. For a
 production-shaped `chat.send` request, it creates or reuses a native dry-run
-session, records queue metadata, dedupes by idempotency key, and returns a
-structured ACK with:
+session, records queue metadata, dedupes by idempotency key within the current
+diagnostic lane, and returns a structured ACK with:
 
 - `acceptedForQueue: true`;
 - `queuedForDryRun: true`;
@@ -49,6 +49,8 @@ structured ACK with:
 - per-session counters and recent redacted request metadata.
 
 The endpoint intentionally omits raw user text and idempotency-key values.
+Lane-scoped dedupe means shadow dry-run and direct canary can observe the same
+production turn without marking each other as duplicates.
 
 ## Device Verification
 

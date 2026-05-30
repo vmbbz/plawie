@@ -50,6 +50,9 @@ The app only forwards real turns to this direct lane when built with:
 
 The forwarding is fire-and-forget. It does not block the production PRoot
 request and does not alter the user-visible response stream.
+Direct canary and shadow dry-run dedupe in separate native diagnostic lanes, so
+the same production frame can be observed by both without false duplicate
+marking.
 
 Expected live log:
 
