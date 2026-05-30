@@ -186,6 +186,10 @@
             'gesture dance': 'animations/gesture_dance.vrma',
             'peace sign': 'animations/gesture_peacesign.vrma',
         };
+        const STABLE_GESTURE_PATH_OVERRIDES = {
+            'wave': 'animations/gesture_greeting.vrma',
+            'wave right': 'animations/gesture_greeting.vrma',
+        };
         const GESTURE_FILE_MAP = {};
         GESTURE_PATHS.forEach(name => {
             const path = `animations/${name}.vrma`;
@@ -203,6 +207,9 @@
             GESTURE_FILE_MAP[alias] = path;
             GESTURE_FILE_MAP[path.toLowerCase()] = path;
             GESTURE_FILE_MAP[path.split('/').pop().replace('.vrma', '').toLowerCase().replaceAll('_', ' ')] = path;
+        });
+        Object.entries(STABLE_GESTURE_PATH_OVERRIDES).forEach(([alias, path]) => {
+            GESTURE_FILE_MAP[alias] = path;
         });
         Object.entries(FULL_BODY_GESTURE_ALIASES).forEach(([alias, path]) => {
             GESTURE_FILE_MAP[alias] = path;

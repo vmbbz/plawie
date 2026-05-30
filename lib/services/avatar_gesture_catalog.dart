@@ -14,6 +14,8 @@ class AvatarGestureCatalog {
     'gesture dance': 'assets/vrm/animations/gesture_dance.vrma',
     'spin': 'assets/vrm/animations/gesture_spin.vrma',
     'greeting': 'assets/vrm/animations/gesture_greeting.vrma',
+    'wave': 'assets/vrm/animations/gesture_greeting.vrma',
+    'wave right': 'assets/vrm/animations/gesture_greeting.vrma',
     'squat': 'assets/vrm/animations/gesture_squat.vrma',
     'fight': 'assets/vrm/animations/gesture_fight.vrma',
     'cute': 'assets/vrm/animations/gesture_cute.vrma',
@@ -102,11 +104,9 @@ class AvatarGestureCatalog {
         'assets/vrm/animations/limbs/Stylized_Wave_Left_01.vrma',
     'stylized wave right':
         'assets/vrm/animations/limbs/Stylized_Wave_Right_01.vrma',
-    'wave': 'assets/vrm/animations/limbs/Wave_Right_01.vrma',
     'both wave': 'assets/vrm/animations/limbs/Wave_Both_01.vrma',
     'wave both': 'assets/vrm/animations/limbs/Wave_Both_01.vrma',
     'wave left': 'assets/vrm/animations/limbs/Wave_Left_01.vrma',
-    'wave right': 'assets/vrm/animations/limbs/Wave_Right_01.vrma',
   };
 
   static final List<String> toolGestureNames = _buildToolGestureNames();
