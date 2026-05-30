@@ -502,6 +502,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-native-dart-bridge-ordering-cancel-stream",
     "/gateway/chat-native-dart-bridge-haptic-canary-stream",
     "/gateway/chat-native-dart-bridge-readonly-canary-stream",
+    "/gateway/chat-native-dart-bridge-avatar-canary-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -3112,6 +3113,146 @@ function createMobileGatewayProbe({
         requestHash: bridgeRequest.requestHash,
         canaryAllowlist: bridgeRequest.canaryAllowlist,
         cancellationToken: bridgeRequest.cancellationToken,
+        dryRun: bridgeRequest.dryRun,
+        providerCallsEnabled: bridgeRequest.providerCallsEnabled,
+        executionEnabled: bridgeRequest.executionEnabled,
+        toolExecutionEnabled: bridgeRequest.toolExecutionEnabled,
+        bridgeExecutionEnabled: bridgeRequest.bridgeExecutionEnabled
+      })
+    };
+  }
+
+  function nativeAvatarCanaryToolSelection() {
+    const baseTool = nativeMobileToolCatalog().find((entry) =>
+      entry.gatewayName === "avatar.gesture"
+    );
+    if (!baseTool) {
+      throw Object.assign(new Error("avatar_canary_tool_missing"), {
+        code: "avatar_canary_tool_missing"
+      });
+    }
+    const tool = {
+      ...baseTool,
+      description:
+        "Execute one protected avatar.gesture canary through the native-to-Dart bridge.",
+      sampleArguments: {
+        gesture: "wave right",
+        durationMs: 1800,
+        interrupt: true,
+        protectedGesture: true,
+        source: "native-dart-bridge-avatar-canary",
+        canaryMode: "native-dart-bridge-avatar-canary"
+      }
+    };
+    const toolFunctionNames = [tool.functionName];
+    const gatewayToolNames = [tool.gatewayName];
+    const toolAliasMap = { [tool.functionName]: tool.gatewayName };
+    return {
+      tools: [tool],
+      toolFunctionNames,
+      gatewayToolNames,
+      toolAliasMap,
+      selectionHash: metadataHash({
+        toolFunctionNames,
+        gatewayToolNames,
+        canaryAllowlist: ["avatar.gesture"],
+        gesture: tool.sampleArguments.gesture,
+        durationMs: tool.sampleArguments.durationMs,
+        protectedGesture: true
+      })
+    };
+  }
+
+  function nativeDartBridgeAvatarCanaryRequest(
+    dispatch,
+    queued,
+    requestBuilder
+  ) {
+    const source = "native-dart-bridge-avatar-canary";
+    const canaryMode = "native-dart-bridge-avatar-canary";
+    const canaryAllowlist = ["avatar.gesture"];
+    const input = {
+      gesture: "wave right",
+      durationMs: 1800,
+      interrupt: true,
+      protectedGesture: true,
+      source,
+      canaryMode
+    };
+    const cancellationToken = stableId("native-avatar-cancel-token", {
+      runId: queued.runId,
+      callId: dispatch.callId,
+      dispatchHash: dispatch.dispatchHash
+    });
+    const toolUseFrame = {
+      ...dispatch.toolUseFrame,
+      source,
+      input,
+      dryRun: false,
+      canaryOnly: true,
+      canaryMode,
+      protectedGesture: true,
+      arbitration: "protected-gesture",
+      cancellationToken,
+      executionEnabled: true,
+      toolExecutionEnabled: true
+    };
+    const executeDispatchHash = metadataHash({
+      callId: dispatch.callId,
+      route: dispatch.route,
+      toolUseFrame,
+      fixtureHash: dispatch.fixture.parsed.toolPlanHash,
+      canaryAllowlist,
+      dryRun: false,
+      protectedGesture: true,
+      executionEnabled: true,
+      toolExecutionEnabled: true,
+      bridgeExecutionEnabled: true
+    });
+    const bridgeRequest = {
+      type: "native_tool_dispatch_execute_canary",
+      runtime: "native-node-embedded",
+      source,
+      canaryMode,
+      canaryOnly: true,
+      protectedGesture: true,
+      arbitration: "protected-gesture",
+      runId: queued.runId,
+      requestId: queued.requestId,
+      nativeSessionId: queued.nativeSessionId,
+      callId: dispatch.callId,
+      method: dispatch.route.method,
+      capability: dispatch.route.capability,
+      dartCapability: dispatch.route.dartCapability,
+      requiresUiThread: dispatch.route.requiresUiThread,
+      input,
+      toolUseFrame,
+      dispatchHash: executeDispatchHash,
+      requestHash: requestBuilder.requestHash,
+      toolSelectionHash: requestBuilder.toolSelectionHash,
+      canaryAllowlist,
+      cancellationToken,
+      dryRun: false,
+      providerCallsEnabled: false,
+      executionEnabled: true,
+      toolExecutionEnabled: true,
+      bridgeExecutionEnabled: true
+    };
+    return {
+      ...bridgeRequest,
+      bridgeRequestHash: metadataHash({
+        type: bridgeRequest.type,
+        source: bridgeRequest.source,
+        runId: bridgeRequest.runId,
+        callId: bridgeRequest.callId,
+        method: bridgeRequest.method,
+        capability: bridgeRequest.capability,
+        input: bridgeRequest.input,
+        dispatchHash: bridgeRequest.dispatchHash,
+        requestHash: bridgeRequest.requestHash,
+        canaryAllowlist: bridgeRequest.canaryAllowlist,
+        cancellationToken: bridgeRequest.cancellationToken,
+        protectedGesture: bridgeRequest.protectedGesture,
         dryRun: bridgeRequest.dryRun,
         providerCallsEnabled: bridgeRequest.providerCallsEnabled,
         executionEnabled: bridgeRequest.executionEnabled,
@@ -7383,6 +7524,447 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatNativeDartBridgeAvatarCanaryStream(req, res) {
+    const source = "native-dart-bridge-avatar-canary";
+    const canaryMode = "native-dart-bridge-avatar-canary";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder =
+        providerToolPlanRequestBuilder(envelope, shape, queued, payload);
+      const avatarToolSelection = nativeAvatarCanaryToolSelection();
+      const dispatch = syntheticToolDispatchDryRun(avatarToolSelection, queued);
+      const bridgeRequest = nativeDartBridgeAvatarCanaryRequest(
+        dispatch,
+        queued,
+        {
+          ...requestBuilder,
+          toolSelectionHash: avatarToolSelection.selectionHash
+        }
+      );
+      const canaryAllowlistOk =
+        dispatch.route.method === "avatar.gesture" &&
+        bridgeRequest.canaryAllowlist.length === 1 &&
+        bridgeRequest.canaryAllowlist[0] === "avatar.gesture" &&
+        bridgeRequest.input.gesture === "wave right" &&
+        bridgeRequest.input.durationMs > 0 &&
+        bridgeRequest.input.durationMs <= 2500 &&
+        bridgeRequest.input.interrupt === true &&
+        bridgeRequest.input.protectedGesture === true;
+      const ack = {
+        parsed,
+        route: "native_dart_bridge_avatar_canary",
+        routeStatus: "native_dart_bridge_avatar_canary_started",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "native forced one protected allowlisted avatar.gesture call and sent it to Dart for real canary execution",
+        provider: requestBuilder.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: requestBuilder.providerModel,
+        transport: requestBuilder.transport,
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: avatarToolSelection.selectionHash,
+        dispatchHash: bridgeRequest.dispatchHash,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        fixtureHash: dispatch.fixture.parsed.toolPlanHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        canaryAllowlist: bridgeRequest.canaryAllowlist,
+        canaryAllowlistOk,
+        gesture: bridgeRequest.input.gesture,
+        durationMs: bridgeRequest.input.durationMs,
+        protectedGesture: true,
+        arbitration: bridgeRequest.arbitration,
+        executeParityOk: false,
+        validationOk: false,
+        selectedToolCount: 1,
+        providerCallStarted: false,
+        providerCallsEnabled: false,
+        transportInvocationEnabled: false,
+        executionEnabled: true,
+        toolExecutionEnabled: true,
+        bridgeExecutionEnabled: true,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: "native_dart_bridge_avatar_canary",
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "native-dart-bridge-avatar-canary"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: false,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "native_dart_bridge_avatar_canary",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: true,
+        toolExecutionEnabled: true,
+        bridgeExecutionEnabled: true,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("tool_plan_summary", {
+        ok: dispatch.fixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        toolPlanSummary: dispatch.fixture.parsed,
+        plan: dispatch.plan,
+        forcedAllowlist: bridgeRequest.canaryAllowlist,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        canaryAllowlistOk,
+        providerCallsEnabled: false,
+        executionEnabled: true,
+        toolExecutionEnabled: true,
+        bridgeExecutionEnabled: true,
+        protectedGesture: true,
+        arbitration: bridgeRequest.arbitration
+      });
+
+      writeEvent("bridge_execute_request", {
+        ok: canaryAllowlistOk && dispatch.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        endpoint: "http://127.0.0.1:8765/api/native-gateway/dispatch-execute-canary",
+        bridgeRequest: {
+          type: bridgeRequest.type,
+          callId: bridgeRequest.callId,
+          method: bridgeRequest.method,
+          capability: bridgeRequest.capability,
+          dartCapability: bridgeRequest.dartCapability,
+          requiresUiThread: bridgeRequest.requiresUiThread,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          dispatchHash: bridgeRequest.dispatchHash,
+          cancellationToken: bridgeRequest.cancellationToken,
+          canaryAllowlist: bridgeRequest.canaryAllowlist,
+          input: bridgeRequest.input,
+          dryRun: bridgeRequest.dryRun,
+          providerCallsEnabled: bridgeRequest.providerCallsEnabled,
+          executionEnabled: bridgeRequest.executionEnabled,
+          toolExecutionEnabled: bridgeRequest.toolExecutionEnabled,
+          bridgeExecutionEnabled: bridgeRequest.bridgeExecutionEnabled,
+          protectedGesture: bridgeRequest.protectedGesture,
+          arbitration: bridgeRequest.arbitration
+        }
+      });
+
+      const bridgeResponse = await postJsonToDartBridge(
+        "/api/native-gateway/dispatch-execute-canary",
+        bridgeRequest,
+        10000,
+        "execute-canary"
+      );
+      const executeAck = bridgeResponse.body;
+      const executeResult =
+        executeAck?.result && typeof executeAck.result === "object"
+          ? executeAck.result
+          : {};
+      const resultStatus = executeAck.resultStatus || executeResult.status || "unknown";
+      const returnedGesture = String(executeResult.gesture || "").toLowerCase();
+      const returnedDuration = Number(executeResult.durationMs);
+      const gestureOk = returnedGesture === "wave right";
+      const durationOk =
+        Number.isFinite(returnedDuration) &&
+        returnedDuration > 0 &&
+        returnedDuration <= 2500;
+      const resultStatusOk = resultStatus === "started";
+      const arbitrationOk =
+        executeResult.protectedGesture === true ||
+        executeAck.avatarInputOk === true;
+      const executeAckHash = metadataHash({
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        ok: executeAck.ok === true,
+        accepted: executeAck.accepted === true,
+        command: executeAck.command,
+        canaryAllowlistOk: executeAck.canaryAllowlistOk === true,
+        dryRun: executeAck.dryRun === false,
+        executed: executeAck.executed === true,
+        resultStatus,
+        gesture: returnedGesture,
+        durationMs: executeResult.durationMs,
+        protectedGesture: executeResult.protectedGesture === true,
+        providerCallsEnabled: executeAck.providerCallsEnabled === true,
+        executionEnabled: executeAck.executionEnabled === true,
+        toolExecutionEnabled: executeAck.toolExecutionEnabled === true,
+        bridgeExecutionEnabled: executeAck.bridgeExecutionEnabled === true
+      });
+      const executeParityOk =
+        requestBuilder.validationOk === true &&
+        dispatch.parityOk === true &&
+        canaryAllowlistOk === true &&
+        executeAck.ok === true &&
+        executeAck.accepted === true &&
+        executeAck.command === "avatar.gesture" &&
+        executeAck.canaryAllowlistOk === true &&
+        executeAck.dryRun === false &&
+        executeAck.executed === true &&
+        resultStatusOk &&
+        gestureOk &&
+        durationOk &&
+        arbitrationOk &&
+        executeAck.providerCallsEnabled === false &&
+        executeAck.executionEnabled === true &&
+        executeAck.toolExecutionEnabled === true &&
+        executeAck.bridgeExecutionEnabled === true;
+      const toolResultFrame = {
+        type: "tool_result",
+        id: dispatch.callId,
+        name: "avatar.gesture",
+        result: {
+          ok: executeParityOk,
+          dryRun: false,
+          executed: executeAck.executed === true,
+          accepted: executeAck.accepted === true,
+          status: resultStatus,
+          result: executeResult,
+          executeAckHash,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          cancellationToken: bridgeRequest.cancellationToken,
+          canaryAllowlistOk: executeAck.canaryAllowlistOk === true,
+          gestureOk,
+          durationOk,
+          arbitrationOk,
+          providerCallsEnabled: false,
+          executionEnabled: true,
+          toolExecutionEnabled: true,
+          bridgeExecutionEnabled: true,
+          protectedGesture: true
+        },
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        dryRun: false,
+        executionEnabled: true,
+        toolExecutionEnabled: true,
+        protectedGesture: true
+      };
+
+      writeEvent("bridge_execute_ack", {
+        ok: executeAck.ok === true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        statusCode: bridgeResponse.statusCode,
+        responseBytesRead: bridgeResponse.responseBytesRead,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        executeAckHash,
+        executeParityOk,
+        resultStatus,
+        gestureOk,
+        durationOk,
+        arbitrationOk,
+        executeAck
+      });
+      writeEvent("tool_use_frame", {
+        ok: dispatch.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        frame: bridgeRequest.toolUseFrame
+      });
+      writeEvent("tool_result_frame", {
+        ok: executeParityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        frame: toolResultFrame
+      });
+      writeEvent("avatar_canary_summary", {
+        ok: executeParityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: avatarToolSelection.selectionHash,
+        dispatchHash: bridgeRequest.dispatchHash,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        executeAckHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        canaryAllowlistOk,
+        executeParityOk,
+        validationOk: executeParityOk,
+        toolName: "avatar.gesture",
+        capability: "avatar",
+        dartCapability: dispatch.route.dartCapability,
+        gesture: returnedGesture || bridgeRequest.input.gesture,
+        durationMs: executeResult.durationMs,
+        resultStatus,
+        gestureOk,
+        durationOk,
+        arbitrationOk,
+        providerCallsEnabled: false,
+        executionEnabled: true,
+        toolExecutionEnabled: true,
+        bridgeExecutionEnabled: true,
+        protectedGesture: true
+      });
+      writeEvent("end", {
+        ok: executeParityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        routeStatus: executeParityOk
+          ? "native_dart_bridge_avatar_canary_complete"
+          : "native_dart_bridge_avatar_canary_failed",
+        finishReason: executeParityOk
+          ? "native_dart_bridge_avatar_canary_complete"
+          : "native_dart_bridge_avatar_canary_failed",
+        requestHash: requestBuilder.requestHash,
+        dispatchHash: bridgeRequest.dispatchHash,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        executeAckHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        canaryAllowlistOk,
+        executeParityOk,
+        validationOk: executeParityOk,
+        toolName: "avatar.gesture",
+        capability: "avatar",
+        gesture: returnedGesture || bridgeRequest.input.gesture,
+        providerCallsEnabled: false,
+        executionEnabled: true,
+        toolExecutionEnabled: true,
+        bridgeExecutionEnabled: true,
+        protectedGesture: true
+      });
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code:
+              error.code || "chat_native_dart_bridge_avatar_canary_parse_failed",
+            message: error.message || String(error),
+            raw: error.raw || error.stack || error.message || String(error),
+            statusCode: error.statusCode || null,
+            body: error.body || null
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_native_dart_bridge_avatar_canary_failed",
+          message: error.message || String(error),
+          raw: error.raw || error.stack || error.message || String(error),
+          statusCode: error.statusCode || null,
+          body: error.body || null
+        }
+      });
+      res.end();
+    }
+  }
+
   async function handleChatNativeDartBridgeReadOnlyCanaryStream(req, res) {
     const source = "native-dart-bridge-readonly-canary";
     const canaryMode = "native-dart-bridge-readonly-canary";
@@ -8070,6 +8652,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-native-dart-bridge-readonly-canary-stream") {
       handleChatNativeDartBridgeReadOnlyCanaryStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-native-dart-bridge-avatar-canary-stream") {
+      handleChatNativeDartBridgeAvatarCanaryStream(req, res);
       return true;
     }
 

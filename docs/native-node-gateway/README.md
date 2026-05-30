@@ -88,6 +88,9 @@ keeping provider calls and general tool routing disabled,
 can run an explicit `/native-dart-bridge-readonly` canary that executes
 allowlisted `flash.status` and `sensor.list` read-only bridge calls in order
 while keeping provider calls and general tool routing disabled,
+can run an explicit `/native-dart-bridge-avatar` canary that executes one
+protected allowlisted `avatar.gesture` call and suppresses auto gesture
+interjections during the visible canary window,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -156,6 +159,7 @@ be safely generalized.
 | [39-native-dart-bridge-ordering-cancel.md](39-native-dart-bridge-ordering-cancel.md) | Explicit `/native-dart-bridge-order` UI turns proving bridge ordering and cancellation dry-run parity |
 | [40-native-dart-bridge-haptic-canary.md](40-native-dart-bridge-haptic-canary.md) | Explicit `/native-dart-bridge-haptic` UI turns executing one bounded haptic bridge canary |
 | [41-native-dart-bridge-readonly-canary.md](41-native-dart-bridge-readonly-canary.md) | Explicit `/native-dart-bridge-readonly` UI turns executing ordered read-only bridge canaries |
+| [42-native-dart-bridge-avatar-canary.md](42-native-dart-bridge-avatar-canary.md) | Explicit `/native-dart-bridge-avatar` UI turns executing one protected visible avatar gesture canary |
 
 ## Work Rules
 

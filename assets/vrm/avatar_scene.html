@@ -214,6 +214,8 @@
         let activeGestureCommand = null;
         let activeGestureTimer = null;
         let gestureCommandSequence = 0;
+        let protectedGestureUntil = 0;
+        let protectedGestureId = null;
         const DEFAULT_LOOP_GESTURE_MS = 15000;
         const MAX_GESTURE_MS = 120000;
 
@@ -607,12 +609,13 @@
             const wasSpeaking = isSpeaking;
             speechIntensity = intensity;
             isSpeaking = intensity > 0.1;
+            const protectedGestureActive = isProtectedGestureActive();
 
             // Auto talk gesture: start when TTS begins, stop when TTS ends.
             // Only acts when no explicit (non-talk) gesture is in progress.
             if (isSpeaking && !wasSpeaking) {
                 const talkAction = gestures['talk'];
-                if (talkAction && idleAction && gestureMode !== 'subtle') {
+                if (talkAction && idleAction && gestureMode !== 'subtle' && !protectedGestureActive) {
                     const onlyIdle = (currentAction === idleAction || !currentAction);
                     if (onlyIdle && !talkGestureActive) {
                         talkGestureActive = true;
@@ -622,7 +625,7 @@
                     }
                 }
                 // Dance mode: immediately play dance loop
-                if (gestureMode === 'dance') {
+                if (gestureMode === 'dance' && !protectedGestureActive) {
                     const danceAction = gestures['dance'] || gestures['spin'];
                     if (danceAction) window.playGesture('dance');
                 }
@@ -650,7 +653,7 @@
         window.setGestureMode = (mode) => {
             gestureMode = mode;
             nextRandomGestureTime = -1;
-            if (mode === 'dance' && isSpeaking) {
+            if (mode === 'dance' && isSpeaking && !isProtectedGestureActive()) {
                 window.playGesture('dance');
             } else if (mode === 'expressive') {
                 // Reset timer so first expressive gesture fires in 3-5 s
@@ -768,6 +771,19 @@
             return Math.max(250, Math.min(MAX_GESTURE_MS, Math.round(ms)));
         }
 
+        function isProtectedGestureCommand(command) {
+            return !!command && (
+                command.protectedGesture === true ||
+                command.protected === true ||
+                command.source === 'native-dart-bridge-avatar-canary' ||
+                command.canaryMode === 'native-dart-bridge-avatar-canary'
+            );
+        }
+
+        function isProtectedGestureActive() {
+            return !!protectedGestureId && performance.now() < protectedGestureUntil;
+        }
+
         function isLoopingGesture(n, action) {
             const alias = action?.alias || n || '';
             const path = action?.path || '';
@@ -810,8 +826,13 @@
                 id: command.id,
                 status,
                 gesture: command.resolvedGesture || command.gesture,
+                protectedGesture: protectedGestureId === command.id,
                 queueDepth: gestureQueue.length,
             });
+            if (protectedGestureId === command.id) {
+                protectedGestureId = null;
+                protectedGestureUntil = 0;
+            }
             activeGestureCommand = null;
             activeGestureTimer = null;
             processGestureQueue();
@@ -888,6 +909,7 @@
             const duration = action.getClip().duration;
             const naturalDurationMs = Math.max((duration * 1000) - 350, 100);
             const playDurationMs = requestedDurationMs || (isLooping ? DEFAULT_LOOP_GESTURE_MS : naturalDurationMs);
+            const protectedCommand = isProtectedGestureCommand(command);
 
             if (isLooping) {
                 talkGestureActive = (n === 'talk' || n === 'gesture_talk');
@@ -906,6 +928,11 @@
                 proceduralBlend = 0.0;
             }
 
+            if (protectedCommand) {
+                protectedGestureId = command.id;
+                protectedGestureUntil = performance.now() + Math.min(playDurationMs + 500, 10000);
+            }
+
             postGestureResult({
                 id: command.id,
                 status: 'started',
@@ -913,6 +940,8 @@
                 path: action.path || null,
                 looping: isLooping,
                 durationMs: playDurationMs,
+                protectedGesture: protectedCommand,
+                protectedUntilMs: protectedCommand ? Math.max(0, Math.round(protectedGestureUntil - performance.now())) : 0,
                 queueDepth: gestureQueue.length,
             });
 
@@ -950,6 +979,26 @@
                 : { ...rawCommand };
             command.id = command.id || ('js_gesture_' + Date.now() + '_' + (gestureCommandSequence++));
             command.gesture = command.gesture || command.name || command.value || 'ready';
+            const protectedIncoming = isProtectedGestureCommand(command);
+            if (isProtectedGestureActive() && !protectedIncoming) {
+                const incomingGesture = normalizeGestureName(command.gesture);
+                const isAutoLowPriority =
+                    command.source === 'legacy' ||
+                    command.source === 'auto' ||
+                    incomingGesture === 'ready' ||
+                    incomingGesture === 'talk' ||
+                    incomingGesture === 'dance';
+                if (isAutoLowPriority) {
+                    postGestureResult({
+                        id: command.id,
+                        status: 'skipped',
+                        gesture: command.gesture,
+                        reason: 'Protected gesture is active.',
+                        queueDepth: gestureQueue.length,
+                    });
+                    return;
+                }
+            }
 
             if (command.interrupt === true) {
                 gestureQueue.length = 0;
@@ -1180,7 +1229,7 @@
             // ── Expressive mode: random interjection gestures while TTS is active ──
             if (gestureMode === 'expressive' && isSpeaking) {
                 if (nextRandomGestureTime < 0) nextRandomGestureTime = time + 3 + Math.random() * 2;
-                if (time >= nextRandomGestureTime && currentAction === gestures['talk']) {
+                if (time >= nextRandomGestureTime && currentAction === gestures['talk'] && !isProtectedGestureActive()) {
                     const pool = EXPRESSIVE_GESTURES.filter(g => gestures[g]);
                     if (pool.length) window.playGesture(pool[Math.floor(Math.random() * pool.length)]);
                     nextRandomGestureTime = time + 5 + Math.random() * 6;

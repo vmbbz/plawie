@@ -3840,6 +3840,24 @@ $message''';
     return null;
   }
 
+  String? _nativeDartBridgeAvatarPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const command = '/native-dart-bridge-avatar';
+    final lower = trimmedLeft.toLowerCase();
+    if (lower == command) {
+      return 'avatar.gesture wave right protected native bridge canary';
+    }
+    if (lower.startsWith('$command ')) {
+      final payload = trimmedLeft.substring(command.length).trimLeft();
+      return payload.isEmpty
+          ? 'avatar.gesture wave right protected native bridge canary'
+          : payload;
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -6471,6 +6489,232 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeDartBridgeAvatarMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final avatarMessage = _nativeDartBridgeAvatarPayload(message);
+    if (avatarMessage == null) return;
+    final canaryPrompt = avatarMessage.trim().isEmpty
+        ? 'avatar.gesture wave right protected native bridge canary'
+        : 'avatar.gesture wave right ${avatarMessage.trim()}';
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: canaryPrompt,
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-DART-BRIDGE-AVATAR] -> Opening real avatar bridge canary',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamNativeDartBridgeAvatarCanaryChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        _addActivity('[NATIVE-DART-BRIDGE-AVATAR] OK ACK received');
+        yield [
+          'Native bridge avatar canary started',
+          '',
+          'parsed: ${ack['parsed'] == true}',
+          'routeStatus: ${ack['routeStatus'] ?? 'unknown'}',
+          'hashMatches: ${ack['hashMatches'] == true}',
+          'bridgeRequestHash: ${ack['bridgeRequestHash'] ?? 'unknown'}',
+          'gesture: ${ack['gesture'] ?? 'unknown'}',
+          'durationMs: ${ack['durationMs'] ?? 'unknown'}',
+          'protectedGesture: ${ack['protectedGesture'] == true}',
+          'arbitration: ${ack['arbitration'] ?? 'unknown'}',
+          'canaryAllowlistOk: ${ack['canaryAllowlistOk'] == true}',
+          'providerCallsEnabled: ${ack['providerCallsEnabled'] == true}',
+          'executionEnabled: ${ack['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${ack['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_plan_summary') {
+        yield [
+          'Native avatar canary plan',
+          '',
+          'fixtureParityOk: ${event['fixtureParityOk'] == true}',
+          'dispatchParityOk: ${event['dispatchParityOk'] == true}',
+          'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+          'protectedGesture: ${event['protectedGesture'] == true}',
+          'arbitration: ${event['arbitration'] ?? 'unknown'}',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'executionEnabled: ${event['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_execute_request') {
+        final bridgeRequest = event['bridgeRequest'] is Map
+            ? Map<String, dynamic>.from(event['bridgeRequest'] as Map)
+            : <String, dynamic>{};
+        final input = bridgeRequest['input'] is Map
+            ? Map<String, dynamic>.from(bridgeRequest['input'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Native avatar execute request sent',
+          '',
+          'method: ${bridgeRequest['method'] ?? 'unknown'}',
+          'capability: ${bridgeRequest['capability'] ?? 'unknown'}',
+          'endpoint: ${event['endpoint'] ?? 'unknown'}',
+          'gesture: ${input['gesture'] ?? 'unknown'}',
+          'durationMs: ${input['durationMs'] ?? 'unknown'}',
+          'interrupt: ${input['interrupt'] == true}',
+          'protectedGesture: ${input['protectedGesture'] == true}',
+          'dryRun: ${bridgeRequest['dryRun'] == true}',
+          'providerCallsEnabled: ${bridgeRequest['providerCallsEnabled'] == true}',
+          'executionEnabled: ${bridgeRequest['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${bridgeRequest['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${bridgeRequest['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_execute_ack') {
+        final executeAck = event['executeAck'] is Map
+            ? Map<String, dynamic>.from(event['executeAck'] as Map)
+            : <String, dynamic>{};
+        final result = executeAck['result'] is Map
+            ? Map<String, dynamic>.from(executeAck['result'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Dart bridge avatar execute ACK',
+          '',
+          'ok: ${executeAck['ok'] == true}',
+          'accepted: ${executeAck['accepted'] == true}',
+          'executed: ${executeAck['executed'] == true}',
+          'command: ${executeAck['command'] ?? 'unknown'}',
+          'gesture: ${result['gesture'] ?? 'unknown'}',
+          'durationMs: ${result['durationMs'] ?? 'unknown'}',
+          'resultStatus: ${event['resultStatus'] ?? executeAck['resultStatus'] ?? 'unknown'}',
+          'gestureOk: ${event['gestureOk'] == true}',
+          'durationOk: ${event['durationOk'] == true}',
+          'arbitrationOk: ${event['arbitrationOk'] == true}',
+          'executeParityOk: ${event['executeParityOk'] == true}',
+          'executeAckHash: ${event['executeAckHash'] ?? 'unknown'}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_use_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final input = frame['input'] is Map
+            ? Map<String, dynamic>.from(frame['input'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        continue;
+      }
+
+      if (eventType == 'tool_result_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final result = frame['result'] is Map
+            ? Map<String, dynamic>.from(frame['result'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        continue;
+      }
+
+      if (eventType == 'avatar_canary_summary') {
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-AVATAR] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native bridge avatar canary summary',
+          '',
+          'toolName: ${event['toolName'] ?? 'unknown'}',
+          'gesture: ${event['gesture'] ?? 'unknown'}',
+          'durationMs: ${event['durationMs'] ?? 'unknown'}',
+          'resultStatus: ${event['resultStatus'] ?? 'unknown'}',
+          'gestureOk: ${event['gestureOk'] == true}',
+          'durationOk: ${event['durationOk'] == true}',
+          'arbitrationOk: ${event['arbitrationOk'] == true}',
+          'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+          'executeParityOk: ${event['executeParityOk'] == true}',
+          'validationOk: ${event['validationOk'] == true}',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'executionEnabled: ${event['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-AVATAR] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native bridge avatar canary complete',
+            '',
+            'finishReason: $finishReason',
+            'toolName: ${event['toolName'] ?? 'unknown'}',
+            'gesture: ${event['gesture'] ?? 'unknown'}',
+            'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+            'executeParityOk: ${event['executeParityOk'] == true}',
+            'validationOk: ${event['validationOk'] == true}',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'executionEnabled: ${event['executionEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+            'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-DART-BRIDGE-AVATAR] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native Dart bridge avatar canary ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6504,6 +6748,15 @@ $message''';
 
     if (_nativeDartBridgeReadOnlyPayload(message) != null) {
       yield* _sendNativeDartBridgeReadOnlyMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
+
+    if (_nativeDartBridgeAvatarPayload(message) != null) {
+      yield* _sendNativeDartBridgeAvatarMessage(
         message,
         model: model,
         sessionKey: sessionKey,

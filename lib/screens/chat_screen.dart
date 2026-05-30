@@ -524,6 +524,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-dart-bridge-order]',
       '[native-dart-bridge-haptic]',
       '[native-dart-bridge-readonly]',
+      '[native-dart-bridge-avatar]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];

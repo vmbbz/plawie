@@ -75,6 +75,10 @@ class AvatarCapability extends CapabilityHandler {
           'gesture': gesture,
           if (durationMs != null) 'durationMs': durationMs,
           if (interrupt != null) 'interrupt': interrupt,
+          if (params['protectedGesture'] == true) 'protectedGesture': true,
+          if (params['source'] != null) 'source': params['source'].toString(),
+          if (params['canaryMode'] != null)
+            'canaryMode': params['canaryMode'].toString(),
         }).timeout(const Duration(seconds: 9));
         return NodeFrame.response('', payload: {
           'status': result['status'] ?? 'queued',

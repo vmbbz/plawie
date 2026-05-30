@@ -7,6 +7,7 @@ import 'preferences_service.dart';
 import 'skills_service.dart';
 import 'tts_service.dart';
 import 'gateway_tool_catalog.dart';
+import 'capabilities/avatar_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
@@ -55,6 +56,7 @@ class AgentSkillServer {
 
   HttpServer? _server;
   Future<void>? _startFuture;
+  final AvatarCapability _avatarCapability = AvatarCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
@@ -322,6 +324,7 @@ class AgentSkillServer {
           _validateNativeGatewayDryRunArguments(command, input);
       final hapticCanary = canaryMode == 'native-dart-bridge-haptic-canary';
       final readOnlyCanary = canaryMode == 'native-dart-bridge-readonly-canary';
+      final avatarCanary = canaryMode == 'native-dart-bridge-avatar-canary';
       final canaryAllowlistOk = _nativeGatewayExecuteCanaryAllowlistOk(
         canaryMode,
         allowlist,
@@ -332,10 +335,24 @@ class AgentSkillServer {
               input['durationMs'] ?? input['duration_ms'],
             )
           : null;
+      final avatarGesture =
+          avatarCanary ? _nativeGatewayAvatarCanaryGesture(input) : null;
+      final avatarDurationMs = avatarCanary
+          ? _nativeGatewayAvatarCanaryDuration(
+              input['durationMs'] ?? input['duration_ms'],
+            )
+          : null;
       final patternRejected = input.containsKey('pattern');
       final hapticInputOk =
           !hapticCanary || (durationValidation != null && !patternRejected);
       final readOnlyInputOk = !readOnlyCanary || input.isEmpty;
+      final avatarInputOk = !avatarCanary ||
+          (avatarGesture == 'wave right' &&
+              avatarDurationMs != null &&
+              input['interrupt'] == true &&
+              input['protectedGesture'] == true &&
+              input['source'] == 'native-dart-bridge-avatar-canary' &&
+              input['canaryMode'] == 'native-dart-bridge-avatar-canary');
       final commandAllowedForMode =
           _nativeGatewayExecuteCanaryCommandAllowed(canaryMode, command);
       final accepted = dryRunDisabled &&
@@ -346,7 +363,8 @@ class AgentSkillServer {
           argumentValidation.ok &&
           canaryAllowlistOk &&
           hapticInputOk &&
-          readOnlyInputOk;
+          readOnlyInputOk &&
+          avatarInputOk;
 
       var executed = false;
       var result = <String, dynamic>{};
@@ -355,6 +373,8 @@ class AgentSkillServer {
         final frame = await _executeNativeGatewayCanaryCommand(
           command,
           hapticDurationMs: durationValidation,
+          avatarGesture: avatarGesture,
+          avatarDurationMs: avatarDurationMs,
         );
         executed = frame.isOk;
         if (frame.payload != null) {
@@ -364,9 +384,11 @@ class AgentSkillServer {
           error = Map<String, dynamic>.from(frame.error!);
         }
       }
-      final routePrefix = readOnlyCanary
-          ? 'native_dart_bridge_readonly_canary'
-          : 'native_dart_bridge_haptic_canary';
+      final routePrefix = avatarCanary
+          ? 'native_dart_bridge_avatar_canary'
+          : readOnlyCanary
+              ? 'native_dart_bridge_readonly_canary'
+              : 'native_dart_bridge_haptic_canary';
       final resultStatus =
           result['status']?.toString() ?? (executed ? 'ok' : 'not_executed');
 
@@ -398,6 +420,9 @@ class AgentSkillServer {
             durationValidation != null &&
             durationValidation > 0 &&
             durationValidation <= 150,
+        'avatarGesture': avatarGesture,
+        'avatarDurationMs': avatarDurationMs,
+        'avatarInputOk': avatarInputOk,
         'patternRejected': patternRejected,
         'readOnlyInputOk': readOnlyInputOk,
         'result': result,
@@ -435,6 +460,27 @@ class AgentSkillServer {
     return parsed;
   }
 
+  String? _nativeGatewayAvatarCanaryGesture(Map<String, dynamic> input) {
+    final value =
+        (input['gesture'] ?? input['name'] ?? input['value'] ?? input['text'])
+            ?.toString()
+            .trim()
+            .toLowerCase();
+    if (value == null || value.isEmpty) return null;
+    return value == 'wave' ? 'wave right' : value;
+  }
+
+  int? _nativeGatewayAvatarCanaryDuration(dynamic value) {
+    final parsed = value is int
+        ? value
+        : value is num
+            ? value.round()
+            : int.tryParse(value?.toString() ?? '');
+    if (parsed == null || parsed < 500) return null;
+    if (parsed > 2500) return 2500;
+    return parsed;
+  }
+
   bool _nativeGatewayExecuteCanaryAllowlistOk(
     String? canaryMode,
     List<String> allowlist,
@@ -444,6 +490,12 @@ class AgentSkillServer {
       return allowlist.length == 1 &&
           allowlist.single == 'haptic.vibrate' &&
           command == 'haptic.vibrate';
+    }
+
+    if (canaryMode == 'native-dart-bridge-avatar-canary') {
+      return allowlist.length == 1 &&
+          allowlist.single == 'avatar.gesture' &&
+          command == 'avatar.gesture';
     }
 
     if (canaryMode == 'native-dart-bridge-readonly-canary') {
@@ -465,6 +517,9 @@ class AgentSkillServer {
     if (canaryMode == 'native-dart-bridge-haptic-canary') {
       return command == 'haptic.vibrate';
     }
+    if (canaryMode == 'native-dart-bridge-avatar-canary') {
+      return command == 'avatar.gesture';
+    }
     if (canaryMode == 'native-dart-bridge-readonly-canary') {
       return command == 'flash.status' || command == 'sensor.list';
     }
@@ -474,12 +529,26 @@ class AgentSkillServer {
   Future<dynamic> _executeNativeGatewayCanaryCommand(
     String command, {
     int? hapticDurationMs,
+    String? avatarGesture,
+    int? avatarDurationMs,
   }) {
     switch (command) {
       case 'haptic.vibrate':
         return _vibrationCapability.handle(
           'haptic.vibrate',
           {'durationMs': hapticDurationMs ?? 90},
+        );
+      case 'avatar.gesture':
+        return _avatarCapability.handle(
+          'avatar.gesture',
+          {
+            'gesture': avatarGesture ?? 'wave right',
+            'durationMs': avatarDurationMs ?? 1800,
+            'interrupt': true,
+            'protectedGesture': true,
+            'source': 'native-dart-bridge-avatar-canary',
+            'canaryMode': 'native-dart-bridge-avatar-canary',
+          },
         );
       case 'flash.status':
         return _flashCapability.handle('flash.status', const {});
