@@ -860,6 +860,174 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamProviderLiveCanaryChatSendFrame(
+    Map<String, dynamic> frame, {
+    required Map<String, dynamic> providerConfig,
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-provider-live-canary-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode({
+          ...frame,
+          'nativeCanaryProviderConfig': providerConfig,
+        });
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native provider live canary HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-PROVIDER-LIVE] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'provider': ack['provider'],
+                  'requestedModel': ack['requestedModel'],
+                  'providerModel': ack['providerModel'],
+                  'transport': ack['transport'],
+                  'requestHash': ack['requestHash'],
+                  'validationOk': ack['validationOk'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'transportInvocationEnabled':
+                      ack['transportInvocationEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'providerCallStarted': ack['providerCallStarted'],
+                  'maxTokens': ack['maxTokens'],
+                  'requestBodyBytes': ack['requestBodyBytes'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'provider_request') {
+          final providerRequest = decoded['providerRequest'] is Map
+              ? Map<String, dynamic>.from(decoded['providerRequest'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-PROVIDER-LIVE] request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': providerRequest['provider'],
+                  'providerModel': providerRequest['providerModel'],
+                  'requestHash': providerRequest['requestHash'],
+                  'maxTokens': providerRequest['maxTokens'],
+                  'promptChars': providerRequest['promptChars'],
+                  'requestBodyBytes': providerRequest['requestBodyBytes'],
+                  'providerCallsEnabled':
+                      providerRequest['providerCallsEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_call_started') {
+          log(
+            '[NATIVE-PROVIDER-LIVE] provider call started: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': decoded['provider'],
+                  'requestHash': decoded['requestHash'],
+                  'requestBodyBytes': decoded['requestBodyBytes'],
+                  'providerBillingSurfaceReached':
+                      decoded['providerBillingSurfaceReached'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_response') {
+          log(
+            '[NATIVE-PROVIDER-LIVE] response: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': decoded['provider'],
+                  'statusCode': decoded['statusCode'],
+                  'contentType': decoded['contentType'],
+                  'firstByteMs': decoded['firstByteMs'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_gate') {
+          final gate = decoded['gate'] is Map
+              ? Map<String, dynamic>.from(decoded['gate'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-PROVIDER-LIVE] gate: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'enabled': gate['enabled'] == true,
+                  'status': gate['status'],
+                  'reason': gate['reason'],
+                  'blockedBefore': gate['blockedBefore'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_error') {
+          final error = decoded['error'];
+          log(
+            '[NATIVE-PROVIDER-LIVE] provider error: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': decoded['provider'],
+                  'statusCode': decoded['statusCode'],
+                  'error': error,
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeProviderLiveSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -1083,6 +1251,12 @@ class NativeGatewayShadowParityService {
       'requestHash': ack['requestHash'],
       'transportHash': ack['transportHash'],
       'validationOk': ack['validationOk'] == true,
+      'endpointHost': ack['endpointHost'],
+      'endpointPath': ack['endpointPath'],
+      'maxTokens': ack['maxTokens'],
+      'promptChars': ack['promptChars'],
+      'requestBodyBytes': ack['requestBodyBytes'],
+      'providerCallStarted': ack['providerCallStarted'] == true,
       'abortStage': ack['abortStage'],
       'abortedLocally': ack['abortedLocally'] == true,
       'dnsLookupStarted': ack['dnsLookupStarted'] == true,
@@ -1264,6 +1438,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-TRANSPORT-SHIM] native transport shim failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeProviderLiveSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-PROVIDER-LIVE] native provider live canary failed '
       '(${error.runtimeType})',
     );
   }

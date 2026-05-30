@@ -493,6 +493,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-shell-stream",
     "/gateway/chat-provider-request-builder-stream",
     "/gateway/chat-provider-transport-shim-stream",
+    "/gateway/chat-provider-live-canary-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -999,7 +1000,7 @@ function createMobileGatewayProbe({
     };
   }
 
-  function providerShellEnvelope(payload, shape, queued) {
+  function providerRouteFromPayload(payload) {
     const params = payload && typeof payload.params === "object" && payload.params !== null
       ? payload.params
       : {};
@@ -1014,9 +1015,24 @@ function createMobileGatewayProbe({
       ? requestedModel.slice(0, slashIndex)
       : "unknown";
     const provider = explicitProvider || inferredProvider;
-    const providerModel = slashIndex > 0
+    let providerModel = slashIndex > 0
       ? requestedModel.slice(slashIndex + 1)
       : requestedModel;
+    if (provider === "openrouter" && requestedModel === "openrouter/auto") {
+      providerModel = "openrouter/auto";
+    }
+    return {
+      requestedModel,
+      provider,
+      providerModel
+    };
+  }
+
+  function providerShellEnvelope(payload, shape, queued) {
+    const route = providerRouteFromPayload(payload);
+    const requestedModel = route.requestedModel;
+    const provider = route.provider;
+    const providerModel = route.providerModel;
     const openAiCompatible = [
       "openrouter",
       "openai",
@@ -1327,6 +1343,228 @@ function createMobileGatewayProbe({
       },
       stopBefore: "dns_tls_socket_or_fetch"
     };
+  }
+
+  function liveCanaryProviderConfig(payload, requestBuilder) {
+    const raw = payload && typeof payload.nativeCanaryProviderConfig === "object" &&
+      payload.nativeCanaryProviderConfig !== null
+      ? payload.nativeCanaryProviderConfig
+      : {};
+    const apiKey = typeof raw.apiKey === "string" ? raw.apiKey.trim() : "";
+    const endpoint = typeof raw.endpoint === "string" && raw.endpoint.trim().length > 0
+      ? raw.endpoint.trim()
+      : requestBuilder.endpointRedacted;
+    const model = typeof raw.model === "string" && raw.model.trim().length > 0
+      ? raw.model.trim()
+      : requestBuilder.providerModel;
+    const maxTokensRaw = Number(raw.maxTokens);
+    const maxTokens = Number.isFinite(maxTokensRaw)
+      ? Math.max(1, Math.min(32, Math.floor(maxTokensRaw)))
+      : 16;
+    const timeoutMsRaw = Number(raw.timeoutMs);
+    const timeoutMs = Number.isFinite(timeoutMsRaw)
+      ? Math.max(1000, Math.min(60000, Math.floor(timeoutMsRaw)))
+      : 45000;
+    const referer = typeof raw.referer === "string" && raw.referer.trim().length > 0
+      ? raw.referer.trim()
+      : "https://github.com/vmbbz/plawie";
+    const title = typeof raw.title === "string" && raw.title.trim().length > 0
+      ? raw.title.trim()
+      : "Plawie Native Canary";
+
+    let endpointShape = {
+      protocol: "unknown",
+      host: "unknown",
+      pathname: "unknown"
+    };
+    let endpointAllowed = false;
+    try {
+      const url = new URL(endpoint);
+      endpointShape = {
+        protocol: url.protocol.replace(":", ""),
+        host: url.hostname,
+        pathname: url.pathname
+      };
+      endpointAllowed = requestBuilder.provider === "openrouter" &&
+        url.protocol === "https:" &&
+        url.hostname === "openrouter.ai" &&
+        url.pathname.endsWith("/chat/completions");
+    } catch (_) {
+      endpointAllowed = false;
+    }
+
+    return {
+      provider: requestBuilder.provider,
+      endpoint,
+      endpointShape,
+      endpointAllowed,
+      model,
+      apiKey,
+      apiKeyLoaded: apiKey.length > 0,
+      maxTokens,
+      timeoutMs,
+      referer,
+      title
+    };
+  }
+
+  function compactCanaryPrompt(payload) {
+    const params = payload && typeof payload.params === "object" && payload.params !== null
+      ? payload.params
+      : {};
+    const raw = typeof params.message === "string" ? params.message : "";
+    const compact = raw.replace(/\s+/g, " ").trim();
+    return compact.length > 280 ? compact.slice(0, 280) : compact;
+  }
+
+  function providerLiveCanaryRequest(requestBuilder, payload) {
+    const providerConfig = liveCanaryProviderConfig(payload, requestBuilder);
+    const userPrompt = compactCanaryPrompt(payload);
+    const normalizedBody = {
+      model: providerConfig.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a Plawie native provider canary. Reply with exactly: native-ok"
+        },
+        {
+          role: "user",
+          content: `Canary probe: ${userPrompt || "native provider live canary"}`
+        }
+      ],
+      stream: true,
+      max_tokens: providerConfig.maxTokens,
+      temperature: 0
+    };
+    const redactedBodyShape = {
+      model: normalizedBody.model,
+      messages: normalizedBody.messages.map((message) => ({
+        role: message.role,
+        content: "<redacted>",
+        chars: message.content.length
+      })),
+      stream: normalizedBody.stream,
+      max_tokens: normalizedBody.max_tokens,
+      temperature: normalizedBody.temperature
+    };
+    const normalizedHeadersShape = {
+      accept: "text/event-stream",
+      authorization: providerConfig.apiKeyLoaded
+        ? "Bearer <redacted>"
+        : "Bearer <missing>",
+      "content-type": "application/json",
+      "http-referer": "<redacted>",
+      "x-title": "<redacted>"
+    };
+    const requestBodyText = JSON.stringify(normalizedBody);
+    const blockReasons = [];
+    if (providerConfig.provider !== "openrouter") {
+      blockReasons.push("only_openrouter_live_canary_supported");
+    }
+    if (!providerConfig.endpointAllowed) {
+      blockReasons.push("endpoint_not_on_openrouter_chat_completions");
+    }
+    if (!providerConfig.apiKeyLoaded) {
+      blockReasons.push("missing_openrouter_api_key");
+    }
+    if (typeof globalThis.fetch !== "function") {
+      blockReasons.push("fetch_unavailable_in_embedded_node");
+    }
+
+    return {
+      provider: providerConfig.provider,
+      requestedModel: requestBuilder.requestedModel,
+      providerModel: providerConfig.model,
+      transport: requestBuilder.transport,
+      endpoint: providerConfig.endpoint,
+      endpointShape: providerConfig.endpointShape,
+      normalizedHeadersShape,
+      redactedBodyShape,
+      requestBodyText,
+      requestBodyBytes: Buffer.byteLength(requestBodyText, "utf8"),
+      promptChars: userPrompt.length,
+      timeoutMs: providerConfig.timeoutMs,
+      maxTokens: providerConfig.maxTokens,
+      apiKey: providerConfig.apiKey,
+      referer: providerConfig.referer,
+      title: providerConfig.title,
+      canStart: blockReasons.length === 0,
+      blockReasons,
+      headersHash: metadataHash(normalizedHeadersShape),
+      bodyHash: metadataHash(redactedBodyShape),
+      requestHash: metadataHash({
+        provider: providerConfig.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: providerConfig.model,
+        transport: requestBuilder.transport,
+        endpointShape: providerConfig.endpointShape,
+        headersShape: normalizedHeadersShape,
+        bodyShape: redactedBodyShape,
+        requestBuilderHash: requestBuilder.requestHash
+      })
+    };
+  }
+
+  function providerErrorPayload({
+    source,
+    canaryMode,
+    runId,
+    provider,
+    statusCode = null,
+    code = "provider_error",
+    message = "provider error",
+    rawError = null
+  }) {
+    const rawText = rawError == null
+      ? null
+      : String(rawError).slice(0, 4000);
+    return {
+      ok: false,
+      runtime: "native-node-embedded",
+      source,
+      canaryMode,
+      runId,
+      provider,
+      statusCode,
+      rawProviderError: rawText,
+      error: {
+        type: "provider_error",
+        code,
+        message,
+        raw: rawText
+      },
+      normalizedError: {
+        type: "provider_error",
+        code,
+        message
+      }
+    };
+  }
+
+  function contentFromOpenAiCompatibleChunk(decoded) {
+    if (!decoded || typeof decoded !== "object") return "";
+    const choices = Array.isArray(decoded.choices) ? decoded.choices : [];
+    if (choices.length === 0 || !choices[0] || typeof choices[0] !== "object") {
+      return "";
+    }
+    const choice = choices[0];
+    const delta = choice.delta && typeof choice.delta === "object"
+      ? choice.delta
+      : null;
+    const message = choice.message && typeof choice.message === "object"
+      ? choice.message
+      : null;
+    const content = delta?.content ?? message?.content ?? "";
+    return typeof content === "string" ? content : "";
+  }
+
+  async function readProviderText(response) {
+    try {
+      return await response.text();
+    } catch (error) {
+      return `failed to read provider body: ${error.message || String(error)}`;
+    }
   }
 
   async function handleChatRouteSkeletonStream(req, res) {
@@ -2541,6 +2779,491 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderLiveCanaryStream(req, res) {
+    const source = "provider-live-canary";
+    const canaryMode = "provider-live-canary";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder = providerRequestBuilderDryRun(envelope, shape, queued);
+      const liveRequest = providerLiveCanaryRequest(requestBuilder, payload);
+      const routeBlocked = liveRequest.canStart !== true;
+      const ack = {
+        parsed,
+        route: routeBlocked ? "blocked" : "enabled_canary",
+        routeStatus: routeBlocked
+          ? "blocked_before_provider_call"
+          : "provider_call_starting",
+        source,
+        canaryMode,
+        directCanary,
+        reason: routeBlocked
+          ? liveRequest.blockReasons.join(",")
+          : "explicit native live provider canary allowed one tiny OpenRouter call",
+        provider: liveRequest.provider,
+        requestedModel: liveRequest.requestedModel,
+        providerModel: liveRequest.providerModel,
+        transport: liveRequest.transport,
+        headersHash: liveRequest.headersHash,
+        bodyHash: liveRequest.bodyHash,
+        requestHash: liveRequest.requestHash,
+        validationOk: liveRequest.canStart === true,
+        endpointHost: liveRequest.endpointShape.host,
+        endpointPath: liveRequest.endpointShape.pathname,
+        maxTokens: liveRequest.maxTokens,
+        promptChars: liveRequest.promptChars,
+        requestBodyBytes: liveRequest.requestBodyBytes,
+        providerCallStarted: false,
+        providerCallsEnabled: liveRequest.canStart === true,
+        transportInvocationEnabled: liveRequest.canStart === true,
+        executionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-live-canary"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: false,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: liveRequest.canStart === true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "provider_live_canary",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: liveRequest.canStart === true,
+        executionEnabled: false,
+        transportInvocationEnabled: liveRequest.canStart === true,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("provider_request", {
+        ok: liveRequest.canStart === true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        providerRequest: {
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          transport: liveRequest.transport,
+          endpointShape: liveRequest.endpointShape,
+          headersHash: liveRequest.headersHash,
+          bodyHash: liveRequest.bodyHash,
+          requestHash: liveRequest.requestHash,
+          maxTokens: liveRequest.maxTokens,
+          promptChars: liveRequest.promptChars,
+          requestBodyBytes: liveRequest.requestBodyBytes,
+          redactedBodyShape: liveRequest.redactedBodyShape,
+          transportInvocationEnabled: liveRequest.canStart === true,
+          providerCallsEnabled: liveRequest.canStart === true
+        }
+      });
+
+      if (routeBlocked) {
+        writeEvent("provider_gate", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          gate: {
+            enabled: false,
+            status: "blocked",
+            reason: liveRequest.blockReasons.join(","),
+            blockedBefore: "fetch"
+          },
+          transportInvocationEnabled: false,
+          providerCallsEnabled: false
+        });
+        writeEvent("provider_error", providerErrorPayload({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          code: "native_live_canary_blocked",
+          message: liveRequest.blockReasons.join(",") ||
+            "native live canary blocked before provider call",
+          rawError: JSON.stringify({
+            reasons: liveRequest.blockReasons,
+            provider: liveRequest.provider,
+            endpointHost: liveRequest.endpointShape.host
+          })
+        }));
+        writeEvent("end", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: ack.routeStatus,
+          finishReason: "provider_live_canary_blocked",
+          providerCallsEnabled: false,
+          executionEnabled: false
+        });
+        res.end();
+        return;
+      }
+
+      const startedAtMs = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        try {
+          controller.abort("native_provider_live_canary_timeout");
+        } catch (_) {
+          controller.abort();
+        }
+      }, liveRequest.timeoutMs);
+
+      try {
+        writeEvent("provider_call_started", {
+          ok: true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          requestHash: liveRequest.requestHash,
+          requestBodyBytes: liveRequest.requestBodyBytes,
+          providerCallStarted: true,
+          providerBillingSurfaceReached: true
+        });
+
+        const response = await fetch(liveRequest.endpoint, {
+          method: "POST",
+          headers: {
+            "accept": "text/event-stream",
+            "content-type": "application/json",
+            "authorization": `Bearer ${liveRequest.apiKey}`,
+            "http-referer": liveRequest.referer,
+            "x-title": liveRequest.title
+          },
+          body: liveRequest.requestBodyText,
+          signal: controller.signal
+        });
+
+        const responseStatus = response.status;
+        const contentType = response.headers.get("content-type") || "";
+        writeEvent("provider_response", {
+          ok: response.ok,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          statusCode: responseStatus,
+          contentType,
+          firstByteMs: Date.now() - startedAtMs
+        });
+
+        if (!response.ok) {
+          const rawError = await readProviderText(response);
+          clearTimeout(timeout);
+          writeEvent("provider_error", providerErrorPayload({
+            source,
+            canaryMode,
+            runId: queued.runId,
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            code: `provider_http_${responseStatus}`,
+            message: `provider returned HTTP ${responseStatus}`,
+            rawError
+          }));
+          writeEvent("end", {
+            ok: false,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: "provider_error",
+            finishReason: "provider_http_error",
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            requestHash: liveRequest.requestHash,
+            providerCallsEnabled: true,
+            executionEnabled: false
+          });
+          res.end();
+          return;
+        }
+
+        let sequence = 0;
+        let textChars = 0;
+        let firstTokenMs = null;
+        let finishReason = null;
+        let buffer = "";
+        const decoder = new TextDecoder();
+        const reader = response.body && typeof response.body.getReader === "function"
+          ? response.body.getReader()
+          : null;
+
+        if (!reader) {
+          const raw = await readProviderText(response);
+          try {
+            const decoded = JSON.parse(raw);
+            const content = contentFromOpenAiCompatibleChunk(decoded);
+            if (content.length > 0) {
+              sequence += 1;
+              textChars += content.length;
+              firstTokenMs = Date.now() - startedAtMs;
+              writeEvent("delta", {
+                ok: true,
+                runtime: "native-node-embedded",
+                source,
+                canaryMode,
+                runId: queued.runId,
+                sequence,
+                text: content
+              });
+            }
+          } catch (_) {
+            writeEvent("delta", {
+              ok: true,
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              sequence: 1,
+              text: raw.slice(0, 120)
+            });
+            textChars += Math.min(raw.length, 120);
+          }
+        } else {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split(/\r?\n/);
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const data = trimmed.slice(5).trim();
+              if (data.length === 0) continue;
+              if (data === "[DONE]") {
+                finishReason = finishReason || "done";
+                continue;
+              }
+              try {
+                const decoded = JSON.parse(data);
+                const choices = Array.isArray(decoded.choices)
+                  ? decoded.choices
+                  : [];
+                const choice = choices[0] && typeof choices[0] === "object"
+                  ? choices[0]
+                  : null;
+                const content = contentFromOpenAiCompatibleChunk(decoded);
+                if (choice?.finish_reason) {
+                  finishReason = choice.finish_reason;
+                }
+                if (content.length === 0) continue;
+                sequence += 1;
+                textChars += content.length;
+                if (firstTokenMs == null) {
+                  firstTokenMs = Date.now() - startedAtMs;
+                }
+                writeEvent("delta", {
+                  ok: true,
+                  runtime: "native-node-embedded",
+                  source,
+                  canaryMode,
+                  runId: queued.runId,
+                  sequence,
+                  text: content
+                });
+              } catch (error) {
+                writeEvent("provider_parse_warning", {
+                  ok: false,
+                  runtime: "native-node-embedded",
+                  source,
+                  canaryMode,
+                  runId: queued.runId,
+                  warning: {
+                    code: "provider_chunk_parse_failed",
+                    message: error.message || String(error),
+                    rawChunk: data.slice(0, 500)
+                  }
+                });
+              }
+            }
+          }
+        }
+
+        clearTimeout(timeout);
+        writeEvent("end", {
+          ok: true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: "provider_live_canary_complete",
+          finishReason: finishReason || "stream_complete",
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          statusCode: responseStatus,
+          requestHash: liveRequest.requestHash,
+          firstTokenMs,
+          durationMs: Date.now() - startedAtMs,
+          textChars,
+          providerCallsEnabled: true,
+          executionEnabled: false
+        });
+        res.end();
+      } catch (error) {
+        clearTimeout(timeout);
+        const aborted = error?.name === "AbortError";
+        writeEvent("provider_error", providerErrorPayload({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          code: aborted ? "provider_timeout" : "provider_fetch_failed",
+          message: error.message || String(error),
+          rawError: error.stack || error.message || String(error)
+        }));
+        writeEvent("end", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: aborted ? "provider_timeout" : "provider_fetch_failed",
+          finishReason: aborted ? "provider_timeout" : "provider_fetch_failed",
+          provider: liveRequest.provider,
+          requestHash: liveRequest.requestHash,
+          durationMs: Date.now() - startedAtMs,
+          providerCallsEnabled: true,
+          executionEnabled: false
+        });
+        res.end();
+      }
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_provider_live_canary_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_live_canary_failed",
+          message: error.message || String(error),
+          raw: error.stack || error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -2688,6 +3411,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-transport-shim-stream") {
       handleChatProviderTransportShimStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-live-canary-stream") {
+      handleChatProviderLiveCanaryStream(req, res);
       return true;
     }
 

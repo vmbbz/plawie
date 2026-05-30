@@ -3738,6 +3738,17 @@ $message''';
     return null;
   }
 
+  String? _nativeProviderLivePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-live ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -4541,6 +4552,223 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProviderLiveMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final liveMessage = _nativeProviderLivePayload(message);
+    if (liveMessage == null) return;
+    if (liveMessage.trim().isEmpty) {
+      yield '[Error] Native provider live canary needs a message after /native-live.';
+      return;
+    }
+
+    final route = await _resolveFastCloudRoute(model);
+    if (route == null || route.provider != 'openrouter') {
+      yield '[Error] Native provider live canary currently supports only '
+          'OpenRouter models with a configured API key.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final providerModel = route.model.trim();
+    final canaryProviderModel = providerModel == 'openrouter/auto'
+        ? ModelProviderCatalog.defaultCloudFallbackModel
+            .substring('${route.provider}/'.length)
+        : providerModel;
+    final requestedModel = canaryProviderModel.startsWith('${route.provider}/')
+        ? canaryProviderModel
+        : '${route.provider}/$canaryProviderModel';
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: liveMessage.trim(),
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: route.provider,
+    );
+    final providerConfig = <String, dynamic>{
+      'provider': route.provider,
+      'apiKey': route.apiKey,
+      'endpoint': route.url,
+      'model': canaryProviderModel,
+      'maxTokens': 32,
+      'timeoutMs': 45000,
+      'referer': 'https://github.com/vmbbz/plawie',
+      'title': 'Plawie Native Canary',
+    };
+
+    _addActivity(
+      '[NATIVE-PROVIDER-LIVE] -> Opening embedded Node provider live canary',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamProviderLiveCanaryChatSendFrame(
+      chatSendFrame,
+      providerConfig: providerConfig,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final provider = ack['provider']?.toString() ?? 'unknown';
+        final providerModel = ack['providerModel']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final validationOk = ack['validationOk'] == true;
+        final maxTokens = ack['maxTokens']?.toString() ?? 'unknown';
+        final bodyBytes = ack['requestBodyBytes']?.toString() ?? 'unknown';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-PROVIDER-LIVE] OK ACK received');
+        yield [
+          'Native provider live canary started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'provider: $provider',
+          'providerModel: $providerModel',
+          'requestHash: $requestHash',
+          'validationOk: $validationOk',
+          'maxTokens: $maxTokens',
+          'bodyBytes: $bodyBytes',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_request') {
+        final providerRequest = event['providerRequest'] is Map
+            ? Map<String, dynamic>.from(event['providerRequest'] as Map)
+            : <String, dynamic>{};
+        final provider = providerRequest['provider']?.toString() ?? 'unknown';
+        final providerModel =
+            providerRequest['providerModel']?.toString() ?? 'unknown';
+        final requestHash =
+            providerRequest['requestHash']?.toString() ?? 'unknown';
+        final maxTokens = providerRequest['maxTokens']?.toString() ?? 'unknown';
+        final promptChars =
+            providerRequest['promptChars']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-PROVIDER-LIVE] OK request received');
+        yield [
+          'Native live provider request',
+          '',
+          'provider: $provider',
+          'providerModel: $providerModel',
+          'requestHash: $requestHash',
+          'maxTokens: $maxTokens',
+          'promptChars: $promptChars',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_gate') {
+        final gate = event['gate'] is Map
+            ? Map<String, dynamic>.from(event['gate'] as Map)
+            : <String, dynamic>{};
+        final reason = gate['reason']?.toString() ?? 'provider gate closed';
+        _addActivity('[NATIVE-PROVIDER-LIVE] gate closed: $reason');
+        continue;
+      }
+
+      if (eventType == 'provider_call_started') {
+        final bytes = event['requestBodyBytes']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-PROVIDER-LIVE] provider call started, bodyBytes=$bytes',
+        );
+        yield [
+          'Native provider call started',
+          '',
+          'bodyBytes: $bytes',
+          'billingSurface: ${event['providerBillingSurfaceReached'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_response') {
+        final statusCode = event['statusCode']?.toString() ?? 'unknown';
+        final firstByteMs = event['firstByteMs']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-PROVIDER-LIVE] provider response $statusCode');
+        yield [
+          'Native provider response',
+          '',
+          'statusCode: $statusCode',
+          'firstByteMs: $firstByteMs',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'provider_error') {
+        final raw = _rawGatewayErrorText(
+          event['rawProviderError'] ?? event['error'] ?? event,
+        );
+        _addActivity('[NATIVE-PROVIDER-LIVE] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+
+      if (eventType == 'provider_parse_warning') {
+        final raw = _rawGatewayErrorText(event['warning'] ?? event);
+        _addActivity('[NATIVE-PROVIDER-LIVE] parse warning $raw');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        final firstTokenMs = event['firstTokenMs']?.toString() ?? 'none';
+        final durationMs = event['durationMs']?.toString() ?? 'unknown';
+        final textChars = event['textChars']?.toString() ?? '0';
+        _addActivity(
+          '[NATIVE-PROVIDER-LIVE] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            '',
+            'Native provider live canary complete',
+            '',
+            'finishReason: $finishReason',
+            'firstTokenMs: $firstTokenMs',
+            'durationMs: $durationMs',
+            'textChars: $textChars',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-PROVIDER-LIVE] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native provider live canary ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -4553,6 +4781,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProviderLivePayload(message) != null) {
+      yield* _sendNativeProviderLiveMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeTransportShimPayload(message) != null) {
       yield* _sendNativeTransportShimMessage(
