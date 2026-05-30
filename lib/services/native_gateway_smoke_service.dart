@@ -81,13 +81,22 @@ class NativeGatewaySmokeService {
 
       final health =
           await _probeHealth(expectedRuntime: 'native-node-embedded');
+      final gatewayProbe = await _probeJson('/gateway/probe');
+      final capabilities = await _probeJson('/gateway/capabilities');
+      final models = await _probeJson('/v1/models');
       final ok = health['ok'] == true &&
           health['runtime'] == 'native-node-embedded' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
           health['productionGatewayPort'] == AppConstants.gatewayPort &&
           health['openclawStarted'] == false &&
-          _preflightPassed(health['preflight']);
+          _preflightPassed(health['preflight']) &&
+          _gatewayProbePassed(health['gatewayProbe']) &&
+          _gatewayProbePassed(gatewayProbe) &&
+          _capabilitiesProbePassed(capabilities) &&
+          _modelProbePassed(models);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
+      log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
+      log('[NATIVE-NODE-EMBEDDED] capabilities: ${jsonEncode(capabilities)}');
 
       final stopped = await _nodeRuntime.stop();
       final stillRunning = await _nodeRuntime.isRunning();
@@ -187,16 +196,97 @@ class NativeGatewaySmokeService {
         bridgeToolsOk;
   }
 
+  static bool _gatewayProbePassed(Object? value) {
+    if (value is! Map<String, dynamic>) return false;
+
+    final endpoints = value['endpoints'];
+    final endpointsOk = endpoints is List &&
+        endpoints.contains('/health') &&
+        endpoints.contains('/gateway/probe') &&
+        endpoints.contains('/gateway/capabilities') &&
+        endpoints.contains('/v1/models') &&
+        endpoints.contains('/v1/chat/completions');
+
+    final skillCount = value['skillCount'];
+    final toolCount = value['toolCount'];
+    return value['passed'] == true &&
+        value['probe'] == 'mobile-openclaw-gateway-bootstrap' &&
+        value['gatewayShape'] == 'openclaw-http-probe' &&
+        value['runtime'] == 'native-node-embedded' &&
+        value['canaryOnly'] == true &&
+        value['productionReady'] == false &&
+        value['openclawStarted'] == false &&
+        value['chatRoutingEnabled'] == false &&
+        value['providerCallsEnabled'] == false &&
+        value['fullSkillRegistryLoaded'] == false &&
+        value['skillRegistryMode'] == 'curated-mobile-preflight' &&
+        skillCount is num &&
+        skillCount >= 4 &&
+        toolCount is num &&
+        toolCount >= 3 &&
+        endpointsOk;
+  }
+
+  static bool _capabilitiesProbePassed(Map<String, dynamic> value) {
+    final skills = value['skillFiles'];
+    final tools = value['bridgeToolNames'];
+    return value['ok'] == true &&
+        value['runtime'] == 'native-node-embedded' &&
+        value['capabilityMode'] == 'curated-mobile-preflight' &&
+        value['canaryOnly'] == true &&
+        value['openclawStarted'] == false &&
+        value['fullSkillRegistryLoaded'] == false &&
+        value['productionSkillsLoaded'] == false &&
+        value['skillCount'] is num &&
+        (value['skillCount'] as num) >= 4 &&
+        skills is List &&
+        skills.contains('battery.md') &&
+        tools is List &&
+        tools.contains('get_battery') &&
+        tools.contains('read_sensor') &&
+        tools.contains('vibrate');
+  }
+
+  static bool _modelProbePassed(Map<String, dynamic> value) {
+    final models = value['data'];
+    if (models is! List || models.isEmpty || models.first is! Map) {
+      return false;
+    }
+    final first = Map<String, dynamic>.from(models.first as Map);
+    final capabilities = first['capabilities'];
+
+    return value['object'] == 'list' &&
+        value['probeOnly'] == true &&
+        value['canaryOnly'] == true &&
+        first['id'] == 'plawie/native-node-probe' &&
+        capabilities is Map &&
+        capabilities['chat'] == false &&
+        capabilities['tool_calls'] == false &&
+        capabilities['streaming'] == false;
+  }
+
   static Future<Map<String, dynamic>> _probeHealth({
     required String expectedRuntime,
+  }) async {
+    return _probeJson('/health', expectedRuntime: expectedRuntime);
+  }
+
+  static Future<Map<String, dynamic>> _probeJson(
+    String path, {
+    String? expectedRuntime,
   }) async {
     final client = http.Client();
     try {
       Object? lastError;
       for (var attempt = 0; attempt < 12; attempt++) {
         try {
+          final normalizedPath = path.startsWith('/') ? path : '/$path';
           final response = await client
-              .get(Uri.parse('${AppConstants.nativeGatewaySmokeUrl}/health'))
+              .get(
+                Uri.parse(
+                  '${AppConstants.nativeGatewaySmokeUrl}$normalizedPath',
+                ),
+              )
               .timeout(const Duration(seconds: 2));
           if (response.statusCode != 200) {
             throw StateError('HTTP ${response.statusCode}: ${response.body}');
@@ -205,7 +295,8 @@ class NativeGatewaySmokeService {
           if (decoded is! Map<String, dynamic>) {
             throw StateError('Health payload was not a JSON object');
           }
-          if (decoded['runtime'] != expectedRuntime) {
+          if (expectedRuntime != null &&
+              decoded['runtime'] != expectedRuntime) {
             throw StateError(
               'Expected $expectedRuntime health, got ${decoded['runtime']}',
             );
@@ -216,7 +307,7 @@ class NativeGatewaySmokeService {
           await Future<void>.delayed(const Duration(milliseconds: 250));
         }
       }
-      throw StateError('Health probe failed: $lastError');
+      throw StateError('JSON probe $path failed: $lastError');
     } finally {
       client.close();
     }

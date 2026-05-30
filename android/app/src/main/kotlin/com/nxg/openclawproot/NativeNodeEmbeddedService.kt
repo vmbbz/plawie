@@ -143,6 +143,10 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/android_bridge_tools.js",
             File(dir, "android_bridge_tools.js")
         )
+        copyAsset(
+            "flutter_assets/assets/openclaw/mobile_gateway_probe.js",
+            File(dir, "mobile_gateway_probe.js")
+        )
 
         listOf("avatar_forge.md", "battery.md", "sensors.md", "vibrate.md").forEach { name ->
             copyAsset(
@@ -191,6 +195,7 @@ class NativeNodeEmbeddedService : Service() {
             const require = createRequire(import.meta.url);
             const bundleRoot = $bundleRoot;
             const manifestPath = $manifestPath;
+            const { createMobileGatewayProbe } = require(path.join(bundleRoot, "mobile_gateway_probe.js"));
 
             const host = "$HOST";
             const port = $PORT;
@@ -273,9 +278,23 @@ class NativeNodeEmbeddedService : Service() {
             }
 
             const preflight = runPreflight();
+            const gatewayProbe = createMobileGatewayProbe({
+              preflight,
+              host,
+              port,
+              productionGatewayPort: 18789,
+              startedAt
+            });
 
             const server = http.createServer((req, res) => {
-              if (req.url === "/health" || req.url === "/" || req.url === "/preflight") {
+              const requestUrl = new URL(req.url || "/", `http://${'$'}{host}:${'$'}{port}`);
+              const pathname = requestUrl.pathname;
+
+              if (gatewayProbe.handle(req, res, pathname)) {
+                return;
+              }
+
+              if (pathname === "/health" || pathname === "/" || pathname === "/preflight") {
                 const body = JSON.stringify({
                   ok: true,
                   runtime: "native-node-embedded",
@@ -287,6 +306,7 @@ class NativeNodeEmbeddedService : Service() {
                   productionGatewayPort: 18789,
                   openclawStarted: false,
                   preflight,
+                  gatewayProbe: gatewayProbe.summary(),
                   pid: process.pid,
                   uptimeMs: Date.now() - startedAt
                 });
