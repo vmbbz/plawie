@@ -3694,6 +3694,17 @@ $message''';
     return null;
   }
 
+  String? _nativeRoutingSkeletonPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-route ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -3867,6 +3878,148 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeRoutingSkeletonMessage(
+    String message, {
+    String? sessionKey,
+  }) async* {
+    final routeMessage = _nativeRoutingSkeletonPayload(message);
+    if (routeMessage == null) return;
+    if (routeMessage.trim().isEmpty) {
+      yield '[Error] Native routing skeleton needs a message after /native-route.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final outboundMessage =
+        await _decorateMessageWithMobileNodeContext(routeMessage);
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: outboundMessage,
+      sessionKey: resolvedSessionKey,
+    );
+
+    _addActivity(
+      '[NATIVE-ROUTE-SKELETON] -> Opening embedded Node routing skeleton',
+    );
+
+    var sawAck = false;
+    await for (final event
+        in NativeGatewayShadowParityService.streamRoutingSkeletonChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final route = ack['route']?.toString() ?? 'unknown';
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final queueStatus = ack['queueStatus']?.toString() ?? 'unknown';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-ROUTE-SKELETON] OK ACK received');
+        yield [
+          'Native routing skeleton started',
+          '',
+          'parsed: $parsed',
+          'route: $route',
+          'routeStatus: $routeStatus',
+          'queue: $queueStatus',
+          'hashMatches: $hashMatches',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'route_plan') {
+        final plan = event['routePlan'] is Map
+            ? Map<String, dynamic>.from(event['routePlan'] as Map)
+            : <String, dynamic>{};
+        final providerGate = plan['providerCallGate'] is Map
+            ? Map<String, dynamic>.from(plan['providerCallGate'] as Map)
+            : <String, dynamic>{};
+        final toolGate = plan['toolExecutionGate'] is Map
+            ? Map<String, dynamic>.from(plan['toolExecutionGate'] as Map)
+            : <String, dynamic>{};
+        final cancellation = plan['cancellation'] is Map
+            ? Map<String, dynamic>.from(plan['cancellation'] as Map)
+            : <String, dynamic>{};
+        final routeStatus = plan['routeStatus']?.toString() ?? 'unknown';
+        final providerGateStatus =
+            providerGate['enabled'] == true ? 'enabled' : 'disabled';
+        final toolGateStatus =
+            toolGate['enabled'] == true ? 'enabled' : 'disabled';
+        final cancelEndpoint =
+            cancellation['endpoint']?.toString() ?? 'unavailable';
+        _addActivity('[NATIVE-ROUTE-SKELETON] OK route plan received');
+        yield [
+          'Native route plan',
+          '',
+          'routeStatus: $routeStatus',
+          'providerGate: $providerGateStatus',
+          'toolGate: $toolGateStatus',
+          'cancel: $cancelEndpoint',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_gate') {
+        final gate = event['gate'] is Map
+            ? Map<String, dynamic>.from(event['gate'] as Map)
+            : <String, dynamic>{};
+        final reason = gate['reason']?.toString() ?? 'provider gate closed';
+        _addActivity('[NATIVE-ROUTE-SKELETON] provider gate closed: $reason');
+        continue;
+      }
+
+      if (eventType == 'tool_gate') {
+        final gate = event['gate'] is Map
+            ? Map<String, dynamic>.from(event['gate'] as Map)
+            : <String, dynamic>{};
+        final reason = gate['reason']?.toString() ?? 'tool gate closed';
+        _addActivity('[NATIVE-ROUTE-SKELETON] tool gate closed: $reason');
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'cancelled') {
+        _addActivity('[NATIVE-ROUTE-SKELETON] cancelled');
+        yield '[Cancelled] Native routing skeleton run cancelled.';
+        return;
+      }
+
+      if (eventType == 'end') {
+        _addActivity('[NATIVE-ROUTE-SKELETON] OK skeleton complete');
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-ROUTE-SKELETON] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native routing skeleton ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -3879,6 +4032,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeRoutingSkeletonPayload(message) != null) {
+      yield* _sendNativeRoutingSkeletonMessage(
+        message,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeStreamingCanaryPayload(message) != null) {
       yield* _sendNativeStreamingCanaryMessage(

@@ -51,6 +51,10 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function delayMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function metadataHash(metadata) {
   return crypto
     .createHash("sha256")
@@ -484,6 +488,8 @@ function createMobileGatewayProbe({
     "/gateway/chat-send-dry-run",
     "/gateway/chat-send-canary",
     "/gateway/chat-send-canary-stream",
+    "/gateway/chat-route-skeleton-stream",
+    "/gateway/chat-route-skeleton-cancel",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -516,6 +522,7 @@ function createMobileGatewayProbe({
   }
 
   const dryRunQueue = createDryRunQueue();
+  const routingSkeletonRuns = new Map();
 
   function summary() {
     return {
@@ -929,6 +936,439 @@ function createMobileGatewayProbe({
     }
   }
 
+  function routingSkeletonPlan(queued, shape) {
+    return {
+      mode: "native-routing-skeleton",
+      routeStatus: "blocked_before_provider",
+      acceptedForRouting: false,
+      chatRoutingEnabled: false,
+      providerCallGate: {
+        enabled: false,
+        status: "blocked",
+        reason: "provider_calls_disabled_until_native_runtime_canary_gate"
+      },
+      toolExecutionGate: {
+        enabled: false,
+        status: "blocked",
+        reason: "tool_execution_disabled_until_native_runtime_canary_gate"
+      },
+      queue: {
+        status: queued.state,
+        source: queued.source,
+        canaryMode: queued.canaryMode,
+        sequence: queued.sequence
+      },
+      session: {
+        sessionKey: queued.sessionKey,
+        nativeSessionId: queued.nativeSessionId
+      },
+      run: {
+        requestId: queued.requestId,
+        runId: queued.runId,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId
+      },
+      request: {
+        metadataHash: shape.metadataHash,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints
+      },
+      cancellation: {
+        supported: true,
+        endpoint: "/gateway/chat-route-skeleton-cancel",
+        runId: queued.runId
+      },
+      errorFrameContract: {
+        event: "error",
+        fields: [
+          "ok",
+          "runtime",
+          "source",
+          "canaryMode",
+          "runId",
+          "error.type",
+          "error.code",
+          "error.message"
+        ]
+      }
+    };
+  }
+
+  async function handleChatRouteSkeletonStream(req, res) {
+    const source = "routing-skeleton";
+    const canaryMode = "routing-skeleton";
+    const directCanary = true;
+    let runState = null;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    function finishCancelled() {
+      if (!runState || res.writableEnded) return true;
+      if (!runState.cancelRequested) return false;
+      runState.status = "cancelled";
+      runState.completedAt = nowIso();
+      writeEvent("cancelled", {
+        ok: true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: runState.runId,
+        finishReason: "cancelled",
+        providerCallsEnabled: false,
+        executionEnabled: false
+      });
+      writeEvent("end", {
+        ok: true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: runState.runId,
+        finishReason: "cancelled",
+        providerCallsEnabled: false,
+        executionEnabled: false
+      });
+      res.end();
+      routingSkeletonRuns.delete(runState.runId);
+      return true;
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const routePlan = routingSkeletonPlan(queued, shape);
+      runState = {
+        runId: queued.runId,
+        requestId: queued.requestId,
+        sessionKey: queued.sessionKey,
+        status: "streaming",
+        cancelRequested: false,
+        startedAt: nowIso(),
+        routePlan
+      };
+      routingSkeletonRuns.set(queued.runId, runState);
+
+      req.on("close", () => {
+        if (!res.writableEnded && runState) {
+          runState.clientClosed = true;
+        }
+      });
+
+      const ack = {
+        parsed,
+        route: "disabled",
+        routeStatus: routePlan.routeStatus,
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "chat.send frame parsed by native routing skeleton; provider calls and tool execution remain disabled",
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "routing-skeleton"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: "disabled",
+        routeStatus: routePlan.routeStatus,
+        acceptedForRouting: false,
+        acceptedForQueue: true,
+        queuedForDryRun: true,
+        queueStatus: "parsed_disabled",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      const steps = [
+        {
+          event: "route_plan",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routePlan
+          }
+        },
+        {
+          event: "provider_gate",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            gate: routePlan.providerCallGate,
+            providerCallsEnabled: false
+          }
+        },
+        {
+          event: "tool_gate",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            gate: routePlan.toolExecutionGate,
+            executionEnabled: false,
+            mobileToolHints: shape.mobileToolHints
+          }
+        },
+        {
+          event: "delta",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 1,
+            text:
+              "Native routing skeleton accepted the production-shaped chat.send frame. "
+          }
+        },
+        {
+          event: "delta",
+          delay: 140,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 2,
+            text:
+              "It built a route plan, attached cancellation/error contracts, and stopped before provider or tool execution."
+          }
+        },
+        {
+          event: "end",
+          delay: 80,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: routePlan.routeStatus,
+            finishReason: "routing_skeleton_complete",
+            providerCallsEnabled: false,
+            executionEnabled: false
+          }
+        }
+      ];
+
+      for (const step of steps) {
+        await delayMs(step.delay);
+        if (finishCancelled()) return;
+        writeEvent(step.event, step.payload);
+        if (step.event === "end") {
+          runState.status = "completed";
+          runState.completedAt = nowIso();
+          res.end();
+          routingSkeletonRuns.delete(queued.runId);
+          return;
+        }
+      }
+    } catch (error) {
+      if (runState) {
+        runState.status = "error";
+        runState.completedAt = nowIso();
+        routingSkeletonRuns.delete(runState.runId);
+      }
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_route_skeleton_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: runState?.runId ?? null,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_route_skeleton_failed",
+          message: error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
+  async function handleChatRouteSkeletonCancel(req, res) {
+    try {
+      const body = await readJsonBody(req, 64 * 1024);
+      const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      const runId = typeof body?.runId === "string" && body.runId.trim().length > 0
+        ? body.runId.trim()
+        : url.searchParams.get("runId");
+      if (typeof runId !== "string" || runId.trim().length === 0) {
+        sendJson(res, 400, {
+          ok: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          error: {
+            type: "invalid_request",
+            code: "missing_run_id",
+            message: "runId is required to cancel a native routing skeleton run"
+          }
+        });
+        return;
+      }
+
+      const runState = routingSkeletonRuns.get(runId);
+      if (!runState) {
+        sendJson(res, 404, {
+          ok: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          runId,
+          cancelled: false,
+          error: {
+            type: "not_found",
+            code: "routing_skeleton_run_not_found",
+            message: "no active native routing skeleton run exists for runId"
+          }
+        });
+        return;
+      }
+
+      runState.cancelRequested = true;
+      runState.status = "cancel_requested";
+      runState.cancelRequestedAt = nowIso();
+      sendJson(res, 202, {
+        ok: true,
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        runId,
+        cancelled: true,
+        status: runState.status,
+        providerCallsEnabled: false,
+        executionEnabled: false
+      });
+    } catch (error) {
+      sendJson(res, error.statusCode || 400, {
+        ok: false,
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        error: {
+          type: "invalid_request",
+          code: error.code || "routing_skeleton_cancel_failed",
+          message: error.message || String(error)
+        }
+      });
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -1051,6 +1491,16 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-send-canary-stream") {
       handleChatSendCanaryStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-route-skeleton-stream") {
+      handleChatRouteSkeletonStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-route-skeleton-cancel") {
+      handleChatRouteSkeletonCancel(req, res);
       return true;
     }
 

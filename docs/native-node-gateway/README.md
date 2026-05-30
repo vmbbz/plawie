@@ -57,6 +57,8 @@ Node parser metadata, keeps a diagnostics-only native dry-run session/queue
 model for mirrored real turns, accepts a hidden direct native canary dry-run
 copy of real turns, accepts an explicit UI-driven native primary canary dry-run
 turn, can stream a synthetic native-owned dry-run response back to the chat UI,
+can build a diagnostics-only native routing skeleton with route-plan,
+cancellation, provider-gate, tool-gate, and error-frame events,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -113,6 +115,7 @@ be safely generalized.
 | [27-direct-canary-dry-run.md](27-direct-canary-dry-run.md) | Hidden direct native canary dry-run for real `chat.send` frames while PRoot remains primary |
 | [28-native-primary-canary.md](28-native-primary-canary.md) | Explicit `/native-canary` UI turns sent directly to embedded Node with routing disabled |
 | [29-native-stream-canary.md](29-native-stream-canary.md) | Explicit `/native-stream` UI turns consuming a native-owned synthetic response stream |
+| [30-native-routing-skeleton.md](30-native-routing-skeleton.md) | Explicit `/native-route` UI turns exercising native route lifecycle gates without execution |
 
 ## Work Rules
 

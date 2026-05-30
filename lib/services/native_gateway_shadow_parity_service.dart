@@ -353,6 +353,110 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamRoutingSkeletonChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-route-skeleton-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native routing skeleton HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-ROUTE-SKELETON] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'queuedForDryRun': ack['queuedForDryRun'],
+                  'queueStatus': ack['queueStatus'],
+                  'nativeSessionId': ack['nativeSessionId'],
+                  'runId': ack['runId'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'route_plan') {
+          final plan = decoded['routePlan'] is Map
+              ? Map<String, dynamic>.from(decoded['routePlan'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-ROUTE-SKELETON] plan: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'routeStatus': plan['routeStatus'],
+                  'acceptedForRouting': plan['acceptedForRouting'],
+                  'providerGate':
+                      (plan['providerCallGate'] as Map?)?['enabled'] == true,
+                  'toolGate':
+                      (plan['toolExecutionGate'] as Map?)?['enabled'] == true,
+                  'cancelEndpoint': (plan['cancellation'] as Map?)?['endpoint'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeRouteSkeletonSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -543,6 +647,7 @@ class NativeGatewayShadowParityService {
       'method': response['method'],
       'parsed': response['parsed'] == true,
       'route': ack['route'],
+      'routeStatus': response['routeStatus'] ?? ack['routeStatus'],
       'source': response['source'] ?? ack['source'],
       'canaryMode': response['canaryMode'] ?? ack['canaryMode'],
       'directCanary':
@@ -694,6 +799,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-STREAM-CANARY] native stream canary failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeRouteSkeletonSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-ROUTE-SKELETON] native routing skeleton failed '
       '(${error.runtimeType})',
     );
   }

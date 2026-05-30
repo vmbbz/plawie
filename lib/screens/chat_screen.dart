@@ -512,6 +512,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-canary-direct]',
       '[native-primary-canary]',
       '[native-stream-canary]',
+      '[native-route-skeleton]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];
