@@ -522,6 +522,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-tool-dispatch]',
       '[native-dart-bridge]',
       '[native-dart-bridge-order]',
+      '[native-dart-bridge-haptic]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];

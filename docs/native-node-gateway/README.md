@@ -82,6 +82,9 @@ without executing the capability,
 can run an explicit `/native-dart-bridge-order` canary that sends ordered
 native bridge dry-runs and records a cancellation-shaped dry-run ACK without
 executing the capability,
+can run an explicit `/native-dart-bridge-haptic` canary that executes one
+bounded allowlisted `haptic.vibrate` call through native Node -> Dart while
+keeping provider calls and general tool routing disabled,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -148,6 +151,7 @@ be safely generalized.
 | [37-native-tool-dispatch-dry-run.md](37-native-tool-dispatch-dry-run.md) | Explicit `/native-tool-dispatch` UI turns emitting synthetic tool-use/result frames without execution |
 | [38-native-dart-bridge-dry-run.md](38-native-dart-bridge-dry-run.md) | Explicit `/native-dart-bridge` UI turns proving native-to-Dart dispatch ACKs without execution |
 | [39-native-dart-bridge-ordering-cancel.md](39-native-dart-bridge-ordering-cancel.md) | Explicit `/native-dart-bridge-order` UI turns proving bridge ordering and cancellation dry-run parity |
+| [40-native-dart-bridge-haptic-canary.md](40-native-dart-bridge-haptic-canary.md) | Explicit `/native-dart-bridge-haptic` UI turns executing one bounded haptic bridge canary |
 
 ## Work Rules
 

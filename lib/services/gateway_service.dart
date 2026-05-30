@@ -3804,6 +3804,24 @@ $message''';
     return null;
   }
 
+  String? _nativeDartBridgeHapticPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const command = '/native-dart-bridge-haptic';
+    final lower = trimmedLeft.toLowerCase();
+    if (lower == command) {
+      return 'haptic.vibrate short native bridge canary';
+    }
+    if (lower.startsWith('$command ')) {
+      final payload = trimmedLeft.substring(command.length).trimLeft();
+      return payload.isEmpty
+          ? 'haptic.vibrate short native bridge canary'
+          : payload;
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -6007,6 +6025,213 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeDartBridgeHapticMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final hapticMessage = _nativeDartBridgeHapticPayload(message);
+    if (hapticMessage == null) return;
+    final canaryPrompt = hapticMessage.trim().isEmpty
+        ? 'haptic.vibrate short native bridge canary'
+        : 'haptic.vibrate ${hapticMessage.trim()}';
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: canaryPrompt,
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-DART-BRIDGE-HAPTIC] -> Opening real haptic bridge canary',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamNativeDartBridgeHapticCanaryChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        _addActivity('[NATIVE-DART-BRIDGE-HAPTIC] OK ACK received');
+        yield [
+          'Native bridge haptic canary started',
+          '',
+          'parsed: ${ack['parsed'] == true}',
+          'routeStatus: ${ack['routeStatus'] ?? 'unknown'}',
+          'hashMatches: ${ack['hashMatches'] == true}',
+          'bridgeRequestHash: ${ack['bridgeRequestHash'] ?? 'unknown'}',
+          'canaryAllowlistOk: ${ack['canaryAllowlistOk'] == true}',
+          'durationMs: ${ack['durationMs'] ?? 'unknown'}',
+          'providerCallsEnabled: ${ack['providerCallsEnabled'] == true}',
+          'executionEnabled: ${ack['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${ack['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_plan_summary') {
+        yield [
+          'Native haptic canary plan',
+          '',
+          'fixtureParityOk: ${event['fixtureParityOk'] == true}',
+          'dispatchParityOk: ${event['dispatchParityOk'] == true}',
+          'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'executionEnabled: ${event['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_execute_request') {
+        final bridgeRequest = event['bridgeRequest'] is Map
+            ? Map<String, dynamic>.from(event['bridgeRequest'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Native bridge execute request sent',
+          '',
+          'method: ${bridgeRequest['method'] ?? 'unknown'}',
+          'capability: ${bridgeRequest['capability'] ?? 'unknown'}',
+          'endpoint: ${event['endpoint'] ?? 'unknown'}',
+          'durationMs: ${(bridgeRequest['input'] is Map ? (bridgeRequest['input'] as Map)['durationMs'] : null) ?? 'unknown'}',
+          'dryRun: ${bridgeRequest['dryRun'] == true}',
+          'providerCallsEnabled: ${bridgeRequest['providerCallsEnabled'] == true}',
+          'executionEnabled: ${bridgeRequest['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${bridgeRequest['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${bridgeRequest['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_execute_ack') {
+        final executeAck = event['executeAck'] is Map
+            ? Map<String, dynamic>.from(event['executeAck'] as Map)
+            : <String, dynamic>{};
+        final result = executeAck['result'] is Map
+            ? Map<String, dynamic>.from(executeAck['result'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Dart bridge haptic execute ACK',
+          '',
+          'ok: ${executeAck['ok'] == true}',
+          'accepted: ${executeAck['accepted'] == true}',
+          'executed: ${executeAck['executed'] == true}',
+          'command: ${executeAck['command'] ?? 'unknown'}',
+          'durationMs: ${executeAck['durationMs'] ?? 'unknown'}',
+          'resultStatus: ${result['status'] ?? 'unknown'}',
+          'executeParityOk: ${event['executeParityOk'] == true}',
+          'executeAckHash: ${event['executeAckHash'] ?? 'unknown'}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_use_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final input = frame['input'] is Map
+            ? Map<String, dynamic>.from(frame['input'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        continue;
+      }
+
+      if (eventType == 'tool_result_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final result = frame['result'] is Map
+            ? Map<String, dynamic>.from(frame['result'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        continue;
+      }
+
+      if (eventType == 'haptic_canary_summary') {
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-HAPTIC] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native bridge haptic canary summary',
+          '',
+          'toolName: ${event['toolName'] ?? 'unknown'}',
+          'durationMs: ${event['durationMs'] ?? 'unknown'}',
+          'resultStatus: ${event['resultStatus'] ?? 'unknown'}',
+          'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+          'executeParityOk: ${event['executeParityOk'] == true}',
+          'validationOk: ${event['validationOk'] == true}',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'executionEnabled: ${event['executionEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-HAPTIC] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native bridge haptic canary complete',
+            '',
+            'finishReason: $finishReason',
+            'toolName: ${event['toolName'] ?? 'unknown'}',
+            'capability: ${event['capability'] ?? 'unknown'}',
+            'canaryAllowlistOk: ${event['canaryAllowlistOk'] == true}',
+            'executeParityOk: ${event['executeParityOk'] == true}',
+            'validationOk: ${event['validationOk'] == true}',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'executionEnabled: ${event['executionEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+            'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-DART-BRIDGE-HAPTIC] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native Dart bridge haptic canary ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6022,6 +6247,15 @@ $message''';
 
     if (_nativeDartBridgeOrderingPayload(message) != null) {
       yield* _sendNativeDartBridgeOrderingMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
+
+    if (_nativeDartBridgeHapticPayload(message) != null) {
+      yield* _sendNativeDartBridgeHapticMessage(
         message,
         model: model,
         sessionKey: sessionKey,

@@ -108,6 +108,9 @@ class AgentSkillServer {
     } else if (request.method == 'POST' &&
         path == '/api/native-gateway/dispatch-cancel-dry-run') {
       await _handleNativeGatewayDispatchCancelDryRun(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/dispatch-execute-canary') {
+      await _handleNativeGatewayDispatchExecuteCanary(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -276,6 +279,138 @@ class AgentSkillServer {
     } catch (e) {
       _sendError(request, 'native_dart_bridge_cancel_dry_run_failed: $e');
     }
+  }
+
+  Future<void> _handleNativeGatewayDispatchExecuteCanary(
+    HttpRequest request,
+  ) async {
+    try {
+      final body = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
+      final frame = body['toolUseFrame'] is Map
+          ? Map<String, dynamic>.from(body['toolUseFrame'] as Map)
+          : <String, dynamic>{};
+      final rawCommand = (body['method'] ??
+              body['command'] ??
+              body['toolName'] ??
+              frame['name'])
+          ?.toString()
+          .trim();
+      final command = _canonicalNativeGatewayCommand(rawCommand);
+      final input = body['input'] is Map
+          ? Map<String, dynamic>.from(body['input'] as Map)
+          : frame['input'] is Map
+              ? Map<String, dynamic>.from(frame['input'] as Map)
+              : <String, dynamic>{};
+      final allowlist = body['canaryAllowlist'] is List
+          ? (body['canaryAllowlist'] as List)
+              .map((value) => value.toString())
+              .toList()
+          : const <String>[];
+      final canaryMode = body['canaryMode']?.toString();
+      final dryRunDisabled =
+          body.containsKey('dryRun') && body['dryRun'] == false;
+      final executionRequested = body['executionEnabled'] == true &&
+          body['toolExecutionEnabled'] == true &&
+          body['bridgeExecutionEnabled'] == true;
+      final providerCallsDisabled = body['providerCallsEnabled'] != true;
+      final commandKnown = command != null &&
+          GatewayToolCatalog.mobileNodeAllowCommands.contains(command);
+      final argumentValidation =
+          _validateNativeGatewayDryRunArguments(command, input);
+      final canaryAllowlistOk =
+          allowlist.length == 1 && allowlist.single == 'haptic.vibrate';
+      final durationValidation = _nativeGatewayHapticCanaryDuration(
+          input['durationMs'] ?? input['duration_ms']);
+      final patternRejected = input.containsKey('pattern');
+      final accepted = dryRunDisabled &&
+          executionRequested &&
+          providerCallsDisabled &&
+          canaryMode == 'native-dart-bridge-haptic-canary' &&
+          command == 'haptic.vibrate' &&
+          commandKnown &&
+          argumentValidation.ok &&
+          canaryAllowlistOk &&
+          durationValidation != null &&
+          !patternRejected;
+
+      var executed = false;
+      var result = <String, dynamic>{};
+      Map<String, dynamic>? error;
+      if (accepted) {
+        final frame = await _vibrationCapability.handle(
+          'haptic.vibrate',
+          {'durationMs': durationValidation},
+        );
+        executed = frame.isOk;
+        if (frame.payload != null) {
+          result = Map<String, dynamic>.from(frame.payload!);
+        }
+        if (frame.error != null) {
+          error = Map<String, dynamic>.from(frame.error!);
+        }
+      }
+
+      _sendJson(request, {
+        'ok': accepted && executed,
+        'accepted': accepted,
+        'executed': executed,
+        'dryRun': false,
+        'runtime': 'flutter-dart',
+        'bridge': 'AgentSkillServer',
+        'source': 'native-dart-bridge-haptic-canary',
+        'canaryMode': canaryMode,
+        'routeStatus': accepted && executed
+            ? 'native_dart_bridge_haptic_canary_ack'
+            : 'native_dart_bridge_haptic_canary_rejected',
+        'command': command ?? rawCommand ?? 'unknown',
+        'rawCommand': rawCommand,
+        'commandKnown': commandKnown,
+        'capability': _capabilityForCommand(command),
+        'dartCapability': body['dartCapability']?.toString() ??
+            _dartCapabilityForCommand(command),
+        'requiresUiThread': body['requiresUiThread'] == true,
+        'canaryAllowlist': allowlist,
+        'canaryAllowlistOk': canaryAllowlistOk,
+        'inputKeys': input.keys.map((key) => key.toString()).toList()..sort(),
+        'argumentValidation': argumentValidation.toJson(),
+        'durationMs': durationValidation,
+        'durationBounded': durationValidation != null &&
+            durationValidation > 0 &&
+            durationValidation <= 150,
+        'patternRejected': patternRejected,
+        'result': result,
+        if (error != null) 'error': error,
+        'requestHash': body['requestHash'],
+        'dispatchHash': body['dispatchHash'],
+        'bridgeRequestHash': body['bridgeRequestHash'],
+        'cancellationToken': body['cancellationToken'],
+        'callId': body['callId'],
+        'runId': body['runId'],
+        'nativeSessionId': body['nativeSessionId'],
+        'wouldDispatchTo': _dartCapabilityForCommand(command),
+        'providerCallsEnabled': false,
+        'executionEnabled': accepted,
+        'toolExecutionEnabled': accepted,
+        'bridgeExecutionEnabled': accepted,
+        'receivedAt': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      _sendError(request, 'native_dart_bridge_execute_canary_failed: $e');
+    }
+  }
+
+  int? _nativeGatewayHapticCanaryDuration(dynamic value) {
+    if (value == null) return 90;
+    final parsed = value is int
+        ? value
+        : value is num
+            ? value.round()
+            : int.tryParse(value.toString());
+    if (parsed == null || parsed <= 0) return null;
+    if (parsed > 150) return 150;
+    if (parsed < 10) return 10;
+    return parsed;
   }
 
   String? _canonicalNativeGatewayCommand(String? command) {

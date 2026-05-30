@@ -2015,6 +2015,212 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>>
+      streamNativeDartBridgeHapticCanaryChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-native-dart-bridge-haptic-canary-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 3000));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native Dart bridge haptic canary HTTP '
+          '${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'requestHash': ack['requestHash'],
+                  'bridgeRequestHash': ack['bridgeRequestHash'],
+                  'canaryAllowlistOk': ack['canaryAllowlistOk'],
+                  'executeParityOk': ack['executeParityOk'],
+                  'validationOk': ack['validationOk'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'toolExecutionEnabled': ack['toolExecutionEnabled'],
+                  'bridgeExecutionEnabled': ack['bridgeExecutionEnabled'],
+                  'durationMs': ack['durationMs'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'tool_plan_summary') {
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] plan: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'fixtureParityOk': decoded['fixtureParityOk'] == true,
+                  'dispatchParityOk': decoded['dispatchParityOk'] == true,
+                  'canaryAllowlistOk': decoded['canaryAllowlistOk'] == true,
+                  'forcedAllowlist': decoded['forcedAllowlist'],
+                  'executionEnabled': decoded['executionEnabled'] == true,
+                  'toolExecutionEnabled':
+                      decoded['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      decoded['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_execute_request') {
+          final bridgeRequest = decoded['bridgeRequest'] is Map
+              ? Map<String, dynamic>.from(decoded['bridgeRequest'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] execute request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'method': bridgeRequest['method'],
+                  'capability': bridgeRequest['capability'],
+                  'bridgeRequestHash': bridgeRequest['bridgeRequestHash'],
+                  'cancellationToken': bridgeRequest['cancellationToken'],
+                  'canaryAllowlist': bridgeRequest['canaryAllowlist'],
+                  'input': bridgeRequest['input'],
+                  'dryRun': bridgeRequest['dryRun'] == true,
+                  'providerCallsEnabled':
+                      bridgeRequest['providerCallsEnabled'] == true,
+                  'executionEnabled': bridgeRequest['executionEnabled'] == true,
+                  'toolExecutionEnabled':
+                      bridgeRequest['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      bridgeRequest['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_execute_ack') {
+          final executeAck = decoded['executeAck'] is Map
+              ? Map<String, dynamic>.from(decoded['executeAck'] as Map)
+              : <String, dynamic>{};
+          final result = executeAck['result'] is Map
+              ? Map<String, dynamic>.from(executeAck['result'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] execute ack: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'accepted': executeAck['accepted'] == true,
+                  'executed': executeAck['executed'] == true,
+                  'command': executeAck['command'],
+                  'canaryAllowlistOk': executeAck['canaryAllowlistOk'] == true,
+                  'durationMs': executeAck['durationMs'],
+                  'resultStatus': result['status'],
+                  'executeAckHash': decoded['executeAckHash'],
+                  'executeParityOk': decoded['executeParityOk'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'tool_use_frame' ||
+            decoded['event'] == 'tool_result_frame') {
+          final frame = decoded['frame'] is Map
+              ? Map<String, dynamic>.from(decoded['frame'] as Map)
+              : <String, dynamic>{};
+          final result = frame['result'] is Map
+              ? Map<String, dynamic>.from(frame['result'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] ${decoded['event']}: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'type': frame['type'],
+                  'name': frame['name'],
+                  'id': frame['id'],
+                  'executed': result['executed'] == true,
+                  'status': result['status'],
+                  'toolExecutionEnabled': frame['toolExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'haptic_canary_summary') {
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] summary: ${jsonEncode({
+                  'ok': decoded['ok'] == true,
+                  'runId': decoded['runId'],
+                  'toolName': decoded['toolName'],
+                  'durationMs': decoded['durationMs'],
+                  'resultStatus': decoded['resultStatus'],
+                  'canaryAllowlistOk': decoded['canaryAllowlistOk'] == true,
+                  'executeParityOk': decoded['executeParityOk'] == true,
+                  'validationOk': decoded['validationOk'] == true,
+                  'providerCallsEnabled':
+                      decoded['providerCallsEnabled'] == true,
+                  'executionEnabled': decoded['executionEnabled'] == true,
+                  'toolExecutionEnabled':
+                      decoded['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      decoded['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'error') {
+          log(
+            '[NATIVE-DART-BRIDGE-HAPTIC] error: ${jsonEncode({
+                  'error': decoded['error'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      log('[NATIVE-DART-BRIDGE-HAPTIC] native Dart bridge haptic canary '
+          'failed or skipped: $e');
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -2249,14 +2455,18 @@ class NativeGatewayShadowParityService {
       'bridgeParityOk': ack['bridgeParityOk'] == true,
       'orderingParityOk': ack['orderingParityOk'] == true,
       'cancellationParityOk': ack['cancellationParityOk'] == true,
+      'canaryAllowlistOk': ack['canaryAllowlistOk'] == true,
+      'executeParityOk': ack['executeParityOk'] == true,
       'validationOk': ack['validationOk'] == true,
       'orderCount': ack['orderCount'],
       'cancelOrderIndex': ack['cancelOrderIndex'],
+      'durationMs': ack['durationMs'] ?? ack['hapticDurationMs'],
       'selectedToolCount': ack['selectedToolCount'],
       'toolPlanCount': ack['toolPlanCount'],
       'allowedPlanCount': ack['allowedPlanCount'],
       'blockedPlanCount': ack['blockedPlanCount'],
       'toolExecutionEnabled': ack['toolExecutionEnabled'] == true,
+      'bridgeExecutionEnabled': ack['bridgeExecutionEnabled'] == true,
       'endpointHost': ack['endpointHost'],
       'endpointPath': ack['endpointPath'],
       'maxTokens': ack['maxTokens'],
