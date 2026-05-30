@@ -66,8 +66,11 @@ class AvatarCapability extends CapabilityHandler {
             _intParam(params, ['durationMs', 'duration_ms', 'duration']);
         if (durationMs == null && gesture.toLowerCase().contains('dance')) {
           durationMs = 60000;
+        } else if (durationMs == null && _isSittingGesture(gesture)) {
+          durationMs = 30000;
         }
-        final interrupt = _boolParam(params, ['interrupt']);
+        final interrupt = _boolParam(params, ['interrupt']) ??
+            (_isSittingGesture(gesture) ? true : null);
         final result = await requestCallback({
           'gesture': gesture,
           if (durationMs != null) 'durationMs': durationMs,
@@ -93,6 +96,11 @@ class AvatarCapability extends CapabilityHandler {
       'gesture': gesture,
       'reason': 'Legacy avatar gesture callback was used.',
     });
+  }
+
+  bool _isSittingGesture(String gesture) {
+    final lower = gesture.toLowerCase();
+    return lower.contains('sit') || lower.contains('seated');
   }
 
   int? _intParam(Map<String, dynamic> params, List<String> keys) {

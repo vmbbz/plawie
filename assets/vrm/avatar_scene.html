@@ -771,13 +771,17 @@
         function isLoopingGesture(n, action) {
             const alias = action?.alias || n || '';
             const path = action?.path || '';
+            const normalizedPath = path.toLowerCase();
             return alias === 'talk' ||
                    alias === 'dance' ||
                    alias === 'gesture_talk' ||
                    alias === 'gesture_dance' ||
-                   path.includes('gesture_talk') ||
-                   path.includes('dance_picatrix') ||
-                   path.includes('gesture_dance');
+                   alias.includes('sit') ||
+                   alias.includes('seated') ||
+                   normalizedPath.includes('gesture_talk') ||
+                   normalizedPath.includes('dance_picatrix') ||
+                   normalizedPath.includes('gesture_dance') ||
+                   normalizedPath.includes('sit');
         }
 
         function resolveGestureName(baseClipName, layerClipNames = []) {

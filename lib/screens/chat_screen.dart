@@ -302,11 +302,19 @@ class _ChatScreenState extends State<ChatScreen>
     }
     command['gesture'] = gesture.toString();
     final normalizedGesture = command['gesture'].toString().toLowerCase();
-    if (normalizedGesture.contains('dance') &&
-        command['durationMs'] == null &&
-        command['duration_ms'] == null &&
-        command['duration'] == null) {
-      command['durationMs'] = 60000;
+    final hasDuration = command['durationMs'] != null ||
+        command['duration_ms'] != null ||
+        command['duration'] != null;
+    if (!hasDuration) {
+      if (normalizedGesture.contains('dance')) {
+        command['durationMs'] = 60000;
+      } else if (_isSittingGestureRequest(normalizedGesture)) {
+        command['durationMs'] = 30000;
+      }
+    }
+    if (_isSittingGestureRequest(normalizedGesture) &&
+        command['interrupt'] == null) {
+      command['interrupt'] = true;
     }
     debugPrint('[AVATAR] Gesture request: ${jsonEncode(command)}');
 
@@ -326,6 +334,10 @@ class _ChatScreenState extends State<ChatScreen>
     );
     debugPrint('[AVATAR] Gesture result: ${jsonEncode(started)}');
     return started;
+  }
+
+  bool _isSittingGestureRequest(String value) {
+    return value.contains('sit') || value.contains('seated');
   }
 
   Future<void> _loadChatHistory() async {

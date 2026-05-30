@@ -96,6 +96,11 @@ class NativeGatewaySmokeService {
         _sampleGatewayWsChatSendFrame(),
         expectedStatus: 200,
       );
+      final chatSendDryRun = await _postJson(
+        '/gateway/chat-send-dry-run',
+        _sampleGatewayWsChatSendFrame(),
+        expectedStatus: 202,
+      );
       final shadowParity =
           await NativeGatewayShadowParityService.observeChatSendFrame(
         _sampleGatewayWsChatSendFrame(),
@@ -114,6 +119,7 @@ class NativeGatewaySmokeService {
           _modelProbePassed(models) &&
           _chatShapeProbePassed(chatShape) &&
           _wsFrameShapeProbePassed(wsFrameShape) &&
+          _chatSendDryRunProbePassed(chatSendDryRun) &&
           (shadowParity?.parityOk == true);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
       log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
@@ -131,6 +137,9 @@ class NativeGatewaySmokeService {
       );
       log(
         '[NATIVE-NODE-EMBEDDED] ws chat frame shape: ${jsonEncode(wsFrameShape['requestShape'])}',
+      );
+      log(
+        '[NATIVE-NODE-EMBEDDED] chat.send dry-run: ${jsonEncode(chatSendDryRun['ack'])}',
       );
 
       if (NativeGatewayShadowParityService.shadowDiagnosticsEnabled) {
@@ -255,6 +264,7 @@ class NativeGatewaySmokeService {
         endpoints.contains('/gateway/skill-registry') &&
         endpoints.contains('/gateway/request-shape') &&
         endpoints.contains('/gateway/ws-frame-shape') &&
+        endpoints.contains('/gateway/chat-send-dry-run') &&
         endpoints.contains('/v1/models') &&
         endpoints.contains('/v1/chat/completions');
 
@@ -403,6 +413,46 @@ class NativeGatewaySmokeService {
         shape['hasMobileToolContext'] == true &&
         shape['mobileNodeHandle'] == 'OpenClaw Mobile' &&
         shape['notificationListDisabled'] == true &&
+        shape['looksLikeProductionChatSend'] == true &&
+        shape['acceptedForRouting'] == false &&
+        shape['providerCallsEnabled'] == false &&
+        shape['executionEnabled'] == false &&
+        hints is List &&
+        hints.contains('camera_snap') &&
+        hints.contains('avatar.gesture') &&
+        hints.contains('haptic.vibrate') &&
+        hints.contains('notifications.list');
+  }
+
+  static bool _chatSendDryRunProbePassed(Map<String, dynamic> value) {
+    final shape = value['requestShape'];
+    final ack = value['ack'];
+    if (shape is! Map || ack is! Map) return false;
+
+    final hints = ack['mobileToolHints'];
+    return value['ok'] == true &&
+        value['type'] == 'res' &&
+        value['id'] == 'probe-chat-send-request' &&
+        value['method'] == 'chat.send' &&
+        value['runtime'] == 'native-node-embedded' &&
+        value['canaryOnly'] == true &&
+        value['dryRun'] == true &&
+        value['parsed'] == true &&
+        value['openclawStarted'] == false &&
+        value['acceptedForRouting'] == false &&
+        value['chatRoutingEnabled'] == false &&
+        value['providerCallsEnabled'] == false &&
+        value['executionEnabled'] == false &&
+        ack['parsed'] == true &&
+        ack['route'] == 'disabled' &&
+        ack['sessionKey'] == 'main' &&
+        ack['idempotencyKeyPresent'] == true &&
+        ack['timeoutMs'] == 300000 &&
+        ack['messageChars'] is num &&
+        ack['hasMobileToolContext'] == true &&
+        ack['mobileNodeHandle'] == 'OpenClaw Mobile' &&
+        ack['metadataHash'] is String &&
+        (ack['metadataHash'] as String).isNotEmpty &&
         shape['looksLikeProductionChatSend'] == true &&
         shape['acceptedForRouting'] == false &&
         shape['providerCallsEnabled'] == false &&

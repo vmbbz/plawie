@@ -1,3 +1,5 @@
+const crypto = require("node:crypto");
+
 const jsonHeaders = {
   "content-type": "application/json",
   "cache-control": "no-store"
@@ -47,6 +49,14 @@ function readJsonBody(req, maxBytes) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function metadataHash(metadata) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(metadata))
+    .digest("hex")
+    .slice(0, 16);
 }
 
 function summarizeMessageContent(content) {
@@ -203,9 +213,9 @@ function summarizeGatewayWsFrame(payload) {
     "sensor.list",
     "flash.status",
     "notifications.list"
-  ].filter((hint) => message.includes(hint));
+  ].filter((hint) => message.includes(hint)).sort();
 
-  return {
+  const shape = {
     ok: true,
     requestShape: "openclaw-ws-rpc-chat-send",
     frameType: payload?.type ?? null,
@@ -236,6 +246,30 @@ function summarizeGatewayWsFrame(payload) {
     executionEnabled: false,
     inspectedAt: nowIso()
   };
+
+  return {
+    ...shape,
+    metadataHash: metadataHash({
+      requestShape: shape.requestShape,
+      frameType: shape.frameType,
+      method: shape.method,
+      hasId: shape.hasId,
+      hasParams: shape.hasParams,
+      sessionKey: shape.sessionKey,
+      messageChars: shape.messageChars,
+      hasMessage: shape.hasMessage,
+      idempotencyKeyPresent: shape.idempotencyKeyPresent,
+      timeoutMs: shape.timeoutMs,
+      hasMobileToolContext: shape.hasMobileToolContext,
+      mobileNodeHandle: shape.mobileNodeHandle,
+      notificationListDisabled: shape.notificationListDisabled,
+      mobileToolHints: shape.mobileToolHints,
+      looksLikeProductionChatSend: shape.looksLikeProductionChatSend,
+      acceptedForRouting: shape.acceptedForRouting,
+      providerCallsEnabled: shape.providerCallsEnabled,
+      executionEnabled: shape.executionEnabled
+    })
+  };
 }
 
 function createMobileGatewayProbe({
@@ -254,6 +288,7 @@ function createMobileGatewayProbe({
     "/gateway/skill-registry",
     "/gateway/request-shape",
     "/gateway/ws-frame-shape",
+    "/gateway/chat-send-dry-run",
     "/v1/models",
     "/v1/chat/completions"
   ];
@@ -396,6 +431,64 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatSendDryRun(req, res) {
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      sendJson(res, parsed ? 202 : 422, {
+        ok: parsed,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        parsed,
+        openclawStarted: false,
+        acceptedForRouting: false,
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        productionGatewayPort,
+        ack: {
+          parsed,
+          route: "disabled",
+          reason: parsed
+            ? "chat.send frame parsed; routing intentionally disabled in native dry-run"
+            : "payload is not a production-shaped chat.send frame",
+          sessionKey: shape.sessionKey,
+          idempotencyKeyPresent: shape.idempotencyKeyPresent,
+          timeoutMs: shape.timeoutMs,
+          messageChars: shape.messageChars,
+          hasMobileToolContext: shape.hasMobileToolContext,
+          mobileNodeHandle: shape.mobileNodeHandle,
+          mobileToolHints: shape.mobileToolHints,
+          metadataHash: shape.metadataHash
+        },
+        requestShape: shape
+      });
+    } catch (error) {
+      sendJson(res, error.statusCode || 400, {
+        ok: false,
+        error: {
+          type: "invalid_request",
+          code: error.code || "chat_send_dry_run_parse_failed",
+          message: error.message || String(error)
+        },
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        openclawStarted: false,
+        acceptedForRouting: false,
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        productionGatewayPort
+      });
+    }
+  }
+
   function modelList() {
     return {
       object: "list",
@@ -491,6 +584,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/ws-frame-shape") {
       handleWsFrameShape(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-send-dry-run") {
+      handleChatSendDryRun(req, res);
       return true;
     }
 
