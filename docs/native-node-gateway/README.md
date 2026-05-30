@@ -61,6 +61,8 @@ can build a diagnostics-only native routing skeleton with route-plan,
 cancellation, provider-gate, tool-gate, and error-frame events,
 can build a diagnostics-only provider/model adapter envelope with outbound
 network disabled,
+can normalize a diagnostics-only provider request builder contract with
+transport invocation disabled,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -119,6 +121,7 @@ be safely generalized.
 | [29-native-stream-canary.md](29-native-stream-canary.md) | Explicit `/native-stream` UI turns consuming a native-owned synthetic response stream |
 | [30-native-routing-skeleton.md](30-native-routing-skeleton.md) | Explicit `/native-route` UI turns exercising native route lifecycle gates without execution |
 | [31-native-provider-shell.md](31-native-provider-shell.md) | Explicit `/native-provider` UI turns building a redacted provider envelope without network |
+| [32-native-provider-request-builder.md](32-native-provider-request-builder.md) | Explicit `/native-provider-build` UI turns normalizing a redacted provider request without transport |
 
 ## Work Rules
 

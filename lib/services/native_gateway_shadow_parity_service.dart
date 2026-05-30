@@ -575,6 +575,143 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamProviderRequestBuilderChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-provider-request-builder-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native provider request builder HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-PROVIDER-BUILDER] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'provider': ack['provider'],
+                  'requestedModel': ack['requestedModel'],
+                  'transport': ack['transport'],
+                  'headersHash': ack['headersHash'],
+                  'bodyHash': ack['bodyHash'],
+                  'requestHash': ack['requestHash'],
+                  'validationOk': ack['validationOk'],
+                  'transportInvocationEnabled':
+                      ack['transportInvocationEnabled'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'provider_request') {
+          final builder = decoded['requestBuilder'] is Map
+              ? Map<String, dynamic>.from(decoded['requestBuilder'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-PROVIDER-BUILDER] request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': builder['provider'],
+                  'requestedModel': builder['requestedModel'],
+                  'transport': builder['transport'],
+                  'headersHash': builder['headersHash'],
+                  'bodyHash': builder['bodyHash'],
+                  'requestHash': builder['requestHash'],
+                  'validationOk': builder['validationOk'],
+                  'transportInvocationEnabled':
+                      builder['transportInvocationEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'request_validation') {
+          log(
+            '[NATIVE-PROVIDER-BUILDER] validation: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'validationOk': decoded['validationOk'] == true,
+                  'providerConfigStatus':
+                      (decoded['providerConfigStatus'] as Map?)?['mode'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'transport_gate') {
+          final gate = decoded['gate'] is Map
+              ? Map<String, dynamic>.from(decoded['gate'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-PROVIDER-BUILDER] transport gate: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'enabled': gate['enabled'] == true,
+                  'status': gate['status'],
+                  'reason': gate['reason'],
+                  'blockedBefore': gate['blockedBefore'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeProviderBuilderSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -793,6 +930,14 @@ class NativeGatewayShadowParityService {
       'providerModel': ack['providerModel'],
       'transport': ack['transport'],
       'envelopeHash': ack['envelopeHash'],
+      'headersHash': ack['headersHash'],
+      'bodyHash': ack['bodyHash'],
+      'requestHash': ack['requestHash'],
+      'validationOk': ack['validationOk'] == true,
+      'transportInvocationEnabled':
+          response['transportInvocationEnabled'] == true ||
+              ack['transportInvocationEnabled'] == true,
+      'providerConfigStatus': ack['providerConfigStatus'],
       'duplicate': ack['duplicate'] == true,
       'duplicateOfRequestId': ack['duplicateOfRequestId'],
       'queuedAt': ack['queuedAt'],
@@ -942,6 +1087,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-PROVIDER-SHELL] native provider shell failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeProviderBuilderSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-PROVIDER-BUILDER] native provider request builder failed '
       '(${error.runtimeType})',
     );
   }

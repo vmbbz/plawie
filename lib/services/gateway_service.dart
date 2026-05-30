@@ -3716,6 +3716,17 @@ $message''';
     return null;
   }
 
+  String? _nativeProviderBuilderPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-provider-build ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -4180,6 +4191,171 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProviderBuilderMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final builderMessage = _nativeProviderBuilderPayload(message);
+    if (builderMessage == null) return;
+    if (builderMessage.trim().isEmpty) {
+      yield '[Error] Native provider builder needs a message after /native-provider-build.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final outboundMessage =
+        await _decorateMessageWithMobileNodeContext(builderMessage);
+    final providerHint =
+        model.contains('/') ? model.split('/').first.trim() : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: outboundMessage,
+      sessionKey: resolvedSessionKey,
+      model: model,
+      provider: providerHint,
+    );
+
+    _addActivity(
+      '[NATIVE-PROVIDER-BUILDER] -> Opening embedded Node provider request builder',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamProviderRequestBuilderChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final provider = ack['provider']?.toString() ?? 'unknown';
+        final requestedModel = ack['requestedModel']?.toString() ?? 'unknown';
+        final transport = ack['transport']?.toString() ?? 'unknown';
+        final headersHash = ack['headersHash']?.toString() ?? 'unknown';
+        final bodyHash = ack['bodyHash']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final validationOk = ack['validationOk'] == true;
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-PROVIDER-BUILDER] OK ACK received');
+        yield [
+          'Native provider request builder started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'provider: $provider',
+          'model: $requestedModel',
+          'transport: $transport',
+          'headersHash: $headersHash',
+          'bodyHash: $bodyHash',
+          'requestHash: $requestHash',
+          'validationOk: $validationOk',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_request') {
+        final builder = event['requestBuilder'] is Map
+            ? Map<String, dynamic>.from(event['requestBuilder'] as Map)
+            : <String, dynamic>{};
+        final provider = builder['provider']?.toString() ?? 'unknown';
+        final providerModel = builder['providerModel']?.toString() ?? 'unknown';
+        final endpoint = builder['endpointRedacted']?.toString() ?? 'unknown';
+        final stopBefore = builder['stopBefore']?.toString() ?? 'unknown';
+        final transportInvocation =
+            builder['transportInvocationEnabled'] == true
+                ? 'enabled'
+                : 'disabled';
+        _addActivity('[NATIVE-PROVIDER-BUILDER] OK request builder received');
+        yield [
+          'Native normalized provider request',
+          '',
+          'provider: $provider',
+          'providerModel: $providerModel',
+          'endpoint: $endpoint',
+          'transportInvocation: $transportInvocation',
+          'stopBefore: $stopBefore',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'request_validation') {
+        final validationOk = event['validationOk'] == true;
+        final configStatus = event['providerConfigStatus'] is Map
+            ? Map<String, dynamic>.from(event['providerConfigStatus'] as Map)
+            : <String, dynamic>{};
+        final mode = configStatus['mode']?.toString() ?? 'unknown';
+        final apiKeyLoaded = configStatus['apiKeyLoaded'] == true;
+        _addActivity(
+          '[NATIVE-PROVIDER-BUILDER] validation received: $validationOk',
+        );
+        yield [
+          'Native request validation',
+          '',
+          'validationOk: $validationOk',
+          'configMode: $mode',
+          'apiKeyLoaded: $apiKeyLoaded',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'transport_gate') {
+        final gate = event['gate'] is Map
+            ? Map<String, dynamic>.from(event['gate'] as Map)
+            : <String, dynamic>{};
+        final reason = gate['reason']?.toString() ?? 'transport gate closed';
+        _addActivity(
+            '[NATIVE-PROVIDER-BUILDER] transport gate closed: $reason');
+        continue;
+      }
+
+      if (eventType == 'provider_error_contract') {
+        final provider = event['provider']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-PROVIDER-BUILDER] provider error contract ready: $provider',
+        );
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'end') {
+        _addActivity('[NATIVE-PROVIDER-BUILDER] OK builder complete');
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-PROVIDER-BUILDER] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native provider request builder ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -4192,6 +4368,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProviderBuilderPayload(message) != null) {
+      yield* _sendNativeProviderBuilderMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeProviderShellPayload(message) != null) {
       yield* _sendNativeProviderShellMessage(

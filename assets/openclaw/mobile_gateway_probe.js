@@ -491,6 +491,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-route-skeleton-stream",
     "/gateway/chat-route-skeleton-cancel",
     "/gateway/chat-provider-shell-stream",
+    "/gateway/chat-provider-request-builder-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -1099,6 +1100,116 @@ function createMobileGatewayProbe({
         bodyShape: envelopeShape.bodyShape,
         request: envelopeShape.request
       })
+    };
+  }
+
+  function providerRequestBuilderDryRun(envelope, shape, queued) {
+    const normalizedHeaders = {
+      accept: envelope.stream ? "text/event-stream" : "application/json",
+      authorization: "Bearer <redacted-or-missing>",
+      "content-type": "application/json",
+      "http-referer": "<redacted-or-missing>",
+      "x-title": "<redacted-or-missing>"
+    };
+    const normalizedBody = {
+      model: envelope.providerModel,
+      messages: [
+        {
+          role: "user",
+          content: "<redacted>"
+        }
+      ],
+      stream: envelope.stream === true,
+      tools: [],
+      tool_choice: "none"
+    };
+    const headerValidation = {
+      contentTypeOk: normalizedHeaders["content-type"] === "application/json",
+      acceptOk: normalizedHeaders.accept === "text/event-stream",
+      authorizationPolicy: "required_for_network_call",
+      authMaterialStatus: "not_loaded_in_canary",
+      forbiddenHeadersPresent: false,
+      rawSecretsPresent: false
+    };
+    const bodyValidation = {
+      modelPresent: typeof normalizedBody.model === "string" && normalizedBody.model.length > 0,
+      messagesNormalized: normalizedBody.messages.length === 1,
+      rawPromptRedacted: normalizedBody.messages[0].content === "<redacted>",
+      streamMode: normalizedBody.stream === true,
+      toolSchemasAttached: normalizedBody.tools.length > 0,
+      toolChoice: normalizedBody.tool_choice
+    };
+    const headersHash = metadataHash(normalizedHeaders);
+    const bodyHash = metadataHash(normalizedBody);
+    const requestContract = {
+      provider: envelope.provider,
+      requestedModel: envelope.requestedModel,
+      providerModel: envelope.providerModel,
+      transport: envelope.transport,
+      method: envelope.method,
+      endpointRedacted: envelope.endpointRedacted,
+      normalizedHeaders,
+      normalizedBody,
+      headerValidation,
+      bodyValidation,
+      envelopeHash: envelope.envelopeHash,
+      request: {
+        metadataHash: shape.metadataHash,
+        sessionKey: shape.sessionKey,
+        messageChars: shape.messageChars,
+        mobileToolHints: shape.mobileToolHints
+      },
+      run: {
+        requestId: queued.requestId,
+        runId: queued.runId
+      },
+      outboundNetworkEnabled: false,
+      transportInvocationEnabled: false,
+      providerCallsEnabled: false,
+      executionEnabled: false,
+      stopBefore: "fetch_or_http_request",
+      transportGate: {
+        enabled: false,
+        status: "blocked",
+        reason: "transport_invocation_disabled_until_canary_gate",
+        blockedBefore: "fetch_or_http_request"
+      },
+      providerConfigStatus: {
+        mode: "shape_only",
+        apiKeyLoaded: false,
+        endpointResolved: true,
+        headersNormalized: true,
+        bodyNormalized: true
+      },
+      errorContract: envelope.errorContract
+    };
+
+    return {
+      ...requestContract,
+      headersHash,
+      bodyHash,
+      requestHash: metadataHash({
+        provider: requestContract.provider,
+        requestedModel: requestContract.requestedModel,
+        providerModel: requestContract.providerModel,
+        transport: requestContract.transport,
+        method: requestContract.method,
+        endpointRedacted: requestContract.endpointRedacted,
+        normalizedHeaders,
+        normalizedBody,
+        envelopeHash: requestContract.envelopeHash,
+        outboundNetworkEnabled: requestContract.outboundNetworkEnabled,
+        transportInvocationEnabled: requestContract.transportInvocationEnabled
+      }),
+      validationOk:
+        headerValidation.contentTypeOk &&
+        headerValidation.acceptOk &&
+        headerValidation.forbiddenHeadersPresent === false &&
+        headerValidation.rawSecretsPresent === false &&
+        bodyValidation.modelPresent &&
+        bodyValidation.messagesNormalized &&
+        bodyValidation.rawPromptRedacted &&
+        bodyValidation.streamMode
     };
   }
 
@@ -1737,6 +1848,290 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderRequestBuilderStream(req, res) {
+    const source = "provider-request-builder";
+    const canaryMode = "provider-request-builder";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder = providerRequestBuilderDryRun(envelope, shape, queued);
+      const ack = {
+        parsed,
+        route: "disabled",
+        routeStatus: "blocked_before_transport_invocation",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "provider request builder normalized headers/body and stopped before fetch/http.request",
+        provider: requestBuilder.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: requestBuilder.providerModel,
+        transport: requestBuilder.transport,
+        envelopeHash: requestBuilder.envelopeHash,
+        headersHash: requestBuilder.headersHash,
+        bodyHash: requestBuilder.bodyHash,
+        requestHash: requestBuilder.requestHash,
+        validationOk: requestBuilder.validationOk,
+        transportInvocationEnabled: false,
+        providerConfigStatus: requestBuilder.providerConfigStatus.mode,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-request-builder"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: "disabled",
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: false,
+        acceptedForQueue: true,
+        queuedForDryRun: true,
+        queueStatus: "parsed_disabled",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      const steps = [
+        {
+          event: "provider_request",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            requestBuilder
+          }
+        },
+        {
+          event: "request_validation",
+          delay: 110,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            validationOk: requestBuilder.validationOk,
+            headerValidation: requestBuilder.headerValidation,
+            bodyValidation: requestBuilder.bodyValidation,
+            providerConfigStatus: requestBuilder.providerConfigStatus
+          }
+        },
+        {
+          event: "transport_gate",
+          delay: 110,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            gate: requestBuilder.transportGate,
+            transportInvocationEnabled: false,
+            providerCallsEnabled: false
+          }
+        },
+        {
+          event: "provider_error_contract",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            provider: requestBuilder.provider,
+            errorContract: requestBuilder.errorContract
+          }
+        },
+        {
+          event: "delta",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 1,
+            text:
+              "Native provider request builder normalized the redacted headers and body. "
+          }
+        },
+        {
+          event: "delta",
+          delay: 140,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 2,
+            text:
+              "It stopped before fetch/http.request, so no provider network or billing happened."
+          }
+        },
+        {
+          event: "end",
+          delay: 80,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: ack.routeStatus,
+            finishReason: "provider_request_builder_complete",
+            provider: requestBuilder.provider,
+            requestedModel: requestBuilder.requestedModel,
+            requestHash: requestBuilder.requestHash,
+            validationOk: requestBuilder.validationOk,
+            transportInvocationEnabled: false,
+            providerCallsEnabled: false,
+            executionEnabled: false
+          }
+        }
+      ];
+
+      for (const step of steps) {
+        await delayMs(step.delay);
+        writeEvent(step.event, step.payload);
+        if (step.event === "end") {
+          res.end();
+          return;
+        }
+      }
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_provider_request_builder_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_request_builder_failed",
+          message: error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -1874,6 +2269,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-shell-stream") {
       handleChatProviderShellStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-request-builder-stream") {
+      handleChatProviderRequestBuilderStream(req, res);
       return true;
     }
 
