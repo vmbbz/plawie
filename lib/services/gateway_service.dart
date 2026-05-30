@@ -3440,56 +3440,26 @@ HEARTBEAT_OK.
   String _formatGatewayProviderError(String rawError, {String? model}) {
     final normalized = rawError.trim();
     if (normalized.isEmpty || normalized.toLowerCase() == 'null') {
-      return 'Provider unavailable — please retry in a moment.';
-    }
-
-    final lower = normalized.toLowerCase();
-    final lowerModel = (model ?? '').toLowerCase();
-    final isGroqModel = lowerModel.startsWith('groq/');
-    final isOpenRouterModel = lowerModel.startsWith('openrouter/');
-    if (lower.contains('file lock stale') ||
-        lower.contains('stale_session_state') ||
-        lower.contains('queued_work_without_active_run')) {
-      return normalized;
-    }
-    final looksLikeBilling = lower.contains('billing') ||
-        lower.contains('credit') ||
-        lower.contains('insufficient balance') ||
-        lower.contains('out of balance') ||
-        lower.contains('balance exhausted');
-    if (isOpenRouterModel && looksLikeBilling) {
-      return 'OpenRouter billing/credits are exhausted. Add credits or switch to a working provider/model, then retry.';
-    }
-    if (looksLikeBilling) {
-      return 'Provider billing/credits are exhausted. Add credits or switch provider/model, then retry.';
-    }
-    final looksLikeRateLimit = lower.contains('rate limit') ||
-        lower.contains('429') ||
-        lower.contains('tokens per minute') ||
-        lower.contains(' tpm') ||
-        lower.contains('request too large for model');
-    if (isGroqModel &&
-        (looksLikeRateLimit ||
-            lower.contains('groq') ||
-            lower.contains('request too large'))) {
-      return 'Groq rejected the full Gateway request because this key/org TPM limit is too low for the current tool context. Use a higher-tier Groq key or switch to a full-context provider.';
-    }
-    if (lower.contains('free-models-per-day') ||
-        (isOpenRouterModel && looksLikeRateLimit)) {
-      return 'OpenRouter free quota is exhausted. Use another provider/model or add OpenRouter credits, then retry.';
-    }
-    if (looksLikeRateLimit) {
-      return 'Provider rate limit reached. Retry later, reduce the request size, or switch provider/model.';
-    }
-    if (lower.contains('auth') ||
-        lower.contains('invalid api key') ||
-        lower.contains('unauthorized')) {
-      return 'Cloud model authentication failed. Update your provider API key in Settings and retry.';
-    }
-    if (lower.contains('timeout') || lower.contains('timed out')) {
-      return 'Cloud provider did not respond in time. Retry or switch model/provider.';
+      return 'Gateway/provider returned an empty error payload.';
     }
     return normalized;
+  }
+
+  String _rawGatewayErrorText(Object? value,
+      {String fallback = 'Unknown API error'}) {
+    if (value == null) return fallback;
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isEmpty || trimmed.toLowerCase() == 'null'
+          ? fallback
+          : trimmed;
+    }
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      final text = value.toString().trim();
+      return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
+    }
   }
 
   bool _looksLikeMobileNodeToolRequest(String message) {
@@ -3915,8 +3885,10 @@ $message''';
           if (type == 'error') {
             markRelevantGatewayActivity();
             final payload = frame['payload'] as Map<String, dynamic>?;
-            final rawMsg =
-                payload?['message'] as String? ?? 'API Error encountered';
+            final rawMsg = _rawGatewayErrorText(
+              payload?['message'] ?? payload ?? frame,
+              fallback: 'API Error encountered',
+            );
             final errMsg = _formatGatewayProviderError(rawMsg, model: model);
             _addActivity('[CHAT] ✗ $errMsg');
             finishChatWithError(errMsg);
@@ -3926,9 +3898,7 @@ $message''';
           // Any frame carrying a root-level 'error' field
           if (frame.containsKey('error') && frame['error'] != null) {
             final errObj = frame['error'];
-            final errStr = errObj is Map
-                ? (errObj['message']?.toString() ?? errObj.toString())
-                : errObj.toString();
+            final errStr = _rawGatewayErrorText(errObj);
             if (errStr.toLowerCase().contains('rate limit') ||
                 errStr.toLowerCase().contains('api') ||
                 errStr.toLowerCase().contains('invalid') ||
@@ -3951,7 +3921,8 @@ $message''';
             if (!ok) {
               final error = frame['error'] as Map<String, dynamic>?;
               final msg = _formatGatewayProviderError(
-                error?['message'] as String? ?? 'chat.send failed',
+                _rawGatewayErrorText(error?['message'] ?? error,
+                    fallback: 'chat.send failed'),
                 model: model,
               );
               _addActivity('[CHAT] ✗ $msg');
@@ -4006,11 +3977,9 @@ $message''';
                 firstToken &&
                 !runStarted) {
               markRelevantGatewayActivity();
-              final rawError =
-                  (data['error'] ?? data['reason'] ?? data['message'] ?? state)
-                          ?.toString() ??
-                      state ??
-                      'Unknown API error';
+              final rawError = _rawGatewayErrorText(
+                data['error'] ?? data['reason'] ?? data['message'] ?? state,
+              );
               final msg = _formatGatewayProviderError(rawError, model: model);
               _addActivity('[CHAT] ✗ $msg');
               finishChatWithError(msg);
@@ -4121,17 +4090,11 @@ $message''';
                   return;
                 }
                 markRelevantGatewayActivity();
-                final rawError =
-                    (innerData?['error'] ?? payload?['error'] ?? frame['error'])
-                            ?.toString() ??
-                        'Unknown API error';
-                final String error;
-                if (rawError.toLowerCase().contains('does not support tools')) {
-                  error = 'This model does not support tool use. '
-                      'Tap the TOOLS button in the model selector to disable it, then try again.';
-                } else {
-                  error = _formatGatewayProviderError(rawError, model: model);
-                }
+                final rawError = _rawGatewayErrorText(
+                  innerData?['error'] ?? payload?['error'] ?? frame['error'],
+                );
+                final error =
+                    _formatGatewayProviderError(rawError, model: model);
                 _addActivity('[CHAT] ✗ $error');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $error');
@@ -4184,20 +4147,23 @@ $message''';
                 return;
               }
               markRelevantGatewayActivity();
-              final rawErr = (innerData?['error'] ??
-                          payload?['error'] ??
-                          payload?['reason'] ??
-                          frame['reason'] ??
-                          frame['error'])
-                      ?.toString() ??
-                  '';
+              final rawErr = _rawGatewayErrorText(
+                innerData?['error'] ??
+                    payload?['error'] ??
+                    payload?['reason'] ??
+                    frame['reason'] ??
+                    frame['error'],
+                fallback: '',
+              );
               final isAuthError = reason == 'auth' ||
                   rawErr.toLowerCase().contains('auth') ||
                   rawErr.toLowerCase().contains('surface_error');
               if (isAuthError) {
-                const authMsg =
-                    'Cloud model authentication is required. Add a valid provider API key in Model Settings, then try again.';
-                _addActivity('[CHAT] ✗ Cloud auth required');
+                final authMsg = _formatGatewayProviderError(
+                  rawErr.isEmpty ? 'Cloud model authentication error.' : rawErr,
+                  model: model,
+                );
+                _addActivity('[CHAT] ✗ $authMsg');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $authMsg');
                   chunkController.close();

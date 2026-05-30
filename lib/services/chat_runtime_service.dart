@@ -387,9 +387,8 @@ class ChatRuntimeService extends ChangeNotifier {
             errorMsg =
                 'Gateway session became stale and was reset. Please resend this message.';
           }
-          fullResponse = fullResponse.isEmpty
-              ? 'Warning: $errorMsg'
-              : '$fullResponse\n\nWarning: $errorMsg';
+          fullResponse =
+              fullResponse.isEmpty ? errorMsg : '$fullResponse\n\n$errorMsg';
           updateAssistant(text: fullResponse);
           break;
         }
