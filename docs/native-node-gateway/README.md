@@ -54,10 +54,10 @@ canary skills, scans the real PRoot `~/.openclaw/skills` tree, parses realistic
 OpenAI/OpenClaw chat request envelopes, recognizes Plawie's production
 `chat.send` frame fields, compares redacted Dart sender metadata with embedded
 Node parser metadata, keeps a diagnostics-only native dry-run session/queue
-model for mirrored real turns, verifies Node built-ins and Intl, exposes
-harmless Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports
-readiness without starting OpenClaw. Production Gateway startup still remains
-PRoot.
+model for mirrored real turns, accepts a hidden direct native canary dry-run
+copy of real turns, verifies Node built-ins and Intl, exposes harmless
+Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
+without starting OpenClaw. Production Gateway startup still remains PRoot.
 
 The first direct Node 22 Android build attempt proved the official source path
 can configure and produce major artifacts. The follow-up offline build produced
@@ -108,6 +108,7 @@ be safely generalized.
 | [24-embedded-ws-chat-frame-parity.md](24-embedded-ws-chat-frame-parity.md) | Probe-only parsing of Plawie's production WebSocket `chat.send` frame shape |
 | [25-dart-shadow-parity-collector.md](25-dart-shadow-parity-collector.md) | Diagnostics-only redacted comparison between PRoot sender metadata and native parser output |
 | [26-native-dry-run-session-queue.md](26-native-dry-run-session-queue.md) | Diagnostics-only native session and queue ACKs for mirrored real `chat.send` frames |
+| [27-direct-canary-dry-run.md](27-direct-canary-dry-run.md) | Hidden direct native canary dry-run for real `chat.send` frames while PRoot remains primary |
 
 ## Work Rules
 

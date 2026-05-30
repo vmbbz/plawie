@@ -3830,6 +3830,11 @@ $message''';
       log: _addActivity,
     ));
 
+    unawaited(NativeGatewayShadowParityService.sendDirectCanaryChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    ));
+
     final responseStream = _connection!.sendRequest(chatSendFrame);
 
     bool firstToken = true;

@@ -104,7 +104,14 @@ function createDryRunQueue() {
     }
   }
 
-  function acceptDryRun({ payload, shape, gatewayReady }) {
+  function acceptDryRun({
+    payload,
+    shape,
+    gatewayReady,
+    source = "shadow-dry-run",
+    canaryMode = "shadow-dry-run",
+    directCanary = false
+  }) {
     const session = sessionFor(shape.sessionKey);
     const idempotencyKey = typeof payload?.params?.idempotencyKey === "string"
       ? payload.params.idempotencyKey
@@ -138,6 +145,9 @@ function createDryRunQueue() {
       runId,
       sessionKey: session.sessionKey,
       nativeSessionId: session.nativeSessionId,
+      source,
+      canaryMode,
+      directCanary,
       metadataHash: shape.metadataHash,
       messageChars: shape.messageChars,
       mobileToolHints: shape.mobileToolHints,
@@ -170,6 +180,9 @@ function createDryRunQueue() {
       sequence: entry.sequence,
       requestId: entry.requestId,
       runId: entry.runId,
+      source: entry.source,
+      canaryMode: entry.canaryMode,
+      directCanary: entry.directCanary,
       metadataHash: entry.metadataHash,
       messageChars: entry.messageChars,
       duplicate: entry.duplicate,
@@ -210,6 +223,11 @@ function createDryRunQueue() {
         .reduce((sum, session) => sum + session.completed, 0),
       totalDuplicate: Array.from(sessions.values())
         .reduce((sum, session) => sum + session.duplicate, 0),
+      sourceCounts: recent.reduce((counts, entry) => {
+        const source = entry.source || "unknown";
+        counts[source] = (counts[source] || 0) + 1;
+        return counts;
+      }, {}),
       sessions: Array.from(sessions.values()).map((session) => ({
         sessionKey: session.sessionKey,
         nativeSessionId: session.nativeSessionId,
@@ -461,6 +479,7 @@ function createMobileGatewayProbe({
     "/gateway/request-shape",
     "/gateway/ws-frame-shape",
     "/gateway/chat-send-dry-run",
+    "/gateway/chat-send-canary",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -623,7 +642,11 @@ function createMobileGatewayProbe({
     }
   }
 
-  async function handleChatSendDryRun(req, res) {
+  async function handleChatSendDryRun(req, res, {
+    source = "shadow-dry-run",
+    canaryMode = "shadow-dry-run",
+    directCanary = false
+  } = {}) {
     try {
       const payload = await readJsonBody(req, 256 * 1024);
       const shape = summarizeGatewayWsFrame(payload);
@@ -632,7 +655,10 @@ function createMobileGatewayProbe({
         ? dryRunQueue.acceptDryRun({
             payload,
             shape,
-            gatewayReady: readyState()
+            gatewayReady: readyState(),
+            source,
+            canaryMode,
+            directCanary
           })
         : null;
       sendJson(res, parsed ? 202 : 422, {
@@ -643,6 +669,9 @@ function createMobileGatewayProbe({
         runtime: "native-node-embedded",
         canaryOnly: true,
         dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
         parsed,
         openclawStarted: false,
         acceptedForRouting: false,
@@ -656,6 +685,9 @@ function createMobileGatewayProbe({
         ack: {
           parsed,
           route: "disabled",
+          source,
+          canaryMode,
+          directCanary,
           reason: parsed
             ? "chat.send frame queued and parsed; routing intentionally disabled in native dry-run"
             : "payload is not a production-shaped chat.send frame",
@@ -697,6 +729,9 @@ function createMobileGatewayProbe({
         runtime: "native-node-embedded",
         canaryOnly: true,
         dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
         openclawStarted: false,
         acceptedForRouting: false,
         chatRoutingEnabled: false,
@@ -815,6 +850,15 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-send-dry-run") {
       handleChatSendDryRun(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-send-canary") {
+      handleChatSendDryRun(req, res, {
+        source: "direct-canary",
+        canaryMode: "direct-dry-run",
+        directCanary: true
+      });
       return true;
     }
 

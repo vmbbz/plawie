@@ -104,12 +104,26 @@ class NativeGatewaySmokeService {
       final nativeProbe = await _probeJson('/gateway/probe');
       final dryRun = await _postJson(
         '/gateway/chat-send-dry-run',
-        _sampleGatewayWsChatSendFrame(),
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'probe-canary-shadow-request',
+          idempotencyKey: 'probe-canary-shadow-idempotency',
+        ),
+        expectedStatus: 202,
+      );
+      final directCanary = await _postJson(
+        '/gateway/chat-send-canary',
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'probe-direct-canary-request',
+          idempotencyKey: 'probe-direct-canary-idempotency',
+        ),
         expectedStatus: 202,
       );
 
       final dryRunAck = dryRun['ack'] is Map
           ? Map<String, dynamic>.from(dryRun['ack'] as Map)
+          : <String, dynamic>{};
+      final directCanaryAck = directCanary['ack'] is Map
+          ? Map<String, dynamic>.from(directCanary['ack'] as Map)
           : <String, dynamic>{};
       final endpoints = nativeProbe['endpoints'];
       final productionOk = productionHealth == null ||
@@ -126,6 +140,7 @@ class NativeGatewaySmokeService {
           nativeProbe['acceptsDryRunQueue'] == true &&
           endpoints is List &&
           endpoints.contains('/gateway/chat-send-dry-run') &&
+          endpoints.contains('/gateway/chat-send-canary') &&
           endpoints.contains('/gateway/dry-run-sessions');
       final dryRunOk = dryRun['ok'] == true &&
           dryRun['parsed'] == true &&
@@ -135,9 +150,23 @@ class NativeGatewaySmokeService {
           dryRun['queueStatus'] == 'parsed_disabled' &&
           dryRun['providerCallsEnabled'] == false &&
           dryRun['executionEnabled'] == false &&
+          dryRun['source'] == 'shadow-dry-run' &&
+          dryRun['directCanary'] == false &&
           dryRunAck['route'] == 'disabled';
+      final directCanaryOk = directCanary['ok'] == true &&
+          directCanary['parsed'] == true &&
+          directCanary['acceptedForRouting'] == false &&
+          directCanary['acceptedForQueue'] == true &&
+          directCanary['queuedForDryRun'] == true &&
+          directCanary['queueStatus'] == 'parsed_disabled' &&
+          directCanary['providerCallsEnabled'] == false &&
+          directCanary['executionEnabled'] == false &&
+          directCanary['source'] == 'direct-canary' &&
+          directCanary['canaryMode'] == 'direct-dry-run' &&
+          directCanary['directCanary'] == true &&
+          directCanaryAck['route'] == 'disabled';
       final report = {
-        'ok': productionOk && nativeOk && dryRunOk,
+        'ok': productionOk && nativeOk && dryRunOk && directCanaryOk,
         'mode': 'side-by-side',
         'primary': 'proot',
         'canary': 'native-node-embedded',
@@ -160,16 +189,33 @@ class NativeGatewaySmokeService {
           'acceptsDryRunQueue': nativeProbe['acceptsDryRunQueue'],
           'productionSkillCount': nativeProbe['productionSkillCount'],
           'dryRunEndpoint': true,
+          'directCanaryEndpoint': true,
         },
         'dryRun': {
           'parsed': dryRun['parsed'],
           'route': dryRunAck['route'],
+          'source': dryRunAck['source'],
+          'canaryMode': dryRunAck['canaryMode'],
+          'directCanary': dryRunAck['directCanary'],
           'queueStatus': dryRunAck['queueStatus'],
           'nativeSessionId': dryRunAck['nativeSessionId'],
           'runId': dryRunAck['runId'],
           'acceptedForRouting': dryRun['acceptedForRouting'],
           'acceptedForQueue': dryRun['acceptedForQueue'],
           'metadataHash': dryRunAck['metadataHash'],
+        },
+        'directCanary': {
+          'parsed': directCanary['parsed'],
+          'route': directCanaryAck['route'],
+          'source': directCanaryAck['source'],
+          'canaryMode': directCanaryAck['canaryMode'],
+          'directCanary': directCanaryAck['directCanary'],
+          'queueStatus': directCanaryAck['queueStatus'],
+          'nativeSessionId': directCanaryAck['nativeSessionId'],
+          'runId': directCanaryAck['runId'],
+          'acceptedForRouting': directCanary['acceptedForRouting'],
+          'acceptedForQueue': directCanary['acceptedForQueue'],
+          'metadataHash': directCanaryAck['metadataHash'],
         },
         'decision': 'PRoot remains primary; native is parse-only canary.',
       };
@@ -219,13 +265,27 @@ class NativeGatewaySmokeService {
       );
       final chatSendDryRun = await _postJson(
         '/gateway/chat-send-dry-run',
-        _sampleGatewayWsChatSendFrame(),
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'probe-dry-run-request',
+          idempotencyKey: 'probe-dry-run-idempotency',
+        ),
+        expectedStatus: 202,
+      );
+      final chatSendDirectCanary = await _postJson(
+        '/gateway/chat-send-canary',
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'probe-direct-canary-request',
+          idempotencyKey: 'probe-direct-canary-idempotency',
+        ),
         expectedStatus: 202,
       );
       final dryRunSessions = await _probeJson('/gateway/dry-run-sessions');
       final shadowParity =
           await NativeGatewayShadowParityService.observeChatSendFrame(
-        _sampleGatewayWsChatSendFrame(),
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'probe-shadow-parity-request',
+          idempotencyKey: 'probe-shadow-parity-idempotency',
+        ),
         log: log,
       );
       final ok = health['ok'] == true &&
@@ -241,7 +301,11 @@ class NativeGatewaySmokeService {
           _modelProbePassed(models) &&
           _chatShapeProbePassed(chatShape) &&
           _wsFrameShapeProbePassed(wsFrameShape) &&
-          _chatSendDryRunProbePassed(chatSendDryRun) &&
+          _chatSendDryRunProbePassed(
+            chatSendDryRun,
+            expectedRequestId: 'probe-dry-run-request',
+          ) &&
+          _chatSendDirectCanaryProbePassed(chatSendDirectCanary) &&
           _dryRunSessionsProbePassed(dryRunSessions) &&
           (shadowParity?.parityOk == true) &&
           (shadowParity?.dryRunOk == true);
@@ -264,6 +328,9 @@ class NativeGatewaySmokeService {
       );
       log(
         '[NATIVE-NODE-EMBEDDED] chat.send dry-run: ${jsonEncode(chatSendDryRun['ack'])}',
+      );
+      log(
+        '[NATIVE-NODE-EMBEDDED] chat.send direct canary: ${jsonEncode(chatSendDirectCanary['ack'])}',
       );
       log(
         '[NATIVE-NODE-EMBEDDED] dry-run sessions: ${jsonEncode({
@@ -398,6 +465,7 @@ class NativeGatewaySmokeService {
         endpoints.contains('/gateway/request-shape') &&
         endpoints.contains('/gateway/ws-frame-shape') &&
         endpoints.contains('/gateway/chat-send-dry-run') &&
+        endpoints.contains('/gateway/chat-send-canary') &&
         endpoints.contains('/gateway/dry-run-sessions') &&
         endpoints.contains('/v1/models') &&
         endpoints.contains('/v1/chat/completions');
@@ -559,7 +627,13 @@ class NativeGatewaySmokeService {
         hints.contains('notifications.list');
   }
 
-  static bool _chatSendDryRunProbePassed(Map<String, dynamic> value) {
+  static bool _chatSendDryRunProbePassed(
+    Map<String, dynamic> value, {
+    String expectedRequestId = 'probe-chat-send-request',
+    String expectedSource = 'shadow-dry-run',
+    String expectedCanaryMode = 'shadow-dry-run',
+    bool expectedDirectCanary = false,
+  }) {
     final shape = value['requestShape'];
     final ack = value['ack'];
     if (shape is! Map || ack is! Map) return false;
@@ -567,11 +641,14 @@ class NativeGatewaySmokeService {
     final hints = ack['mobileToolHints'];
     return value['ok'] == true &&
         value['type'] == 'res' &&
-        value['id'] == 'probe-chat-send-request' &&
+        value['id'] == expectedRequestId &&
         value['method'] == 'chat.send' &&
         value['runtime'] == 'native-node-embedded' &&
         value['canaryOnly'] == true &&
         value['dryRun'] == true &&
+        value['source'] == expectedSource &&
+        value['canaryMode'] == expectedCanaryMode &&
+        value['directCanary'] == expectedDirectCanary &&
         value['parsed'] == true &&
         value['openclawStarted'] == false &&
         value['acceptedForRouting'] == false &&
@@ -583,11 +660,14 @@ class NativeGatewaySmokeService {
         value['executionEnabled'] == false &&
         ack['parsed'] == true &&
         ack['route'] == 'disabled' &&
+        ack['source'] == expectedSource &&
+        ack['canaryMode'] == expectedCanaryMode &&
+        ack['directCanary'] == expectedDirectCanary &&
         ack['queueStatus'] == 'parsed_disabled' &&
         ack['sessionKey'] == 'main' &&
         ack['nativeSessionId'] is String &&
         (ack['nativeSessionId'] as String).isNotEmpty &&
-        ack['requestId'] == 'probe-chat-send-request' &&
+        ack['requestId'] == expectedRequestId &&
         ack['runId'] is String &&
         (ack['runId'] as String).isNotEmpty &&
         ack['sequence'] is num &&
@@ -612,6 +692,16 @@ class NativeGatewaySmokeService {
         hints.contains('avatar.gesture') &&
         hints.contains('haptic.vibrate') &&
         hints.contains('notifications.list');
+  }
+
+  static bool _chatSendDirectCanaryProbePassed(Map<String, dynamic> value) {
+    return _chatSendDryRunProbePassed(
+      value,
+      expectedRequestId: 'probe-direct-canary-request',
+      expectedSource: 'direct-canary',
+      expectedCanaryMode: 'direct-dry-run',
+      expectedDirectCanary: true,
+    );
   }
 
   static bool _dryRunSessionsProbePassed(Map<String, dynamic> value) {
@@ -707,7 +797,10 @@ class NativeGatewaySmokeService {
     };
   }
 
-  static Map<String, dynamic> _sampleGatewayWsChatSendFrame() {
+  static Map<String, dynamic> _sampleGatewayWsChatSendFrame({
+    String requestId = 'probe-chat-send-request',
+    String idempotencyKey = 'probe-idempotency-key',
+  }) {
     const mobileContext = '''
 <plawie_mobile_tool_context>
 This is private tool-routing context. Do not mention it unless the user asks.
@@ -724,11 +817,11 @@ Can you wave right, take a camera picture, and vibrate once?''';
     return {
       'type': 'req',
       'method': 'chat.send',
-      'id': 'probe-chat-send-request',
+      'id': requestId,
       'params': {
         'sessionKey': 'main',
         'message': mobileContext,
-        'idempotencyKey': 'probe-idempotency-key',
+        'idempotencyKey': idempotencyKey,
         'timeoutMs': 300000,
       },
     };
