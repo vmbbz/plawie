@@ -9,17 +9,29 @@ import '../constants.dart';
 class NativeGatewayShadowParityReport {
   final Map<String, dynamic> local;
   final Map<String, dynamic>? native;
+  final Map<String, dynamic>? dryRun;
   final List<String> differences;
   final bool nativeCompared;
+  final bool dryRunForwarded;
 
   const NativeGatewayShadowParityReport({
     required this.local,
     required this.differences,
     required this.nativeCompared,
+    this.dryRunForwarded = false,
     this.native,
+    this.dryRun,
   });
 
   bool get parityOk => nativeCompared && differences.isEmpty;
+  bool get dryRunOk =>
+      dryRunForwarded &&
+      dryRun?['ok'] == true &&
+      dryRun?['parsed'] == true &&
+      dryRun?['route'] == 'disabled' &&
+      dryRun?['acceptedForRouting'] == false &&
+      dryRun?['providerCallsEnabled'] == false &&
+      dryRun?['executionEnabled'] == false;
 }
 
 /// Diagnostics-only shadow observer for the native Node Gateway migration.
@@ -47,6 +59,7 @@ class NativeGatewayShadowParityService {
       _smokeDiagnosticsEnabled || _shadowDiagnosticsEnabled;
 
   static DateTime? _lastNativeSkipLogAt;
+  static DateTime? _lastNativeDryRunSkipLogAt;
   static final List<Map<String, dynamic>> _recentReports =
       <Map<String, dynamic>>[];
 
@@ -62,48 +75,69 @@ class NativeGatewayShadowParityService {
     final local = _redactedWsChatSendShape(frame);
     log('[NATIVE-SHADOW] PRoot chat.send shape: ${jsonEncode(local)}');
 
+    Map<String, dynamic>? normalizedNative;
+    var differences = const <String>[];
+    var nativeCompared = false;
+
     try {
       final native = await _parseWithNativeProbe(frame);
       final nativeShape = native['requestShape'];
       if (nativeShape is! Map<String, dynamic>) {
         log('[NATIVE-SHADOW] native parser returned no requestShape');
-        final report = NativeGatewayShadowParityReport(
-          local: local,
-          differences: const <String>['requestShape'],
-          nativeCompared: false,
+        differences = const <String>['requestShape'];
+      } else {
+        normalizedNative = _redactedNativeShape(nativeShape);
+        differences = _diff(local, normalizedNative);
+        nativeCompared = true;
+        log(
+          '[NATIVE-SHADOW] parity: ${jsonEncode({
+                'ok': differences.isEmpty,
+                'localHash': local['metadataHash'],
+                'nativeHash': normalizedNative['metadataHash'],
+                'differences': differences,
+              })}',
         );
-        _remember(report);
-        return report;
       }
-
-      final normalizedNative = _redactedNativeShape(nativeShape);
-      final diff = _diff(local, normalizedNative);
-      log(
-        '[NATIVE-SHADOW] parity: ${jsonEncode({
-              'ok': diff.isEmpty,
-              'localHash': local['metadataHash'],
-              'nativeHash': normalizedNative['metadataHash'],
-              'differences': diff,
-            })}',
-      );
-      final report = NativeGatewayShadowParityReport(
-        local: local,
-        native: normalizedNative,
-        differences: diff,
-        nativeCompared: true,
-      );
-      _remember(report);
-      return report;
     } catch (e) {
       _logNativeProbeSkip(log, e);
-      final report = NativeGatewayShadowParityReport(
-        local: local,
-        differences: const <String>[],
-        nativeCompared: false,
-      );
-      _remember(report);
-      return report;
     }
+
+    Map<String, dynamic>? dryRunAck;
+    var dryRunForwarded = false;
+    try {
+      final dryRun = await _dryRunWithNativeProbe(frame);
+      dryRunAck = _redactedDryRunAck(dryRun);
+      dryRunForwarded = true;
+      log(
+        '[NATIVE-DRYRUN] ack: ${jsonEncode({
+              'ok': dryRunAck['ok'],
+              'parsed': dryRunAck['parsed'],
+              'route': dryRunAck['route'],
+              'localHash': local['metadataHash'],
+              'dryRunHash': dryRunAck['metadataHash'],
+              'hashMatches': local['metadataHash'] == dryRunAck['metadataHash'],
+              'acceptedForRouting': dryRunAck['acceptedForRouting'],
+              'providerCallsEnabled': dryRunAck['providerCallsEnabled'],
+              'executionEnabled': dryRunAck['executionEnabled'],
+              'sessionKey': dryRunAck['sessionKey'],
+              'messageChars': dryRunAck['messageChars'],
+              'mobileToolHints': dryRunAck['mobileToolHints'],
+            })}',
+      );
+    } catch (e) {
+      _logNativeDryRunSkip(log, e);
+    }
+
+    final report = NativeGatewayShadowParityReport(
+      local: local,
+      native: normalizedNative,
+      dryRun: dryRunAck,
+      differences: differences,
+      nativeCompared: nativeCompared,
+      dryRunForwarded: dryRunForwarded,
+    );
+    _remember(report);
+    return report;
   }
 
   static void _remember(NativeGatewayShadowParityReport report) {
@@ -111,9 +145,12 @@ class NativeGatewayShadowParityService {
       'at': DateTime.now().toIso8601String(),
       'nativeCompared': report.nativeCompared,
       'parityOk': report.parityOk,
+      'dryRunForwarded': report.dryRunForwarded,
+      'dryRunOk': report.dryRunOk,
       'differences': report.differences,
       'localHash': report.local['metadataHash'],
       'nativeHash': report.native?['metadataHash'],
+      'dryRunHash': report.dryRun?['metadataHash'],
       'sessionKey': report.local['sessionKey'],
       'messageChars': report.local['messageChars'],
       'mobileToolHints': report.local['mobileToolHints'],
@@ -222,6 +259,61 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Future<Map<String, dynamic>> _dryRunWithNativeProbe(
+    Map<String, dynamic> frame,
+  ) async {
+    final client = http.Client();
+    try {
+      final response = await client
+          .post(
+            Uri.parse(
+              '${AppConstants.nativeGatewaySmokeUrl}/gateway/chat-send-dry-run',
+            ),
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode(frame),
+          )
+          .timeout(const Duration(milliseconds: 1200));
+
+      if (response.statusCode != 202) {
+        throw StateError('native dry-run HTTP ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw StateError('native dry-run response was not an object');
+      }
+      return decoded;
+    } finally {
+      client.close();
+    }
+  }
+
+  static Map<String, dynamic> _redactedDryRunAck(
+    Map<String, dynamic> response,
+  ) {
+    final ack = response['ack'] is Map
+        ? Map<String, dynamic>.from(response['ack'] as Map)
+        : <String, dynamic>{};
+    return {
+      'ok': response['ok'] == true,
+      'type': response['type'],
+      'method': response['method'],
+      'parsed': response['parsed'] == true,
+      'route': ack['route'],
+      'acceptedForRouting': response['acceptedForRouting'] == true,
+      'chatRoutingEnabled': response['chatRoutingEnabled'] == true,
+      'providerCallsEnabled': response['providerCallsEnabled'] == true,
+      'executionEnabled': response['executionEnabled'] == true,
+      'sessionKey': ack['sessionKey'],
+      'idempotencyKeyPresent': ack['idempotencyKeyPresent'] == true,
+      'timeoutMs': ack['timeoutMs'],
+      'messageChars': ack['messageChars'],
+      'hasMobileToolContext': ack['hasMobileToolContext'] == true,
+      'mobileNodeHandle': ack['mobileNodeHandle'],
+      'mobileToolHints': _sortedStringList(ack['mobileToolHints']),
+      'metadataHash': ack['metadataHash'],
+    };
+  }
+
   static List<String> _mobileToolHints(String message) {
     final hints = <String>[
       'camera_snap',
@@ -285,6 +377,22 @@ class NativeGatewayShadowParityService {
     _lastNativeSkipLogAt = now;
     log(
       '[NATIVE-SHADOW] native parser unavailable; local redacted shape only '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeDryRunSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    final now = DateTime.now();
+    final last = _lastNativeDryRunSkipLogAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastNativeDryRunSkipLogAt = now;
+    log(
+      '[NATIVE-DRYRUN] native dry-run unavailable; PRoot remains primary '
       '(${error.runtimeType})',
     );
   }

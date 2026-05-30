@@ -231,7 +231,8 @@ class NativeGatewaySmokeService {
           _chatShapeProbePassed(chatShape) &&
           _wsFrameShapeProbePassed(wsFrameShape) &&
           _chatSendDryRunProbePassed(chatSendDryRun) &&
-          (shadowParity?.parityOk == true);
+          (shadowParity?.parityOk == true) &&
+          (shadowParity?.dryRunOk == true);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
       log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
       log('[NATIVE-NODE-EMBEDDED] capabilities: ${jsonEncode(capabilities)}');
