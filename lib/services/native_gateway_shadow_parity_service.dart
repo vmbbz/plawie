@@ -712,6 +712,154 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamProviderTransportShimChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-provider-transport-shim-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native transport shim HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-TRANSPORT-SHIM] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'provider': ack['provider'],
+                  'requestedModel': ack['requestedModel'],
+                  'transport': ack['transport'],
+                  'requestHash': ack['requestHash'],
+                  'transportHash': ack['transportHash'],
+                  'validationOk': ack['validationOk'],
+                  'abortStage': ack['abortStage'],
+                  'dnsLookupStarted': ack['dnsLookupStarted'],
+                  'tlsHandshakeStarted': ack['tlsHandshakeStarted'],
+                  'socketOpened': ack['socketOpened'],
+                  'requestBytesWritten': ack['requestBytesWritten'],
+                  'providerBillingSurfaceReached':
+                      ack['providerBillingSurfaceReached'],
+                  'transportInvocationEnabled':
+                      ack['transportInvocationEnabled'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'transport_shim') {
+          final shim = decoded['transportShim'] is Map
+              ? Map<String, dynamic>.from(decoded['transportShim'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-TRANSPORT-SHIM] shim: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': shim['provider'],
+                  'transport': shim['transport'],
+                  'transportHash': shim['transportHash'],
+                  'validationOk': shim['validationOk'],
+                  'stopBefore': shim['stopBefore'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'abort_contract') {
+          final abort = decoded['abortContract'] is Map
+              ? Map<String, dynamic>.from(decoded['abortContract'] as Map)
+              : <String, dynamic>{};
+          final probe = decoded['networkProbe'] is Map
+              ? Map<String, dynamic>.from(decoded['networkProbe'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-TRANSPORT-SHIM] abort: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'abortedLocally': abort['abortedLocally'] == true,
+                  'abortStage': abort['abortStage'],
+                  'socketOpened': probe['socketOpened'] == true,
+                  'requestBytesWritten': probe['requestBytesWritten'],
+                  'providerBillingSurfaceReached':
+                      probe['providerBillingSurfaceReached'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'transport_gate') {
+          final gate = decoded['gate'] is Map
+              ? Map<String, dynamic>.from(decoded['gate'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-TRANSPORT-SHIM] gate: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'enabled': gate['enabled'] == true,
+                  'status': gate['status'],
+                  'reason': gate['reason'],
+                  'blockedBefore': gate['blockedBefore'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeTransportShimSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -933,7 +1081,16 @@ class NativeGatewayShadowParityService {
       'headersHash': ack['headersHash'],
       'bodyHash': ack['bodyHash'],
       'requestHash': ack['requestHash'],
+      'transportHash': ack['transportHash'],
       'validationOk': ack['validationOk'] == true,
+      'abortStage': ack['abortStage'],
+      'abortedLocally': ack['abortedLocally'] == true,
+      'dnsLookupStarted': ack['dnsLookupStarted'] == true,
+      'tlsHandshakeStarted': ack['tlsHandshakeStarted'] == true,
+      'socketOpened': ack['socketOpened'] == true,
+      'requestBytesWritten': ack['requestBytesWritten'],
+      'providerBillingSurfaceReached':
+          ack['providerBillingSurfaceReached'] == true,
       'transportInvocationEnabled':
           response['transportInvocationEnabled'] == true ||
               ack['transportInvocationEnabled'] == true,
@@ -1097,6 +1254,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-PROVIDER-BUILDER] native provider request builder failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeTransportShimSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-TRANSPORT-SHIM] native transport shim failed '
       '(${error.runtimeType})',
     );
   }

@@ -3727,6 +3727,17 @@ $message''';
     return null;
   }
 
+  String? _nativeTransportShimPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-transport ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -4356,6 +4367,180 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeTransportShimMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final shimMessage = _nativeTransportShimPayload(message);
+    if (shimMessage == null) return;
+    if (shimMessage.trim().isEmpty) {
+      yield '[Error] Native transport shim needs a message after /native-transport.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final outboundMessage = await _decorateMessageWithMobileNodeContext(
+      shimMessage,
+    );
+    final providerHint =
+        model.contains('/') ? model.split('/').first.trim() : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: outboundMessage,
+      sessionKey: resolvedSessionKey,
+      model: model,
+      provider: providerHint,
+    );
+
+    _addActivity(
+      '[NATIVE-TRANSPORT-SHIM] -> Opening embedded Node transport shim',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamProviderTransportShimChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final provider = ack['provider']?.toString() ?? 'unknown';
+        final requestedModel = ack['requestedModel']?.toString() ?? 'unknown';
+        final transport = ack['transport']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final transportHash = ack['transportHash']?.toString() ?? 'unknown';
+        final abortStage = ack['abortStage']?.toString() ?? 'unknown';
+        final validationOk = ack['validationOk'] == true;
+        final socketOpened = ack['socketOpened'] == true;
+        final bytesWritten = ack['requestBytesWritten']?.toString() ?? '0';
+        final billingSurface = ack['providerBillingSurfaceReached'] == true;
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-TRANSPORT-SHIM] OK ACK received');
+        yield [
+          'Native transport shim started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'provider: $provider',
+          'model: $requestedModel',
+          'transport: $transport',
+          'requestHash: $requestHash',
+          'transportHash: $transportHash',
+          'validationOk: $validationOk',
+          'abortStage: $abortStage',
+          'socketOpened: $socketOpened',
+          'bytesWritten: $bytesWritten',
+          'billingSurface: $billingSurface',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'transport_shim') {
+        final shim = event['transportShim'] is Map
+            ? Map<String, dynamic>.from(event['transportShim'] as Map)
+            : <String, dynamic>{};
+        final provider = shim['provider']?.toString() ?? 'unknown';
+        final transport = shim['transport']?.toString() ?? 'unknown';
+        final stopBefore = shim['stopBefore']?.toString() ?? 'unknown';
+        final transportHash = shim['transportHash']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-TRANSPORT-SHIM] OK shim received');
+        yield [
+          'Native transport object',
+          '',
+          'provider: $provider',
+          'transport: $transport',
+          'transportHash: $transportHash',
+          'stopBefore: $stopBefore',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'abort_contract') {
+        final abort = event['abortContract'] is Map
+            ? Map<String, dynamic>.from(event['abortContract'] as Map)
+            : <String, dynamic>{};
+        final probe = event['networkProbe'] is Map
+            ? Map<String, dynamic>.from(event['networkProbe'] as Map)
+            : <String, dynamic>{};
+        final abortedLocally = abort['abortedLocally'] == true;
+        final abortStage = abort['abortStage']?.toString() ?? 'unknown';
+        final socketOpened = probe['socketOpened'] == true;
+        final requestBytesWritten =
+            probe['requestBytesWritten']?.toString() ?? '0';
+        final billingSurface = probe['providerBillingSurfaceReached'] == true;
+        _addActivity(
+          '[NATIVE-TRANSPORT-SHIM] abort contract received: $abortStage',
+        );
+        yield [
+          'Native transport abort',
+          '',
+          'abortedLocally: $abortedLocally',
+          'abortStage: $abortStage',
+          'socketOpened: $socketOpened',
+          'bytesWritten: $requestBytesWritten',
+          'billingSurface: $billingSurface',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'transport_gate') {
+        final gate = event['gate'] is Map
+            ? Map<String, dynamic>.from(event['gate'] as Map)
+            : <String, dynamic>{};
+        final reason = gate['reason']?.toString() ?? 'transport gate closed';
+        _addActivity('[NATIVE-TRANSPORT-SHIM] gate closed: $reason');
+        continue;
+      }
+
+      if (eventType == 'shim_validation') {
+        final validationOk = event['validationOk'] == true;
+        _addActivity(
+          '[NATIVE-TRANSPORT-SHIM] validation received: $validationOk',
+        );
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'end') {
+        _addActivity('[NATIVE-TRANSPORT-SHIM] OK shim complete');
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-TRANSPORT-SHIM] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native transport shim ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -4368,6 +4553,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeTransportShimPayload(message) != null) {
+      yield* _sendNativeTransportShimMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeProviderBuilderPayload(message) != null) {
       yield* _sendNativeProviderBuilderMessage(

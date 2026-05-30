@@ -515,6 +515,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-route-skeleton]',
       '[native-provider-shell]',
       '[native-provider-builder]',
+      '[native-transport-shim]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];

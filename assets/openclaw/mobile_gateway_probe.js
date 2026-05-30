@@ -492,6 +492,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-route-skeleton-cancel",
     "/gateway/chat-provider-shell-stream",
     "/gateway/chat-provider-request-builder-stream",
+    "/gateway/chat-provider-transport-shim-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -1210,6 +1211,121 @@ function createMobileGatewayProbe({
         bodyValidation.messagesNormalized &&
         bodyValidation.rawPromptRedacted &&
         bodyValidation.streamMode
+    };
+  }
+
+  function providerTransportShimDryRun(requestBuilder, queued) {
+    let endpointShape = {
+      protocol: "unknown",
+      host: "unknown",
+      pathname: "unknown",
+      searchParamNames: []
+    };
+    try {
+      const url = new URL(requestBuilder.endpointRedacted);
+      endpointShape = {
+        protocol: url.protocol.replace(":", ""),
+        host: url.hostname || "unknown",
+        pathname: url.pathname || "/",
+        searchParamNames: Array.from(url.searchParams.keys()).sort()
+      };
+    } catch (_) {
+      endpointShape = {
+        protocol: "provider",
+        host: requestBuilder.provider,
+        pathname: "/chat/completions",
+        searchParamNames: []
+      };
+    }
+
+    const abortContract = {
+      abortControllerCreated: true,
+      signalAttached: true,
+      abortedLocally: true,
+      abortReason: "transport_shim_canary_no_network",
+      abortStage: "before_dns"
+    };
+    const networkProbe = {
+      dnsLookupStarted: false,
+      tlsHandshakeStarted: false,
+      socketOpened: false,
+      requestBytesWritten: 0,
+      responseBytesRead: 0,
+      providerBillingSurfaceReached: false
+    };
+    const transportObject = {
+      adapter: "native-node-fetch-compatible-shim",
+      provider: requestBuilder.provider,
+      transport: requestBuilder.transport,
+      method: requestBuilder.method,
+      endpointShape,
+      headersHash: requestBuilder.headersHash,
+      bodyHash: requestBuilder.bodyHash,
+      requestHash: requestBuilder.requestHash,
+      streamExpected: requestBuilder.normalizedBody.stream === true,
+      timeoutMs: 300000,
+      abortContract,
+      networkProbe,
+      outboundNetworkEnabled: false,
+      transportInvocationEnabled: false,
+      providerCallsEnabled: false,
+      executionEnabled: false
+    };
+    const shimValidation = {
+      adapterSelected: transportObject.adapter.length > 0,
+      endpointResolved: endpointShape.protocol !== "unknown",
+      signalAttached: abortContract.signalAttached,
+      abortedBeforeDns: abortContract.abortStage === "before_dns",
+      noSocketOpened: networkProbe.socketOpened === false,
+      noBytesWritten: networkProbe.requestBytesWritten === 0,
+      billingSurfaceUnreached: networkProbe.providerBillingSurfaceReached === false
+    };
+
+    return {
+      provider: requestBuilder.provider,
+      requestedModel: requestBuilder.requestedModel,
+      providerModel: requestBuilder.providerModel,
+      transport: requestBuilder.transport,
+      envelopeHash: requestBuilder.envelopeHash,
+      headersHash: requestBuilder.headersHash,
+      bodyHash: requestBuilder.bodyHash,
+      requestHash: requestBuilder.requestHash,
+      transportObject,
+      shimValidation,
+      transportHash: metadataHash({
+        adapter: transportObject.adapter,
+        provider: transportObject.provider,
+        transport: transportObject.transport,
+        method: transportObject.method,
+        endpointShape: transportObject.endpointShape,
+        headersHash: transportObject.headersHash,
+        bodyHash: transportObject.bodyHash,
+        requestHash: transportObject.requestHash,
+        abortContract: transportObject.abortContract,
+        networkProbe: transportObject.networkProbe,
+        outboundNetworkEnabled: transportObject.outboundNetworkEnabled,
+        transportInvocationEnabled: transportObject.transportInvocationEnabled
+      }),
+      validationOk:
+        requestBuilder.validationOk === true &&
+        shimValidation.adapterSelected &&
+        shimValidation.endpointResolved &&
+        shimValidation.signalAttached &&
+        shimValidation.abortedBeforeDns &&
+        shimValidation.noSocketOpened &&
+        shimValidation.noBytesWritten &&
+        shimValidation.billingSurfaceUnreached,
+      transportGate: {
+        enabled: false,
+        status: "aborted_locally",
+        reason: "transport_shim_aborted_before_dns_tls_socket",
+        blockedBefore: "dns_lookup"
+      },
+      run: {
+        requestId: queued.requestId,
+        runId: queued.runId
+      },
+      stopBefore: "dns_tls_socket_or_fetch"
     };
   }
 
@@ -2132,6 +2248,299 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderTransportShimStream(req, res) {
+    const source = "provider-transport-shim";
+    const canaryMode = "provider-transport-shim";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder = providerRequestBuilderDryRun(envelope, shape, queued);
+      const transportShim = providerTransportShimDryRun(requestBuilder, queued);
+      const ack = {
+        parsed,
+        route: "disabled",
+        routeStatus: "aborted_before_dns",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "provider transport shim constructed locally and aborted before DNS/TLS/socket/network",
+        provider: transportShim.provider,
+        requestedModel: transportShim.requestedModel,
+        providerModel: transportShim.providerModel,
+        transport: transportShim.transport,
+        envelopeHash: transportShim.envelopeHash,
+        headersHash: transportShim.headersHash,
+        bodyHash: transportShim.bodyHash,
+        requestHash: transportShim.requestHash,
+        transportHash: transportShim.transportHash,
+        validationOk: transportShim.validationOk,
+        abortStage: transportShim.transportObject.abortContract.abortStage,
+        abortedLocally: transportShim.transportObject.abortContract.abortedLocally,
+        dnsLookupStarted: transportShim.transportObject.networkProbe.dnsLookupStarted,
+        tlsHandshakeStarted: transportShim.transportObject.networkProbe.tlsHandshakeStarted,
+        socketOpened: transportShim.transportObject.networkProbe.socketOpened,
+        requestBytesWritten: transportShim.transportObject.networkProbe.requestBytesWritten,
+        providerBillingSurfaceReached:
+          transportShim.transportObject.networkProbe.providerBillingSurfaceReached,
+        transportInvocationEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-transport-shim"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: "disabled",
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: false,
+        acceptedForQueue: true,
+        queuedForDryRun: true,
+        queueStatus: "parsed_disabled",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      const steps = [
+        {
+          event: "transport_shim",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            transportShim
+          }
+        },
+        {
+          event: "abort_contract",
+          delay: 100,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            abortContract: transportShim.transportObject.abortContract,
+            networkProbe: transportShim.transportObject.networkProbe
+          }
+        },
+        {
+          event: "transport_gate",
+          delay: 110,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            gate: transportShim.transportGate,
+            transportInvocationEnabled: false,
+            providerCallsEnabled: false
+          }
+        },
+        {
+          event: "shim_validation",
+          delay: 110,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            validationOk: transportShim.validationOk,
+            shimValidation: transportShim.shimValidation
+          }
+        },
+        {
+          event: "delta",
+          delay: 120,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 1,
+            text:
+              "Native transport shim constructed the provider transport object. "
+          }
+        },
+        {
+          event: "delta",
+          delay: 140,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: 2,
+            text:
+              "It aborted locally before DNS, TLS, socket open, bytes written, or provider billing."
+          }
+        },
+        {
+          event: "end",
+          delay: 80,
+          payload: {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: ack.routeStatus,
+            finishReason: "provider_transport_shim_complete",
+            provider: transportShim.provider,
+            requestedModel: transportShim.requestedModel,
+            transportHash: transportShim.transportHash,
+            validationOk: transportShim.validationOk,
+            transportInvocationEnabled: false,
+            providerCallsEnabled: false,
+            executionEnabled: false
+          }
+        }
+      ];
+
+      for (const step of steps) {
+        await delayMs(step.delay);
+        writeEvent(step.event, step.payload);
+        if (step.event === "end") {
+          res.end();
+          return;
+        }
+      }
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_provider_transport_shim_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_transport_shim_failed",
+          message: error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -2274,6 +2683,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-request-builder-stream") {
       handleChatProviderRequestBuilderStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-transport-shim-stream") {
+      handleChatProviderTransportShimStream(req, res);
       return true;
     }
 
