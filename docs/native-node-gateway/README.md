@@ -79,6 +79,9 @@ execution disabled,
 can run an explicit `/native-dart-bridge` canary that sends a native synthetic
 dispatch request across the Dart loopback bridge and receives a dry-run ACK
 without executing the capability,
+can run an explicit `/native-dart-bridge-order` canary that sends ordered
+native bridge dry-runs and records a cancellation-shaped dry-run ACK without
+executing the capability,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -144,6 +147,7 @@ be safely generalized.
 | [36-native-provider-tool-plan-canary.md](36-native-provider-tool-plan-canary.md) | Explicit `/native-tool-plan` UI turns capturing provider tool-call plans without execution |
 | [37-native-tool-dispatch-dry-run.md](37-native-tool-dispatch-dry-run.md) | Explicit `/native-tool-dispatch` UI turns emitting synthetic tool-use/result frames without execution |
 | [38-native-dart-bridge-dry-run.md](38-native-dart-bridge-dry-run.md) | Explicit `/native-dart-bridge` UI turns proving native-to-Dart dispatch ACKs without execution |
+| [39-native-dart-bridge-ordering-cancel.md](39-native-dart-bridge-ordering-cancel.md) | Explicit `/native-dart-bridge-order` UI turns proving bridge ordering and cancellation dry-run parity |
 
 ## Work Rules
 

@@ -105,6 +105,9 @@ class AgentSkillServer {
     } else if (request.method == 'POST' &&
         path == '/api/native-gateway/dispatch-dry-run') {
       await _handleNativeGatewayDispatchDryRun(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/dispatch-cancel-dry-run') {
+      await _handleNativeGatewayDispatchCancelDryRun(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -196,6 +199,10 @@ class AgentSkillServer {
         'requestHash': body['requestHash'],
         'dispatchHash': body['dispatchHash'],
         'bridgeRequestHash': body['bridgeRequestHash'],
+        'orderIndex': body['orderIndex'],
+        'orderCount': body['orderCount'],
+        'orderingKey': body['orderingKey'],
+        'cancellationToken': body['cancellationToken'],
         'callId': body['callId'],
         'runId': body['runId'],
         'nativeSessionId': body['nativeSessionId'],
@@ -209,6 +216,65 @@ class AgentSkillServer {
       });
     } catch (e) {
       _sendError(request, 'native_dart_bridge_dry_run_failed: $e');
+    }
+  }
+
+  Future<void> _handleNativeGatewayDispatchCancelDryRun(
+    HttpRequest request,
+  ) async {
+    try {
+      final body = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
+      final dryRun = body['dryRun'] == true;
+      final executionEnabled = body['executionEnabled'] == true ||
+          body['toolExecutionEnabled'] == true ||
+          body['bridgeExecutionEnabled'] == true;
+      final targetRunId = body['targetRunId']?.toString().trim();
+      final targetBridgeRequestHash =
+          body['targetBridgeRequestHash']?.toString().trim();
+      final cancellationToken = body['cancellationToken']?.toString().trim();
+      final cancelAccepted = dryRun &&
+          !executionEnabled &&
+          targetRunId != null &&
+          targetRunId.isNotEmpty &&
+          targetBridgeRequestHash != null &&
+          targetBridgeRequestHash.isNotEmpty;
+
+      _sendJson(request, {
+        'ok': cancelAccepted,
+        'cancelAccepted': cancelAccepted,
+        'cancelRequested': true,
+        'cancelApplied': false,
+        'dryRun': true,
+        'runtime': 'flutter-dart',
+        'bridge': 'AgentSkillServer',
+        'source': 'native-dart-bridge-ordering-cancel',
+        'routeStatus': cancelAccepted
+            ? 'native_dart_bridge_cancel_dry_run_ack'
+            : 'native_dart_bridge_cancel_dry_run_rejected',
+        'cancellationState': cancelAccepted
+            ? 'recorded_dry_run_no_active_execution'
+            : 'rejected',
+        'reason': body['reason']?.toString() ?? 'native bridge dry-run cancel',
+        'targetRunId': targetRunId,
+        'targetRequestId': body['targetRequestId'],
+        'targetCallId': body['targetCallId'],
+        'targetBridgeRequestHash': targetBridgeRequestHash,
+        'targetDispatchHash': body['targetDispatchHash'],
+        'orderIndex': body['orderIndex'],
+        'orderCount': body['orderCount'],
+        'cancellationToken': cancellationToken,
+        'cancelRequestHash': body['cancelRequestHash'],
+        'targetWasExecuting': false,
+        'skippedReason': 'native_dart_bridge_cancel_dry_run_only',
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'bridgeExecutionEnabled': false,
+        'receivedAt': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      _sendError(request, 'native_dart_bridge_cancel_dry_run_failed: $e');
     }
   }
 

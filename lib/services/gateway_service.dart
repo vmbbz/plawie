@@ -3793,6 +3793,17 @@ $message''';
     return null;
   }
 
+  String? _nativeDartBridgeOrderingPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-dart-bridge-order ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -5780,6 +5791,222 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeDartBridgeOrderingMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final orderMessage = _nativeDartBridgeOrderingPayload(message);
+    if (orderMessage == null) return;
+    if (orderMessage.trim().isEmpty) {
+      yield '[Error] Native Dart bridge ordering dry-run needs a message after /native-dart-bridge-order.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: orderMessage.trim(),
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-DART-BRIDGE-ORDER] -> Opening bridge ordering/cancel dry-run',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamNativeDartBridgeOrderingCancelChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        _addActivity('[NATIVE-DART-BRIDGE-ORDER] OK ACK received');
+        yield [
+          'Native bridge ordering/cancel dry-run started',
+          '',
+          'parsed: ${ack['parsed'] == true}',
+          'routeStatus: ${ack['routeStatus'] ?? 'unknown'}',
+          'hashMatches: ${ack['hashMatches'] == true}',
+          'orderingPlanHash: ${ack['orderingPlanHash'] ?? 'unknown'}',
+          'orderCount: ${ack['orderCount'] ?? 0}',
+          'cancelOrderIndex: ${ack['cancelOrderIndex'] ?? 'unknown'}',
+          'fixtureParityOk: ${ack['fixtureParityOk'] == true}',
+          'dispatchParityOk: ${ack['dispatchParityOk'] == true}',
+          'providerCallsEnabled: ${ack['providerCallsEnabled'] == true}',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'order_plan') {
+        final planned = event['plannedOrder'] is List
+            ? event['plannedOrder'] as List
+            : const [];
+        final order = planned
+            .map((entry) => entry is Map ? entry['orderIndex'] : null)
+            .where((entry) => entry != null)
+            .join(', ');
+        yield [
+          'Native bridge order plan',
+          '',
+          'orderCount: ${event['orderCount'] ?? 0}',
+          'cancelOrderIndex: ${event['cancelOrderIndex'] ?? 'unknown'}',
+          'plannedOrder: $order',
+          'orderingPlanHash: ${event['orderingPlanHash'] ?? 'unknown'}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_ack') {
+        final bridgeAck = event['bridgeAck'] is Map
+            ? Map<String, dynamic>.from(event['bridgeAck'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Dart ordered bridge ACK',
+          '',
+          'orderIndex: ${event['orderIndex'] ?? 'unknown'}',
+          'accepted: ${bridgeAck['accepted'] == true}',
+          'command: ${bridgeAck['command'] ?? 'unknown'}',
+          'commandKnown: ${bridgeAck['commandKnown'] == true}',
+          'bridgeParityOk: ${event['bridgeParityOk'] == true}',
+          'bridgeAckHash: ${event['bridgeAckHash'] ?? 'unknown'}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_use_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final input = frame['input'] is Map
+            ? Map<String, dynamic>.from(frame['input'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        continue;
+      }
+
+      if (eventType == 'tool_result_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final result = frame['result'] is Map
+            ? Map<String, dynamic>.from(frame['result'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        continue;
+      }
+
+      if (eventType == 'cancel_ack') {
+        final cancelAck = event['cancelAck'] is Map
+            ? Map<String, dynamic>.from(event['cancelAck'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Dart bridge cancellation ACK',
+          '',
+          'orderIndex: ${event['orderIndex'] ?? 'unknown'}',
+          'cancelAccepted: ${cancelAck['cancelAccepted'] == true}',
+          'cancelApplied: ${cancelAck['cancelApplied'] == true}',
+          'cancellationState: ${cancelAck['cancellationState'] ?? 'unknown'}',
+          'cancellationParityOk: ${event['cancellationParityOk'] == true}',
+          'skippedReason: ${cancelAck['skippedReason'] ?? 'unknown'}',
+          'toolExecutionEnabled: ${cancelAck['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${cancelAck['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'ordering_summary') {
+        final expected = event['expectedOrder'] is List
+            ? (event['expectedOrder'] as List).join(', ')
+            : '';
+        final bridgeOrder = event['observedBridgeOrder'] is List
+            ? (event['observedBridgeOrder'] as List).join(', ')
+            : '';
+        final resultOrder = event['observedResultOrder'] is List
+            ? (event['observedResultOrder'] as List).join(', ')
+            : '';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-ORDER] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native bridge ordering summary',
+          '',
+          'expectedOrder: $expected',
+          'observedBridgeOrder: $bridgeOrder',
+          'observedResultOrder: $resultOrder',
+          'uniqueRunIds: ${event['uniqueRunIds'] ?? 'unknown'}',
+          'orderingParityOk: ${event['orderingParityOk'] == true}',
+          'cancellationParityOk: ${event['cancellationParityOk'] == true}',
+          'validationOk: ${event['validationOk'] == true}',
+          'cancellationState: ${event['cancellationState'] ?? 'unknown'}',
+          'skippedReason: ${event['skippedReason'] ?? 'unknown'}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE-ORDER] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native bridge ordering/cancel dry-run complete',
+            '',
+            'finishReason: $finishReason',
+            'orderCount: ${event['orderCount'] ?? 0}',
+            'orderingParityOk: ${event['orderingParityOk'] == true}',
+            'cancellationParityOk: ${event['cancellationParityOk'] == true}',
+            'validationOk: ${event['validationOk'] == true}',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+            'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-DART-BRIDGE-ORDER] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native Dart bridge ordering/cancel dry-run ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -5792,6 +6019,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeDartBridgeOrderingPayload(message) != null) {
+      yield* _sendNativeDartBridgeOrderingMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeDartBridgePayload(message) != null) {
       yield* _sendNativeDartBridgeMessage(

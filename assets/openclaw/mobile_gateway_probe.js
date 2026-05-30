@@ -499,6 +499,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-tool-plan-canary-stream",
     "/gateway/chat-tool-dispatch-dry-run-stream",
     "/gateway/chat-native-dart-bridge-dry-run-stream",
+    "/gateway/chat-native-dart-bridge-ordering-cancel-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -2913,6 +2914,84 @@ function createMobileGatewayProbe({
         dryRun: bridgeRequest.dryRun,
         executionEnabled: bridgeRequest.executionEnabled,
         toolExecutionEnabled: bridgeRequest.toolExecutionEnabled
+      })
+    };
+  }
+
+  function nativeDartBridgeOrderedRequest(bridgeRequest, orderIndex, orderCount) {
+    const ordered = {
+      ...bridgeRequest,
+      source: "native-dart-bridge-ordering-cancel",
+      canaryMode: "native-dart-bridge-ordering-cancel",
+      orderIndex,
+      orderCount,
+      orderingKey: `${bridgeRequest.nativeSessionId}:${orderIndex}`,
+      cancellationToken: stableId("native-cancel-token", {
+        runId: bridgeRequest.runId,
+        callId: bridgeRequest.callId,
+        orderIndex,
+        dispatchHash: bridgeRequest.dispatchHash
+      }),
+      bridgeExecutionEnabled: false,
+      toolExecutionEnabled: false,
+      executionEnabled: false
+    };
+    return {
+      ...ordered,
+      bridgeRequestHash: metadataHash({
+        type: ordered.type,
+        runId: ordered.runId,
+        callId: ordered.callId,
+        method: ordered.method,
+        capability: ordered.capability,
+        input: ordered.input,
+        dispatchHash: ordered.dispatchHash,
+        requestHash: ordered.requestHash,
+        orderIndex: ordered.orderIndex,
+        orderCount: ordered.orderCount,
+        cancellationToken: ordered.cancellationToken,
+        dryRun: ordered.dryRun,
+        executionEnabled: ordered.executionEnabled,
+        toolExecutionEnabled: ordered.toolExecutionEnabled,
+        bridgeExecutionEnabled: ordered.bridgeExecutionEnabled
+      })
+    };
+  }
+
+  function nativeDartBridgeCancelDryRunRequest(target, reason) {
+    const cancelRequest = {
+      type: "native_tool_dispatch_cancel_dry_run",
+      runtime: "native-node-embedded",
+      source: "native-dart-bridge-ordering-cancel",
+      canaryMode: "native-dart-bridge-ordering-cancel",
+      targetRunId: target.runId,
+      targetRequestId: target.requestId,
+      targetCallId: target.callId,
+      targetBridgeRequestHash: target.bridgeRequestHash,
+      targetDispatchHash: target.dispatchHash,
+      orderIndex: target.orderIndex,
+      orderCount: target.orderCount,
+      cancellationToken: target.cancellationToken,
+      reason,
+      dryRun: true,
+      providerCallsEnabled: false,
+      executionEnabled: false,
+      toolExecutionEnabled: false,
+      bridgeExecutionEnabled: false
+    };
+    return {
+      ...cancelRequest,
+      cancelRequestHash: metadataHash({
+        type: cancelRequest.type,
+        targetRunId: cancelRequest.targetRunId,
+        targetCallId: cancelRequest.targetCallId,
+        targetBridgeRequestHash: cancelRequest.targetBridgeRequestHash,
+        cancellationToken: cancelRequest.cancellationToken,
+        reason: cancelRequest.reason,
+        dryRun: cancelRequest.dryRun,
+        executionEnabled: cancelRequest.executionEnabled,
+        toolExecutionEnabled: cancelRequest.toolExecutionEnabled,
+        bridgeExecutionEnabled: cancelRequest.bridgeExecutionEnabled
       })
     };
   }
@@ -6097,6 +6176,543 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatNativeDartBridgeOrderingCancelStream(req, res) {
+    const source = "native-dart-bridge-ordering-cancel";
+    const canaryMode = "native-dart-bridge-ordering-cancel";
+    const directCanary = true;
+    const orderCount = 3;
+    const cancelOrderIndex = 1;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    function clonePayloadForOrder(payload, orderIndex) {
+      const params = payload?.params && typeof payload.params === "object"
+        ? { ...payload.params }
+        : {};
+      return {
+        ...payload,
+        id: stableId("native-order-request", {
+          id: payload?.id,
+          orderIndex,
+          message: params.message
+        }),
+        params: {
+          ...params,
+          idempotencyKey: stableId("native-order-idempotency", {
+            base: params.idempotencyKey,
+            orderIndex
+          })
+        }
+      };
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const entries = [];
+      let requestBuilder = null;
+      for (let orderIndex = 0; orderIndex < orderCount; orderIndex += 1) {
+        const orderedPayload = clonePayloadForOrder(payload, orderIndex);
+        const orderedShape = summarizeGatewayWsFrame(orderedPayload);
+        const queued = dryRunQueue.acceptDryRun({
+          payload: orderedPayload,
+          shape: orderedShape,
+          gatewayReady: readyState(),
+          source,
+          canaryMode,
+          directCanary
+        });
+        const envelope = providerShellEnvelope(
+          orderedPayload,
+          orderedShape,
+          queued
+        );
+        const builder =
+          providerToolPlanRequestBuilder(envelope, orderedShape, queued, orderedPayload);
+        requestBuilder ??= builder;
+        const fixtureTools = nativeMobileToolCatalog().filter((entry) =>
+          builder.toolFunctionNames.includes(entry.functionName)
+        );
+        const toolSelection = {
+          tools: fixtureTools,
+          toolFunctionNames: builder.toolFunctionNames,
+          gatewayToolNames: builder.gatewayToolNames,
+          toolAliasMap: builder.toolAliasMap,
+          selectionHash: builder.toolSelectionHash
+        };
+        const dispatch = syntheticToolDispatchDryRun(toolSelection, queued);
+        const bridgeRequest = nativeDartBridgeOrderedRequest(
+          nativeDartBridgeDryRunRequest(dispatch, queued, builder),
+          orderIndex,
+          orderCount
+        );
+        entries.push({
+          orderIndex,
+          orderedPayload,
+          orderedShape,
+          queued,
+          builder,
+          dispatch,
+          bridgeRequest,
+          bridgeAck: null,
+          bridgeAckHash: null,
+          bridgeParityOk: false,
+          resultFrame: null
+        });
+      }
+
+      const orderingPlanHash = metadataHash({
+        orderCount,
+        cancelOrderIndex,
+        runIds: entries.map((entry) => entry.queued.runId),
+        bridgeRequestHashes: entries.map((entry) => entry.bridgeRequest.bridgeRequestHash)
+      });
+      const ack = {
+        parsed,
+        route: "native_dart_bridge_ordering_cancel",
+        routeStatus: "native_dart_bridge_ordering_cancel_started",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "native sends ordered dry-run dispatches to Dart and records a dry-run cancellation",
+        provider: requestBuilder.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: requestBuilder.providerModel,
+        transport: requestBuilder.transport,
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        dispatchHash: entries[0].dispatch.dispatchHash,
+        orderingPlanHash,
+        orderCount,
+        cancelOrderIndex,
+        fixtureHash: entries[0].dispatch.fixture.parsed.toolPlanHash,
+        fixtureParityOk: entries.every((entry) => entry.dispatch.fixture.parityOk),
+        dispatchParityOk: entries.every((entry) => entry.dispatch.parityOk),
+        orderingParityOk: false,
+        cancellationParityOk: false,
+        validationOk: false,
+        selectedToolCount: requestBuilder.selectedToolCount,
+        toolPlanCount: entries[0].dispatch.fixture.parsed.toolPlanCount,
+        allowedPlanCount: entries[0].dispatch.fixture.parsed.allowedPlanCount,
+        blockedPlanCount: entries[0].dispatch.fixture.parsed.blockedPlanCount,
+        providerCallStarted: false,
+        providerCallsEnabled: false,
+        transportInvocationEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: entries[0].queued.nativeSessionId,
+        requestId: entries[0].queued.requestId,
+        runId: entries[0].queued.runId,
+        sequence: entries[0].queued.sequence,
+        queueStatus: "native_dart_bridge_ordering_cancel",
+        gatewayReady: entries[0].queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "native-dart-bridge-ordering-cancel"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "native_dart_bridge_ordering_cancel",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("order_plan", {
+        ok: true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        orderCount,
+        cancelOrderIndex,
+        orderingPlanHash,
+        plannedOrder: entries.map((entry) => ({
+          orderIndex: entry.orderIndex,
+          runId: entry.queued.runId,
+          requestId: entry.queued.requestId,
+          bridgeRequestHash: entry.bridgeRequest.bridgeRequestHash,
+          cancellationToken: entry.bridgeRequest.cancellationToken,
+          toolName: entry.dispatch.route.method
+        })),
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false
+      });
+
+      const observedBridgeOrder = [];
+      const observedResultOrder = [];
+      for (const entry of entries) {
+        writeEvent("bridge_request", {
+          ok: entry.dispatch.parityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: entry.queued.runId,
+          orderIndex: entry.orderIndex,
+          endpoint: "http://127.0.0.1:8765/api/native-gateway/dispatch-dry-run",
+          bridgeRequest: {
+            type: entry.bridgeRequest.type,
+            callId: entry.bridgeRequest.callId,
+            method: entry.bridgeRequest.method,
+            capability: entry.bridgeRequest.capability,
+            dartCapability: entry.bridgeRequest.dartCapability,
+            requiresUiThread: entry.bridgeRequest.requiresUiThread,
+            orderIndex: entry.bridgeRequest.orderIndex,
+            orderCount: entry.bridgeRequest.orderCount,
+            orderingKey: entry.bridgeRequest.orderingKey,
+            cancellationToken: entry.bridgeRequest.cancellationToken,
+            bridgeRequestHash: entry.bridgeRequest.bridgeRequestHash,
+            dispatchHash: entry.bridgeRequest.dispatchHash,
+            dryRun: entry.bridgeRequest.dryRun,
+            executionEnabled: entry.bridgeRequest.executionEnabled,
+            toolExecutionEnabled: entry.bridgeRequest.toolExecutionEnabled,
+            bridgeExecutionEnabled: entry.bridgeRequest.bridgeExecutionEnabled
+          }
+        });
+
+        const bridgeResponse = await postJsonToDartBridge(
+          "/api/native-gateway/dispatch-dry-run",
+          entry.bridgeRequest,
+          2500
+        );
+        const bridgeAck = bridgeResponse.body;
+        const bridgeAckHash = metadataHash({
+          bridgeRequestHash: entry.bridgeRequest.bridgeRequestHash,
+          ok: bridgeAck.ok === true,
+          accepted: bridgeAck.accepted === true,
+          commandKnown: bridgeAck.commandKnown === true,
+          command: bridgeAck.command,
+          capability: bridgeAck.capability,
+          orderIndex: bridgeAck.orderIndex,
+          dryRun: bridgeAck.dryRun === true,
+          skippedReason: bridgeAck.skippedReason,
+          executionEnabled: bridgeAck.executionEnabled === true,
+          toolExecutionEnabled: bridgeAck.toolExecutionEnabled === true,
+          bridgeExecutionEnabled: bridgeAck.bridgeExecutionEnabled === true
+        });
+        entry.bridgeAck = bridgeAck;
+        entry.bridgeAckHash = bridgeAckHash;
+        entry.bridgeParityOk =
+          entry.dispatch.parityOk &&
+          bridgeAck.ok === true &&
+          bridgeAck.accepted === true &&
+          bridgeAck.commandKnown === true &&
+          bridgeAck.orderIndex === entry.orderIndex &&
+          bridgeAck.dryRun === true &&
+          bridgeAck.executionEnabled === false &&
+          bridgeAck.toolExecutionEnabled === false &&
+          bridgeAck.bridgeExecutionEnabled === false &&
+          bridgeAck.skippedReason === "native_dart_bridge_dry_run_only";
+        observedBridgeOrder.push(entry.orderIndex);
+
+        writeEvent("bridge_ack", {
+          ok: bridgeAck.ok === true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: entry.queued.runId,
+          orderIndex: entry.orderIndex,
+          statusCode: bridgeResponse.statusCode,
+          responseBytesRead: bridgeResponse.responseBytesRead,
+          bridgeAckHash,
+          bridgeParityOk: entry.bridgeParityOk,
+          bridgeAck
+        });
+
+        const resultFrame = {
+          ...entry.dispatch.toolResultFrame,
+          result: {
+            ...entry.dispatch.toolResultFrame.result,
+            ok: entry.bridgeParityOk,
+            bridgeAckReceived: true,
+            bridgeAckHash,
+            bridgeRequestHash: entry.bridgeRequest.bridgeRequestHash,
+            orderIndex: entry.orderIndex,
+            orderingKey: entry.bridgeRequest.orderingKey,
+            cancellationToken: entry.bridgeRequest.cancellationToken,
+            dartBridgeOk: bridgeAck.ok === true,
+            dartAccepted: bridgeAck.accepted === true,
+            commandKnown: bridgeAck.commandKnown === true,
+            skippedReason: bridgeAck.skippedReason,
+            bridgeExecutionEnabled: false,
+            toolExecutionEnabled: false,
+            executionEnabled: false
+          },
+          orderIndex: entry.orderIndex
+        };
+        entry.resultFrame = resultFrame;
+        observedResultOrder.push(entry.orderIndex);
+        writeEvent("tool_use_frame", {
+          ok: entry.dispatch.parityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: entry.queued.runId,
+          orderIndex: entry.orderIndex,
+          frame: {
+            ...entry.dispatch.toolUseFrame,
+            orderIndex: entry.orderIndex,
+            cancellationToken: entry.bridgeRequest.cancellationToken
+          }
+        });
+        writeEvent("tool_result_frame", {
+          ok: entry.bridgeParityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: entry.queued.runId,
+          orderIndex: entry.orderIndex,
+          frame: resultFrame
+        });
+      }
+
+      const cancelTarget = entries[cancelOrderIndex];
+      const cancelRequest = nativeDartBridgeCancelDryRunRequest(
+        {
+          runId: cancelTarget.queued.runId,
+          requestId: cancelTarget.queued.requestId,
+          callId: cancelTarget.bridgeRequest.callId,
+          bridgeRequestHash: cancelTarget.bridgeRequest.bridgeRequestHash,
+          dispatchHash: cancelTarget.dispatch.dispatchHash,
+          orderIndex: cancelTarget.orderIndex,
+          orderCount,
+          cancellationToken: cancelTarget.bridgeRequest.cancellationToken
+        },
+        "ordering_cancel_parity_after_bridge_ack"
+      );
+      writeEvent("cancel_request", {
+        ok: true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: cancelTarget.queued.runId,
+        orderIndex: cancelTarget.orderIndex,
+        endpoint: "http://127.0.0.1:8765/api/native-gateway/dispatch-cancel-dry-run",
+        cancelRequest
+      });
+      const cancelResponse = await postJsonToDartBridge(
+        "/api/native-gateway/dispatch-cancel-dry-run",
+        cancelRequest,
+        2500
+      );
+      const cancelAck = cancelResponse.body;
+      const cancelAckHash = metadataHash({
+        cancelRequestHash: cancelRequest.cancelRequestHash,
+        ok: cancelAck.ok === true,
+        cancelAccepted: cancelAck.cancelAccepted === true,
+        targetRunId: cancelAck.targetRunId,
+        targetBridgeRequestHash: cancelAck.targetBridgeRequestHash,
+        cancellationState: cancelAck.cancellationState,
+        skippedReason: cancelAck.skippedReason,
+        executionEnabled: cancelAck.executionEnabled === true,
+        toolExecutionEnabled: cancelAck.toolExecutionEnabled === true,
+        bridgeExecutionEnabled: cancelAck.bridgeExecutionEnabled === true
+      });
+      const expectedOrder = entries.map((entry) => entry.orderIndex);
+      const runIds = entries.map((entry) => entry.queued.runId);
+      const uniqueRunIds = new Set(runIds);
+      const orderingParityOk =
+        uniqueRunIds.size === entries.length &&
+        JSON.stringify(observedBridgeOrder) === JSON.stringify(expectedOrder) &&
+        JSON.stringify(observedResultOrder) === JSON.stringify(expectedOrder) &&
+        entries.every((entry) => entry.bridgeParityOk === true);
+      const cancellationParityOk =
+        cancelAck.ok === true &&
+        cancelAck.cancelAccepted === true &&
+        cancelAck.cancelRequested === true &&
+        cancelAck.cancelApplied === false &&
+        cancelAck.targetRunId === cancelTarget.queued.runId &&
+        cancelAck.targetBridgeRequestHash === cancelTarget.bridgeRequest.bridgeRequestHash &&
+        cancelAck.cancellationState === "recorded_dry_run_no_active_execution" &&
+        cancelAck.skippedReason === "native_dart_bridge_cancel_dry_run_only" &&
+        cancelAck.executionEnabled === false &&
+        cancelAck.toolExecutionEnabled === false &&
+        cancelAck.bridgeExecutionEnabled === false;
+      const validationOk =
+        requestBuilder.validationOk === true &&
+        entries.every((entry) => entry.dispatch.parityOk) &&
+        orderingParityOk &&
+        cancellationParityOk;
+
+      writeEvent("cancel_ack", {
+        ok: cancelAck.ok === true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: cancelTarget.queued.runId,
+        orderIndex: cancelTarget.orderIndex,
+        statusCode: cancelResponse.statusCode,
+        responseBytesRead: cancelResponse.responseBytesRead,
+        cancelRequestHash: cancelRequest.cancelRequestHash,
+        cancelAckHash,
+        cancellationParityOk,
+        cancelAck
+      });
+      writeEvent("ordering_summary", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        orderingPlanHash,
+        orderCount,
+        expectedOrder,
+        observedBridgeOrder,
+        observedResultOrder,
+        uniqueRunIds: uniqueRunIds.size,
+        orderingParityOk,
+        cancellationParityOk,
+        validationOk,
+        cancelOrderIndex,
+        cancelRequestHash: cancelRequest.cancelRequestHash,
+        cancelAckHash,
+        targetRunId: cancelTarget.queued.runId,
+        targetBridgeRequestHash: cancelTarget.bridgeRequest.bridgeRequestHash,
+        cancellationState: cancelAck.cancellationState,
+        skippedReason: cancelAck.skippedReason,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false
+      });
+      writeEvent("end", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        routeStatus: validationOk
+          ? "native_dart_bridge_ordering_cancel_complete"
+          : "native_dart_bridge_ordering_cancel_failed",
+        finishReason: validationOk
+          ? "native_dart_bridge_ordering_cancel_complete"
+          : "native_dart_bridge_ordering_cancel_failed",
+        orderingPlanHash,
+        orderCount,
+        orderingParityOk,
+        cancellationParityOk,
+        validationOk,
+        cancelOrderIndex,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false
+      });
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code:
+              error.code || "chat_native_dart_bridge_ordering_cancel_parse_failed",
+            message: error.message || String(error),
+            raw: error.raw || error.stack || error.message || String(error),
+            statusCode: error.statusCode || null,
+            body: error.body || null
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_native_dart_bridge_ordering_cancel_failed",
+          message: error.message || String(error),
+          raw: error.raw || error.stack || error.message || String(error),
+          statusCode: error.statusCode || null,
+          body: error.body || null
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -6269,6 +6885,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-native-dart-bridge-dry-run-stream") {
       handleChatNativeDartBridgeDryRunStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-native-dart-bridge-ordering-cancel-stream") {
+      handleChatNativeDartBridgeOrderingCancelStream(req, res);
       return true;
     }
 

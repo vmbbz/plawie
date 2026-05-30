@@ -1783,6 +1783,238 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>>
+      streamNativeDartBridgeOrderingCancelChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-native-dart-bridge-ordering-cancel-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native Dart bridge ordering/cancel HTTP '
+          '${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'requestHash': ack['requestHash'],
+                  'orderingPlanHash': ack['orderingPlanHash'],
+                  'orderCount': ack['orderCount'],
+                  'cancelOrderIndex': ack['cancelOrderIndex'],
+                  'fixtureParityOk': ack['fixtureParityOk'],
+                  'dispatchParityOk': ack['dispatchParityOk'],
+                  'orderingParityOk': ack['orderingParityOk'],
+                  'cancellationParityOk': ack['cancellationParityOk'],
+                  'validationOk': ack['validationOk'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'toolExecutionEnabled': ack['toolExecutionEnabled'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'order_plan') {
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] plan: ${jsonEncode({
+                  'orderingPlanHash': decoded['orderingPlanHash'],
+                  'orderCount': decoded['orderCount'],
+                  'cancelOrderIndex': decoded['cancelOrderIndex'],
+                  'plannedOrder': decoded['plannedOrder'],
+                  'toolExecutionEnabled':
+                      decoded['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      decoded['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_request') {
+          final bridgeRequest = decoded['bridgeRequest'] is Map
+              ? Map<String, dynamic>.from(decoded['bridgeRequest'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'orderIndex': decoded['orderIndex'],
+                  'method': bridgeRequest['method'],
+                  'capability': bridgeRequest['capability'],
+                  'bridgeRequestHash': bridgeRequest['bridgeRequestHash'],
+                  'cancellationToken': bridgeRequest['cancellationToken'],
+                  'dryRun': bridgeRequest['dryRun'] == true,
+                  'toolExecutionEnabled':
+                      bridgeRequest['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      bridgeRequest['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_ack') {
+          final bridgeAck = decoded['bridgeAck'] is Map
+              ? Map<String, dynamic>.from(decoded['bridgeAck'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] bridge ack: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'orderIndex': decoded['orderIndex'],
+                  'ok': decoded['ok'] == true,
+                  'accepted': bridgeAck['accepted'] == true,
+                  'command': bridgeAck['command'],
+                  'commandKnown': bridgeAck['commandKnown'] == true,
+                  'bridgeAckHash': decoded['bridgeAckHash'],
+                  'bridgeParityOk': decoded['bridgeParityOk'] == true,
+                  'skippedReason': bridgeAck['skippedReason'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'tool_use_frame' ||
+            decoded['event'] == 'tool_result_frame') {
+          final frame = decoded['frame'] is Map
+              ? Map<String, dynamic>.from(decoded['frame'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] ${decoded['event']}: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'orderIndex': decoded['orderIndex'],
+                  'ok': decoded['ok'] == true,
+                  'type': frame['type'],
+                  'name': frame['name'],
+                  'id': frame['id'],
+                  'toolExecutionEnabled': frame['toolExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'cancel_request') {
+          final cancelRequest = decoded['cancelRequest'] is Map
+              ? Map<String, dynamic>.from(decoded['cancelRequest'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] cancel request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'orderIndex': decoded['orderIndex'],
+                  'cancelRequestHash': cancelRequest['cancelRequestHash'],
+                  'targetRunId': cancelRequest['targetRunId'],
+                  'targetBridgeRequestHash':
+                      cancelRequest['targetBridgeRequestHash'],
+                  'cancellationToken': cancelRequest['cancellationToken'],
+                  'toolExecutionEnabled':
+                      cancelRequest['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      cancelRequest['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'cancel_ack') {
+          final cancelAck = decoded['cancelAck'] is Map
+              ? Map<String, dynamic>.from(decoded['cancelAck'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] cancel ack: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'orderIndex': decoded['orderIndex'],
+                  'ok': decoded['ok'] == true,
+                  'cancelAccepted': cancelAck['cancelAccepted'] == true,
+                  'cancelApplied': cancelAck['cancelApplied'] == true,
+                  'cancellationState': cancelAck['cancellationState'],
+                  'cancelAckHash': decoded['cancelAckHash'],
+                  'cancellationParityOk':
+                      decoded['cancellationParityOk'] == true,
+                  'skippedReason': cancelAck['skippedReason'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'ordering_summary') {
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] summary: ${jsonEncode({
+                  'ok': decoded['ok'] == true,
+                  'orderingPlanHash': decoded['orderingPlanHash'],
+                  'orderCount': decoded['orderCount'],
+                  'expectedOrder': decoded['expectedOrder'],
+                  'observedBridgeOrder': decoded['observedBridgeOrder'],
+                  'observedResultOrder': decoded['observedResultOrder'],
+                  'uniqueRunIds': decoded['uniqueRunIds'],
+                  'orderingParityOk': decoded['orderingParityOk'] == true,
+                  'cancellationParityOk':
+                      decoded['cancellationParityOk'] == true,
+                  'validationOk': decoded['validationOk'] == true,
+                  'cancellationState': decoded['cancellationState'],
+                  'skippedReason': decoded['skippedReason'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'error') {
+          log(
+            '[NATIVE-DART-BRIDGE-ORDER] error: ${jsonEncode({
+                  'error': decoded['error'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeDartBridgeOrderingCancelSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -2008,11 +2240,18 @@ class NativeGatewayShadowParityService {
       'toolSelectionHash': ack['toolSelectionHash'],
       'dispatchHash': ack['dispatchHash'],
       'bridgeRequestHash': ack['bridgeRequestHash'],
+      'orderingPlanHash': ack['orderingPlanHash'],
+      'cancelRequestHash': ack['cancelRequestHash'],
+      'cancelAckHash': ack['cancelAckHash'],
       'fixtureHash': ack['fixtureHash'],
       'fixtureParityOk': ack['fixtureParityOk'] == true,
       'dispatchParityOk': ack['dispatchParityOk'] == true,
       'bridgeParityOk': ack['bridgeParityOk'] == true,
+      'orderingParityOk': ack['orderingParityOk'] == true,
+      'cancellationParityOk': ack['cancellationParityOk'] == true,
       'validationOk': ack['validationOk'] == true,
+      'orderCount': ack['orderCount'],
+      'cancelOrderIndex': ack['cancelOrderIndex'],
       'selectedToolCount': ack['selectedToolCount'],
       'toolPlanCount': ack['toolPlanCount'],
       'allowedPlanCount': ack['allowedPlanCount'],
@@ -2256,6 +2495,16 @@ class NativeGatewayShadowParityService {
     log(
       '[NATIVE-DART-BRIDGE] native Dart bridge dry-run failed '
       '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeDartBridgeOrderingCancelSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-DART-BRIDGE-ORDER] native Dart bridge ordering/cancel '
+      'dry-run failed (${error.runtimeType})',
     );
   }
 }
