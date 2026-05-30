@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const http = require("node:http");
 
 const jsonHeaders = {
   "content-type": "application/json",
@@ -497,6 +498,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-stream-parser-parity-stream",
     "/gateway/chat-provider-tool-plan-canary-stream",
     "/gateway/chat-tool-dispatch-dry-run-stream",
+    "/gateway/chat-native-dart-bridge-dry-run-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -2809,6 +2811,109 @@ function createMobileGatewayProbe({
         toolResultFrame.result.skippedReason === "native_tool_execution_disabled" &&
         toolUseFrame.toolExecutionEnabled === false &&
         toolResultFrame.toolExecutionEnabled === false
+    };
+  }
+
+  function postJsonToDartBridge(pathname, body, timeoutMs = 2500) {
+    const payload = Buffer.from(JSON.stringify(body), "utf8");
+    return new Promise((resolve, reject) => {
+      const request = http.request({
+        hostname: "127.0.0.1",
+        port: 8765,
+        path: pathname,
+        method: "POST",
+        timeout: timeoutMs,
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(payload.length),
+          "x-plawie-native-bridge": "dry-run"
+        }
+      }, (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const rawBody = Buffer.concat(chunks).toString("utf8");
+          let jsonBody = {};
+          try {
+            jsonBody = rawBody.trim().length === 0 ? {} : JSON.parse(rawBody);
+          } catch (error) {
+            reject(Object.assign(new Error("dart_bridge_invalid_json"), {
+              code: "dart_bridge_invalid_json",
+              statusCode: response.statusCode,
+              raw: rawBody,
+              cause: error.message
+            }));
+            return;
+          }
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            reject(Object.assign(new Error("dart_bridge_http_error"), {
+              code: "dart_bridge_http_error",
+              statusCode: response.statusCode,
+              raw: rawBody,
+              body: jsonBody
+            }));
+            return;
+          }
+          resolve({
+            statusCode: response.statusCode,
+            body: jsonBody,
+            raw: rawBody,
+            responseBytesRead: Buffer.byteLength(rawBody, "utf8")
+          });
+        });
+      });
+      request.on("timeout", () => {
+        request.destroy(Object.assign(new Error("dart_bridge_timeout"), {
+          code: "dart_bridge_timeout",
+          timeoutMs
+        }));
+      });
+      request.on("error", reject);
+      request.write(payload);
+      request.end();
+    });
+  }
+
+  function nativeDartBridgeDryRunRequest(dispatch, queued, requestBuilder) {
+    const bridgeRequest = {
+      type: "native_tool_dispatch_dry_run",
+      runtime: "native-node-embedded",
+      source: "native-dart-bridge-dry-run",
+      canaryMode: "native-dart-bridge-dry-run",
+      runId: queued.runId,
+      requestId: queued.requestId,
+      nativeSessionId: queued.nativeSessionId,
+      callId: dispatch.callId,
+      method: dispatch.route.method,
+      capability: dispatch.route.capability,
+      dartCapability: dispatch.route.dartCapability,
+      requiresUiThread: dispatch.route.requiresUiThread,
+      input: dispatch.toolUseFrame.input,
+      toolUseFrame: dispatch.toolUseFrame,
+      dispatchHash: dispatch.dispatchHash,
+      requestHash: requestBuilder.requestHash,
+      toolSelectionHash: requestBuilder.toolSelectionHash,
+      dryRun: true,
+      providerCallsEnabled: false,
+      executionEnabled: false,
+      toolExecutionEnabled: false,
+      bridgeExecutionEnabled: false
+    };
+    return {
+      ...bridgeRequest,
+      bridgeRequestHash: metadataHash({
+        type: bridgeRequest.type,
+        runId: bridgeRequest.runId,
+        callId: bridgeRequest.callId,
+        method: bridgeRequest.method,
+        capability: bridgeRequest.capability,
+        input: bridgeRequest.input,
+        dispatchHash: bridgeRequest.dispatchHash,
+        requestHash: bridgeRequest.requestHash,
+        dryRun: bridgeRequest.dryRun,
+        executionEnabled: bridgeRequest.executionEnabled,
+        toolExecutionEnabled: bridgeRequest.toolExecutionEnabled
+      })
     };
   }
 
@@ -5602,6 +5707,396 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatNativeDartBridgeDryRunStream(req, res) {
+    const source = "native-dart-bridge-dry-run";
+    const canaryMode = "native-dart-bridge-dry-run";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder =
+        providerToolPlanRequestBuilder(envelope, shape, queued, payload);
+      const fixtureTools = nativeMobileToolCatalog().filter((entry) =>
+        requestBuilder.toolFunctionNames.includes(entry.functionName)
+      );
+      const toolSelection = {
+        tools: fixtureTools,
+        toolFunctionNames: requestBuilder.toolFunctionNames,
+        gatewayToolNames: requestBuilder.gatewayToolNames,
+        toolAliasMap: requestBuilder.toolAliasMap,
+        selectionHash: requestBuilder.toolSelectionHash
+      };
+      const dispatch = syntheticToolDispatchDryRun(toolSelection, queued);
+      const bridgeRequest =
+        nativeDartBridgeDryRunRequest(dispatch, queued, requestBuilder);
+
+      const ack = {
+        parsed,
+        route: "native_dart_bridge_dry_run",
+        routeStatus: "native_dart_bridge_dry_run_started",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "native mapped a tool plan and sent a dry-run dispatch request to Dart",
+        provider: requestBuilder.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: requestBuilder.providerModel,
+        transport: requestBuilder.transport,
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        dispatchHash: dispatch.dispatchHash,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        fixtureHash: dispatch.fixture.parsed.toolPlanHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        bridgeParityOk: false,
+        validationOk: false,
+        selectedToolCount: requestBuilder.selectedToolCount,
+        toolPlanCount: dispatch.fixture.parsed.toolPlanCount,
+        allowedPlanCount: dispatch.fixture.parsed.allowedPlanCount,
+        blockedPlanCount: dispatch.fixture.parsed.blockedPlanCount,
+        providerCallStarted: false,
+        providerCallsEnabled: false,
+        transportInvocationEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "native-dart-bridge-dry-run"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "native_dart_bridge_dry_run",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("tool_plan_summary", {
+        ok: dispatch.fixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        toolPlanSummary: dispatch.fixture.parsed,
+        plan: dispatch.plan,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        toolExecutionEnabled: false
+      });
+
+      writeEvent("tool_dispatch_plan", {
+        ok: dispatch.canDispatch,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        dispatchPlan: {
+          callId: dispatch.callId,
+          route: dispatch.route,
+          planHash: dispatch.plan?.planHash || null,
+          dispatchHash: dispatch.dispatchHash,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          wouldExecute: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false
+        }
+      });
+
+      writeEvent("bridge_request", {
+        ok: dispatch.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        endpoint: "http://127.0.0.1:8765/api/native-gateway/dispatch-dry-run",
+        bridgeRequest: {
+          type: bridgeRequest.type,
+          callId: bridgeRequest.callId,
+          method: bridgeRequest.method,
+          capability: bridgeRequest.capability,
+          dartCapability: bridgeRequest.dartCapability,
+          requiresUiThread: bridgeRequest.requiresUiThread,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          dispatchHash: bridgeRequest.dispatchHash,
+          dryRun: bridgeRequest.dryRun,
+          executionEnabled: bridgeRequest.executionEnabled,
+          toolExecutionEnabled: bridgeRequest.toolExecutionEnabled,
+          bridgeExecutionEnabled: bridgeRequest.bridgeExecutionEnabled
+        }
+      });
+
+      const bridgeResponse = await postJsonToDartBridge(
+        "/api/native-gateway/dispatch-dry-run",
+        bridgeRequest,
+        2500
+      );
+      const bridgeAck = bridgeResponse.body;
+      const bridgeAckHash = metadataHash({
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        ok: bridgeAck.ok === true,
+        accepted: bridgeAck.accepted === true,
+        commandKnown: bridgeAck.commandKnown === true,
+        command: bridgeAck.command,
+        capability: bridgeAck.capability,
+        dryRun: bridgeAck.dryRun === true,
+        skippedReason: bridgeAck.skippedReason,
+        executionEnabled: bridgeAck.executionEnabled === true,
+        toolExecutionEnabled: bridgeAck.toolExecutionEnabled === true,
+        bridgeExecutionEnabled: bridgeAck.bridgeExecutionEnabled === true
+      });
+      const bridgeParityOk =
+        dispatch.parityOk &&
+        bridgeAck.ok === true &&
+        bridgeAck.accepted === true &&
+        bridgeAck.commandKnown === true &&
+        bridgeAck.dryRun === true &&
+        bridgeAck.executionEnabled === false &&
+        bridgeAck.toolExecutionEnabled === false &&
+        bridgeAck.bridgeExecutionEnabled === false &&
+        bridgeAck.skippedReason === "native_dart_bridge_dry_run_only";
+      const validationOk =
+        requestBuilder.validationOk === true && bridgeParityOk === true;
+      const bridgedToolResultFrame = {
+        ...dispatch.toolResultFrame,
+        result: {
+          ...dispatch.toolResultFrame.result,
+          ok: bridgeParityOk,
+          bridgeAckReceived: true,
+          bridgeAckHash,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          dartBridgeOk: bridgeAck.ok === true,
+          dartAccepted: bridgeAck.accepted === true,
+          commandKnown: bridgeAck.commandKnown === true,
+          skippedReason: bridgeAck.skippedReason,
+          bridgeExecutionEnabled: false,
+          toolExecutionEnabled: false,
+          executionEnabled: false
+        }
+      };
+
+      writeEvent("bridge_ack", {
+        ok: bridgeAck.ok === true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        statusCode: bridgeResponse.statusCode,
+        responseBytesRead: bridgeResponse.responseBytesRead,
+        bridgeAckHash,
+        bridgeParityOk,
+        validationOk,
+        bridgeAck
+      });
+      writeEvent("tool_use_frame", {
+        ok: dispatch.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        frame: dispatch.toolUseFrame
+      });
+      writeEvent("tool_result_frame", {
+        ok: bridgeParityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        frame: bridgedToolResultFrame
+      });
+
+      writeEvent("bridge_summary", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        requestHash: requestBuilder.requestHash,
+        dispatchHash: dispatch.dispatchHash,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        bridgeAckHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        bridgeParityOk,
+        validationOk,
+        toolName: dispatch.route.method,
+        capability: dispatch.route.capability,
+        dartCapability: dispatch.route.dartCapability,
+        skippedReason: bridgeAck.skippedReason,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false
+      });
+
+      writeEvent("end", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        routeStatus: validationOk
+          ? "native_dart_bridge_dry_run_complete"
+          : "native_dart_bridge_dry_run_failed",
+        finishReason: validationOk ? "native_dart_bridge_dry_run_complete" : "native_dart_bridge_dry_run_failed",
+        requestHash: requestBuilder.requestHash,
+        dispatchHash: dispatch.dispatchHash,
+        bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+        bridgeAckHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        bridgeParityOk,
+        validationOk,
+        toolName: dispatch.route.method,
+        capability: dispatch.route.capability,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false
+      });
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_native_dart_bridge_dry_run_parse_failed",
+            message: error.message || String(error),
+            raw: error.raw || error.stack || error.message || String(error),
+            statusCode: error.statusCode || null,
+            body: error.body || null
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_native_dart_bridge_dry_run_failed",
+          message: error.message || String(error),
+          raw: error.raw || error.stack || error.message || String(error),
+          statusCode: error.statusCode || null,
+          body: error.body || null
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -5769,6 +6264,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-tool-dispatch-dry-run-stream") {
       handleChatToolDispatchDryRunStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-native-dart-bridge-dry-run-stream") {
+      handleChatNativeDartBridgeDryRunStream(req, res);
       return true;
     }
 

@@ -1582,6 +1582,207 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamNativeDartBridgeDryRunChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-native-dart-bridge-dry-run-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native Dart bridge dry-run HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-DART-BRIDGE] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'requestHash': ack['requestHash'],
+                  'toolSelectionHash': ack['toolSelectionHash'],
+                  'dispatchHash': ack['dispatchHash'],
+                  'bridgeRequestHash': ack['bridgeRequestHash'],
+                  'fixtureParityOk': ack['fixtureParityOk'],
+                  'dispatchParityOk': ack['dispatchParityOk'],
+                  'bridgeParityOk': ack['bridgeParityOk'],
+                  'validationOk': ack['validationOk'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'toolExecutionEnabled': ack['toolExecutionEnabled'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'tool_dispatch_plan') {
+          final plan = decoded['dispatchPlan'] is Map
+              ? Map<String, dynamic>.from(decoded['dispatchPlan'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE] dispatch plan: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'callId': plan['callId'],
+                  'route': plan['route'],
+                  'dispatchHash': plan['dispatchHash'],
+                  'bridgeRequestHash': plan['bridgeRequestHash'],
+                  'toolExecutionEnabled': plan['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      plan['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_request') {
+          final bridgeRequest = decoded['bridgeRequest'] is Map
+              ? Map<String, dynamic>.from(decoded['bridgeRequest'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE] request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'endpoint': decoded['endpoint'],
+                  'method': bridgeRequest['method'],
+                  'capability': bridgeRequest['capability'],
+                  'bridgeRequestHash': bridgeRequest['bridgeRequestHash'],
+                  'dryRun': bridgeRequest['dryRun'] == true,
+                  'executionEnabled': bridgeRequest['executionEnabled'] == true,
+                  'toolExecutionEnabled':
+                      bridgeRequest['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      bridgeRequest['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_ack') {
+          final bridgeAck = decoded['bridgeAck'] is Map
+              ? Map<String, dynamic>.from(decoded['bridgeAck'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE] bridge ack: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'accepted': bridgeAck['accepted'] == true,
+                  'command': bridgeAck['command'],
+                  'commandKnown': bridgeAck['commandKnown'] == true,
+                  'capability': bridgeAck['capability'],
+                  'bridgeAckHash': decoded['bridgeAckHash'],
+                  'bridgeParityOk': decoded['bridgeParityOk'] == true,
+                  'validationOk': decoded['validationOk'] == true,
+                  'skippedReason': bridgeAck['skippedReason'],
+                  'executionEnabled': bridgeAck['executionEnabled'] == true,
+                  'toolExecutionEnabled':
+                      bridgeAck['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      bridgeAck['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'tool_use_frame' ||
+            decoded['event'] == 'tool_result_frame') {
+          final frame = decoded['frame'] is Map
+              ? Map<String, dynamic>.from(decoded['frame'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-DART-BRIDGE] ${decoded['event']}: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'type': frame['type'],
+                  'name': frame['name'],
+                  'id': frame['id'],
+                  'executionEnabled': frame['executionEnabled'] == true,
+                  'toolExecutionEnabled': frame['toolExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'bridge_summary') {
+          log(
+            '[NATIVE-DART-BRIDGE] summary: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'toolName': decoded['toolName'],
+                  'capability': decoded['capability'],
+                  'dartCapability': decoded['dartCapability'],
+                  'dispatchHash': decoded['dispatchHash'],
+                  'bridgeRequestHash': decoded['bridgeRequestHash'],
+                  'bridgeAckHash': decoded['bridgeAckHash'],
+                  'dispatchParityOk': decoded['dispatchParityOk'] == true,
+                  'bridgeParityOk': decoded['bridgeParityOk'] == true,
+                  'validationOk': decoded['validationOk'] == true,
+                  'skippedReason': decoded['skippedReason'],
+                  'toolExecutionEnabled':
+                      decoded['toolExecutionEnabled'] == true,
+                  'bridgeExecutionEnabled':
+                      decoded['bridgeExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'error') {
+          log(
+            '[NATIVE-DART-BRIDGE] error: ${jsonEncode({
+                  'error': decoded['error'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeDartBridgeSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -1806,9 +2007,11 @@ class NativeGatewayShadowParityService {
       'transportHash': ack['transportHash'],
       'toolSelectionHash': ack['toolSelectionHash'],
       'dispatchHash': ack['dispatchHash'],
+      'bridgeRequestHash': ack['bridgeRequestHash'],
       'fixtureHash': ack['fixtureHash'],
       'fixtureParityOk': ack['fixtureParityOk'] == true,
       'dispatchParityOk': ack['dispatchParityOk'] == true,
+      'bridgeParityOk': ack['bridgeParityOk'] == true,
       'validationOk': ack['validationOk'] == true,
       'selectedToolCount': ack['selectedToolCount'],
       'toolPlanCount': ack['toolPlanCount'],
@@ -2042,6 +2245,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-TOOL-DISPATCH] native tool dispatch dry-run failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeDartBridgeSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-DART-BRIDGE] native Dart bridge dry-run failed '
       '(${error.runtimeType})',
     );
   }

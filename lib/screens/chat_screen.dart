@@ -520,6 +520,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-stream-parity]',
       '[native-tool-plan]',
       '[native-tool-dispatch]',
+      '[native-dart-bridge]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];

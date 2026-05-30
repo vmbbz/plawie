@@ -6,8 +6,27 @@ import 'package:flutter/material.dart';
 import 'preferences_service.dart';
 import 'skills_service.dart';
 import 'tts_service.dart';
+import 'gateway_tool_catalog.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/vibration_capability.dart';
+
+class _NativeGatewayDryRunArgumentValidation {
+  final bool ok;
+  final String code;
+  final String message;
+
+  const _NativeGatewayDryRunArgumentValidation({
+    required this.ok,
+    required this.code,
+    required this.message,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'ok': ok,
+        'code': code,
+        'message': message,
+      };
+}
 
 /// Local HTTP Server that listens on 127.0.0.1:8765 for OpenClaw Native Skills.
 /// The gateway AI agent POSTs to these endpoints to control the Android app.
@@ -83,6 +102,9 @@ class AgentSkillServer {
       _handleToolsCatalog(request);
     } else if (request.method == 'GET' && path == '/api/skills/list') {
       _handleSkillsList(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/dispatch-dry-run') {
+      await _handleNativeGatewayDispatchDryRun(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -119,6 +141,207 @@ class AgentSkillServer {
   void _handleSkillsList(HttpRequest request) {
     final skills = SkillsService().getSkillsList();
     _sendJson(request, {'skills': skills.map((s) => s.toJson()).toList()});
+  }
+
+  // ── Native Gateway Bridge Dry Run ─────────────────────────────────────────
+  Future<void> _handleNativeGatewayDispatchDryRun(HttpRequest request) async {
+    try {
+      final body = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
+      final frame = body['toolUseFrame'] is Map
+          ? Map<String, dynamic>.from(body['toolUseFrame'] as Map)
+          : <String, dynamic>{};
+      final rawCommand = (body['method'] ??
+              body['command'] ??
+              body['toolName'] ??
+              frame['name'])
+          ?.toString()
+          .trim();
+      final command = _canonicalNativeGatewayCommand(rawCommand);
+      final input = body['input'] is Map
+          ? Map<String, dynamic>.from(body['input'] as Map)
+          : frame['input'] is Map
+              ? Map<String, dynamic>.from(frame['input'] as Map)
+              : <String, dynamic>{};
+      final dryRun = body['dryRun'] == true;
+      final executionEnabled = body['executionEnabled'] == true ||
+          body['toolExecutionEnabled'] == true ||
+          body['bridgeExecutionEnabled'] == true;
+      final commandKnown = command != null &&
+          GatewayToolCatalog.mobileNodeAllowCommands.contains(command);
+      final argumentValidation =
+          _validateNativeGatewayDryRunArguments(command, input);
+      final accepted =
+          dryRun && !executionEnabled && commandKnown && argumentValidation.ok;
+
+      _sendJson(request, {
+        'ok': accepted,
+        'accepted': accepted,
+        'dryRun': true,
+        'runtime': 'flutter-dart',
+        'bridge': 'AgentSkillServer',
+        'source': 'native-dart-bridge-dry-run',
+        'routeStatus': accepted
+            ? 'native_dart_bridge_dry_run_ack'
+            : 'native_dart_bridge_dry_run_rejected',
+        'command': command ?? rawCommand ?? 'unknown',
+        'rawCommand': rawCommand,
+        'commandKnown': commandKnown,
+        'capability': _capabilityForCommand(command),
+        'dartCapability': body['dartCapability']?.toString() ??
+            _dartCapabilityForCommand(command),
+        'requiresUiThread': body['requiresUiThread'] == true,
+        'inputKeys': input.keys.map((key) => key.toString()).toList()..sort(),
+        'argumentValidation': argumentValidation.toJson(),
+        'requestHash': body['requestHash'],
+        'dispatchHash': body['dispatchHash'],
+        'bridgeRequestHash': body['bridgeRequestHash'],
+        'callId': body['callId'],
+        'runId': body['runId'],
+        'nativeSessionId': body['nativeSessionId'],
+        'wouldDispatchTo': _dartCapabilityForCommand(command),
+        'skippedReason': 'native_dart_bridge_dry_run_only',
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'bridgeExecutionEnabled': false,
+        'receivedAt': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      _sendError(request, 'native_dart_bridge_dry_run_failed: $e');
+    }
+  }
+
+  String? _canonicalNativeGatewayCommand(String? command) {
+    if (command == null || command.isEmpty) return null;
+    const aliases = {
+      'avatar_gesture': 'avatar.gesture',
+      'avatar_mode': 'avatar.mode',
+      'avatar_model': 'avatar.model',
+      'avatar_status': 'avatar.status',
+      'gesture.wave': 'avatar.gesture',
+      'gestures.wave': 'avatar.gesture',
+      'wave': 'avatar.gesture',
+      'camera_snap': 'camera.snap',
+      'camera_clip': 'camera.clip',
+      'camera_list': 'camera.list',
+      'canvas_navigate': 'canvas.navigate',
+      'canvas_eval': 'canvas.eval',
+      'canvas_snapshot': 'canvas.snapshot',
+      'flash_on': 'flash.on',
+      'flash_off': 'flash.off',
+      'flash_toggle': 'flash.toggle',
+      'flash_status': 'flash.status',
+      'torch.on': 'flash.on',
+      'torch.off': 'flash.off',
+      'torch.toggle': 'flash.toggle',
+      'torch.status': 'flash.status',
+      'torch_on': 'flash.on',
+      'torch_off': 'flash.off',
+      'torch_toggle': 'flash.toggle',
+      'torch_status': 'flash.status',
+      'location_get': 'location.get',
+      'screen_record': 'screen.record',
+      'sensor_read': 'sensor.read',
+      'sensor_list': 'sensor.list',
+      'haptic_vibrate': 'haptic.vibrate',
+      'vibrate': 'haptic.vibrate',
+    };
+    final normalized = command.trim();
+    return aliases[normalized] ?? normalized;
+  }
+
+  _NativeGatewayDryRunArgumentValidation _validateNativeGatewayDryRunArguments(
+    String? command,
+    Map<String, dynamic> input,
+  ) {
+    switch (command) {
+      case 'avatar.gesture':
+        final gesture = (input['gesture'] ??
+                input['name'] ??
+                input['value'] ??
+                input['text'])
+            ?.toString()
+            .trim();
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: gesture != null && gesture.isNotEmpty,
+          code:
+              gesture != null && gesture.isNotEmpty ? 'ok' : 'missing_gesture',
+          message: gesture != null && gesture.isNotEmpty
+              ? 'avatar.gesture arguments are dispatchable'
+              : 'avatar.gesture requires a gesture value',
+        );
+      case 'haptic.vibrate':
+        final duration = input['durationMs'] ?? input['duration_ms'];
+        final pattern = input['pattern'];
+        final ok = duration == null ||
+            duration is num ||
+            int.tryParse(duration.toString()) != null ||
+            pattern is List;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'invalid_duration',
+          message: ok
+              ? 'haptic.vibrate arguments are dispatchable'
+              : 'haptic.vibrate duration must be numeric',
+        );
+      case 'camera.snap':
+      case 'camera.clip':
+      case 'camera.list':
+      case 'canvas.navigate':
+      case 'canvas.eval':
+      case 'canvas.snapshot':
+      case 'flash.on':
+      case 'flash.off':
+      case 'flash.toggle':
+      case 'flash.status':
+      case 'location.get':
+      case 'screen.record':
+      case 'sensor.read':
+      case 'sensor.list':
+      case 'avatar.mode':
+      case 'avatar.model':
+      case 'avatar.status':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'arguments are dispatchable',
+        );
+      default:
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: false,
+          code: 'unknown_command',
+          message: 'command is not registered for native gateway dry-run',
+        );
+    }
+  }
+
+  String _capabilityForCommand(String? command) {
+    if (command == null || !command.contains('.')) return 'unknown';
+    return command.split('.').first;
+  }
+
+  String _dartCapabilityForCommand(String? command) {
+    switch (_capabilityForCommand(command)) {
+      case 'avatar':
+        return 'AvatarCapability';
+      case 'camera':
+        return 'CameraCapability';
+      case 'canvas':
+        return 'CanvasCapability';
+      case 'flash':
+        return 'FlashCapability';
+      case 'haptic':
+        return 'VibrationCapability';
+      case 'location':
+        return 'LocationCapability';
+      case 'screen':
+        return 'ScreenCapability';
+      case 'sensor':
+        return 'SensorCapability';
+      default:
+        return 'UnknownCapability';
+    }
   }
 
   // ── Generic tool executor ─────────────────────────────────────────────────

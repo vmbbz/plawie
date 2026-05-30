@@ -3782,6 +3782,17 @@ $message''';
     return null;
   }
 
+  String? _nativeDartBridgePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-dart-bridge ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -5546,6 +5557,229 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeDartBridgeMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final bridgeMessage = _nativeDartBridgePayload(message);
+    if (bridgeMessage == null) return;
+    if (bridgeMessage.trim().isEmpty) {
+      yield '[Error] Native Dart bridge dry-run needs a message after /native-dart-bridge.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: bridgeMessage.trim(),
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-DART-BRIDGE] -> Opening native-to-Dart bridge dry-run',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamNativeDartBridgeDryRunChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final dispatchHash = ack['dispatchHash']?.toString() ?? 'unknown';
+        final bridgeRequestHash =
+            ack['bridgeRequestHash']?.toString() ?? 'unknown';
+        final fixtureParityOk = ack['fixtureParityOk'] == true;
+        final dispatchParityOk = ack['dispatchParityOk'] == true;
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-DART-BRIDGE] OK ACK received');
+        yield [
+          'Native-to-Dart bridge dry-run started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'requestHash: $requestHash',
+          'dispatchHash: $dispatchHash',
+          'bridgeRequestHash: $bridgeRequestHash',
+          'fixtureParityOk: $fixtureParityOk',
+          'dispatchParityOk: $dispatchParityOk',
+          'providerCallsEnabled: ${ack['providerCallsEnabled'] == true}',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_dispatch_plan') {
+        final dispatchPlan = event['dispatchPlan'] is Map
+            ? Map<String, dynamic>.from(event['dispatchPlan'] as Map)
+            : <String, dynamic>{};
+        final route = dispatchPlan['route'] is Map
+            ? Map<String, dynamic>.from(dispatchPlan['route'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Native bridge dispatch plan',
+          '',
+          'callId: ${dispatchPlan['callId'] ?? 'unknown'}',
+          'method: ${route['method'] ?? 'unknown'}',
+          'capability: ${route['capability'] ?? 'unknown'}',
+          'dartCapability: ${route['dartCapability'] ?? 'unknown'}',
+          'bridgeRequestHash: ${dispatchPlan['bridgeRequestHash'] ?? 'unknown'}',
+          'toolExecutionEnabled: ${dispatchPlan['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${dispatchPlan['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_request') {
+        final bridgeRequest = event['bridgeRequest'] is Map
+            ? Map<String, dynamic>.from(event['bridgeRequest'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Native bridge request sent',
+          '',
+          'method: ${bridgeRequest['method'] ?? 'unknown'}',
+          'capability: ${bridgeRequest['capability'] ?? 'unknown'}',
+          'endpoint: ${event['endpoint'] ?? 'unknown'}',
+          'dryRun: ${bridgeRequest['dryRun'] == true}',
+          'bridgeExecutionEnabled: ${bridgeRequest['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'bridge_ack') {
+        final bridgeAck = event['bridgeAck'] is Map
+            ? Map<String, dynamic>.from(event['bridgeAck'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Dart bridge dry-run ACK',
+          '',
+          'ok: ${bridgeAck['ok'] == true}',
+          'accepted: ${bridgeAck['accepted'] == true}',
+          'command: ${bridgeAck['command'] ?? 'unknown'}',
+          'commandKnown: ${bridgeAck['commandKnown'] == true}',
+          'capability: ${bridgeAck['capability'] ?? 'unknown'}',
+          'bridgeAckHash: ${event['bridgeAckHash'] ?? 'unknown'}',
+          'bridgeParityOk: ${event['bridgeParityOk'] == true}',
+          'validationOk: ${event['validationOk'] == true}',
+          'skippedReason: ${bridgeAck['skippedReason'] ?? 'unknown'}',
+          'toolExecutionEnabled: ${bridgeAck['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${bridgeAck['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_use_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final input = frame['input'] is Map
+            ? Map<String, dynamic>.from(frame['input'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        continue;
+      }
+
+      if (eventType == 'tool_result_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final result = frame['result'] is Map
+            ? Map<String, dynamic>.from(frame['result'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        continue;
+      }
+
+      if (eventType == 'bridge_summary') {
+        final toolName = event['toolName']?.toString() ?? 'unknown';
+        final capability = event['capability']?.toString() ?? 'unknown';
+        final bridgeParityOk = event['bridgeParityOk'] == true;
+        final validationOk = event['validationOk'] == true;
+        final skipped = event['skippedReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native-Dart bridge summary',
+          '',
+          'toolName: $toolName',
+          'capability: $capability',
+          'bridgeParityOk: $bridgeParityOk',
+          'validationOk: $validationOk',
+          'skippedReason: $skipped',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-DART-BRIDGE] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native-to-Dart bridge dry-run complete',
+            '',
+            'finishReason: $finishReason',
+            'toolName: ${event['toolName'] ?? 'unknown'}',
+            'capability: ${event['capability'] ?? 'unknown'}',
+            'dispatchParityOk: ${event['dispatchParityOk'] == true}',
+            'bridgeParityOk: ${event['bridgeParityOk'] == true}',
+            'validationOk: ${event['validationOk'] == true}',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+            'bridgeExecutionEnabled: ${event['bridgeExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-DART-BRIDGE] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native-to-Dart bridge dry-run ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -5558,6 +5792,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeDartBridgePayload(message) != null) {
+      yield* _sendNativeDartBridgeMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeToolDispatchPayload(message) != null) {
       yield* _sendNativeToolDispatchMessage(
