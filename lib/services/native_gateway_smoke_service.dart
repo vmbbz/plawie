@@ -379,6 +379,123 @@ class NativeGatewaySmokeService {
     }
   }
 
+  static Future<Map<String, dynamic>> runRuntimeSelectionCanary({
+    required void Function(String message) log,
+  }) async {
+    final productionRuntime = GatewayRuntimeRegistry.current;
+    final canaryRuntime = GatewayRuntimeRegistry.nativeNodeProcessSmoke;
+    final productionRunning = await productionRuntime
+        .isRunning()
+        .timeout(const Duration(seconds: 3), onTimeout: () => false)
+        .catchError((_) => false);
+
+    Map<String, dynamic> productionHealth = <String, dynamic>{};
+    Object? productionHealthError;
+    if (productionRunning) {
+      try {
+        productionHealth = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthError = e;
+      }
+    }
+
+    final nativeWasRunning = await canaryRuntime
+        .isRunning()
+        .timeout(const Duration(seconds: 3), onTimeout: () => false)
+        .catchError((_) => false);
+    var nativeStartedByCanary = false;
+    if (!nativeWasRunning) {
+      nativeStartedByCanary = await canaryRuntime
+          .start()
+          .timeout(const Duration(seconds: 8), onTimeout: () => false)
+          .catchError((_) => false);
+    }
+    var nativeRunning = nativeWasRunning;
+    Map<String, dynamic> nativeHealth = <String, dynamic>{};
+    Map<String, dynamic> nativeProbe = <String, dynamic>{};
+    Object? nativeError;
+    if (nativeWasRunning || nativeStartedByCanary) {
+      try {
+        nativeHealth = await _probeHealth(
+          expectedRuntime: 'native-node-embedded',
+        );
+        nativeProbe = await _probeJson('/gateway/probe');
+        nativeRunning = true;
+      } catch (e) {
+        nativeError = e;
+        nativeRunning = await canaryRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+      }
+    }
+
+    final productionHealthOk = productionHealth['ok'] == true ||
+        productionHealth['status'] == 'ok' ||
+        productionHealth.isNotEmpty;
+    final nativeOk = nativeRunning &&
+        nativeHealth['ok'] == true &&
+        nativeHealth['runtime'] == 'native-node-embedded' &&
+        nativeHealth['port'] == AppConstants.nativeGatewaySmokePort &&
+        nativeProbe['runtime'] == 'native-node-embedded' &&
+        nativeProbe['canaryOnly'] == true &&
+        nativeProbe['chatRoutingEnabled'] == false &&
+        nativeProbe['providerCallsEnabled'] == false;
+    final selectionGuardOk = productionRuntime.id == 'proot' &&
+        canaryRuntime.id == 'native-node-embedded-smoke' &&
+        AppConstants.gatewayPort != AppConstants.nativeGatewaySmokePort &&
+        nativeProbe['productionReady'] == false &&
+        nativeProbe['openclawStarted'] == false;
+    final fallbackOk = productionRuntime.id == 'proot';
+    final ok = productionRunning &&
+        productionHealthOk &&
+        nativeOk &&
+        selectionGuardOk &&
+        fallbackOk;
+
+    final report = <String, dynamic>{
+      'ok': ok,
+      'phase': 'hidden-runtime-selection-canary',
+      'mode': 'side-by-side-selection',
+      'activeRuntimeId': productionRuntime.id,
+      'activeRuntimeLabel': productionRuntime.label,
+      'activeRuntimeIsProot': productionRuntime.id == 'proot',
+      'fallbackRuntimeId': 'proot',
+      'fallbackOneActionAway': fallbackOk,
+      'productionPort': AppConstants.gatewayPort,
+      'nativeCanaryPort': AppConstants.nativeGatewaySmokePort,
+      'portsIsolated':
+          AppConstants.gatewayPort != AppConstants.nativeGatewaySmokePort,
+      'productionRunning': productionRunning,
+      'productionHealthOk': productionHealthOk,
+      'productionRuntimeReported': productionHealth['runtime'],
+      if (productionHealthError != null)
+        'productionHealthError': productionHealthError.toString(),
+      'canaryRuntimeId': canaryRuntime.id,
+      'canaryRuntimeLabel': canaryRuntime.label,
+      'nativeWasRunning': nativeWasRunning,
+      'nativeStartedByCanary': nativeStartedByCanary,
+      'nativeRunning': nativeRunning,
+      'nativeHealthOk': nativeOk,
+      'nativeRuntimeReported': nativeHealth['runtime'],
+      'nativeNode': nativeHealth['node'],
+      if (nativeError != null) 'nativeError': nativeError.toString(),
+      'selectionGuardOk': selectionGuardOk,
+      'nativeProductionReady': nativeProbe['productionReady'] == true,
+      'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+      'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+      'nativeProviderCallsEnabled': nativeProbe['providerCallsEnabled'] == true,
+      'nativeToolExecutionEnabled': nativeProbe['toolExecutionEnabled'] == true,
+      'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+      'decision': ok
+          ? 'PRoot remains active; native is selectable only as an isolated canary.'
+          : 'Runtime selection canary is not ready for promotion.',
+      'nextGate': 'native production-port bind only after explicit PRoot stop',
+    };
+    log('[NATIVE-RUNTIME-SELECT] ${jsonEncode(report)}');
+    return report;
+  }
+
   static Future<NativeGatewaySmokeReport> runLifecycleSmokeTest({
     required void Function(String message) log,
     String label = 'manual',
@@ -879,6 +996,26 @@ Can you wave right, take a camera picture, and vibrate once?''';
         }
       }
       throw StateError('JSON probe $path failed: $lastError');
+    } finally {
+      client.close();
+    }
+  }
+
+  static Future<Map<String, dynamic>> _probeProductionJson(String path) async {
+    final client = http.Client();
+    try {
+      final normalizedPath = path.startsWith('/') ? path : '/$path';
+      final response = await client
+          .get(Uri.parse('${AppConstants.gatewayUrl}$normalizedPath'))
+          .timeout(const Duration(seconds: 2));
+      if (response.statusCode != 200) {
+        throw StateError('HTTP ${response.statusCode}: ${response.body}');
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw StateError('Production probe payload was not a JSON object');
+      }
+      return decoded;
     } finally {
       client.close();
     }

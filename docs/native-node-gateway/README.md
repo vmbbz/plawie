@@ -1,6 +1,6 @@
 # Native Node Gateway Research Track
 
-Last updated: 2026-05-30
+Last updated: 2026-05-31
 
 Branch: `native-node-gateway-research`
 
@@ -91,6 +91,9 @@ while keeping provider calls and general tool routing disabled,
 can run an explicit `/native-dart-bridge-avatar` canary that executes one
 protected allowlisted `avatar.gesture` call and suppresses auto gesture
 interjections during the visible canary window,
+can run an explicit `/native-runtime-select` canary that verifies PRoot remains
+the active production runtime while embedded native Node is selectable only as
+an isolated side-by-side canary on `18790`,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -160,6 +163,7 @@ be safely generalized.
 | [40-native-dart-bridge-haptic-canary.md](40-native-dart-bridge-haptic-canary.md) | Explicit `/native-dart-bridge-haptic` UI turns executing one bounded haptic bridge canary |
 | [41-native-dart-bridge-readonly-canary.md](41-native-dart-bridge-readonly-canary.md) | Explicit `/native-dart-bridge-readonly` UI turns executing ordered read-only bridge canaries |
 | [42-native-dart-bridge-avatar-canary.md](42-native-dart-bridge-avatar-canary.md) | Explicit `/native-dart-bridge-avatar` UI turns executing one protected visible avatar gesture canary |
+| [43-native-runtime-selection-canary.md](43-native-runtime-selection-canary.md) | Explicit `/native-runtime-select` UI turns proving side-by-side runtime selection guards |
 
 ## Work Rules
 

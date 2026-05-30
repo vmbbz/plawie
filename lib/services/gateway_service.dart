@@ -3858,6 +3858,25 @@ $message''';
     return null;
   }
 
+  String? _nativeRuntimeSelectionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-runtime-select',
+      '/native-runtime-selection',
+    };
+    for (final command in commands) {
+      if (lower == command) return 'runtime selection canary';
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty ? 'runtime selection canary' : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -6715,6 +6734,55 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeRuntimeSelectionMessage(String message) async* {
+    final payload = _nativeRuntimeSelectionPayload(message);
+    if (payload == null) return;
+    _addActivity(
+      '[NATIVE-RUNTIME-SELECT] -> Opening hidden runtime selection canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService.runRuntimeSelectionCanary(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-RUNTIME-SELECT] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native runtime selection canary complete'
+            : 'Native runtime selection canary pending',
+        '',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'productionRunning: ${report['productionRunning'] == true}',
+        'productionHealthOk: ${report['productionHealthOk'] == true}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'canaryRuntimeId: ${report['canaryRuntimeId'] ?? 'unknown'}',
+        'nativeRunning: ${report['nativeRunning'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeCanaryPort: ${report['nativeCanaryPort'] ?? 'unknown'}',
+        'portsIsolated: ${report['portsIsolated'] == true}',
+        'selectionGuardOk: ${report['selectionGuardOk'] == true}',
+        'nativeCanaryOnly: ${report['nativeCanaryOnly'] == true}',
+        'nativeOpenClawStarted: ${report['nativeOpenClawStarted'] == true}',
+        'nativeChatRoutingEnabled: ${report['nativeChatRoutingEnabled'] == true}',
+        'nativeProviderCallsEnabled: ${report['nativeProviderCallsEnabled'] == true}',
+        'nativeToolExecutionEnabled: ${report['nativeToolExecutionEnabled'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-RUNTIME-SELECT] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6727,6 +6795,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeRuntimeSelectionPayload(message) != null) {
+      yield* _sendNativeRuntimeSelectionMessage(message);
+      return;
+    }
 
     if (_nativeDartBridgeOrderingPayload(message) != null) {
       yield* _sendNativeDartBridgeOrderingMessage(
