@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../constants.dart';
 import 'gateway_runtime.dart';
+import 'native_gateway_shadow_parity_service.dart';
 
 class NativeGatewaySmokeReport {
   final bool passed;
@@ -95,6 +96,11 @@ class NativeGatewaySmokeService {
         _sampleGatewayWsChatSendFrame(),
         expectedStatus: 200,
       );
+      final shadowParity =
+          await NativeGatewayShadowParityService.observeChatSendFrame(
+        _sampleGatewayWsChatSendFrame(),
+        log: log,
+      );
       final ok = health['ok'] == true &&
           health['runtime'] == 'native-node-embedded' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
@@ -107,7 +113,8 @@ class NativeGatewaySmokeService {
           _skillRegistryProbePassed(skillRegistry) &&
           _modelProbePassed(models) &&
           _chatShapeProbePassed(chatShape) &&
-          _wsFrameShapeProbePassed(wsFrameShape);
+          _wsFrameShapeProbePassed(wsFrameShape) &&
+          (shadowParity?.parityOk == true);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
       log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
       log('[NATIVE-NODE-EMBEDDED] capabilities: ${jsonEncode(capabilities)}');

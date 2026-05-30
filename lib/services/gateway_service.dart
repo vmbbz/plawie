@@ -18,6 +18,7 @@ import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'gateway_tool_catalog.dart';
 import 'native_gateway_smoke_service.dart';
+import 'native_gateway_shadow_parity_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'diagnostic_service.dart';
@@ -3802,7 +3803,8 @@ $message''';
     final outboundMessage =
         await _decorateMessageWithMobileNodeContext(message);
 
-    final responseStream = _connection!.sendRequest({
+    final chatSendFrame = <String, dynamic>{
+      'type': 'req',
       'method': 'chat.send',
       'params': {
         'sessionKey': resolvedSessionKey,
@@ -3811,7 +3813,14 @@ $message''';
         'timeoutMs': timeoutMs,
       },
       'id': requestId,
-    });
+    };
+
+    unawaited(NativeGatewayShadowParityService.observeChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    ));
+
+    final responseStream = _connection!.sendRequest(chatSendFrame);
 
     bool firstToken = true;
     // activeRunId: initially from chat.send ACK, then corrected to the actual

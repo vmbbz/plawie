@@ -17,6 +17,7 @@ The native runtime cannot become default until it passes this matrix.
 | Runtime artifact type | PRoot process is known | Native diagnostics identify executable-process vs embedded-libnode path |
 | Missing native artifact | Not applicable | Missing executable or `libnode.so` reports a clean diagnostic skip |
 | AVF eligibility | Not applicable | Device capability, VM package, endpoint, and readiness are reported without changing runtime |
+| Shadow parity collector | Not applicable | Diagnostics-only collector compares redacted PRoot `chat.send` metadata against native parser output without routing chat |
 
 ## WebSocket And RPC
 

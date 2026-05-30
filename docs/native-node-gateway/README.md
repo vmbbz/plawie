@@ -47,14 +47,15 @@ package a locally built Android arm64 Node `22.22.3` `libnode.so`, build a tiny
 `libplawie_node_bridge.so` JNI wrapper, and start a `/health` server on
 `127.0.0.1:18790` inside an isolated `:native_node_smoke` Android process.
 That lane now also runs a mobile OpenClaw preflight, Gateway bootstrap probe,
-read-only production skill inventory, HTTP request-shape parity, and WebSocket
-`chat.send` frame-shape parity: it copies curated OpenClaw assets, loads Android
-bridge tooling, counts bundled canary skills, scans the real PRoot
-`~/.openclaw/skills` tree, parses realistic OpenAI/OpenClaw chat request
-envelopes, recognizes Plawie's production `chat.send` frame fields, verifies
-Node built-ins and Intl, exposes harmless Gateway-shaped probe endpoints on
-`127.0.0.1:18790`, and reports readiness without starting OpenClaw. Production
-Gateway startup still remains PRoot.
+read-only production skill inventory, HTTP request-shape parity, WebSocket
+`chat.send` frame-shape parity, and diagnostics-only Dart shadow parity: it
+copies curated OpenClaw assets, loads Android bridge tooling, counts bundled
+canary skills, scans the real PRoot `~/.openclaw/skills` tree, parses realistic
+OpenAI/OpenClaw chat request envelopes, recognizes Plawie's production
+`chat.send` frame fields, compares redacted Dart sender metadata with embedded
+Node parser metadata, verifies Node built-ins and Intl, exposes harmless
+Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
+without starting OpenClaw. Production Gateway startup still remains PRoot.
 
 The first direct Node 22 Android build attempt proved the official source path
 can configure and produce major artifacts. The follow-up offline build produced
@@ -103,6 +104,7 @@ be safely generalized.
 | [22-embedded-skill-registry-inventory.md](22-embedded-skill-registry-inventory.md) | Read-only scan of the production PRoot skill registry from embedded Node |
 | [23-embedded-request-shape-parity.md](23-embedded-request-shape-parity.md) | Probe-only parsing of OpenAI/OpenClaw chat request envelopes without execution |
 | [24-embedded-ws-chat-frame-parity.md](24-embedded-ws-chat-frame-parity.md) | Probe-only parsing of Plawie's production WebSocket `chat.send` frame shape |
+| [25-dart-shadow-parity-collector.md](25-dart-shadow-parity-collector.md) | Diagnostics-only redacted comparison between PRoot sender metadata and native parser output |
 
 ## Work Rules
 

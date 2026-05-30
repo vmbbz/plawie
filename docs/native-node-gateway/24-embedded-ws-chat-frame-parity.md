@@ -73,7 +73,7 @@ trusted to run any part of the frame.
 
 ## Next Gate
 
-Add a shadow parity collector that records production PRoot frame metadata from
-the Dart sender path and compares it to the embedded parser output. The
-collector should store counts and hashes only, not raw user messages, and must
-remain diagnostics-gated.
+The next gate is documented in `25-dart-shadow-parity-collector.md`: a
+diagnostics-only Dart collector that records production PRoot frame metadata and
+compares it to the embedded parser output using counts, booleans, enum-like
+fields, and metadata hashes only.
