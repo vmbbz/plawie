@@ -494,6 +494,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-request-builder-stream",
     "/gateway/chat-provider-transport-shim-stream",
     "/gateway/chat-provider-live-canary-stream",
+    "/gateway/chat-provider-stream-parser-parity-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -1565,6 +1566,272 @@ function createMobileGatewayProbe({
     } catch (error) {
       return `failed to read provider body: ${error.message || String(error)}`;
     }
+  }
+
+  function createProviderStreamParser({
+    source,
+    canaryMode,
+    runId,
+    startedAtMs = Date.now(),
+    writeEvent = null
+  }) {
+    let sequence = 0;
+    let textChars = 0;
+    let firstTokenMs = null;
+    let finishReason = null;
+    let doneSeen = false;
+    let warningCount = 0;
+    let dataLineCount = 0;
+    let parsedJsonCount = 0;
+    let text = "";
+    const warnings = [];
+
+    function warning(code, message, rawChunk) {
+      warningCount += 1;
+      const entry = {
+        code,
+        message,
+        rawChunk: String(rawChunk || "").slice(0, 500)
+      };
+      warnings.push(entry);
+      if (writeEvent) {
+        writeEvent("provider_parse_warning", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId,
+          warning: entry
+        });
+      }
+    }
+
+    function acceptData(data) {
+      const trimmed = String(data || "").trim();
+      if (trimmed.length === 0) return;
+      dataLineCount += 1;
+      if (trimmed === "[DONE]") {
+        doneSeen = true;
+        if (!finishReason) finishReason = "done";
+        return;
+      }
+
+      let decoded;
+      try {
+        decoded = JSON.parse(trimmed);
+        parsedJsonCount += 1;
+      } catch (error) {
+        warning(
+          "provider_chunk_parse_failed",
+          error.message || String(error),
+          trimmed
+        );
+        return;
+      }
+
+      const choices = Array.isArray(decoded.choices) ? decoded.choices : [];
+      const choice = choices[0] && typeof choices[0] === "object"
+        ? choices[0]
+        : null;
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
+      }
+
+      const content = contentFromOpenAiCompatibleChunk(decoded);
+      if (content.length === 0) return;
+
+      sequence += 1;
+      textChars += content.length;
+      text += content;
+      if (firstTokenMs == null) {
+        firstTokenMs = Date.now() - startedAtMs;
+      }
+      if (writeEvent) {
+        writeEvent("delta", {
+          ok: true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId,
+          sequence,
+          text: content
+        });
+      }
+    }
+
+    function acceptLine(line) {
+      const trimmed = String(line || "").trim();
+      if (trimmed.length === 0) return;
+      if (!trimmed.startsWith("data:")) return;
+      acceptData(trimmed.slice(5));
+    }
+
+    function summary() {
+      return {
+        text,
+        textChars,
+        sequence,
+        firstTokenMs,
+        finishReason,
+        doneSeen,
+        warningCount,
+        dataLineCount,
+        parsedJsonCount,
+        warnings,
+        parserHash: metadataHash({
+          text,
+          textChars,
+          sequence,
+          finishReason,
+          doneSeen,
+          warningCount,
+          dataLineCount,
+          parsedJsonCount
+        })
+      };
+    }
+
+    return {
+      acceptData,
+      acceptLine,
+      summary
+    };
+  }
+
+  function parseOpenAiCompatibleSseFixture() {
+    const parser = createProviderStreamParser({
+      source: "provider-stream-parser-parity",
+      canaryMode: "provider-stream-parser-parity",
+      runId: "fixture"
+    });
+    const fixtureLines = [
+      'data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}',
+      'data: {"choices":[{"index":0,"delta":{"content":"native"}}]}',
+      'data: {"choices":[{"index":0,"delta":{"content":"-ok"}}]}',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      "data: {not-json",
+      "data: [DONE]"
+    ];
+    for (const line of fixtureLines) parser.acceptLine(line);
+    const parsed = parser.summary();
+    return {
+      fixture: "openai-compatible-sse-chunks",
+      expectedText: "native-ok",
+      expectedFinishReason: "stop",
+      expectedDoneSeen: true,
+      expectedWarningCount: 1,
+      parsed,
+      parityOk:
+        parsed.text === "native-ok" &&
+        parsed.finishReason === "stop" &&
+        parsed.doneSeen === true &&
+        parsed.warningCount === 1 &&
+        parsed.sequence === 2
+    };
+  }
+
+  function normalizeProviderErrorFixture() {
+    const rawProviderError = JSON.stringify({
+      error: {
+        message: "fixture insufficient credits",
+        code: "insufficient_credits",
+        type: "billing_error"
+      }
+    });
+    const parsed = JSON.parse(rawProviderError);
+    const normalizedError = {
+      type: parsed.error.type,
+      code: parsed.error.code,
+      message: parsed.error.message
+    };
+    return {
+      fixture: "provider-error-raw-forwarding",
+      statusCode: 402,
+      rawProviderError,
+      rawProviderErrorForwarded: true,
+      normalizedError,
+      parityOk:
+        normalizedError.type === "billing_error" &&
+        normalizedError.code === "insufficient_credits" &&
+        normalizedError.message === "fixture insufficient credits" &&
+        rawProviderError.includes("fixture insufficient credits")
+    };
+  }
+
+  function normalizeProviderTimeoutFixture() {
+    const timeoutMs = 25;
+    const rawProviderError = "AbortError: native_provider_stream_parser_timeout";
+    const normalizedError = {
+      type: "provider_timeout",
+      code: "provider_timeout",
+      message: `provider stream timed out after ${timeoutMs}ms`
+    };
+    return {
+      fixture: "provider-timeout-normalization",
+      timeoutMs,
+      rawProviderError,
+      normalizedError,
+      aborted: true,
+      parityOk:
+        normalizedError.type === "provider_timeout" &&
+        normalizedError.code === "provider_timeout" &&
+        rawProviderError.includes("AbortError")
+    };
+  }
+
+  function normalizeProviderCancellationFixture() {
+    const controller = new AbortController();
+    controller.abort("native_stream_parser_parity_cancelled");
+    const cancelledFrame = {
+      event: "cancelled",
+      ok: true,
+      runtime: "native-node-embedded",
+      source: "provider-stream-parser-parity",
+      canaryMode: "provider-stream-parser-parity",
+      finishReason: "cancelled",
+      providerCallsEnabled: false,
+      executionEnabled: false
+    };
+    return {
+      fixture: "provider-cancellation-contract",
+      abortControllerCreated: true,
+      signalAttached: true,
+      signalAborted: controller.signal.aborted === true,
+      abortReason: String(controller.signal.reason || ""),
+      cancelledFrame,
+      parityOk:
+        controller.signal.aborted === true &&
+        cancelledFrame.finishReason === "cancelled" &&
+        cancelledFrame.providerCallsEnabled === false &&
+        cancelledFrame.executionEnabled === false
+    };
+  }
+
+  function providerStreamParserParityFixtures() {
+    const chunkFixture = parseOpenAiCompatibleSseFixture();
+    const errorFixture = normalizeProviderErrorFixture();
+    const timeoutFixture = normalizeProviderTimeoutFixture();
+    const cancellationFixture = normalizeProviderCancellationFixture();
+    return {
+      chunkFixture,
+      errorFixture,
+      timeoutFixture,
+      cancellationFixture,
+      parityOk:
+        chunkFixture.parityOk &&
+        errorFixture.parityOk &&
+        timeoutFixture.parityOk &&
+        cancellationFixture.parityOk,
+      fixtureHash: metadataHash({
+        chunk: chunkFixture.parsed.parserHash,
+        error: errorFixture.normalizedError,
+        timeout: timeoutFixture.normalizedError,
+        cancellation: {
+          signalAborted: cancellationFixture.signalAborted,
+          finishReason: cancellationFixture.cancelledFrame.finishReason
+        }
+      })
+    };
   }
 
   async function handleChatRouteSkeletonStream(req, res) {
@@ -3264,6 +3531,505 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderStreamParserParityStream(req, res) {
+    const source = "provider-stream-parser-parity";
+    const canaryMode = "provider-stream-parser-parity";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder = providerRequestBuilderDryRun(envelope, shape, queued);
+      const liveRequest = providerLiveCanaryRequest(requestBuilder, payload);
+      const fixtures = providerStreamParserParityFixtures();
+      const routeBlocked = liveRequest.canStart !== true;
+      const ack = {
+        parsed,
+        route: routeBlocked ? "blocked" : "enabled_canary",
+        routeStatus: routeBlocked
+          ? "blocked_before_provider_call"
+          : "provider_stream_parser_parity_starting",
+        source,
+        canaryMode,
+        directCanary,
+        reason: routeBlocked
+          ? liveRequest.blockReasons.join(",")
+          : "explicit native stream parser parity canary allowed one tiny OpenRouter stream",
+        provider: liveRequest.provider,
+        requestedModel: liveRequest.requestedModel,
+        providerModel: liveRequest.providerModel,
+        transport: liveRequest.transport,
+        headersHash: liveRequest.headersHash,
+        bodyHash: liveRequest.bodyHash,
+        requestHash: liveRequest.requestHash,
+        fixtureHash: fixtures.fixtureHash,
+        fixtureParityOk: fixtures.parityOk,
+        validationOk: liveRequest.canStart === true && fixtures.parityOk,
+        endpointHost: liveRequest.endpointShape.host,
+        endpointPath: liveRequest.endpointShape.pathname,
+        maxTokens: liveRequest.maxTokens,
+        promptChars: liveRequest.promptChars,
+        requestBodyBytes: liveRequest.requestBodyBytes,
+        providerCallStarted: false,
+        providerCallsEnabled: liveRequest.canStart === true,
+        transportInvocationEnabled: liveRequest.canStart === true,
+        executionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-stream-parser-parity"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: false,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: liveRequest.canStart === true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "provider_stream_parser_parity",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: liveRequest.canStart === true,
+        executionEnabled: false,
+        transportInvocationEnabled: liveRequest.canStart === true,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("parser_fixture", {
+        ok: fixtures.chunkFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.chunkFixture
+      });
+      writeEvent("error_fixture", {
+        ok: fixtures.errorFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.errorFixture
+      });
+      writeEvent("timeout_fixture", {
+        ok: fixtures.timeoutFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.timeoutFixture
+      });
+      writeEvent("cancellation_fixture", {
+        ok: fixtures.cancellationFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.cancellationFixture
+      });
+
+      writeEvent("provider_request", {
+        ok: liveRequest.canStart === true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        providerRequest: {
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          transport: liveRequest.transport,
+          endpointShape: liveRequest.endpointShape,
+          headersHash: liveRequest.headersHash,
+          bodyHash: liveRequest.bodyHash,
+          requestHash: liveRequest.requestHash,
+          maxTokens: liveRequest.maxTokens,
+          promptChars: liveRequest.promptChars,
+          requestBodyBytes: liveRequest.requestBodyBytes,
+          redactedBodyShape: liveRequest.redactedBodyShape,
+          transportInvocationEnabled: liveRequest.canStart === true,
+          providerCallsEnabled: liveRequest.canStart === true
+        }
+      });
+
+      if (routeBlocked) {
+        writeEvent("provider_gate", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          gate: {
+            enabled: false,
+            status: "blocked",
+            reason: liveRequest.blockReasons.join(","),
+            blockedBefore: "fetch"
+          },
+          transportInvocationEnabled: false,
+          providerCallsEnabled: false
+        });
+        writeEvent("provider_error", providerErrorPayload({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          code: "native_stream_parser_parity_blocked",
+          message: liveRequest.blockReasons.join(",") ||
+            "native stream parser parity blocked before provider call",
+          rawError: JSON.stringify({
+            reasons: liveRequest.blockReasons,
+            provider: liveRequest.provider,
+            endpointHost: liveRequest.endpointShape.host
+          })
+        }));
+        writeEvent("end", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: ack.routeStatus,
+          finishReason: "provider_stream_parser_parity_blocked",
+          fixtureParityOk: fixtures.parityOk,
+          providerCallsEnabled: false,
+          executionEnabled: false
+        });
+        res.end();
+        return;
+      }
+
+      const startedAtMs = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        try {
+          controller.abort("native_provider_stream_parser_parity_timeout");
+        } catch (_) {
+          controller.abort();
+        }
+      }, liveRequest.timeoutMs);
+
+      try {
+        writeEvent("provider_call_started", {
+          ok: true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          requestHash: liveRequest.requestHash,
+          requestBodyBytes: liveRequest.requestBodyBytes,
+          providerCallStarted: true,
+          providerBillingSurfaceReached: true
+        });
+
+        const response = await fetch(liveRequest.endpoint, {
+          method: "POST",
+          headers: {
+            "accept": "text/event-stream",
+            "content-type": "application/json",
+            "authorization": `Bearer ${liveRequest.apiKey}`,
+            "http-referer": liveRequest.referer,
+            "x-title": liveRequest.title
+          },
+          body: liveRequest.requestBodyText,
+          signal: controller.signal
+        });
+
+        const responseStatus = response.status;
+        const contentType = response.headers.get("content-type") || "";
+        writeEvent("provider_response", {
+          ok: response.ok,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          statusCode: responseStatus,
+          contentType,
+          firstByteMs: Date.now() - startedAtMs
+        });
+
+        if (!response.ok) {
+          const rawError = await readProviderText(response);
+          clearTimeout(timeout);
+          writeEvent("provider_error", providerErrorPayload({
+            source,
+            canaryMode,
+            runId: queued.runId,
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            code: `provider_http_${responseStatus}`,
+            message: `provider returned HTTP ${responseStatus}`,
+            rawError
+          }));
+          writeEvent("end", {
+            ok: false,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: "provider_error",
+            finishReason: "provider_http_error",
+            fixtureParityOk: fixtures.parityOk,
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            requestHash: liveRequest.requestHash,
+            providerCallsEnabled: true,
+            executionEnabled: false
+          });
+          res.end();
+          return;
+        }
+
+        const parser = createProviderStreamParser({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          startedAtMs,
+          writeEvent
+        });
+        let buffer = "";
+        const decoder = new TextDecoder();
+        const reader = response.body && typeof response.body.getReader === "function"
+          ? response.body.getReader()
+          : null;
+
+        if (!reader) {
+          const raw = await readProviderText(response);
+          try {
+            const decoded = JSON.parse(raw);
+            const content = contentFromOpenAiCompatibleChunk(decoded);
+            if (content.length > 0) {
+              parser.acceptData(JSON.stringify({
+                choices: [
+                  {
+                    delta: { content },
+                    finish_reason: decoded?.choices?.[0]?.finish_reason || "stop"
+                  }
+                ]
+              }));
+            }
+          } catch (error) {
+            parser.acceptData(JSON.stringify({
+              choices: [
+                {
+                  delta: { content: raw.slice(0, 120) },
+                  finish_reason: "raw_text"
+                }
+              ]
+            }));
+          }
+        } else {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split(/\r?\n/);
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              parser.acceptLine(line);
+            }
+          }
+          if (buffer.trim().length > 0) {
+            parser.acceptLine(buffer);
+          }
+        }
+
+        clearTimeout(timeout);
+        const liveSummary = parser.summary();
+        const liveParityOk =
+          responseStatus === 200 &&
+          liveSummary.textChars > 0 &&
+          liveSummary.warningCount === 0;
+        writeEvent("live_parser_summary", {
+          ok: liveParityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          statusCode: responseStatus,
+          parserSummary: liveSummary,
+          fixtureParityOk: fixtures.parityOk,
+          liveParityOk,
+          parityOk: fixtures.parityOk && liveParityOk
+        });
+        writeEvent("end", {
+          ok: fixtures.parityOk && liveParityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: "provider_stream_parser_parity_complete",
+          finishReason: liveSummary.finishReason || "stream_complete",
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          statusCode: responseStatus,
+          requestHash: liveRequest.requestHash,
+          fixtureHash: fixtures.fixtureHash,
+          fixtureParityOk: fixtures.parityOk,
+          liveParityOk,
+          firstTokenMs: liveSummary.firstTokenMs,
+          durationMs: Date.now() - startedAtMs,
+          textChars: liveSummary.textChars,
+          warningCount: liveSummary.warningCount,
+          providerCallsEnabled: true,
+          executionEnabled: false
+        });
+        res.end();
+      } catch (error) {
+        clearTimeout(timeout);
+        const aborted = error?.name === "AbortError";
+        writeEvent("provider_error", providerErrorPayload({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          code: aborted ? "provider_timeout" : "provider_fetch_failed",
+          message: error.message || String(error),
+          rawError: error.stack || error.message || String(error)
+        }));
+        writeEvent("end", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: aborted ? "provider_timeout" : "provider_fetch_failed",
+          finishReason: aborted ? "provider_timeout" : "provider_fetch_failed",
+          provider: liveRequest.provider,
+          requestHash: liveRequest.requestHash,
+          fixtureHash: fixtures.fixtureHash,
+          fixtureParityOk: fixtures.parityOk,
+          durationMs: Date.now() - startedAtMs,
+          providerCallsEnabled: true,
+          executionEnabled: false
+        });
+        res.end();
+      }
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_provider_stream_parser_parity_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_stream_parser_parity_failed",
+          message: error.message || String(error),
+          raw: error.stack || error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -3416,6 +4182,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-live-canary-stream") {
       handleChatProviderLiveCanaryStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-stream-parser-parity-stream") {
+      handleChatProviderStreamParserParityStream(req, res);
       return true;
     }
 

@@ -67,6 +67,9 @@ can construct a diagnostics-only provider transport shim that aborts locally
 before DNS/TLS/socket/provider billing,
 can run an explicit `/native-live` OpenRouter live-provider canary with a tiny
 max-token request from embedded Node,
+can run an explicit `/native-stream-parity` canary that checks native provider
+chunk parsing, raw provider errors, timeout normalization, cancellation
+contracts, and one tiny live provider stream,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -128,6 +131,7 @@ be safely generalized.
 | [32-native-provider-request-builder.md](32-native-provider-request-builder.md) | Explicit `/native-provider-build` UI turns normalizing a redacted provider request without transport |
 | [33-native-transport-shim.md](33-native-transport-shim.md) | Explicit `/native-transport` UI turns constructing provider transport and aborting before network |
 | [34-native-provider-live-canary.md](34-native-provider-live-canary.md) | Explicit `/native-live` UI turns making one tiny OpenRouter provider call from embedded Node |
+| [35-native-provider-stream-parser-parity.md](35-native-provider-stream-parser-parity.md) | Explicit `/native-stream-parity` UI turns validating provider chunk/error/timeout/cancel parsing |
 
 ## Work Rules
 

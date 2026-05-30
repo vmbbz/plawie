@@ -3749,6 +3749,17 @@ $message''';
     return null;
   }
 
+  String? _nativeProviderStreamParityPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-stream-parity ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -4769,6 +4780,289 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProviderStreamParityMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final parityMessage = _nativeProviderStreamParityPayload(message);
+    if (parityMessage == null) return;
+    if (parityMessage.trim().isEmpty) {
+      yield '[Error] Native stream parser parity needs a message after /native-stream-parity.';
+      return;
+    }
+
+    final route = await _resolveFastCloudRoute(model);
+    if (route == null || route.provider != 'openrouter') {
+      yield '[Error] Native stream parser parity currently supports only '
+          'OpenRouter models with a configured API key.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final providerModel = route.model.trim();
+    final canaryProviderModel = providerModel == 'openrouter/auto'
+        ? ModelProviderCatalog.defaultCloudFallbackModel
+            .substring('${route.provider}/'.length)
+        : providerModel;
+    final requestedModel = canaryProviderModel.startsWith('${route.provider}/')
+        ? canaryProviderModel
+        : '${route.provider}/$canaryProviderModel';
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: parityMessage.trim(),
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: route.provider,
+    );
+    final providerConfig = <String, dynamic>{
+      'provider': route.provider,
+      'apiKey': route.apiKey,
+      'endpoint': route.url,
+      'model': canaryProviderModel,
+      'maxTokens': 32,
+      'timeoutMs': 45000,
+      'referer': 'https://github.com/vmbbz/plawie',
+      'title': 'Plawie Native Stream Parser Parity',
+    };
+
+    _addActivity(
+      '[NATIVE-STREAM-PARITY] -> Opening embedded Node stream parser parity canary',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamProviderStreamParserParityChatSendFrame(
+      chatSendFrame,
+      providerConfig: providerConfig,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final provider = ack['provider']?.toString() ?? 'unknown';
+        final providerModel = ack['providerModel']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final fixtureHash = ack['fixtureHash']?.toString() ?? 'unknown';
+        final fixtureParityOk = ack['fixtureParityOk'] == true;
+        final validationOk = ack['validationOk'] == true;
+        final maxTokens = ack['maxTokens']?.toString() ?? 'unknown';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-STREAM-PARITY] OK ACK received');
+        yield [
+          'Native stream parser parity started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'provider: $provider',
+          'providerModel: $providerModel',
+          'requestHash: $requestHash',
+          'fixtureHash: $fixtureHash',
+          'fixtureParityOk: $fixtureParityOk',
+          'validationOk: $validationOk',
+          'maxTokens: $maxTokens',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'parser_fixture') {
+        final fixture = event['fixture'] is Map
+            ? Map<String, dynamic>.from(event['fixture'] as Map)
+            : <String, dynamic>{};
+        final parsed = fixture['parsed'] is Map
+            ? Map<String, dynamic>.from(fixture['parsed'] as Map)
+            : <String, dynamic>{};
+        final parityOk = fixture['parityOk'] == true;
+        final text = parsed['text']?.toString() ?? '';
+        final finish = parsed['finishReason']?.toString() ?? 'unknown';
+        final warnings = parsed['warningCount']?.toString() ?? '0';
+        _addActivity('[NATIVE-STREAM-PARITY] parser fixture ok=$parityOk');
+        yield [
+          'Native parser fixture',
+          '',
+          'parityOk: $parityOk',
+          'text: $text',
+          'finishReason: $finish',
+          'warningCount: $warnings',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'error_fixture' ||
+          eventType == 'timeout_fixture' ||
+          eventType == 'cancellation_fixture') {
+        final fixture = event['fixture'] is Map
+            ? Map<String, dynamic>.from(event['fixture'] as Map)
+            : <String, dynamic>{};
+        final fixtureName = fixture['fixture']?.toString() ?? eventType ?? '';
+        final parityOk = fixture['parityOk'] == true;
+        final normalized = fixture['normalizedError'] is Map
+            ? Map<String, dynamic>.from(fixture['normalizedError'] as Map)
+            : <String, dynamic>{};
+        final code = normalized['code']?.toString() ??
+            fixture['abortReason']?.toString() ??
+            'ok';
+        _addActivity('[NATIVE-STREAM-PARITY] $fixtureName ok=$parityOk');
+        yield [
+          'Native ${(eventType ?? 'fixture').replaceAll('_', ' ')}',
+          '',
+          'fixture: $fixtureName',
+          'parityOk: $parityOk',
+          'code: $code',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_request') {
+        final providerRequest = event['providerRequest'] is Map
+            ? Map<String, dynamic>.from(event['providerRequest'] as Map)
+            : <String, dynamic>{};
+        final provider = providerRequest['provider']?.toString() ?? 'unknown';
+        final providerModel =
+            providerRequest['providerModel']?.toString() ?? 'unknown';
+        final bodyBytes =
+            providerRequest['requestBodyBytes']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-STREAM-PARITY] OK request received');
+        yield [
+          'Native parity provider request',
+          '',
+          'provider: $provider',
+          'providerModel: $providerModel',
+          'bodyBytes: $bodyBytes',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_call_started') {
+        final bytes = event['requestBodyBytes']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-STREAM-PARITY] provider call started, bodyBytes=$bytes',
+        );
+        yield [
+          'Native parity provider call started',
+          '',
+          'bodyBytes: $bytes',
+          'billingSurface: ${event['providerBillingSurfaceReached'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_response') {
+        final statusCode = event['statusCode']?.toString() ?? 'unknown';
+        final firstByteMs = event['firstByteMs']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-STREAM-PARITY] provider response $statusCode');
+        yield [
+          'Native parity provider response',
+          '',
+          'statusCode: $statusCode',
+          'firstByteMs: $firstByteMs',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'live_parser_summary') {
+        final summary = event['parserSummary'] is Map
+            ? Map<String, dynamic>.from(event['parserSummary'] as Map)
+            : <String, dynamic>{};
+        final fixtureParityOk = event['fixtureParityOk'] == true;
+        final liveParityOk = event['liveParityOk'] == true;
+        final parityOk = event['parityOk'] == true;
+        final textChars = summary['textChars']?.toString() ?? '0';
+        final finishReason = summary['finishReason']?.toString() ?? 'unknown';
+        final warningCount = summary['warningCount']?.toString() ?? '0';
+        _addActivity('[NATIVE-STREAM-PARITY] live summary ok=$parityOk');
+        yield [
+          '',
+          'Native live parser summary',
+          '',
+          'fixtureParityOk: $fixtureParityOk',
+          'liveParityOk: $liveParityOk',
+          'parityOk: $parityOk',
+          'textChars: $textChars',
+          'finishReason: $finishReason',
+          'warningCount: $warningCount',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_error') {
+        final raw = _rawGatewayErrorText(
+          event['rawProviderError'] ?? event['error'] ?? event,
+        );
+        _addActivity('[NATIVE-STREAM-PARITY] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+
+      if (eventType == 'provider_parse_warning') {
+        final raw = _rawGatewayErrorText(event['warning'] ?? event);
+        _addActivity('[NATIVE-STREAM-PARITY] parse warning $raw');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        final firstTokenMs = event['firstTokenMs']?.toString() ?? 'none';
+        final durationMs = event['durationMs']?.toString() ?? 'unknown';
+        final textChars = event['textChars']?.toString() ?? '0';
+        final warnings = event['warningCount']?.toString() ?? '0';
+        _addActivity(
+          '[NATIVE-STREAM-PARITY] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            '',
+            'Native stream parser parity complete',
+            '',
+            'finishReason: $finishReason',
+            'firstTokenMs: $firstTokenMs',
+            'durationMs: $durationMs',
+            'textChars: $textChars',
+            'warningCount: $warnings',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-STREAM-PARITY] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native stream parser parity ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -4781,6 +5075,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProviderStreamParityPayload(message) != null) {
+      yield* _sendNativeProviderStreamParityMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeProviderLivePayload(message) != null) {
       yield* _sendNativeProviderLiveMessage(

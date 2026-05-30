@@ -1028,6 +1028,209 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>>
+      streamProviderStreamParserParityChatSendFrame(
+    Map<String, dynamic> frame, {
+    required Map<String, dynamic> providerConfig,
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-provider-stream-parser-parity-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode({
+          ...frame,
+          'nativeCanaryProviderConfig': providerConfig,
+        });
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native provider stream parser parity HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-STREAM-PARITY] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'provider': ack['provider'],
+                  'requestedModel': ack['requestedModel'],
+                  'providerModel': ack['providerModel'],
+                  'transport': ack['transport'],
+                  'requestHash': ack['requestHash'],
+                  'fixtureHash': ack['fixtureHash'],
+                  'fixtureParityOk': ack['fixtureParityOk'],
+                  'validationOk': ack['validationOk'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'transportInvocationEnabled':
+                      ack['transportInvocationEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'maxTokens': ack['maxTokens'],
+                  'requestBodyBytes': ack['requestBodyBytes'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'parser_fixture') {
+          final fixture = decoded['fixture'] is Map
+              ? Map<String, dynamic>.from(decoded['fixture'] as Map)
+              : <String, dynamic>{};
+          final parsed = fixture['parsed'] is Map
+              ? Map<String, dynamic>.from(fixture['parsed'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-STREAM-PARITY] parser fixture: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'text': parsed['text'],
+                  'finishReason': parsed['finishReason'],
+                  'warningCount': parsed['warningCount'],
+                  'parserHash': parsed['parserHash'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'error_fixture' ||
+            decoded['event'] == 'timeout_fixture' ||
+            decoded['event'] == 'cancellation_fixture') {
+          final fixture = decoded['fixture'] is Map
+              ? Map<String, dynamic>.from(decoded['fixture'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-STREAM-PARITY] ${decoded['event']}: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'fixture': fixture['fixture'],
+                  'parityOk': fixture['parityOk'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_call_started') {
+          log(
+            '[NATIVE-STREAM-PARITY] provider call started: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': decoded['provider'],
+                  'requestHash': decoded['requestHash'],
+                  'requestBodyBytes': decoded['requestBodyBytes'],
+                  'providerBillingSurfaceReached':
+                      decoded['providerBillingSurfaceReached'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_response') {
+          log(
+            '[NATIVE-STREAM-PARITY] response: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': decoded['provider'],
+                  'statusCode': decoded['statusCode'],
+                  'contentType': decoded['contentType'],
+                  'firstByteMs': decoded['firstByteMs'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'live_parser_summary') {
+          final summary = decoded['parserSummary'] is Map
+              ? Map<String, dynamic>.from(decoded['parserSummary'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-STREAM-PARITY] live summary: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'textChars': summary['textChars'],
+                  'finishReason': summary['finishReason'],
+                  'warningCount': summary['warningCount'],
+                  'fixtureParityOk': decoded['fixtureParityOk'],
+                  'liveParityOk': decoded['liveParityOk'],
+                  'parityOk': decoded['parityOk'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_gate') {
+          final gate = decoded['gate'] is Map
+              ? Map<String, dynamic>.from(decoded['gate'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-STREAM-PARITY] gate: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'enabled': gate['enabled'] == true,
+                  'status': gate['status'],
+                  'reason': gate['reason'],
+                  'blockedBefore': gate['blockedBefore'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_error') {
+          log(
+            '[NATIVE-STREAM-PARITY] provider error: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': decoded['provider'],
+                  'statusCode': decoded['statusCode'],
+                  'error': decoded['error'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeStreamParitySkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -1250,6 +1453,8 @@ class NativeGatewayShadowParityService {
       'bodyHash': ack['bodyHash'],
       'requestHash': ack['requestHash'],
       'transportHash': ack['transportHash'],
+      'fixtureHash': ack['fixtureHash'],
+      'fixtureParityOk': ack['fixtureParityOk'] == true,
       'validationOk': ack['validationOk'] == true,
       'endpointHost': ack['endpointHost'],
       'endpointPath': ack['endpointPath'],
@@ -1448,6 +1653,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-PROVIDER-LIVE] native provider live canary failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeStreamParitySkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-STREAM-PARITY] native stream parser parity failed '
       '(${error.runtimeType})',
     );
   }
