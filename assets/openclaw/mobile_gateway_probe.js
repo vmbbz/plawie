@@ -14,6 +14,7 @@ function nowIso() {
 
 function createMobileGatewayProbe({
   preflight,
+  skillRegistry,
   host,
   port,
   productionGatewayPort,
@@ -24,6 +25,7 @@ function createMobileGatewayProbe({
     "/preflight",
     "/gateway/probe",
     "/gateway/capabilities",
+    "/gateway/skill-registry",
     "/v1/models",
     "/v1/chat/completions"
   ];
@@ -56,6 +58,8 @@ function createMobileGatewayProbe({
       chatRoutingEnabled: false,
       providerCallsEnabled: false,
       fullSkillRegistryLoaded: false,
+      productionSkillRegistryInspected: skillRegistry?.ok === true,
+      productionSkillCount: skillRegistry?.skillCount ?? 0,
       skillRegistryMode: "curated-mobile-preflight",
       skillCount: preflight?.skillCount ?? 0,
       toolCount: Array.isArray(preflight?.bridgeToolNames)
@@ -76,7 +80,20 @@ function createMobileGatewayProbe({
       canaryOnly: true,
       openclawStarted: false,
       fullSkillRegistryLoaded: false,
+      productionSkillRegistryInspected: skillRegistry?.ok === true,
+      productionSkillCount: skillRegistry?.skillCount ?? 0,
       productionSkillsLoaded: false,
+      productionSkillRegistry: skillRegistry
+        ? {
+            ok: skillRegistry.ok === true,
+            readOnly: skillRegistry.readOnly === true,
+            executionEnabled: skillRegistry.executionEnabled === true,
+            registrySource: skillRegistry.registrySource,
+            skillCount: skillRegistry.skillCount ?? 0,
+            countsByClass: skillRegistry.countsByClass ?? {},
+            errors: skillRegistry.errors ?? []
+          }
+        : null,
       skillsSource: "assets/openclaw/skills",
       skillCount: preflight?.skillCount ?? 0,
       skillFiles: preflight?.skillFiles ?? [],
@@ -138,6 +155,21 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/capabilities") {
       sendJson(res, 200, capabilities());
+      return true;
+    }
+
+    if (pathname === "/gateway/skill-registry") {
+      sendJson(res, skillRegistry?.ok === true ? 200 : 503, {
+        ...(skillRegistry ?? {
+          ok: false,
+          readOnly: true,
+          executionEnabled: false,
+          errors: ["skill_registry_not_configured"]
+        }),
+        canaryOnly: true,
+        openclawStarted: false,
+        chatRoutingEnabled: false
+      });
       return true;
     }
 

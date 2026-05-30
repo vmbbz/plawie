@@ -19,6 +19,7 @@ The native process copies and loads only a curated mobile preflight bundle:
 
 - `android_bridge_tools.js`
 - `mobile_gateway_probe.js`
+- `mobile_skill_registry.js`
 - `skills/avatar_forge.md`
 - `skills/battery.md`
 - `skills/sensors.md`
@@ -36,6 +37,7 @@ The canary server exposes:
 - `/preflight`
 - `/gateway/probe`
 - `/gateway/capabilities`
+- `/gateway/skill-registry`
 - `/v1/models`
 - `/v1/chat/completions`
 
@@ -70,6 +72,7 @@ Verified on Samsung SM-A556E / Android 14 with diagnostic build flag
 - placeholder native Android smoke passed twice;
 - embedded Node `v22.22.3` started through `node::Start`;
 - six curated preflight assets were copied with `missing=0`;
+- later Phase 4 builds copy seven assets with the read-only registry scanner;
 - `/health` returned `preflight.passed: true`;
 - `/gateway/probe` returned `status: ready`;
 - `/gateway/capabilities` returned the four canary skills and three bridge
@@ -89,12 +92,12 @@ preflight gate.
 
 ## Next Gate
 
-The next useful phase is a mobile skill registry inventory:
+The next useful phase is now complete and documented in
+`22-embedded-skill-registry-inventory.md`: a mobile skill registry inventory.
+The follow-up after that is request-shape parity, not tool execution:
 
-- read the production PRoot `skills.md`/skills tree shape;
-- define which skills are Android-safe, cloud-only, shell-only, or blocked;
-- generate a mobile registry manifest without executing tools;
-- prove that the embedded lane can report the full registry shape without
-  starting real chat.
+- mirror the production Gateway request envelope;
+- reject chat safely while preserving OpenAI/OpenClaw-compatible error shape;
+- compare model/tool/session fields against PRoot without provider calls.
 
 Only after that should the native lane attempt real OpenClaw request routing.

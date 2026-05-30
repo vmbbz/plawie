@@ -147,6 +147,10 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/mobile_gateway_probe.js",
             File(dir, "mobile_gateway_probe.js")
         )
+        copyAsset(
+            "flutter_assets/assets/openclaw/mobile_skill_registry.js",
+            File(dir, "mobile_skill_registry.js")
+        )
 
         listOf("avatar_forge.md", "battery.md", "sensors.md", "vibrate.md").forEach { name ->
             copyAsset(
@@ -184,6 +188,12 @@ class NativeNodeEmbeddedService : Service() {
         val script = File(dir, "server.mjs")
         val bundleRoot = JSONObject.quote(preflight.root.absolutePath)
         val manifestPath = JSONObject.quote(preflight.manifest.absolutePath)
+        val prootSkillRoot = JSONObject.quote(
+            File(filesDir, "rootfs/ubuntu/root/.openclaw/skills").absolutePath
+        )
+        val prootConfigPath = JSONObject.quote(
+            File(filesDir, "rootfs/ubuntu/root/.openclaw/openclaw.json").absolutePath
+        )
         script.writeText(
             """
             import http from "node:http";
@@ -196,6 +206,9 @@ class NativeNodeEmbeddedService : Service() {
             const bundleRoot = $bundleRoot;
             const manifestPath = $manifestPath;
             const { createMobileGatewayProbe } = require(path.join(bundleRoot, "mobile_gateway_probe.js"));
+            const { inspectSkillRegistry } = require(path.join(bundleRoot, "mobile_skill_registry.js"));
+            const productionSkillsRoot = $prootSkillRoot;
+            const productionConfigPath = $prootConfigPath;
 
             const host = "$HOST";
             const port = $PORT;
@@ -278,8 +291,13 @@ class NativeNodeEmbeddedService : Service() {
             }
 
             const preflight = runPreflight();
+            const skillRegistry = inspectSkillRegistry({
+              skillsRoot: productionSkillsRoot,
+              configPath: productionConfigPath
+            });
             const gatewayProbe = createMobileGatewayProbe({
               preflight,
+              skillRegistry,
               host,
               port,
               productionGatewayPort: 18789,

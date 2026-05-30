@@ -83,6 +83,7 @@ class NativeGatewaySmokeService {
           await _probeHealth(expectedRuntime: 'native-node-embedded');
       final gatewayProbe = await _probeJson('/gateway/probe');
       final capabilities = await _probeJson('/gateway/capabilities');
+      final skillRegistry = await _probeJson('/gateway/skill-registry');
       final models = await _probeJson('/v1/models');
       final ok = health['ok'] == true &&
           health['runtime'] == 'native-node-embedded' &&
@@ -93,10 +94,19 @@ class NativeGatewaySmokeService {
           _gatewayProbePassed(health['gatewayProbe']) &&
           _gatewayProbePassed(gatewayProbe) &&
           _capabilitiesProbePassed(capabilities) &&
+          _skillRegistryProbePassed(skillRegistry) &&
           _modelProbePassed(models);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
       log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
       log('[NATIVE-NODE-EMBEDDED] capabilities: ${jsonEncode(capabilities)}');
+      log(
+        '[NATIVE-NODE-EMBEDDED] skill registry: ${jsonEncode({
+              'ok': skillRegistry['ok'],
+              'readOnly': skillRegistry['readOnly'],
+              'skillCount': skillRegistry['skillCount'],
+              'countsByClass': skillRegistry['countsByClass'],
+            })}',
+      );
 
       final stopped = await _nodeRuntime.stop();
       final stillRunning = await _nodeRuntime.isRunning();
@@ -204,6 +214,7 @@ class NativeGatewaySmokeService {
         endpoints.contains('/health') &&
         endpoints.contains('/gateway/probe') &&
         endpoints.contains('/gateway/capabilities') &&
+        endpoints.contains('/gateway/skill-registry') &&
         endpoints.contains('/v1/models') &&
         endpoints.contains('/v1/chat/completions');
 
@@ -219,6 +230,9 @@ class NativeGatewaySmokeService {
         value['chatRoutingEnabled'] == false &&
         value['providerCallsEnabled'] == false &&
         value['fullSkillRegistryLoaded'] == false &&
+        value['productionSkillRegistryInspected'] == true &&
+        value['productionSkillCount'] is num &&
+        (value['productionSkillCount'] as num) >= 50 &&
         value['skillRegistryMode'] == 'curated-mobile-preflight' &&
         skillCount is num &&
         skillCount >= 4 &&
@@ -236,6 +250,9 @@ class NativeGatewaySmokeService {
         value['canaryOnly'] == true &&
         value['openclawStarted'] == false &&
         value['fullSkillRegistryLoaded'] == false &&
+        value['productionSkillRegistryInspected'] == true &&
+        value['productionSkillCount'] is num &&
+        (value['productionSkillCount'] as num) >= 50 &&
         value['productionSkillsLoaded'] == false &&
         value['skillCount'] is num &&
         (value['skillCount'] as num) >= 4 &&
@@ -245,6 +262,35 @@ class NativeGatewaySmokeService {
         tools.contains('get_battery') &&
         tools.contains('read_sensor') &&
         tools.contains('vibrate');
+  }
+
+  static bool _skillRegistryProbePassed(Map<String, dynamic> value) {
+    final skills = value['skills'];
+    if (skills is! List) return false;
+
+    final ids = skills
+        .whereType<Map>()
+        .map((skill) => skill['id']?.toString())
+        .whereType<String>()
+        .toSet();
+    final countsByClass = value['countsByClass'];
+
+    return value['ok'] == true &&
+        value['readOnly'] == true &&
+        value['executionEnabled'] == false &&
+        value['registrySource'] == 'proot-openclaw-skills' &&
+        value['openclawStarted'] == false &&
+        value['chatRoutingEnabled'] == false &&
+        value['canaryOnly'] == true &&
+        value['skillCount'] is num &&
+        (value['skillCount'] as num) >= 50 &&
+        ids.contains('weather') &&
+        ids.contains('canvas') &&
+        ids.contains('device-node') &&
+        ids.contains('gestures') &&
+        ids.contains('tts-voice') &&
+        countsByClass is Map &&
+        countsByClass.isNotEmpty;
   }
 
   static bool _modelProbePassed(Map<String, dynamic> value) {

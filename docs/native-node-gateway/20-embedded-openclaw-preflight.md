@@ -30,6 +30,7 @@ The service copies only small curated files:
 
 - `assets/openclaw/android_bridge_tools.js`
 - `assets/openclaw/mobile_gateway_probe.js`
+- `assets/openclaw/mobile_skill_registry.js`
 - `assets/openclaw/skills/avatar_forge.md`
 - `assets/openclaw/skills/battery.md`
 - `assets/openclaw/skills/sensors.md`
@@ -93,7 +94,7 @@ Verified on Samsung SM-A556E / Android 14:
 - diagnostic APK built with `PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`;
 - APK contained the new `android_bridge_tools.js` Flutter asset;
 - native Android placeholder smoke passed;
-- embedded Node copied six mobile OpenClaw preflight assets;
+- embedded Node copied seven mobile OpenClaw preflight assets;
 - embedded Node answered `/health` with `preflight.passed: true`;
 - isolated `:native_node_smoke` process stopped after diagnostics;
 - Flutter UI process remained alive;
@@ -122,9 +123,10 @@ server. This gate proves the first OpenClaw-facing surface:
 
 ## Next Gate
 
-This phase now feeds the curated Gateway bootstrap probe documented in
-`21-embedded-gateway-bootstrap-probe.md`. The copied skills remain a canary
-subset only; they are not the full production `skills.md` registry.
+This phase now feeds the curated Gateway bootstrap probe and read-only skill
+registry inventory documented in `21-embedded-gateway-bootstrap-probe.md` and
+`22-embedded-skill-registry-inventory.md`. The copied markdown skills remain a
+canary subset only; they are not the full production `skills.md` registry.
 
 Do not bind `18789`, route chat, start provider calls, or touch production
 Gateway config until later parity gates explicitly promote the embedded lane.
