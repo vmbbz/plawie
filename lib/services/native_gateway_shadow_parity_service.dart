@@ -61,15 +61,24 @@ class NativeGatewayShadowParityService {
     defaultValue: false,
   );
 
+  static const bool _primaryCanaryDiagnosticsEnabled = bool.fromEnvironment(
+    'PLAWIE_NATIVE_GATEWAY_PRIMARY_CANARY_DIAGNOSTICS',
+    defaultValue: false,
+  );
+
   static bool get shadowDiagnosticsEnabled => _shadowDiagnosticsEnabled;
 
   static bool get directCanaryDiagnosticsEnabled =>
       _directCanaryDiagnosticsEnabled;
 
+  static bool get primaryCanaryDiagnosticsEnabled =>
+      _primaryCanaryDiagnosticsEnabled;
+
   static bool get diagnosticsEnabled =>
       _smokeDiagnosticsEnabled ||
       _shadowDiagnosticsEnabled ||
-      _directCanaryDiagnosticsEnabled;
+      _directCanaryDiagnosticsEnabled ||
+      _primaryCanaryDiagnosticsEnabled;
 
   static DateTime? _lastNativeSkipLogAt;
   static DateTime? _lastNativeDryRunSkipLogAt;
@@ -205,6 +214,55 @@ class NativeGatewayShadowParityService {
       return ack;
     } catch (e) {
       _logNativeDirectCanarySkip(log, e);
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> sendPrimaryCanaryChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async {
+    if (!_primaryCanaryDiagnosticsEnabled) return null;
+
+    final local = _redactedWsChatSendShape(frame);
+    try {
+      final canary = await _directCanaryWithNativeProbe(frame);
+      final ack = _redactedDryRunAck(canary);
+      final hashMatches = local['metadataHash'] == ack['metadataHash'];
+      log(
+        '[NATIVE-PRIMARY-CANARY] ack: ${jsonEncode({
+              'ok': ack['ok'],
+              'parsed': ack['parsed'],
+              'route': ack['route'],
+              'source': ack['source'],
+              'canaryMode': ack['canaryMode'],
+              'directCanary': ack['directCanary'],
+              'localHash': local['metadataHash'],
+              'canaryHash': ack['metadataHash'],
+              'hashMatches': hashMatches,
+              'acceptedForRouting': ack['acceptedForRouting'],
+              'acceptedForQueue': ack['acceptedForQueue'],
+              'queuedForDryRun': ack['queuedForDryRun'],
+              'queueStatus': ack['queueStatus'],
+              'queueDepthBefore': ack['queueDepthBefore'],
+              'queueDepthAfter': ack['queueDepthAfter'],
+              'nativeSessionId': ack['nativeSessionId'],
+              'runId': ack['runId'],
+              'duplicate': ack['duplicate'],
+              'providerCallsEnabled': ack['providerCallsEnabled'],
+              'executionEnabled': ack['executionEnabled'],
+              'sessionKey': ack['sessionKey'],
+              'messageChars': ack['messageChars'],
+              'mobileToolHints': ack['mobileToolHints'],
+            })}',
+      );
+      return {
+        ...ack,
+        'localHash': local['metadataHash'],
+        'hashMatches': hashMatches,
+      };
+    } catch (e) {
+      _logNativePrimaryCanarySkip(log, e);
       return null;
     }
   }
@@ -531,6 +589,16 @@ class NativeGatewayShadowParityService {
     log(
       '[NATIVE-CANARY-DIRECT] native direct canary unavailable; '
       'PRoot remains primary (${error.runtimeType})',
+    );
+  }
+
+  static void _logNativePrimaryCanarySkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-PRIMARY-CANARY] native primary canary failed '
+      '(${error.runtimeType})',
     );
   }
 }

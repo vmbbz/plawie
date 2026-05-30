@@ -57,6 +57,11 @@ class GatewayService {
     'http://127.0.0.1:18789',
     'http://localhost:18789',
   ];
+  static const bool _nativePrimaryCanaryDiagnosticsEnabled =
+      bool.fromEnvironment(
+    'PLAWIE_NATIVE_GATEWAY_PRIMARY_CANARY_DIAGNOSTICS',
+    defaultValue: false,
+  );
   static const String _mobileChatSessionPrefix = 'mobile:chat:';
   static const String _defaultAuthProfileName = 'default';
 
@@ -3658,6 +3663,106 @@ If the user asks what tools or phone abilities are available, include these Andr
 $message''';
   }
 
+  String? _nativePrimaryCanaryPayload(String message, String model) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefixes = <String>[
+      '/native-canary ',
+      '/native ',
+    ];
+    for (final prefix in prefixes) {
+      if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+        return trimmedLeft.substring(prefix.length).trimLeft();
+      }
+    }
+
+    if (model == 'plawie/native-node-probe') {
+      return message;
+    }
+    return null;
+  }
+
+  Stream<String> _sendNativePrimaryCanaryMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final canaryMessage = _nativePrimaryCanaryPayload(message, model);
+    if (canaryMessage == null) return;
+    if (canaryMessage.trim().isEmpty) {
+      yield '[Error] Native canary needs a message after /native-canary.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final outboundMessage =
+        await _decorateMessageWithMobileNodeContext(canaryMessage);
+    final chatSendFrame = <String, dynamic>{
+      'type': 'req',
+      'method': 'chat.send',
+      'params': {
+        'sessionKey': resolvedSessionKey,
+        'message': outboundMessage,
+        'idempotencyKey': const Uuid().v4(),
+        'timeoutMs': 300000,
+      },
+      'id': const Uuid().v4(),
+    };
+
+    _addActivity(
+      '[NATIVE-PRIMARY-CANARY] -> Sending directly to embedded Node '
+      '(routing disabled)',
+    );
+    final ack =
+        await NativeGatewayShadowParityService.sendPrimaryCanaryChatSendFrame(
+            chatSendFrame,
+            log: _addActivity);
+    if (ack == null) {
+      yield '[Error] Native primary canary is unavailable in this build or '
+          'the embedded Node parser is not running.';
+      return;
+    }
+
+    final parsed = ack['parsed'] == true;
+    final hashMatches = ack['hashMatches'] == true;
+    final route = ack['route']?.toString() ?? 'unknown';
+    final queueStatus = ack['queueStatus']?.toString() ?? 'unknown';
+    final nativeSessionId = ack['nativeSessionId']?.toString() ?? 'unknown';
+    final runId = ack['runId']?.toString() ?? 'unknown';
+    final messageChars = ack['messageChars']?.toString() ?? 'unknown';
+    final hints = ack['mobileToolHints'] is List
+        ? (ack['mobileToolHints'] as List).join(', ')
+        : '';
+
+    if (parsed && hashMatches && route == 'disabled') {
+      _addActivity('[NATIVE-PRIMARY-CANARY] ✓ Parsed by native dry-run');
+    } else {
+      _addActivity('[NATIVE-PRIMARY-CANARY] ✗ Unexpected ACK shape');
+    }
+
+    yield [
+      'Native canary dry-run ACK',
+      '',
+      'parsed: $parsed',
+      'route: $route',
+      'queue: $queueStatus',
+      'hashMatches: $hashMatches',
+      'session: $nativeSessionId',
+      'run: $runId',
+      'messageChars: $messageChars',
+      if (hints.isNotEmpty) 'toolHints: $hints',
+      '',
+      'No provider call or tool execution ran. This turn bypassed PRoot and '
+          'only proved the UI-to-embedded-Node chat frame lane.',
+    ].join('\n');
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -3670,6 +3775,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativePrimaryCanaryPayload(message, model) != null) {
+      yield* _sendNativePrimaryCanaryMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     // Local-llm: bypass the gateway entirely. Do this before token lookup,
     // autostart, WS setup, or provider sync so NDK mode stays lightweight and

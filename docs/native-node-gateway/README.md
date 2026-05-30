@@ -55,7 +55,8 @@ OpenAI/OpenClaw chat request envelopes, recognizes Plawie's production
 `chat.send` frame fields, compares redacted Dart sender metadata with embedded
 Node parser metadata, keeps a diagnostics-only native dry-run session/queue
 model for mirrored real turns, accepts a hidden direct native canary dry-run
-copy of real turns, verifies Node built-ins and Intl, exposes harmless
+copy of real turns, accepts an explicit UI-driven native primary canary dry-run
+turn, verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
 
@@ -109,6 +110,7 @@ be safely generalized.
 | [25-dart-shadow-parity-collector.md](25-dart-shadow-parity-collector.md) | Diagnostics-only redacted comparison between PRoot sender metadata and native parser output |
 | [26-native-dry-run-session-queue.md](26-native-dry-run-session-queue.md) | Diagnostics-only native session and queue ACKs for mirrored real `chat.send` frames |
 | [27-direct-canary-dry-run.md](27-direct-canary-dry-run.md) | Hidden direct native canary dry-run for real `chat.send` frames while PRoot remains primary |
+| [28-native-primary-canary.md](28-native-primary-canary.md) | Explicit `/native-canary` UI turns sent directly to embedded Node with routing disabled |
 
 ## Work Rules
 
