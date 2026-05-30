@@ -29,6 +29,9 @@ That means the observed `skillCount: 4` is intentional. Production PRoot still
 owns the full OpenClaw `skills.md`/tool universe until a later parity phase
 builds a real mobile registry loader.
 
+Later phases also inspect that production skill tree read-only and parse chat
+request envelopes, but execution remains disabled.
+
 ## Probe Endpoints
 
 The canary server exposes:
@@ -38,12 +41,14 @@ The canary server exposes:
 - `/gateway/probe`
 - `/gateway/capabilities`
 - `/gateway/skill-registry`
+- `/gateway/request-shape`
 - `/v1/models`
 - `/v1/chat/completions`
 
-`/v1/chat/completions` intentionally returns a probe-only error instead of
-running a model or provider request. This prevents accidental user traffic from
-leaking into a partial runtime.
+`/gateway/request-shape` parses a JSON chat request and returns a safe summary.
+`/v1/chat/completions` performs the same parsing but intentionally returns
+`409 chat_disabled` instead of running a model or provider request. This
+prevents accidental user traffic from leaking into a partial runtime.
 
 ## Payload Contract
 
@@ -72,7 +77,7 @@ Verified on Samsung SM-A556E / Android 14 with diagnostic build flag
 - placeholder native Android smoke passed twice;
 - embedded Node `v22.22.3` started through `node::Start`;
 - six curated preflight assets were copied with `missing=0`;
-- later Phase 4 builds copy seven assets with the read-only registry scanner;
+- later builds copy seven assets with the read-only registry scanner;
 - `/health` returned `preflight.passed: true`;
 - `/gateway/probe` returned `status: ready`;
 - `/gateway/capabilities` returned the four canary skills and three bridge
@@ -90,14 +95,12 @@ module. On the embedded Android Node build, that path stalled before
 `createRequire`, matching the bridge-tool loader path already verified by the
 preflight gate.
 
-## Next Gate
+## Follow-Up Gates
 
-The next useful phase is now complete and documented in
-`22-embedded-skill-registry-inventory.md`: a mobile skill registry inventory.
-The follow-up after that is request-shape parity, not tool execution:
+The next gates are documented separately:
 
-- mirror the production Gateway request envelope;
-- reject chat safely while preserving OpenAI/OpenClaw-compatible error shape;
-- compare model/tool/session fields against PRoot without provider calls.
+- `22-embedded-skill-registry-inventory.md`
+- `23-embedded-request-shape-parity.md`
 
-Only after that should the native lane attempt real OpenClaw request routing.
+Only after those prove stable should the native lane attempt real OpenClaw
+request routing.

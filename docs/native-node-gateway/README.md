@@ -47,9 +47,10 @@ package a locally built Android arm64 Node `22.22.3` `libnode.so`, build a tiny
 `libplawie_node_bridge.so` JNI wrapper, and start a `/health` server on
 `127.0.0.1:18790` inside an isolated `:native_node_smoke` Android process.
 That lane now also runs a mobile OpenClaw preflight, Gateway bootstrap probe,
-and read-only production skill inventory: it copies curated OpenClaw assets,
-loads Android bridge tooling, counts bundled canary skills, scans the real
-PRoot `~/.openclaw/skills` tree, verifies Node built-ins and Intl, exposes
+read-only production skill inventory, and request-shape parity check: it copies
+curated OpenClaw assets, loads Android bridge tooling, counts bundled canary
+skills, scans the real PRoot `~/.openclaw/skills` tree, parses a realistic
+OpenAI/OpenClaw chat request envelope, verifies Node built-ins and Intl, exposes
 harmless Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports
 readiness without starting OpenClaw. Production Gateway startup still remains
 PRoot.
@@ -99,6 +100,7 @@ be safely generalized.
 | [20-embedded-openclaw-preflight.md](20-embedded-openclaw-preflight.md) | Embedded Node mobile OpenClaw preflight contract and device result |
 | [21-embedded-gateway-bootstrap-probe.md](21-embedded-gateway-bootstrap-probe.md) | Canary Gateway-shaped HTTP endpoints on embedded Node without chat routing |
 | [22-embedded-skill-registry-inventory.md](22-embedded-skill-registry-inventory.md) | Read-only scan of the production PRoot skill registry from embedded Node |
+| [23-embedded-request-shape-parity.md](23-embedded-request-shape-parity.md) | Probe-only parsing of OpenAI/OpenClaw chat request envelopes without execution |
 
 ## Work Rules
 

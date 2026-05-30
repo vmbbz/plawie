@@ -85,6 +85,11 @@ class NativeGatewaySmokeService {
       final capabilities = await _probeJson('/gateway/capabilities');
       final skillRegistry = await _probeJson('/gateway/skill-registry');
       final models = await _probeJson('/v1/models');
+      final chatShape = await _postJson(
+        '/v1/chat/completions',
+        _sampleChatCompletionRequest(),
+        expectedStatus: 409,
+      );
       final ok = health['ok'] == true &&
           health['runtime'] == 'native-node-embedded' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
@@ -95,7 +100,8 @@ class NativeGatewaySmokeService {
           _gatewayProbePassed(gatewayProbe) &&
           _capabilitiesProbePassed(capabilities) &&
           _skillRegistryProbePassed(skillRegistry) &&
-          _modelProbePassed(models);
+          _modelProbePassed(models) &&
+          _chatShapeProbePassed(chatShape);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
       log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
       log('[NATIVE-NODE-EMBEDDED] capabilities: ${jsonEncode(capabilities)}');
@@ -106,6 +112,9 @@ class NativeGatewaySmokeService {
               'skillCount': skillRegistry['skillCount'],
               'countsByClass': skillRegistry['countsByClass'],
             })}',
+      );
+      log(
+        '[NATIVE-NODE-EMBEDDED] chat request shape: ${jsonEncode(chatShape['requestShape'])}',
       );
 
       final stopped = await _nodeRuntime.stop();
@@ -215,6 +224,7 @@ class NativeGatewaySmokeService {
         endpoints.contains('/gateway/probe') &&
         endpoints.contains('/gateway/capabilities') &&
         endpoints.contains('/gateway/skill-registry') &&
+        endpoints.contains('/gateway/request-shape') &&
         endpoints.contains('/v1/models') &&
         endpoints.contains('/v1/chat/completions');
 
@@ -311,6 +321,103 @@ class NativeGatewaySmokeService {
         capabilities['streaming'] == false;
   }
 
+  static bool _chatShapeProbePassed(Map<String, dynamic> value) {
+    final error = value['error'];
+    final shape = value['requestShape'];
+    if (error is! Map || shape is! Map) return false;
+
+    final roles = shape['roleCounts'];
+    final toolNames = shape['toolNames'];
+    return error['code'] == 'chat_disabled' &&
+        value['runtime'] == 'native-node-embedded' &&
+        value['canaryOnly'] == true &&
+        value['openclawStarted'] == false &&
+        value['providerCallsEnabled'] == false &&
+        value['executionEnabled'] == false &&
+        shape['ok'] == true &&
+        shape['requestShape'] == 'openai-chat-completions' &&
+        shape['model'] == 'plawie/native-node-probe' &&
+        shape['stream'] == true &&
+        shape['acceptedForRouting'] == false &&
+        shape['providerCallsEnabled'] == false &&
+        shape['executionEnabled'] == false &&
+        shape['safeForProbe'] == true &&
+        shape['messageCount'] == 3 &&
+        roles is Map &&
+        roles['system'] == 1 &&
+        roles['user'] == 1 &&
+        roles['assistant'] == 1 &&
+        shape['toolCount'] == 2 &&
+        toolNames is List &&
+        toolNames.contains('get_battery') &&
+        toolNames.contains('vibrate');
+  }
+
+  static Map<String, dynamic> _sampleChatCompletionRequest() {
+    return {
+      'model': 'plawie/native-node-probe',
+      'stream': true,
+      'temperature': 0.2,
+      'max_tokens': 128,
+      'tool_choice': 'auto',
+      'messages': [
+        {
+          'role': 'system',
+          'content':
+              'Probe-only Gateway request shape. Do not execute tools or call providers.',
+        },
+        {
+          'role': 'user',
+          'content': 'Can you check the battery and vibrate once?',
+        },
+        {
+          'role': 'assistant',
+          'content': null,
+          'tool_calls': [
+            {
+              'id': 'call_probe_battery',
+              'type': 'function',
+              'function': {
+                'name': 'get_battery',
+                'arguments': '{}',
+              },
+            },
+          ],
+        },
+      ],
+      'tools': [
+        {
+          'type': 'function',
+          'function': {
+            'name': 'get_battery',
+            'description': 'Read Android battery status.',
+            'parameters': {
+              'type': 'object',
+              'properties': <String, Object?>{},
+            },
+          },
+        },
+        {
+          'type': 'function',
+          'function': {
+            'name': 'vibrate',
+            'description': 'Trigger a short Android haptic pulse.',
+            'parameters': {
+              'type': 'object',
+              'properties': {
+                'duration_ms': {
+                  'type': 'integer',
+                  'minimum': 1,
+                  'maximum': 1000,
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
   static Future<Map<String, dynamic>> _probeHealth({
     required String expectedRuntime,
   }) async {
@@ -354,6 +461,45 @@ class NativeGatewaySmokeService {
         }
       }
       throw StateError('JSON probe $path failed: $lastError');
+    } finally {
+      client.close();
+    }
+  }
+
+  static Future<Map<String, dynamic>> _postJson(
+    String path,
+    Map<String, dynamic> payload, {
+    required int expectedStatus,
+  }) async {
+    final client = http.Client();
+    try {
+      Object? lastError;
+      for (var attempt = 0; attempt < 12; attempt++) {
+        try {
+          final normalizedPath = path.startsWith('/') ? path : '/$path';
+          final response = await client
+              .post(
+                Uri.parse(
+                  '${AppConstants.nativeGatewaySmokeUrl}$normalizedPath',
+                ),
+                headers: const {'content-type': 'application/json'},
+                body: jsonEncode(payload),
+              )
+              .timeout(const Duration(seconds: 2));
+          if (response.statusCode != expectedStatus) {
+            throw StateError('HTTP ${response.statusCode}: ${response.body}');
+          }
+          final decoded = jsonDecode(response.body);
+          if (decoded is! Map<String, dynamic>) {
+            throw StateError('POST payload was not a JSON object');
+          }
+          return decoded;
+        } catch (e) {
+          lastError = e;
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+      }
+      throw StateError('JSON POST probe $path failed: $lastError');
     } finally {
       client.close();
     }

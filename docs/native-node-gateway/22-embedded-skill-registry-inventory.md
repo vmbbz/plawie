@@ -91,7 +91,8 @@ agency over it. That is the right next step before attempting request routing.
 
 ## Next Gate
 
-Build a request-shape parity probe:
+The request-shape parity probe is documented in
+`23-embedded-request-shape-parity.md`. Its scope is:
 
 - mirror OpenAI/OpenClaw request envelopes;
 - preserve production port isolation on `18790`;
