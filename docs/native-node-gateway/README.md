@@ -70,6 +70,9 @@ max-token request from embedded Node,
 can run an explicit `/native-stream-parity` canary that checks native provider
 chunk parsing, raw provider errors, timeout normalization, cancellation
 contracts, and one tiny live provider stream,
+can run an explicit `/native-tool-plan` canary that attaches native-safe mobile
+tool schemas and captures streamed provider tool-call plans with tool execution
+disabled,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -132,6 +135,7 @@ be safely generalized.
 | [33-native-transport-shim.md](33-native-transport-shim.md) | Explicit `/native-transport` UI turns constructing provider transport and aborting before network |
 | [34-native-provider-live-canary.md](34-native-provider-live-canary.md) | Explicit `/native-live` UI turns making one tiny OpenRouter provider call from embedded Node |
 | [35-native-provider-stream-parser-parity.md](35-native-provider-stream-parser-parity.md) | Explicit `/native-stream-parity` UI turns validating provider chunk/error/timeout/cancel parsing |
+| [36-native-provider-tool-plan-canary.md](36-native-provider-tool-plan-canary.md) | Explicit `/native-tool-plan` UI turns capturing provider tool-call plans without execution |
 
 ## Work Rules
 

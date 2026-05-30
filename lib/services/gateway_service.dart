@@ -3760,6 +3760,17 @@ $message''';
     return null;
   }
 
+  String? _nativeToolPlanPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-tool-plan ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -5063,6 +5074,244 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeToolPlanMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final planMessage = _nativeToolPlanPayload(message);
+    if (planMessage == null) return;
+    if (planMessage.trim().isEmpty) {
+      yield '[Error] Native tool plan canary needs a message after /native-tool-plan.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: planMessage.trim(),
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-TOOL-PLAN] -> Opening embedded Node tool plan canary',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamProviderToolPlanCanaryChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final provider = ack['provider']?.toString() ?? 'unknown';
+        final providerModel = ack['providerModel']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final toolSelectionHash =
+            ack['toolSelectionHash']?.toString() ?? 'unknown';
+        final fixtureHash = ack['fixtureHash']?.toString() ?? 'unknown';
+        final fixtureParityOk = ack['fixtureParityOk'] == true;
+        final validationOk = ack['validationOk'] == true;
+        final selectedToolCount = ack['selectedToolCount']?.toString() ?? '0';
+        final toolPlanCount = ack['toolPlanCount']?.toString() ?? '0';
+        final allowedPlanCount = ack['allowedPlanCount']?.toString() ?? '0';
+        final blockedPlanCount = ack['blockedPlanCount']?.toString() ?? '0';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-TOOL-PLAN] OK ACK received');
+        yield [
+          'Native tool plan canary started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'provider: $provider',
+          'providerModel: $providerModel',
+          'requestHash: $requestHash',
+          'toolSelectionHash: $toolSelectionHash',
+          'fixtureHash: $fixtureHash',
+          'fixtureParityOk: $fixtureParityOk',
+          'validationOk: $validationOk',
+          'selectedToolCount: $selectedToolCount',
+          'toolPlanCount: $toolPlanCount',
+          'allowedPlanCount: $allowedPlanCount',
+          'blockedPlanCount: $blockedPlanCount',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_catalog') {
+        final names = event['toolFunctionNames'] is List
+            ? (event['toolFunctionNames'] as List).join(', ')
+            : '';
+        final gatewayNames = event['gatewayToolNames'] is List
+            ? (event['gatewayToolNames'] as List).join(', ')
+            : '';
+        final selectedToolCount = event['selectedToolCount']?.toString() ?? '0';
+        final schemaChars = event['schemaChars']?.toString() ?? '0';
+        _addActivity('[NATIVE-TOOL-PLAN] OK catalog received');
+        yield [
+          'Native tool catalog attached',
+          '',
+          'selectedToolCount: $selectedToolCount',
+          'functionNames: $names',
+          'gatewayNames: $gatewayNames',
+          'schemaChars: $schemaChars',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'provider_request') {
+        final providerRequest = event['providerRequest'] is Map
+            ? Map<String, dynamic>.from(event['providerRequest'] as Map)
+            : <String, dynamic>{};
+        final requestHash =
+            providerRequest['requestHash']?.toString() ?? 'unknown';
+        final bodyHash = providerRequest['bodyHash']?.toString() ?? 'unknown';
+        final toolCount =
+            providerRequest['selectedToolCount']?.toString() ?? '0';
+        final names = providerRequest['toolFunctionNames'] is List
+            ? (providerRequest['toolFunctionNames'] as List).join(', ')
+            : '';
+        _addActivity('[NATIVE-TOOL-PLAN] OK request received');
+        yield [
+          'Native tool-plan provider request',
+          '',
+          'requestHash: $requestHash',
+          'bodyHash: $bodyHash',
+          'selectedToolCount: $toolCount',
+          'functionNames: $names',
+          'providerCallsEnabled: ${providerRequest['providerCallsEnabled'] == true}',
+          'toolExecutionEnabled: ${providerRequest['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'streaming_tool_fixture' ||
+          eventType == 'message_tool_fixture' ||
+          eventType == 'unknown_tool_fixture' ||
+          eventType == 'malformed_arguments_fixture') {
+        final fixture = event['fixture'] is Map
+            ? Map<String, dynamic>.from(event['fixture'] as Map)
+            : <String, dynamic>{};
+        final parsed = fixture['parsed'] is Map
+            ? Map<String, dynamic>.from(fixture['parsed'] as Map)
+            : <String, dynamic>{};
+        final fixtureName = fixture['fixture']?.toString() ?? eventType ?? '';
+        final parityOk = fixture['parityOk'] == true;
+        final planCount = parsed['toolPlanCount']?.toString() ?? '0';
+        final allowed = parsed['allowedPlanCount']?.toString() ?? '0';
+        final blocked = parsed['blockedPlanCount']?.toString() ?? '0';
+        final invalid = parsed['invalidArgumentCount']?.toString() ?? '0';
+        final unknown = parsed['unknownToolCount']?.toString() ?? '0';
+        _addActivity('[NATIVE-TOOL-PLAN] $fixtureName ok=$parityOk');
+        yield [
+          'Native ${(eventType ?? 'tool fixture').replaceAll('_', ' ')}',
+          '',
+          'fixture: $fixtureName',
+          'parityOk: $parityOk',
+          'toolPlanCount: $planCount',
+          'allowedPlanCount: $allowed',
+          'blockedPlanCount: $blocked',
+          'invalidArgumentCount: $invalid',
+          'unknownToolCount: $unknown',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_plan_summary') {
+        final summary = event['toolPlanSummary'] is Map
+            ? Map<String, dynamic>.from(event['toolPlanSummary'] as Map)
+            : <String, dynamic>{};
+        final names = summary['toolPlanNames'] is List
+            ? (summary['toolPlanNames'] as List).join(', ')
+            : '';
+        final fixtureParityOk = event['fixtureParityOk'] == true;
+        final validationOk = event['validationOk'] == true;
+        final planCount = summary['toolPlanCount']?.toString() ?? '0';
+        final allowed = summary['allowedPlanCount']?.toString() ?? '0';
+        final blocked = summary['blockedPlanCount']?.toString() ?? '0';
+        final finish = summary['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-TOOL-PLAN] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native tool plan summary',
+          '',
+          'fixtureParityOk: $fixtureParityOk',
+          'validationOk: $validationOk',
+          'toolPlanCount: $planCount',
+          'allowedPlanCount: $allowed',
+          'blockedPlanCount: $blocked',
+          'finishReason: $finish',
+          'toolPlanNames: $names',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        final toolPlanCount = event['toolPlanCount']?.toString() ?? '0';
+        final allowed = event['allowedPlanCount']?.toString() ?? '0';
+        final blocked = event['blockedPlanCount']?.toString() ?? '0';
+        _addActivity(
+          '[NATIVE-TOOL-PLAN] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native tool plan canary complete',
+            '',
+            'finishReason: $finishReason',
+            'toolPlanCount: $toolPlanCount',
+            'allowedPlanCount: $allowed',
+            'blockedPlanCount: $blocked',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-TOOL-PLAN] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native tool plan canary ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -5075,6 +5324,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeToolPlanPayload(message) != null) {
+      yield* _sendNativeToolPlanMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeProviderStreamParityPayload(message) != null) {
       yield* _sendNativeProviderStreamParityMessage(

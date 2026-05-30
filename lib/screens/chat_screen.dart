@@ -518,6 +518,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-transport-shim]',
       '[native-provider-live]',
       '[native-stream-parity]',
+      '[native-tool-plan]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];

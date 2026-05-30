@@ -495,6 +495,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-transport-shim-stream",
     "/gateway/chat-provider-live-canary-stream",
     "/gateway/chat-provider-stream-parser-parity-stream",
+    "/gateway/chat-provider-tool-plan-canary-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -1831,6 +1832,831 @@ function createMobileGatewayProbe({
           finishReason: cancellationFixture.cancelledFrame.finishReason
         }
       })
+    };
+  }
+
+  function nativeMobileToolCatalog() {
+    return [
+      {
+        functionName: "avatar_gesture",
+        gatewayName: "avatar.gesture",
+        aliases: [
+          "avatar.gesture",
+          "avatar_gesture",
+          "gesture",
+          "wave",
+          "dance",
+          "bow",
+          "pose"
+        ],
+        description:
+          "Capture an avatar gesture plan. The native canary records this plan only.",
+        parameters: {
+          type: "object",
+          properties: {
+            gesture: {
+              type: "string",
+              description: "Gesture or VRMA animation name."
+            },
+            intensity: {
+              type: "number",
+              minimum: 0,
+              maximum: 1
+            }
+          },
+          required: ["gesture"],
+          additionalProperties: false
+        },
+        sampleArguments: { gesture: "wave", intensity: 0.65 }
+      },
+      {
+        functionName: "camera_snap",
+        gatewayName: "camera.snap",
+        aliases: ["camera.snap", "camera_snap", "camera", "photo", "picture", "selfie"],
+        description:
+          "Capture a camera snapshot plan. The native canary does not open the camera.",
+        parameters: {
+          type: "object",
+          properties: {
+            facing: {
+              type: "string",
+              enum: ["back", "front"]
+            }
+          },
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: { facing: "back" }
+      },
+      {
+        functionName: "canvas_eval",
+        gatewayName: "canvas.eval",
+        aliases: ["canvas.eval", "canvas_eval", "canvas", "javascript", "js"],
+        description:
+          "Capture an in-app canvas JavaScript plan. The native canary does not run JavaScript.",
+        parameters: {
+          type: "object",
+          properties: {
+            js: {
+              type: "string",
+              description: "JavaScript to run in the in-app canvas."
+            }
+          },
+          required: ["js"],
+          additionalProperties: false
+        },
+        sampleArguments: { js: "document.title" }
+      },
+      {
+        functionName: "canvas_navigate",
+        gatewayName: "canvas.navigate",
+        aliases: ["canvas.navigate", "canvas_navigate", "navigate", "open url", "website"],
+        description:
+          "Capture an in-app canvas navigation plan. The native canary does not navigate.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: {
+              type: "string",
+              description: "Absolute URL to open in the in-app canvas."
+            }
+          },
+          required: ["url"],
+          additionalProperties: false
+        },
+        sampleArguments: { url: "https://example.com" }
+      },
+      {
+        functionName: "canvas_snapshot",
+        gatewayName: "canvas.snapshot",
+        aliases: ["canvas.snapshot", "canvas_snapshot", "snapshot", "screenshot"],
+        description:
+          "Capture an in-app canvas snapshot plan. The native canary does not capture pixels.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: {}
+      },
+      {
+        functionName: "haptic_vibrate",
+        gatewayName: "haptic.vibrate",
+        aliases: ["haptic.vibrate", "haptic_vibrate", "vibrate", "buzz", "haptic"],
+        description:
+          "Capture a vibration plan. The native canary does not vibrate the phone.",
+        parameters: {
+          type: "object",
+          properties: {
+            durationMs: {
+              type: "integer",
+              minimum: 50,
+              maximum: 2000
+            }
+          },
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: { durationMs: 250 }
+      },
+      {
+        functionName: "sensor_read",
+        gatewayName: "sensor.read",
+        aliases: ["sensor.read", "sensor_read", "sensor", "accelerometer", "gyroscope"],
+        description:
+          "Capture a phone sensor read plan. The native canary does not read sensors.",
+        parameters: {
+          type: "object",
+          properties: {
+            sensor: {
+              type: "string",
+              enum: ["accelerometer", "gyroscope", "magnetometer", "barometer"]
+            }
+          },
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: { sensor: "accelerometer" }
+      },
+      {
+        functionName: "sensor_list",
+        gatewayName: "sensor.list",
+        aliases: ["sensor.list", "sensor_list", "list sensors", "sensors"],
+        description:
+          "Capture a sensor list plan. The native canary does not query Android sensors.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: {}
+      },
+      {
+        functionName: "flash_status",
+        gatewayName: "flash.status",
+        aliases: ["flash.status", "flash_status", "torch", "flashlight", "flash"],
+        description:
+          "Capture a flashlight status plan. The native canary does not touch the flashlight.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: {}
+      },
+      {
+        functionName: "device_status",
+        gatewayName: "device.status",
+        aliases: ["device_status", "device.status", "battery", "device", "phone status"],
+        description:
+          "Capture a device status plan. The native canary does not query device state.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false
+        },
+        sampleArguments: {}
+      }
+    ];
+  }
+
+  function toolSchemaForCatalogEntry(entry) {
+    return {
+      type: "function",
+      function: {
+        name: entry.functionName,
+        description: entry.description,
+        parameters: entry.parameters
+      },
+      gatewayName: entry.gatewayName
+    };
+  }
+
+  function selectNativeMobileTools(payload, shape, { maxTools = 8 } = {}) {
+    const params = payload && typeof payload.params === "object" && payload.params !== null
+      ? payload.params
+      : {};
+    const message = typeof params.message === "string" ? params.message : "";
+    const lower = message.toLowerCase();
+    const hints = Array.isArray(shape.mobileToolHints) ? shape.mobileToolHints : [];
+    const asksAboutTools =
+      /\b(tool|tools|capabilit|what can you do|available)\b/.test(lower);
+    const catalog = nativeMobileToolCatalog();
+    const selected = [];
+
+    for (const entry of catalog) {
+      const aliasMatched = entry.aliases.some((alias) =>
+        lower.includes(alias.toLowerCase()) || hints.includes(alias)
+      );
+      if (aliasMatched || asksAboutTools) {
+        selected.push(entry);
+      }
+      if (selected.length >= maxTools) break;
+    }
+
+    if (selected.length === 0) {
+      selected.push(catalog[0]);
+    }
+
+    const toolSchemas = selected.map(toolSchemaForCatalogEntry);
+    return {
+      tools: selected,
+      toolSchemas,
+      toolFunctionNames: selected.map((entry) => entry.functionName).sort(),
+      gatewayToolNames: selected.map((entry) => entry.gatewayName).sort(),
+      toolAliasMap: Object.fromEntries(
+        selected.map((entry) => [entry.functionName, entry.gatewayName])
+      ),
+      selectionHash: metadataHash({
+        toolFunctionNames: selected.map((entry) => entry.functionName).sort(),
+        gatewayToolNames: selected.map((entry) => entry.gatewayName).sort()
+      })
+    };
+  }
+
+  function providerToolPlanRequestBuilder(envelope, shape, queued, payload) {
+    const selected = selectNativeMobileTools(payload, shape);
+    const normalizedHeaders = {
+      accept: "text/event-stream",
+      authorization: "Bearer <redacted-or-missing>",
+      "content-type": "application/json",
+      "http-referer": "<redacted-or-missing>",
+      "x-title": "<redacted-or-missing>"
+    };
+    const normalizedBody = {
+      model: envelope.providerModel,
+      messages: [
+        {
+          role: "system",
+          content: "<redacted>",
+          chars: 163
+        },
+        {
+          role: "user",
+          content: "<redacted>",
+          chars: shape.messageChars
+        }
+      ],
+      stream: true,
+      tools: selected.toolSchemas,
+      tool_choice: "auto"
+    };
+    const headerValidation = {
+      contentTypeOk: normalizedHeaders["content-type"] === "application/json",
+      acceptOk: normalizedHeaders.accept === "text/event-stream",
+      authorizationPolicy: "required_for_future_network_call",
+      authMaterialStatus: "not_loaded_for_tool_plan_canary",
+      forbiddenHeadersPresent: false,
+      rawSecretsPresent: false
+    };
+    const bodyValidation = {
+      modelPresent: typeof normalizedBody.model === "string" && normalizedBody.model.length > 0,
+      messagesNormalized: normalizedBody.messages.length === 2,
+      rawPromptRedacted: normalizedBody.messages.every((message) =>
+        message.content === "<redacted>"
+      ),
+      streamMode: normalizedBody.stream === true,
+      toolSchemasAttached: normalizedBody.tools.length > 0,
+      toolChoice: normalizedBody.tool_choice,
+      toolNamesValid: selected.toolFunctionNames.every((name) =>
+        /^[a-zA-Z0-9_-]{1,64}$/.test(name)
+      )
+    };
+    const headersHash = metadataHash(normalizedHeaders);
+    const bodyHash = metadataHash(normalizedBody);
+    const requestHash = metadataHash({
+      provider: envelope.provider,
+      providerModel: envelope.providerModel,
+      transport: envelope.transport,
+      headers: normalizedHeaders,
+      body: normalizedBody,
+      envelopeHash: envelope.envelopeHash,
+      toolSelectionHash: selected.selectionHash,
+      transportInvocationEnabled: false,
+      providerCallsEnabled: false,
+      executionEnabled: false
+    });
+
+    return {
+      provider: envelope.provider,
+      requestedModel: envelope.requestedModel,
+      providerModel: envelope.providerModel,
+      transport: envelope.transport,
+      method: envelope.method,
+      endpointRedacted: envelope.endpointRedacted,
+      normalizedHeaders,
+      normalizedBody,
+      headerValidation,
+      bodyValidation,
+      selectedToolCount: selected.tools.length,
+      toolFunctionNames: selected.toolFunctionNames,
+      gatewayToolNames: selected.gatewayToolNames,
+      toolAliasMap: selected.toolAliasMap,
+      toolSelectionHash: selected.selectionHash,
+      headersHash,
+      bodyHash,
+      requestHash,
+      validationOk:
+        headerValidation.contentTypeOk &&
+        headerValidation.acceptOk &&
+        headerValidation.forbiddenHeadersPresent === false &&
+        headerValidation.rawSecretsPresent === false &&
+        bodyValidation.modelPresent &&
+        bodyValidation.messagesNormalized &&
+        bodyValidation.rawPromptRedacted &&
+        bodyValidation.streamMode &&
+        bodyValidation.toolSchemasAttached &&
+        bodyValidation.toolNamesValid,
+      request: {
+        metadataHash: shape.metadataHash,
+        sessionKey: shape.sessionKey,
+        messageChars: shape.messageChars,
+        mobileToolHints: shape.mobileToolHints
+      },
+      run: {
+        requestId: queued.requestId,
+        runId: queued.runId
+      },
+      providerCallsEnabled: false,
+      transportInvocationEnabled: false,
+      executionEnabled: false,
+      toolExecutionEnabled: false,
+      stopBefore: "provider_fetch_or_tool_dispatch",
+      transportGate: {
+        enabled: false,
+        status: "blocked",
+        reason: "tool_plan_capture_only_until_canary_gate",
+        blockedBefore: "fetch_or_tool_dispatch"
+      }
+    };
+  }
+
+  function createProviderToolPlanParser({
+    source,
+    canaryMode,
+    runId,
+    allowedTools,
+    toolAliasMap,
+    writeEvent = null
+  }) {
+    const allowed = new Set(allowedTools || []);
+    const aliasMap = toolAliasMap || {};
+    const calls = new Map();
+    let finishReason = null;
+    let doneSeen = false;
+    let warningCount = 0;
+    let dataLineCount = 0;
+    let parsedJsonCount = 0;
+    const warnings = [];
+
+    function warning(code, message, rawChunk) {
+      warningCount += 1;
+      const entry = {
+        code,
+        message,
+        rawChunk: String(rawChunk || "").slice(0, 500)
+      };
+      warnings.push(entry);
+      if (writeEvent) {
+        writeEvent("tool_plan_parse_warning", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId,
+          warning: entry
+        });
+      }
+    }
+
+    function ensureCall(rawCall, fallbackIndex) {
+      const index = Number.isInteger(rawCall?.index) ? rawCall.index : fallbackIndex;
+      const key = Number.isInteger(index)
+        ? `index:${index}`
+        : `call:${calls.size}`;
+      if (!calls.has(key)) {
+        calls.set(key, {
+          index,
+          id: null,
+          type: "function",
+          functionName: "",
+          gatewayName: null,
+          argumentsText: ""
+        });
+      }
+      return calls.get(key);
+    }
+
+    function acceptToolCalls(rawToolCalls) {
+      if (!Array.isArray(rawToolCalls)) return;
+      rawToolCalls.forEach((rawCall, fallbackIndex) => {
+        if (!rawCall || typeof rawCall !== "object") return;
+        const call = ensureCall(rawCall, fallbackIndex);
+        if (typeof rawCall.id === "string" && rawCall.id.length > 0) {
+          call.id = rawCall.id;
+        }
+        if (typeof rawCall.type === "string" && rawCall.type.length > 0) {
+          call.type = rawCall.type;
+        }
+        const fn = rawCall.function && typeof rawCall.function === "object"
+          ? rawCall.function
+          : {};
+        if (typeof fn.name === "string" && fn.name.length > 0) {
+          call.functionName = fn.name;
+          call.gatewayName = aliasMap[fn.name] || fn.name;
+        }
+        if (typeof fn.arguments === "string") {
+          call.argumentsText += fn.arguments;
+        }
+        if (writeEvent && call.functionName) {
+          writeEvent("tool_plan_delta", {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId,
+            index: call.index,
+            id: call.id,
+            functionName: call.functionName,
+            gatewayName: call.gatewayName,
+            argumentChars: call.argumentsText.length
+          });
+        }
+      });
+    }
+
+    function acceptDecoded(decoded) {
+      if (!decoded || typeof decoded !== "object") return;
+      const choices = Array.isArray(decoded.choices) ? decoded.choices : [];
+      const choice = choices[0] && typeof choices[0] === "object"
+        ? choices[0]
+        : null;
+      if (!choice) return;
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+      const delta = choice.delta && typeof choice.delta === "object"
+        ? choice.delta
+        : null;
+      const message = choice.message && typeof choice.message === "object"
+        ? choice.message
+        : null;
+      acceptToolCalls(delta?.tool_calls);
+      acceptToolCalls(message?.tool_calls);
+    }
+
+    function acceptData(data) {
+      const trimmed = String(data || "").trim();
+      if (trimmed.length === 0) return;
+      dataLineCount += 1;
+      if (trimmed === "[DONE]") {
+        doneSeen = true;
+        if (!finishReason) finishReason = "done";
+        return;
+      }
+
+      let decoded;
+      try {
+        decoded = JSON.parse(trimmed);
+        parsedJsonCount += 1;
+      } catch (error) {
+        warning("tool_plan_chunk_parse_failed", error.message || String(error), trimmed);
+        return;
+      }
+      acceptDecoded(decoded);
+    }
+
+    function acceptLine(line) {
+      const trimmed = String(line || "").trim();
+      if (trimmed.length === 0) return;
+      if (!trimmed.startsWith("data:")) return;
+      acceptData(trimmed.slice(5));
+    }
+
+    function summary() {
+      const plans = Array.from(calls.values()).map((call) => {
+        let parsedArguments = null;
+        let argumentsOk = false;
+        let argumentError = null;
+        try {
+          parsedArguments = call.argumentsText.trim().length === 0
+            ? {}
+            : JSON.parse(call.argumentsText);
+          argumentsOk =
+            parsedArguments !== null &&
+            typeof parsedArguments === "object" &&
+            !Array.isArray(parsedArguments);
+        } catch (error) {
+          argumentError = error.message || String(error);
+        }
+        const allowedName = allowed.has(call.functionName);
+        const blockedReason = !allowedName
+          ? "tool_not_in_attached_schema"
+          : (!argumentsOk ? "invalid_tool_arguments" : null);
+        const gatewayName = call.gatewayName || aliasMap[call.functionName] || call.functionName;
+        return {
+          index: call.index,
+          id: call.id,
+          type: call.type,
+          functionName: call.functionName,
+          gatewayName,
+          argumentsTextChars: call.argumentsText.length,
+          arguments: argumentsOk ? parsedArguments : null,
+          argumentsOk,
+          argumentError,
+          allowedName,
+          blockedReason,
+          executionEnabled: false,
+          planHash: metadataHash({
+            functionName: call.functionName,
+            gatewayName,
+            argumentsText: call.argumentsText,
+            allowedName,
+            argumentsOk,
+            blockedReason
+          })
+        };
+      });
+      const allowedPlanCount = plans.filter((plan) =>
+        plan.allowedName && plan.argumentsOk
+      ).length;
+      const blockedPlanCount = plans.filter((plan) => plan.blockedReason).length;
+      const invalidArgumentCount = plans.filter((plan) =>
+        plan.blockedReason === "invalid_tool_arguments"
+      ).length;
+      const unknownToolCount = plans.filter((plan) =>
+        plan.blockedReason === "tool_not_in_attached_schema"
+      ).length;
+      const toolPlanHash = metadataHash({
+        plans: plans.map((plan) => ({
+          functionName: plan.functionName,
+          gatewayName: plan.gatewayName,
+          planHash: plan.planHash,
+          blockedReason: plan.blockedReason
+        })),
+        finishReason,
+        doneSeen,
+        warningCount
+      });
+
+      return {
+        toolPlanCount: plans.length,
+        toolPlanNames: plans.map((plan) => plan.functionName).sort(),
+        gatewayToolNames: plans.map((plan) => plan.gatewayName).sort(),
+        allowedPlanCount,
+        blockedPlanCount,
+        invalidArgumentCount,
+        unknownToolCount,
+        finishReason,
+        doneSeen,
+        warningCount,
+        dataLineCount,
+        parsedJsonCount,
+        warnings,
+        plans,
+        toolPlanHash,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      };
+    }
+
+    return {
+      acceptData,
+      acceptLine,
+      summary
+    };
+  }
+
+  function toolArgumentsForFixture(tool) {
+    return tool?.sampleArguments && typeof tool.sampleArguments === "object"
+      ? tool.sampleArguments
+      : {};
+  }
+
+  function parseStreamingToolPlanFixture(toolSelection) {
+    const tool = toolSelection.tools[0] || nativeMobileToolCatalog()[0];
+    const parser = createProviderToolPlanParser({
+      source: "provider-tool-plan-canary",
+      canaryMode: "provider-tool-plan-canary",
+      runId: "fixture",
+      allowedTools: toolSelection.toolFunctionNames,
+      toolAliasMap: toolSelection.toolAliasMap
+    });
+    const argsText = JSON.stringify(toolArgumentsForFixture(tool));
+    const first = argsText.slice(0, Math.ceil(argsText.length / 2));
+    const second = argsText.slice(first.length);
+    parser.acceptData(JSON.stringify({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_native_tool_plan_0",
+                type: "function",
+                function: {
+                  name: tool.functionName,
+                  arguments: first
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }));
+    parser.acceptData(JSON.stringify({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                function: {
+                  arguments: second
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }));
+    parser.acceptData(JSON.stringify({
+      choices: [
+        {
+          delta: {},
+          finish_reason: "tool_calls"
+        }
+      ]
+    }));
+    parser.acceptData("[DONE]");
+    const parsed = parser.summary();
+    return {
+      fixture: "openai-compatible-streaming-tool-call",
+      expectedTool: tool.functionName,
+      parsed,
+      parityOk:
+        parsed.toolPlanCount === 1 &&
+        parsed.allowedPlanCount === 1 &&
+        parsed.blockedPlanCount === 0 &&
+        parsed.invalidArgumentCount === 0 &&
+        parsed.finishReason === "tool_calls" &&
+        parsed.doneSeen === true
+    };
+  }
+
+  function parseMessageToolPlanFixture(toolSelection) {
+    const tool = toolSelection.tools[1] || toolSelection.tools[0] || nativeMobileToolCatalog()[0];
+    const parser = createProviderToolPlanParser({
+      source: "provider-tool-plan-canary",
+      canaryMode: "provider-tool-plan-canary",
+      runId: "fixture",
+      allowedTools: toolSelection.toolFunctionNames,
+      toolAliasMap: toolSelection.toolAliasMap
+    });
+    parser.acceptData(JSON.stringify({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "call_native_tool_plan_1",
+                type: "function",
+                function: {
+                  name: tool.functionName,
+                  arguments: JSON.stringify(toolArgumentsForFixture(tool))
+                }
+              }
+            ]
+          },
+          finish_reason: "tool_calls"
+        }
+      ]
+    }));
+    const parsed = parser.summary();
+    return {
+      fixture: "openai-compatible-message-tool-call",
+      expectedTool: tool.functionName,
+      parsed,
+      parityOk:
+        parsed.toolPlanCount === 1 &&
+        parsed.allowedPlanCount === 1 &&
+        parsed.blockedPlanCount === 0 &&
+        parsed.invalidArgumentCount === 0 &&
+        parsed.finishReason === "tool_calls"
+    };
+  }
+
+  function parseUnknownToolFixture(toolSelection) {
+    const parser = createProviderToolPlanParser({
+      source: "provider-tool-plan-canary",
+      canaryMode: "provider-tool-plan-canary",
+      runId: "fixture",
+      allowedTools: toolSelection.toolFunctionNames,
+      toolAliasMap: toolSelection.toolAliasMap
+    });
+    parser.acceptData(JSON.stringify({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_unknown_tool",
+                type: "function",
+                function: {
+                  name: "unknown_destructive_tool",
+                  arguments: "{}"
+                }
+              }
+            ]
+          },
+          finish_reason: "tool_calls"
+        }
+      ]
+    }));
+    const parsed = parser.summary();
+    return {
+      fixture: "unknown-tool-rejected",
+      parsed,
+      parityOk:
+        parsed.toolPlanCount === 1 &&
+        parsed.allowedPlanCount === 0 &&
+        parsed.blockedPlanCount === 1 &&
+        parsed.unknownToolCount === 1 &&
+        parsed.plans[0]?.blockedReason === "tool_not_in_attached_schema"
+    };
+  }
+
+  function parseMalformedArgumentsFixture(toolSelection) {
+    const tool = toolSelection.tools[0] || nativeMobileToolCatalog()[0];
+    const parser = createProviderToolPlanParser({
+      source: "provider-tool-plan-canary",
+      canaryMode: "provider-tool-plan-canary",
+      runId: "fixture",
+      allowedTools: toolSelection.toolFunctionNames,
+      toolAliasMap: toolSelection.toolAliasMap
+    });
+    parser.acceptData(JSON.stringify({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_bad_args",
+                type: "function",
+                function: {
+                  name: tool.functionName,
+                  arguments: "{not-json"
+                }
+              }
+            ]
+          },
+          finish_reason: "tool_calls"
+        }
+      ]
+    }));
+    const parsed = parser.summary();
+    return {
+      fixture: "malformed-tool-arguments-rejected",
+      expectedTool: tool.functionName,
+      parsed,
+      parityOk:
+        parsed.toolPlanCount === 1 &&
+        parsed.allowedPlanCount === 0 &&
+        parsed.blockedPlanCount === 1 &&
+        parsed.invalidArgumentCount === 1 &&
+        parsed.plans[0]?.blockedReason === "invalid_tool_arguments"
+    };
+  }
+
+  function providerToolPlanFixtures(toolSelection) {
+    const streamingFixture = parseStreamingToolPlanFixture(toolSelection);
+    const messageFixture = parseMessageToolPlanFixture(toolSelection);
+    const unknownFixture = parseUnknownToolFixture(toolSelection);
+    const malformedFixture = parseMalformedArgumentsFixture(toolSelection);
+    const parityOk =
+      streamingFixture.parityOk &&
+      messageFixture.parityOk &&
+      unknownFixture.parityOk &&
+      malformedFixture.parityOk;
+    const fixtureHash = metadataHash({
+      streamingHash: streamingFixture.parsed.toolPlanHash,
+      messageHash: messageFixture.parsed.toolPlanHash,
+      unknownHash: unknownFixture.parsed.toolPlanHash,
+      malformedHash: malformedFixture.parsed.toolPlanHash,
+      parityOk
+    });
+    return {
+      streamingFixture,
+      messageFixture,
+      unknownFixture,
+      malformedFixture,
+      parityOk,
+      fixtureHash
     };
   }
 
@@ -4030,6 +4856,318 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderToolPlanCanaryStream(req, res) {
+    const source = "provider-tool-plan-canary";
+    const canaryMode = "provider-tool-plan-canary";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder =
+        providerToolPlanRequestBuilder(envelope, shape, queued, payload);
+      const fixtureTools = nativeMobileToolCatalog().filter((entry) =>
+        requestBuilder.toolFunctionNames.includes(entry.functionName)
+      );
+      const toolSelection = {
+        tools: fixtureTools,
+        toolFunctionNames: requestBuilder.toolFunctionNames,
+        gatewayToolNames: requestBuilder.gatewayToolNames,
+        toolAliasMap: requestBuilder.toolAliasMap,
+        selectionHash: requestBuilder.toolSelectionHash
+      };
+      const fixtures = providerToolPlanFixtures(toolSelection);
+      const validationOk = requestBuilder.validationOk === true && fixtures.parityOk;
+      const ack = {
+        parsed,
+        route: "tool_plan_capture",
+        routeStatus: "provider_tool_plan_capture_complete",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "native captured provider tool-call plans from fixtures with dispatch disabled",
+        provider: requestBuilder.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: requestBuilder.providerModel,
+        transport: requestBuilder.transport,
+        headersHash: requestBuilder.headersHash,
+        bodyHash: requestBuilder.bodyHash,
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        fixtureHash: fixtures.fixtureHash,
+        fixtureParityOk: fixtures.parityOk,
+        validationOk,
+        selectedToolCount: requestBuilder.selectedToolCount,
+        toolPlanCount: fixtures.streamingFixture.parsed.toolPlanCount,
+        allowedPlanCount: fixtures.streamingFixture.parsed.allowedPlanCount,
+        blockedPlanCount: fixtures.streamingFixture.parsed.blockedPlanCount,
+        providerCallStarted: false,
+        providerCallsEnabled: false,
+        transportInvocationEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-tool-plan-canary"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: false,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "provider_tool_plan_capture",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("tool_catalog", {
+        ok: true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        selectedToolCount: requestBuilder.selectedToolCount,
+        toolFunctionNames: requestBuilder.toolFunctionNames,
+        gatewayToolNames: requestBuilder.gatewayToolNames,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        schemaChars: JSON.stringify(requestBuilder.normalizedBody.tools).length,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      });
+
+      writeEvent("provider_request", {
+        ok: requestBuilder.validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        providerRequest: {
+          provider: requestBuilder.provider,
+          requestedModel: requestBuilder.requestedModel,
+          providerModel: requestBuilder.providerModel,
+          transport: requestBuilder.transport,
+          endpointRedacted: requestBuilder.endpointRedacted,
+          headersHash: requestBuilder.headersHash,
+          bodyHash: requestBuilder.bodyHash,
+          requestHash: requestBuilder.requestHash,
+          selectedToolCount: requestBuilder.selectedToolCount,
+          toolFunctionNames: requestBuilder.toolFunctionNames,
+          gatewayToolNames: requestBuilder.gatewayToolNames,
+          bodyValidation: requestBuilder.bodyValidation,
+          transportInvocationEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          stopBefore: requestBuilder.stopBefore
+        }
+      });
+
+      writeEvent("streaming_tool_fixture", {
+        ok: fixtures.streamingFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.streamingFixture
+      });
+      writeEvent("message_tool_fixture", {
+        ok: fixtures.messageFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.messageFixture
+      });
+      writeEvent("unknown_tool_fixture", {
+        ok: fixtures.unknownFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.unknownFixture
+      });
+      writeEvent("malformed_arguments_fixture", {
+        ok: fixtures.malformedFixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        fixture: fixtures.malformedFixture
+      });
+
+      writeEvent("tool_plan_summary", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        toolPlanSummary: fixtures.streamingFixture.parsed,
+        fixtureHash: fixtures.fixtureHash,
+        fixtureParityOk: fixtures.parityOk,
+        validationOk,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      });
+
+      writeEvent("end", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        routeStatus: validationOk
+          ? "provider_tool_plan_capture_complete"
+          : "provider_tool_plan_capture_failed",
+        finishReason: validationOk ? "tool_plan_capture_complete" : "tool_plan_capture_failed",
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        fixtureHash: fixtures.fixtureHash,
+        fixtureParityOk: fixtures.parityOk,
+        validationOk,
+        selectedToolCount: requestBuilder.selectedToolCount,
+        toolPlanCount: fixtures.streamingFixture.parsed.toolPlanCount,
+        allowedPlanCount: fixtures.streamingFixture.parsed.allowedPlanCount,
+        blockedPlanCount: fixtures.streamingFixture.parsed.blockedPlanCount,
+        invalidArgumentCount: fixtures.streamingFixture.parsed.invalidArgumentCount,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      });
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_provider_tool_plan_canary_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_tool_plan_canary_failed",
+          message: error.message || String(error),
+          raw: error.stack || error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -4187,6 +5325,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-stream-parser-parity-stream") {
       handleChatProviderStreamParserParityStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-tool-plan-canary-stream") {
+      handleChatProviderToolPlanCanaryStream(req, res);
       return true;
     }
 

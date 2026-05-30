@@ -1231,6 +1231,191 @@ class NativeGatewayShadowParityService {
     }
   }
 
+  static Stream<Map<String, dynamic>> streamProviderToolPlanCanaryChatSendFrame(
+    Map<String, dynamic> frame, {
+    required void Function(String message) log,
+  }) async* {
+    if (!_primaryCanaryDiagnosticsEnabled) {
+      throw StateError('native primary canary diagnostics disabled');
+    }
+
+    final local = _redactedWsChatSendShape(frame);
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse(
+          '${AppConstants.nativeGatewaySmokeUrl}'
+          '/gateway/chat-provider-tool-plan-canary-stream',
+        ),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(frame);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+
+      if (response.statusCode != 202) {
+        final body = await response.stream.bytesToString();
+        throw StateError(
+          'native provider tool plan canary HTTP ${response.statusCode}: $body',
+        );
+      }
+
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map<String, dynamic>) continue;
+
+        if (decoded['event'] == 'ack') {
+          final ack = _redactedDryRunAck(decoded);
+          final hashMatches = local['metadataHash'] == ack['metadataHash'];
+          log(
+            '[NATIVE-TOOL-PLAN] ack: ${jsonEncode({
+                  'ok': ack['ok'],
+                  'parsed': ack['parsed'],
+                  'route': ack['route'],
+                  'routeStatus': ack['routeStatus'],
+                  'source': ack['source'],
+                  'canaryMode': ack['canaryMode'],
+                  'directCanary': ack['directCanary'],
+                  'localHash': local['metadataHash'],
+                  'canaryHash': ack['metadataHash'],
+                  'hashMatches': hashMatches,
+                  'acceptedForRouting': ack['acceptedForRouting'],
+                  'acceptedForQueue': ack['acceptedForQueue'],
+                  'provider': ack['provider'],
+                  'providerModel': ack['providerModel'],
+                  'requestHash': ack['requestHash'],
+                  'toolSelectionHash': ack['toolSelectionHash'],
+                  'fixtureHash': ack['fixtureHash'],
+                  'fixtureParityOk': ack['fixtureParityOk'],
+                  'validationOk': ack['validationOk'],
+                  'selectedToolCount': ack['selectedToolCount'],
+                  'toolPlanCount': ack['toolPlanCount'],
+                  'allowedPlanCount': ack['allowedPlanCount'],
+                  'blockedPlanCount': ack['blockedPlanCount'],
+                  'providerCallsEnabled': ack['providerCallsEnabled'],
+                  'transportInvocationEnabled':
+                      ack['transportInvocationEnabled'],
+                  'executionEnabled': ack['executionEnabled'],
+                  'toolExecutionEnabled': ack['toolExecutionEnabled'],
+                  'messageChars': ack['messageChars'],
+                })}',
+          );
+          yield {
+            ...decoded,
+            'ack': {
+              ...ack,
+              'localHash': local['metadataHash'],
+              'hashMatches': hashMatches,
+            },
+          };
+          continue;
+        }
+
+        if (decoded['event'] == 'tool_catalog') {
+          log(
+            '[NATIVE-TOOL-PLAN] catalog: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'selectedToolCount': decoded['selectedToolCount'],
+                  'toolFunctionNames': decoded['toolFunctionNames'],
+                  'gatewayToolNames': decoded['gatewayToolNames'],
+                  'toolSelectionHash': decoded['toolSelectionHash'],
+                  'schemaChars': decoded['schemaChars'],
+                  'toolExecutionEnabled': decoded['toolExecutionEnabled'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'provider_request') {
+          final providerRequest = decoded['providerRequest'] is Map
+              ? Map<String, dynamic>.from(decoded['providerRequest'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-TOOL-PLAN] request: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'provider': providerRequest['provider'],
+                  'providerModel': providerRequest['providerModel'],
+                  'requestHash': providerRequest['requestHash'],
+                  'bodyHash': providerRequest['bodyHash'],
+                  'selectedToolCount': providerRequest['selectedToolCount'],
+                  'toolFunctionNames': providerRequest['toolFunctionNames'],
+                  'providerCallsEnabled':
+                      providerRequest['providerCallsEnabled'] == true,
+                  'toolExecutionEnabled':
+                      providerRequest['toolExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'streaming_tool_fixture' ||
+            decoded['event'] == 'message_tool_fixture' ||
+            decoded['event'] == 'unknown_tool_fixture' ||
+            decoded['event'] == 'malformed_arguments_fixture') {
+          final fixture = decoded['fixture'] is Map
+              ? Map<String, dynamic>.from(decoded['fixture'] as Map)
+              : <String, dynamic>{};
+          final parsed = fixture['parsed'] is Map
+              ? Map<String, dynamic>.from(fixture['parsed'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-TOOL-PLAN] ${decoded['event']}: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'fixture': fixture['fixture'],
+                  'ok': fixture['parityOk'] == true,
+                  'toolPlanCount': parsed['toolPlanCount'],
+                  'allowedPlanCount': parsed['allowedPlanCount'],
+                  'blockedPlanCount': parsed['blockedPlanCount'],
+                  'invalidArgumentCount': parsed['invalidArgumentCount'],
+                  'unknownToolCount': parsed['unknownToolCount'],
+                  'toolPlanHash': parsed['toolPlanHash'],
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'tool_plan_summary') {
+          final summary = decoded['toolPlanSummary'] is Map
+              ? Map<String, dynamic>.from(decoded['toolPlanSummary'] as Map)
+              : <String, dynamic>{};
+          log(
+            '[NATIVE-TOOL-PLAN] summary: ${jsonEncode({
+                  'runId': decoded['runId'],
+                  'ok': decoded['ok'] == true,
+                  'toolPlanCount': summary['toolPlanCount'],
+                  'allowedPlanCount': summary['allowedPlanCount'],
+                  'blockedPlanCount': summary['blockedPlanCount'],
+                  'finishReason': summary['finishReason'],
+                  'toolPlanHash': summary['toolPlanHash'],
+                  'fixtureParityOk': decoded['fixtureParityOk'] == true,
+                  'validationOk': decoded['validationOk'] == true,
+                  'toolExecutionEnabled':
+                      decoded['toolExecutionEnabled'] == true,
+                })}',
+          );
+        }
+
+        if (decoded['event'] == 'error') {
+          log(
+            '[NATIVE-TOOL-PLAN] error: ${jsonEncode({
+                  'error': decoded['error'],
+                })}',
+          );
+        }
+
+        yield decoded;
+      }
+    } catch (e) {
+      _logNativeToolPlanSkip(log, e);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
   static void _remember(NativeGatewayShadowParityReport report) {
     _recentReports.add({
       'at': DateTime.now().toIso8601String(),
@@ -1453,9 +1638,15 @@ class NativeGatewayShadowParityService {
       'bodyHash': ack['bodyHash'],
       'requestHash': ack['requestHash'],
       'transportHash': ack['transportHash'],
+      'toolSelectionHash': ack['toolSelectionHash'],
       'fixtureHash': ack['fixtureHash'],
       'fixtureParityOk': ack['fixtureParityOk'] == true,
       'validationOk': ack['validationOk'] == true,
+      'selectedToolCount': ack['selectedToolCount'],
+      'toolPlanCount': ack['toolPlanCount'],
+      'allowedPlanCount': ack['allowedPlanCount'],
+      'blockedPlanCount': ack['blockedPlanCount'],
+      'toolExecutionEnabled': ack['toolExecutionEnabled'] == true,
       'endpointHost': ack['endpointHost'],
       'endpointPath': ack['endpointPath'],
       'maxTokens': ack['maxTokens'],
@@ -1663,6 +1854,16 @@ class NativeGatewayShadowParityService {
   ) {
     log(
       '[NATIVE-STREAM-PARITY] native stream parser parity failed '
+      '(${error.runtimeType})',
+    );
+  }
+
+  static void _logNativeToolPlanSkip(
+    void Function(String message) log,
+    Object error,
+  ) {
+    log(
+      '[NATIVE-TOOL-PLAN] native tool plan canary failed '
       '(${error.runtimeType})',
     );
   }
