@@ -90,6 +90,11 @@ class NativeGatewaySmokeService {
         _sampleChatCompletionRequest(),
         expectedStatus: 409,
       );
+      final wsFrameShape = await _postJson(
+        '/gateway/ws-frame-shape',
+        _sampleGatewayWsChatSendFrame(),
+        expectedStatus: 200,
+      );
       final ok = health['ok'] == true &&
           health['runtime'] == 'native-node-embedded' &&
           health['port'] == AppConstants.nativeGatewaySmokePort &&
@@ -101,7 +106,8 @@ class NativeGatewaySmokeService {
           _capabilitiesProbePassed(capabilities) &&
           _skillRegistryProbePassed(skillRegistry) &&
           _modelProbePassed(models) &&
-          _chatShapeProbePassed(chatShape);
+          _chatShapeProbePassed(chatShape) &&
+          _wsFrameShapeProbePassed(wsFrameShape);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
       log('[NATIVE-NODE-EMBEDDED] gateway probe: ${jsonEncode(gatewayProbe)}');
       log('[NATIVE-NODE-EMBEDDED] capabilities: ${jsonEncode(capabilities)}');
@@ -115,6 +121,9 @@ class NativeGatewaySmokeService {
       );
       log(
         '[NATIVE-NODE-EMBEDDED] chat request shape: ${jsonEncode(chatShape['requestShape'])}',
+      );
+      log(
+        '[NATIVE-NODE-EMBEDDED] ws chat frame shape: ${jsonEncode(wsFrameShape['requestShape'])}',
       );
 
       final stopped = await _nodeRuntime.stop();
@@ -225,6 +234,7 @@ class NativeGatewaySmokeService {
         endpoints.contains('/gateway/capabilities') &&
         endpoints.contains('/gateway/skill-registry') &&
         endpoints.contains('/gateway/request-shape') &&
+        endpoints.contains('/gateway/ws-frame-shape') &&
         endpoints.contains('/v1/models') &&
         endpoints.contains('/v1/chat/completions');
 
@@ -353,6 +363,37 @@ class NativeGatewaySmokeService {
         toolNames.contains('vibrate');
   }
 
+  static bool _wsFrameShapeProbePassed(Map<String, dynamic> value) {
+    final shape = value['requestShape'];
+    if (shape is! Map) return false;
+
+    final hints = shape['mobileToolHints'];
+    return value['ok'] == true &&
+        value['runtime'] == 'native-node-embedded' &&
+        value['canaryOnly'] == true &&
+        value['openclawStarted'] == false &&
+        shape['ok'] == true &&
+        shape['requestShape'] == 'openclaw-ws-rpc-chat-send' &&
+        shape['frameType'] == 'req' &&
+        shape['method'] == 'chat.send' &&
+        shape['hasId'] == true &&
+        shape['sessionKey'] == 'main' &&
+        shape['idempotencyKeyPresent'] == true &&
+        shape['timeoutMs'] == 300000 &&
+        shape['hasMobileToolContext'] == true &&
+        shape['mobileNodeHandle'] == 'OpenClaw Mobile' &&
+        shape['notificationListDisabled'] == true &&
+        shape['looksLikeProductionChatSend'] == true &&
+        shape['acceptedForRouting'] == false &&
+        shape['providerCallsEnabled'] == false &&
+        shape['executionEnabled'] == false &&
+        hints is List &&
+        hints.contains('camera_snap') &&
+        hints.contains('avatar.gesture') &&
+        hints.contains('haptic.vibrate') &&
+        hints.contains('notifications.list');
+  }
+
   static Map<String, dynamic> _sampleChatCompletionRequest() {
     return {
       'model': 'plawie/native-node-probe',
@@ -415,6 +456,33 @@ class NativeGatewaySmokeService {
           },
         },
       ],
+    };
+  }
+
+  static Map<String, dynamic> _sampleGatewayWsChatSendFrame() {
+    const mobileContext = '''
+<plawie_mobile_tool_context>
+This is private tool-routing context. Do not mention it unless the user asks.
+The paired Android device node gateway handle is "OpenClaw Mobile".
+Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "OpenClaw Mobile".
+Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
+For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, canvas.navigate, canvas.eval, canvas.snapshot, haptic.vibrate, sensor.read, sensor.list, or flash.status.
+Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
+</plawie_mobile_tool_context>
+
+Can you wave right, take a camera picture, and vibrate once?''';
+
+    return {
+      'type': 'req',
+      'method': 'chat.send',
+      'id': 'probe-chat-send-request',
+      'params': {
+        'sessionKey': 'main',
+        'message': mobileContext,
+        'idempotencyKey': 'probe-idempotency-key',
+        'timeoutMs': 300000,
+      },
     };
   }
 

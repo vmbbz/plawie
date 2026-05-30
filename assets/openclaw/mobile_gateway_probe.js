@@ -175,6 +175,69 @@ function summarizeChatRequest(payload) {
   };
 }
 
+function extractMobileNodeHandle(message) {
+  if (typeof message !== "string") return null;
+  const match = message.match(/gateway handle is "([^"]+)"/);
+  return match ? match[1] : null;
+}
+
+function summarizeGatewayWsFrame(payload) {
+  const params = payload && typeof payload.params === "object" && payload.params !== null
+    ? payload.params
+    : {};
+  const message = typeof params.message === "string" ? params.message : "";
+  const sessionKey = typeof params.sessionKey === "string" ? params.sessionKey : null;
+  const idempotencyKey = typeof params.idempotencyKey === "string"
+    ? params.idempotencyKey
+    : null;
+  const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : null;
+  const mobileToolHints = [
+    "camera_snap",
+    "device_status",
+    "avatar.gesture",
+    "canvas.navigate",
+    "canvas.eval",
+    "canvas.snapshot",
+    "haptic.vibrate",
+    "sensor.read",
+    "sensor.list",
+    "flash.status",
+    "notifications.list"
+  ].filter((hint) => message.includes(hint));
+
+  return {
+    ok: true,
+    requestShape: "openclaw-ws-rpc-chat-send",
+    frameType: payload?.type ?? null,
+    method: payload?.method ?? null,
+    hasId: typeof payload?.id === "string" && payload.id.length > 0,
+    hasParams: Object.keys(params).length > 0,
+    sessionKey,
+    messageChars: message.length,
+    hasMessage: message.length > 0,
+    idempotencyKeyPresent: idempotencyKey != null && idempotencyKey.length > 0,
+    timeoutMs,
+    hasMobileToolContext: message.includes("<plawie_mobile_tool_context>"),
+    mobileNodeHandle: extractMobileNodeHandle(message),
+    notificationListDisabled:
+      message.includes("Notification listing/reading is not currently exposed"),
+    mobileToolHints,
+    looksLikeProductionChatSend:
+      payload?.type === "req" &&
+      payload?.method === "chat.send" &&
+      typeof payload?.id === "string" &&
+      typeof sessionKey === "string" &&
+      typeof params.message === "string" &&
+      typeof idempotencyKey === "string" &&
+      typeof timeoutMs === "number",
+    safeForProbe: true,
+    acceptedForRouting: false,
+    providerCallsEnabled: false,
+    executionEnabled: false,
+    inspectedAt: nowIso()
+  };
+}
+
 function createMobileGatewayProbe({
   preflight,
   skillRegistry,
@@ -190,6 +253,7 @@ function createMobileGatewayProbe({
     "/gateway/capabilities",
     "/gateway/skill-registry",
     "/gateway/request-shape",
+    "/gateway/ws-frame-shape",
     "/v1/models",
     "/v1/chat/completions"
   ];
@@ -304,6 +368,34 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleWsFrameShape(req, res) {
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      sendJson(res, 200, {
+        ok: true,
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        openclawStarted: false,
+        productionGatewayPort,
+        requestShape: shape
+      });
+    } catch (error) {
+      sendJson(res, error.statusCode || 400, {
+        ok: false,
+        error: {
+          type: "invalid_request",
+          code: error.code || "ws_frame_shape_parse_failed",
+          message: error.message || String(error)
+        },
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        openclawStarted: false,
+        productionGatewayPort
+      });
+    }
+  }
+
   function modelList() {
     return {
       object: "list",
@@ -394,6 +486,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/request-shape") {
       handleRequestShape(req, res, { statusCode: 200 });
+      return true;
+    }
+
+    if (pathname === "/gateway/ws-frame-shape") {
+      handleWsFrameShape(req, res);
       return true;
     }
 

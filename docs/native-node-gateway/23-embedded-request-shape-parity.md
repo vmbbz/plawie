@@ -67,6 +67,7 @@ This proves the embedded lane can understand the shape of traffic the real
 Gateway receives before it is trusted to do any work. It gives us a measurable
 boundary between "can parse the request" and "can safely own the request".
 
-The next gate should compare this shape against production PRoot observations
-from real Gateway requests, still without executing native tools or calling
-providers.
+The follow-up gate is documented in
+`24-embedded-ws-chat-frame-parity.md`: parse Plawie's actual production
+WebSocket `chat.send` frame shape, still without executing native tools or
+calling providers.

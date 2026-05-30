@@ -42,10 +42,13 @@ The canary server exposes:
 - `/gateway/capabilities`
 - `/gateway/skill-registry`
 - `/gateway/request-shape`
+- `/gateway/ws-frame-shape`
 - `/v1/models`
 - `/v1/chat/completions`
 
 `/gateway/request-shape` parses a JSON chat request and returns a safe summary.
+`/gateway/ws-frame-shape` parses Plawie's production WebSocket `chat.send` RPC
+frame shape and returns a safe summary.
 `/v1/chat/completions` performs the same parsing but intentionally returns
 `409 chat_disabled` instead of running a model or provider request. This
 prevents accidental user traffic from leaking into a partial runtime.
@@ -101,6 +104,7 @@ The next gates are documented separately:
 
 - `22-embedded-skill-registry-inventory.md`
 - `23-embedded-request-shape-parity.md`
+- `24-embedded-ws-chat-frame-parity.md`
 
 Only after those prove stable should the native lane attempt real OpenClaw
 request routing.
