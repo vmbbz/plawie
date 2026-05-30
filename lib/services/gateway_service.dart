@@ -149,7 +149,9 @@ class GatewayService {
   void _addActivity(String event) {
     debugPrint('[GATEWAY] $event'); // logcat visibility
     _activityBuffer.add(event);
-    if (_activityBuffer.length > 40) _activityBuffer.removeAt(0);
+    if (_activityBuffer.length > 120) {
+      _activityBuffer.removeRange(0, _activityBuffer.length - 120);
+    }
     _chatActivityController.add(event);
   }
 

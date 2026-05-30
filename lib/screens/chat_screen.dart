@@ -464,7 +464,9 @@ class _ChatScreenState extends State<ChatScreen>
     setState(() {
       _diagnosticLogs
           .add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
-      if (_diagnosticLogs.length > 100) _diagnosticLogs.removeAt(0);
+      if (_diagnosticLogs.length > 200) {
+        _diagnosticLogs.removeRange(0, _diagnosticLogs.length - 200);
+      }
 
       // Auto-show diagnostics on first error - REMOVED for better UX
     });
@@ -505,6 +507,11 @@ class _ChatScreenState extends State<ChatScreen>
       '[warn]',
       '[error]',
       '[native-shadow]',
+      '[native-dryrun]',
+      '[native-canary]',
+      '[native-canary-direct]',
+      '[native-node-embedded]',
+      '[native-smoke]',
     ];
     if (prefixes.any((prefix) => lower.startsWith(prefix))) return true;
 
@@ -525,6 +532,9 @@ class _ChatScreenState extends State<ChatScreen>
       'event_loop',
       'liveness warning',
       'handshake timeout',
+      'direct canary',
+      'dry-run',
+      'native-node-embedded',
     ];
     return needles.any((needle) => lower.contains(needle));
   }
