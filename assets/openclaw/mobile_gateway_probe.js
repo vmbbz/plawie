@@ -483,6 +483,7 @@ function createMobileGatewayProbe({
     "/gateway/ws-frame-shape",
     "/gateway/chat-send-dry-run",
     "/gateway/chat-send-canary",
+    "/gateway/chat-send-canary-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -745,6 +746,189 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatSendCanaryStream(req, res) {
+    const source = "primary-canary-stream";
+    const canaryMode = "stream-dry-run";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const ack = {
+        parsed,
+        route: "disabled",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "chat.send frame queued and parsed; native stream is synthetic and routing remains disabled",
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "stream-dry-run"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: true,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        acceptedForRouting: false,
+        acceptedForQueue: true,
+        queuedForDryRun: true,
+        queueStatus: "parsed_disabled",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      const chunks = [
+        "Native stream dry-run accepted the production-shaped chat.send frame. ",
+        "The UI is now consuming a response stream from embedded Node on 18790. ",
+        "Routing, provider calls, and tool execution are still disabled."
+      ];
+      chunks.forEach((text, index) => {
+        setTimeout(() => {
+          writeEvent("delta", {
+            ok: true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            sequence: index + 1,
+            text
+          });
+          if (index === chunks.length - 1) {
+            writeEvent("end", {
+              ok: true,
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              finishReason: "dry_run_complete",
+              providerCallsEnabled: false,
+              executionEnabled: false
+            });
+            res.end();
+          }
+        }, 120 + index * 180);
+      });
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_send_stream_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: true,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_send_stream_failed",
+          message: error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -862,6 +1046,11 @@ function createMobileGatewayProbe({
         canaryMode: "direct-dry-run",
         directCanary: true
       });
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-send-canary-stream") {
+      handleChatSendCanaryStream(req, res);
       return true;
     }
 

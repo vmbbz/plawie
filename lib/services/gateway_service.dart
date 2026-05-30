@@ -3683,6 +3683,34 @@ $message''';
     return null;
   }
 
+  String? _nativeStreamingCanaryPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-stream ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _nativeCanaryChatSendFrame({
+    required String message,
+    required String sessionKey,
+  }) {
+    return <String, dynamic>{
+      'type': 'req',
+      'method': 'chat.send',
+      'params': {
+        'sessionKey': sessionKey,
+        'message': message,
+        'idempotencyKey': const Uuid().v4(),
+        'timeoutMs': 300000,
+      },
+      'id': const Uuid().v4(),
+    };
+  }
+
   Stream<String> _sendNativePrimaryCanaryMessage(
     String message, {
     required String model,
@@ -3703,17 +3731,10 @@ $message''';
         _normalizeMobileChatSessionKey(requestedSessionKey);
     final outboundMessage =
         await _decorateMessageWithMobileNodeContext(canaryMessage);
-    final chatSendFrame = <String, dynamic>{
-      'type': 'req',
-      'method': 'chat.send',
-      'params': {
-        'sessionKey': resolvedSessionKey,
-        'message': outboundMessage,
-        'idempotencyKey': const Uuid().v4(),
-        'timeoutMs': 300000,
-      },
-      'id': const Uuid().v4(),
-    };
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: outboundMessage,
+      sessionKey: resolvedSessionKey,
+    );
 
     _addActivity(
       '[NATIVE-PRIMARY-CANARY] -> Sending directly to embedded Node '
@@ -3763,6 +3784,89 @@ $message''';
     ].join('\n');
   }
 
+  Stream<String> _sendNativeStreamingCanaryMessage(
+    String message, {
+    String? sessionKey,
+  }) async* {
+    final canaryMessage = _nativeStreamingCanaryPayload(message);
+    if (canaryMessage == null) return;
+    if (canaryMessage.trim().isEmpty) {
+      yield '[Error] Native stream canary needs a message after /native-stream.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final outboundMessage =
+        await _decorateMessageWithMobileNodeContext(canaryMessage);
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: outboundMessage,
+      sessionKey: resolvedSessionKey,
+    );
+
+    _addActivity(
+      '[NATIVE-STREAM-CANARY] -> Opening embedded Node dry-run stream',
+    );
+
+    var sawAck = false;
+    await for (final event
+        in NativeGatewayShadowParityService.streamPrimaryCanaryChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final route = ack['route']?.toString() ?? 'unknown';
+        final queueStatus = ack['queueStatus']?.toString() ?? 'unknown';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-STREAM-CANARY] ✓ Stream ACK received');
+        yield [
+          'Native stream canary started',
+          '',
+          'parsed: $parsed',
+          'route: $route',
+          'queue: $queueStatus',
+          'hashMatches: $hashMatches',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'delta') {
+        final text = event['text']?.toString() ?? '';
+        if (text.isNotEmpty) yield text;
+        continue;
+      }
+
+      if (eventType == 'end') {
+        _addActivity('[NATIVE-STREAM-CANARY] ✓ Stream complete');
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-STREAM-CANARY] ✗ $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native stream canary ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -3775,6 +3879,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeStreamingCanaryPayload(message) != null) {
+      yield* _sendNativeStreamingCanaryMessage(
+        message,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativePrimaryCanaryPayload(message, model) != null) {
       yield* _sendNativePrimaryCanaryMessage(
