@@ -30,6 +30,9 @@ class NativeGatewayShadowParityReport {
       dryRun?['parsed'] == true &&
       dryRun?['route'] == 'disabled' &&
       dryRun?['acceptedForRouting'] == false &&
+      dryRun?['acceptedForQueue'] == true &&
+      dryRun?['queuedForDryRun'] == true &&
+      dryRun?['queueStatus'] == 'parsed_disabled' &&
       dryRun?['providerCallsEnabled'] == false &&
       dryRun?['executionEnabled'] == false;
 }
@@ -117,6 +120,14 @@ class NativeGatewayShadowParityService {
               'dryRunHash': dryRunAck['metadataHash'],
               'hashMatches': local['metadataHash'] == dryRunAck['metadataHash'],
               'acceptedForRouting': dryRunAck['acceptedForRouting'],
+              'acceptedForQueue': dryRunAck['acceptedForQueue'],
+              'queuedForDryRun': dryRunAck['queuedForDryRun'],
+              'queueStatus': dryRunAck['queueStatus'],
+              'queueDepthBefore': dryRunAck['queueDepthBefore'],
+              'queueDepthAfter': dryRunAck['queueDepthAfter'],
+              'nativeSessionId': dryRunAck['nativeSessionId'],
+              'runId': dryRunAck['runId'],
+              'duplicate': dryRunAck['duplicate'],
               'providerCallsEnabled': dryRunAck['providerCallsEnabled'],
               'executionEnabled': dryRunAck['executionEnabled'],
               'sessionKey': dryRunAck['sessionKey'],
@@ -152,6 +163,10 @@ class NativeGatewayShadowParityService {
       'nativeHash': report.native?['metadataHash'],
       'dryRunHash': report.dryRun?['metadataHash'],
       'sessionKey': report.local['sessionKey'],
+      'nativeSessionId': report.dryRun?['nativeSessionId'],
+      'runId': report.dryRun?['runId'],
+      'queueStatus': report.dryRun?['queueStatus'],
+      'queueDepthAfter': report.dryRun?['queueDepthAfter'],
       'messageChars': report.local['messageChars'],
       'mobileToolHints': report.local['mobileToolHints'],
     });
@@ -300,10 +315,27 @@ class NativeGatewayShadowParityService {
       'parsed': response['parsed'] == true,
       'route': ack['route'],
       'acceptedForRouting': response['acceptedForRouting'] == true,
+      'acceptedForQueue': response['acceptedForQueue'] == true,
+      'queuedForDryRun': response['queuedForDryRun'] == true,
+      'queueStatus': response['queueStatus'] ?? ack['queueStatus'],
+      'queueDepthBefore': ack['queueDepthBefore'],
+      'queueDepthAfter': ack['queueDepthAfter'],
+      'pendingQueueDepth': ack['pendingQueueDepth'],
       'chatRoutingEnabled': response['chatRoutingEnabled'] == true,
       'providerCallsEnabled': response['providerCallsEnabled'] == true,
       'executionEnabled': response['executionEnabled'] == true,
       'sessionKey': ack['sessionKey'],
+      'nativeSessionId': ack['nativeSessionId'],
+      'requestId': ack['requestId'],
+      'runId': ack['runId'],
+      'sequence': ack['sequence'],
+      'sessionAccepted': ack['sessionAccepted'],
+      'sessionCompleted': ack['sessionCompleted'],
+      'sessionDuplicate': ack['sessionDuplicate'],
+      'duplicate': ack['duplicate'] == true,
+      'duplicateOfRequestId': ack['duplicateOfRequestId'],
+      'queuedAt': ack['queuedAt'],
+      'parsedAt': ack['parsedAt'],
       'idempotencyKeyPresent': ack['idempotencyKeyPresent'] == true,
       'timeoutMs': ack['timeoutMs'],
       'messageChars': ack['messageChars'],

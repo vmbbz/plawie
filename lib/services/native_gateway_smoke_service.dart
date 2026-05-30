@@ -123,11 +123,16 @@ class NativeGatewaySmokeService {
           nativeProbe['canaryOnly'] == true &&
           nativeProbe['chatRoutingEnabled'] == false &&
           nativeProbe['providerCallsEnabled'] == false &&
+          nativeProbe['acceptsDryRunQueue'] == true &&
           endpoints is List &&
-          endpoints.contains('/gateway/chat-send-dry-run');
+          endpoints.contains('/gateway/chat-send-dry-run') &&
+          endpoints.contains('/gateway/dry-run-sessions');
       final dryRunOk = dryRun['ok'] == true &&
           dryRun['parsed'] == true &&
           dryRun['acceptedForRouting'] == false &&
+          dryRun['acceptedForQueue'] == true &&
+          dryRun['queuedForDryRun'] == true &&
+          dryRun['queueStatus'] == 'parsed_disabled' &&
           dryRun['providerCallsEnabled'] == false &&
           dryRun['executionEnabled'] == false &&
           dryRunAck['route'] == 'disabled';
@@ -152,13 +157,18 @@ class NativeGatewaySmokeService {
           'canaryOnly': nativeProbe['canaryOnly'],
           'chatRoutingEnabled': nativeProbe['chatRoutingEnabled'],
           'providerCallsEnabled': nativeProbe['providerCallsEnabled'],
+          'acceptsDryRunQueue': nativeProbe['acceptsDryRunQueue'],
           'productionSkillCount': nativeProbe['productionSkillCount'],
           'dryRunEndpoint': true,
         },
         'dryRun': {
           'parsed': dryRun['parsed'],
           'route': dryRunAck['route'],
+          'queueStatus': dryRunAck['queueStatus'],
+          'nativeSessionId': dryRunAck['nativeSessionId'],
+          'runId': dryRunAck['runId'],
           'acceptedForRouting': dryRun['acceptedForRouting'],
+          'acceptedForQueue': dryRun['acceptedForQueue'],
           'metadataHash': dryRunAck['metadataHash'],
         },
         'decision': 'PRoot remains primary; native is parse-only canary.',
@@ -212,6 +222,7 @@ class NativeGatewaySmokeService {
         _sampleGatewayWsChatSendFrame(),
         expectedStatus: 202,
       );
+      final dryRunSessions = await _probeJson('/gateway/dry-run-sessions');
       final shadowParity =
           await NativeGatewayShadowParityService.observeChatSendFrame(
         _sampleGatewayWsChatSendFrame(),
@@ -231,6 +242,7 @@ class NativeGatewaySmokeService {
           _chatShapeProbePassed(chatShape) &&
           _wsFrameShapeProbePassed(wsFrameShape) &&
           _chatSendDryRunProbePassed(chatSendDryRun) &&
+          _dryRunSessionsProbePassed(dryRunSessions) &&
           (shadowParity?.parityOk == true) &&
           (shadowParity?.dryRunOk == true);
       log('[NATIVE-NODE-EMBEDDED] health: ${jsonEncode(health)}');
@@ -252,6 +264,15 @@ class NativeGatewaySmokeService {
       );
       log(
         '[NATIVE-NODE-EMBEDDED] chat.send dry-run: ${jsonEncode(chatSendDryRun['ack'])}',
+      );
+      log(
+        '[NATIVE-NODE-EMBEDDED] dry-run sessions: ${jsonEncode({
+              'ok': dryRunSessions['ok'],
+              'sessionCount': dryRunSessions['sessionCount'],
+              'pendingQueueDepth': dryRunSessions['pendingQueueDepth'],
+              'totalCompleted': dryRunSessions['totalCompleted'],
+              'totalDuplicate': dryRunSessions['totalDuplicate'],
+            })}',
       );
 
       if (NativeGatewayShadowParityService.shadowDiagnosticsEnabled) {
@@ -377,6 +398,7 @@ class NativeGatewaySmokeService {
         endpoints.contains('/gateway/request-shape') &&
         endpoints.contains('/gateway/ws-frame-shape') &&
         endpoints.contains('/gateway/chat-send-dry-run') &&
+        endpoints.contains('/gateway/dry-run-sessions') &&
         endpoints.contains('/v1/models') &&
         endpoints.contains('/v1/chat/completions');
 
@@ -391,6 +413,7 @@ class NativeGatewaySmokeService {
         value['openclawStarted'] == false &&
         value['chatRoutingEnabled'] == false &&
         value['providerCallsEnabled'] == false &&
+        value['acceptsDryRunQueue'] == true &&
         value['fullSkillRegistryLoaded'] == false &&
         value['productionSkillRegistryInspected'] == true &&
         value['productionSkillCount'] is num &&
@@ -552,12 +575,27 @@ class NativeGatewaySmokeService {
         value['parsed'] == true &&
         value['openclawStarted'] == false &&
         value['acceptedForRouting'] == false &&
+        value['acceptedForQueue'] == true &&
+        value['queuedForDryRun'] == true &&
+        value['queueStatus'] == 'parsed_disabled' &&
         value['chatRoutingEnabled'] == false &&
         value['providerCallsEnabled'] == false &&
         value['executionEnabled'] == false &&
         ack['parsed'] == true &&
         ack['route'] == 'disabled' &&
+        ack['queueStatus'] == 'parsed_disabled' &&
         ack['sessionKey'] == 'main' &&
+        ack['nativeSessionId'] is String &&
+        (ack['nativeSessionId'] as String).isNotEmpty &&
+        ack['requestId'] == 'probe-chat-send-request' &&
+        ack['runId'] is String &&
+        (ack['runId'] as String).isNotEmpty &&
+        ack['sequence'] is num &&
+        ack['queueDepthBefore'] is num &&
+        ack['queueDepthAfter'] is num &&
+        ack['pendingQueueDepth'] == 0 &&
+        ack['sessionCompleted'] is num &&
+        ack['duplicate'] == false &&
         ack['idempotencyKeyPresent'] == true &&
         ack['timeoutMs'] == 300000 &&
         ack['messageChars'] is num &&
@@ -574,6 +612,34 @@ class NativeGatewaySmokeService {
         hints.contains('avatar.gesture') &&
         hints.contains('haptic.vibrate') &&
         hints.contains('notifications.list');
+  }
+
+  static bool _dryRunSessionsProbePassed(Map<String, dynamic> value) {
+    final sessions = value['sessions'];
+    if (sessions is! List || sessions.isEmpty || sessions.first is! Map) {
+      return false;
+    }
+    final first = Map<String, dynamic>.from(sessions.first as Map);
+    return value['ok'] == true &&
+        value['runtime'] == 'native-node-embedded' &&
+        value['canaryOnly'] == true &&
+        value['dryRun'] == true &&
+        value['queueMode'] == 'parse-only' &&
+        value['route'] == 'disabled' &&
+        value['acceptedForRouting'] == false &&
+        value['chatRoutingEnabled'] == false &&
+        value['providerCallsEnabled'] == false &&
+        value['executionEnabled'] == false &&
+        value['sessionCount'] is num &&
+        (value['sessionCount'] as num) >= 1 &&
+        value['pendingQueueDepth'] == 0 &&
+        value['totalCompleted'] is num &&
+        (value['totalCompleted'] as num) >= 1 &&
+        first['sessionKey'] == 'main' &&
+        first['nativeSessionId'] is String &&
+        (first['nativeSessionId'] as String).isNotEmpty &&
+        first['completed'] is num &&
+        (first['completed'] as num) >= 1;
   }
 
   static Map<String, dynamic> _sampleChatCompletionRequest() {
