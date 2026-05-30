@@ -3452,6 +3452,17 @@ HEARTBEAT_OK.
         lower.contains('queued_work_without_active_run')) {
       return normalized;
     }
+    final looksLikeBilling = lower.contains('billing') ||
+        lower.contains('credit') ||
+        lower.contains('insufficient balance') ||
+        lower.contains('out of balance') ||
+        lower.contains('balance exhausted');
+    if (isOpenRouterModel && looksLikeBilling) {
+      return 'OpenRouter billing/credits are exhausted. Add credits or switch to a working provider/model, then retry.';
+    }
+    if (looksLikeBilling) {
+      return 'Provider billing/credits are exhausted. Add credits or switch provider/model, then retry.';
+    }
     final looksLikeRateLimit = lower.contains('rate limit') ||
         lower.contains('429') ||
         lower.contains('tokens per minute') ||
@@ -3773,14 +3784,22 @@ $message''';
     _addActivity('[CHAT] → Sending to $model');
 
     const timeoutMs = 300000;
+    const noFirstTokenTimeout = Duration(seconds: 90);
+    const relevantInactivityTimeout = Duration(minutes: 3);
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
-    final chatInactivityTimeout = Duration(milliseconds: timeoutMs);
-    var lastGatewayActivityAt = DateTime.now();
+    final requestStartedAt = DateTime.now();
+    var lastRelevantGatewayActivityAt = requestStartedAt;
     Timer? inactivityWatchdog;
 
-    void markGatewayActivity() {
-      lastGatewayActivityAt = DateTime.now();
+    void markRelevantGatewayActivity() {
+      lastRelevantGatewayActivityAt = DateTime.now();
+    }
+
+    void finishChatWithError(String message) {
+      if (chunkController.isClosed) return;
+      chunkController.add('[Error] $message');
+      chunkController.close();
     }
 
     // Session routing priority:
@@ -3831,6 +3850,10 @@ $message''';
     // stream before any content arrives.
     bool runStarted = false;
     var assistantSnapshot = '';
+    bool isActiveRunFrame(String? agentRun) {
+      return activeRunId == null || agentRun == null || agentRun == activeRunId;
+    }
+
     String assistantDelta(String text) {
       if (text.isEmpty) return '';
       if (assistantSnapshot.isEmpty) {
@@ -3852,19 +3875,33 @@ $message''';
       return text;
     }
 
-    inactivityWatchdog = Timer.periodic(const Duration(seconds: 15), (timer) {
+    inactivityWatchdog = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (chunkController.isClosed) {
         timer.cancel();
         return;
       }
-      final idleFor = DateTime.now().difference(lastGatewayActivityAt);
-      if (idleFor <= chatInactivityTimeout) return;
-      _addActivity('[CHAT] ✗ No gateway activity for '
-          '${chatInactivityTimeout.inSeconds}s');
-      chunkController.add('[Error] Gateway chat timed out after '
-          '${chatInactivityTimeout.inSeconds} seconds with no backend activity. '
-          'Retry or switch provider/model.');
-      chunkController.close();
+      final now = DateTime.now();
+      final idleFor = now.difference(lastRelevantGatewayActivityAt);
+      if (firstToken && idleFor > noFirstTokenTimeout) {
+        _addActivity('[CHAT] ✗ No assistant response for '
+            '${noFirstTokenTimeout.inSeconds}s');
+        finishChatWithError(
+          'Gateway chat produced no assistant response after '
+          '${noFirstTokenTimeout.inSeconds} seconds. This can happen after '
+          'provider/API-key changes or exhausted credits. Retry with a working '
+          'provider/model key.',
+        );
+        timer.cancel();
+        return;
+      }
+      if (idleFor <= relevantInactivityTimeout) return;
+      _addActivity('[CHAT] ✗ No relevant gateway chat activity for '
+          '${relevantInactivityTimeout.inSeconds}s');
+      finishChatWithError(
+        'Gateway chat timed out after '
+        '${relevantInactivityTimeout.inSeconds} seconds with no relevant chat '
+        'activity. Retry or switch provider/model.',
+      );
       timer.cancel();
     });
 
@@ -3872,20 +3909,17 @@ $message''';
     frameSub = responseStream.listen(
       (frame) {
         try {
-          markGatewayActivity();
           final type = frame['type'] as String?;
 
           // Gateway-level error (e.g. rate limit, provider failure)
           if (type == 'error') {
+            markRelevantGatewayActivity();
             final payload = frame['payload'] as Map<String, dynamic>?;
             final rawMsg =
                 payload?['message'] as String? ?? 'API Error encountered';
             final errMsg = _formatGatewayProviderError(rawMsg, model: model);
             _addActivity('[CHAT] ✗ $errMsg');
-            if (!chunkController.isClosed) {
-              chunkController.add('[Error] $errMsg');
-              chunkController.close();
-            }
+            finishChatWithError(errMsg);
             return;
           }
 
@@ -3897,28 +3931,31 @@ $message''';
                 : errObj.toString();
             if (errStr.toLowerCase().contains('rate limit') ||
                 errStr.toLowerCase().contains('api') ||
-                errStr.toLowerCase().contains('invalid')) {
+                errStr.toLowerCase().contains('invalid') ||
+                errStr.toLowerCase().contains('billing') ||
+                errStr.toLowerCase().contains('credit') ||
+                errStr.toLowerCase().contains('insufficient balance') ||
+                errStr.toLowerCase().contains('balance exhausted')) {
+              markRelevantGatewayActivity();
               final errMsg = _formatGatewayProviderError(errStr, model: model);
               _addActivity('[CHAT] ✗ $errMsg');
-              if (!chunkController.isClosed) {
-                chunkController.add('[Error] $errMsg');
-                chunkController.close();
-              }
+              finishChatWithError(errMsg);
               return;
             }
           }
 
           // ACK from chat.send — ok:true means streaming started; ok:false means rejected
           if (type == 'res' && frame['id'] == requestId) {
+            markRelevantGatewayActivity();
             final ok = frame['ok'] as bool? ?? false;
             if (!ok) {
               final error = frame['error'] as Map<String, dynamic>?;
-              final msg = error?['message'] as String? ?? 'chat.send failed';
+              final msg = _formatGatewayProviderError(
+                error?['message'] as String? ?? 'chat.send failed',
+                model: model,
+              );
               _addActivity('[CHAT] ✗ $msg');
-              if (!chunkController.isClosed) {
-                chunkController.add('[Error] $msg');
-                chunkController.close();
-              }
+              finishChatWithError(msg);
             } else {
               activeRunId = frame['runId'] as String?;
               _addActivity('[CHAT] ← Gateway accepted (streaming...)');
@@ -3938,6 +3975,7 @@ $message''';
             final payload = frame['payload'] as Map<String, dynamic>?;
             final message = payload?['text'] as String?;
             if (message != null && message.isNotEmpty) {
+              markRelevantGatewayActivity();
               _addActivity('[CHAT] ← Agent initiated: $message');
               if (!chunkController.isClosed) {
                 chunkController.add(message);
@@ -3960,9 +3998,22 @@ $message''';
             // timeout would silently close run N+1's stream before content arrives.
             if ((state == 'final' || state == 'aborted' || state == 'error') &&
                 (runStarted || !firstToken)) {
+              markRelevantGatewayActivity();
               if (!chunkController.isClosed) {
                 chunkController.close();
               }
+            } else if ((state == 'aborted' || state == 'error') &&
+                firstToken &&
+                !runStarted) {
+              markRelevantGatewayActivity();
+              final rawError =
+                  (data['error'] ?? data['reason'] ?? data['message'] ?? state)
+                          ?.toString() ??
+                      state ??
+                      'Unknown API error';
+              final msg = _formatGatewayProviderError(rawError, model: model);
+              _addActivity('[CHAT] ✗ $msg');
+              finishChatWithError(msg);
             }
           }
 
@@ -3977,15 +4028,14 @@ $message''';
 
             if (stream == 'assistant') {
               // Filter text from runs other than ours (activeRunId updated from phase=start)
-              if (activeRunId != null &&
-                  agentRun != null &&
-                  agentRun != activeRunId) {
+              if (!isActiveRunFrame(agentRun)) {
                 return;
               }
               final text = (innerData?['text'] ??
                   payload?['text'] ??
                   frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
+                markRelevantGatewayActivity();
                 final delta = assistantDelta(text);
                 if (delta.isEmpty) return;
                 if (firstToken) {
@@ -3995,11 +4045,10 @@ $message''';
                 chunkController.add(delta);
               }
             } else if (stream == 'tool_use') {
-              if (activeRunId != null &&
-                  agentRun != null &&
-                  agentRun != activeRunId) {
+              if (!isActiveRunFrame(agentRun)) {
                 return;
               }
+              markRelevantGatewayActivity();
               assistantSnapshot =
                   ''; // Reset snapshot on tool use so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
@@ -4012,11 +4061,10 @@ $message''';
                     .add('\x00TOOL_USE:$name:${jsonEncode(input ?? {})}\x00');
               }
             } else if (stream == 'tool_result') {
-              if (activeRunId != null &&
-                  agentRun != null &&
-                  agentRun != activeRunId) {
+              if (!isActiveRunFrame(agentRun)) {
                 return;
               }
+              markRelevantGatewayActivity();
               assistantSnapshot =
                   ''; // Reset snapshot on tool result so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
@@ -4067,12 +4115,12 @@ $message''';
                 if (agentRun != null) activeRunId = agentRun;
                 runStarted = true;
                 assistantSnapshot = '';
+                markRelevantGatewayActivity();
               } else if (phase == 'error') {
-                if (activeRunId != null &&
-                    agentRun != null &&
-                    agentRun != activeRunId) {
+                if (!isActiveRunFrame(agentRun)) {
                   return;
                 }
+                markRelevantGatewayActivity();
                 final rawError =
                     (innerData?['error'] ?? payload?['error'] ?? frame['error'])
                             ?.toString() ??
@@ -4090,11 +4138,10 @@ $message''';
                   chunkController.close();
                 }
               } else if (phase == 'end') {
-                if (activeRunId != null &&
-                    agentRun != null &&
-                    agentRun != activeRunId) {
+                if (!isActiveRunFrame(agentRun)) {
                   return;
                 }
+                markRelevantGatewayActivity();
                 final rawEndSignal = (innerData?['error'] ??
                             payload?['error'] ??
                             innerData?['reason'] ??
@@ -4133,11 +4180,10 @@ $message''';
               // Real provider errors surface through stream=lifecycle phase=error.
               final reason = (payload?['reason'] ?? frame['reason']) as String?;
               if (reason == 'seq gap') return;
-              if (activeRunId != null &&
-                  agentRun != null &&
-                  agentRun != activeRunId) {
+              if (!isActiveRunFrame(agentRun)) {
                 return;
               }
+              markRelevantGatewayActivity();
               final rawErr = (innerData?['error'] ??
                           payload?['error'] ??
                           payload?['reason'] ??

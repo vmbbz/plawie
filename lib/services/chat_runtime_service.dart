@@ -14,6 +14,8 @@ import 'preferences_service.dart';
 import 'tts_service.dart';
 
 class ChatRuntimeService extends ChangeNotifier {
+  static const Duration _chatTurnHardTimeout = Duration(minutes: 6);
+
   static final ChatRuntimeService _instance = ChatRuntimeService._internal();
   factory ChatRuntimeService() => _instance;
   ChatRuntimeService._internal() {
@@ -78,6 +80,16 @@ class ChatRuntimeService extends ChangeNotifier {
     _messages
       ..clear()
       ..addAll(history);
+    if (_messages.isNotEmpty &&
+        !_messages.last.isUser &&
+        _messages.last.text.trim().isEmpty) {
+      _messages[_messages.length - 1] = ChatMessage(
+        text:
+            'Warning: Previous response was interrupted before the Gateway returned a final result. Please resend the last message.',
+        isUser: false,
+      );
+      unawaited(_persistence.saveMessages(_messages));
+    }
     if (_messages.isEmpty) {
       _messages.add(ChatMessage(
         text:
@@ -310,7 +322,19 @@ class ChatRuntimeService extends ChangeNotifier {
         );
       }
 
-      await for (final chunk in stream) {
+      final guardedStream = stream.timeout(
+        _chatTurnHardTimeout,
+        onTimeout: (sink) {
+          sink.add(
+            '[Error] Chat timed out after '
+            '${_chatTurnHardTimeout.inMinutes} minutes. '
+            'Retry after switching provider/model or API key.',
+          );
+          sink.close();
+        },
+      );
+
+      await for (final chunk in guardedStream) {
         if (!loggedFirstAssistantChunk &&
             chunk.trim().isNotEmpty &&
             !chunk.startsWith('\x00TOOL_')) {
