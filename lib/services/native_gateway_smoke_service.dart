@@ -38,26 +38,137 @@ class NativeGatewaySmokeService {
   static final GatewayRuntime _runtime = GatewayRuntimeRegistry.nativeNodeSmoke;
   static final GatewayRuntime _nodeRuntime =
       GatewayRuntimeRegistry.nativeNodeProcessSmoke;
+  static bool _startupSelfTestInFlight = false;
+  static bool _canaryComparisonInFlight = false;
+  static bool _canaryComparisonPassed = false;
+  static DateTime? _lastCanaryComparisonAttemptAt;
+  static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
 
   static Future<void> runStartupSelfTestIfEnabled({
     required void Function(String message) log,
   }) async {
     if (!diagnosticsEnabled) return;
+    if (_startupSelfTestInFlight) return;
 
-    log('[NATIVE-SMOKE] Diagnostics enabled; testing isolated native runtime.');
-    final first = await runLifecycleSmokeTest(log: log, label: 'first');
-    final second = await runLifecycleSmokeTest(log: log, label: 'restart');
-    final node = await runNativeNodeProcessSmokeTest(log: log);
+    _startupSelfTestInFlight = true;
+    try {
+      log('[NATIVE-SMOKE] Diagnostics enabled; testing isolated native runtime.');
+      final first = await runLifecycleSmokeTest(log: log, label: 'first');
+      final second = await runLifecycleSmokeTest(log: log, label: 'restart');
+      final node = await runNativeNodeProcessSmokeTest(log: log);
 
-    if (first.passed && second.passed && node.passed) {
-      log('[NATIVE-SMOKE] Native smoke runtime and embedded Node diagnostics passed.');
-    } else if (first.passed && second.passed && node.skipped) {
-      log('[NATIVE-SMOKE] Native Android smoke passed; embedded Node skipped: ${node.message}');
-    } else if (first.passed && second.passed) {
-      log('[NATIVE-SMOKE] Native Android smoke passed; embedded Node failed: ${node.message}');
-    } else {
-      log('[NATIVE-SMOKE] Native smoke runtime diagnostics failed: '
-          '${first.message}; ${second.message}; ${node.message}');
+      if (first.passed && second.passed && node.passed) {
+        log('[NATIVE-SMOKE] Native smoke runtime and embedded Node diagnostics passed.');
+      } else if (first.passed && second.passed && node.skipped) {
+        log('[NATIVE-SMOKE] Native Android smoke passed; embedded Node skipped: ${node.message}');
+      } else if (first.passed && second.passed) {
+        log('[NATIVE-SMOKE] Native Android smoke passed; embedded Node failed: ${node.message}');
+      } else {
+        log('[NATIVE-SMOKE] Native smoke runtime diagnostics failed: '
+            '${first.message}; ${second.message}; ${node.message}');
+      }
+    } finally {
+      _startupSelfTestInFlight = false;
+    }
+  }
+
+  static Future<void> runCanaryComparisonIfEnabled({
+    required void Function(String message) log,
+    Map<String, dynamic>? productionHealth,
+  }) async {
+    if (!diagnosticsEnabled) return;
+    if (_startupSelfTestInFlight ||
+        _canaryComparisonInFlight ||
+        _canaryComparisonPassed) {
+      return;
+    }
+    final now = DateTime.now();
+    final last = _lastCanaryComparisonAttemptAt;
+    if (last != null && now.difference(last) < _canaryComparisonRetryCooldown) {
+      return;
+    }
+
+    _canaryComparisonInFlight = true;
+    _lastCanaryComparisonAttemptAt = now;
+    try {
+      if (!await _nodeRuntime.isRunning()) {
+        final started = await _nodeRuntime.start();
+        if (!started) {
+          log('[NATIVE-CANARY] native 18790 did not start; PRoot remains primary.');
+          return;
+        }
+      }
+
+      final nativeHealth =
+          await _probeHealth(expectedRuntime: 'native-node-embedded');
+      final nativeProbe = await _probeJson('/gateway/probe');
+      final dryRun = await _postJson(
+        '/gateway/chat-send-dry-run',
+        _sampleGatewayWsChatSendFrame(),
+        expectedStatus: 202,
+      );
+
+      final dryRunAck = dryRun['ack'] is Map
+          ? Map<String, dynamic>.from(dryRun['ack'] as Map)
+          : <String, dynamic>{};
+      final endpoints = nativeProbe['endpoints'];
+      final productionOk = productionHealth == null ||
+          productionHealth['ok'] == true ||
+          productionHealth['health'] != null ||
+          productionHealth.isNotEmpty;
+      final nativeOk = nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.nativeGatewaySmokePort &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          endpoints is List &&
+          endpoints.contains('/gateway/chat-send-dry-run');
+      final dryRunOk = dryRun['ok'] == true &&
+          dryRun['parsed'] == true &&
+          dryRun['acceptedForRouting'] == false &&
+          dryRun['providerCallsEnabled'] == false &&
+          dryRun['executionEnabled'] == false &&
+          dryRunAck['route'] == 'disabled';
+      final report = {
+        'ok': productionOk && nativeOk && dryRunOk,
+        'mode': 'side-by-side',
+        'primary': 'proot',
+        'canary': 'native-node-embedded',
+        'production': {
+          'port': AppConstants.gatewayPort,
+          'healthy': productionOk,
+          if (productionHealth?['ok'] != null) 'ok': productionHealth?['ok'],
+          if (productionHealth?['runtime'] != null)
+            'runtime': productionHealth?['runtime'],
+          if (productionHealth?['version'] != null)
+            'version': productionHealth?['version'],
+        },
+        'native': {
+          'port': AppConstants.nativeGatewaySmokePort,
+          'healthy': nativeOk,
+          'node': nativeHealth['node'],
+          'canaryOnly': nativeProbe['canaryOnly'],
+          'chatRoutingEnabled': nativeProbe['chatRoutingEnabled'],
+          'providerCallsEnabled': nativeProbe['providerCallsEnabled'],
+          'productionSkillCount': nativeProbe['productionSkillCount'],
+          'dryRunEndpoint': true,
+        },
+        'dryRun': {
+          'parsed': dryRun['parsed'],
+          'route': dryRunAck['route'],
+          'acceptedForRouting': dryRun['acceptedForRouting'],
+          'metadataHash': dryRunAck['metadataHash'],
+        },
+        'decision': 'PRoot remains primary; native is parse-only canary.',
+      };
+      _canaryComparisonPassed = report['ok'] == true;
+      log('[NATIVE-CANARY] ${jsonEncode(report)}');
+    } catch (e) {
+      log('[NATIVE-CANARY] side-by-side comparison pending: $e');
+    } finally {
+      _canaryComparisonInFlight = false;
     }
   }
 

@@ -589,7 +589,6 @@ class _ChatScreenState extends State<ChatScreen>
       if (mounted) {
         setState(() {
           _speechIntensity = 0.8;
-          _currentGesture = 'talk';
         });
         _syncOverlayState();
       }
@@ -604,7 +603,7 @@ class _ChatScreenState extends State<ChatScreen>
         if (_ttsQueue.isEmpty && _ttsSentenceBuffer.isEmpty) {
           setState(() {
             _speechIntensity = 0.0;
-            _currentGesture = 'ready'; // Reset to idle pose
+            _currentGesture = null;
           });
           _syncOverlayState();
 

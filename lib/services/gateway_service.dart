@@ -2964,6 +2964,10 @@ HEARTBEAT_OK.
       );
 
       if (response.statusCode < 500) {
+        unawaited(NativeGatewaySmokeService.runCanaryComparisonIfEnabled(
+          log: _addActivity,
+          productionHealth: _decodeObject(response.body),
+        ));
         _consecutiveFailures = 0; // Success — reset failure counter
 
         // ── 2. Single token retrieval (with timeout) ─────────────────────
@@ -3294,6 +3298,16 @@ HEARTBEAT_OK.
     } catch (_) {
       return false;
     }
+  }
+
+  Map<String, dynamic>? _decodeObject(String text) {
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<http.Response> _probeGatewayHealth({
