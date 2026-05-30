@@ -137,7 +137,9 @@ class GatewayService {
   static const Duration _gatewayConfigReloadSettle = Duration(seconds: 8);
   static const Duration _gatewayConfigSoftSettle = Duration(seconds: 3);
   static const Duration _gatewaySessionPatchSettle = Duration(seconds: 5);
-  static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 90);
+  static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 240);
+  static const Duration _gatewayStaleChatRecoverySettle =
+      Duration(seconds: 180);
 
   /// Live stream of human-readable chat and gateway events.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -170,9 +172,11 @@ class GatewayService {
   void _beginGatewayConfigTransition(
     String reason, {
     Duration minimumSettle = _gatewayConfigReloadSettle,
+    bool allowShorten = false,
   }) {
     final until = DateTime.now().add(minimumSettle);
-    if (_gatewayConfigTransitionUntil == null ||
+    if (allowShorten ||
+        _gatewayConfigTransitionUntil == null ||
         until.isAfter(_gatewayConfigTransitionUntil!)) {
       _gatewayConfigTransitionUntil = until;
     }
@@ -829,6 +833,26 @@ class GatewayService {
   /// New Auto-Healing Logic: Detects critical failures in logs and attempts recovery.
   void _handleGatewayAutoHeal(String log) {
     if (_isFixingDep) return;
+
+    if (log.contains('queued_work_without_active_run')) {
+      _beginGatewayConfigTransition(
+        'stale chat lane recovery',
+        minimumSettle: _gatewayStaleChatRecoverySettle,
+      );
+      _addActivity(
+        '[CHAT] Gateway reported stale queued work; holding new chat sends.',
+      );
+    } else if (log
+        .contains('stuck session recovery outcome: status=released')) {
+      _beginGatewayConfigTransition(
+        'stale chat lane recovery released',
+        minimumSettle: const Duration(seconds: 20),
+        allowShorten: true,
+      );
+      _addActivity(
+        '[CHAT] Gateway stale lane released; waiting briefly before new sends.',
+      );
+    }
 
     // 1. Missing specific dependencies
     if (log.contains("Cannot find module '@buape/carbon'")) {
@@ -3883,11 +3907,16 @@ $message''';
       if (firstToken && idleFor > noFirstTokenTimeout) {
         _addActivity('[CHAT] ✗ No assistant response for '
             '${noFirstTokenTimeout.inSeconds}s');
+        _beginGatewayConfigTransition(
+          'chat no-first-token recovery',
+          minimumSettle: _gatewayStaleChatRecoverySettle,
+        );
+        disconnectWebSocket();
         finishChatWithError(
-          'Gateway chat produced no assistant response after '
-          '${noFirstTokenTimeout.inSeconds} seconds. This can happen after '
-          'provider/API-key changes or exhausted credits. Retry with a working '
-          'provider/model key.',
+          'Gateway accepted the turn but produced no assistant response after '
+          '${noFirstTokenTimeout.inSeconds} seconds. Plawie is holding the '
+          'Gateway chat lane while it recovers, so retries do not enter a '
+          'stale queue. Please resend after the Gateway settles.',
         );
         timer.cancel();
         return;
