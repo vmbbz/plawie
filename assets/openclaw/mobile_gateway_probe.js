@@ -496,6 +496,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-live-canary-stream",
     "/gateway/chat-provider-stream-parser-parity-stream",
     "/gateway/chat-provider-tool-plan-canary-stream",
+    "/gateway/chat-tool-dispatch-dry-run-stream",
     "/gateway/dry-run-sessions",
     "/v1/models",
     "/v1/chat/completions"
@@ -2657,6 +2658,157 @@ function createMobileGatewayProbe({
       malformedFixture,
       parityOk,
       fixtureHash
+    };
+  }
+
+  function capabilityRouteForToolPlan(plan) {
+    const gatewayName = plan?.gatewayName || plan?.functionName || "unknown";
+    const routes = {
+      "avatar.gesture": {
+        capability: "avatar",
+        dartCapability: "AvatarCapability",
+        method: "avatar.gesture",
+        requiresUiThread: true
+      },
+      "camera.snap": {
+        capability: "camera",
+        dartCapability: "CameraCapability",
+        method: "camera.snap",
+        requiresUiThread: true
+      },
+      "canvas.eval": {
+        capability: "canvas",
+        dartCapability: "CanvasCapability",
+        method: "canvas.eval",
+        requiresUiThread: true
+      },
+      "canvas.navigate": {
+        capability: "canvas",
+        dartCapability: "CanvasCapability",
+        method: "canvas.navigate",
+        requiresUiThread: true
+      },
+      "canvas.snapshot": {
+        capability: "canvas",
+        dartCapability: "CanvasCapability",
+        method: "canvas.snapshot",
+        requiresUiThread: true
+      },
+      "haptic.vibrate": {
+        capability: "haptic",
+        dartCapability: "HapticCapability",
+        method: "haptic.vibrate",
+        requiresUiThread: false
+      },
+      "sensor.read": {
+        capability: "sensor",
+        dartCapability: "SensorCapability",
+        method: "sensor.read",
+        requiresUiThread: false
+      },
+      "sensor.list": {
+        capability: "sensor",
+        dartCapability: "SensorCapability",
+        method: "sensor.list",
+        requiresUiThread: false
+      },
+      "flash.status": {
+        capability: "flash",
+        dartCapability: "FlashCapability",
+        method: "flash.status",
+        requiresUiThread: false
+      },
+      "device.status": {
+        capability: "device",
+        dartCapability: "DeviceStatusCapability",
+        method: "device.status",
+        requiresUiThread: false
+      }
+    };
+    return routes[gatewayName] || {
+      capability: "unknown",
+      dartCapability: "UnknownCapability",
+      method: gatewayName,
+      requiresUiThread: false
+    };
+  }
+
+  function syntheticToolDispatchDryRun(toolSelection, queued) {
+    const fixture = parseStreamingToolPlanFixture(toolSelection);
+    const plan = fixture.parsed.plans[0] || null;
+    const route = capabilityRouteForToolPlan(plan);
+    const canDispatch =
+      fixture.parityOk &&
+      plan &&
+      plan.allowedName === true &&
+      plan.argumentsOk === true &&
+      route.capability !== "unknown";
+    const callId = plan?.id || stableId("native-tool-call", {
+      runId: queued.runId,
+      functionName: plan?.functionName,
+      planHash: plan?.planHash
+    });
+    const toolUseFrame = {
+      type: "tool_use",
+      id: callId,
+      name: route.method,
+      input: plan?.arguments || {},
+      runtime: "native-node-embedded",
+      source: "tool-dispatch-dry-run",
+      executionEnabled: false,
+      toolExecutionEnabled: false,
+      planHash: plan?.planHash || null
+    };
+    const syntheticResult = {
+      ok: canDispatch,
+      dryRun: true,
+      skipped: true,
+      skippedReason: "native_tool_execution_disabled",
+      runtime: "native-node-embedded",
+      source: "tool-dispatch-dry-run",
+      capability: route.capability,
+      dartCapability: route.dartCapability,
+      method: route.method,
+      requiresUiThread: route.requiresUiThread,
+      wouldExecute: canDispatch,
+      executionEnabled: false,
+      toolExecutionEnabled: false,
+      planHash: plan?.planHash || null
+    };
+    const toolResultFrame = {
+      type: "tool_result",
+      id: callId,
+      name: route.method,
+      result: syntheticResult,
+      runtime: "native-node-embedded",
+      source: "tool-dispatch-dry-run",
+      executionEnabled: false,
+      toolExecutionEnabled: false
+    };
+    const dispatchHash = metadataHash({
+      callId,
+      route,
+      toolUseFrame,
+      syntheticResult,
+      fixtureHash: fixture.parsed.toolPlanHash
+    });
+
+    return {
+      fixture,
+      plan,
+      route,
+      callId,
+      canDispatch,
+      toolUseFrame,
+      toolResultFrame,
+      dispatchHash,
+      parityOk:
+        canDispatch &&
+        toolUseFrame.type === "tool_use" &&
+        toolResultFrame.type === "tool_result" &&
+        toolResultFrame.result.skippedReason === "native_tool_execution_disabled" &&
+        toolUseFrame.toolExecutionEnabled === false &&
+        toolResultFrame.toolExecutionEnabled === false
     };
   }
 
@@ -5168,6 +5320,288 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatToolDispatchDryRunStream(req, res) {
+    const source = "tool-dispatch-dry-run";
+    const canaryMode = "tool-dispatch-dry-run";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder =
+        providerToolPlanRequestBuilder(envelope, shape, queued, payload);
+      const fixtureTools = nativeMobileToolCatalog().filter((entry) =>
+        requestBuilder.toolFunctionNames.includes(entry.functionName)
+      );
+      const toolSelection = {
+        tools: fixtureTools,
+        toolFunctionNames: requestBuilder.toolFunctionNames,
+        gatewayToolNames: requestBuilder.gatewayToolNames,
+        toolAliasMap: requestBuilder.toolAliasMap,
+        selectionHash: requestBuilder.toolSelectionHash
+      };
+      const dispatch = syntheticToolDispatchDryRun(toolSelection, queued);
+      const validationOk =
+        requestBuilder.validationOk === true && dispatch.parityOk === true;
+      const ack = {
+        parsed,
+        route: "tool_dispatch_dry_run",
+        routeStatus: "native_tool_dispatch_dry_run_complete",
+        source,
+        canaryMode,
+        directCanary,
+        reason:
+          "native mapped a captured tool plan to synthetic tool_use/tool_result frames",
+        provider: requestBuilder.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: requestBuilder.providerModel,
+        transport: requestBuilder.transport,
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        dispatchHash: dispatch.dispatchHash,
+        fixtureHash: dispatch.fixture.parsed.toolPlanHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        validationOk,
+        selectedToolCount: requestBuilder.selectedToolCount,
+        toolPlanCount: dispatch.fixture.parsed.toolPlanCount,
+        allowedPlanCount: dispatch.fixture.parsed.allowedPlanCount,
+        blockedPlanCount: dispatch.fixture.parsed.blockedPlanCount,
+        providerCallStarted: false,
+        providerCallsEnabled: false,
+        transportInvocationEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: queued.state,
+        queueDepthBefore: queued.queueDepthBefore,
+        queueDepthAfter: queued.queueDepthAfter,
+        pendingQueueDepth: queued.pendingQueueDepth,
+        sessionAccepted: queued.sessionAccepted,
+        sessionCompleted: queued.sessionCompleted,
+        sessionDuplicate: queued.sessionDuplicate,
+        duplicate: queued.duplicate,
+        duplicateOfRequestId: queued.duplicateOfRequestId,
+        queuedAt: queued.queuedAt,
+        parsedAt: queued.parsedAt,
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "tool-dispatch-dry-run"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: false,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "native_tool_dispatch_dry_run",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        transportInvocationEnabled: false,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("tool_plan_summary", {
+        ok: dispatch.fixture.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        toolPlanSummary: dispatch.fixture.parsed,
+        plan: dispatch.plan,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        toolExecutionEnabled: false
+      });
+
+      writeEvent("tool_dispatch_plan", {
+        ok: dispatch.canDispatch,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        dispatchPlan: {
+          callId: dispatch.callId,
+          route: dispatch.route,
+          planHash: dispatch.plan?.planHash || null,
+          dispatchHash: dispatch.dispatchHash,
+          wouldExecute: dispatch.canDispatch,
+          executionEnabled: false,
+          toolExecutionEnabled: false
+        }
+      });
+
+      writeEvent("tool_use_frame", {
+        ok: dispatch.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        frame: dispatch.toolUseFrame
+      });
+      writeEvent("tool_result_frame", {
+        ok: dispatch.parityOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        frame: dispatch.toolResultFrame
+      });
+
+      writeEvent("dispatch_summary", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        dispatchHash: dispatch.dispatchHash,
+        dispatchParityOk: dispatch.parityOk,
+        validationOk,
+        toolName: dispatch.route.method,
+        capability: dispatch.route.capability,
+        dartCapability: dispatch.route.dartCapability,
+        skippedReason: dispatch.toolResultFrame.result.skippedReason,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      });
+
+      writeEvent("end", {
+        ok: validationOk,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        routeStatus: validationOk
+          ? "native_tool_dispatch_dry_run_complete"
+          : "native_tool_dispatch_dry_run_failed",
+        finishReason: validationOk ? "tool_dispatch_dry_run_complete" : "tool_dispatch_dry_run_failed",
+        requestHash: requestBuilder.requestHash,
+        toolSelectionHash: requestBuilder.toolSelectionHash,
+        dispatchHash: dispatch.dispatchHash,
+        fixtureParityOk: dispatch.fixture.parityOk,
+        dispatchParityOk: dispatch.parityOk,
+        validationOk,
+        toolName: dispatch.route.method,
+        capability: dispatch.route.capability,
+        providerCallsEnabled: false,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      });
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code: error.code || "chat_tool_dispatch_dry_run_parse_failed",
+            message: error.message || String(error)
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_tool_dispatch_dry_run_failed",
+          message: error.message || String(error),
+          raw: error.stack || error.message || String(error)
+        }
+      });
+      res.end();
+    }
+  }
+
   function handleDryRunSessions(_req, res) {
     sendJson(res, 200, {
       ...dryRunQueue.snapshot(),
@@ -5330,6 +5764,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-tool-plan-canary-stream") {
       handleChatProviderToolPlanCanaryStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-tool-dispatch-dry-run-stream") {
+      handleChatToolDispatchDryRunStream(req, res);
       return true;
     }
 

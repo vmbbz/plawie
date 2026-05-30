@@ -3771,6 +3771,17 @@ $message''';
     return null;
   }
 
+  String? _nativeToolDispatchPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/native-tool-dispatch ';
+    if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+      return trimmedLeft.substring(prefix.length).trimLeft();
+    }
+    return null;
+  }
+
   Map<String, dynamic> _nativeCanaryChatSendFrame({
     required String message,
     required String sessionKey,
@@ -5312,6 +5323,229 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeToolDispatchMessage(
+    String message, {
+    required String model,
+    String? sessionKey,
+  }) async* {
+    final dispatchMessage = _nativeToolDispatchPayload(message);
+    if (dispatchMessage == null) return;
+    if (dispatchMessage.trim().isEmpty) {
+      yield '[Error] Native tool dispatch dry-run needs a message after /native-tool-dispatch.';
+      return;
+    }
+
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    final requestedModel =
+        model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+    final provider =
+        requestedModel.contains('/') ? requestedModel.split('/').first : null;
+    final chatSendFrame = _nativeCanaryChatSendFrame(
+      message: dispatchMessage.trim(),
+      sessionKey: resolvedSessionKey,
+      model: requestedModel,
+      provider: provider,
+    );
+
+    _addActivity(
+      '[NATIVE-TOOL-DISPATCH] -> Opening embedded Node tool dispatch dry-run',
+    );
+
+    var sawAck = false;
+    await for (final event in NativeGatewayShadowParityService
+        .streamToolDispatchDryRunChatSendFrame(
+      chatSendFrame,
+      log: _addActivity,
+    )) {
+      final eventType = event['event']?.toString();
+      if (eventType == 'ack') {
+        sawAck = true;
+        final ack = event['ack'] is Map
+            ? Map<String, dynamic>.from(event['ack'] as Map)
+            : <String, dynamic>{};
+        final parsed = ack['parsed'] == true;
+        final hashMatches = ack['hashMatches'] == true;
+        final routeStatus = ack['routeStatus']?.toString() ?? 'unknown';
+        final requestHash = ack['requestHash']?.toString() ?? 'unknown';
+        final dispatchHash = ack['dispatchHash']?.toString() ?? 'unknown';
+        final fixtureParityOk = ack['fixtureParityOk'] == true;
+        final dispatchParityOk = ack['dispatchParityOk'] == true;
+        final validationOk = ack['validationOk'] == true;
+        final toolPlanCount = ack['toolPlanCount']?.toString() ?? '0';
+        final allowedPlanCount = ack['allowedPlanCount']?.toString() ?? '0';
+        final blockedPlanCount = ack['blockedPlanCount']?.toString() ?? '0';
+        final runId = ack['runId']?.toString() ?? 'unknown';
+        _addActivity('[NATIVE-TOOL-DISPATCH] OK ACK received');
+        yield [
+          'Native tool dispatch dry-run started',
+          '',
+          'parsed: $parsed',
+          'routeStatus: $routeStatus',
+          'hashMatches: $hashMatches',
+          'requestHash: $requestHash',
+          'dispatchHash: $dispatchHash',
+          'fixtureParityOk: $fixtureParityOk',
+          'dispatchParityOk: $dispatchParityOk',
+          'validationOk: $validationOk',
+          'toolPlanCount: $toolPlanCount',
+          'allowedPlanCount: $allowedPlanCount',
+          'blockedPlanCount: $blockedPlanCount',
+          'providerCallsEnabled: ${ack['providerCallsEnabled'] == true}',
+          'toolExecutionEnabled: ${ack['toolExecutionEnabled'] == true}',
+          'run: $runId',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_plan_summary') {
+        final summary = event['toolPlanSummary'] is Map
+            ? Map<String, dynamic>.from(event['toolPlanSummary'] as Map)
+            : <String, dynamic>{};
+        final names = summary['toolPlanNames'] is List
+            ? (summary['toolPlanNames'] as List).join(', ')
+            : '';
+        yield [
+          'Native dispatch tool plan parsed',
+          '',
+          'toolPlanCount: ${summary['toolPlanCount'] ?? 0}',
+          'allowedPlanCount: ${summary['allowedPlanCount'] ?? 0}',
+          'blockedPlanCount: ${summary['blockedPlanCount'] ?? 0}',
+          'toolPlanNames: $names',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_dispatch_plan') {
+        final dispatchPlan = event['dispatchPlan'] is Map
+            ? Map<String, dynamic>.from(event['dispatchPlan'] as Map)
+            : <String, dynamic>{};
+        final route = dispatchPlan['route'] is Map
+            ? Map<String, dynamic>.from(dispatchPlan['route'] as Map)
+            : <String, dynamic>{};
+        yield [
+          'Native tool dispatch plan',
+          '',
+          'callId: ${dispatchPlan['callId'] ?? 'unknown'}',
+          'method: ${route['method'] ?? 'unknown'}',
+          'capability: ${route['capability'] ?? 'unknown'}',
+          'dartCapability: ${route['dartCapability'] ?? 'unknown'}',
+          'wouldExecute: ${dispatchPlan['wouldExecute'] == true}',
+          'toolExecutionEnabled: ${dispatchPlan['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_use_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final input = frame['input'] is Map
+            ? Map<String, dynamic>.from(frame['input'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        yield [
+          'Native synthetic tool_use frame',
+          '',
+          'name: $name',
+          'input: ${jsonEncode(input)}',
+          'toolExecutionEnabled: ${frame['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'tool_result_frame') {
+        final frame = event['frame'] is Map
+            ? Map<String, dynamic>.from(event['frame'] as Map)
+            : <String, dynamic>{};
+        final name = frame['name']?.toString() ?? 'tool';
+        final result = frame['result'] is Map
+            ? Map<String, dynamic>.from(frame['result'] as Map)
+            : <String, dynamic>{};
+        yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        yield [
+          'Native synthetic tool_result frame',
+          '',
+          'name: $name',
+          'ok: ${result['ok'] == true}',
+          'dryRun: ${result['dryRun'] == true}',
+          'skippedReason: ${result['skippedReason'] ?? 'unknown'}',
+          'capability: ${result['capability'] ?? 'unknown'}',
+          'toolExecutionEnabled: ${result['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'dispatch_summary') {
+        final toolName = event['toolName']?.toString() ?? 'unknown';
+        final capability = event['capability']?.toString() ?? 'unknown';
+        final dispatchParityOk = event['dispatchParityOk'] == true;
+        final validationOk = event['validationOk'] == true;
+        final skipped = event['skippedReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-TOOL-DISPATCH] summary ok=${event['ok'] == true}',
+        );
+        yield [
+          'Native dispatch summary',
+          '',
+          'toolName: $toolName',
+          'capability: $capability',
+          'dispatchParityOk: $dispatchParityOk',
+          'validationOk: $validationOk',
+          'skippedReason: $skipped',
+          'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+          'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          '',
+        ].join('\n');
+        continue;
+      }
+
+      if (eventType == 'end') {
+        final ok = event['ok'] == true;
+        final finishReason = event['finishReason']?.toString() ?? 'unknown';
+        _addActivity(
+          '[NATIVE-TOOL-DISPATCH] ${ok ? 'OK' : 'ERROR'} complete: $finishReason',
+        );
+        if (ok) {
+          yield [
+            'Native tool dispatch dry-run complete',
+            '',
+            'finishReason: $finishReason',
+            'toolName: ${event['toolName'] ?? 'unknown'}',
+            'capability: ${event['capability'] ?? 'unknown'}',
+            'dispatchParityOk: ${event['dispatchParityOk'] == true}',
+            'validationOk: ${event['validationOk'] == true}',
+            'providerCallsEnabled: ${event['providerCallsEnabled'] == true}',
+            'toolExecutionEnabled: ${event['toolExecutionEnabled'] == true}',
+          ].join('\n');
+        }
+        return;
+      }
+
+      if (eventType == 'error') {
+        final raw = _rawGatewayErrorText(event['error'] ?? event);
+        _addActivity('[NATIVE-TOOL-DISPATCH] ERROR $raw');
+        yield '[Error] $raw';
+        return;
+      }
+    }
+
+    if (!sawAck) {
+      yield '[Error] Native tool dispatch dry-run ended before ACK.';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -5324,6 +5558,15 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeToolDispatchPayload(message) != null) {
+      yield* _sendNativeToolDispatchMessage(
+        message,
+        model: model,
+        sessionKey: sessionKey,
+      );
+      return;
+    }
 
     if (_nativeToolPlanPayload(message) != null) {
       yield* _sendNativeToolPlanMessage(

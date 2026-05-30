@@ -73,6 +73,9 @@ contracts, and one tiny live provider stream,
 can run an explicit `/native-tool-plan` canary that attaches native-safe mobile
 tool schemas and captures streamed provider tool-call plans with tool execution
 disabled,
+can run an explicit `/native-tool-dispatch` canary that maps a captured native
+tool plan to synthetic `tool_use` and `tool_result` frames while keeping real
+execution disabled,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -136,6 +139,7 @@ be safely generalized.
 | [34-native-provider-live-canary.md](34-native-provider-live-canary.md) | Explicit `/native-live` UI turns making one tiny OpenRouter provider call from embedded Node |
 | [35-native-provider-stream-parser-parity.md](35-native-provider-stream-parser-parity.md) | Explicit `/native-stream-parity` UI turns validating provider chunk/error/timeout/cancel parsing |
 | [36-native-provider-tool-plan-canary.md](36-native-provider-tool-plan-canary.md) | Explicit `/native-tool-plan` UI turns capturing provider tool-call plans without execution |
+| [37-native-tool-dispatch-dry-run.md](37-native-tool-dispatch-dry-run.md) | Explicit `/native-tool-dispatch` UI turns emitting synthetic tool-use/result frames without execution |
 
 ## Work Rules
 
