@@ -62,8 +62,11 @@ class AvatarCapability extends CapabilityHandler {
 
     if (requestCallback != null) {
       try {
-        final durationMs =
+        var durationMs =
             _intParam(params, ['durationMs', 'duration_ms', 'duration']);
+        if (durationMs == null && gesture.toLowerCase().contains('dance')) {
+          durationMs = 60000;
+        }
         final interrupt = _boolParam(params, ['interrupt']);
         final result = await requestCallback({
           'gesture': gesture,

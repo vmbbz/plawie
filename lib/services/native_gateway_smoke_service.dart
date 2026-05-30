@@ -133,6 +133,19 @@ class NativeGatewaySmokeService {
         '[NATIVE-NODE-EMBEDDED] ws chat frame shape: ${jsonEncode(wsFrameShape['requestShape'])}',
       );
 
+      if (NativeGatewayShadowParityService.shadowDiagnosticsEnabled) {
+        log(
+          '[NATIVE-NODE-EMBEDDED] keeping parser running for real-turn shadow parity.',
+        );
+        return NativeGatewaySmokeReport(
+          passed: ok,
+          message: ok
+              ? 'ok; parser kept alive'
+              : 'unexpected embedded native Node health payload',
+          health: health,
+        );
+      }
+
       final stopped = await _nodeRuntime.stop();
       final stillRunning = await _nodeRuntime.isRunning();
       if (!stopped || stillRunning) {
@@ -496,17 +509,26 @@ Can you wave right, take a camera picture, and vibrate once?''';
   static Future<Map<String, dynamic>> _probeHealth({
     required String expectedRuntime,
   }) async {
-    return _probeJson('/health', expectedRuntime: expectedRuntime);
+    return _probeJson(
+      '/health',
+      expectedRuntime: expectedRuntime,
+      attempts: expectedRuntime == 'native-node-embedded' ? 60 : 12,
+      retryDelay: expectedRuntime == 'native-node-embedded'
+          ? const Duration(milliseconds: 500)
+          : const Duration(milliseconds: 250),
+    );
   }
 
   static Future<Map<String, dynamic>> _probeJson(
     String path, {
     String? expectedRuntime,
+    int attempts = 12,
+    Duration retryDelay = const Duration(milliseconds: 250),
   }) async {
     final client = http.Client();
     try {
       Object? lastError;
-      for (var attempt = 0; attempt < 12; attempt++) {
+      for (var attempt = 0; attempt < attempts; attempt++) {
         try {
           final normalizedPath = path.startsWith('/') ? path : '/$path';
           final response = await client
@@ -532,7 +554,7 @@ Can you wave right, take a camera picture, and vibrate once?''';
           return decoded;
         } catch (e) {
           lastError = e;
-          await Future<void>.delayed(const Duration(milliseconds: 250));
+          await Future<void>.delayed(retryDelay);
         }
       }
       throw StateError('JSON probe $path failed: $lastError');

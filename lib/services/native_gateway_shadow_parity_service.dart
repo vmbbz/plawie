@@ -41,10 +41,17 @@ class NativeGatewayShadowParityService {
     defaultValue: false,
   );
 
+  static bool get shadowDiagnosticsEnabled => _shadowDiagnosticsEnabled;
+
   static bool get diagnosticsEnabled =>
       _smokeDiagnosticsEnabled || _shadowDiagnosticsEnabled;
 
   static DateTime? _lastNativeSkipLogAt;
+  static final List<Map<String, dynamic>> _recentReports =
+      <Map<String, dynamic>>[];
+
+  static List<Map<String, dynamic>> get recentReports =>
+      List.unmodifiable(_recentReports);
 
   static Future<NativeGatewayShadowParityReport?> observeChatSendFrame(
     Map<String, dynamic> frame, {
@@ -60,11 +67,13 @@ class NativeGatewayShadowParityService {
       final nativeShape = native['requestShape'];
       if (nativeShape is! Map<String, dynamic>) {
         log('[NATIVE-SHADOW] native parser returned no requestShape');
-        return NativeGatewayShadowParityReport(
+        final report = NativeGatewayShadowParityReport(
           local: local,
           differences: const <String>['requestShape'],
           nativeCompared: false,
         );
+        _remember(report);
+        return report;
       }
 
       final normalizedNative = _redactedNativeShape(nativeShape);
@@ -77,19 +86,40 @@ class NativeGatewayShadowParityService {
               'differences': diff,
             })}',
       );
-      return NativeGatewayShadowParityReport(
+      final report = NativeGatewayShadowParityReport(
         local: local,
         native: normalizedNative,
         differences: diff,
         nativeCompared: true,
       );
+      _remember(report);
+      return report;
     } catch (e) {
       _logNativeProbeSkip(log, e);
-      return NativeGatewayShadowParityReport(
+      final report = NativeGatewayShadowParityReport(
         local: local,
         differences: const <String>[],
         nativeCompared: false,
       );
+      _remember(report);
+      return report;
+    }
+  }
+
+  static void _remember(NativeGatewayShadowParityReport report) {
+    _recentReports.add({
+      'at': DateTime.now().toIso8601String(),
+      'nativeCompared': report.nativeCompared,
+      'parityOk': report.parityOk,
+      'differences': report.differences,
+      'localHash': report.local['metadataHash'],
+      'nativeHash': report.native?['metadataHash'],
+      'sessionKey': report.local['sessionKey'],
+      'messageChars': report.local['messageChars'],
+      'mobileToolHints': report.local['mobileToolHints'],
+    });
+    if (_recentReports.length > 24) {
+      _recentReports.removeRange(0, _recentReports.length - 24);
     }
   }
 

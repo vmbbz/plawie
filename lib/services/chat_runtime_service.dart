@@ -164,7 +164,12 @@ class ChatRuntimeService extends ChangeNotifier {
         lower.contains('file lock stale') ||
         lower.contains('queued_work_without_active_run') ||
         lower.contains('session file repaired') ||
-        lower.contains('agent cleanup timed out');
+        lower.contains('agent cleanup timed out') ||
+        lower.contains('unknown session') ||
+        lower.contains('unknown sessionkey') ||
+        lower.contains('unknown session key') ||
+        lower.contains('unknown chatid') ||
+        lower.contains('unknown chat id');
   }
 
   Future<void> sendMessage({
@@ -382,10 +387,13 @@ class ChatRuntimeService extends ChangeNotifier {
             chunk.contains('API error')) {
           var errorMsg = chunk.replaceAll('[Error]', '').trim();
           if (_isRecoverableGatewaySessionFailure(errorMsg)) {
+            final rawGatewayError = errorMsg;
             _gatewaySessionKey = null;
             await _persistence.setActiveGatewaySessionKey(null);
             errorMsg =
-                'Gateway session became stale and was reset. Please resend this message.';
+                'Gateway session became stale and was reset before this turn could finish.\n\n'
+                'Raw Gateway error: $rawGatewayError\n\n'
+                'Please resend this message.';
           }
           fullResponse =
               fullResponse.isEmpty ? errorMsg : '$fullResponse\n\n$errorMsg';

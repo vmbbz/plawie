@@ -301,6 +301,14 @@ class _ChatScreenState extends State<ChatScreen>
       };
     }
     command['gesture'] = gesture.toString();
+    final normalizedGesture = command['gesture'].toString().toLowerCase();
+    if (normalizedGesture.contains('dance') &&
+        command['durationMs'] == null &&
+        command['duration_ms'] == null &&
+        command['duration'] == null) {
+      command['durationMs'] = 60000;
+    }
+    debugPrint('[AVATAR] Gesture request: ${jsonEncode(command)}');
 
     final started = await _avatarController
         .playGestureCommand(command)
@@ -316,6 +324,7 @@ class _ChatScreenState extends State<ChatScreen>
     _addDiagnosticLog(
       'Avatar gesture ${started['status']}: ${started['gesture'] ?? command['gesture']}',
     );
+    debugPrint('[AVATAR] Gesture result: ${jsonEncode(started)}');
     return started;
   }
 
@@ -483,6 +492,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[model]',
       '[warn]',
       '[error]',
+      '[native-shadow]',
     ];
     if (prefixes.any((prefix) => lower.startsWith(prefix))) return true;
 

@@ -136,6 +136,7 @@ class GatewayService {
       Duration(seconds: 8);
   static const Duration _gatewayConfigReloadSettle = Duration(seconds: 8);
   static const Duration _gatewayConfigSoftSettle = Duration(seconds: 3);
+  static const Duration _gatewaySessionPatchSettle = Duration(seconds: 5);
   static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 90);
 
   /// Live stream of human-readable chat and gateway events.
@@ -3733,8 +3734,28 @@ $message''';
       _addActivity('[CHAT] WebSocket lane repaired; continuing.');
     }
 
+    // Session routing priority:
+    // 1) explicit sessionKey from caller (per-chat session binding)
+    // 2) agent/<id> model route
+    // 3) isolated mobile default (never agent:main:main)
+    final requestedSessionKey =
+        (sessionKey != null && sessionKey.trim().isNotEmpty)
+            ? sessionKey.trim()
+            : model.startsWith('agent/')
+                ? model.substring(6)
+                : 'main';
+    final resolvedSessionKey =
+        _normalizeMobileChatSessionKey(requestedSessionKey);
+    if (resolvedSessionKey != requestedSessionKey) {
+      _addActivity('[SESS] normalized mobile chat session: '
+          '$requestedSessionKey -> $resolvedSessionKey');
+    }
+
     if (modelSyncChanges.isNotEmpty) {
-      await _patchActiveGatewaySessionModel(modelSyncChanges);
+      await _patchActiveGatewaySessionModel(
+        modelSyncChanges,
+        sessionKey: resolvedSessionKey,
+      );
       token = await _waitForGatewayChatLaneReady(token);
       if (token == null || token.isEmpty) {
         yield '[Error] Gateway is applying the selected model/provider.\n\n'
@@ -3751,6 +3772,9 @@ $message''';
       }
     }
 
+    _addActivity(
+        '[SESS] gateway main=${_connection?.mainSessionKey ?? 'pending'}; '
+        'chat=$resolvedSessionKey');
     _addActivity('[CHAT] → Sending to $model');
 
     const timeoutMs = 300000;
@@ -3770,23 +3794,6 @@ $message''';
       if (chunkController.isClosed) return;
       chunkController.add('[Error] $message');
       chunkController.close();
-    }
-
-    // Session routing priority:
-    // 1) explicit sessionKey from caller (per-chat session binding)
-    // 2) agent/<id> model route
-    // 3) isolated mobile default (never agent:main:main)
-    final requestedSessionKey =
-        (sessionKey != null && sessionKey.trim().isNotEmpty)
-            ? sessionKey.trim()
-            : model.startsWith('agent/')
-                ? model.substring(6)
-                : 'main';
-    final resolvedSessionKey =
-        _normalizeMobileChatSessionKey(requestedSessionKey);
-    if (resolvedSessionKey != requestedSessionKey) {
-      _addActivity('[SESS] normalized mobile chat session: '
-          '$requestedSessionKey -> $resolvedSessionKey');
     }
 
     final outboundMessage =
@@ -5123,18 +5130,28 @@ $message''';
   }
 
   Future<void> _patchActiveGatewaySessionModel(
-    Map<String, dynamic> changedMetadata,
-  ) async {
+    Map<String, dynamic> changedMetadata, {
+    String sessionKey = 'main',
+  }) async {
     if (changedMetadata.isEmpty || _connection == null) return;
+    _beginGatewayConfigTransition(
+      'active gateway session patch',
+      minimumSettle: _gatewaySessionPatchSettle,
+    );
     try {
-      await _connection!.patchSessionMetadata(changedMetadata);
-      _addActivity('[MODEL] active gateway session patched: $changedMetadata');
-      // sessions.patch is fire-and-forget on the socket. Give the gateway a
-      // short turn to apply it before chat.send enters the agent lane.
-      await Future.delayed(const Duration(milliseconds: 350));
+      await _connection!.patchSessionMetadata(
+        changedMetadata,
+        sessionKey: sessionKey,
+      );
+      _addActivity(
+        '[MODEL] active gateway session patched ($sessionKey): $changedMetadata',
+      );
+      await Future.delayed(const Duration(milliseconds: 500));
     } catch (e) {
       _addActivity('[MODEL] active session model patch skipped: $e');
     }
+    disconnectWebSocket();
+    await Future.delayed(_gatewaySessionPatchSettle);
   }
 
   /// Resolves the intended model ID, falling back to preferences then
