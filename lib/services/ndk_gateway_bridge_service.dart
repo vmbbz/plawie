@@ -78,6 +78,11 @@ class NdkGatewayBridgeService {
   /// forward to fllama. Older turns are dropped to stay within context budget.
   static const int _maxHistoryTurns =
       ModelExecutionPolicy.ndkBridgeMaxHistoryTurns;
+  static const int _maxSelectedGatewayTools = 4;
+  static const int _maxGatewayToolDescriptionChars = 220;
+  static const int _maxGatewayToolSchemaChars = 900;
+  static const int _maxGatewayToolProperties = 12;
+  static const int _maxGatewayToolEnumValues = 24;
 
   final _stateController = StreamController<NdkGatewayBridgeState>.broadcast();
   NdkGatewayBridgeState _state = const NdkGatewayBridgeState();
@@ -215,6 +220,7 @@ class NdkGatewayBridgeService {
 
     final messages = _parseMessages(decoded['messages']);
     final tools = _parseTools(decoded['tools']);
+    final selectedTools = _selectToolsForTurn(tools, messages);
 
     // Context trimming:
     // The gateway sends a ~25K-char system prompt and full tool definitions.
@@ -222,9 +228,10 @@ class NdkGatewayBridgeService {
     //   1. Replace or truncate the system prompt to a compact bridge prompt.
     //   2. Preserve recent assistant tool_calls and matching tool results.
     //   3. Keep only the latest bounded conversation slice.
+    //   4. Forward only a small packed set of relevant tool schemas.
     final trimmedMessages = _trimForSmallModel(
       messages,
-      toolsAvailable: tools.isNotEmpty,
+      toolsAvailable: selectedTools.isNotEmpty,
     );
     final chatTurn = _chatTurnFromTrimmedMessages(trimmedMessages);
     if (chatTurn.userMessage.trim().isEmpty) {
@@ -254,14 +261,14 @@ class NdkGatewayBridgeService {
         model: model,
         history: chatTurn.history,
         userMessage: chatTurn.userMessage,
-        tools: tools.isNotEmpty ? tools : null,
+        tools: selectedTools,
       );
     } else {
       final buffer = StringBuffer();
       await for (final token in local.chat(
         chatTurn.history,
         chatTurn.userMessage,
-        tools: tools.isNotEmpty ? tools : null,
+        tools: selectedTools,
         yieldToolCalls: true,
       )) {
         if (token.startsWith('\x00TOOL_CALLS:') && token.endsWith('\x00')) {
@@ -464,6 +471,324 @@ class NdkGatewayBridgeService {
         })
         .whereType<Tool>()
         .toList();
+  }
+
+  List<Tool> _selectToolsForTurn(
+    List<Tool> tools,
+    List<Map<String, dynamic>> messages,
+  ) {
+    if (tools.isEmpty) return const <Tool>[];
+
+    final query = _lastUserMessage(messages).toLowerCase();
+    if (!_hasToolIntent(query)) return const <Tool>[];
+
+    final scored = tools
+        .map((tool) => MapEntry(tool, _scoreToolForTurn(tool, query)))
+        .where((entry) => entry.value > 0)
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final selected = scored
+        .take(_maxSelectedGatewayTools)
+        .map((entry) => _compactGatewayTool(entry.key, query))
+        .toList(growable: false);
+
+    if (selected.isNotEmpty) return selected;
+
+    final broad = tools.where((tool) {
+      final name = tool.name.toLowerCase();
+      return name.contains('node') ||
+          name.contains('tool') ||
+          name.contains('android') ||
+          name.contains('device');
+    }).take(1);
+
+    return broad
+        .map((tool) => _compactGatewayTool(tool, query))
+        .toList(growable: false);
+  }
+
+  bool _hasToolIntent(String query) {
+    if (query.trim().isEmpty) return false;
+    return _containsAny(query, const [
+      'tool',
+      'skill',
+      'capabilit',
+      'can you do',
+      'available',
+      'use ',
+      'run ',
+      'open ',
+      'browse',
+      'web',
+      'search',
+      'camera',
+      'photo',
+      'picture',
+      'snapshot',
+      'battery',
+      'charge',
+      'location',
+      'gps',
+      'weather',
+      'screen',
+      'record',
+      'canvas',
+      'avatar',
+      'gesture',
+      'vibrate',
+      'haptic',
+      'sensor',
+      'flash',
+      'torch',
+      'terminal',
+      'shell',
+      'command',
+    ]);
+  }
+
+  int _scoreToolForTurn(Tool tool, String query) {
+    final name = tool.name.toLowerCase();
+    final description = tool.description.toLowerCase();
+    final schemaProbe = tool.jsonSchema.length > 3000
+        ? tool.jsonSchema.substring(0, 3000).toLowerCase()
+        : tool.jsonSchema.toLowerCase();
+    final haystack = '$name $description $schemaProbe';
+    var score = 0;
+
+    void addFor(List<String> queryTerms, List<String> toolTerms, int weight) {
+      if (!_containsAny(query, queryTerms)) return;
+      if (_containsAny(haystack, toolTerms)) score += weight;
+    }
+
+    addFor(const ['tool', 'skill', 'capabilit', 'available', 'can you do'],
+        const ['tool', 'skill', 'node', 'android', 'device'], 8);
+    addFor(const ['camera', 'photo', 'picture', 'snapshot', 'selfie', 'image'],
+        const ['camera', 'photo', 'picture', 'snapshot', 'image'], 14);
+    addFor(const ['battery', 'charge'],
+        const ['battery', 'charge', 'device', 'android', 'node'], 12);
+    addFor(const ['location', 'gps', 'where am i'],
+        const ['location', 'gps', 'device', 'android', 'node'], 12);
+    addFor(const ['weather', 'forecast'],
+        const ['weather', 'forecast', 'location'], 12);
+    addFor(const ['screen', 'record', 'screenshot', 'canvas', 'browser'],
+        const ['screen', 'record', 'screenshot', 'canvas', 'browser'], 12);
+    addFor(const ['avatar', 'gesture', 'wave', 'dance', 'emotion'],
+        const ['avatar', 'gesture', 'emotion', 'node'], 12);
+    addFor(const ['vibrate', 'haptic'],
+        const ['vibrate', 'haptic', 'device', 'android', 'node'], 12);
+    addFor(const ['sensor', 'accelerometer', 'gyro', 'gyroscope'],
+        const ['sensor', 'accelerometer', 'gyro', 'device', 'node'], 12);
+    addFor(const ['flash', 'torch', 'light'],
+        const ['flash', 'torch', 'light', 'camera', 'node'], 12);
+    addFor(const ['terminal', 'shell', 'command', 'exec'],
+        const ['terminal', 'shell', 'command', 'exec'], 12);
+    addFor(const ['open ', 'browse', 'url', 'web', 'search'],
+        const ['open', 'browse', 'url', 'web', 'search', 'canvas'], 10);
+
+    for (final token in _queryTokens(query)) {
+      if (token.length >= 4 && haystack.contains(token)) score += 1;
+    }
+    if (name.contains('node') || name.contains('android')) score += 2;
+    return score;
+  }
+
+  Tool _compactGatewayTool(Tool tool, String query) {
+    final compactSchema = _compactToolSchema(tool.jsonSchema, query);
+    var schemaJson = jsonEncode(compactSchema);
+    if (schemaJson.length > _maxGatewayToolSchemaChars) {
+      schemaJson = jsonEncode({
+        'type': 'object',
+        'additionalProperties': true,
+      });
+    }
+
+    return Tool(
+      name: tool.name,
+      description: _truncateBridgeContent(
+        tool.description,
+        _maxGatewayToolDescriptionChars,
+      ),
+      jsonSchema: schemaJson,
+    );
+  }
+
+  Map<String, dynamic> _compactToolSchema(String schemaJson, String query) {
+    try {
+      final decoded = jsonDecode(schemaJson);
+      if (decoded is Map) {
+        return _compactSchemaMap(decoded, query);
+      }
+    } catch (_) {}
+    return {
+      'type': 'object',
+      'additionalProperties': true,
+    };
+  }
+
+  Map<String, dynamic> _compactSchemaMap(Map raw, String query) {
+    final result = <String, dynamic>{
+      'type': raw['type']?.toString().isNotEmpty == true
+          ? raw['type'].toString()
+          : 'object',
+    };
+
+    final rawProperties = raw['properties'];
+    if (rawProperties is Map && rawProperties.isNotEmpty) {
+      final selectedKeys = _selectSchemaPropertyKeys(rawProperties, raw, query);
+      final compactProperties = <String, dynamic>{};
+      for (final key in selectedKeys) {
+        final value = rawProperties[key];
+        if (value is Map) {
+          compactProperties[key] = _compactSchemaProperty(value, query);
+        }
+      }
+      if (compactProperties.isNotEmpty) {
+        result['properties'] = compactProperties;
+      }
+
+      final required = raw['required'];
+      if (required is List) {
+        final keptRequired = required
+            .map((value) => value.toString())
+            .where(compactProperties.containsKey)
+            .toList(growable: false);
+        if (keptRequired.isNotEmpty) result['required'] = keptRequired;
+      }
+    }
+
+    if (!result.containsKey('properties')) {
+      result['additionalProperties'] = true;
+    }
+    return result;
+  }
+
+  List<String> _selectSchemaPropertyKeys(
+    Map properties,
+    Map schema,
+    String query,
+  ) {
+    final preferred = const [
+      'action',
+      'tool',
+      'node',
+      'name',
+      'command',
+      'input',
+      'text',
+      'query',
+      'url',
+      'location',
+      'arguments',
+      'args',
+      'params',
+      'invokeCommand',
+      'invokeParamsJson',
+      'durationMs',
+      'quality',
+      'gesture',
+      'emotion',
+    ];
+    final required = schema['required'] is List
+        ? (schema['required'] as List).map((value) => value.toString()).toList()
+        : const <String>[];
+    final keys = properties.keys.map((key) => key.toString()).toList();
+    final selected = <String>[];
+
+    void add(String key) {
+      if (properties.containsKey(key) &&
+          !selected.contains(key) &&
+          selected.length < _maxGatewayToolProperties) {
+        selected.add(key);
+      }
+    }
+
+    for (final key in required) {
+      add(key);
+    }
+    for (final key in preferred) {
+      add(key);
+    }
+
+    final queryTokens = _queryTokens(query).toSet();
+    final scored = keys.where((key) => !selected.contains(key)).map((key) {
+      var score = 0;
+      final lowerKey = key.toLowerCase();
+      if (queryTokens.any(lowerKey.contains)) score += 4;
+      final value = properties[key];
+      if (value is Map) {
+        final description = value['description']?.toString().toLowerCase();
+        if (description != null &&
+            queryTokens.any((token) => description.contains(token))) {
+          score += 2;
+        }
+      }
+      return MapEntry(key, score);
+    }).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    for (final entry in scored) {
+      if (selected.length >= _maxGatewayToolProperties) break;
+      add(entry.key);
+    }
+    return selected;
+  }
+
+  Map<String, dynamic> _compactSchemaProperty(Map raw, String query) {
+    final result = <String, dynamic>{};
+    final type = raw['type'];
+    if (type is String && type.isNotEmpty) result['type'] = type;
+
+    final description = raw['description'];
+    if (description is String && description.trim().isNotEmpty) {
+      result['description'] = _truncateBridgeContent(description, 120);
+    }
+
+    final enumValues = raw['enum'];
+    if (enumValues is List && enumValues.isNotEmpty) {
+      final sortedEnumValues = List<Object?>.from(enumValues);
+      final queryTokens = _queryTokens(query).toSet();
+      sortedEnumValues.sort((a, b) {
+        final left = _enumScore(a, queryTokens);
+        final right = _enumScore(b, queryTokens);
+        return right.compareTo(left);
+      });
+      result['enum'] = sortedEnumValues
+          .take(_maxGatewayToolEnumValues)
+          .map((value) =>
+              value is num || value is bool ? value : value.toString())
+          .toList(growable: false);
+    }
+
+    final items = raw['items'];
+    if (items is Map) {
+      final itemType = items['type'];
+      if (itemType is String && itemType.isNotEmpty) {
+        result['items'] = {'type': itemType};
+      }
+    }
+
+    if (result.isEmpty) result['type'] = 'string';
+    return result;
+  }
+
+  bool _containsAny(String text, List<String> needles) {
+    return needles.any(text.contains);
+  }
+
+  int _enumScore(Object? value, Set<String> queryTokens) {
+    final text = value?.toString().toLowerCase() ?? '';
+    var score = 0;
+    for (final token in queryTokens) {
+      if (text.contains(token)) score += 1;
+    }
+    return score;
+  }
+
+  Iterable<String> _queryTokens(String query) sync* {
+    for (final token in query.split(RegExp(r'[^a-z0-9_]+'))) {
+      if (token.length >= 3) yield token;
+    }
   }
 
   List<Map<String, dynamic>> _parseMessages(dynamic raw) {
