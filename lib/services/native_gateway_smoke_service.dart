@@ -47,6 +47,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortBindInFlight = false;
   static bool _productionPortBindSoakInFlight = false;
   static bool _runtimeOwnerCanaryInFlight = false;
+  static bool _productionPortRouteOwnerInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -530,6 +531,7 @@ class NativeGatewaySmokeService {
       var nativeRunning = false;
       var nativeObservedAlive = false;
       var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
       var rollbackStarted = false;
       var rollbackRunning = false;
       var rollbackHealthOk = false;
@@ -577,9 +579,8 @@ class NativeGatewaySmokeService {
             attempts: 12,
             retryDelay: const Duration(milliseconds: 500),
           );
-          productionHealthOkBefore = productionBefore['ok'] == true ||
-              productionBefore['status'] == 'ok' ||
-              productionBefore.isNotEmpty;
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
         } catch (e) {
           productionBeforeError = e;
         }
@@ -647,6 +648,13 @@ class NativeGatewaySmokeService {
         } catch (e) {
           nativeStopError = e;
         }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
 
         try {
           for (var attempt = 1; attempt <= 3; attempt++) {
@@ -660,9 +668,8 @@ class NativeGatewaySmokeService {
                 retryDelay: const Duration(milliseconds: 750),
                 requestTimeout: const Duration(seconds: 1),
               );
-              rollbackHealthOk = rollbackHealth['ok'] == true ||
-                  rollbackHealth['status'] == 'ok' ||
-                  rollbackHealth.isNotEmpty;
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
             } catch (e) {
               rollbackError = e;
             }
@@ -713,6 +720,7 @@ class NativeGatewaySmokeService {
           nativeStarted &&
           nativeGuardOk &&
           nativeStopped &&
+          nativePortReleasedAfterStop &&
           rollbackOk;
 
       final report = <String, dynamic>{
@@ -754,6 +762,7 @@ class NativeGatewaySmokeService {
         'nativeStopped': nativeStopped,
         if (nativeStopError != null)
           'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
         'rollbackRuntimeId': 'proot',
         'rollbackStarted': rollbackStarted,
         'rollbackRunning': rollbackRunning,
@@ -841,9 +850,8 @@ class NativeGatewaySmokeService {
 
       final passedCycles =
           reports.where((report) => report['ok'] == true).length;
-      final finalProductionOk = finalProductionHealth['ok'] == true ||
-          finalProductionHealth['status'] == 'ok' ||
-          finalProductionHealth.isNotEmpty;
+      final finalProductionOk =
+          _productionHealthLooksLikeProot(finalProductionHealth);
       final finalNativeSmokeOk =
           finalNativeSmokeHealth['runtime'] == 'native-node-embedded' &&
               finalNativeSmokeHealth['port'] ==
@@ -924,6 +932,7 @@ class NativeGatewaySmokeService {
       var nativeObservedAlive = false;
       var nativeOwnerProbesOk = false;
       var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
       var rollbackStarted = false;
       var rollbackRunning = false;
       var rollbackHealthOk = false;
@@ -971,9 +980,8 @@ class NativeGatewaySmokeService {
             attempts: 12,
             retryDelay: const Duration(milliseconds: 500),
           );
-          productionHealthOkBefore = productionBefore['ok'] == true ||
-              productionBefore['status'] == 'ok' ||
-              productionBefore.isNotEmpty;
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
         } catch (e) {
           productionBeforeError = e;
         }
@@ -1104,6 +1112,13 @@ class NativeGatewaySmokeService {
         } catch (e) {
           nativeStopError = e;
         }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
 
         try {
           for (var attempt = 1; attempt <= 3; attempt++) {
@@ -1117,9 +1132,8 @@ class NativeGatewaySmokeService {
                 retryDelay: const Duration(milliseconds: 750),
                 requestTimeout: const Duration(seconds: 1),
               );
-              rollbackHealthOk = rollbackHealth['ok'] == true ||
-                  rollbackHealth['status'] == 'ok' ||
-                  rollbackHealth.isNotEmpty;
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
             } catch (e) {
               rollbackError = e;
             }
@@ -1171,6 +1185,7 @@ class NativeGatewaySmokeService {
           nativeInitialGuardOk &&
           nativeOwnerProbesOk &&
           nativeStopped &&
+          nativePortReleasedAfterStop &&
           rollbackOk;
 
       final report = <String, dynamic>{
@@ -1218,6 +1233,7 @@ class NativeGatewaySmokeService {
         'nativeStopped': nativeStopped,
         if (nativeStopError != null)
           'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
         'rollbackRuntimeId': 'proot',
         'rollbackStarted': rollbackStarted,
         'rollbackRunning': rollbackRunning,
@@ -1235,6 +1251,471 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _runtimeOwnerCanaryInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runProductionPortRouteOwnerDryRun({
+    required void Function(String message) log,
+  }) async {
+    if (_productionPortRouteOwnerInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-route-owner-dry-run',
+        'alreadyInFlight': true,
+        'decision': 'Production-port route-owner dry-run is already running.',
+      };
+    }
+
+    _productionPortRouteOwnerInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var routeDryRunSent = false;
+      var routeAckOk = false;
+      var routePlanOk = false;
+      var routeProviderGateOk = false;
+      var routeToolGateOk = false;
+      var routeOrderOk = false;
+      var routeEndOk = false;
+      var routeDryRunOk = false;
+      var postRouteGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postRouteHealth = <String, dynamic>{};
+      Map<String, dynamic> postRouteProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> routeEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? routeError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-ROUTE-OWNER] Opening production-port route dry-run.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Route-owner dry-run requires PRoot as the current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before route dry-run.',
+          );
+        }
+
+        log('[NATIVE-ROUTE-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before route dry-run.',
+          );
+        }
+
+        log(
+          '[NATIVE-ROUTE-OWNER] Starting native on 18789 and sending '
+          'routing skeleton dry-run.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError('Native route-owner dry-run did not start.');
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        routeDryRunSent = true;
+        routeEvents = await _streamProductionNdjson(
+          '/gateway/chat-route-skeleton-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-route-owner-request',
+            idempotencyKey: 'production-route-owner-idempotency-key',
+          ),
+          expectedStatus: 202,
+        );
+
+        final ackEvent = _firstEvent(routeEvents, 'ack');
+        final routePlanEvent = _firstEvent(routeEvents, 'route_plan');
+        final providerGateEvent = _firstEvent(routeEvents, 'provider_gate');
+        final toolGateEvent = _firstEvent(routeEvents, 'tool_gate');
+        final endEvent = _firstEvent(routeEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final routePlan = routePlanEvent['routePlan'] is Map
+            ? Map<String, dynamic>.from(routePlanEvent['routePlan'] as Map)
+            : <String, dynamic>{};
+        final providerGate = providerGateEvent['gate'] is Map
+            ? Map<String, dynamic>.from(providerGateEvent['gate'] as Map)
+            : <String, dynamic>{};
+        final toolGate = toolGateEvent['gate'] is Map
+            ? Map<String, dynamic>.from(toolGateEvent['gate'] as Map)
+            : <String, dynamic>{};
+        final providerCallGate = routePlan['providerCallGate'] is Map
+            ? Map<String, dynamic>.from(routePlan['providerCallGate'] as Map)
+            : <String, dynamic>{};
+        final toolExecutionGate = routePlan['toolExecutionGate'] is Map
+            ? Map<String, dynamic>.from(routePlan['toolExecutionGate'] as Map)
+            : <String, dynamic>{};
+        final cancellation = routePlan['cancellation'] is Map
+            ? Map<String, dynamic>.from(routePlan['cancellation'] as Map)
+            : <String, dynamic>{};
+        final observedOrder =
+            routeEvents.map((event) => event['event']?.toString()).toList();
+        const expectedOrder = <String>[
+          'ack',
+          'route_plan',
+          'provider_gate',
+          'tool_gate',
+          'delta',
+          'delta',
+          'end',
+        ];
+        routeOrderOk = observedOrder.length >= expectedOrder.length;
+        for (var i = 0; i < expectedOrder.length && routeOrderOk; i++) {
+          routeOrderOk = observedOrder[i] == expectedOrder[i];
+        }
+        routeAckOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == true &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'disabled' &&
+            ackEvent['routeStatus'] == 'blocked_before_provider' &&
+            ackEvent['acceptedForRouting'] == false &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == true &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['providerCallsEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ack['routeStatus'] == 'blocked_before_provider' &&
+            ack['providerCallsEnabled'] != true &&
+            ack['executionEnabled'] != true;
+        routePlanOk = routePlanEvent['ok'] == true &&
+            routePlan['routeStatus'] == 'blocked_before_provider' &&
+            routePlan['acceptedForRouting'] == false &&
+            routePlan['chatRoutingEnabled'] == false &&
+            providerCallGate['enabled'] == false &&
+            toolExecutionGate['enabled'] == false &&
+            cancellation['supported'] == true &&
+            cancellation['endpoint'] == '/gateway/chat-route-skeleton-cancel';
+        routeProviderGateOk = providerGateEvent['ok'] == true &&
+            providerGateEvent['providerCallsEnabled'] == false &&
+            providerGate['enabled'] == false &&
+            providerGate['status'] == 'blocked';
+        routeToolGateOk = toolGateEvent['ok'] == true &&
+            toolGateEvent['executionEnabled'] == false &&
+            toolGate['enabled'] == false &&
+            toolGate['status'] == 'blocked';
+        routeEndOk = endEvent['ok'] == true &&
+            endEvent['finishReason'] == 'routing_skeleton_complete' &&
+            endEvent['providerCallsEnabled'] == false &&
+            endEvent['executionEnabled'] == false;
+        routeDryRunOk = routeAckOk &&
+            routePlanOk &&
+            routeProviderGateOk &&
+            routeToolGateOk &&
+            routeOrderOk &&
+            routeEndOk;
+
+        postRouteHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postRouteProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postRouteGuardOk = postRouteHealth['ok'] == true &&
+            postRouteHealth['runtime'] == 'native-node-embedded' &&
+            postRouteHealth['port'] == AppConstants.gatewayPort &&
+            postRouteHealth['productionPortBindCanary'] == true &&
+            postRouteHealth['openclawStarted'] == false &&
+            postRouteProbe['runtime'] == 'native-node-embedded' &&
+            postRouteProbe['port'] == AppConstants.gatewayPort &&
+            postRouteProbe['productionPortBindCanary'] == true &&
+            postRouteProbe['canaryOnly'] == true &&
+            postRouteProbe['productionReady'] == false &&
+            postRouteProbe['openclawStarted'] == false &&
+            postRouteProbe['chatRoutingEnabled'] == false &&
+            postRouteProbe['providerCallsEnabled'] == false &&
+            postRouteProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (routeDryRunSent) {
+          routeError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          routeDryRunOk &&
+          postRouteGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final observedOrder =
+          routeEvents.map((event) => event['event']?.toString()).toList();
+      final ackEvent = _firstEvent(routeEvents, 'ack');
+      final routePlanEvent = _firstEvent(routeEvents, 'route_plan');
+      final endEvent = _firstEvent(routeEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final routePlan = routePlanEvent['routePlan'] is Map
+          ? Map<String, dynamic>.from(routePlanEvent['routePlan'] as Map)
+          : <String, dynamic>{};
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-route-owner-dry-run',
+        'mode': 'native-production-port-route-skeleton-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'routeDryRunSent': routeDryRunSent,
+        'routeDryRunOk': routeDryRunOk,
+        'routeAckOk': routeAckOk,
+        'routePlanOk': routePlanOk,
+        'routeProviderGateOk': routeProviderGateOk,
+        'routeToolGateOk': routeToolGateOk,
+        'routeOrderOk': routeOrderOk,
+        'routeEndOk': routeEndOk,
+        'routeEventsCount': routeEvents.length,
+        'routeObservedOrder': observedOrder,
+        'routeStatus': ackEvent['routeStatus'] ?? ack['routeStatus'],
+        'routePlanStatus': routePlan['routeStatus'],
+        'routeFinishReason': endEvent['finishReason'],
+        'routeAcceptedForRouting': ackEvent['acceptedForRouting'] == true,
+        'routeProviderCallsEnabled': ackEvent['providerCallsEnabled'] == true,
+        'routeExecutionEnabled': ackEvent['executionEnabled'] == true,
+        'routeRunId': ack['runId'],
+        'routeRequestId': ack['requestId'],
+        if (routeError != null) 'routeError': routeError.toString(),
+        'postRouteGuardOk': postRouteGuardOk,
+        'postRouteRuntimeReported': postRouteHealth['runtime'],
+        'postRouteCanaryOnly': postRouteProbe['canaryOnly'] == true,
+        'postRouteChatRoutingEnabled':
+            postRouteProbe['chatRoutingEnabled'] == true,
+        'postRouteProviderCallsEnabled':
+            postRouteProbe['providerCallsEnabled'] == true,
+        'postRouteToolExecutionEnabled':
+            postRouteProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, accepted a route dry-run, blocked execution, and PRoot was restored.'
+            : 'Production-port route owner dry-run is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'native production-port provider envelope dry-run with provider calls still disabled',
+      };
+      log('[NATIVE-ROUTE-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortRouteOwnerInFlight = false;
     }
   }
 
@@ -1798,6 +2279,66 @@ Can you wave right, take a camera picture, and vibrate once?''';
     }
     client.close();
     return false;
+  }
+
+  static Map<String, dynamic> _firstEvent(
+    List<Map<String, dynamic>> events,
+    String eventName,
+  ) {
+    for (final event in events) {
+      if (event['event'] == eventName) return event;
+    }
+    return <String, dynamic>{};
+  }
+
+  static bool _productionHealthLooksLikeProot(Map<String, dynamic> health) {
+    if (health.isEmpty) return false;
+    if (health['runtime'] == 'native-node-embedded') return false;
+    if (health['productionPortBindCanary'] == true) return false;
+    return health['ok'] == true ||
+        health['status'] == 'ok' ||
+        health['status'] == 'live' ||
+        health.isNotEmpty;
+  }
+
+  static Future<List<Map<String, dynamic>>> _streamProductionNdjson(
+    String path,
+    Map<String, dynamic> payload, {
+    required int expectedStatus,
+  }) async {
+    final client = http.Client();
+    try {
+      final normalizedPath = path.startsWith('/') ? path : '/$path';
+      final request = http.Request(
+        'POST',
+        Uri.parse('${AppConstants.gatewayUrl}$normalizedPath'),
+      )
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode(payload);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(milliseconds: 2500));
+      if (response.statusCode != expectedStatus) {
+        final body = await response.stream.bytesToString();
+        throw StateError('HTTP ${response.statusCode}: $body');
+      }
+
+      final events = <Map<String, dynamic>>[];
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 12))) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map<String, dynamic>) {
+          events.add(decoded);
+        }
+      }
+      return events;
+    } finally {
+      client.close();
+    }
   }
 
   static Future<Map<String, dynamic>> _postJson(

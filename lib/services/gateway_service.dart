@@ -3944,6 +3944,27 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionRouteOwnerPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-route-owner',
+      '/native-production-route',
+      '/native-owner-route',
+      'native-route-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) return 'production route owner dry-run';
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty ? 'production route owner dry-run' : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7007,6 +7028,69 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionRouteOwnerMessage(
+    String message,
+  ) async* {
+    final payload = _nativeProductionRouteOwnerPayload(message);
+    if (payload == null) return;
+    _addActivity(
+      '[NATIVE-ROUTE-OWNER] -> Opening production-port route owner dry-run',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionPortRouteOwnerDryRun(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-ROUTE-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production route-owner dry-run complete'
+            : 'Native production route-owner dry-run pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'routeDryRunSent: ${report['routeDryRunSent'] == true}',
+        'routeDryRunOk: ${report['routeDryRunOk'] == true}',
+        'routeAckOk: ${report['routeAckOk'] == true}',
+        'routePlanOk: ${report['routePlanOk'] == true}',
+        'routeProviderGateOk: ${report['routeProviderGateOk'] == true}',
+        'routeToolGateOk: ${report['routeToolGateOk'] == true}',
+        'routeOrderOk: ${report['routeOrderOk'] == true}',
+        'routeEndOk: ${report['routeEndOk'] == true}',
+        'routeStatus: ${report['routeStatus'] ?? 'unknown'}',
+        'routeFinishReason: ${report['routeFinishReason'] ?? 'unknown'}',
+        'routeProviderCallsEnabled: ${report['routeProviderCallsEnabled'] == true}',
+        'routeExecutionEnabled: ${report['routeExecutionEnabled'] == true}',
+        'postRouteGuardOk: ${report['postRouteGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-ROUTE-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7019,6 +7103,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionRouteOwnerPayload(message) != null) {
+      yield* _sendNativeProductionRouteOwnerMessage(message);
+      return;
+    }
 
     if (_nativeRuntimeOwnerCanaryHoldSeconds(message) != null) {
       yield* _sendNativeRuntimeOwnerCanaryMessage(message);
