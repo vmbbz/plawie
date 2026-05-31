@@ -52,6 +52,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderBuilderInFlight = false;
   static bool _productionPortProviderTransportInFlight = false;
   static bool _productionPortProviderLiveInFlight = false;
+  static bool _productionPortProviderBackedChatInFlight = false;
   static bool _productionPortProviderStreamParityInFlight = false;
   static bool _productionPortProviderToolPlanInFlight = false;
   static bool _productionPortToolDispatchInFlight = false;
@@ -3783,6 +3784,21 @@ class NativeGatewaySmokeService {
               '';
       final deltaEvents =
           liveEvents.where((event) => event['event'] == 'delta').toList();
+      final redactedBodyShape = providerRequest['redactedBodyShape'] is Map
+          ? Map<String, dynamic>.from(
+              providerRequest['redactedBodyShape'] as Map,
+            )
+          : <String, dynamic>{};
+      final redactedBodyShapeText = jsonEncode(redactedBodyShape);
+      final requestHasToolSchemas = redactedBodyShape.containsKey('tools') ||
+          redactedBodyShape.containsKey('tool_choice') ||
+          redactedBodyShapeText.contains('"tools"') ||
+          redactedBodyShapeText.contains('"tool_choice"');
+      final toolExecutionDisabledOk = liveEndOk &&
+          endEvent['executionEnabled'] == false &&
+          requestHasToolSchemas == false &&
+          nativeProbe['toolExecutionEnabled'] != true &&
+          postLiveProbe['toolExecutionEnabled'] != true;
 
       final report = <String, dynamic>{
         'ok': ok,
@@ -3829,6 +3845,8 @@ class NativeGatewaySmokeService {
         'providerCallStartedOk': providerCallStartedOk,
         'providerResponseOk': providerResponseOk,
         'providerErrorSurfaceOk': providerErrorSurfaceOk,
+        'requestHasToolSchemas': requestHasToolSchemas,
+        'toolExecutionDisabledOk': toolExecutionDisabledOk,
         'liveOrderOk': liveOrderOk,
         'liveEndOk': liveEndOk,
         'liveEventsCount': liveEvents.length,
@@ -3846,6 +3864,8 @@ class NativeGatewaySmokeService {
         'promptChars': providerRequest['promptChars'] ?? ack['promptChars'],
         'requestBodyBytes':
             providerRequest['requestBodyBytes'] ?? ack['requestBodyBytes'],
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
         'apiKeyLoaded': apiKeyLoaded,
         'providerCallStarted': callStartedEvent['providerCallStarted'] == true,
         'providerBillingSurfaceReached':
@@ -3899,6 +3919,126 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderLiveInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderBackedChatCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt =
+        'native production provider-backed chat canary with tool execution disabled',
+  }) async {
+    if (_productionPortProviderBackedChatInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-backed-chat-canary',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port provider-backed chat canary is already running.',
+      };
+    }
+
+    _productionPortProviderBackedChatInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
+      final title = providerConfigForNative['title']?.toString().trim();
+      if (title == null || title.isEmpty) {
+        providerConfigForNative['title'] =
+            'Plawie Native Provider-Backed Chat Canary';
+      }
+
+      log(
+        '[NATIVE-CHAT-OWNER] Opening provider-backed chat canary with '
+        'tool execution disabled.',
+      );
+
+      final innerReport = await runProductionPortProviderLiveCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-LIVE-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-LIVE-OWNER]',
+              '[NATIVE-CHAT-OWNER]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        providerConfig: providerConfigForNative,
+        prompt: prompt,
+      );
+
+      final deltaCount = innerReport['deltaCount'];
+      final textChars = innerReport['textChars'];
+      final providerBackedChatOk = innerReport['liveSuccessOk'] == true &&
+          innerReport['providerRequestOk'] == true &&
+          innerReport['providerCallStartedOk'] == true &&
+          innerReport['providerResponseOk'] == true &&
+          innerReport['providerCallStarted'] == true &&
+          innerReport['providerBillingSurfaceReached'] == true &&
+          innerReport['statusCode'] == 200 &&
+          deltaCount is num &&
+          deltaCount > 0 &&
+          textChars is num &&
+          textChars > 0 &&
+          innerReport['rawProviderErrorForwarded'] != true;
+      final toolExecutionDisabledOk =
+          innerReport['toolExecutionDisabledOk'] == true &&
+              innerReport['requestHasToolSchemas'] == false &&
+              innerReport['executionEnabled'] != true &&
+              innerReport['nativeToolExecutionEnabled'] != true &&
+              innerReport['postLiveToolExecutionEnabled'] != true;
+      final providerBackedChatCanaryOk = innerReport['ok'] == true &&
+          providerBackedChatOk &&
+          toolExecutionDisabledOk;
+
+      final report = <String, dynamic>{
+        ...innerReport,
+        'ok': providerBackedChatCanaryOk,
+        'phase': 'hidden-production-port-provider-backed-chat-canary',
+        'mode':
+            'native-production-port-provider-backed-chat-with-tools-disabled-rollback',
+        'innerPhase': innerReport['phase'],
+        'innerOk': innerReport['ok'] == true,
+        'providerBackedChatCanaryOk': providerBackedChatCanaryOk,
+        'providerBackedChatOk': providerBackedChatOk,
+        'chatResponseOk': providerBackedChatOk,
+        'toolExecutionDisabledOk': toolExecutionDisabledOk,
+        'providerCallsEnabledOk': innerReport['providerCallsEnabled'] == true &&
+            innerReport['providerCallStarted'] == true,
+        'requestHasToolSchemas': innerReport['requestHasToolSchemas'] == true,
+        'innerDurationMs': innerReport['durationMs'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': providerBackedChatCanaryOk
+            ? 'Native owned 18789, completed one provider-backed chat stream with tool execution disabled, and PRoot was restored.'
+            : 'Production-port provider-backed chat canary is not promotable; require a successful provider response, no tool schemas, tool execution disabled, and PRoot rollback.',
+        'nextGate':
+            'production-port native chat response UI canary with PRoot rollback',
+      };
+      log('[NATIVE-CHAT-OWNER] ${jsonEncode({
+            ...report,
+            'rawProviderErrorPreview': report['rawProviderErrorPreview'] == null
+                ? null
+                : '<redacted in activity log>',
+          })}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-backed-chat-canary',
+        'mode':
+            'native-production-port-provider-backed-chat-with-tools-disabled-rollback',
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Production-port provider-backed chat canary failed before a report was produced.',
+      };
+      log('[NATIVE-CHAT-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortProviderBackedChatInFlight = false;
     }
   }
 

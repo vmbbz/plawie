@@ -4065,6 +4065,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderBackedChatPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-chat-owner',
+      '/native-production-chat',
+      '/native-provider-chat-owner',
+      '/native-provider-backed-chat-owner',
+      'native-chat-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production provider-backed chat canary with tool execution disabled';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production provider-backed chat canary with tool execution disabled'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionProviderStreamParityPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -7697,6 +7723,87 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderBackedChatMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionProviderBackedChatPayload(message);
+    if (payload == null) return;
+
+    final providerConfig =
+        await resolveNativeProviderLiveCanaryConfig(model: model);
+    if (providerConfig == null) {
+      yield '[Error] Native production provider-backed chat canary needs an OpenRouter model with a configured API key.';
+      return;
+    }
+
+    _addActivity(
+      '[NATIVE-CHAT-OWNER] -> Opening production-port provider-backed chat canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderBackedChatCanary(
+        log: _addActivity,
+        providerConfig: providerConfig,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-CHAT-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production provider-backed chat canary complete'
+            : 'Native production provider-backed chat canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'providerBackedChatCanaryOk: ${report['providerBackedChatCanaryOk'] == true}',
+        'providerBackedChatOk: ${report['providerBackedChatOk'] == true}',
+        'chatResponseOk: ${report['chatResponseOk'] == true}',
+        'toolExecutionDisabledOk: ${report['toolExecutionDisabledOk'] == true}',
+        'requestHasToolSchemas: ${report['requestHasToolSchemas'] == true}',
+        'providerRequestOk: ${report['providerRequestOk'] == true}',
+        'providerCallStartedOk: ${report['providerCallStartedOk'] == true}',
+        'providerResponseOk: ${report['providerResponseOk'] == true}',
+        'liveOrderOk: ${report['liveOrderOk'] == true}',
+        'liveEndOk: ${report['liveEndOk'] == true}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'maxTokens: ${report['maxTokens'] ?? 'unknown'}',
+        'apiKeyLoaded: ${report['apiKeyLoaded'] == true}',
+        'statusCode: ${report['statusCode'] ?? 'unknown'}',
+        'deltaCount: ${report['deltaCount'] ?? 0}',
+        'textChars: ${report['textChars'] ?? 0}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        'postLiveGuardOk: ${report['postLiveGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-CHAT-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionProviderStreamParityMessage(
     String message, {
     required String model,
@@ -8508,6 +8615,14 @@ $message''';
 
     if (_nativeProductionProviderStreamParityPayload(message) != null) {
       yield* _sendNativeProductionProviderStreamParityMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionProviderBackedChatPayload(message) != null) {
+      yield* _sendNativeProductionProviderBackedChatMessage(
         message,
         model: model,
       );

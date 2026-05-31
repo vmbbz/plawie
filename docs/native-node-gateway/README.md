@@ -197,6 +197,7 @@ be safely generalized.
 | [57-native-owner-bridge-execution-readonly-canary.md](57-native-owner-bridge-execution-readonly-canary.md) | Explicit `/native-bridge-exec-owner` diagnostics proving read-only native-to-Dart bridge execution on `18789` |
 | [58-native-owner-bridge-execution-haptic-canary.md](58-native-owner-bridge-execution-haptic-canary.md) | Explicit `/native-haptic-exec-owner` diagnostics proving bounded haptic native-to-Dart bridge execution on `18789` |
 | [59-native-owner-bridge-execution-avatar-canary.md](59-native-owner-bridge-execution-avatar-canary.md) | Explicit `/native-avatar-exec-owner` diagnostics proving protected avatar native-to-Dart bridge execution on `18789` |
+| [60-native-owner-provider-backed-chat-canary.md](60-native-owner-provider-backed-chat-canary.md) | Explicit `/native-chat-owner` diagnostics proving one provider-backed chat stream on `18789` while tool execution remains disabled |
 
 ## Work Rules
 
