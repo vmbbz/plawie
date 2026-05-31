@@ -7,6 +7,7 @@ import 'preferences_service.dart';
 import 'skills_service.dart';
 import 'tts_service.dart';
 import 'gateway_tool_catalog.dart';
+import 'native_gateway_smoke_service.dart';
 import 'capabilities/avatar_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/sensor_capability.dart';
@@ -115,6 +116,9 @@ class AgentSkillServer {
     } else if (request.method == 'POST' &&
         path == '/api/native-gateway/dispatch-execute-canary') {
       await _handleNativeGatewayDispatchExecuteCanary(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/production-port-bind-canary') {
+      await _handleNativeGatewayProductionPortBindCanary(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -135,6 +139,37 @@ class AgentSkillServer {
       await _handleValeo(request);
     } else {
       _sendNotFound(request);
+    }
+  }
+
+  Future<void> _handleNativeGatewayProductionPortBindCanary(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionPortBindCanary(
+        log: (message) => debugPrint('[GATEWAY] $message'),
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
     }
   }
 
@@ -1059,9 +1094,13 @@ class AgentSkillServer {
     }
   }
 
-  void _sendJson(HttpRequest request, Map<String, dynamic> data) {
+  void _sendJson(
+    HttpRequest request,
+    Map<String, dynamic> data, {
+    int statusCode = HttpStatus.ok,
+  }) {
     request.response
-      ..statusCode = HttpStatus.ok
+      ..statusCode = statusCode
       ..headers.contentType = ContentType.json
       ..write(jsonEncode(data))
       ..close();

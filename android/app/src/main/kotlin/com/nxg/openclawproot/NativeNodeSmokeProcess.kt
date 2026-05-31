@@ -32,13 +32,27 @@ class NativeNodeSmokeProcess(
         private const val TAG = "NativeNodeSmoke"
         const val HOST = NativeNodeEmbeddedService.HOST
         const val PORT = NativeNodeEmbeddedService.PORT
+        const val PRODUCTION_PORT = NativeNodeEmbeddedService.PRODUCTION_PORT
         private const val MAX_LOG_LINES = 300
     }
 
     fun start(): Boolean {
-        if (isRunning()) {
+        return startOnPort(PORT, "embedded-smoke")
+    }
+
+    fun startProductionPortCanary(): Boolean {
+        return startOnPort(PRODUCTION_PORT, "production-port-bind-canary")
+    }
+
+    fun startOnPort(port: Int, canaryMode: String): Boolean {
+        if (isRunningOnPort(port)) {
             appendLog("start ignored; embedded Node smoke runtime already alive")
             return true
+        }
+
+        if (port != PORT && port != PRODUCTION_PORT) {
+            appendLog("start rejected; unsupported embedded Node port=$port")
+            return false
         }
 
         if (!libnode.exists()) {
@@ -58,8 +72,14 @@ class NativeNodeSmokeProcess(
         }
 
         return try {
-            NativeNodeEmbeddedService.start(context.applicationContext)
-            appendLog("requested embedded Node smoke service start")
+            NativeNodeEmbeddedService.start(
+                context.applicationContext,
+                port = port,
+                canaryMode = canaryMode
+            )
+            appendLog(
+                "requested embedded Node service start port=$port canaryMode=$canaryMode"
+            )
             true
         } catch (e: Exception) {
             appendLog("start failed: ${e.message}")
@@ -75,10 +95,10 @@ class NativeNodeSmokeProcess(
 
             val deadline = SystemClock.elapsedRealtime() + 2500L
             while (SystemClock.elapsedRealtime() < deadline) {
-                if (!isRunning()) return true
+                if (!isRunningOnAnyKnownPort()) return true
                 Thread.sleep(100)
             }
-            !isRunning()
+            !isRunningOnAnyKnownPort()
         } catch (e: Exception) {
             appendLog("stop failed: ${e.message}")
             Log.e(TAG, "Failed to stop embedded Node smoke service", e)
@@ -87,7 +107,19 @@ class NativeNodeSmokeProcess(
     }
 
     fun isRunning(): Boolean {
-        return probeHealth()?.optString("runtime") == "native-node-embedded"
+        return isRunningOnPort(PORT)
+    }
+
+    fun isProductionPortCanaryRunning(): Boolean {
+        return isRunningOnPort(PRODUCTION_PORT)
+    }
+
+    fun isRunningOnPort(port: Int): Boolean {
+        return probeHealth(port)?.optString("runtime") == "native-node-embedded"
+    }
+
+    private fun isRunningOnAnyKnownPort(): Boolean {
+        return isRunningOnPort(PORT) || isRunningOnPort(PRODUCTION_PORT)
     }
 
     fun getRecentLogs(): String {
@@ -99,9 +131,9 @@ class NativeNodeSmokeProcess(
             .ifBlank { "Embedded native Node smoke runtime has no logs yet." }
     }
 
-    private fun probeHealth(): JSONObject? {
+    private fun probeHealth(port: Int): JSONObject? {
         return try {
-            val connection = URL("http://$HOST:$PORT/health").openConnection() as HttpURLConnection
+            val connection = URL("http://$HOST:$port/health").openConnection() as HttpURLConnection
             connection.connectTimeout = 300
             connection.readTimeout = 300
             connection.useCaches = false

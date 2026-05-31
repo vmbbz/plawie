@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class NativeNodeEmbeddedService : Service() {
     private val startedAtMs = SystemClock.elapsedRealtime()
+    private var activePort = PORT
+    private var activeCanaryMode = "embedded-smoke"
 
     private data class PreflightBundle(
         val root: File,
@@ -28,13 +30,22 @@ class NativeNodeEmbeddedService : Service() {
         private const val TAG = "NativeNodeEmbedded"
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
+        private const val EXTRA_PORT = "port"
+        private const val EXTRA_CANARY_MODE = "canaryMode"
         const val HOST = "127.0.0.1"
         const val PORT = 18790
+        const val PRODUCTION_PORT = 18789
         private val lifecycleGeneration = AtomicInteger(0)
 
-        fun start(context: Context) {
+        fun start(
+            context: Context,
+            port: Int = PORT,
+            canaryMode: String = "embedded-smoke"
+        ) {
             context.startService(Intent(context, NativeNodeEmbeddedService::class.java).apply {
                 action = ACTION_START
+                putExtra(EXTRA_PORT, port)
+                putExtra(EXTRA_CANARY_MODE, canaryMode)
             })
         }
 
@@ -56,7 +67,7 @@ class NativeNodeEmbeddedService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopEmbeddedRuntime(startId)
-            else -> startEmbeddedRuntime()
+            else -> startEmbeddedRuntime(intent)
         }
         return START_NOT_STICKY
     }
@@ -66,17 +77,37 @@ class NativeNodeEmbeddedService : Service() {
         super.onDestroy()
     }
 
-    private fun startEmbeddedRuntime() {
+    private fun startEmbeddedRuntime(intent: Intent?) {
         lifecycleGeneration.incrementAndGet()
 
-        if (NativeNodeBridge.running()) {
-            appendLog("start ignored; embedded Node already running")
+        val requestedPort = intent?.getIntExtra(EXTRA_PORT, PORT) ?: PORT
+        val requestedCanaryMode =
+            intent?.getStringExtra(EXTRA_CANARY_MODE)?.takeIf { it.isNotBlank() }
+                ?: "embedded-smoke"
+        if (requestedPort != PORT && requestedPort != PRODUCTION_PORT) {
+            appendLog("start rejected; unsupported port=$requestedPort mode=$requestedCanaryMode")
+            stopSelf()
             return
         }
 
-        val preflight = preparePreflightBundle()
-        val script = writeSmokeScript(preflight)
-        appendLog("starting embedded Node health runtime on http://$HOST:$PORT")
+        if (NativeNodeBridge.running()) {
+            appendLog(
+                "start ignored; embedded Node already running " +
+                    "activePort=$activePort activeMode=$activeCanaryMode " +
+                    "requestedPort=$requestedPort requestedMode=$requestedCanaryMode"
+            )
+            return
+        }
+
+        activePort = requestedPort
+        activeCanaryMode = requestedCanaryMode
+
+        val preflight = preparePreflightBundle(requestedPort, requestedCanaryMode)
+        val script = writeSmokeScript(preflight, requestedPort, requestedCanaryMode)
+        appendLog(
+            "starting embedded Node health runtime on http://$HOST:$requestedPort " +
+                "canaryMode=$requestedCanaryMode"
+        )
 
         val args = arrayOf("plawie-native-node", script.absolutePath)
         val result = NativeNodeBridge.start(args)
@@ -110,7 +141,7 @@ class NativeNodeEmbeddedService : Service() {
         }
     }
 
-    private fun preparePreflightBundle(): PreflightBundle {
+    private fun preparePreflightBundle(port: Int, canaryMode: String): PreflightBundle {
         val dir = File(workDir(applicationContext), "mobile-openclaw-preflight")
         if (dir.exists()) dir.deleteRecursively()
         dir.mkdirs()
@@ -172,6 +203,9 @@ class NativeNodeEmbeddedService : Service() {
                 )
                 .put("productionGatewayPort", 18789)
                 .put("smokePort", PORT)
+                .put("bindPort", port)
+                .put("canaryMode", canaryMode)
+                .put("productionPortBindCanary", port == PRODUCTION_PORT)
                 .toString()
         )
 
@@ -182,7 +216,11 @@ class NativeNodeEmbeddedService : Service() {
         return PreflightBundle(dir, manifest)
     }
 
-    private fun writeSmokeScript(preflight: PreflightBundle): File {
+    private fun writeSmokeScript(
+        preflight: PreflightBundle,
+        port: Int,
+        canaryMode: String
+    ): File {
         val dir = workDir(applicationContext)
         dir.mkdirs()
         val script = File(dir, "server.mjs")
@@ -194,6 +232,7 @@ class NativeNodeEmbeddedService : Service() {
         val prootConfigPath = JSONObject.quote(
             File(filesDir, "rootfs/ubuntu/root/.openclaw/openclaw.json").absolutePath
         )
+        val quotedCanaryMode = JSONObject.quote(canaryMode)
         script.writeText(
             """
             import http from "node:http";
@@ -211,7 +250,9 @@ class NativeNodeEmbeddedService : Service() {
             const productionConfigPath = $prootConfigPath;
 
             const host = "$HOST";
-            const port = $PORT;
+            const port = $port;
+            const canaryMode = $quotedCanaryMode;
+            const productionPortBindCanary = port === 18789;
             const startedAt = Date.now();
 
             function versionAtLeast(actual, minimum) {
@@ -286,6 +327,9 @@ class NativeNodeEmbeddedService : Service() {
                 missingAssets,
                 productionGatewayPort: manifest.productionGatewayPort,
                 smokePort: manifest.smokePort,
+                bindPort: manifest.bindPort,
+                canaryMode,
+                productionPortBindCanary,
                 openclawStarted: false
               };
             }
@@ -322,6 +366,9 @@ class NativeNodeEmbeddedService : Service() {
                   host,
                   port,
                   productionGatewayPort: 18789,
+                  smokePort: $PORT,
+                  canaryMode,
+                  productionPortBindCanary,
                   openclawStarted: false,
                   preflight,
                   gatewayProbe: gatewayProbe.summary(),

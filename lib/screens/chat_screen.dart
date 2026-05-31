@@ -526,6 +526,7 @@ class _ChatScreenState extends State<ChatScreen>
       '[native-dart-bridge-readonly]',
       '[native-dart-bridge-avatar]',
       '[native-runtime-select]',
+      '[native-port-bind]',
       '[native-node-embedded]',
       '[native-smoke]',
     ];

@@ -3877,6 +3877,27 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionPortBindPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-port-bind-canary',
+      '/native-production-port',
+      '/native-production-bind',
+      'native-port-bind-canary',
+    };
+    for (final command in commands) {
+      if (lower == command) return 'production port bind canary';
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty ? 'production port bind canary' : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -6783,6 +6804,61 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionPortBindMessage(String message) async* {
+    final payload = _nativeProductionPortBindPayload(message);
+    if (payload == null) return;
+    _addActivity(
+      '[NATIVE-PORT-BIND] -> Opening guarded production-port bind canary',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionPortBindCanary(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-PORT-BIND] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production-port bind canary complete'
+            : 'Native production-port bind canary pending',
+        '',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'canaryRuntimeId: ${report['canaryRuntimeId'] ?? 'unknown'}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeRunning: ${report['nativeRunning'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativePortReported: ${report['nativePortReported'] ?? 'unknown'}',
+        'nativeProductionPortBindCanary: ${report['nativeProductionPortBindCanary'] == true}',
+        'nativeCanaryOnly: ${report['nativeCanaryOnly'] == true}',
+        'nativeOpenClawStarted: ${report['nativeOpenClawStarted'] == true}',
+        'nativeChatRoutingEnabled: ${report['nativeChatRoutingEnabled'] == true}',
+        'nativeProviderCallsEnabled: ${report['nativeProviderCallsEnabled'] == true}',
+        'nativeToolExecutionEnabled: ${report['nativeToolExecutionEnabled'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-PORT-BIND] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6795,6 +6871,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionPortBindPayload(message) != null) {
+      yield* _sendNativeProductionPortBindMessage(message);
+      return;
+    }
 
     if (_nativeRuntimeSelectionPayload(message) != null) {
       yield* _sendNativeRuntimeSelectionMessage(message);

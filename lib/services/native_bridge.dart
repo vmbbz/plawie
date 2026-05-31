@@ -309,6 +309,13 @@ class NativeBridge {
         false;
   }
 
+  static Future<bool> startNativeNodeProductionPortCanaryRuntime() async {
+    return await _channel.invokeMethod<bool>(
+          'startNativeNodeProductionPortCanaryRuntime',
+        ) ??
+        false;
+  }
+
   static Future<bool> stopNativeNodeSmokeRuntime() async {
     return await _channel.invokeMethod<bool>('stopNativeNodeSmokeRuntime') ??
         false;
@@ -317,6 +324,13 @@ class NativeBridge {
   static Future<bool> isNativeNodeSmokeRuntimeRunning() async {
     return await _channel
             .invokeMethod<bool>('isNativeNodeSmokeRuntimeRunning') ??
+        false;
+  }
+
+  static Future<bool> isNativeNodeProductionPortCanaryRuntimeRunning() async {
+    return await _channel.invokeMethod<bool>(
+          'isNativeNodeProductionPortCanaryRuntimeRunning',
+        ) ??
         false;
   }
 

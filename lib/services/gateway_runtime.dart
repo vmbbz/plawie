@@ -114,6 +114,39 @@ class NativeNodeProcessGatewayRuntime implements GatewayRuntime {
   }
 }
 
+class NativeNodeProductionPortCanaryRuntime implements GatewayRuntime {
+  const NativeNodeProductionPortCanaryRuntime();
+
+  @override
+  String get id => 'native-node-production-port-canary';
+
+  @override
+  String get label => 'Embedded Native Node Production-Port Canary Runtime';
+
+  @override
+  Stream<String> get logStream => const Stream<String>.empty();
+
+  @override
+  Future<bool> start({bool allowDuringSetup = false}) {
+    return NativeBridge.startNativeNodeProductionPortCanaryRuntime();
+  }
+
+  @override
+  Future<bool> stop() {
+    return NativeBridge.stopNativeNodeSmokeRuntime();
+  }
+
+  @override
+  Future<bool> isRunning() {
+    return NativeBridge.isNativeNodeProductionPortCanaryRuntimeRunning();
+  }
+
+  @override
+  Future<String> getLogs() {
+    return NativeBridge.getNativeNodeSmokeRuntimeLogs();
+  }
+}
+
 class GatewayRuntimeRegistry {
   GatewayRuntimeRegistry._();
 
@@ -122,4 +155,6 @@ class GatewayRuntimeRegistry {
       const NativeNodeGatewayRuntime();
   static final GatewayRuntime nativeNodeProcessSmoke =
       const NativeNodeProcessGatewayRuntime();
+  static final GatewayRuntime nativeNodeProductionPortCanary =
+      const NativeNodeProductionPortCanaryRuntime();
 }

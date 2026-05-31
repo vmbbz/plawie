@@ -26,7 +26,9 @@ class NativeGatewaySmokeReport {
 /// Enable with:
 /// `--dart-define=PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`
 ///
-/// This never touches the production Gateway port and never routes chat.
+/// Most canaries stay off the production Gateway port. The production-port
+/// bind canary is explicit, stops PRoot first, keeps native routing disabled,
+/// and rolls back to PRoot before returning.
 class NativeGatewaySmokeService {
   NativeGatewaySmokeService._();
 
@@ -38,8 +40,11 @@ class NativeGatewaySmokeService {
   static final GatewayRuntime _runtime = GatewayRuntimeRegistry.nativeNodeSmoke;
   static final GatewayRuntime _nodeRuntime =
       GatewayRuntimeRegistry.nativeNodeProcessSmoke;
+  static final GatewayRuntime _productionPortRuntime =
+      GatewayRuntimeRegistry.nativeNodeProductionPortCanary;
   static bool _startupSelfTestInFlight = false;
   static bool _canaryComparisonInFlight = false;
+  static bool _productionPortBindInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -494,6 +499,276 @@ class NativeGatewaySmokeService {
     };
     log('[NATIVE-RUNTIME-SELECT] ${jsonEncode(report)}');
     return report;
+  }
+
+  static Future<Map<String, dynamic>> runProductionPortBindCanary({
+    required void Function(String message) log,
+  }) async {
+    if (_productionPortBindInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-bind-canary',
+        'alreadyInFlight': true,
+        'decision': 'Production-port bind canary is already running.',
+      };
+    }
+
+    _productionPortBindInFlight = true;
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final canaryRuntime = _productionPortRuntime;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var nativeStopped = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-PORT-BIND] Opening guarded production-port bind canary.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore = productionBefore['ok'] == true ||
+              productionBefore['status'] == 'ok' ||
+              productionBefore.isNotEmpty;
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Production-port canary requires PRoot as the current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before the bind canary.',
+          );
+        }
+
+        log('[NATIVE-PORT-BIND] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly after PRoot stop.',
+          );
+        }
+
+        log('[NATIVE-PORT-BIND] Starting native on 18789 with routing disabled.');
+        nativeStarted = await canaryRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError('Native production-port canary did not start.');
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await canaryRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+      } catch (e) {
+        if (prootStopRequested || productionPortReleased || nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await canaryRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk = rollbackHealth['ok'] == true ||
+                  rollbackHealth['status'] == 'ok' ||
+                  rollbackHealth.isNotEmpty;
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeGuardOk &&
+          nativeStopped &&
+          rollbackOk;
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-bind-canary',
+        'mode': 'stop-proot-bind-native-rollback-proot',
+        'activeRuntimeId': productionRuntime.id,
+        'canaryRuntimeId': canaryRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeHealthOk': nativeGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'decision': ok
+            ? 'Native proved it can bind 18789 as a canary; PRoot was restored.'
+            : 'Production-port bind canary is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'native can own 18789 only after full routing/provider/tool parity gates',
+      };
+      log('[NATIVE-PORT-BIND] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortBindInFlight = false;
+    }
   }
 
   static Future<NativeGatewaySmokeReport> runLifecycleSmokeTest({
@@ -962,6 +1237,45 @@ Can you wave right, take a camera picture, and vibrate once?''';
     String? expectedRuntime,
     int attempts = 12,
     Duration retryDelay = const Duration(milliseconds: 250),
+    Duration requestTimeout = const Duration(seconds: 2),
+  }) async {
+    return _probeJsonAtBase(
+      AppConstants.nativeGatewaySmokeUrl,
+      path,
+      expectedRuntime: expectedRuntime,
+      attempts: attempts,
+      retryDelay: retryDelay,
+      requestTimeout: requestTimeout,
+      label: 'Native smoke',
+    );
+  }
+
+  static Future<Map<String, dynamic>> _probeProductionJson(
+    String path, {
+    String? expectedRuntime,
+    int attempts = 12,
+    Duration retryDelay = const Duration(milliseconds: 250),
+    Duration requestTimeout = const Duration(seconds: 2),
+  }) async {
+    return _probeJsonAtBase(
+      AppConstants.gatewayUrl,
+      path,
+      expectedRuntime: expectedRuntime,
+      attempts: attempts,
+      retryDelay: retryDelay,
+      requestTimeout: requestTimeout,
+      label: 'Production',
+    );
+  }
+
+  static Future<Map<String, dynamic>> _probeJsonAtBase(
+    String baseUrl,
+    String path, {
+    String? expectedRuntime,
+    int attempts = 12,
+    Duration retryDelay = const Duration(milliseconds: 250),
+    Duration requestTimeout = const Duration(seconds: 2),
+    required String label,
   }) async {
     final client = http.Client();
     try {
@@ -970,12 +1284,8 @@ Can you wave right, take a camera picture, and vibrate once?''';
         try {
           final normalizedPath = path.startsWith('/') ? path : '/$path';
           final response = await client
-              .get(
-                Uri.parse(
-                  '${AppConstants.nativeGatewaySmokeUrl}$normalizedPath',
-                ),
-              )
-              .timeout(const Duration(seconds: 2));
+              .get(Uri.parse('$baseUrl$normalizedPath'))
+              .timeout(requestTimeout);
           if (response.statusCode != 200) {
             throw StateError('HTTP ${response.statusCode}: ${response.body}');
           }
@@ -992,33 +1302,35 @@ Can you wave right, take a camera picture, and vibrate once?''';
           return decoded;
         } catch (e) {
           lastError = e;
-          await Future<void>.delayed(retryDelay);
+          if (retryDelay > Duration.zero) {
+            await Future<void>.delayed(retryDelay);
+          }
         }
       }
-      throw StateError('JSON probe $path failed: $lastError');
+      throw StateError('$label JSON probe $path failed: $lastError');
     } finally {
       client.close();
     }
   }
 
-  static Future<Map<String, dynamic>> _probeProductionJson(String path) async {
+  static Future<bool> _waitForProductionPortReleased({
+    required Duration timeout,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
     final client = http.Client();
-    try {
-      final normalizedPath = path.startsWith('/') ? path : '/$path';
-      final response = await client
-          .get(Uri.parse('${AppConstants.gatewayUrl}$normalizedPath'))
-          .timeout(const Duration(seconds: 2));
-      if (response.statusCode != 200) {
-        throw StateError('HTTP ${response.statusCode}: ${response.body}');
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        await client
+            .get(Uri.parse('${AppConstants.gatewayUrl}/health'))
+            .timeout(const Duration(milliseconds: 700));
+      } catch (_) {
+        client.close();
+        return true;
       }
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic>) {
-        throw StateError('Production probe payload was not a JSON object');
-      }
-      return decoded;
-    } finally {
-      client.close();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
     }
+    client.close();
+    return false;
   }
 
   static Future<Map<String, dynamic>> _postJson(

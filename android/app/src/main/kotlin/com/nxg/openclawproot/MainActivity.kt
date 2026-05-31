@@ -326,11 +326,17 @@ class MainActivity : FlutterActivity() {
                 "startNativeNodeSmokeRuntime" -> {
                     result.success(nativeNodeSmokeProcess.start())
                 }
+                "startNativeNodeProductionPortCanaryRuntime" -> {
+                    result.success(nativeNodeSmokeProcess.startProductionPortCanary())
+                }
                 "stopNativeNodeSmokeRuntime" -> {
                     result.success(nativeNodeSmokeProcess.stop())
                 }
                 "isNativeNodeSmokeRuntimeRunning" -> {
                     result.success(nativeNodeSmokeProcess.isRunning())
+                }
+                "isNativeNodeProductionPortCanaryRuntimeRunning" -> {
+                    result.success(nativeNodeSmokeProcess.isProductionPortCanaryRunning())
                 }
                 "getNativeNodeSmokeRuntimeLogs" -> {
                     result.success(nativeNodeSmokeProcess.getRecentLogs())
