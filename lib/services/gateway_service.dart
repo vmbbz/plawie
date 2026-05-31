@@ -4330,6 +4330,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionPromotionPolicyPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-policy-owner',
+      '/native-promotion-policy-owner',
+      '/native-production-policy',
+      '/native-skill-tool-policy-owner',
+      '/native-promotion-map-owner',
+      'native-policy-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production promotion policy map';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production promotion policy map'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -8829,6 +8856,66 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionPromotionPolicyMessage(
+    String message,
+  ) async* {
+    final payload = _nativeProductionPromotionPolicyPayload(message);
+    if (payload == null) return;
+
+    _addActivity(
+      '[NATIVE-PROMOTION-POLICY] -> Building production promotion policy map',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionPromotionPolicyMap(
+              log: _addActivity);
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-PROMOTION-POLICY] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native promotion policy map complete'
+            : 'Native promotion policy map pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'productionHealthOk: ${report['productionHealthOk'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeSafetyGatesOk: ${report['nativeSafetyGatesOk'] == true}',
+        'inventoryParityOk: ${report['inventoryParityOk'] == true}',
+        'productionSkillCount: ${report['productionSkillCount'] ?? 0}',
+        'nativeSkillCount: ${report['nativeSkillCount'] ?? 0}',
+        'skillPolicyCoverageOk: ${report['skillPolicyCoverageOk'] == true}',
+        'skillPolicyCount: ${report['skillPolicyCount'] ?? 0}',
+        'missingSkillPolicyCount: ${report['missingSkillPolicyCount'] ?? 0}',
+        'mobileBridgeCandidateSkills: ${report['mobileBridgeCandidateSkills'] is List ? (report['mobileBridgeCandidateSkills'] as List).join(', ') : ''}',
+        'mobileToolPolicyCoverageOk: ${report['mobileToolPolicyCoverageOk'] == true}',
+        'mobileToolCount: ${report['mobileToolCount'] ?? 0}',
+        'mobileToolPolicyCount: ${report['mobileToolPolicyCount'] ?? 0}',
+        'toolHintPolicyCoverageOk: ${report['toolHintPolicyCoverageOk'] == true}',
+        'mobileToolHintCount: ${report['mobileToolHintCount'] ?? 0}',
+        'toolHintPolicyCount: ${report['toolHintPolicyCount'] ?? 0}',
+        'nativeDefaultRoutingEnabled: ${report['nativeDefaultRoutingEnabled'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-PROMOTION-POLICY] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -9403,6 +9490,11 @@ $message''';
 
     if (_nativeProductionInventoryParityPayload(message) != null) {
       yield* _sendNativeProductionInventoryParityMessage(message);
+      return;
+    }
+
+    if (_nativeProductionPromotionPolicyPayload(message) != null) {
+      yield* _sendNativeProductionPromotionPolicyMessage(message);
       return;
     }
 

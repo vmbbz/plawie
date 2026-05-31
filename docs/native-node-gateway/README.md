@@ -117,6 +117,9 @@ PRoot,
 can run an explicit `/native-inventory-owner` diagnostics proving native sees
 the full production skill registry and mobile bridge tool surface read-only
 while PRoot remains primary,
+can run an explicit `/native-policy-owner` diagnostics proving every production
+skill, mobile bridge tool, and native tool hint has an explicit conservative
+promotion policy while default native routing remains disabled,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -211,6 +214,7 @@ be safely generalized.
 | [65-native-owner-live-provider-tool-continuation-canary.md](65-native-owner-live-provider-tool-continuation-canary.md) | Explicit `/native-live-tool-continue-owner` diagnostics proving live provider tool results continue to final provider text |
 | [66-native-owner-chat-loop-tool-continuation-canary.md](66-native-owner-chat-loop-tool-continuation-canary.md) | Explicit `/native-chat-loop-owner` diagnostics proving native emits a chat-visible response after one live tool continuation |
 | [67-native-owner-skill-tool-inventory-parity.md](67-native-owner-skill-tool-inventory-parity.md) | Explicit `/native-inventory-owner` diagnostics proving full production skill/tool inventory parity read-only |
+| [68-native-owner-promotion-policy-map.md](68-native-owner-promotion-policy-map.md) | Explicit `/native-policy-owner` diagnostics proving conservative promotion policy coverage for every skill/tool before routing |
 
 ## Work Rules
 

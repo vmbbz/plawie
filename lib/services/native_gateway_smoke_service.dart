@@ -70,6 +70,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderLiveToolContinuationInFlight = false;
   static bool _productionPortNativeChatLoopContinuationInFlight = false;
   static bool _productionInventoryParityInFlight = false;
+  static bool _productionPromotionPolicyMapInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -586,6 +587,176 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionInventoryParityInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runProductionPromotionPolicyMap({
+    required void Function(String message) log,
+  }) async {
+    if (_productionPromotionPolicyMapInFlight) {
+      return {
+        'ok': false,
+        'phase': 'production-promotion-policy-map',
+        'status': 'busy',
+        'decision': 'Production promotion policy map is already running.',
+      };
+    }
+
+    _productionPromotionPolicyMapInFlight = true;
+    final startedAt = DateTime.now();
+    var nativeStartedForProbe = false;
+    try {
+      final productionHealth = await _probeProductionJson(
+        '/health',
+        attempts: 20,
+        requestTimeout: const Duration(seconds: 5),
+      );
+      final productionHealthOk =
+          _productionHealthLooksLikeProot(productionHealth);
+
+      final nativeWasRunning = await _nodeRuntime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false)
+          .catchError((_) => false);
+      if (!nativeWasRunning) {
+        nativeStartedForProbe = await _nodeRuntime.start();
+      }
+
+      final nativeHealth =
+          await _probeHealth(expectedRuntime: 'native-node-embedded');
+      final nativeProbe = await _probeJson('/gateway/probe');
+      final capabilities = await _probeJson('/gateway/capabilities');
+      final skillRegistry = await _probeJson('/gateway/skill-registry');
+      final wsFrameShape = await _postJson(
+        '/gateway/ws-frame-shape',
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'promotion-policy-ws-shape',
+          idempotencyKey: 'promotion-policy-idempotency',
+        ),
+        expectedStatus: 200,
+      );
+
+      final productionSkillIds = await _scanProductionSkillIds();
+      final nativeSkillIds = _skillIdsFromRegistry(skillRegistry);
+      final missingInNative =
+          _sortedDifference(productionSkillIds, nativeSkillIds);
+      final extraInNative =
+          _sortedDifference(nativeSkillIds, productionSkillIds);
+      final skillPolicies = _buildSkillPromotionPolicies(productionSkillIds);
+      final missingSkillPolicies =
+          _sortedDifference(productionSkillIds, skillPolicies.keys.toSet());
+      final skillPolicyClassCounts =
+          _countStringValues(skillPolicies.values.toList());
+
+      final mobileTools = await _probeAgentSkillTools();
+      final mobileToolNames = _toolNamesFromAgentTools(mobileTools);
+      final mobileToolPolicies =
+          _buildMobileToolPromotionPolicies(mobileToolNames);
+      final missingMobileToolPolicies =
+          _sortedDifference(mobileToolNames, mobileToolPolicies.keys.toSet());
+      final mobileToolPolicyClassCounts =
+          _countStringValues(mobileToolPolicies.values.toList());
+
+      final requestShape = wsFrameShape['requestShape'] is Map
+          ? Map<String, dynamic>.from(wsFrameShape['requestShape'] as Map)
+          : <String, dynamic>{};
+      final mobileToolHints = requestShape['mobileToolHints'] is List
+          ? (requestShape['mobileToolHints'] as List)
+              .map((value) => value.toString())
+              .toSet()
+          : <String>{};
+      final toolHintPolicies = _buildToolHintPromotionPolicies(mobileToolHints);
+      final missingToolHintPolicies =
+          _sortedDifference(mobileToolHints, toolHintPolicies.keys.toSet());
+      final toolHintPolicyClassCounts =
+          _countStringValues(toolHintPolicies.values.toList());
+
+      final nativeSafetyGatesOk = nativeHealth['openclawStarted'] == false &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          skillRegistry['readOnly'] == true &&
+          skillRegistry['executionEnabled'] == false &&
+          capabilities['productionSkillsLoaded'] == false;
+      final inventoryParityOk = productionSkillIds.length >= 50 &&
+          nativeSkillIds.length == productionSkillIds.length &&
+          missingInNative.isEmpty &&
+          extraInNative.isEmpty;
+      final skillPolicyCoverageOk =
+          skillPolicies.length == productionSkillIds.length &&
+              missingSkillPolicies.isEmpty &&
+              !skillPolicies.values.contains('unmapped');
+      final mobileToolPolicyCoverageOk =
+          mobileToolPolicies.length == mobileToolNames.length &&
+              missingMobileToolPolicies.isEmpty &&
+              !mobileToolPolicies.values.contains('unmapped');
+      final toolHintPolicyCoverageOk =
+          toolHintPolicies.length == mobileToolHints.length &&
+              missingToolHintPolicies.isEmpty &&
+              !toolHintPolicies.values.contains('unmapped');
+      final nativeDefaultRoutingEnabled = false;
+      final providerCallsEnabled = false;
+      final executionEnabled = false;
+      final toolExecutionEnabled = false;
+
+      final ok = productionHealthOk &&
+          nativeSafetyGatesOk &&
+          inventoryParityOk &&
+          skillPolicyCoverageOk &&
+          mobileToolPolicyCoverageOk &&
+          toolHintPolicyCoverageOk &&
+          !nativeDefaultRoutingEnabled &&
+          !providerCallsEnabled &&
+          !executionEnabled &&
+          !toolExecutionEnabled;
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'production-promotion-policy-map',
+        'mode': 'side-by-side-read-only-policy-map',
+        'primaryRuntimeId': 'proot',
+        'nativeRuntimeId': 'native-node-embedded',
+        'productionHealthOk': productionHealthOk,
+        'nativeStartedForProbe': nativeStartedForProbe,
+        'nativeHealthOk': nativeHealth['ok'] == true,
+        'nativeSafetyGatesOk': nativeSafetyGatesOk,
+        'inventoryParityOk': inventoryParityOk,
+        'productionSkillCount': productionSkillIds.length,
+        'nativeSkillCount': nativeSkillIds.length,
+        'missingInNativeCount': missingInNative.length,
+        'extraInNativeCount': extraInNative.length,
+        'skillPolicyCoverageOk': skillPolicyCoverageOk,
+        'skillPolicyCount': skillPolicies.length,
+        'missingSkillPolicyCount': missingSkillPolicies.length,
+        'skillPolicyClassCounts': skillPolicyClassCounts,
+        'mobileBridgeCandidateSkills': _mobileBridgeCandidateSkillIds
+            .intersection(productionSkillIds)
+            .toList()
+          ..sort(),
+        'mobileToolPolicyCoverageOk': mobileToolPolicyCoverageOk,
+        'mobileToolCount': mobileToolNames.length,
+        'mobileToolPolicyCount': mobileToolPolicies.length,
+        'missingMobileToolPolicyCount': missingMobileToolPolicies.length,
+        'mobileToolPolicyClassCounts': mobileToolPolicyClassCounts,
+        'toolHintPolicyCoverageOk': toolHintPolicyCoverageOk,
+        'mobileToolHintCount': mobileToolHints.length,
+        'toolHintPolicyCount': toolHintPolicies.length,
+        'missingToolHintPolicyCount': missingToolHintPolicies.length,
+        'toolHintPolicyClassCounts': toolHintPolicyClassCounts,
+        'nativeDefaultRoutingEnabled': nativeDefaultRoutingEnabled,
+        'providerCallsEnabled': providerCallsEnabled,
+        'executionEnabled': executionEnabled,
+        'toolExecutionEnabled': toolExecutionEnabled,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Promotion policies cover all production skills and mobile tools; default native routing remains disabled.'
+            : 'Promotion policy coverage is incomplete; native default routing remains blocked.',
+        'nextGate':
+            'single-skill native promotion canary with explicit rollback policy',
+      };
+      log('[NATIVE-PROMOTION-POLICY] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPromotionPolicyMapInFlight = false;
     }
   }
 
@@ -11567,6 +11738,76 @@ class NativeGatewaySmokeService {
   static List<String> _sortedDifference(Set<String> left, Set<String> right) {
     final diff = left.difference(right).toList()..sort();
     return diff;
+  }
+
+  static const Set<String> _mobileBridgeCandidateSkillIds = <String>{
+    'canvas',
+    'device-node',
+    'gestures',
+    'tts-voice',
+  };
+
+  static Map<String, String> _buildSkillPromotionPolicies(
+    Set<String> skillIds,
+  ) {
+    final policies = <String, String>{};
+    for (final id in skillIds) {
+      policies[id] = _mobileBridgeCandidateSkillIds.contains(id)
+          ? 'native_bridge_candidate_proot_default'
+          : 'proot_fallback_default';
+    }
+    return policies;
+  }
+
+  static Map<String, String> _buildMobileToolPromotionPolicies(
+    Set<String> toolNames,
+  ) {
+    final policies = <String, String>{};
+    for (final name in toolNames) {
+      policies[name] = switch (name) {
+        'avatar-control' ||
+        'device-node' ||
+        'tts-voice' =>
+          'native_bridge_candidate_proot_default',
+        _ => 'proot_fallback_default',
+      };
+    }
+    return policies;
+  }
+
+  static Map<String, String> _buildToolHintPromotionPolicies(
+    Set<String> toolHints,
+  ) {
+    final policies = <String, String>{};
+    for (final hint in toolHints) {
+      policies[hint] = switch (hint) {
+        'flash.status' ||
+        'sensor.list' ||
+        'sensor.read' ||
+        'device_status' ||
+        'notifications.list' =>
+          'native_bridge_readonly_allowlist_manual_only',
+        'avatar.gesture' ||
+        'haptic.vibrate' =>
+          'native_bridge_bounded_effect_allowlist_manual_only',
+        'camera_snap' ||
+        'canvas.snapshot' =>
+          'native_bridge_capture_allowlist_manual_only',
+        'canvas.eval' ||
+        'canvas.navigate' =>
+          'native_bridge_ui_mutation_candidate_manual_only',
+        _ => 'proot_fallback_default',
+      };
+    }
+    return policies;
+  }
+
+  static Map<String, int> _countStringValues(List<String> values) {
+    final counts = <String, int>{};
+    for (final value in values) {
+      counts[value] = (counts[value] ?? 0) + 1;
+    }
+    return counts;
   }
 
   static bool _preflightPassed(Object? value) {
