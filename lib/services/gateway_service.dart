@@ -4117,6 +4117,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionChatRouteSelectionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-chat-route-owner',
+      '/native-production-chat-route',
+      '/native-route-select-owner',
+      '/native-chat-route-select-owner',
+      'native-chat-route-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production chat route selection canary with provider fallback';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production chat route selection canary with provider fallback'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionProviderStreamParityPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -7912,6 +7938,78 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionChatRouteSelectionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionChatRouteSelectionPayload(message);
+    if (payload == null) return;
+
+    final providerConfig =
+        await resolveNativeProviderLiveCanaryConfig(model: model);
+    if (providerConfig == null) {
+      yield '[Error] Native production chat route selection canary needs an OpenRouter model with a configured API key.';
+      return;
+    }
+
+    _addActivity(
+      '[NATIVE-CHAT-ROUTE-SELECT] -> Opening production-port chat route selection canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortNativeChatRouteSelectionCanary(
+        log: _addActivity,
+        providerConfig: providerConfig,
+        requestedModel: model,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      final uiResponseText = report['uiResponseText']?.toString().trim() ?? '';
+      _addActivity(
+        '[NATIVE-CHAT-ROUTE-SELECT] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        if (uiResponseText.isNotEmpty) uiResponseText,
+        if (uiResponseText.isNotEmpty) '',
+        ok
+            ? 'Native production chat route selection canary complete'
+            : 'Native production chat route selection canary pending',
+        '',
+        'requestedModel: ${report['requestedModel'] ?? model}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'nativeEligible: ${report['nativeEligible'] == true}',
+        'routeSelectionPolicyOk: ${report['routeSelectionPolicyOk'] == true}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'nativeRouteExecutedOk: ${report['nativeRouteExecutedOk'] == true}',
+        'fallbackAfterCanaryOk: ${report['fallbackAfterCanaryOk'] == true}',
+        'executionStillLockedOk: ${report['executionStillLockedOk'] == true}',
+        'chatUiCanaryOk: ${report['chatUiCanaryOk'] == true}',
+        'uiResponseVisibleOk: ${report['uiResponseVisibleOk'] == true}',
+        'providerBackedChatOk: ${report['providerBackedChatOk'] == true}',
+        'requestHasToolSchemas: ${report['requestHasToolSchemas'] == true}',
+        'toolExecutionDisabledOk: ${report['toolExecutionDisabledOk'] == true}',
+        'statusCode: ${report['statusCode'] ?? 'unknown'}',
+        'deltaCount: ${report['deltaCount'] ?? 0}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-CHAT-ROUTE-SELECT] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionProviderStreamParityMessage(
     String message, {
     required String model,
@@ -8723,6 +8821,14 @@ $message''';
 
     if (_nativeProductionProviderStreamParityPayload(message) != null) {
       yield* _sendNativeProductionProviderStreamParityMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionChatRouteSelectionPayload(message) != null) {
+      yield* _sendNativeProductionChatRouteSelectionMessage(
         message,
         model: model,
       );

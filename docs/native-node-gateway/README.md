@@ -199,6 +199,7 @@ be safely generalized.
 | [59-native-owner-bridge-execution-avatar-canary.md](59-native-owner-bridge-execution-avatar-canary.md) | Explicit `/native-avatar-exec-owner` diagnostics proving protected avatar native-to-Dart bridge execution on `18789` |
 | [60-native-owner-provider-backed-chat-canary.md](60-native-owner-provider-backed-chat-canary.md) | Explicit `/native-chat-owner` diagnostics proving one provider-backed chat stream on `18789` while tool execution remains disabled |
 | [61-native-owner-chat-response-ui-canary.md](61-native-owner-chat-response-ui-canary.md) | Explicit `/native-chat-ui-owner` diagnostics proving native provider text reaches the chat-visible response path with PRoot rollback |
+| [62-native-owner-chat-route-selection-canary.md](62-native-owner-chat-route-selection-canary.md) | Explicit `/native-chat-route-owner` diagnostics proving native chat route selection with PRoot provider fallback |
 
 ## Work Rules
 

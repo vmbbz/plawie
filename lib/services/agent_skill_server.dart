@@ -150,6 +150,9 @@ class AgentSkillServer {
         path == '/api/native-gateway/production-chat-response-ui-canary') {
       await _handleNativeGatewayProductionChatResponseUiCanary(request);
     } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/production-chat-route-selection-canary') {
+      await _handleNativeGatewayProductionChatRouteSelectionCanary(request);
+    } else if (request.method == 'POST' &&
         path ==
             '/api/native-gateway/production-provider-stream-parser-parity') {
       await _handleNativeGatewayProductionProviderStreamParserParity(request);
@@ -622,6 +625,75 @@ class AgentSkillServer {
         providerConfig: providerConfig,
         prompt: prompt == null || prompt.isEmpty
             ? 'native production chat response UI canary with PRoot rollback'
+            : prompt,
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
+    }
+  }
+
+  Future<void> _handleNativeGatewayProductionChatRouteSelectionCanary(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      final body = await utf8.decoder.bind(request).join();
+      Map<String, dynamic> args = <String, dynamic>{};
+      if (body.trim().isNotEmpty) {
+        final decoded = jsonDecode(body);
+        if (decoded is Map) {
+          args = decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      }
+      final prompt = args['prompt']?.toString().trim();
+      final model = args['model']?.toString().trim();
+      final requestedModel =
+          model == null || model.isEmpty ? 'openrouter/auto' : model;
+      final explicitConfig = args['providerConfig'] is Map
+          ? Map<String, dynamic>.from(args['providerConfig'] as Map)
+          : null;
+      final providerConfig = explicitConfig ??
+          await GatewayService().resolveNativeProviderLiveCanaryConfig(
+            model: requestedModel,
+          );
+
+      if (providerConfig == null) {
+        _sendJson(
+            request,
+            {
+              'ok': false,
+              'error': 'openrouter_provider_config_unavailable',
+              'message':
+                  'No OpenRouter model/API key is configured for native chat route selection canary.',
+            },
+            statusCode: HttpStatus.badRequest);
+        return;
+      }
+
+      final report = await NativeGatewaySmokeService
+          .runProductionPortNativeChatRouteSelectionCanary(
+        log: (message) => debugPrint('[GATEWAY] $message'),
+        providerConfig: providerConfig,
+        requestedModel: requestedModel,
+        prompt: prompt == null || prompt.isEmpty
+            ? 'native production chat route selection canary with provider fallback'
             : prompt,
       );
       _sendJson(request, report);

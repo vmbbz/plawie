@@ -54,6 +54,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderLiveInFlight = false;
   static bool _productionPortProviderBackedChatInFlight = false;
   static bool _productionPortChatResponseUiInFlight = false;
+  static bool _productionPortNativeChatRouteSelectionInFlight = false;
   static bool _productionPortProviderStreamParityInFlight = false;
   static bool _productionPortProviderToolPlanInFlight = false;
   static bool _productionPortToolDispatchInFlight = false;
@@ -4170,6 +4171,168 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortChatResponseUiInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortNativeChatRouteSelectionCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String requestedModel = 'openrouter/auto',
+    String prompt =
+        'native production chat route selection canary with provider fallback',
+  }) async {
+    if (_productionPortNativeChatRouteSelectionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-native-chat-route-selection-canary',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port native chat route selection canary is already running.',
+      };
+    }
+
+    _productionPortNativeChatRouteSelectionInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final requestedModelId = requestedModel.trim().isEmpty
+          ? 'openrouter/auto'
+          : requestedModel.trim();
+      final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
+      final provider = providerConfigForNative['provider']?.toString().trim();
+      final providerModel = providerConfigForNative['model']?.toString().trim();
+      final endpoint = providerConfigForNative['endpoint']?.toString().trim();
+      final apiKeyLoaded =
+          providerConfigForNative['apiKey']?.toString().trim().isNotEmpty ==
+              true;
+      final nativeEligible = provider == 'openrouter' &&
+          providerModel != null &&
+          providerModel.isNotEmpty &&
+          endpoint != null &&
+          endpoint.contains('/chat/completions') &&
+          apiKeyLoaded;
+      final selectedRuntimeId =
+          nativeEligible ? 'native-node-production-port-canary' : 'proot';
+      final selectedRoute = nativeEligible
+          ? 'native-provider-backed-chat-ui-canary'
+          : 'proot-provider-chat-fallback';
+      final fallbackRuntimeId = 'proot';
+      final fallbackRoute = 'proot-provider-chat';
+      final routeSelectionPolicyOk = nativeEligible &&
+          selectedRuntimeId == 'native-node-production-port-canary' &&
+          selectedRoute == 'native-provider-backed-chat-ui-canary' &&
+          fallbackRuntimeId == 'proot' &&
+          fallbackRoute == 'proot-provider-chat';
+
+      log(
+        '[NATIVE-CHAT-ROUTE-SELECT] Evaluating native chat route selection '
+        'policy for $requestedModelId.',
+      );
+
+      final innerReport = await runProductionPortChatResponseUiCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-CHAT-UI-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-CHAT-UI-OWNER]',
+              '[NATIVE-CHAT-ROUTE-SELECT]',
+            ));
+          } else if (message.startsWith('[NATIVE-CHAT-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-CHAT-OWNER]',
+              '[NATIVE-CHAT-ROUTE-SELECT]',
+            ));
+          } else if (message.startsWith('[NATIVE-LIVE-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-LIVE-OWNER]',
+              '[NATIVE-CHAT-ROUTE-SELECT]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        providerConfig: {
+          ...providerConfigForNative,
+          'title': 'Plawie Native Chat Route Selection Canary',
+        },
+        prompt: prompt,
+      );
+
+      final nativeRouteExecutedOk = innerReport['ok'] == true &&
+          innerReport['chatUiCanaryOk'] == true &&
+          innerReport['providerBackedChatOk'] == true &&
+          innerReport['uiResponseVisibleOk'] == true;
+      final fallbackAfterCanaryOk = innerReport['activeRuntimeId'] == 'proot' &&
+          innerReport['rollbackRuntimeId'] == 'proot' &&
+          innerReport['rollbackStarted'] == true &&
+          innerReport['rollbackRunning'] == true &&
+          innerReport['rollbackHealthOk'] == true &&
+          innerReport['nativeSmokeRestored'] == true;
+      final executionStillLockedOk =
+          innerReport['toolExecutionDisabledOk'] == true &&
+              innerReport['requestHasToolSchemas'] == false &&
+              innerReport['executionEnabled'] != true &&
+              innerReport['postLiveToolExecutionEnabled'] != true;
+      final routeSelectionCanaryOk = routeSelectionPolicyOk &&
+          nativeRouteExecutedOk &&
+          fallbackAfterCanaryOk &&
+          executionStillLockedOk;
+
+      final report = <String, dynamic>{
+        ...innerReport,
+        'ok': routeSelectionCanaryOk,
+        'phase': 'hidden-production-port-native-chat-route-selection-canary',
+        'mode':
+            'native-production-port-chat-route-selection-with-proot-fallback',
+        'innerPhase': innerReport['phase'],
+        'innerOk': innerReport['ok'] == true,
+        'requestedModel': requestedModelId,
+        'provider': provider,
+        'providerModel': providerModel,
+        'nativeEligible': nativeEligible,
+        'routeSelectionPolicyOk': routeSelectionPolicyOk,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'nativeRouteExecutedOk': nativeRouteExecutedOk,
+        'fallbackAfterCanaryOk': fallbackAfterCanaryOk,
+        'executionStillLockedOk': executionStillLockedOk,
+        'routeSelectionCanaryOk': routeSelectionCanaryOk,
+        'innerDurationMs': innerReport['durationMs'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': routeSelectionCanaryOk
+            ? 'Native route selection chose the bounded native chat canary, produced visible provider text, kept execution locked, and returned fallback ownership to PRoot.'
+            : 'Native route selection is not promotable; require eligible provider config, successful native route, execution locked, and PRoot fallback restored.',
+        'nextGate':
+            'production-port native provider tool-plan to allowlisted execution canary',
+      };
+      log('[NATIVE-CHAT-ROUTE-SELECT] ${jsonEncode({
+            ...report,
+            'uiResponseText': report['uiResponseText'] == null
+                ? null
+                : '<redacted in activity log>',
+            'rawProviderErrorPreview': report['rawProviderErrorPreview'] == null
+                ? null
+                : '<redacted in activity log>',
+          })}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-native-chat-route-selection-canary',
+        'mode':
+            'native-production-port-chat-route-selection-with-proot-fallback',
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Production-port native chat route selection canary failed before a report was produced.',
+      };
+      log('[NATIVE-CHAT-ROUTE-SELECT] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortNativeChatRouteSelectionInFlight = false;
     }
   }
 
