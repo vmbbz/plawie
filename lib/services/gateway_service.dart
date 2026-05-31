@@ -4222,6 +4222,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderLiveToolExecutionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-live-tool-exec-owner',
+      '/native-production-live-tool-exec',
+      '/native-provider-live-tool-exec-owner',
+      '/native-live-provider-tool-exec-owner',
+      '/native-provider-tool-call-exec-owner',
+      'native-live-tool-exec-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production live provider tool execution canary: wave right';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production live provider tool execution canary: wave right'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -8303,6 +8330,123 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderLiveToolExecutionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionProviderLiveToolExecutionPayload(message);
+    if (payload == null) return;
+
+    final providerConfig =
+        await resolveNativeProviderLiveCanaryConfig(model: model);
+    if (providerConfig == null) {
+      yield '[Error] Native production live tool execution canary needs an OpenRouter model with a configured API key.';
+      return;
+    }
+
+    _addActivity(
+      '[NATIVE-LIVE-TOOL-OWNER] -> Opening live provider tool-call to bounded bridge execution canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderLiveToolExecutionCanary(
+        log: _addActivity,
+        providerConfig: providerConfig,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-LIVE-TOOL-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final toolNames = report['toolPlanNames'] is List
+          ? (report['toolPlanNames'] as List).join(', ')
+          : '';
+      final gatewayNames = report['gatewayToolNames'] is List
+          ? (report['gatewayToolNames'] as List).join(', ')
+          : '';
+      final rawProviderPreview =
+          report['rawProviderErrorPreview']?.toString().trim() ?? '';
+
+      yield [
+        ok
+            ? 'Native live provider tool execution canary complete'
+            : 'Native live provider tool execution canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'canarySent: ${report['canarySent'] == true}',
+        'liveToolExecutionCanaryOk: ${report['liveToolExecutionCanaryOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'toolCatalogOk: ${report['toolCatalogOk'] == true}',
+        'providerRequestOk: ${report['providerRequestOk'] == true}',
+        'providerCallStartedOk: ${report['providerCallStartedOk'] == true}',
+        'providerResponseOk: ${report['providerResponseOk'] == true}',
+        'providerErrorSurfaceOk: ${report['providerErrorSurfaceOk'] == true}',
+        'liveToolPlanSummaryOk: ${report['liveToolPlanSummaryOk'] == true}',
+        'bridgeExecuteRequestOk: ${report['bridgeExecuteRequestOk'] == true}',
+        'bridgeExecuteAckOk: ${report['bridgeExecuteAckOk'] == true}',
+        'toolUseFrameOk: ${report['toolUseFrameOk'] == true}',
+        'toolResultFrameOk: ${report['toolResultFrameOk'] == true}',
+        'executionSummaryOk: ${report['executionSummaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'routeStatus: ${report['routeStatus'] ?? 'unknown'}',
+        'finishReason: ${report['finishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'statusCode: ${report['statusCode'] ?? 'unknown'}',
+        'selectedToolCount: ${report['selectedToolCount'] ?? 0}',
+        'toolPlanCount: ${report['toolPlanCount'] ?? 0}',
+        'allowedPlanCount: ${report['allowedPlanCount'] ?? 0}',
+        'toolPlanNames: $toolNames',
+        'gatewayToolNames: $gatewayNames',
+        'command: ${report['command'] ?? 'unknown'}',
+        'gesture: ${report['gesture'] ?? 'unknown'}',
+        'resultStatus: ${report['resultStatus'] ?? 'unknown'}',
+        'liveToolPlanOk: ${report['liveToolPlanOk'] == true}',
+        'dispatchParityOk: ${report['dispatchParityOk'] == true}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'providerCallsDuringExecutionEnabled: ${report['providerCallsDuringExecutionEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'protectedGesture: ${report['protectedGesture'] == true}',
+        'providerBillingSurfaceReached: ${report['providerBillingSurfaceReached'] == true}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        if (rawProviderPreview.isNotEmpty)
+          'rawProviderErrorPreview: $rawProviderPreview',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-LIVE-TOOL-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -8874,6 +9018,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderLiveToolExecutionPayload(message) != null) {
+      yield* _sendNativeProductionProviderLiveToolExecutionMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionProviderToolPlanExecutionPayload(message) != null) {
       yield* _sendNativeProductionProviderToolPlanExecutionMessage(

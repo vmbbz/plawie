@@ -497,6 +497,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-live-canary-stream",
     "/gateway/chat-provider-stream-parser-parity-stream",
     "/gateway/chat-provider-tool-plan-canary-stream",
+    "/gateway/chat-provider-live-tool-execution-canary-stream",
     "/gateway/chat-tool-dispatch-dry-run-stream",
     "/gateway/chat-native-dart-bridge-dry-run-stream",
     "/gateway/chat-native-dart-bridge-ordering-cancel-stream",
@@ -1516,6 +1517,194 @@ function createMobileGatewayProbe({
         bodyShape: redactedBodyShape,
         requestBuilderHash: requestBuilder.requestHash
       })
+    };
+  }
+
+  function providerLiveToolExecutionCanaryRequest(requestBuilder, payload) {
+    const providerConfig = liveCanaryProviderConfig(payload, requestBuilder);
+    const toolSelection = nativeAvatarCanaryToolSelection();
+    const userPrompt = compactCanaryPrompt(payload);
+    const tool = toolSelection.tools[0];
+    const normalizedBody = {
+      model: providerConfig.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a Plawie native live tool canary. You must call the avatar_gesture tool exactly once with gesture set to wave right. Do not answer with normal text."
+        },
+        {
+          role: "user",
+          content: `Canary tool-call request: ${userPrompt || "wave right with avatar.gesture"}`
+        }
+      ],
+      stream: true,
+      max_tokens: providerConfig.maxTokens,
+      temperature: 0,
+      tools: toolSelection.tools.map(toolSchemaForCatalogEntry),
+      tool_choice: {
+        type: "function",
+        function: { name: tool.functionName }
+      }
+    };
+    const redactedBodyShape = {
+      model: normalizedBody.model,
+      messages: normalizedBody.messages.map((message) => ({
+        role: message.role,
+        content: "<redacted>",
+        chars: message.content.length
+      })),
+      stream: normalizedBody.stream,
+      max_tokens: normalizedBody.max_tokens,
+      temperature: normalizedBody.temperature,
+      tools: normalizedBody.tools.map((entry) => entry.function.name),
+      tool_choice: normalizedBody.tool_choice
+    };
+    const normalizedHeadersShape = {
+      accept: "text/event-stream",
+      authorization: providerConfig.apiKeyLoaded
+        ? "Bearer <redacted>"
+        : "Bearer <missing>",
+      "content-type": "application/json",
+      "http-referer": "<redacted>",
+      "x-title": "<redacted>"
+    };
+    const requestBodyText = JSON.stringify(normalizedBody);
+    const blockReasons = [];
+    if (providerConfig.provider !== "openrouter") {
+      blockReasons.push("only_openrouter_live_tool_canary_supported");
+    }
+    if (!providerConfig.endpointAllowed) {
+      blockReasons.push("endpoint_not_on_openrouter_chat_completions");
+    }
+    if (!providerConfig.apiKeyLoaded) {
+      blockReasons.push("missing_openrouter_api_key");
+    }
+    if (typeof globalThis.fetch !== "function") {
+      blockReasons.push("fetch_unavailable_in_embedded_node");
+    }
+
+    return {
+      provider: providerConfig.provider,
+      requestedModel: requestBuilder.requestedModel,
+      providerModel: providerConfig.model,
+      transport: requestBuilder.transport,
+      endpoint: providerConfig.endpoint,
+      endpointShape: providerConfig.endpointShape,
+      normalizedHeadersShape,
+      redactedBodyShape,
+      requestBodyText,
+      requestBodyBytes: Buffer.byteLength(requestBodyText, "utf8"),
+      promptChars: userPrompt.length,
+      timeoutMs: providerConfig.timeoutMs,
+      maxTokens: providerConfig.maxTokens,
+      apiKey: providerConfig.apiKey,
+      referer: providerConfig.referer,
+      title: providerConfig.title,
+      canStart: blockReasons.length === 0,
+      blockReasons,
+      selectedToolCount: toolSelection.tools.length,
+      toolFunctionNames: toolSelection.toolFunctionNames,
+      gatewayToolNames: toolSelection.gatewayToolNames,
+      toolAliasMap: toolSelection.toolAliasMap,
+      toolSelectionHash: toolSelection.selectionHash,
+      canaryAllowlist: ["avatar.gesture"],
+      expectedToolFunctionName: tool.functionName,
+      expectedGatewayToolName: tool.gatewayName,
+      toolChoice: normalizedBody.tool_choice,
+      headersHash: metadataHash(normalizedHeadersShape),
+      bodyHash: metadataHash(redactedBodyShape),
+      requestHash: metadataHash({
+        provider: providerConfig.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: providerConfig.model,
+        transport: requestBuilder.transport,
+        endpointShape: providerConfig.endpointShape,
+        headersShape: normalizedHeadersShape,
+        bodyShape: redactedBodyShape,
+        requestBuilderHash: requestBuilder.requestHash,
+        toolSelectionHash: toolSelection.selectionHash,
+        liveToolExecutionCanary: true
+      })
+    };
+  }
+
+  function dispatchFromParsedToolPlan(parsed, queued, source) {
+    const plan = Array.isArray(parsed?.plans)
+      ? parsed.plans.find((entry) =>
+        entry?.allowedName === true && entry?.argumentsOk === true
+      )
+      : null;
+    const route = capabilityRouteForToolPlan(plan);
+    const canDispatch =
+      plan &&
+      route.capability !== "unknown" &&
+      parsed.allowedPlanCount === 1 &&
+      parsed.blockedPlanCount === 0;
+    const callId = plan?.id || stableId("native-live-tool-call", {
+      runId: queued.runId,
+      functionName: plan?.functionName,
+      planHash: plan?.planHash
+    });
+    const toolUseFrame = {
+      type: "tool_use",
+      id: callId,
+      name: route.method,
+      input: plan?.arguments || {},
+      runtime: "native-node-embedded",
+      source,
+      executionEnabled: false,
+      toolExecutionEnabled: false,
+      planHash: plan?.planHash || null
+    };
+    const toolResultFrame = {
+      type: "tool_result",
+      id: callId,
+      name: route.method,
+      result: {
+        ok: canDispatch,
+        dryRun: true,
+        skipped: true,
+        skippedReason: "live_provider_tool_execution_waiting_for_allowlist",
+        runtime: "native-node-embedded",
+        source,
+        capability: route.capability,
+        dartCapability: route.dartCapability,
+        method: route.method,
+        requiresUiThread: route.requiresUiThread,
+        wouldExecute: canDispatch,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        planHash: plan?.planHash || null
+      },
+      runtime: "native-node-embedded",
+      source,
+      executionEnabled: false,
+      toolExecutionEnabled: false
+    };
+    const dispatchHash = metadataHash({
+      callId,
+      route,
+      toolUseFrame,
+      toolResultFrame,
+      toolPlanHash: parsed?.toolPlanHash,
+      source
+    });
+    return {
+      fixture: { parsed },
+      plan,
+      route,
+      callId,
+      canDispatch,
+      toolUseFrame,
+      toolResultFrame,
+      dispatchHash,
+      parityOk:
+        canDispatch &&
+        toolUseFrame.type === "tool_use" &&
+        toolResultFrame.type === "tool_result" &&
+        toolUseFrame.toolExecutionEnabled === false &&
+        toolResultFrame.toolExecutionEnabled === false
     };
   }
 
@@ -5908,6 +6097,761 @@ function createMobileGatewayProbe({
     }
   }
 
+  async function handleChatProviderLiveToolExecutionCanaryStream(req, res) {
+    const source = "provider-live-tool-execution-canary";
+    const canaryMode = "provider-live-tool-execution-canary";
+    const directCanary = true;
+
+    function writeEvent(event, payload) {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({
+        event,
+        ...payload
+      })}\n`);
+    }
+
+    try {
+      const payload = await readJsonBody(req, 256 * 1024);
+      const shape = summarizeGatewayWsFrame(payload);
+      const parsed = shape.looksLikeProductionChatSend === true;
+      if (!parsed) {
+        sendJson(res, 422, {
+          ok: false,
+          parsed: false,
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          acceptedForRouting: false,
+          acceptedForQueue: false,
+          chatRoutingEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          productionGatewayPort,
+          error: {
+            type: "invalid_request",
+            code: "not_chat_send_frame",
+            message: "payload is not a production-shaped chat.send frame"
+          },
+          requestShape: shape
+        });
+        return;
+      }
+
+      const queued = dryRunQueue.acceptDryRun({
+        payload,
+        shape,
+        gatewayReady: readyState(),
+        source,
+        canaryMode,
+        directCanary
+      });
+      const envelope = providerShellEnvelope(payload, shape, queued);
+      const requestBuilder = providerRequestBuilderDryRun(envelope, shape, queued);
+      const liveRequest =
+        providerLiveToolExecutionCanaryRequest(requestBuilder, payload);
+      const routeBlocked = liveRequest.canStart !== true;
+      const ack = {
+        parsed,
+        route: routeBlocked ? "blocked" : "live_provider_tool_execution_canary",
+        routeStatus: routeBlocked
+          ? "blocked_before_provider_call"
+          : "live_provider_tool_call_starting",
+        source,
+        canaryMode,
+        directCanary,
+        reason: routeBlocked
+          ? liveRequest.blockReasons.join(",")
+          : "native will request one live provider tool call and execute only the matching bounded bridge allowlist",
+        provider: liveRequest.provider,
+        requestedModel: liveRequest.requestedModel,
+        providerModel: liveRequest.providerModel,
+        transport: liveRequest.transport,
+        headersHash: liveRequest.headersHash,
+        bodyHash: liveRequest.bodyHash,
+        requestHash: liveRequest.requestHash,
+        toolSelectionHash: liveRequest.toolSelectionHash,
+        validationOk: liveRequest.canStart === true,
+        endpointHost: liveRequest.endpointShape.host,
+        endpointPath: liveRequest.endpointShape.pathname,
+        maxTokens: liveRequest.maxTokens,
+        promptChars: liveRequest.promptChars,
+        requestBodyBytes: liveRequest.requestBodyBytes,
+        selectedToolCount: liveRequest.selectedToolCount,
+        toolFunctionNames: liveRequest.toolFunctionNames,
+        gatewayToolNames: liveRequest.gatewayToolNames,
+        canaryAllowlist: liveRequest.canaryAllowlist,
+        expectedToolFunctionName: liveRequest.expectedToolFunctionName,
+        expectedGatewayToolName: liveRequest.expectedGatewayToolName,
+        providerCallStarted: false,
+        providerCallsEnabled: liveRequest.canStart === true,
+        transportInvocationEnabled: liveRequest.canStart === true,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false,
+        sessionKey: shape.sessionKey,
+        nativeSessionId: queued.nativeSessionId,
+        requestId: queued.requestId,
+        runId: queued.runId,
+        sequence: queued.sequence,
+        queueStatus: "live_provider_tool_execution_canary",
+        gatewayReady: queued.gatewayReady,
+        idempotencyKeyPresent: shape.idempotencyKeyPresent,
+        timeoutMs: shape.timeoutMs,
+        messageChars: shape.messageChars,
+        hasMobileToolContext: shape.hasMobileToolContext,
+        mobileNodeHandle: shape.mobileNodeHandle,
+        mobileToolHints: shape.mobileToolHints,
+        metadataHash: shape.metadataHash
+      };
+
+      res.writeHead(202, {
+        "content-type": "application/x-ndjson",
+        "cache-control": "no-store",
+        "x-plawie-native-canary": "provider-live-tool-execution-canary"
+      });
+      writeEvent("ack", {
+        ok: true,
+        type: "res",
+        id: typeof payload?.id === "string" ? payload.id : null,
+        method: "chat.send",
+        runtime: "native-node-embedded",
+        canaryOnly: true,
+        dryRun: false,
+        source,
+        canaryMode,
+        directCanary,
+        parsed: true,
+        route: ack.route,
+        routeStatus: ack.routeStatus,
+        acceptedForRouting: liveRequest.canStart === true,
+        acceptedForQueue: true,
+        queuedForDryRun: false,
+        queueStatus: "live_provider_tool_execution_canary",
+        chatRoutingEnabled: false,
+        providerCallsEnabled: liveRequest.canStart === true,
+        executionEnabled: false,
+        toolExecutionEnabled: false,
+        bridgeExecutionEnabled: false,
+        transportInvocationEnabled: liveRequest.canStart === true,
+        productionGatewayPort,
+        ack,
+        requestShape: shape
+      });
+
+      writeEvent("tool_catalog", {
+        ok: liveRequest.selectedToolCount === 1,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        selectedToolCount: liveRequest.selectedToolCount,
+        toolFunctionNames: liveRequest.toolFunctionNames,
+        gatewayToolNames: liveRequest.gatewayToolNames,
+        toolSelectionHash: liveRequest.toolSelectionHash,
+        canaryAllowlist: liveRequest.canaryAllowlist,
+        executionEnabled: false,
+        toolExecutionEnabled: false
+      });
+
+      writeEvent("provider_request", {
+        ok: liveRequest.canStart === true,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        runId: queued.runId,
+        providerRequest: {
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          transport: liveRequest.transport,
+          endpointShape: liveRequest.endpointShape,
+          headersHash: liveRequest.headersHash,
+          bodyHash: liveRequest.bodyHash,
+          requestHash: liveRequest.requestHash,
+          maxTokens: liveRequest.maxTokens,
+          promptChars: liveRequest.promptChars,
+          requestBodyBytes: liveRequest.requestBodyBytes,
+          redactedBodyShape: liveRequest.redactedBodyShape,
+          selectedToolCount: liveRequest.selectedToolCount,
+          toolFunctionNames: liveRequest.toolFunctionNames,
+          gatewayToolNames: liveRequest.gatewayToolNames,
+          toolChoice: liveRequest.toolChoice,
+          canaryAllowlist: liveRequest.canaryAllowlist,
+          transportInvocationEnabled: liveRequest.canStart === true,
+          providerCallsEnabled: liveRequest.canStart === true,
+          executionEnabled: false,
+          toolExecutionEnabled: false
+        }
+      });
+
+      if (routeBlocked) {
+        writeEvent("provider_gate", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          gate: {
+            enabled: false,
+            status: "blocked",
+            reason: liveRequest.blockReasons.join(","),
+            blockedBefore: "fetch"
+          },
+          transportInvocationEnabled: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false
+        });
+        writeEvent("provider_error", providerErrorPayload({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          code: "native_live_tool_execution_canary_blocked",
+          message: liveRequest.blockReasons.join(",") ||
+            "native live tool execution canary blocked before provider call",
+          rawError: JSON.stringify({
+            reasons: liveRequest.blockReasons,
+            provider: liveRequest.provider,
+            endpointHost: liveRequest.endpointShape.host
+          })
+        }));
+        writeEvent("end", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: ack.routeStatus,
+          finishReason: "live_provider_tool_execution_canary_blocked",
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false
+        });
+        res.end();
+        return;
+      }
+
+      const startedAtMs = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        try {
+          controller.abort("native_provider_live_tool_execution_timeout");
+        } catch (_) {
+          controller.abort();
+        }
+      }, liveRequest.timeoutMs);
+
+      try {
+        writeEvent("provider_call_started", {
+          ok: true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          requestHash: liveRequest.requestHash,
+          requestBodyBytes: liveRequest.requestBodyBytes,
+          providerCallStarted: true,
+          providerBillingSurfaceReached: true
+        });
+
+        const response = await fetch(liveRequest.endpoint, {
+          method: "POST",
+          headers: {
+            "accept": "text/event-stream",
+            "content-type": "application/json",
+            "authorization": `Bearer ${liveRequest.apiKey}`,
+            "http-referer": liveRequest.referer,
+            "x-title": liveRequest.title
+          },
+          body: liveRequest.requestBodyText,
+          signal: controller.signal
+        });
+
+        const responseStatus = response.status;
+        const contentType = response.headers.get("content-type") || "";
+        writeEvent("provider_response", {
+          ok: response.ok,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          statusCode: responseStatus,
+          contentType,
+          firstByteMs: Date.now() - startedAtMs
+        });
+
+        if (!response.ok) {
+          const rawError = await readProviderText(response);
+          clearTimeout(timeout);
+          writeEvent("provider_error", providerErrorPayload({
+            source,
+            canaryMode,
+            runId: queued.runId,
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            code: `provider_http_${responseStatus}`,
+            message: `provider returned HTTP ${responseStatus}`,
+            rawError
+          }));
+          writeEvent("end", {
+            ok: false,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: "provider_error",
+            finishReason: "provider_http_error",
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            requestHash: liveRequest.requestHash,
+            providerCallsEnabled: true,
+            executionEnabled: false,
+            toolExecutionEnabled: false,
+            bridgeExecutionEnabled: false
+          });
+          res.end();
+          return;
+        }
+
+        const parser = createProviderToolPlanParser({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          allowedTools: liveRequest.toolFunctionNames,
+          toolAliasMap: liveRequest.toolAliasMap,
+          writeEvent
+        });
+        let buffer = "";
+        const decoder = new TextDecoder();
+        const reader = response.body && typeof response.body.getReader === "function"
+          ? response.body.getReader()
+          : null;
+
+        if (!reader) {
+          const raw = await readProviderText(response);
+          try {
+            parser.acceptData(JSON.stringify(JSON.parse(raw)));
+          } catch (error) {
+            parser.acceptData(raw);
+          }
+        } else {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split(/\r?\n/);
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              parser.acceptLine(line);
+            }
+          }
+          if (buffer.trim().length > 0) {
+            parser.acceptLine(buffer);
+          }
+        }
+
+        clearTimeout(timeout);
+        const liveToolPlanSummary = parser.summary();
+        const livePlan = Array.isArray(liveToolPlanSummary.plans)
+          ? liveToolPlanSummary.plans[0]
+          : null;
+        const canaryAllowlistOk =
+          liveRequest.canaryAllowlist.length === 1 &&
+          liveRequest.canaryAllowlist[0] === "avatar.gesture" &&
+          liveToolPlanSummary.allowedPlanCount === 1 &&
+          liveToolPlanSummary.blockedPlanCount === 0 &&
+          livePlan?.gatewayName === "avatar.gesture";
+        const liveToolPlanOk =
+          responseStatus === 200 &&
+          canaryAllowlistOk &&
+          liveToolPlanSummary.toolPlanCount === 1 &&
+          liveToolPlanSummary.invalidArgumentCount === 0 &&
+          liveToolPlanSummary.warningCount === 0 &&
+          ["tool_calls", "done"].includes(liveToolPlanSummary.finishReason);
+
+        writeEvent("live_tool_plan_summary", {
+          ok: liveToolPlanOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          statusCode: responseStatus,
+          toolPlanSummary: liveToolPlanSummary,
+          canaryAllowlist: liveRequest.canaryAllowlist,
+          canaryAllowlistOk,
+          liveToolPlanOk,
+          providerCallsEnabled: true,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false
+        });
+
+        if (!liveToolPlanOk) {
+          writeEvent("end", {
+            ok: false,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: "live_provider_tool_plan_failed",
+            finishReason: "live_provider_tool_plan_failed",
+            provider: liveRequest.provider,
+            statusCode: responseStatus,
+            requestHash: liveRequest.requestHash,
+            canaryAllowlistOk,
+            liveToolPlanOk,
+            providerCallsEnabled: true,
+            executionEnabled: false,
+            toolExecutionEnabled: false,
+            bridgeExecutionEnabled: false
+          });
+          res.end();
+          return;
+        }
+
+        const dispatch = dispatchFromParsedToolPlan(
+          liveToolPlanSummary,
+          queued,
+          source
+        );
+        const bridgeRequest = nativeDartBridgeAvatarCanaryRequest(
+          dispatch,
+          queued,
+          liveRequest
+        );
+        const bridgeRequestOk =
+          dispatch.parityOk &&
+          bridgeRequest.method === "avatar.gesture" &&
+          bridgeRequest.canaryAllowlist.length === 1 &&
+          bridgeRequest.canaryAllowlist[0] === "avatar.gesture" &&
+          bridgeRequest.input.gesture === "wave right" &&
+          bridgeRequest.input.protectedGesture === true &&
+          bridgeRequest.providerCallsEnabled === false &&
+          bridgeRequest.executionEnabled === true &&
+          bridgeRequest.toolExecutionEnabled === true &&
+          bridgeRequest.bridgeExecutionEnabled === true;
+
+        writeEvent("bridge_execute_request", {
+          ok: bridgeRequestOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          endpoint: "http://127.0.0.1:8765/api/native-gateway/dispatch-execute-canary",
+          bridgeRequest: {
+            type: bridgeRequest.type,
+            callId: bridgeRequest.callId,
+            method: bridgeRequest.method,
+            capability: bridgeRequest.capability,
+            dartCapability: bridgeRequest.dartCapability,
+            requiresUiThread: bridgeRequest.requiresUiThread,
+            bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+            dispatchHash: bridgeRequest.dispatchHash,
+            cancellationToken: bridgeRequest.cancellationToken,
+            canaryAllowlist: bridgeRequest.canaryAllowlist,
+            input: bridgeRequest.input,
+            dryRun: bridgeRequest.dryRun,
+            providerCallsEnabled: bridgeRequest.providerCallsEnabled,
+            executionEnabled: bridgeRequest.executionEnabled,
+            toolExecutionEnabled: bridgeRequest.toolExecutionEnabled,
+            bridgeExecutionEnabled: bridgeRequest.bridgeExecutionEnabled,
+            protectedGesture: bridgeRequest.protectedGesture,
+            arbitration: bridgeRequest.arbitration
+          }
+        });
+
+        const bridgeResponse = await postJsonToDartBridge(
+          "/api/native-gateway/dispatch-execute-canary",
+          bridgeRequest,
+          10000,
+          "execute-canary"
+        );
+        const executeAck = bridgeResponse.body;
+        const executeResult =
+          executeAck?.result && typeof executeAck.result === "object"
+            ? executeAck.result
+            : {};
+        const resultStatus =
+          executeAck.resultStatus || executeResult.status || "unknown";
+        const returnedGesture = String(executeResult.gesture || "").toLowerCase();
+        const returnedDuration = Number(executeResult.durationMs);
+        const gestureOk = returnedGesture === "wave right";
+        const durationOk =
+          Number.isFinite(returnedDuration) &&
+          returnedDuration > 0 &&
+          returnedDuration <= 2500;
+        const resultStatusOk = resultStatus === "started";
+        const arbitrationOk =
+          executeResult.protectedGesture === true ||
+          executeAck.avatarInputOk === true;
+        const executeAckHash = metadataHash({
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          ok: executeAck.ok === true,
+          accepted: executeAck.accepted === true,
+          command: executeAck.command,
+          canaryAllowlistOk: executeAck.canaryAllowlistOk === true,
+          dryRun: executeAck.dryRun === false,
+          executed: executeAck.executed === true,
+          resultStatus,
+          gesture: returnedGesture,
+          durationMs: executeResult.durationMs,
+          protectedGesture: executeResult.protectedGesture === true,
+          providerCallsEnabled: executeAck.providerCallsEnabled === true,
+          executionEnabled: executeAck.executionEnabled === true,
+          toolExecutionEnabled: executeAck.toolExecutionEnabled === true,
+          bridgeExecutionEnabled: executeAck.bridgeExecutionEnabled === true
+        });
+        const executeParityOk =
+          liveToolPlanOk &&
+          dispatch.parityOk === true &&
+          bridgeRequestOk &&
+          executeAck.ok === true &&
+          executeAck.accepted === true &&
+          executeAck.command === "avatar.gesture" &&
+          executeAck.canaryAllowlistOk === true &&
+          executeAck.dryRun === false &&
+          executeAck.executed === true &&
+          resultStatusOk &&
+          gestureOk &&
+          durationOk &&
+          arbitrationOk &&
+          executeAck.providerCallsEnabled === false &&
+          executeAck.executionEnabled === true &&
+          executeAck.toolExecutionEnabled === true &&
+          executeAck.bridgeExecutionEnabled === true;
+        const toolResultFrame = {
+          type: "tool_result",
+          id: dispatch.callId,
+          name: "avatar.gesture",
+          result: {
+            ok: executeParityOk,
+            dryRun: false,
+            executed: executeAck.executed === true,
+            accepted: executeAck.accepted === true,
+            status: resultStatus,
+            result: executeResult,
+            executeAckHash,
+            bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+            cancellationToken: bridgeRequest.cancellationToken,
+            canaryAllowlistOk: executeAck.canaryAllowlistOk === true,
+            gestureOk,
+            durationOk,
+            arbitrationOk,
+            providerCallsEnabled: false,
+            executionEnabled: true,
+            toolExecutionEnabled: true,
+            bridgeExecutionEnabled: true,
+            protectedGesture: true
+          },
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          dryRun: false,
+          executionEnabled: true,
+          toolExecutionEnabled: true,
+          protectedGesture: true
+        };
+
+        writeEvent("bridge_execute_ack", {
+          ok: executeAck.ok === true,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          statusCode: bridgeResponse.statusCode,
+          responseBytesRead: bridgeResponse.responseBytesRead,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          executeAckHash,
+          executeParityOk,
+          resultStatus,
+          gestureOk,
+          durationOk,
+          arbitrationOk,
+          executeAck
+        });
+        writeEvent("tool_use_frame", {
+          ok: dispatch.parityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          frame: bridgeRequest.toolUseFrame
+        });
+        writeEvent("tool_result_frame", {
+          ok: executeParityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          frame: toolResultFrame
+        });
+        writeEvent("live_tool_execution_summary", {
+          ok: executeParityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          statusCode: responseStatus,
+          requestHash: liveRequest.requestHash,
+          toolSelectionHash: liveRequest.toolSelectionHash,
+          dispatchHash: bridgeRequest.dispatchHash,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          executeAckHash,
+          liveToolPlanOk,
+          dispatchParityOk: dispatch.parityOk,
+          canaryAllowlistOk,
+          executeParityOk,
+          validationOk: executeParityOk,
+          toolName: "avatar.gesture",
+          capability: "avatar",
+          dartCapability: dispatch.route.dartCapability,
+          gesture: returnedGesture || bridgeRequest.input.gesture,
+          durationMs: executeResult.durationMs,
+          resultStatus,
+          gestureOk,
+          durationOk,
+          arbitrationOk,
+          providerCallsEnabled: true,
+          providerCallsDuringExecutionEnabled: false,
+          transportInvocationEnabled: true,
+          executionEnabled: true,
+          toolExecutionEnabled: true,
+          bridgeExecutionEnabled: true,
+          protectedGesture: true
+        });
+        writeEvent("end", {
+          ok: executeParityOk,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: executeParityOk
+            ? "live_provider_tool_execution_canary_complete"
+            : "live_provider_tool_execution_canary_failed",
+          finishReason: executeParityOk
+            ? "live_provider_tool_execution_canary_complete"
+            : "live_provider_tool_execution_canary_failed",
+          provider: liveRequest.provider,
+          requestedModel: liveRequest.requestedModel,
+          providerModel: liveRequest.providerModel,
+          statusCode: responseStatus,
+          requestHash: liveRequest.requestHash,
+          toolSelectionHash: liveRequest.toolSelectionHash,
+          dispatchHash: bridgeRequest.dispatchHash,
+          bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+          executeAckHash,
+          liveToolPlanOk,
+          dispatchParityOk: dispatch.parityOk,
+          canaryAllowlistOk,
+          executeParityOk,
+          validationOk: executeParityOk,
+          toolName: "avatar.gesture",
+          capability: "avatar",
+          gesture: returnedGesture || bridgeRequest.input.gesture,
+          providerCallsEnabled: true,
+          providerCallsDuringExecutionEnabled: false,
+          transportInvocationEnabled: true,
+          executionEnabled: true,
+          toolExecutionEnabled: true,
+          bridgeExecutionEnabled: true,
+          protectedGesture: true
+        });
+        res.end();
+      } catch (error) {
+        clearTimeout(timeout);
+        const aborted = error?.name === "AbortError";
+        writeEvent("provider_error", providerErrorPayload({
+          source,
+          canaryMode,
+          runId: queued.runId,
+          provider: liveRequest.provider,
+          code: aborted ? "provider_timeout" : "provider_fetch_or_bridge_failed",
+          message: error.message || String(error),
+          rawError: error.stack || error.message || String(error)
+        }));
+        writeEvent("end", {
+          ok: false,
+          runtime: "native-node-embedded",
+          source,
+          canaryMode,
+          runId: queued.runId,
+          routeStatus: aborted
+            ? "provider_timeout"
+            : "provider_fetch_or_bridge_failed",
+          finishReason: aborted
+            ? "provider_timeout"
+            : "provider_fetch_or_bridge_failed",
+          provider: liveRequest.provider,
+          requestHash: liveRequest.requestHash,
+          durationMs: Date.now() - startedAtMs,
+          providerCallsEnabled: true,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false
+        });
+        res.end();
+      }
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, error.statusCode || 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            code:
+              error.code || "chat_provider_live_tool_execution_canary_parse_failed",
+            message: error.message || String(error),
+            raw: error.raw || error.stack || error.message || String(error),
+            statusCode: error.statusCode || null,
+            body: error.body || null
+          },
+          runtime: "native-node-embedded",
+          canaryOnly: true,
+          dryRun: false,
+          source,
+          canaryMode,
+          directCanary,
+          openclawStarted: false,
+          acceptedForRouting: false,
+          providerCallsEnabled: false,
+          executionEnabled: false,
+          toolExecutionEnabled: false,
+          bridgeExecutionEnabled: false,
+          transportInvocationEnabled: false,
+          productionGatewayPort
+        });
+        return;
+      }
+      writeEvent("error", {
+        ok: false,
+        runtime: "native-node-embedded",
+        source,
+        canaryMode,
+        error: {
+          type: "stream_error",
+          code: error.code || "chat_provider_live_tool_execution_canary_failed",
+          message: error.message || String(error),
+          raw: error.raw || error.stack || error.message || String(error),
+          statusCode: error.statusCode || null,
+          body: error.body || null
+        }
+      });
+      res.end();
+    }
+  }
+
   async function handleChatToolDispatchDryRunStream(req, res) {
     const source = "tool-dispatch-dry-run";
     const canaryMode = "tool-dispatch-dry-run";
@@ -8631,6 +9575,11 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-tool-plan-canary-stream") {
       handleChatProviderToolPlanCanaryStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-live-tool-execution-canary-stream") {
+      handleChatProviderLiveToolExecutionCanaryStream(req, res);
       return true;
     }
 

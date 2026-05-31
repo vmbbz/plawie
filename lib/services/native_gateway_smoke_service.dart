@@ -64,6 +64,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortBridgeHapticCanaryInFlight = false;
   static bool _productionPortBridgeAvatarCanaryInFlight = false;
   static bool _productionPortProviderToolPlanExecutionInFlight = false;
+  static bool _productionPortProviderLiveToolExecutionInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -10148,6 +10149,772 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderToolPlanExecutionInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderLiveToolExecutionCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt =
+        'native production live provider tool-call to bounded bridge execution canary: wave right',
+  }) async {
+    if (_productionPortProviderLiveToolExecutionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-live-provider-tool-execution-canary',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port live provider tool execution canary is already running.',
+      };
+    }
+
+    _productionPortProviderLiveToolExecutionInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final providerConfigForNative = Map<String, dynamic>.from(
+        providerConfig,
+      );
+      providerConfigForNative['title'] =
+          providerConfigForNative['title']?.toString().trim().isNotEmpty == true
+              ? providerConfigForNative['title']
+              : 'Plawie Native Live Tool Execution Canary';
+      final providerHint =
+          providerConfigForNative['provider']?.toString().trim();
+      final providerModel = providerConfigForNative['model']?.toString().trim();
+      final apiKeyLoaded =
+          providerConfigForNative['apiKey']?.toString().trim().isNotEmpty ==
+              true;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var canarySent = false;
+      var ackEventOk = false;
+      var toolCatalogOk = false;
+      var providerRequestOk = false;
+      var providerCallStartedOk = false;
+      var providerResponseOk = false;
+      var providerErrorSurfaceOk = false;
+      var liveToolPlanSummaryOk = false;
+      var bridgeExecuteRequestOk = false;
+      var bridgeExecuteAckOk = false;
+      var toolUseFrameOk = false;
+      var toolResultFrameOk = false;
+      var executionSummaryOk = false;
+      var eventOrderOk = false;
+      var endOk = false;
+      var liveToolExecutionCanaryOk = false;
+      var postCanaryGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postCanaryHealth = <String, dynamic>{};
+      Map<String, dynamic> postCanaryProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> canaryEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? canaryError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      Map<String, dynamic> asMap(Object? value) => value is Map
+          ? value.map((key, value) => MapEntry(key.toString(), value))
+          : <String, dynamic>{};
+      List<String> stringList(Object? value) {
+        if (value is! List) return const <String>[];
+        return value.map((entry) => entry.toString()).toList(growable: false);
+      }
+
+      bool listContainsTool(Object? value, String toolName) {
+        final names = stringList(value)
+            .map((entry) => entry.replaceAll('_', '.').toLowerCase())
+            .toSet();
+        return names.contains(toolName.toLowerCase());
+      }
+
+      bool providerStillDisabled(Map<String, dynamic> value) =>
+          value['providerCallsEnabled'] != true &&
+          value['transportInvocationEnabled'] != true;
+      bool executionEnabled(Map<String, dynamic> value) =>
+          value['executionEnabled'] == true &&
+          value['toolExecutionEnabled'] == true &&
+          value['bridgeExecutionEnabled'] == true;
+      int eventIndex(String eventName) =>
+          canaryEvents.indexWhere((event) => event['event'] == eventName);
+
+      log(
+        '[NATIVE-LIVE-TOOL-OWNER] Opening live provider tool-call to bridge execution canary.',
+      );
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Live provider tool execution canary requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before live provider tool execution canary.',
+          );
+        }
+
+        log('[NATIVE-LIVE-TOOL-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before live provider tool execution canary.',
+          );
+        }
+
+        log(
+          '[NATIVE-LIVE-TOOL-OWNER] Starting native on 18789 for one live provider tool call.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError(
+            'Native live provider tool execution canary did not start.',
+          );
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        canarySent = true;
+        canaryEvents = await _streamProductionNdjson(
+          '/gateway/chat-provider-live-tool-execution-canary-stream',
+          {
+            ..._sampleGatewayWsChatSendFrame(
+              requestId: 'production-live-provider-tool-exec-request',
+              idempotencyKey:
+                  'production-live-provider-tool-exec-idempotency-key',
+              model: providerHint == null || providerHint.isEmpty
+                  ? null
+                  : '$providerHint/$providerModel',
+              provider: providerHint,
+              message: prompt,
+            ),
+            'nativeCanaryProviderConfig': providerConfigForNative,
+          },
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 100),
+        );
+
+        final ackEvent = _firstEvent(canaryEvents, 'ack');
+        final catalogEvent = _firstEvent(canaryEvents, 'tool_catalog');
+        final requestEvent = _firstEvent(canaryEvents, 'provider_request');
+        final callStartedEvent =
+            _firstEvent(canaryEvents, 'provider_call_started');
+        final responseEvent = _firstEvent(canaryEvents, 'provider_response');
+        final providerErrorEvent = _firstEvent(canaryEvents, 'provider_error');
+        final planEvent = _firstEvent(canaryEvents, 'live_tool_plan_summary');
+        final bridgeRequestEvent =
+            _firstEvent(canaryEvents, 'bridge_execute_request');
+        final bridgeAckEvent = _firstEvent(canaryEvents, 'bridge_execute_ack');
+        final toolUseEvent = _firstEvent(canaryEvents, 'tool_use_frame');
+        final toolResultEvent = _firstEvent(canaryEvents, 'tool_result_frame');
+        final summaryEvent =
+            _firstEvent(canaryEvents, 'live_tool_execution_summary');
+        final endEvent = _firstEvent(canaryEvents, 'end');
+        final ack = asMap(ackEvent['ack']);
+        final providerRequest = asMap(requestEvent['providerRequest']);
+        final redactedBodyShape = asMap(providerRequest['redactedBodyShape']);
+        final toolChoice = asMap(providerRequest['toolChoice']);
+        final toolChoiceFunction = asMap(toolChoice['function']);
+        final toolPlanSummary = asMap(planEvent['toolPlanSummary']);
+        final bridgeRequest = asMap(bridgeRequestEvent['bridgeRequest']);
+        final executeAck = asMap(bridgeAckEvent['executeAck']);
+        final executeResult = asMap(executeAck['result']);
+        final toolUseFrame = asMap(toolUseEvent['frame']);
+        final toolUseInput = asMap(toolUseFrame['input']);
+        final toolResultFrame = asMap(toolResultEvent['frame']);
+        final toolResult = asMap(toolResultFrame['result']);
+        final toolResultPayload = asMap(toolResult['result']);
+        final rawProviderError =
+            providerErrorEvent['rawProviderError']?.toString() ??
+                (providerErrorEvent['error'] is Map
+                    ? (providerErrorEvent['error'] as Map)['raw']?.toString()
+                    : null) ??
+                '';
+        final expectedOrderedEvents = <String>[
+          'ack',
+          'tool_catalog',
+          'provider_request',
+          'provider_call_started',
+          'provider_response',
+          'live_tool_plan_summary',
+          'bridge_execute_request',
+          'bridge_execute_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'live_tool_execution_summary',
+          'end',
+        ];
+        eventOrderOk = true;
+        var previousIndex = -1;
+        for (final eventName in expectedOrderedEvents) {
+          final index = eventIndex(eventName);
+          if (index <= previousIndex) {
+            eventOrderOk = false;
+            break;
+          }
+          previousIndex = index;
+        }
+
+        final responseStatus = responseEvent['statusCode'];
+        final selectedToolCount = catalogEvent['selectedToolCount'];
+        final requestBodyBytes = providerRequest['requestBodyBytes'];
+        final maxTokens = providerRequest['maxTokens'];
+        ackEventOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == false &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'live_provider_tool_execution_canary' &&
+            ackEvent['routeStatus'] == 'live_provider_tool_call_starting' &&
+            ackEvent['acceptedForRouting'] == true &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['providerCallsEnabled'] == true &&
+            ackEvent['transportInvocationEnabled'] == true &&
+            ackEvent['executionEnabled'] == false &&
+            ackEvent['toolExecutionEnabled'] == false &&
+            ackEvent['bridgeExecutionEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            listContainsTool(ack['gatewayToolNames'], 'avatar.gesture') &&
+            listContainsTool(ack['canaryAllowlist'], 'avatar.gesture');
+        toolCatalogOk = catalogEvent['ok'] == true &&
+            selectedToolCount == 1 &&
+            listContainsTool(
+                catalogEvent['toolFunctionNames'], 'avatar.gesture') &&
+            listContainsTool(
+                catalogEvent['gatewayToolNames'], 'avatar.gesture') &&
+            listContainsTool(
+                catalogEvent['canaryAllowlist'], 'avatar.gesture') &&
+            catalogEvent['executionEnabled'] == false &&
+            catalogEvent['toolExecutionEnabled'] == false;
+        providerRequestOk = requestEvent['ok'] == true &&
+            providerRequest['provider'] == 'openrouter' &&
+            providerRequest['transport'] ==
+                'openai-compatible-chat-completions' &&
+            providerRequest['transportInvocationEnabled'] == true &&
+            providerRequest['providerCallsEnabled'] == true &&
+            providerRequest['executionEnabled'] == false &&
+            providerRequest['toolExecutionEnabled'] == false &&
+            maxTokens is num &&
+            maxTokens <= 32 &&
+            requestBodyBytes is num &&
+            requestBodyBytes > 0 &&
+            providerRequest['requestHash']?.toString().isNotEmpty == true &&
+            redactedBodyShape['tools'] is List &&
+            (redactedBodyShape['tools'] as List).length == 1 &&
+            toolChoice['type'] == 'function' &&
+            toolChoiceFunction['name'] == 'avatar_gesture';
+        providerCallStartedOk = callStartedEvent['ok'] == true &&
+            callStartedEvent['provider'] == 'openrouter' &&
+            callStartedEvent['providerCallStarted'] == true &&
+            callStartedEvent['providerBillingSurfaceReached'] == true &&
+            callStartedEvent['requestBodyBytes'] is num &&
+            (callStartedEvent['requestBodyBytes'] as num) > 0;
+        providerResponseOk =
+            responseEvent['runtime'] == 'native-node-embedded' &&
+                responseEvent['provider'] == 'openrouter' &&
+                responseStatus == 200;
+        providerErrorSurfaceOk = providerErrorEvent.isNotEmpty &&
+            providerErrorEvent['runtime'] == 'native-node-embedded' &&
+            providerErrorEvent['provider'] == 'openrouter' &&
+            rawProviderError.isNotEmpty &&
+            providerErrorEvent['error'] is Map;
+        liveToolPlanSummaryOk = planEvent['ok'] == true &&
+            planEvent['runtime'] == 'native-node-embedded' &&
+            planEvent['provider'] == 'openrouter' &&
+            planEvent['statusCode'] == 200 &&
+            planEvent['liveToolPlanOk'] == true &&
+            planEvent['canaryAllowlistOk'] == true &&
+            toolPlanSummary['toolPlanCount'] == 1 &&
+            toolPlanSummary['allowedPlanCount'] == 1 &&
+            toolPlanSummary['blockedPlanCount'] == 0 &&
+            toolPlanSummary['invalidArgumentCount'] == 0 &&
+            listContainsTool(
+                toolPlanSummary['toolPlanNames'], 'avatar.gesture') &&
+            listContainsTool(
+              toolPlanSummary['gatewayToolNames'],
+              'avatar.gesture',
+            ) &&
+            planEvent['providerCallsEnabled'] == true &&
+            planEvent['executionEnabled'] == false &&
+            planEvent['toolExecutionEnabled'] == false &&
+            planEvent['bridgeExecutionEnabled'] == false;
+        bridgeExecuteRequestOk = bridgeRequestEvent['ok'] == true &&
+            bridgeRequestEvent['runtime'] == 'native-node-embedded' &&
+            bridgeRequest['type'] == 'native_tool_dispatch_execute_canary' &&
+            bridgeRequest['method'] == 'avatar.gesture' &&
+            bridgeRequest['capability'] == 'avatar' &&
+            bridgeRequest['dartCapability'] == 'AvatarCapability' &&
+            bridgeRequest['requiresUiThread'] == true &&
+            bridgeRequest['dryRun'] == false &&
+            bridgeRequest['protectedGesture'] == true &&
+            bridgeRequest['arbitration'] == 'protected-gesture' &&
+            listContainsTool(
+                bridgeRequest['canaryAllowlist'], 'avatar.gesture') &&
+            providerStillDisabled(bridgeRequest) &&
+            executionEnabled(bridgeRequest);
+        bridgeExecuteAckOk = bridgeAckEvent['ok'] == true &&
+            bridgeAckEvent['runtime'] == 'native-node-embedded' &&
+            bridgeAckEvent['statusCode'] == 200 &&
+            bridgeAckEvent['executeParityOk'] == true &&
+            bridgeAckEvent['gestureOk'] == true &&
+            bridgeAckEvent['durationOk'] == true &&
+            bridgeAckEvent['arbitrationOk'] == true &&
+            executeAck['ok'] == true &&
+            executeAck['accepted'] == true &&
+            executeAck['executed'] == true &&
+            executeAck['command'] == 'avatar.gesture' &&
+            executeAck['canaryAllowlistOk'] == true &&
+            executeAck['dryRun'] == false &&
+            executeAck['providerCallsEnabled'] == false &&
+            executionEnabled(executeAck) &&
+            executeResult['status'] == 'started';
+        toolUseFrameOk = toolUseEvent['ok'] == true &&
+            toolUseEvent['runtime'] == 'native-node-embedded' &&
+            toolUseFrame['type'] == 'tool_use' &&
+            toolUseFrame['name'] == 'avatar.gesture' &&
+            toolUseFrame['dryRun'] == false &&
+            toolUseFrame['canaryOnly'] == true &&
+            toolUseFrame['protectedGesture'] == true &&
+            toolUseFrame['arbitration'] == 'protected-gesture' &&
+            toolUseInput['gesture']?.toString().toLowerCase() == 'wave right' &&
+            toolUseInput['protectedGesture'] == true &&
+            toolUseFrame['executionEnabled'] == true &&
+            toolUseFrame['toolExecutionEnabled'] == true;
+        toolResultFrameOk = toolResultEvent['ok'] == true &&
+            toolResultEvent['runtime'] == 'native-node-embedded' &&
+            toolResultFrame['type'] == 'tool_result' &&
+            toolResultFrame['name'] == 'avatar.gesture' &&
+            toolResultFrame['dryRun'] == false &&
+            toolResultFrame['protectedGesture'] == true &&
+            toolResult['ok'] == true &&
+            toolResult['executed'] == true &&
+            toolResult['accepted'] == true &&
+            toolResult['status'] == 'started' &&
+            toolResult['canaryAllowlistOk'] == true &&
+            toolResult['gestureOk'] == true &&
+            toolResult['durationOk'] == true &&
+            toolResult['arbitrationOk'] == true &&
+            toolResultPayload['status'] == 'started' &&
+            toolResultPayload['gesture']?.toString().toLowerCase() ==
+                'wave right' &&
+            providerStillDisabled(toolResult) &&
+            executionEnabled(toolResult);
+        executionSummaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['runtime'] == 'native-node-embedded' &&
+            summaryEvent['provider'] == 'openrouter' &&
+            summaryEvent['liveToolPlanOk'] == true &&
+            summaryEvent['dispatchParityOk'] == true &&
+            summaryEvent['canaryAllowlistOk'] == true &&
+            summaryEvent['executeParityOk'] == true &&
+            summaryEvent['validationOk'] == true &&
+            summaryEvent['toolName'] == 'avatar.gesture' &&
+            summaryEvent['providerCallsEnabled'] == true &&
+            summaryEvent['providerCallsDuringExecutionEnabled'] == false &&
+            summaryEvent['transportInvocationEnabled'] == true &&
+            executionEnabled(summaryEvent) &&
+            summaryEvent['protectedGesture'] == true;
+        endOk = endEvent['ok'] == true &&
+            endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['routeStatus'] ==
+                'live_provider_tool_execution_canary_complete' &&
+            endEvent['finishReason'] ==
+                'live_provider_tool_execution_canary_complete' &&
+            endEvent['provider'] == 'openrouter' &&
+            endEvent['liveToolPlanOk'] == true &&
+            endEvent['dispatchParityOk'] == true &&
+            endEvent['canaryAllowlistOk'] == true &&
+            endEvent['executeParityOk'] == true &&
+            endEvent['validationOk'] == true &&
+            endEvent['toolName'] == 'avatar.gesture' &&
+            endEvent['providerCallsEnabled'] == true &&
+            endEvent['providerCallsDuringExecutionEnabled'] == false &&
+            endEvent['transportInvocationEnabled'] == true &&
+            executionEnabled(endEvent) &&
+            endEvent['protectedGesture'] == true;
+        liveToolExecutionCanaryOk = ackEventOk &&
+            toolCatalogOk &&
+            providerRequestOk &&
+            providerCallStartedOk &&
+            providerResponseOk &&
+            liveToolPlanSummaryOk &&
+            bridgeExecuteRequestOk &&
+            bridgeExecuteAckOk &&
+            toolUseFrameOk &&
+            toolResultFrameOk &&
+            executionSummaryOk &&
+            eventOrderOk &&
+            endOk;
+
+        postCanaryHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postCanaryProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postCanaryGuardOk = postCanaryHealth['ok'] == true &&
+            postCanaryHealth['runtime'] == 'native-node-embedded' &&
+            postCanaryHealth['port'] == AppConstants.gatewayPort &&
+            postCanaryHealth['productionPortBindCanary'] == true &&
+            postCanaryHealth['openclawStarted'] == false &&
+            postCanaryProbe['runtime'] == 'native-node-embedded' &&
+            postCanaryProbe['port'] == AppConstants.gatewayPort &&
+            postCanaryProbe['productionPortBindCanary'] == true &&
+            postCanaryProbe['canaryOnly'] == true &&
+            postCanaryProbe['productionReady'] == false &&
+            postCanaryProbe['openclawStarted'] == false &&
+            postCanaryProbe['chatRoutingEnabled'] == false &&
+            postCanaryProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (canarySent) {
+          canaryError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          liveToolExecutionCanaryOk &&
+          postCanaryGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final endEvent = _firstEvent(canaryEvents, 'end');
+      final requestEvent = _firstEvent(canaryEvents, 'provider_request');
+      final responseEvent = _firstEvent(canaryEvents, 'provider_response');
+      final providerErrorEvent = _firstEvent(canaryEvents, 'provider_error');
+      final planEvent = _firstEvent(canaryEvents, 'live_tool_plan_summary');
+      final bridgeAckEvent = _firstEvent(canaryEvents, 'bridge_execute_ack');
+      final summaryEvent =
+          _firstEvent(canaryEvents, 'live_tool_execution_summary');
+      final providerRequest = asMap(requestEvent['providerRequest']);
+      final toolPlanSummary = asMap(planEvent['toolPlanSummary']);
+      final rawProviderError =
+          providerErrorEvent['rawProviderError']?.toString() ??
+              (providerErrorEvent['error'] is Map
+                  ? (providerErrorEvent['error'] as Map)['raw']?.toString()
+                  : null) ??
+              '';
+      final observedOrder =
+          canaryEvents.map((event) => event['event']?.toString()).toList();
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-live-provider-tool-execution-canary',
+        'mode':
+            'native-production-port-live-provider-tool-call-to-bridge-execution-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'canarySent': canarySent,
+        'liveToolExecutionCanaryOk': liveToolExecutionCanaryOk,
+        'ackEventOk': ackEventOk,
+        'toolCatalogOk': toolCatalogOk,
+        'providerRequestOk': providerRequestOk,
+        'providerCallStartedOk': providerCallStartedOk,
+        'providerResponseOk': providerResponseOk,
+        'providerErrorSurfaceOk': providerErrorSurfaceOk,
+        'liveToolPlanSummaryOk': liveToolPlanSummaryOk,
+        'bridgeExecuteRequestOk': bridgeExecuteRequestOk,
+        'bridgeExecuteAckOk': bridgeExecuteAckOk,
+        'toolUseFrameOk': toolUseFrameOk,
+        'toolResultFrameOk': toolResultFrameOk,
+        'executionSummaryOk': executionSummaryOk,
+        'eventOrderOk': eventOrderOk,
+        'endOk': endOk,
+        'eventsCount': canaryEvents.length,
+        'observedEventOrder': observedOrder,
+        'routeStatus': endEvent['routeStatus'],
+        'finishReason': endEvent['finishReason'],
+        'provider': providerRequest['provider'] ?? endEvent['provider'],
+        'requestedModel':
+            providerRequest['requestedModel'] ?? endEvent['requestedModel'],
+        'providerModel':
+            providerRequest['providerModel'] ?? endEvent['providerModel'],
+        'statusCode': responseEvent['statusCode'] ?? endEvent['statusCode'],
+        'contentType': responseEvent['contentType'],
+        'requestHash':
+            providerRequest['requestHash'] ?? endEvent['requestHash'],
+        'toolSelectionHash': endEvent['toolSelectionHash'],
+        'dispatchHash': endEvent['dispatchHash'],
+        'bridgeRequestHash': endEvent['bridgeRequestHash'],
+        'executeAckHash':
+            bridgeAckEvent['executeAckHash'] ?? endEvent['executeAckHash'],
+        'selectedToolCount': providerRequest['selectedToolCount'],
+        'toolFunctionNames': providerRequest['toolFunctionNames'],
+        'gatewayToolNames': providerRequest['gatewayToolNames'],
+        'toolChoice': providerRequest['toolChoice'],
+        'toolPlanCount': toolPlanSummary['toolPlanCount'],
+        'allowedPlanCount': toolPlanSummary['allowedPlanCount'],
+        'blockedPlanCount': toolPlanSummary['blockedPlanCount'],
+        'invalidArgumentCount': toolPlanSummary['invalidArgumentCount'],
+        'toolPlanNames': toolPlanSummary['toolPlanNames'],
+        'capturedGatewayToolNames': toolPlanSummary['gatewayToolNames'],
+        'liveToolPlanOk': planEvent['liveToolPlanOk'] == true ||
+            endEvent['liveToolPlanOk'] == true,
+        'dispatchParityOk': summaryEvent['dispatchParityOk'] == true ||
+            endEvent['dispatchParityOk'] == true,
+        'canaryAllowlistOk': summaryEvent['canaryAllowlistOk'] == true ||
+            endEvent['canaryAllowlistOk'] == true,
+        'executeParityOk': summaryEvent['executeParityOk'] == true ||
+            endEvent['executeParityOk'] == true,
+        'validationOk': summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'command': summaryEvent['toolName'] ?? endEvent['toolName'],
+        'capability': summaryEvent['capability'] ?? endEvent['capability'],
+        'gesture': summaryEvent['gesture'] ?? endEvent['gesture'],
+        'resultStatus': summaryEvent['resultStatus'],
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'providerCallsDuringExecutionEnabled':
+            endEvent['providerCallsDuringExecutionEnabled'] == true,
+        'transportInvocationEnabled':
+            endEvent['transportInvocationEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabled': endEvent['bridgeExecutionEnabled'] == true,
+        'protectedGesture': endEvent['protectedGesture'] == true,
+        'apiKeyLoaded': apiKeyLoaded,
+        'providerBillingSurfaceReached': _firstEvent(canaryEvents,
+                'provider_call_started')['providerBillingSurfaceReached'] ==
+            true,
+        'rawProviderErrorForwarded': rawProviderError.isNotEmpty,
+        if (rawProviderError.isNotEmpty)
+          'rawProviderErrorPreview': rawProviderError.length > 500
+              ? rawProviderError.substring(0, 500)
+              : rawProviderError,
+        if (canaryError != null) 'canaryError': canaryError.toString(),
+        'postCanaryGuardOk': postCanaryGuardOk,
+        'postCanaryRuntimeReported': postCanaryHealth['runtime'],
+        'postCanaryCanaryOnly': postCanaryProbe['canaryOnly'] == true,
+        'postCanaryChatRoutingEnabled':
+            postCanaryProbe['chatRoutingEnabled'] == true,
+        'postCanaryProviderCallsEnabled':
+            postCanaryProbe['providerCallsEnabled'] == true,
+        'postCanaryToolExecutionEnabled':
+            postCanaryProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, received one live provider tool call, executed only the bounded avatar bridge allowlist, and PRoot was restored.'
+            : (providerErrorSurfaceOk
+                ? 'Native owned 18789, reached the provider but live tool execution did not complete; raw provider/bridge error was surfaced and PRoot rollback was attempted.'
+                : 'Production-port live provider tool execution canary is not promotable; PRoot rollback was attempted.'),
+        'nextGate':
+            'production-port live provider tool result continuation canary with PRoot rollback',
+      };
+      log('[NATIVE-LIVE-TOOL-OWNER] ${jsonEncode({
+            ...report,
+            'rawProviderErrorPreview':
+                rawProviderError.isEmpty ? null : '<redacted in activity log>',
+          })}');
+      return report;
+    } finally {
+      _productionPortProviderLiveToolExecutionInFlight = false;
     }
   }
 
