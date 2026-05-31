@@ -4357,6 +4357,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionSingleSkillPromotionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-single-skill-owner',
+      '/native-single-skill-promotion-owner',
+      '/native-device-node-owner',
+      '/native-device-skill-owner',
+      '/native-skill-owner',
+      'native-single-skill-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native single-skill device-node promotion canary';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native single-skill device-node promotion canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -8916,6 +8943,95 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionSingleSkillPromotionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionSingleSkillPromotionPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-SINGLE-SKILL-PROMOTION] -> Opening device-node single-skill promotion canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortSingleSkillPromotionCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-SINGLE-SKILL-PROMOTION] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final observedOrder = report['observedOrder'] is List
+          ? (report['observedOrder'] as List).join(', ')
+          : '';
+
+      yield [
+        ok
+            ? 'Native single-skill promotion canary complete'
+            : 'Native single-skill promotion canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'promotionPolicyEntry: ${report['promotionPolicyEntry'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'rollbackRuntimeId: ${report['rollbackRuntimeId'] ?? 'unknown'}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'policyMapOk: ${report['policyMapOk'] == true}',
+        'inventoryParityOk: ${report['inventoryParityOk'] == true}',
+        'skillPolicyCoverageOk: ${report['skillPolicyCoverageOk'] == true}',
+        'mobileToolPolicyCoverageOk: ${report['mobileToolPolicyCoverageOk'] == true}',
+        'toolHintPolicyCoverageOk: ${report['toolHintPolicyCoverageOk'] == true}',
+        'selectedSkillCandidateOk: ${report['selectedSkillCandidateOk'] == true}',
+        'singleSkillPolicyOk: ${report['singleSkillPolicyOk'] == true}',
+        'nativeDefaultRoutingEnabled: ${report['nativeDefaultRoutingEnabled'] == true}',
+        'promotionWindowOpened: ${report['promotionWindowOpened'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'readOnlyBridgeCanaryOk: ${report['readOnlyBridgeCanaryOk'] == true}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'expectedOrder: ${_compactJsonValue(report['expectedOrder'])}',
+        'observedOrder: $observedOrder',
+        'orderScopeOk: ${report['orderScopeOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'providerCallsDisabledDuringWindow: ${report['providerCallsDisabledDuringWindow'] == true}',
+        'defaultRoutingDisabledDuringWindow: ${report['defaultRoutingDisabledDuringWindow'] == true}',
+        'executionScope: ${report['executionScope'] ?? 'unknown'}',
+        'toolExecutionEnabledDuringWindow: ${report['toolExecutionEnabledDuringWindow'] == true}',
+        'bridgeExecutionEnabledDuringWindow: ${report['bridgeExecutionEnabledDuringWindow'] == true}',
+        'boundedBridgeExecutionOnly: ${report['boundedBridgeExecutionOnly'] == true}',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'rollbackVerified: ${report['rollbackVerified'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'rollbackPolicy: ${_compactJsonValue(report['rollbackPolicy'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-SINGLE-SKILL-PROMOTION] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -9495,6 +9611,14 @@ $message''';
 
     if (_nativeProductionPromotionPolicyPayload(message) != null) {
       yield* _sendNativeProductionPromotionPolicyMessage(message);
+      return;
+    }
+
+    if (_nativeProductionSingleSkillPromotionPayload(message) != null) {
+      yield* _sendNativeProductionSingleSkillPromotionMessage(
+        message,
+        model: model,
+      );
       return;
     }
 

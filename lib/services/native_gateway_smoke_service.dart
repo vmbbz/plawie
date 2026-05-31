@@ -71,6 +71,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortNativeChatLoopContinuationInFlight = false;
   static bool _productionInventoryParityInFlight = false;
   static bool _productionPromotionPolicyMapInFlight = false;
+  static bool _productionSingleSkillPromotionInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -757,6 +758,280 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPromotionPolicyMapInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortSingleSkillPromotionCanary({
+    required void Function(String message) log,
+    String skillId = 'device-node',
+    String model = 'openrouter/auto',
+    String prompt =
+        'native single-skill device-node promotion canary: check flash and list sensors read-only',
+  }) async {
+    if (_productionSingleSkillPromotionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-single-skill-promotion-canary',
+        'status': 'busy',
+        'decision': 'Single-skill native promotion canary is already running.',
+      };
+    }
+
+    _productionSingleSkillPromotionInFlight = true;
+    final startedAt = DateTime.now();
+    final selectedSkillId =
+        skillId.trim().isEmpty ? 'device-node' : skillId.trim();
+    const expectedReadOnlyOrder = <String>['flash.status', 'sensor.list'];
+    final rollbackPolicy = <String, dynamic>{
+      'skillId': 'device-node',
+      'promotionMode': 'single_skill_native_canary',
+      'primaryRuntimeId': 'proot',
+      'temporaryOwnerRuntimeId': _productionPortRuntime.id,
+      'rollbackRuntimeId': 'proot',
+      'rollbackRequired': true,
+      'rollbackTriggers': <String>[
+        'completion',
+        'policy_precheck_failure',
+        'native_start_failure',
+        'canary_failure',
+        'guard_violation',
+        'timeout_or_exception',
+      ],
+      'allowedToolHints': expectedReadOnlyOrder,
+      'providerCallsEnabled': false,
+      'defaultNativeRoutingEnabled': false,
+      'executionScope': 'read_only_bridge_allowlist',
+    };
+
+    bool listMatches(Object? value, List<String> expected) {
+      if (value is! List || value.length != expected.length) return false;
+      for (var i = 0; i < expected.length; i++) {
+        if (value[i]?.toString() != expected[i]) return false;
+      }
+      return true;
+    }
+
+    try {
+      log(
+        '[NATIVE-SINGLE-SKILL-PROMOTION] Preparing single-skill promotion policy for $selectedSkillId.',
+      );
+
+      if (selectedSkillId != 'device-node') {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-production-port-single-skill-promotion-canary',
+          'mode': 'single-skill-native-promotion-with-explicit-rollback',
+          'selectedSkillId': selectedSkillId,
+          'supportedSkillId': 'device-node',
+          'singleSkillPolicyOk': false,
+          'promotionWindowOpened': false,
+          'rollbackPolicy': rollbackPolicy,
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Only device-node is promotable in this first native single-skill canary.',
+          'nextGate':
+              'single-skill device-node canary must pass before widening native promotion',
+        };
+        log('[NATIVE-SINGLE-SKILL-PROMOTION] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final policyReport = await runProductionPromotionPolicyMap(log: log);
+      final candidateSkills =
+          policyReport['mobileBridgeCandidateSkills'] is List
+              ? (policyReport['mobileBridgeCandidateSkills'] as List)
+                  .map((value) => value.toString())
+                  .toSet()
+              : <String>{};
+      final policyMapOk = policyReport['ok'] == true;
+      final inventoryParityOk = policyReport['inventoryParityOk'] == true;
+      final skillPolicyCoverageOk =
+          policyReport['skillPolicyCoverageOk'] == true;
+      final mobileToolPolicyCoverageOk =
+          policyReport['mobileToolPolicyCoverageOk'] == true;
+      final toolHintPolicyCoverageOk =
+          policyReport['toolHintPolicyCoverageOk'] == true;
+      final selectedSkillCandidateOk =
+          candidateSkills.contains(selectedSkillId);
+      final nativeDefaultRoutingDisabled =
+          policyReport['nativeDefaultRoutingEnabled'] != true;
+      final providerCallsDisabledAtPolicy =
+          policyReport['providerCallsEnabled'] != true;
+      final generalExecutionDisabledAtPolicy =
+          policyReport['executionEnabled'] != true &&
+              policyReport['toolExecutionEnabled'] != true;
+      final singleSkillPolicyOk = policyMapOk &&
+          inventoryParityOk &&
+          skillPolicyCoverageOk &&
+          mobileToolPolicyCoverageOk &&
+          toolHintPolicyCoverageOk &&
+          selectedSkillCandidateOk &&
+          nativeDefaultRoutingDisabled &&
+          providerCallsDisabledAtPolicy &&
+          generalExecutionDisabledAtPolicy;
+
+      if (!singleSkillPolicyOk) {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-production-port-single-skill-promotion-canary',
+          'mode': 'single-skill-native-promotion-with-explicit-rollback',
+          'selectedSkillId': selectedSkillId,
+          'policyMapOk': policyMapOk,
+          'inventoryParityOk': inventoryParityOk,
+          'skillPolicyCoverageOk': skillPolicyCoverageOk,
+          'mobileToolPolicyCoverageOk': mobileToolPolicyCoverageOk,
+          'toolHintPolicyCoverageOk': toolHintPolicyCoverageOk,
+          'selectedSkillCandidateOk': selectedSkillCandidateOk,
+          'nativeDefaultRoutingEnabled':
+              policyReport['nativeDefaultRoutingEnabled'] == true,
+          'providerCallsEnabled': policyReport['providerCallsEnabled'] == true,
+          'executionEnabled': policyReport['executionEnabled'] == true,
+          'toolExecutionEnabled': policyReport['toolExecutionEnabled'] == true,
+          'singleSkillPolicyOk': false,
+          'promotionWindowOpened': false,
+          'rollbackPolicy': rollbackPolicy,
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Single-skill native promotion did not open because the conservative policy precheck failed.',
+          'nextGate':
+              'fix promotion policy coverage before opening a native single-skill owner window',
+        };
+        log('[NATIVE-SINGLE-SKILL-PROMOTION] ${jsonEncode(report)}');
+        return report;
+      }
+
+      log(
+        '[NATIVE-SINGLE-SKILL-PROMOTION] Opening device-node production-port canary window with explicit PRoot rollback.',
+      );
+      final canaryReport = await runProductionPortBridgeExecutionReadOnlyCanary(
+        log: log,
+        model: model,
+        prompt: prompt,
+      );
+
+      final promotionWindowOpened = canaryReport['nativeStarted'] == true &&
+          canaryReport['nativeObservedAlive'] == true &&
+          canaryReport['nativeInitialGuardOk'] == true;
+      final readOnlyBridgeCanaryOk = canaryReport['readOnlyCanaryOk'] == true;
+      final orderScopeOk =
+          listMatches(canaryReport['expectedOrder'], expectedReadOnlyOrder) &&
+              listMatches(canaryReport['observedOrder'], expectedReadOnlyOrder);
+      final providerCallsDisabledDuringWindow =
+          canaryReport['providerCallsEnabled'] != true &&
+              canaryReport['transportInvocationEnabled'] != true &&
+              canaryReport['nativeProviderCallsEnabled'] != true &&
+              canaryReport['postCanaryProviderCallsEnabled'] != true;
+      final defaultRoutingDisabledDuringWindow =
+          canaryReport['nativeChatRoutingEnabled'] != true &&
+              canaryReport['postCanaryChatRoutingEnabled'] != true;
+      final boundedBridgeExecutionOnly =
+          canaryReport['executionEnabled'] == true &&
+              canaryReport['toolExecutionEnabled'] == true &&
+              canaryReport['bridgeExecutionEnabled'] == true &&
+              canaryReport['readOnly'] == true &&
+              orderScopeOk;
+      final rollbackOk = canaryReport['rollbackStarted'] == true &&
+          canaryReport['rollbackRunning'] == true &&
+          canaryReport['rollbackHealthOk'] == true;
+      final guardOk = canaryReport['nativeInitialGuardOk'] == true &&
+          canaryReport['postCanaryGuardOk'] == true;
+      final stopOk = canaryReport['nativeStopped'] == true &&
+          canaryReport['nativePortReleasedAfterStop'] == true;
+      final ok = singleSkillPolicyOk &&
+          canaryReport['ok'] == true &&
+          promotionWindowOpened &&
+          readOnlyBridgeCanaryOk &&
+          canaryReport['canaryAllowlistOk'] == true &&
+          canaryReport['executeParityOk'] == true &&
+          canaryReport['validationOk'] == true &&
+          providerCallsDisabledDuringWindow &&
+          defaultRoutingDisabledDuringWindow &&
+          boundedBridgeExecutionOnly &&
+          guardOk &&
+          stopOk &&
+          rollbackOk;
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-single-skill-promotion-canary',
+        'mode': 'single-skill-native-promotion-with-explicit-rollback',
+        'selectedSkillId': selectedSkillId,
+        'promotionPolicyEntry': 'native_bridge_candidate_proot_default',
+        'primaryRuntimeId': 'proot',
+        'temporaryOwnerRuntimeId': _productionPortRuntime.id,
+        'rollbackRuntimeId': 'proot',
+        'productionPort': AppConstants.gatewayPort,
+        'policyMapOk': policyMapOk,
+        'inventoryParityOk': inventoryParityOk,
+        'skillPolicyCoverageOk': skillPolicyCoverageOk,
+        'mobileToolPolicyCoverageOk': mobileToolPolicyCoverageOk,
+        'toolHintPolicyCoverageOk': toolHintPolicyCoverageOk,
+        'selectedSkillCandidateOk': selectedSkillCandidateOk,
+        'singleSkillPolicyOk': singleSkillPolicyOk,
+        'nativeDefaultRoutingEnabled': false,
+        'promotionWindowOpened': promotionWindowOpened,
+        'nativeStarted': canaryReport['nativeStarted'] == true,
+        'nativeRunning': canaryReport['nativeRunning'] == true,
+        'nativeObservedAlive': canaryReport['nativeObservedAlive'] == true,
+        'nativeInitialGuardOk': canaryReport['nativeInitialGuardOk'] == true,
+        'readOnlyBridgeCanaryOk': readOnlyBridgeCanaryOk,
+        'canaryAllowlist': canaryReport['canaryAllowlist'],
+        'canaryAllowlistOk': canaryReport['canaryAllowlistOk'] == true,
+        'expectedOrder': canaryReport['expectedOrder'],
+        'observedOrder': canaryReport['observedOrder'],
+        'orderScopeOk': orderScopeOk,
+        'executeParityOk': canaryReport['executeParityOk'] == true,
+        'validationOk': canaryReport['validationOk'] == true,
+        'providerCallsEnabled': canaryReport['providerCallsEnabled'] == true,
+        'transportInvocationEnabled':
+            canaryReport['transportInvocationEnabled'] == true,
+        'providerCallsDisabledDuringWindow': providerCallsDisabledDuringWindow,
+        'defaultRoutingDisabledDuringWindow':
+            defaultRoutingDisabledDuringWindow,
+        'executionScope': 'read_only_bridge_allowlist',
+        'toolExecutionEnabledDuringWindow':
+            canaryReport['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabledDuringWindow':
+            canaryReport['bridgeExecutionEnabled'] == true,
+        'boundedBridgeExecutionOnly': boundedBridgeExecutionOnly,
+        'postCanaryGuardOk': canaryReport['postCanaryGuardOk'] == true,
+        'nativeStopped': canaryReport['nativeStopped'] == true,
+        'nativePortReleasedAfterStop':
+            canaryReport['nativePortReleasedAfterStop'] == true,
+        'rollbackStarted': canaryReport['rollbackStarted'] == true,
+        'rollbackRunning': canaryReport['rollbackRunning'] == true,
+        'rollbackHealthOk': canaryReport['rollbackHealthOk'] == true,
+        'rollbackVerified': rollbackOk,
+        'nativeSmokeRestored': canaryReport['nativeSmokeRestored'] == true,
+        'rollbackPolicy': rollbackPolicy,
+        'policyDurationMs': policyReport['durationMs'],
+        'canaryDurationMs': canaryReport['durationMs'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'device-node was promoted only inside a bounded native owner canary, executed read-only bridge checks, and rolled back to healthy PRoot.'
+            : 'Single-skill native promotion canary is not promotable; PRoot rollback was required and reported.',
+        'nextGate':
+            'controlled single-skill route selection for device-node with PRoot fallback still armed',
+      };
+      log('[NATIVE-SINGLE-SKILL-PROMOTION] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-single-skill-promotion-canary',
+        'mode': 'single-skill-native-promotion-with-explicit-rollback',
+        'selectedSkillId': selectedSkillId,
+        'exception': e.toString(),
+        'rollbackPolicy': rollbackPolicy,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Single-skill native promotion canary failed before a green report could be produced; inspect runtime rollback health.',
+      };
+      log('[NATIVE-SINGLE-SKILL-PROMOTION] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionSingleSkillPromotionInFlight = false;
     }
   }
 
