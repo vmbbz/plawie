@@ -498,6 +498,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-stream-parser-parity-stream",
     "/gateway/chat-provider-tool-plan-canary-stream",
     "/gateway/chat-provider-live-tool-execution-canary-stream",
+    "/gateway/chat-provider-live-tool-continuation-canary-stream",
     "/gateway/chat-tool-dispatch-dry-run-stream",
     "/gateway/chat-native-dart-bridge-dry-run-stream",
     "/gateway/chat-native-dart-bridge-ordering-cancel-stream",
@@ -1625,6 +1626,255 @@ function createMobileGatewayProbe({
         requestBuilderHash: requestBuilder.requestHash,
         toolSelectionHash: toolSelection.selectionHash,
         liveToolExecutionCanary: true
+      })
+    };
+  }
+
+  function providerLiveHapticContinuationCanaryRequest(requestBuilder, payload) {
+    const providerConfig = liveCanaryProviderConfig(payload, requestBuilder);
+    const toolSelection = nativeHapticCanaryToolSelection();
+    const userPrompt = compactCanaryPrompt(payload);
+    const tool = toolSelection.tools[0];
+    const normalizedBody = {
+      model: providerConfig.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a Plawie native live tool continuation canary. You must call the haptic_vibrate tool exactly once with durationMs set to 90. Do not answer with normal text."
+        },
+        {
+          role: "user",
+          content: `Canary tool-call request: ${userPrompt || "vibrate once with haptic.vibrate"}`
+        }
+      ],
+      stream: true,
+      max_tokens: providerConfig.maxTokens,
+      temperature: 0,
+      tools: toolSelection.tools.map(toolSchemaForCatalogEntry),
+      tool_choice: {
+        type: "function",
+        function: { name: tool.functionName }
+      }
+    };
+    const redactedBodyShape = {
+      model: normalizedBody.model,
+      messages: normalizedBody.messages.map((message) => ({
+        role: message.role,
+        content: "<redacted>",
+        chars: message.content.length
+      })),
+      stream: normalizedBody.stream,
+      max_tokens: normalizedBody.max_tokens,
+      temperature: normalizedBody.temperature,
+      tools: normalizedBody.tools.map((entry) => entry.function.name),
+      tool_choice: normalizedBody.tool_choice
+    };
+    const normalizedHeadersShape = {
+      accept: "text/event-stream",
+      authorization: providerConfig.apiKeyLoaded
+        ? "Bearer <redacted>"
+        : "Bearer <missing>",
+      "content-type": "application/json",
+      "http-referer": "<redacted>",
+      "x-title": "<redacted>"
+    };
+    const requestBodyText = JSON.stringify(normalizedBody);
+    const blockReasons = [];
+    if (providerConfig.provider !== "openrouter") {
+      blockReasons.push("only_openrouter_live_tool_continuation_supported");
+    }
+    if (!providerConfig.endpointAllowed) {
+      blockReasons.push("endpoint_not_on_openrouter_chat_completions");
+    }
+    if (!providerConfig.apiKeyLoaded) {
+      blockReasons.push("missing_openrouter_api_key");
+    }
+    if (typeof globalThis.fetch !== "function") {
+      blockReasons.push("fetch_unavailable_in_embedded_node");
+    }
+
+    return {
+      provider: providerConfig.provider,
+      requestedModel: requestBuilder.requestedModel,
+      providerModel: providerConfig.model,
+      transport: requestBuilder.transport,
+      endpoint: providerConfig.endpoint,
+      endpointShape: providerConfig.endpointShape,
+      normalizedHeadersShape,
+      redactedBodyShape,
+      requestBodyText,
+      requestBodyBytes: Buffer.byteLength(requestBodyText, "utf8"),
+      promptChars: userPrompt.length,
+      timeoutMs: providerConfig.timeoutMs,
+      maxTokens: providerConfig.maxTokens,
+      apiKey: providerConfig.apiKey,
+      referer: providerConfig.referer,
+      title: providerConfig.title,
+      canStart: blockReasons.length === 0,
+      blockReasons,
+      selectedToolCount: toolSelection.tools.length,
+      toolFunctionNames: toolSelection.toolFunctionNames,
+      gatewayToolNames: toolSelection.gatewayToolNames,
+      toolAliasMap: toolSelection.toolAliasMap,
+      toolSelectionHash: toolSelection.selectionHash,
+      canaryAllowlist: ["haptic.vibrate"],
+      expectedToolFunctionName: tool.functionName,
+      expectedGatewayToolName: tool.gatewayName,
+      toolChoice: normalizedBody.tool_choice,
+      headersHash: metadataHash(normalizedHeadersShape),
+      bodyHash: metadataHash(redactedBodyShape),
+      requestHash: metadataHash({
+        provider: providerConfig.provider,
+        requestedModel: requestBuilder.requestedModel,
+        providerModel: providerConfig.model,
+        transport: requestBuilder.transport,
+        endpointShape: providerConfig.endpointShape,
+        headersShape: normalizedHeadersShape,
+        bodyShape: redactedBodyShape,
+        requestBuilderHash: requestBuilder.requestHash,
+        toolSelectionHash: toolSelection.selectionHash,
+        liveToolContinuationCanary: true
+      })
+    };
+  }
+
+  function providerLiveToolContinuationCanaryRequest(
+    liveRequest,
+    liveToolPlanSummary,
+    toolResultFrame
+  ) {
+    const plan = Array.isArray(liveToolPlanSummary?.plans)
+      ? liveToolPlanSummary.plans.find((entry) =>
+        entry?.allowedName === true && entry?.argumentsOk === true
+      )
+      : null;
+    const callId = plan?.id || toolResultFrame?.id || "native-live-tool-call";
+    const functionName = plan?.functionName || liveRequest.expectedToolFunctionName;
+    const toolArguments = plan?.arguments || { gesture: "wave right" };
+    const toolResult = toolResultFrame?.result?.result || toolResultFrame?.result || {};
+    const gatewayName =
+      plan?.gatewayName || liveRequest.expectedGatewayToolName || toolResultFrame?.name;
+    const hapticResult = gatewayName === "haptic.vibrate";
+    const normalizedToolResult = {
+      ok: toolResultFrame?.result?.ok === true,
+      status: toolResult.status || toolResultFrame?.result?.status || "unknown",
+      ...(hapticResult
+        ? { durationMs: toolArguments.durationMs || toolResult.durationMs || 90 }
+        : {
+          gesture: toolResult.gesture || toolArguments.gesture || "wave right",
+          durationMs: toolResult.durationMs || 1800,
+          protectedGesture:
+            toolResult.protectedGesture === true ||
+            toolResultFrame?.result?.protectedGesture === true
+        })
+    };
+    const normalizedBody = {
+      model: liveRequest.providerModel,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a Plawie native tool-result continuation canary. The native bridge already executed the tool result. Reply with exactly: native tool result received"
+        },
+        {
+          role: "user",
+          content:
+            `Canary request: call ${functionName} once, then acknowledge the returned tool result.`
+        },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: callId,
+              type: "function",
+              function: {
+                name: functionName,
+                arguments: JSON.stringify(toolArguments)
+              }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: callId,
+          name: functionName,
+          content: JSON.stringify(normalizedToolResult)
+        }
+      ],
+      stream: true,
+      max_tokens: Math.max(16, Math.min(64, Number(liveRequest.maxTokens) || 32)),
+      temperature: 0
+    };
+    const redactedBodyShape = {
+      model: normalizedBody.model,
+      messages: normalizedBody.messages.map((message) => ({
+        role: message.role,
+        content: message.content == null ? null : "<redacted>",
+        chars: typeof message.content === "string" ? message.content.length : 0,
+        toolCalls: Array.isArray(message.tool_calls)
+          ? message.tool_calls.map((entry) => entry.function?.name || "unknown")
+          : undefined,
+        toolCallId: message.tool_call_id || undefined,
+        name: message.name || undefined
+      })),
+      stream: normalizedBody.stream,
+      max_tokens: normalizedBody.max_tokens,
+      temperature: normalizedBody.temperature,
+      continuation: true,
+      toolResultName: functionName,
+      gatewayName,
+      toolResultStatus: normalizedToolResult.status
+    };
+    const normalizedHeadersShape = {
+      accept: "text/event-stream",
+      authorization: liveRequest.apiKey ? "Bearer <redacted>" : "Bearer <missing>",
+      "content-type": "application/json",
+      "http-referer": "<redacted>",
+      "x-title": "<redacted>"
+    };
+    const requestBodyText = JSON.stringify(normalizedBody);
+    return {
+      provider: liveRequest.provider,
+      requestedModel: liveRequest.requestedModel,
+      providerModel: liveRequest.providerModel,
+      transport: liveRequest.transport,
+      endpoint: liveRequest.endpoint,
+      endpointShape: liveRequest.endpointShape,
+      normalizedHeadersShape,
+      redactedBodyShape,
+      requestBodyText,
+      requestBodyBytes: Buffer.byteLength(requestBodyText, "utf8"),
+      timeoutMs: liveRequest.timeoutMs,
+      maxTokens: normalizedBody.max_tokens,
+      apiKey: liveRequest.apiKey,
+      referer: liveRequest.referer,
+      title: liveRequest.title,
+      callId,
+      functionName,
+      gatewayName,
+      toolArguments,
+      normalizedToolResult,
+      canStart: liveRequest.canStart === true && normalizedToolResult.ok === true,
+      blockReasons: normalizedToolResult.ok === true
+        ? liveRequest.blockReasons
+        : [...liveRequest.blockReasons, "tool_result_not_ok"],
+      headersHash: metadataHash(normalizedHeadersShape),
+      bodyHash: metadataHash(redactedBodyShape),
+      requestHash: metadataHash({
+        provider: liveRequest.provider,
+        requestedModel: liveRequest.requestedModel,
+        providerModel: liveRequest.providerModel,
+        transport: liveRequest.transport,
+        endpointShape: liveRequest.endpointShape,
+        headersShape: normalizedHeadersShape,
+        bodyShape: redactedBodyShape,
+        firstRequestHash: liveRequest.requestHash,
+        callId,
+        functionName,
+        normalizedToolResult,
+        liveToolContinuationCanary: true
       })
     };
   }
@@ -6097,10 +6347,31 @@ function createMobileGatewayProbe({
     }
   }
 
-  async function handleChatProviderLiveToolExecutionCanaryStream(req, res) {
-    const source = "provider-live-tool-execution-canary";
-    const canaryMode = "provider-live-tool-execution-canary";
+  async function handleChatProviderLiveToolExecutionCanaryStream(
+    req,
+    res,
+    options = {}
+  ) {
+    const continuationEnabled = options.continuationEnabled === true;
+    const source = continuationEnabled
+      ? "provider-live-tool-continuation-canary"
+      : "provider-live-tool-execution-canary";
+    const canaryMode = continuationEnabled
+      ? "provider-live-tool-continuation-canary"
+      : "provider-live-tool-execution-canary";
     const directCanary = true;
+    const routeName = continuationEnabled
+      ? "live_provider_tool_continuation_canary"
+      : "live_provider_tool_execution_canary";
+    const startingStatus = continuationEnabled
+      ? "live_provider_tool_continuation_starting"
+      : "live_provider_tool_call_starting";
+    const completeStatus = continuationEnabled
+      ? "live_provider_tool_continuation_canary_complete"
+      : "live_provider_tool_execution_canary_complete";
+    const failedStatus = continuationEnabled
+      ? "live_provider_tool_continuation_canary_failed"
+      : "live_provider_tool_execution_canary_failed";
 
     function writeEvent(event, payload) {
       if (res.writableEnded) return;
@@ -6152,21 +6423,28 @@ function createMobileGatewayProbe({
       });
       const envelope = providerShellEnvelope(payload, shape, queued);
       const requestBuilder = providerRequestBuilderDryRun(envelope, shape, queued);
-      const liveRequest =
-        providerLiveToolExecutionCanaryRequest(requestBuilder, payload);
+      const liveRequest = continuationEnabled
+        ? providerLiveHapticContinuationCanaryRequest(requestBuilder, payload)
+        : providerLiveToolExecutionCanaryRequest(requestBuilder, payload);
+        const expectedGatewayToolName = liveRequest.expectedGatewayToolName;
+        const expectedToolFunctionName = liveRequest.expectedToolFunctionName;
+        const protectedGestureCanary =
+          expectedGatewayToolName === "avatar.gesture";
       const routeBlocked = liveRequest.canStart !== true;
       const ack = {
         parsed,
-        route: routeBlocked ? "blocked" : "live_provider_tool_execution_canary",
+        route: routeBlocked ? "blocked" : routeName,
         routeStatus: routeBlocked
           ? "blocked_before_provider_call"
-          : "live_provider_tool_call_starting",
+          : startingStatus,
         source,
         canaryMode,
         directCanary,
         reason: routeBlocked
           ? liveRequest.blockReasons.join(",")
-          : "native will request one live provider tool call and execute only the matching bounded bridge allowlist",
+          : continuationEnabled
+            ? "native will request one live provider tool call, execute only the matching bridge allowlist, then continue with the provider using the tool result"
+            : "native will request one live provider tool call and execute only the matching bounded bridge allowlist",
         provider: liveRequest.provider,
         requestedModel: liveRequest.requestedModel,
         providerModel: liveRequest.providerModel,
@@ -6198,7 +6476,7 @@ function createMobileGatewayProbe({
         requestId: queued.requestId,
         runId: queued.runId,
         sequence: queued.sequence,
-        queueStatus: "live_provider_tool_execution_canary",
+        queueStatus: routeName,
         gatewayReady: queued.gatewayReady,
         idempotencyKeyPresent: shape.idempotencyKeyPresent,
         timeoutMs: shape.timeoutMs,
@@ -6212,7 +6490,9 @@ function createMobileGatewayProbe({
       res.writeHead(202, {
         "content-type": "application/x-ndjson",
         "cache-control": "no-store",
-        "x-plawie-native-canary": "provider-live-tool-execution-canary"
+        "x-plawie-native-canary": continuationEnabled
+          ? "provider-live-tool-continuation-canary"
+          : "provider-live-tool-execution-canary"
       });
       writeEvent("ack", {
         ok: true,
@@ -6231,7 +6511,7 @@ function createMobileGatewayProbe({
         acceptedForRouting: liveRequest.canStart === true,
         acceptedForQueue: true,
         queuedForDryRun: false,
-        queueStatus: "live_provider_tool_execution_canary",
+        queueStatus: routeName,
         chatRoutingEnabled: false,
         providerCallsEnabled: liveRequest.canStart === true,
         executionEnabled: false,
@@ -6466,10 +6746,10 @@ function createMobileGatewayProbe({
           : null;
         const canaryAllowlistOk =
           liveRequest.canaryAllowlist.length === 1 &&
-          liveRequest.canaryAllowlist[0] === "avatar.gesture" &&
+          liveRequest.canaryAllowlist[0] === expectedGatewayToolName &&
           liveToolPlanSummary.allowedPlanCount === 1 &&
           liveToolPlanSummary.blockedPlanCount === 0 &&
-          livePlan?.gatewayName === "avatar.gesture";
+          livePlan?.gatewayName === expectedGatewayToolName;
         const liveToolPlanOk =
           responseStatus === 200 &&
           canaryAllowlistOk &&
@@ -6524,18 +6804,18 @@ function createMobileGatewayProbe({
           queued,
           source
         );
-        const bridgeRequest = nativeDartBridgeAvatarCanaryRequest(
-          dispatch,
-          queued,
-          liveRequest
-        );
+        const bridgeRequest = continuationEnabled
+          ? nativeDartBridgeHapticCanaryRequest(dispatch, queued, liveRequest)
+          : nativeDartBridgeAvatarCanaryRequest(dispatch, queued, liveRequest);
         const bridgeRequestOk =
           dispatch.parityOk &&
-          bridgeRequest.method === "avatar.gesture" &&
+          bridgeRequest.method === expectedGatewayToolName &&
           bridgeRequest.canaryAllowlist.length === 1 &&
-          bridgeRequest.canaryAllowlist[0] === "avatar.gesture" &&
-          bridgeRequest.input.gesture === "wave right" &&
-          bridgeRequest.input.protectedGesture === true &&
+          bridgeRequest.canaryAllowlist[0] === expectedGatewayToolName &&
+          (continuationEnabled
+            ? bridgeRequest.input.durationMs === 90
+            : bridgeRequest.input.gesture === "wave right" &&
+              bridgeRequest.input.protectedGesture === true) &&
           bridgeRequest.providerCallsEnabled === false &&
           bridgeRequest.executionEnabled === true &&
           bridgeRequest.toolExecutionEnabled === true &&
@@ -6570,13 +6850,36 @@ function createMobileGatewayProbe({
           }
         });
 
-        const bridgeResponse = await postJsonToDartBridge(
+        let bridgeResponse = await postJsonToDartBridge(
           "/api/native-gateway/dispatch-execute-canary",
           bridgeRequest,
           10000,
           "execute-canary"
         );
-        const executeAck = bridgeResponse.body;
+        let executeAck = bridgeResponse.body;
+        if (executeAck?.accepted !== true || executeAck?.executed !== true) {
+          writeEvent("bridge_execute_retry", {
+            ok: false,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            reason: "first_bridge_execute_ack_not_executed",
+            firstStatusCode: bridgeResponse.statusCode,
+            firstAccepted: executeAck?.accepted === true,
+            firstExecuted: executeAck?.executed === true,
+            firstResultStatus: executeAck?.resultStatus || "unknown",
+            retryDelayMs: 750
+          });
+          await new Promise((resolve) => setTimeout(resolve, 750));
+          bridgeResponse = await postJsonToDartBridge(
+            "/api/native-gateway/dispatch-execute-canary",
+            bridgeRequest,
+            10000,
+            "execute-canary-retry"
+          );
+          executeAck = bridgeResponse.body;
+        }
         const executeResult =
           executeAck?.result && typeof executeAck.result === "object"
             ? executeAck.result
@@ -6585,13 +6888,19 @@ function createMobileGatewayProbe({
           executeAck.resultStatus || executeResult.status || "unknown";
         const returnedGesture = String(executeResult.gesture || "").toLowerCase();
         const returnedDuration = Number(executeResult.durationMs);
-        const gestureOk = returnedGesture === "wave right";
-        const durationOk =
-          Number.isFinite(returnedDuration) &&
-          returnedDuration > 0 &&
-          returnedDuration <= 2500;
-        const resultStatusOk = resultStatus === "started";
+        const gestureOk = continuationEnabled
+          ? true
+          : returnedGesture === "wave right";
+        const durationOk = continuationEnabled
+          ? true
+          : Number.isFinite(returnedDuration) &&
+            returnedDuration > 0 &&
+            returnedDuration <= 2500;
+        const resultStatusOk = continuationEnabled
+          ? resultStatus === "vibrated"
+          : resultStatus === "started";
         const arbitrationOk =
+          continuationEnabled ||
           executeResult.protectedGesture === true ||
           executeAck.avatarInputOk === true;
         const executeAckHash = metadataHash({
@@ -6617,7 +6926,7 @@ function createMobileGatewayProbe({
           bridgeRequestOk &&
           executeAck.ok === true &&
           executeAck.accepted === true &&
-          executeAck.command === "avatar.gesture" &&
+          executeAck.command === expectedGatewayToolName &&
           executeAck.canaryAllowlistOk === true &&
           executeAck.dryRun === false &&
           executeAck.executed === true &&
@@ -6632,7 +6941,7 @@ function createMobileGatewayProbe({
         const toolResultFrame = {
           type: "tool_result",
           id: dispatch.callId,
-          name: "avatar.gesture",
+          name: expectedGatewayToolName,
           result: {
             ok: executeParityOk,
             dryRun: false,
@@ -6651,7 +6960,7 @@ function createMobileGatewayProbe({
             executionEnabled: true,
             toolExecutionEnabled: true,
             bridgeExecutionEnabled: true,
-            protectedGesture: true
+            protectedGesture: protectedGestureCanary
           },
           runtime: "native-node-embedded",
           source,
@@ -6659,7 +6968,7 @@ function createMobileGatewayProbe({
           dryRun: false,
           executionEnabled: true,
           toolExecutionEnabled: true,
-          protectedGesture: true
+          protectedGesture: protectedGestureCanary
         };
 
         writeEvent("bridge_execute_ack", {
@@ -6715,8 +7024,8 @@ function createMobileGatewayProbe({
           canaryAllowlistOk,
           executeParityOk,
           validationOk: executeParityOk,
-          toolName: "avatar.gesture",
-          capability: "avatar",
+          toolName: expectedGatewayToolName,
+          capability: bridgeRequest.capability,
           dartCapability: dispatch.route.dartCapability,
           gesture: returnedGesture || bridgeRequest.input.gesture,
           durationMs: executeResult.durationMs,
@@ -6730,8 +7039,417 @@ function createMobileGatewayProbe({
           executionEnabled: true,
           toolExecutionEnabled: true,
           bridgeExecutionEnabled: true,
-          protectedGesture: true
+          protectedGesture: protectedGestureCanary
         });
+
+        if (continuationEnabled) {
+          const continuationRequest =
+            providerLiveToolContinuationCanaryRequest(
+              liveRequest,
+              liveToolPlanSummary,
+              toolResultFrame
+            );
+          const continuationBlocked =
+            continuationRequest.canStart !== true || executeParityOk !== true;
+          writeEvent("continuation_provider_request", {
+            ok: continuationRequest.canStart === true && executeParityOk === true,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            continuationRequest: {
+              provider: continuationRequest.provider,
+              requestedModel: continuationRequest.requestedModel,
+              providerModel: continuationRequest.providerModel,
+              transport: continuationRequest.transport,
+              endpointShape: continuationRequest.endpointShape,
+              headersHash: continuationRequest.headersHash,
+              bodyHash: continuationRequest.bodyHash,
+              requestHash: continuationRequest.requestHash,
+              firstRequestHash: liveRequest.requestHash,
+              maxTokens: continuationRequest.maxTokens,
+              requestBodyBytes: continuationRequest.requestBodyBytes,
+              callId: continuationRequest.callId,
+              functionName: continuationRequest.functionName,
+              redactedBodyShape: continuationRequest.redactedBodyShape,
+              normalizedToolResult: continuationRequest.normalizedToolResult,
+              providerCallsEnabled: true,
+              providerCallsDuringExecutionEnabled: false,
+              transportInvocationEnabled: true,
+              executionEnabled: false,
+              toolExecutionEnabled: false,
+              bridgeExecutionEnabled: false
+            }
+          });
+
+          if (continuationBlocked) {
+            writeEvent("end", {
+              ok: false,
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              routeStatus: failedStatus,
+              finishReason: "live_provider_tool_continuation_blocked",
+              provider: liveRequest.provider,
+              requestedModel: liveRequest.requestedModel,
+              providerModel: liveRequest.providerModel,
+              statusCode: responseStatus,
+              requestHash: liveRequest.requestHash,
+              continuationRequestHash: continuationRequest.requestHash,
+              liveToolPlanOk,
+              dispatchParityOk: dispatch.parityOk,
+              canaryAllowlistOk,
+              executeParityOk,
+              continuationOk: false,
+              validationOk: false,
+              toolName: expectedGatewayToolName,
+              capability: bridgeRequest.capability,
+              gesture: returnedGesture || bridgeRequest.input.gesture,
+              providerCallsEnabled: true,
+              providerCallsDuringExecutionEnabled: false,
+              transportInvocationEnabled: true,
+              executionEnabled: true,
+              toolExecutionEnabled: true,
+              bridgeExecutionEnabled: true,
+              protectedGesture: protectedGestureCanary
+            });
+            res.end();
+            return;
+          }
+
+          const continuationStartedAtMs = Date.now();
+          const continuationController = new AbortController();
+          const continuationTimeout = setTimeout(() => {
+            try {
+              continuationController.abort("native_provider_tool_continuation_timeout");
+            } catch (_) {
+              continuationController.abort();
+            }
+          }, continuationRequest.timeoutMs);
+          let continuationStatusCode = null;
+          let continuationContentType = "";
+          let continuationTextChars = 0;
+          let continuationDeltaCount = 0;
+          let continuationFirstTokenMs = null;
+          let continuationFinishReason = null;
+          let continuationWarningCount = 0;
+
+          try {
+            writeEvent("continuation_provider_call_started", {
+              ok: true,
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              provider: continuationRequest.provider,
+              requestHash: continuationRequest.requestHash,
+              firstRequestHash: liveRequest.requestHash,
+              requestBodyBytes: continuationRequest.requestBodyBytes,
+              providerCallStarted: true,
+              providerBillingSurfaceReached: true
+            });
+
+            const continuationResponse = await fetch(continuationRequest.endpoint, {
+              method: "POST",
+              headers: {
+                "accept": "text/event-stream",
+                "content-type": "application/json",
+                "authorization": `Bearer ${continuationRequest.apiKey}`,
+                "http-referer": continuationRequest.referer,
+                "x-title": continuationRequest.title
+              },
+              body: continuationRequest.requestBodyText,
+              signal: continuationController.signal
+            });
+            continuationStatusCode = continuationResponse.status;
+            continuationContentType =
+              continuationResponse.headers.get("content-type") || "";
+            writeEvent("continuation_provider_response", {
+              ok: continuationResponse.ok,
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              provider: continuationRequest.provider,
+              statusCode: continuationStatusCode,
+              contentType: continuationContentType,
+              firstByteMs: Date.now() - continuationStartedAtMs
+            });
+
+            if (!continuationResponse.ok) {
+              const rawError = await readProviderText(continuationResponse);
+              clearTimeout(continuationTimeout);
+              writeEvent("continuation_provider_error", providerErrorPayload({
+                source,
+                canaryMode,
+                runId: queued.runId,
+                provider: continuationRequest.provider,
+                statusCode: continuationStatusCode,
+                code: `provider_http_${continuationStatusCode}`,
+                message: `provider returned HTTP ${continuationStatusCode}`,
+                rawError
+              }));
+              writeEvent("end", {
+                ok: false,
+                runtime: "native-node-embedded",
+                source,
+                canaryMode,
+                runId: queued.runId,
+                routeStatus: "continuation_provider_error",
+                finishReason: "continuation_provider_http_error",
+                provider: continuationRequest.provider,
+                requestedModel: continuationRequest.requestedModel,
+                providerModel: continuationRequest.providerModel,
+                statusCode: responseStatus,
+                continuationStatusCode,
+                requestHash: liveRequest.requestHash,
+                continuationRequestHash: continuationRequest.requestHash,
+                liveToolPlanOk,
+                dispatchParityOk: dispatch.parityOk,
+                canaryAllowlistOk,
+                executeParityOk,
+                continuationOk: false,
+                validationOk: false,
+                providerCallsEnabled: true,
+                providerCallsDuringExecutionEnabled: false,
+                transportInvocationEnabled: true,
+                executionEnabled: true,
+                toolExecutionEnabled: true,
+                bridgeExecutionEnabled: true,
+                protectedGesture: protectedGestureCanary
+              });
+              res.end();
+              return;
+            }
+
+            let continuationBuffer = "";
+            const continuationDecoder = new TextDecoder();
+            const continuationReader =
+              continuationResponse.body &&
+              typeof continuationResponse.body.getReader === "function"
+                ? continuationResponse.body.getReader()
+                : null;
+            if (!continuationReader) {
+              const raw = await readProviderText(continuationResponse);
+              try {
+                const decoded = JSON.parse(raw);
+                const content = contentFromOpenAiCompatibleChunk(decoded);
+                if (content.length > 0) {
+                  continuationDeltaCount += 1;
+                  continuationTextChars += content.length;
+                  continuationFirstTokenMs = Date.now() - continuationStartedAtMs;
+                  writeEvent("continuation_delta", {
+                    ok: true,
+                    runtime: "native-node-embedded",
+                    source,
+                    canaryMode,
+                    runId: queued.runId,
+                    sequence: continuationDeltaCount,
+                    text: content
+                  });
+                }
+                continuationFinishReason =
+                  decoded?.choices?.[0]?.finish_reason || continuationFinishReason;
+              } catch (_) {
+                const content = raw.slice(0, 160);
+                continuationDeltaCount += 1;
+                continuationTextChars += content.length;
+                continuationFirstTokenMs = Date.now() - continuationStartedAtMs;
+                writeEvent("continuation_delta", {
+                  ok: true,
+                  runtime: "native-node-embedded",
+                  source,
+                  canaryMode,
+                  runId: queued.runId,
+                  sequence: continuationDeltaCount,
+                  text: content
+                });
+              }
+            } else {
+              while (true) {
+                const { done, value } = await continuationReader.read();
+                if (done) break;
+                continuationBuffer += continuationDecoder.decode(value, { stream: true });
+                const lines = continuationBuffer.split(/\r?\n/);
+                continuationBuffer = lines.pop() || "";
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith("data:")) continue;
+                  const data = trimmed.slice(5).trim();
+                  if (data.length === 0) continue;
+                  if (data === "[DONE]") {
+                    continuationFinishReason = continuationFinishReason || "done";
+                    continue;
+                  }
+                  try {
+                    const decoded = JSON.parse(data);
+                    const choices = Array.isArray(decoded.choices)
+                      ? decoded.choices
+                      : [];
+                    const choice = choices[0] && typeof choices[0] === "object"
+                      ? choices[0]
+                      : null;
+                    const content = contentFromOpenAiCompatibleChunk(decoded);
+                    if (choice?.finish_reason) {
+                      continuationFinishReason = choice.finish_reason;
+                    }
+                    if (content.length === 0) continue;
+                    continuationDeltaCount += 1;
+                    continuationTextChars += content.length;
+                    if (continuationFirstTokenMs == null) {
+                      continuationFirstTokenMs =
+                        Date.now() - continuationStartedAtMs;
+                    }
+                    writeEvent("continuation_delta", {
+                      ok: true,
+                      runtime: "native-node-embedded",
+                      source,
+                      canaryMode,
+                      runId: queued.runId,
+                      sequence: continuationDeltaCount,
+                      text: content
+                    });
+                  } catch (error) {
+                    continuationWarningCount += 1;
+                    writeEvent("continuation_provider_parse_warning", {
+                      ok: false,
+                      runtime: "native-node-embedded",
+                      source,
+                      canaryMode,
+                      runId: queued.runId,
+                      warning: {
+                        code: "continuation_provider_chunk_parse_failed",
+                        message: error.message || String(error),
+                        rawChunk: data.slice(0, 500)
+                      }
+                    });
+                  }
+                }
+              }
+            }
+            clearTimeout(continuationTimeout);
+          } catch (error) {
+            clearTimeout(continuationTimeout);
+            const aborted = error?.name === "AbortError";
+            writeEvent("continuation_provider_error", providerErrorPayload({
+              source,
+              canaryMode,
+              runId: queued.runId,
+              provider: continuationRequest.provider,
+              code: aborted
+                ? "continuation_provider_timeout"
+                : "continuation_provider_fetch_failed",
+              message: error.message || String(error),
+              rawError: error.stack || error.message || String(error)
+            }));
+            writeEvent("end", {
+              ok: false,
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              routeStatus: aborted
+                ? "continuation_provider_timeout"
+                : "continuation_provider_fetch_failed",
+              finishReason: aborted
+                ? "continuation_provider_timeout"
+                : "continuation_provider_fetch_failed",
+              provider: continuationRequest.provider,
+              requestHash: liveRequest.requestHash,
+              continuationRequestHash: continuationRequest.requestHash,
+              durationMs: Date.now() - continuationStartedAtMs,
+              providerCallsEnabled: true,
+              executionEnabled: false,
+              toolExecutionEnabled: false,
+              bridgeExecutionEnabled: false
+            });
+            res.end();
+            return;
+          }
+
+          const continuationOk =
+            continuationStatusCode === 200 &&
+            continuationDeltaCount > 0 &&
+            continuationTextChars > 0 &&
+            continuationWarningCount === 0;
+          writeEvent("continuation_summary", {
+            ok: continuationOk,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            provider: continuationRequest.provider,
+            requestedModel: continuationRequest.requestedModel,
+            providerModel: continuationRequest.providerModel,
+            statusCode: continuationStatusCode,
+            requestHash: continuationRequest.requestHash,
+            firstRequestHash: liveRequest.requestHash,
+            toolResultStatus: continuationRequest.normalizedToolResult.status,
+            toolResultGesture: continuationRequest.normalizedToolResult.gesture,
+            toolResultDurationMs:
+              continuationRequest.normalizedToolResult.durationMs,
+            continuationDeltaCount,
+            continuationTextChars,
+            continuationFirstTokenMs,
+            continuationFinishReason: continuationFinishReason || "stream_complete",
+            continuationWarningCount,
+            continuationOk,
+            liveToolPlanOk,
+            executeParityOk,
+            providerCallsEnabled: true,
+            providerCallsDuringExecutionEnabled: false,
+            transportInvocationEnabled: true,
+            executionEnabled: false,
+            toolExecutionEnabled: false,
+            bridgeExecutionEnabled: false
+          });
+          writeEvent("end", {
+            ok: executeParityOk && continuationOk,
+            runtime: "native-node-embedded",
+            source,
+            canaryMode,
+            runId: queued.runId,
+            routeStatus: executeParityOk && continuationOk
+              ? completeStatus
+              : failedStatus,
+            finishReason: executeParityOk && continuationOk
+              ? completeStatus
+              : failedStatus,
+            provider: liveRequest.provider,
+            requestedModel: liveRequest.requestedModel,
+            providerModel: liveRequest.providerModel,
+            statusCode: responseStatus,
+            continuationStatusCode,
+            requestHash: liveRequest.requestHash,
+            continuationRequestHash: continuationRequest.requestHash,
+            toolSelectionHash: liveRequest.toolSelectionHash,
+            dispatchHash: bridgeRequest.dispatchHash,
+            bridgeRequestHash: bridgeRequest.bridgeRequestHash,
+            executeAckHash,
+            liveToolPlanOk,
+            dispatchParityOk: dispatch.parityOk,
+            canaryAllowlistOk,
+            executeParityOk,
+            continuationOk,
+            validationOk: executeParityOk && continuationOk,
+            toolName: expectedGatewayToolName,
+            capability: bridgeRequest.capability,
+            gesture: returnedGesture || bridgeRequest.input.gesture,
+            continuationDeltaCount,
+            continuationTextChars,
+            providerCallsEnabled: true,
+            providerCallsDuringExecutionEnabled: false,
+            transportInvocationEnabled: true,
+            executionEnabled: true,
+            toolExecutionEnabled: true,
+            bridgeExecutionEnabled: true,
+            protectedGesture: protectedGestureCanary
+          });
+          res.end();
+          return;
+        }
+
         writeEvent("end", {
           ok: executeParityOk,
           runtime: "native-node-embedded",
@@ -6739,11 +7457,11 @@ function createMobileGatewayProbe({
           canaryMode,
           runId: queued.runId,
           routeStatus: executeParityOk
-            ? "live_provider_tool_execution_canary_complete"
-            : "live_provider_tool_execution_canary_failed",
+            ? completeStatus
+            : failedStatus,
           finishReason: executeParityOk
-            ? "live_provider_tool_execution_canary_complete"
-            : "live_provider_tool_execution_canary_failed",
+            ? completeStatus
+            : failedStatus,
           provider: liveRequest.provider,
           requestedModel: liveRequest.requestedModel,
           providerModel: liveRequest.providerModel,
@@ -6758,8 +7476,8 @@ function createMobileGatewayProbe({
           canaryAllowlistOk,
           executeParityOk,
           validationOk: executeParityOk,
-          toolName: "avatar.gesture",
-          capability: "avatar",
+          toolName: expectedGatewayToolName,
+          capability: bridgeRequest.capability,
           gesture: returnedGesture || bridgeRequest.input.gesture,
           providerCallsEnabled: true,
           providerCallsDuringExecutionEnabled: false,
@@ -6767,7 +7485,7 @@ function createMobileGatewayProbe({
           executionEnabled: true,
           toolExecutionEnabled: true,
           bridgeExecutionEnabled: true,
-          protectedGesture: true
+          protectedGesture: protectedGestureCanary
         });
         res.end();
       } catch (error) {
@@ -9580,6 +10298,13 @@ function createMobileGatewayProbe({
 
     if (pathname === "/gateway/chat-provider-live-tool-execution-canary-stream") {
       handleChatProviderLiveToolExecutionCanaryStream(req, res);
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-provider-live-tool-continuation-canary-stream") {
+      handleChatProviderLiveToolExecutionCanaryStream(req, res, {
+        continuationEnabled: true
+      });
       return true;
     }
 

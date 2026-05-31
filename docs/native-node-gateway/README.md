@@ -202,6 +202,7 @@ be safely generalized.
 | [62-native-owner-chat-route-selection-canary.md](62-native-owner-chat-route-selection-canary.md) | Explicit `/native-chat-route-owner` diagnostics proving native chat route selection with PRoot provider fallback |
 | [63-native-owner-provider-tool-plan-allowlisted-execution.md](63-native-owner-provider-tool-plan-allowlisted-execution.md) | Explicit `/native-tool-plan-exec-owner` diagnostics proving provider-style tool plans map to one bounded native-to-Dart execution allowlist |
 | [64-native-owner-live-provider-tool-execution-canary.md](64-native-owner-live-provider-tool-execution-canary.md) | Explicit `/native-live-tool-exec-owner` diagnostics proving a live provider tool call maps to one bounded native-to-Dart execution allowlist |
+| [65-native-owner-live-provider-tool-continuation-canary.md](65-native-owner-live-provider-tool-continuation-canary.md) | Explicit `/native-live-tool-continue-owner` diagnostics proving live provider tool results continue to final provider text |
 
 ## Work Rules
 

@@ -65,6 +65,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortBridgeAvatarCanaryInFlight = false;
   static bool _productionPortProviderToolPlanExecutionInFlight = false;
   static bool _productionPortProviderLiveToolExecutionInFlight = false;
+  static bool _productionPortProviderLiveToolContinuationInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -10153,23 +10154,78 @@ class NativeGatewaySmokeService {
   }
 
   static Future<Map<String, dynamic>>
+      runProductionPortProviderLiveToolContinuationCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt =
+        'native production live provider tool result continuation canary: vibrate once',
+  }) {
+    return runProductionPortProviderLiveToolExecutionCanary(
+      log: log,
+      providerConfig: providerConfig,
+      prompt: prompt,
+      continueWithToolResult: true,
+    );
+  }
+
+  static Future<Map<String, dynamic>>
       runProductionPortProviderLiveToolExecutionCanary({
     required void Function(String message) log,
     required Map<String, dynamic> providerConfig,
     String prompt =
         'native production live provider tool-call to bounded bridge execution canary: wave right',
+    bool continueWithToolResult = false,
   }) async {
-    if (_productionPortProviderLiveToolExecutionInFlight) {
+    final phaseName = continueWithToolResult
+        ? 'hidden-production-port-live-provider-tool-continuation-canary'
+        : 'hidden-production-port-live-provider-tool-execution-canary';
+    final modeName = continueWithToolResult
+        ? 'native-production-port-live-provider-tool-result-continuation-with-rollback'
+        : 'native-production-port-live-provider-tool-call-to-bridge-execution-with-rollback';
+    final logTag = continueWithToolResult
+        ? '[NATIVE-LIVE-TOOL-CONTINUE]'
+        : '[NATIVE-LIVE-TOOL-OWNER]';
+    final expectedRoute = continueWithToolResult
+        ? 'live_provider_tool_continuation_canary'
+        : 'live_provider_tool_execution_canary';
+    final expectedStartingStatus = continueWithToolResult
+        ? 'live_provider_tool_continuation_starting'
+        : 'live_provider_tool_call_starting';
+    final expectedCompleteStatus = continueWithToolResult
+        ? 'live_provider_tool_continuation_canary_complete'
+        : 'live_provider_tool_execution_canary_complete';
+    final expectedGatewayToolName =
+        continueWithToolResult ? 'haptic.vibrate' : 'avatar.gesture';
+    final expectedFunctionName =
+        continueWithToolResult ? 'haptic_vibrate' : 'avatar_gesture';
+    final expectedResultStatus =
+        continueWithToolResult ? 'vibrated' : 'started';
+    final expectedCapability = continueWithToolResult ? 'haptic' : 'avatar';
+    final expectedDartCapability =
+        continueWithToolResult ? 'HapticCapability' : 'AvatarCapability';
+    final expectedRequiresUiThread = !continueWithToolResult;
+    final endpointPath = continueWithToolResult
+        ? '/gateway/chat-provider-live-tool-continuation-canary-stream'
+        : '/gateway/chat-provider-live-tool-execution-canary-stream';
+    final alreadyInFlight = continueWithToolResult
+        ? _productionPortProviderLiveToolContinuationInFlight
+        : _productionPortProviderLiveToolExecutionInFlight;
+    if (alreadyInFlight) {
       return <String, dynamic>{
         'ok': false,
-        'phase': 'hidden-production-port-live-provider-tool-execution-canary',
+        'phase': phaseName,
         'alreadyInFlight': true,
-        'decision':
-            'Production-port live provider tool execution canary is already running.',
+        'decision': continueWithToolResult
+            ? 'Production-port live provider tool continuation canary is already running.'
+            : 'Production-port live provider tool execution canary is already running.',
       };
     }
 
-    _productionPortProviderLiveToolExecutionInFlight = true;
+    if (continueWithToolResult) {
+      _productionPortProviderLiveToolContinuationInFlight = true;
+    } else {
+      _productionPortProviderLiveToolExecutionInFlight = true;
+    }
     final startedAt = DateTime.now();
 
     try {
@@ -10181,7 +10237,9 @@ class NativeGatewaySmokeService {
       providerConfigForNative['title'] =
           providerConfigForNative['title']?.toString().trim().isNotEmpty == true
               ? providerConfigForNative['title']
-              : 'Plawie Native Live Tool Execution Canary';
+              : continueWithToolResult
+                  ? 'Plawie Native Live Tool Continuation Canary'
+                  : 'Plawie Native Live Tool Execution Canary';
       final providerHint =
           providerConfigForNative['provider']?.toString().trim();
       final providerModel = providerConfigForNative['model']?.toString().trim();
@@ -10211,6 +10269,11 @@ class NativeGatewaySmokeService {
       var toolUseFrameOk = false;
       var toolResultFrameOk = false;
       var executionSummaryOk = false;
+      var continuationProviderRequestOk = false;
+      var continuationProviderCallStartedOk = false;
+      var continuationProviderResponseOk = false;
+      var continuationSummaryOk = false;
+      var continuationOk = false;
       var eventOrderOk = false;
       var endOk = false;
       var liveToolExecutionCanaryOk = false;
@@ -10260,7 +10323,7 @@ class NativeGatewaySmokeService {
           canaryEvents.indexWhere((event) => event['event'] == eventName);
 
       log(
-        '[NATIVE-LIVE-TOOL-OWNER] Opening live provider tool-call to bridge execution canary.',
+        '$logTag Opening live provider tool-call to bridge execution canary.',
       );
 
       try {
@@ -10312,7 +10375,7 @@ class NativeGatewaySmokeService {
           );
         }
 
-        log('[NATIVE-LIVE-TOOL-OWNER] Stopping PRoot to release 18789.');
+        log('$logTag Stopping PRoot to release 18789.');
         prootStopRequested = await productionRuntime
             .stop()
             .timeout(const Duration(seconds: 20), onTimeout: () => false);
@@ -10326,7 +10389,7 @@ class NativeGatewaySmokeService {
         }
 
         log(
-          '[NATIVE-LIVE-TOOL-OWNER] Starting native on 18789 for one live provider tool call.',
+          '$logTag Starting native on 18789 for one live provider tool call.',
         );
         nativeStarted = await ownerRuntime
             .start()
@@ -10357,7 +10420,7 @@ class NativeGatewaySmokeService {
 
         canarySent = true;
         canaryEvents = await _streamProductionNdjson(
-          '/gateway/chat-provider-live-tool-execution-canary-stream',
+          endpointPath,
           {
             ..._sampleGatewayWsChatSendFrame(
               requestId: 'production-live-provider-tool-exec-request',
@@ -10390,6 +10453,14 @@ class NativeGatewaySmokeService {
         final toolResultEvent = _firstEvent(canaryEvents, 'tool_result_frame');
         final summaryEvent =
             _firstEvent(canaryEvents, 'live_tool_execution_summary');
+        final continuationRequestEvent =
+            _firstEvent(canaryEvents, 'continuation_provider_request');
+        final continuationCallStartedEvent =
+            _firstEvent(canaryEvents, 'continuation_provider_call_started');
+        final continuationResponseEvent =
+            _firstEvent(canaryEvents, 'continuation_provider_response');
+        final continuationSummaryEvent =
+            _firstEvent(canaryEvents, 'continuation_summary');
         final endEvent = _firstEvent(canaryEvents, 'end');
         final ack = asMap(ackEvent['ack']);
         final providerRequest = asMap(requestEvent['providerRequest']);
@@ -10398,6 +10469,7 @@ class NativeGatewaySmokeService {
         final toolChoiceFunction = asMap(toolChoice['function']);
         final toolPlanSummary = asMap(planEvent['toolPlanSummary']);
         final bridgeRequest = asMap(bridgeRequestEvent['bridgeRequest']);
+        final bridgeRequestInput = asMap(bridgeRequest['input']);
         final executeAck = asMap(bridgeAckEvent['executeAck']);
         final executeResult = asMap(executeAck['result']);
         final toolUseFrame = asMap(toolUseEvent['frame']);
@@ -10405,6 +10477,8 @@ class NativeGatewaySmokeService {
         final toolResultFrame = asMap(toolResultEvent['frame']);
         final toolResult = asMap(toolResultFrame['result']);
         final toolResultPayload = asMap(toolResult['result']);
+        final continuationRequest =
+            asMap(continuationRequestEvent['continuationRequest']);
         final rawProviderError =
             providerErrorEvent['rawProviderError']?.toString() ??
                 (providerErrorEvent['error'] is Map
@@ -10423,6 +10497,10 @@ class NativeGatewaySmokeService {
           'tool_use_frame',
           'tool_result_frame',
           'live_tool_execution_summary',
+          if (continueWithToolResult) 'continuation_provider_request',
+          if (continueWithToolResult) 'continuation_provider_call_started',
+          if (continueWithToolResult) 'continuation_provider_response',
+          if (continueWithToolResult) 'continuation_summary',
           'end',
         ];
         eventOrderOk = true;
@@ -10440,13 +10518,14 @@ class NativeGatewaySmokeService {
         final selectedToolCount = catalogEvent['selectedToolCount'];
         final requestBodyBytes = providerRequest['requestBodyBytes'];
         final maxTokens = providerRequest['maxTokens'];
+        final liveRequestHash = providerRequest['requestHash'];
         ackEventOk = ackEvent['ok'] == true &&
             ackEvent['runtime'] == 'native-node-embedded' &&
             ackEvent['canaryOnly'] == true &&
             ackEvent['dryRun'] == false &&
             ackEvent['parsed'] == true &&
-            ackEvent['route'] == 'live_provider_tool_execution_canary' &&
-            ackEvent['routeStatus'] == 'live_provider_tool_call_starting' &&
+            ackEvent['route'] == expectedRoute &&
+            ackEvent['routeStatus'] == expectedStartingStatus &&
             ackEvent['acceptedForRouting'] == true &&
             ackEvent['acceptedForQueue'] == true &&
             ackEvent['providerCallsEnabled'] == true &&
@@ -10455,16 +10534,17 @@ class NativeGatewaySmokeService {
             ackEvent['toolExecutionEnabled'] == false &&
             ackEvent['bridgeExecutionEnabled'] == false &&
             ack['provider'] == 'openrouter' &&
-            listContainsTool(ack['gatewayToolNames'], 'avatar.gesture') &&
-            listContainsTool(ack['canaryAllowlist'], 'avatar.gesture');
+            listContainsTool(
+                ack['gatewayToolNames'], expectedGatewayToolName) &&
+            listContainsTool(ack['canaryAllowlist'], expectedGatewayToolName);
         toolCatalogOk = catalogEvent['ok'] == true &&
             selectedToolCount == 1 &&
             listContainsTool(
-                catalogEvent['toolFunctionNames'], 'avatar.gesture') &&
+                catalogEvent['toolFunctionNames'], expectedGatewayToolName) &&
             listContainsTool(
-                catalogEvent['gatewayToolNames'], 'avatar.gesture') &&
+                catalogEvent['gatewayToolNames'], expectedGatewayToolName) &&
             listContainsTool(
-                catalogEvent['canaryAllowlist'], 'avatar.gesture') &&
+                catalogEvent['canaryAllowlist'], expectedGatewayToolName) &&
             catalogEvent['executionEnabled'] == false &&
             catalogEvent['toolExecutionEnabled'] == false;
         providerRequestOk = requestEvent['ok'] == true &&
@@ -10483,7 +10563,7 @@ class NativeGatewaySmokeService {
             redactedBodyShape['tools'] is List &&
             (redactedBodyShape['tools'] as List).length == 1 &&
             toolChoice['type'] == 'function' &&
-            toolChoiceFunction['name'] == 'avatar_gesture';
+            toolChoiceFunction['name'] == expectedFunctionName;
         providerCallStartedOk = callStartedEvent['ok'] == true &&
             callStartedEvent['provider'] == 'openrouter' &&
             callStartedEvent['providerCallStarted'] == true &&
@@ -10510,10 +10590,10 @@ class NativeGatewaySmokeService {
             toolPlanSummary['blockedPlanCount'] == 0 &&
             toolPlanSummary['invalidArgumentCount'] == 0 &&
             listContainsTool(
-                toolPlanSummary['toolPlanNames'], 'avatar.gesture') &&
+                toolPlanSummary['toolPlanNames'], expectedGatewayToolName) &&
             listContainsTool(
               toolPlanSummary['gatewayToolNames'],
-              'avatar.gesture',
+              expectedGatewayToolName,
             ) &&
             planEvent['providerCallsEnabled'] == true &&
             planEvent['executionEnabled'] == false &&
@@ -10522,15 +10602,21 @@ class NativeGatewaySmokeService {
         bridgeExecuteRequestOk = bridgeRequestEvent['ok'] == true &&
             bridgeRequestEvent['runtime'] == 'native-node-embedded' &&
             bridgeRequest['type'] == 'native_tool_dispatch_execute_canary' &&
-            bridgeRequest['method'] == 'avatar.gesture' &&
-            bridgeRequest['capability'] == 'avatar' &&
-            bridgeRequest['dartCapability'] == 'AvatarCapability' &&
-            bridgeRequest['requiresUiThread'] == true &&
+            bridgeRequest['method'] == expectedGatewayToolName &&
+            bridgeRequest['capability'] == expectedCapability &&
+            bridgeRequest['dartCapability'] == expectedDartCapability &&
+            bridgeRequest['requiresUiThread'] == expectedRequiresUiThread &&
             bridgeRequest['dryRun'] == false &&
-            bridgeRequest['protectedGesture'] == true &&
-            bridgeRequest['arbitration'] == 'protected-gesture' &&
+            (!continueWithToolResult ||
+                bridgeRequestInput['durationMs'] == 90) &&
+            (continueWithToolResult ||
+                (bridgeRequest['protectedGesture'] == true &&
+                    bridgeRequest['arbitration'] == 'protected-gesture' &&
+                    bridgeRequestInput['gesture']?.toString().toLowerCase() ==
+                        'wave right' &&
+                    bridgeRequestInput['protectedGesture'] == true)) &&
             listContainsTool(
-                bridgeRequest['canaryAllowlist'], 'avatar.gesture') &&
+                bridgeRequest['canaryAllowlist'], expectedGatewayToolName) &&
             providerStillDisabled(bridgeRequest) &&
             executionEnabled(bridgeRequest);
         bridgeExecuteAckOk = bridgeAckEvent['ok'] == true &&
@@ -10543,41 +10629,47 @@ class NativeGatewaySmokeService {
             executeAck['ok'] == true &&
             executeAck['accepted'] == true &&
             executeAck['executed'] == true &&
-            executeAck['command'] == 'avatar.gesture' &&
+            executeAck['command'] == expectedGatewayToolName &&
             executeAck['canaryAllowlistOk'] == true &&
             executeAck['dryRun'] == false &&
             executeAck['providerCallsEnabled'] == false &&
             executionEnabled(executeAck) &&
-            executeResult['status'] == 'started';
+            executeResult['status'] == expectedResultStatus;
         toolUseFrameOk = toolUseEvent['ok'] == true &&
             toolUseEvent['runtime'] == 'native-node-embedded' &&
             toolUseFrame['type'] == 'tool_use' &&
-            toolUseFrame['name'] == 'avatar.gesture' &&
+            toolUseFrame['name'] == expectedGatewayToolName &&
             toolUseFrame['dryRun'] == false &&
             toolUseFrame['canaryOnly'] == true &&
-            toolUseFrame['protectedGesture'] == true &&
-            toolUseFrame['arbitration'] == 'protected-gesture' &&
-            toolUseInput['gesture']?.toString().toLowerCase() == 'wave right' &&
-            toolUseInput['protectedGesture'] == true &&
+            (!continueWithToolResult || toolUseInput['durationMs'] == 90) &&
+            (continueWithToolResult ||
+                (toolUseFrame['protectedGesture'] == true &&
+                    toolUseFrame['arbitration'] == 'protected-gesture' &&
+                    toolUseInput['gesture']?.toString().toLowerCase() ==
+                        'wave right' &&
+                    toolUseInput['protectedGesture'] == true)) &&
             toolUseFrame['executionEnabled'] == true &&
             toolUseFrame['toolExecutionEnabled'] == true;
         toolResultFrameOk = toolResultEvent['ok'] == true &&
             toolResultEvent['runtime'] == 'native-node-embedded' &&
             toolResultFrame['type'] == 'tool_result' &&
-            toolResultFrame['name'] == 'avatar.gesture' &&
+            toolResultFrame['name'] == expectedGatewayToolName &&
             toolResultFrame['dryRun'] == false &&
-            toolResultFrame['protectedGesture'] == true &&
+            (continueWithToolResult ||
+                toolResultFrame['protectedGesture'] == true) &&
             toolResult['ok'] == true &&
             toolResult['executed'] == true &&
             toolResult['accepted'] == true &&
-            toolResult['status'] == 'started' &&
+            toolResult['status'] == expectedResultStatus &&
             toolResult['canaryAllowlistOk'] == true &&
             toolResult['gestureOk'] == true &&
             toolResult['durationOk'] == true &&
             toolResult['arbitrationOk'] == true &&
-            toolResultPayload['status'] == 'started' &&
-            toolResultPayload['gesture']?.toString().toLowerCase() ==
-                'wave right' &&
+            toolResultPayload['status'] == expectedResultStatus &&
+            (!continueWithToolResult || toolResultPayload['gesture'] == null) &&
+            (continueWithToolResult ||
+                toolResultPayload['gesture']?.toString().toLowerCase() ==
+                    'wave right') &&
             providerStillDisabled(toolResult) &&
             executionEnabled(toolResult);
         executionSummaryOk = summaryEvent['ok'] == true &&
@@ -10588,30 +10680,117 @@ class NativeGatewaySmokeService {
             summaryEvent['canaryAllowlistOk'] == true &&
             summaryEvent['executeParityOk'] == true &&
             summaryEvent['validationOk'] == true &&
-            summaryEvent['toolName'] == 'avatar.gesture' &&
+            summaryEvent['toolName'] == expectedGatewayToolName &&
             summaryEvent['providerCallsEnabled'] == true &&
             summaryEvent['providerCallsDuringExecutionEnabled'] == false &&
             summaryEvent['transportInvocationEnabled'] == true &&
             executionEnabled(summaryEvent) &&
-            summaryEvent['protectedGesture'] == true;
+            (continueWithToolResult ||
+                summaryEvent['protectedGesture'] == true);
+        continuationProviderRequestOk = !continueWithToolResult ||
+            (continuationRequestEvent['ok'] == true &&
+                continuationRequestEvent['runtime'] == 'native-node-embedded' &&
+                continuationRequest['provider'] == 'openrouter' &&
+                continuationRequest['transport'] ==
+                    'openai-compatible-chat-completions' &&
+                continuationRequest['requestBodyBytes'] is num &&
+                (continuationRequest['requestBodyBytes'] as num) > 0 &&
+                continuationRequest['requestHash']?.toString().isNotEmpty ==
+                    true &&
+                continuationRequest['firstRequestHash'] == liveRequestHash &&
+                continuationRequest['functionName'] == expectedFunctionName &&
+                continuationRequest['normalizedToolResult'] is Map &&
+                asMap(continuationRequest['normalizedToolResult'])['ok'] ==
+                    true &&
+                asMap(continuationRequest['normalizedToolResult'])['status'] ==
+                    expectedResultStatus &&
+                (continueWithToolResult ||
+                    asMap(continuationRequest['normalizedToolResult'])[
+                                'gesture']
+                            ?.toString()
+                            .toLowerCase() ==
+                        'wave right') &&
+                (!continueWithToolResult ||
+                    asMap(continuationRequest['normalizedToolResult'])[
+                            'durationMs'] ==
+                        90) &&
+                continuationRequest['providerCallsEnabled'] == true &&
+                continuationRequest['providerCallsDuringExecutionEnabled'] ==
+                    false &&
+                continuationRequest['transportInvocationEnabled'] == true &&
+                continuationRequest['executionEnabled'] == false &&
+                continuationRequest['toolExecutionEnabled'] == false &&
+                continuationRequest['bridgeExecutionEnabled'] == false);
+        continuationProviderCallStartedOk = !continueWithToolResult ||
+            (continuationCallStartedEvent['ok'] == true &&
+                continuationCallStartedEvent['provider'] == 'openrouter' &&
+                continuationCallStartedEvent['providerCallStarted'] == true &&
+                continuationCallStartedEvent['providerBillingSurfaceReached'] ==
+                    true &&
+                continuationCallStartedEvent['requestBodyBytes'] is num &&
+                (continuationCallStartedEvent['requestBodyBytes'] as num) > 0);
+        continuationProviderResponseOk = !continueWithToolResult ||
+            (continuationResponseEvent['runtime'] == 'native-node-embedded' &&
+                continuationResponseEvent['provider'] == 'openrouter' &&
+                continuationResponseEvent['statusCode'] == 200);
+        continuationSummaryOk = !continueWithToolResult ||
+            (continuationSummaryEvent['ok'] == true &&
+                continuationSummaryEvent['runtime'] == 'native-node-embedded' &&
+                continuationSummaryEvent['provider'] == 'openrouter' &&
+                continuationSummaryEvent['statusCode'] == 200 &&
+                continuationSummaryEvent['continuationOk'] == true &&
+                continuationSummaryEvent['continuationDeltaCount'] is num &&
+                (continuationSummaryEvent['continuationDeltaCount'] as num) >
+                    0 &&
+                continuationSummaryEvent['continuationTextChars'] is num &&
+                (continuationSummaryEvent['continuationTextChars'] as num) >
+                    0 &&
+                continuationSummaryEvent['continuationWarningCount'] == 0 &&
+                continuationSummaryEvent['toolResultStatus'] ==
+                    expectedResultStatus &&
+                (continueWithToolResult ||
+                    continuationSummaryEvent['toolResultGesture']
+                            ?.toString()
+                            .toLowerCase() ==
+                        'wave right') &&
+                (!continueWithToolResult ||
+                    continuationSummaryEvent['toolResultDurationMs'] == 90) &&
+                continuationSummaryEvent['providerCallsEnabled'] == true &&
+                continuationSummaryEvent[
+                        'providerCallsDuringExecutionEnabled'] ==
+                    false &&
+                continuationSummaryEvent['transportInvocationEnabled'] ==
+                    true &&
+                continuationSummaryEvent['executionEnabled'] == false &&
+                continuationSummaryEvent['toolExecutionEnabled'] == false &&
+                continuationSummaryEvent['bridgeExecutionEnabled'] == false);
+        continuationOk = !continueWithToolResult ||
+            (continuationProviderRequestOk &&
+                continuationProviderCallStartedOk &&
+                continuationProviderResponseOk &&
+                continuationSummaryOk);
         endOk = endEvent['ok'] == true &&
             endEvent['runtime'] == 'native-node-embedded' &&
-            endEvent['routeStatus'] ==
-                'live_provider_tool_execution_canary_complete' &&
-            endEvent['finishReason'] ==
-                'live_provider_tool_execution_canary_complete' &&
+            endEvent['routeStatus'] == expectedCompleteStatus &&
+            endEvent['finishReason'] == expectedCompleteStatus &&
             endEvent['provider'] == 'openrouter' &&
             endEvent['liveToolPlanOk'] == true &&
             endEvent['dispatchParityOk'] == true &&
             endEvent['canaryAllowlistOk'] == true &&
             endEvent['executeParityOk'] == true &&
+            (!continueWithToolResult ||
+                (endEvent['continuationOk'] == true &&
+                    endEvent['continuationDeltaCount'] is num &&
+                    (endEvent['continuationDeltaCount'] as num) > 0 &&
+                    endEvent['continuationTextChars'] is num &&
+                    (endEvent['continuationTextChars'] as num) > 0)) &&
             endEvent['validationOk'] == true &&
-            endEvent['toolName'] == 'avatar.gesture' &&
+            endEvent['toolName'] == expectedGatewayToolName &&
             endEvent['providerCallsEnabled'] == true &&
             endEvent['providerCallsDuringExecutionEnabled'] == false &&
             endEvent['transportInvocationEnabled'] == true &&
             executionEnabled(endEvent) &&
-            endEvent['protectedGesture'] == true;
+            (continueWithToolResult || endEvent['protectedGesture'] == true);
         liveToolExecutionCanaryOk = ackEventOk &&
             toolCatalogOk &&
             providerRequestOk &&
@@ -10623,6 +10802,7 @@ class NativeGatewaySmokeService {
             toolUseFrameOk &&
             toolResultFrameOk &&
             executionSummaryOk &&
+            continuationOk &&
             eventOrderOk &&
             endOk;
 
@@ -10754,22 +10934,34 @@ class NativeGatewaySmokeService {
       final bridgeAckEvent = _firstEvent(canaryEvents, 'bridge_execute_ack');
       final summaryEvent =
           _firstEvent(canaryEvents, 'live_tool_execution_summary');
+      final continuationRequestEvent =
+          _firstEvent(canaryEvents, 'continuation_provider_request');
+      final continuationCallStartedEvent =
+          _firstEvent(canaryEvents, 'continuation_provider_call_started');
+      final continuationResponseEvent =
+          _firstEvent(canaryEvents, 'continuation_provider_response');
+      final continuationSummaryEvent =
+          _firstEvent(canaryEvents, 'continuation_summary');
       final providerRequest = asMap(requestEvent['providerRequest']);
       final toolPlanSummary = asMap(planEvent['toolPlanSummary']);
+      final continuationRequest =
+          asMap(continuationRequestEvent['continuationRequest']);
       final rawProviderError =
           providerErrorEvent['rawProviderError']?.toString() ??
               (providerErrorEvent['error'] is Map
                   ? (providerErrorEvent['error'] as Map)['raw']?.toString()
                   : null) ??
+              _firstEvent(canaryEvents, 'continuation_provider_error')[
+                      'rawProviderError']
+                  ?.toString() ??
               '';
       final observedOrder =
           canaryEvents.map((event) => event['event']?.toString()).toList();
 
       final report = <String, dynamic>{
         'ok': ok,
-        'phase': 'hidden-production-port-live-provider-tool-execution-canary',
-        'mode':
-            'native-production-port-live-provider-tool-call-to-bridge-execution-with-rollback',
+        'phase': phaseName,
+        'mode': modeName,
         'activeRuntimeId': productionRuntime.id,
         'temporaryOwnerRuntimeId': ownerRuntime.id,
         'productionPort': AppConstants.gatewayPort,
@@ -10804,6 +10996,8 @@ class NativeGatewaySmokeService {
         if (nativeError != null) 'nativeError': nativeError.toString(),
         'canarySent': canarySent,
         'liveToolExecutionCanaryOk': liveToolExecutionCanaryOk,
+        'liveToolContinuationCanaryOk':
+            continueWithToolResult && liveToolExecutionCanaryOk,
         'ackEventOk': ackEventOk,
         'toolCatalogOk': toolCatalogOk,
         'providerRequestOk': providerRequestOk,
@@ -10816,6 +11010,12 @@ class NativeGatewaySmokeService {
         'toolUseFrameOk': toolUseFrameOk,
         'toolResultFrameOk': toolResultFrameOk,
         'executionSummaryOk': executionSummaryOk,
+        'continuationEnabled': continueWithToolResult,
+        'continuationProviderRequestOk': continuationProviderRequestOk,
+        'continuationProviderCallStartedOk': continuationProviderCallStartedOk,
+        'continuationProviderResponseOk': continuationProviderResponseOk,
+        'continuationSummaryOk': continuationSummaryOk,
+        'continuationOk': continuationOk,
         'eventOrderOk': eventOrderOk,
         'endOk': endOk,
         'eventsCount': canaryEvents.length,
@@ -10831,6 +11031,21 @@ class NativeGatewaySmokeService {
         'contentType': responseEvent['contentType'],
         'requestHash':
             providerRequest['requestHash'] ?? endEvent['requestHash'],
+        'continuationRequestHash': continuationRequest['requestHash'] ??
+            endEvent['continuationRequestHash'],
+        'continuationStatusCode': continuationResponseEvent['statusCode'] ??
+            endEvent['continuationStatusCode'],
+        'continuationContentType': continuationResponseEvent['contentType'],
+        'continuationDeltaCount':
+            continuationSummaryEvent['continuationDeltaCount'] ??
+                endEvent['continuationDeltaCount'],
+        'continuationTextChars':
+            continuationSummaryEvent['continuationTextChars'] ??
+                endEvent['continuationTextChars'],
+        'continuationFinishReason':
+            continuationSummaryEvent['continuationFinishReason'],
+        'continuationWarningCount':
+            continuationSummaryEvent['continuationWarningCount'],
         'toolSelectionHash': endEvent['toolSelectionHash'],
         'dispatchHash': endEvent['dispatchHash'],
         'bridgeRequestHash': endEvent['bridgeRequestHash'],
@@ -10859,6 +11074,8 @@ class NativeGatewaySmokeService {
         'command': summaryEvent['toolName'] ?? endEvent['toolName'],
         'capability': summaryEvent['capability'] ?? endEvent['capability'],
         'gesture': summaryEvent['gesture'] ?? endEvent['gesture'],
+        'toolDurationMs': summaryEvent['durationMs'] ??
+            continuationSummaryEvent['toolResultDurationMs'],
         'resultStatus': summaryEvent['resultStatus'],
         'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
         'providerCallsDuringExecutionEnabled':
@@ -10873,6 +11090,9 @@ class NativeGatewaySmokeService {
         'providerBillingSurfaceReached': _firstEvent(canaryEvents,
                 'provider_call_started')['providerBillingSurfaceReached'] ==
             true,
+        'continuationProviderBillingSurfaceReached':
+            continuationCallStartedEvent['providerBillingSurfaceReached'] ==
+                true,
         'rawProviderErrorForwarded': rawProviderError.isNotEmpty,
         if (rawProviderError.isNotEmpty)
           'rawProviderErrorPreview': rawProviderError.length > 500
@@ -10900,21 +11120,30 @@ class NativeGatewaySmokeService {
         if (rollbackError != null) 'rollbackError': rollbackError.toString(),
         'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
         'decision': ok
-            ? 'Native owned 18789, received one live provider tool call, executed only the bounded avatar bridge allowlist, and PRoot was restored.'
+            ? (continueWithToolResult
+                ? 'Native owned 18789, received one live provider tool call, executed only the bounded haptic bridge allowlist, continued with the tool result, received final provider text, and PRoot was restored.'
+                : 'Native owned 18789, received one live provider tool call, executed only the bounded avatar bridge allowlist, and PRoot was restored.')
             : (providerErrorSurfaceOk
                 ? 'Native owned 18789, reached the provider but live tool execution did not complete; raw provider/bridge error was surfaced and PRoot rollback was attempted.'
-                : 'Production-port live provider tool execution canary is not promotable; PRoot rollback was attempted.'),
-        'nextGate':
-            'production-port live provider tool result continuation canary with PRoot rollback',
+                : (continueWithToolResult
+                    ? 'Production-port live provider tool continuation canary is not promotable; PRoot rollback was attempted.'
+                    : 'Production-port live provider tool execution canary is not promotable; PRoot rollback was attempted.')),
+        'nextGate': continueWithToolResult
+            ? 'production-port native chat loop canary with one live tool continuation and rollback policy'
+            : 'production-port live provider tool result continuation canary with PRoot rollback',
       };
-      log('[NATIVE-LIVE-TOOL-OWNER] ${jsonEncode({
+      log('$logTag ${jsonEncode({
             ...report,
             'rawProviderErrorPreview':
                 rawProviderError.isEmpty ? null : '<redacted in activity log>',
           })}');
       return report;
     } finally {
-      _productionPortProviderLiveToolExecutionInFlight = false;
+      if (continueWithToolResult) {
+        _productionPortProviderLiveToolContinuationInFlight = false;
+      } else {
+        _productionPortProviderLiveToolExecutionInFlight = false;
+      }
     }
   }
 
