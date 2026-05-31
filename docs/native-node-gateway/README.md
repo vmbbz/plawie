@@ -192,6 +192,7 @@ be safely generalized.
 | [52-native-provider-owner-stream-parity.md](52-native-provider-owner-stream-parity.md) | Explicit `/native-stream-owner` diagnostics proving stream parser/error/timeout/cancel parity on `18789` |
 | [53-native-provider-owner-tool-plan.md](53-native-provider-owner-tool-plan.md) | Explicit `/native-tool-plan-owner` diagnostics proving provider tool-call plan capture on `18789` with execution disabled |
 | [54-native-owner-tool-dispatch-dry-run.md](54-native-owner-tool-dispatch-dry-run.md) | Explicit `/native-dispatch-owner` diagnostics proving synthetic tool dispatch/result frames on `18789` with execution disabled |
+| [55-native-owner-dart-bridge-dry-run.md](55-native-owner-dart-bridge-dry-run.md) | Explicit `/native-dart-bridge-owner` diagnostics proving native-to-Dart dry-run ACKs on `18789` with execution disabled |
 
 ## Work Rules
 

@@ -55,6 +55,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderStreamParityInFlight = false;
   static bool _productionPortProviderToolPlanInFlight = false;
   static bool _productionPortToolDispatchInFlight = false;
+  static bool _productionPortDartBridgeInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -5805,6 +5806,707 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortToolDispatchInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runProductionPortDartBridgeDryRun({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native production Dart bridge dry-run: wave right and vibrate once',
+  }) async {
+    if (_productionPortDartBridgeInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-dart-bridge-dry-run',
+        'alreadyInFlight': true,
+        'decision': 'Production-port Dart bridge dry-run is already running.',
+      };
+    }
+
+    _productionPortDartBridgeInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final requestedModel =
+          model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+      final providerHint = requestedModel.contains('/')
+          ? requestedModel.split('/').first
+          : 'openrouter';
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var bridgeDryRunSent = false;
+      var bridgeAckEventOk = false;
+      var toolPlanSummaryOk = false;
+      var dispatchPlanOk = false;
+      var bridgeRequestOk = false;
+      var bridgeAckOk = false;
+      var toolUseFrameOk = false;
+      var toolResultFrameOk = false;
+      var bridgeSummaryOk = false;
+      var bridgeOrderOk = false;
+      var bridgeEndOk = false;
+      var bridgeDryRunOk = false;
+      var postBridgeGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postBridgeHealth = <String, dynamic>{};
+      Map<String, dynamic> postBridgeProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> bridgeEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? bridgeError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-DART-BRIDGE-OWNER] Opening Dart bridge dry-run.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Dart bridge dry-run requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before Dart bridge dry-run.',
+          );
+        }
+
+        log('[NATIVE-DART-BRIDGE-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before Dart bridge dry-run.',
+          );
+        }
+
+        log(
+          '[NATIVE-DART-BRIDGE-OWNER] Starting native on 18789 and sending '
+          'a dry-run dispatch request to Dart.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError('Native Dart bridge dry-run did not start.');
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        bridgeDryRunSent = true;
+        bridgeEvents = await _streamProductionNdjson(
+          '/gateway/chat-native-dart-bridge-dry-run-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-dart-bridge-dry-run-request',
+            idempotencyKey: 'production-dart-bridge-dry-run-idempotency-key',
+            model: requestedModel,
+            provider: providerHint,
+            message: prompt,
+          ),
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 20),
+        );
+
+        final ackEvent = _firstEvent(bridgeEvents, 'ack');
+        final planEvent = _firstEvent(bridgeEvents, 'tool_plan_summary');
+        final dispatchPlanEvent =
+            _firstEvent(bridgeEvents, 'tool_dispatch_plan');
+        final bridgeRequestEvent = _firstEvent(bridgeEvents, 'bridge_request');
+        final bridgeAckEvent = _firstEvent(bridgeEvents, 'bridge_ack');
+        final toolUseEvent = _firstEvent(bridgeEvents, 'tool_use_frame');
+        final toolResultEvent = _firstEvent(bridgeEvents, 'tool_result_frame');
+        final summaryEvent = _firstEvent(bridgeEvents, 'bridge_summary');
+        final endEvent = _firstEvent(bridgeEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final toolPlanSummary = planEvent['toolPlanSummary'] is Map
+            ? Map<String, dynamic>.from(planEvent['toolPlanSummary'] as Map)
+            : <String, dynamic>{};
+        final plan = planEvent['plan'] is Map
+            ? Map<String, dynamic>.from(planEvent['plan'] as Map)
+            : <String, dynamic>{};
+        final dispatchPlan = dispatchPlanEvent['dispatchPlan'] is Map
+            ? Map<String, dynamic>.from(
+                dispatchPlanEvent['dispatchPlan'] as Map,
+              )
+            : <String, dynamic>{};
+        final route = dispatchPlan['route'] is Map
+            ? Map<String, dynamic>.from(dispatchPlan['route'] as Map)
+            : <String, dynamic>{};
+        final bridgeRequest = bridgeRequestEvent['bridgeRequest'] is Map
+            ? Map<String, dynamic>.from(
+                bridgeRequestEvent['bridgeRequest'] as Map,
+              )
+            : <String, dynamic>{};
+        final bridgeAck = bridgeAckEvent['bridgeAck'] is Map
+            ? Map<String, dynamic>.from(bridgeAckEvent['bridgeAck'] as Map)
+            : <String, dynamic>{};
+        final toolUseFrame = toolUseEvent['frame'] is Map
+            ? Map<String, dynamic>.from(toolUseEvent['frame'] as Map)
+            : <String, dynamic>{};
+        final toolResultFrame = toolResultEvent['frame'] is Map
+            ? Map<String, dynamic>.from(toolResultEvent['frame'] as Map)
+            : <String, dynamic>{};
+        final toolResult = toolResultFrame['result'] is Map
+            ? Map<String, dynamic>.from(toolResultFrame['result'] as Map)
+            : <String, dynamic>{};
+        final observedOrder =
+            bridgeEvents.map((event) => event['event']?.toString()).toList();
+        const expectedOrder = <String>[
+          'ack',
+          'tool_plan_summary',
+          'tool_dispatch_plan',
+          'bridge_request',
+          'bridge_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'bridge_summary',
+          'end',
+        ];
+        bridgeOrderOk = observedOrder.length >= expectedOrder.length;
+        for (var i = 0; i < expectedOrder.length && bridgeOrderOk; i++) {
+          bridgeOrderOk = observedOrder[i] == expectedOrder[i];
+        }
+
+        bridgeAckEventOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == true &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'native_dart_bridge_dry_run' &&
+            ackEvent['routeStatus'] == 'native_dart_bridge_dry_run_started' &&
+            ackEvent['acceptedForRouting'] == true &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == false &&
+            ackEvent['queueStatus'] == 'native_dart_bridge_dry_run' &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['providerCallsEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ackEvent['toolExecutionEnabled'] == false &&
+            ackEvent['bridgeExecutionEnabled'] == false &&
+            ackEvent['transportInvocationEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            ack['route'] == 'native_dart_bridge_dry_run' &&
+            ack['bridgeRequestHash']?.toString().isNotEmpty == true &&
+            ack['fixtureParityOk'] == true &&
+            ack['dispatchParityOk'] == true &&
+            ack['providerCallsEnabled'] == false &&
+            ack['transportInvocationEnabled'] == false &&
+            ack['executionEnabled'] == false &&
+            ack['toolExecutionEnabled'] == false &&
+            ack['bridgeExecutionEnabled'] == false;
+        toolPlanSummaryOk = planEvent['ok'] == true &&
+            planEvent['fixtureParityOk'] == true &&
+            planEvent['toolExecutionEnabled'] == false &&
+            toolPlanSummary['toolPlanCount'] == 1 &&
+            toolPlanSummary['allowedPlanCount'] == 1 &&
+            toolPlanSummary['blockedPlanCount'] == 0 &&
+            toolPlanSummary['invalidArgumentCount'] == 0 &&
+            toolPlanSummary['finishReason'] == 'tool_calls' &&
+            toolPlanSummary['toolExecutionEnabled'] == false &&
+            plan['allowedName'] == true &&
+            plan['argumentsOk'] == true &&
+            plan['blockedReason'] == null;
+        dispatchPlanOk = dispatchPlanEvent['ok'] == true &&
+            dispatchPlan['callId']?.toString().isNotEmpty == true &&
+            dispatchPlan['dispatchHash']?.toString().isNotEmpty == true &&
+            dispatchPlan['bridgeRequestHash']?.toString().isNotEmpty == true &&
+            dispatchPlan['planHash']?.toString().isNotEmpty == true &&
+            dispatchPlan['wouldExecute'] == false &&
+            dispatchPlan['executionEnabled'] == false &&
+            dispatchPlan['toolExecutionEnabled'] == false &&
+            dispatchPlan['bridgeExecutionEnabled'] == false &&
+            route['method'] == 'avatar.gesture' &&
+            route['capability'] == 'avatar' &&
+            route['dartCapability'] == 'AvatarCapability' &&
+            route['requiresUiThread'] == true;
+        bridgeRequestOk = bridgeRequestEvent['ok'] == true &&
+            bridgeRequestEvent['endpoint'] ==
+                'http://127.0.0.1:8765/api/native-gateway/dispatch-dry-run' &&
+            bridgeRequest['type'] == 'native_tool_dispatch_dry_run' &&
+            bridgeRequest['callId'] == dispatchPlan['callId'] &&
+            bridgeRequest['method'] == route['method'] &&
+            bridgeRequest['capability'] == route['capability'] &&
+            bridgeRequest['dartCapability'] == route['dartCapability'] &&
+            bridgeRequest['bridgeRequestHash'] ==
+                dispatchPlan['bridgeRequestHash'] &&
+            bridgeRequest['dispatchHash'] == dispatchPlan['dispatchHash'] &&
+            bridgeRequest['dryRun'] == true &&
+            bridgeRequest['executionEnabled'] == false &&
+            bridgeRequest['toolExecutionEnabled'] == false &&
+            bridgeRequest['bridgeExecutionEnabled'] == false;
+        bridgeAckOk = bridgeAckEvent['ok'] == true &&
+            bridgeAckEvent['statusCode'] == 200 &&
+            bridgeAckEvent['responseBytesRead'] is num &&
+            (bridgeAckEvent['responseBytesRead'] as num) > 0 &&
+            bridgeAckEvent['bridgeAckHash']?.toString().isNotEmpty == true &&
+            bridgeAckEvent['bridgeParityOk'] == true &&
+            bridgeAckEvent['validationOk'] == true &&
+            bridgeAck['ok'] == true &&
+            bridgeAck['accepted'] == true &&
+            bridgeAck['runtime'] == 'flutter-dart' &&
+            bridgeAck['bridge'] == 'AgentSkillServer' &&
+            bridgeAck['source'] == 'native-dart-bridge-dry-run' &&
+            bridgeAck['routeStatus'] == 'native_dart_bridge_dry_run_ack' &&
+            bridgeAck['command'] == route['method'] &&
+            bridgeAck['commandKnown'] == true &&
+            bridgeAck['capability'] == route['capability'] &&
+            bridgeAck['dartCapability'] == route['dartCapability'] &&
+            bridgeAck['dryRun'] == true &&
+            bridgeAck['skippedReason'] == 'native_dart_bridge_dry_run_only' &&
+            bridgeAck['executionEnabled'] == false &&
+            bridgeAck['toolExecutionEnabled'] == false &&
+            bridgeAck['bridgeExecutionEnabled'] == false &&
+            bridgeAck['bridgeRequestHash'] ==
+                bridgeRequest['bridgeRequestHash'];
+        toolUseFrameOk = toolUseEvent['ok'] == true &&
+            toolUseFrame['type'] == 'tool_use' &&
+            toolUseFrame['id']?.toString().isNotEmpty == true &&
+            toolUseFrame['name'] == route['method'] &&
+            toolUseFrame['runtime'] == 'native-node-embedded' &&
+            toolUseFrame['input'] is Map &&
+            (toolUseFrame['input'] as Map)['gesture'] != null &&
+            toolUseFrame['executionEnabled'] == false &&
+            toolUseFrame['toolExecutionEnabled'] == false;
+        toolResultFrameOk = toolResultEvent['ok'] == true &&
+            toolResultFrame['type'] == 'tool_result' &&
+            toolResultFrame['id'] == toolUseFrame['id'] &&
+            toolResultFrame['name'] == route['method'] &&
+            toolResultFrame['runtime'] == 'native-node-embedded' &&
+            toolResultFrame['executionEnabled'] == false &&
+            toolResultFrame['toolExecutionEnabled'] == false &&
+            toolResult['ok'] == true &&
+            toolResult['dryRun'] == true &&
+            toolResult['bridgeAckReceived'] == true &&
+            toolResult['dartBridgeOk'] == true &&
+            toolResult['dartAccepted'] == true &&
+            toolResult['commandKnown'] == true &&
+            toolResult['skippedReason'] == 'native_dart_bridge_dry_run_only' &&
+            toolResult['bridgeRequestHash'] ==
+                bridgeRequest['bridgeRequestHash'] &&
+            toolResult['bridgeExecutionEnabled'] == false &&
+            toolResult['executionEnabled'] == false &&
+            toolResult['toolExecutionEnabled'] == false;
+        bridgeSummaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['fixtureParityOk'] == true &&
+            summaryEvent['dispatchParityOk'] == true &&
+            summaryEvent['bridgeParityOk'] == true &&
+            summaryEvent['validationOk'] == true &&
+            summaryEvent['toolName'] == route['method'] &&
+            summaryEvent['capability'] == route['capability'] &&
+            summaryEvent['dartCapability'] == route['dartCapability'] &&
+            summaryEvent['skippedReason'] ==
+                'native_dart_bridge_dry_run_only' &&
+            summaryEvent['providerCallsEnabled'] == false &&
+            summaryEvent['executionEnabled'] == false &&
+            summaryEvent['toolExecutionEnabled'] == false &&
+            summaryEvent['bridgeExecutionEnabled'] == false;
+        bridgeEndOk = endEvent['ok'] == true &&
+            endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['routeStatus'] == 'native_dart_bridge_dry_run_complete' &&
+            endEvent['finishReason'] == 'native_dart_bridge_dry_run_complete' &&
+            endEvent['fixtureParityOk'] == true &&
+            endEvent['dispatchParityOk'] == true &&
+            endEvent['bridgeParityOk'] == true &&
+            endEvent['validationOk'] == true &&
+            endEvent['toolName'] == route['method'] &&
+            endEvent['capability'] == route['capability'] &&
+            endEvent['providerCallsEnabled'] == false &&
+            endEvent['executionEnabled'] == false &&
+            endEvent['toolExecutionEnabled'] == false &&
+            endEvent['bridgeExecutionEnabled'] == false;
+        bridgeDryRunOk = bridgeAckEventOk &&
+            toolPlanSummaryOk &&
+            dispatchPlanOk &&
+            bridgeRequestOk &&
+            bridgeAckOk &&
+            toolUseFrameOk &&
+            toolResultFrameOk &&
+            bridgeSummaryOk &&
+            bridgeOrderOk &&
+            bridgeEndOk;
+
+        postBridgeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postBridgeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postBridgeGuardOk = postBridgeHealth['ok'] == true &&
+            postBridgeHealth['runtime'] == 'native-node-embedded' &&
+            postBridgeHealth['port'] == AppConstants.gatewayPort &&
+            postBridgeHealth['productionPortBindCanary'] == true &&
+            postBridgeHealth['openclawStarted'] == false &&
+            postBridgeProbe['runtime'] == 'native-node-embedded' &&
+            postBridgeProbe['port'] == AppConstants.gatewayPort &&
+            postBridgeProbe['productionPortBindCanary'] == true &&
+            postBridgeProbe['canaryOnly'] == true &&
+            postBridgeProbe['productionReady'] == false &&
+            postBridgeProbe['openclawStarted'] == false &&
+            postBridgeProbe['chatRoutingEnabled'] == false &&
+            postBridgeProbe['providerCallsEnabled'] == false &&
+            postBridgeProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (bridgeDryRunSent) {
+          bridgeError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          bridgeDryRunOk &&
+          postBridgeGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final ackEvent = _firstEvent(bridgeEvents, 'ack');
+      final planEvent = _firstEvent(bridgeEvents, 'tool_plan_summary');
+      final dispatchPlanEvent = _firstEvent(bridgeEvents, 'tool_dispatch_plan');
+      final bridgeRequestEvent = _firstEvent(bridgeEvents, 'bridge_request');
+      final bridgeAckEvent = _firstEvent(bridgeEvents, 'bridge_ack');
+      final toolResultEvent = _firstEvent(bridgeEvents, 'tool_result_frame');
+      final summaryEvent = _firstEvent(bridgeEvents, 'bridge_summary');
+      final endEvent = _firstEvent(bridgeEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final toolPlanSummary = planEvent['toolPlanSummary'] is Map
+          ? Map<String, dynamic>.from(planEvent['toolPlanSummary'] as Map)
+          : <String, dynamic>{};
+      final dispatchPlan = dispatchPlanEvent['dispatchPlan'] is Map
+          ? Map<String, dynamic>.from(dispatchPlanEvent['dispatchPlan'] as Map)
+          : <String, dynamic>{};
+      final route = dispatchPlan['route'] is Map
+          ? Map<String, dynamic>.from(dispatchPlan['route'] as Map)
+          : <String, dynamic>{};
+      final bridgeRequest = bridgeRequestEvent['bridgeRequest'] is Map
+          ? Map<String, dynamic>.from(
+              bridgeRequestEvent['bridgeRequest'] as Map)
+          : <String, dynamic>{};
+      final bridgeAck = bridgeAckEvent['bridgeAck'] is Map
+          ? Map<String, dynamic>.from(bridgeAckEvent['bridgeAck'] as Map)
+          : <String, dynamic>{};
+      final toolResultFrame = toolResultEvent['frame'] is Map
+          ? Map<String, dynamic>.from(toolResultEvent['frame'] as Map)
+          : <String, dynamic>{};
+      final toolResult = toolResultFrame['result'] is Map
+          ? Map<String, dynamic>.from(toolResultFrame['result'] as Map)
+          : <String, dynamic>{};
+      final observedOrder =
+          bridgeEvents.map((event) => event['event']?.toString()).toList();
+      final toolPlanNames = toolPlanSummary['toolPlanNames'] is List
+          ? List<dynamic>.from(toolPlanSummary['toolPlanNames'] as List)
+          : const <dynamic>[];
+      final gatewayToolNames = toolPlanSummary['gatewayToolNames'] is List
+          ? List<dynamic>.from(toolPlanSummary['gatewayToolNames'] as List)
+          : const <dynamic>[];
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-dart-bridge-dry-run',
+        'mode': 'native-production-port-dart-bridge-dry-run-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'bridgeDryRunSent': bridgeDryRunSent,
+        'bridgeDryRunOk': bridgeDryRunOk,
+        'bridgeAckEventOk': bridgeAckEventOk,
+        'toolPlanSummaryOk': toolPlanSummaryOk,
+        'dispatchPlanOk': dispatchPlanOk,
+        'bridgeRequestOk': bridgeRequestOk,
+        'bridgeAckOk': bridgeAckOk,
+        'toolUseFrameOk': toolUseFrameOk,
+        'toolResultFrameOk': toolResultFrameOk,
+        'bridgeSummaryOk': bridgeSummaryOk,
+        'bridgeOrderOk': bridgeOrderOk,
+        'bridgeEndOk': bridgeEndOk,
+        'bridgeEventsCount': bridgeEvents.length,
+        'bridgeObservedOrder': observedOrder,
+        'bridgeRouteStatus': endEvent['routeStatus'] ?? ack['routeStatus'],
+        'bridgeFinishReason': endEvent['finishReason'],
+        'provider': ack['provider'],
+        'requestedModel': ack['requestedModel'],
+        'providerModel': ack['providerModel'],
+        'transport': ack['transport'],
+        'requestHash': ack['requestHash'] ?? endEvent['requestHash'],
+        'toolSelectionHash': ack['toolSelectionHash'],
+        'dispatchHash': ack['dispatchHash'] ?? endEvent['dispatchHash'],
+        'bridgeRequestHash':
+            bridgeRequest['bridgeRequestHash'] ?? ack['bridgeRequestHash'],
+        'bridgeAckHash': bridgeAckEvent['bridgeAckHash'] ??
+            summaryEvent['bridgeAckHash'] ??
+            endEvent['bridgeAckHash'],
+        'fixtureHash': ack['fixtureHash'],
+        'fixtureParityOk': ack['fixtureParityOk'] == true ||
+            endEvent['fixtureParityOk'] == true,
+        'dispatchParityOk': ack['dispatchParityOk'] == true ||
+            summaryEvent['dispatchParityOk'] == true ||
+            endEvent['dispatchParityOk'] == true,
+        'bridgeParityOk': bridgeAckEvent['bridgeParityOk'] == true ||
+            summaryEvent['bridgeParityOk'] == true ||
+            endEvent['bridgeParityOk'] == true,
+        'validationOk': bridgeAckEvent['validationOk'] == true ||
+            summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'selectedToolCount': ack['selectedToolCount'],
+        'toolPlanCount':
+            toolPlanSummary['toolPlanCount'] ?? ack['toolPlanCount'],
+        'allowedPlanCount':
+            toolPlanSummary['allowedPlanCount'] ?? ack['allowedPlanCount'],
+        'blockedPlanCount':
+            toolPlanSummary['blockedPlanCount'] ?? ack['blockedPlanCount'],
+        'invalidArgumentCount': toolPlanSummary['invalidArgumentCount'],
+        'toolPlanNames': toolPlanNames,
+        'gatewayToolNames': gatewayToolNames,
+        'toolName': route['method'] ?? summaryEvent['toolName'],
+        'capability': route['capability'] ?? summaryEvent['capability'],
+        'dartCapability':
+            route['dartCapability'] ?? summaryEvent['dartCapability'],
+        'requiresUiThread': route['requiresUiThread'],
+        'callId': dispatchPlan['callId'],
+        'bridgeStatusCode': bridgeAckEvent['statusCode'],
+        'bridgeResponseBytesRead': bridgeAckEvent['responseBytesRead'],
+        'dartBridgeOk': bridgeAck['ok'] == true,
+        'dartAccepted': bridgeAck['accepted'] == true,
+        'commandKnown': bridgeAck['commandKnown'] == true,
+        'bridgeCommand': bridgeAck['command'],
+        'toolResultDryRun': toolResult['dryRun'] == true,
+        'bridgeAckReceived': toolResult['bridgeAckReceived'] == true,
+        'skippedReason':
+            bridgeAck['skippedReason'] ?? summaryEvent['skippedReason'],
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'transportInvocationEnabled':
+            ackEvent['transportInvocationEnabled'] == true ||
+                ack['transportInvocationEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabled': endEvent['bridgeExecutionEnabled'] == true,
+        if (bridgeError != null) 'bridgeError': bridgeError.toString(),
+        'postBridgeGuardOk': postBridgeGuardOk,
+        'postBridgeRuntimeReported': postBridgeHealth['runtime'],
+        'postBridgeCanaryOnly': postBridgeProbe['canaryOnly'] == true,
+        'postBridgeChatRoutingEnabled':
+            postBridgeProbe['chatRoutingEnabled'] == true,
+        'postBridgeProviderCallsEnabled':
+            postBridgeProbe['providerCallsEnabled'] == true,
+        'postBridgeToolExecutionEnabled':
+            postBridgeProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, sent a dry-run dispatch request to Dart, received a Dart ACK, and PRoot was restored.'
+            : 'Production-port Dart bridge dry-run is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'production-port bridge ordering and cancellation parity with execution disabled',
+      };
+      log('[NATIVE-DART-BRIDGE-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortDartBridgeInFlight = false;
     }
   }
 
