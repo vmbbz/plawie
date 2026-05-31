@@ -196,6 +196,7 @@ be safely generalized.
 | [56-native-owner-dart-bridge-ordering-cancel.md](56-native-owner-dart-bridge-ordering-cancel.md) | Explicit `/native-dart-bridge-order-owner` diagnostics proving ordered bridge ACKs and cancellation dry-run parity on `18789` |
 | [57-native-owner-bridge-execution-readonly-canary.md](57-native-owner-bridge-execution-readonly-canary.md) | Explicit `/native-bridge-exec-owner` diagnostics proving read-only native-to-Dart bridge execution on `18789` |
 | [58-native-owner-bridge-execution-haptic-canary.md](58-native-owner-bridge-execution-haptic-canary.md) | Explicit `/native-haptic-exec-owner` diagnostics proving bounded haptic native-to-Dart bridge execution on `18789` |
+| [59-native-owner-bridge-execution-avatar-canary.md](59-native-owner-bridge-execution-avatar-canary.md) | Explicit `/native-avatar-exec-owner` diagnostics proving protected avatar native-to-Dart bridge execution on `18789` |
 
 ## Work Rules
 

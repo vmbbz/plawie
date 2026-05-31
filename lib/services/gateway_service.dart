@@ -4247,6 +4247,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionBridgeExecutionAvatarPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-avatar-exec-owner',
+      '/native-production-avatar-exec',
+      '/native-bridge-avatar-exec-owner',
+      '/native-production-bridge-avatar-exec',
+      'native-avatar-exec-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production avatar bridge execution canary: wave right';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production avatar bridge execution canary: wave right'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -8320,6 +8346,97 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionBridgeExecutionAvatarMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionBridgeExecutionAvatarPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-AVATAR-EXEC-OWNER] -> Opening production-port avatar bridge execution canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortBridgeExecutionAvatarCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-AVATAR-EXEC-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final observedEventOrder = report['observedEventOrder'] is List
+          ? (report['observedEventOrder'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native production avatar bridge execution canary complete'
+            : 'Native production avatar bridge execution canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'canarySent: ${report['canarySent'] == true}',
+        'avatarCanaryOk: ${report['avatarCanaryOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'executeRequestOk: ${report['executeRequestOk'] == true}',
+        'executeAckOk: ${report['executeAckOk'] == true}',
+        'toolUseOk: ${report['toolUseOk'] == true}',
+        'toolResultOk: ${report['toolResultOk'] == true}',
+        'summaryOk: ${report['summaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'finishReason: ${report['finishReason'] ?? 'unknown'}',
+        'command: ${report['command'] ?? 'unknown'}',
+        'gesture: ${report['gesture'] ?? 'unknown'}',
+        'durationMs: ${report['durationMs'] ?? 'unknown'}',
+        'resultStatus: ${report['resultStatus'] ?? 'unknown'}',
+        'gestureOk: ${report['gestureOk'] == true}',
+        'durationOk: ${report['durationOk'] == true}',
+        'arbitrationOk: ${report['arbitrationOk'] == true}',
+        'protectedGesture: ${report['protectedGesture'] == true}',
+        'observedEventOrder: $observedEventOrder',
+        'canaryAllowlist: ${_compactJsonValue(report['canaryAllowlist'])}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-AVATAR-EXEC-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -8332,6 +8449,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionBridgeExecutionAvatarPayload(message) != null) {
+      yield* _sendNativeProductionBridgeExecutionAvatarMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionBridgeExecutionHapticPayload(message) != null) {
       yield* _sendNativeProductionBridgeExecutionHapticMessage(

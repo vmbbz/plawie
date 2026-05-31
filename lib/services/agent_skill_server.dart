@@ -168,6 +168,10 @@ class AgentSkillServer {
         path ==
             '/api/native-gateway/production-bridge-execution-haptic-canary') {
       await _handleNativeGatewayProductionBridgeExecutionHapticCanary(request);
+    } else if (request.method == 'POST' &&
+        path ==
+            '/api/native-gateway/production-bridge-execution-avatar-canary') {
+      await _handleNativeGatewayProductionBridgeExecutionAvatarCanary(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -825,6 +829,52 @@ class AgentSkillServer {
         model: model == null || model.isEmpty ? 'openrouter/auto' : model,
         prompt: prompt == null || prompt.isEmpty
             ? 'native production haptic bridge execution canary: vibrate once'
+            : prompt,
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
+    }
+  }
+
+  Future<void> _handleNativeGatewayProductionBridgeExecutionAvatarCanary(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      final body = await utf8.decoder.bind(request).join();
+      Map<String, dynamic> args = <String, dynamic>{};
+      if (body.trim().isNotEmpty) {
+        final decoded = jsonDecode(body);
+        if (decoded is Map) {
+          args = decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      }
+      final prompt = args['prompt']?.toString().trim();
+      final model = args['model']?.toString().trim();
+
+      final report = await NativeGatewaySmokeService
+          .runProductionPortBridgeExecutionAvatarCanary(
+        log: (message) => debugPrint('[GATEWAY] $message'),
+        model: model == null || model.isEmpty ? 'openrouter/auto' : model,
+        prompt: prompt == null || prompt.isEmpty
+            ? 'native production avatar bridge execution canary: wave right'
             : prompt,
       );
       _sendJson(request, report);
