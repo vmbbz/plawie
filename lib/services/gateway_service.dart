@@ -4221,6 +4221,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionBridgeExecutionHapticPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-haptic-exec-owner',
+      '/native-production-haptic-exec',
+      '/native-bridge-haptic-exec-owner',
+      '/native-production-bridge-haptic-exec',
+      'native-haptic-exec-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production haptic bridge execution canary: vibrate once';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production haptic bridge execution canary: vibrate once'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -8207,6 +8233,93 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionBridgeExecutionHapticMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionBridgeExecutionHapticPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-HAPTIC-EXEC-OWNER] -> Opening production-port haptic bridge execution canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortBridgeExecutionHapticCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-HAPTIC-EXEC-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final observedEventOrder = report['observedEventOrder'] is List
+          ? (report['observedEventOrder'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native production haptic bridge execution canary complete'
+            : 'Native production haptic bridge execution canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'canarySent: ${report['canarySent'] == true}',
+        'hapticCanaryOk: ${report['hapticCanaryOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'executeRequestOk: ${report['executeRequestOk'] == true}',
+        'executeAckOk: ${report['executeAckOk'] == true}',
+        'toolUseOk: ${report['toolUseOk'] == true}',
+        'toolResultOk: ${report['toolResultOk'] == true}',
+        'summaryOk: ${report['summaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'finishReason: ${report['finishReason'] ?? 'unknown'}',
+        'command: ${report['command'] ?? 'unknown'}',
+        'durationMs: ${report['durationMs'] ?? 'unknown'}',
+        'durationBounded: ${report['durationBounded'] == true}',
+        'resultStatus: ${report['resultStatus'] ?? 'unknown'}',
+        'observedEventOrder: $observedEventOrder',
+        'canaryAllowlist: ${_compactJsonValue(report['canaryAllowlist'])}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-HAPTIC-EXEC-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -8219,6 +8332,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionBridgeExecutionHapticPayload(message) != null) {
+      yield* _sendNativeProductionBridgeExecutionHapticMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionBridgeExecutionReadOnlyPayload(message) != null) {
       yield* _sendNativeProductionBridgeExecutionReadOnlyMessage(

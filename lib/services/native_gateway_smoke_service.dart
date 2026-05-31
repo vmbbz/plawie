@@ -58,6 +58,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortDartBridgeInFlight = false;
   static bool _productionPortDartBridgeOrderingInFlight = false;
   static bool _productionPortBridgeReadOnlyCanaryInFlight = false;
+  static bool _productionPortBridgeHapticCanaryInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -8030,6 +8031,668 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortBridgeReadOnlyCanaryInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortBridgeExecutionHapticCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native production haptic bridge execution canary: vibrate once',
+  }) async {
+    if (_productionPortBridgeHapticCanaryInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-bridge-execution-haptic-canary',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port haptic bridge execution canary is already running.',
+      };
+    }
+
+    _productionPortBridgeHapticCanaryInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final requestedModel =
+          model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+      final providerHint = requestedModel.contains('/')
+          ? requestedModel.split('/').first
+          : 'openrouter';
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var canarySent = false;
+      var ackEventOk = false;
+      var toolPlanSummaryOk = false;
+      var executeRequestOk = false;
+      var executeAckOk = false;
+      var toolUseOk = false;
+      var toolResultOk = false;
+      var summaryOk = false;
+      var eventOrderOk = false;
+      var endOk = false;
+      var hapticCanaryOk = false;
+      var postCanaryGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postCanaryHealth = <String, dynamic>{};
+      Map<String, dynamic> postCanaryProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> canaryEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? canaryError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      Map<String, dynamic> asMap(Object? value) => value is Map
+          ? value.map((key, value) => MapEntry(key.toString(), value))
+          : <String, dynamic>{};
+      List<Map<String, dynamic>> eventsNamed(String name) => canaryEvents
+          .where((event) => event['event'] == name)
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+
+      bool providerStillDisabled(Map<String, dynamic> value) =>
+          value['providerCallsEnabled'] != true &&
+          value['transportInvocationEnabled'] != true;
+      bool executionEnabled(Map<String, dynamic> value) =>
+          value['executionEnabled'] == true &&
+          value['toolExecutionEnabled'] == true &&
+          value['bridgeExecutionEnabled'] == true;
+      bool toolFrameExecutionEnabled(Map<String, dynamic> value) =>
+          value['executionEnabled'] == true &&
+          value['toolExecutionEnabled'] == true;
+      bool allowlistOk(Object? value) =>
+          value is List &&
+          value.length == 1 &&
+          value.single.toString() == 'haptic.vibrate';
+      int? parseInt(Object? value) {
+        if (value is int) return value;
+        if (value is num) return value.round();
+        if (value == null) return null;
+        return int.tryParse(value.toString());
+      }
+
+      bool durationOk(Object? value) {
+        final parsed = parseInt(value);
+        return parsed != null && parsed > 0 && parsed <= 150;
+      }
+
+      bool resultStatusOk(Object? value) {
+        final status = value?.toString();
+        return status == 'vibrated' || status == 'vibrated_fallback';
+      }
+
+      log(
+        '[NATIVE-HAPTIC-EXEC-OWNER] Opening haptic bridge execution canary.',
+      );
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Haptic bridge execution canary requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before haptic bridge execution canary.',
+          );
+        }
+
+        log('[NATIVE-HAPTIC-EXEC-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before haptic bridge execution canary.',
+          );
+        }
+
+        log(
+          '[NATIVE-HAPTIC-EXEC-OWNER] Starting native on 18789 and executing one bounded haptic allowlist call.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError(
+            'Native haptic bridge execution canary did not start.',
+          );
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        canarySent = true;
+        canaryEvents = await _streamProductionNdjson(
+          '/gateway/chat-native-dart-bridge-haptic-canary-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-bridge-exec-haptic-request',
+            idempotencyKey: 'production-bridge-exec-haptic-idempotency-key',
+            model: requestedModel,
+            provider: providerHint,
+            message: prompt,
+          ),
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 30),
+        );
+
+        final ackEvent = _firstEvent(canaryEvents, 'ack');
+        final planEvent = _firstEvent(canaryEvents, 'tool_plan_summary');
+        final executeRequestEvent =
+            _firstEvent(canaryEvents, 'bridge_execute_request');
+        final executeAckEvent = _firstEvent(canaryEvents, 'bridge_execute_ack');
+        final toolUseEvent = _firstEvent(canaryEvents, 'tool_use_frame');
+        final toolResultEvent = _firstEvent(canaryEvents, 'tool_result_frame');
+        final summaryEvent = _firstEvent(canaryEvents, 'haptic_canary_summary');
+        final endEvent = _firstEvent(canaryEvents, 'end');
+        final ack = asMap(ackEvent['ack']);
+        final bridgeRequest = asMap(executeRequestEvent['bridgeRequest']);
+        final bridgeRequestInput = asMap(bridgeRequest['input']);
+        final executeAck = asMap(executeAckEvent['executeAck']);
+        final executeAckResult = asMap(executeAck['result']);
+        final toolUseFrame = asMap(toolUseEvent['frame']);
+        final toolUseInput = asMap(toolUseFrame['input']);
+        final toolResultFrame = asMap(toolResultEvent['frame']);
+        final toolResult = asMap(toolResultFrame['result']);
+        final toolResultPayload = asMap(toolResult['result']);
+        final expectedEventOrder = <String>[
+          'ack',
+          'tool_plan_summary',
+          'bridge_execute_request',
+          'bridge_execute_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'haptic_canary_summary',
+          'end',
+        ];
+        final observedEventOrder =
+            canaryEvents.map((event) => event['event']?.toString()).toList();
+        eventOrderOk = observedEventOrder.length >= expectedEventOrder.length;
+        for (var i = 0; i < expectedEventOrder.length && eventOrderOk; i++) {
+          eventOrderOk = observedEventOrder[i] == expectedEventOrder[i];
+        }
+
+        ackEventOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == false &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'native_dart_bridge_haptic_canary' &&
+            ackEvent['routeStatus'] ==
+                'native_dart_bridge_haptic_canary_started' &&
+            ackEvent['acceptedForRouting'] == true &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == false &&
+            ackEvent['queueStatus'] == 'native_dart_bridge_haptic_canary' &&
+            providerStillDisabled(ackEvent) &&
+            executionEnabled(ackEvent) &&
+            ack['provider'] == 'openrouter' &&
+            ack['route'] == 'native_dart_bridge_haptic_canary' &&
+            ack['bridgeRequestHash']?.toString().isNotEmpty == true &&
+            ack['dispatchHash']?.toString().isNotEmpty == true &&
+            ack['toolSelectionHash']?.toString().isNotEmpty == true &&
+            durationOk(ack['hapticDurationMs']) &&
+            allowlistOk(ack['canaryAllowlist']) &&
+            ack['canaryAllowlistOk'] == true &&
+            ack['fixtureParityOk'] == true &&
+            ack['dispatchParityOk'] == true &&
+            providerStillDisabled(ack) &&
+            executionEnabled(ack);
+        toolPlanSummaryOk = planEvent['ok'] == true &&
+            planEvent['runtime'] == 'native-node-embedded' &&
+            allowlistOk(planEvent['forcedAllowlist']) &&
+            planEvent['fixtureParityOk'] == true &&
+            planEvent['dispatchParityOk'] == true &&
+            planEvent['canaryAllowlistOk'] == true &&
+            providerStillDisabled(planEvent) &&
+            executionEnabled(planEvent);
+        executeRequestOk = executeRequestEvent['ok'] == true &&
+            executeRequestEvent['runtime'] == 'native-node-embedded' &&
+            executeRequestEvent['endpoint'] ==
+                'http://127.0.0.1:8765/api/native-gateway/dispatch-execute-canary' &&
+            bridgeRequest['type'] == 'native_tool_dispatch_execute_canary' &&
+            bridgeRequest['method'] == 'haptic.vibrate' &&
+            bridgeRequest['capability'] == 'haptic' &&
+            bridgeRequest['dartCapability'] == 'HapticCapability' &&
+            bridgeRequest['requiresUiThread'] == false &&
+            bridgeRequest['bridgeRequestHash']?.toString().isNotEmpty == true &&
+            bridgeRequest['dispatchHash']?.toString().isNotEmpty == true &&
+            bridgeRequest['cancellationToken']?.toString().isNotEmpty == true &&
+            allowlistOk(bridgeRequest['canaryAllowlist']) &&
+            durationOk(bridgeRequestInput['durationMs']) &&
+            bridgeRequest['dryRun'] == false &&
+            providerStillDisabled(bridgeRequest) &&
+            executionEnabled(bridgeRequest);
+        executeAckOk = executeAckEvent['ok'] == true &&
+            executeAckEvent['runtime'] == 'native-node-embedded' &&
+            executeAckEvent['statusCode'] == 200 &&
+            executeAckEvent['bridgeRequestHash'] ==
+                bridgeRequest['bridgeRequestHash'] &&
+            executeAckEvent['executeAckHash']?.toString().isNotEmpty == true &&
+            executeAckEvent['executeParityOk'] == true &&
+            executeAck['ok'] == true &&
+            executeAck['accepted'] == true &&
+            executeAck['executed'] == true &&
+            executeAck['runtime'] == 'flutter-dart' &&
+            executeAck['bridge'] == 'AgentSkillServer' &&
+            executeAck['source'] == 'native-dart-bridge-haptic-canary' &&
+            executeAck['routeStatus'] ==
+                'native_dart_bridge_haptic_canary_ack' &&
+            executeAck['command'] == 'haptic.vibrate' &&
+            executeAck['commandKnown'] == true &&
+            executeAck['canaryAllowlistOk'] == true &&
+            executeAck['dryRun'] == false &&
+            executeAck['durationBounded'] == true &&
+            durationOk(executeAck['durationMs']) &&
+            executeAck['bridgeRequestHash'] ==
+                bridgeRequest['bridgeRequestHash'] &&
+            resultStatusOk(executeAckResult['status']) &&
+            providerStillDisabled(executeAck) &&
+            executionEnabled(executeAck);
+        toolUseOk = toolUseEvent['ok'] == true &&
+            toolUseEvent['runtime'] == 'native-node-embedded' &&
+            toolUseFrame['type'] == 'tool_use' &&
+            toolUseFrame['name'] == 'haptic.vibrate' &&
+            toolUseFrame['runtime'] == 'native-node-embedded' &&
+            toolUseFrame['source'] == 'native-dart-bridge-haptic-canary' &&
+            toolUseFrame['canaryMode'] == 'native-dart-bridge-haptic-canary' &&
+            toolUseFrame['dryRun'] == false &&
+            toolUseFrame['canaryOnly'] == true &&
+            toolUseFrame['cancellationToken']?.toString().isNotEmpty == true &&
+            durationOk(toolUseInput['durationMs']) &&
+            toolFrameExecutionEnabled(toolUseFrame);
+        toolResultOk = toolResultEvent['ok'] == true &&
+            toolResultEvent['runtime'] == 'native-node-embedded' &&
+            toolResultFrame['type'] == 'tool_result' &&
+            toolResultFrame['name'] == 'haptic.vibrate' &&
+            toolResultFrame['id'] == toolUseFrame['id'] &&
+            toolResultFrame['runtime'] == 'native-node-embedded' &&
+            toolResultFrame['source'] == 'native-dart-bridge-haptic-canary' &&
+            toolResultFrame['dryRun'] == false &&
+            toolResult['ok'] == true &&
+            toolResult['dryRun'] == false &&
+            toolResult['executed'] == true &&
+            toolResult['accepted'] == true &&
+            resultStatusOk(toolResult['status']) &&
+            resultStatusOk(toolResultPayload['status']) &&
+            toolResult['canaryAllowlistOk'] == true &&
+            durationOk(toolResult['durationMs']) &&
+            providerStillDisabled(toolResult) &&
+            executionEnabled(toolResult) &&
+            toolFrameExecutionEnabled(toolResultFrame);
+        summaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['runtime'] == 'native-node-embedded' &&
+            summaryEvent['toolName'] == 'haptic.vibrate' &&
+            summaryEvent['capability'] == 'haptic' &&
+            summaryEvent['dartCapability'] == 'HapticCapability' &&
+            durationOk(summaryEvent['durationMs']) &&
+            resultStatusOk(summaryEvent['resultStatus']) &&
+            summaryEvent['canaryAllowlistOk'] == true &&
+            summaryEvent['executeParityOk'] == true &&
+            summaryEvent['validationOk'] == true &&
+            providerStillDisabled(summaryEvent) &&
+            executionEnabled(summaryEvent);
+        endOk = endEvent['ok'] == true &&
+            endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['routeStatus'] ==
+                'native_dart_bridge_haptic_canary_complete' &&
+            endEvent['finishReason'] ==
+                'native_dart_bridge_haptic_canary_complete' &&
+            endEvent['toolName'] == 'haptic.vibrate' &&
+            endEvent['capability'] == 'haptic' &&
+            endEvent['canaryAllowlistOk'] == true &&
+            endEvent['executeParityOk'] == true &&
+            endEvent['validationOk'] == true &&
+            providerStillDisabled(endEvent) &&
+            executionEnabled(endEvent);
+        hapticCanaryOk = ackEventOk &&
+            toolPlanSummaryOk &&
+            executeRequestOk &&
+            executeAckOk &&
+            toolUseOk &&
+            toolResultOk &&
+            summaryOk &&
+            eventOrderOk &&
+            endOk;
+
+        postCanaryHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postCanaryProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postCanaryGuardOk = postCanaryHealth['ok'] == true &&
+            postCanaryHealth['runtime'] == 'native-node-embedded' &&
+            postCanaryHealth['port'] == AppConstants.gatewayPort &&
+            postCanaryHealth['productionPortBindCanary'] == true &&
+            postCanaryHealth['openclawStarted'] == false &&
+            postCanaryProbe['runtime'] == 'native-node-embedded' &&
+            postCanaryProbe['port'] == AppConstants.gatewayPort &&
+            postCanaryProbe['productionPortBindCanary'] == true &&
+            postCanaryProbe['canaryOnly'] == true &&
+            postCanaryProbe['productionReady'] == false &&
+            postCanaryProbe['openclawStarted'] == false &&
+            postCanaryProbe['chatRoutingEnabled'] == false &&
+            postCanaryProbe['providerCallsEnabled'] == false &&
+            postCanaryProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (canarySent) {
+          canaryError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          hapticCanaryOk &&
+          postCanaryGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final ackEvent = _firstEvent(canaryEvents, 'ack');
+      final summaryEvent = _firstEvent(canaryEvents, 'haptic_canary_summary');
+      final endEvent = _firstEvent(canaryEvents, 'end');
+      final ack = asMap(ackEvent['ack']);
+      final executeRequestEvent =
+          _firstEvent(canaryEvents, 'bridge_execute_request');
+      final executeAckEvent = _firstEvent(canaryEvents, 'bridge_execute_ack');
+      final bridgeRequest = asMap(executeRequestEvent['bridgeRequest']);
+      final executeAck = asMap(executeAckEvent['executeAck']);
+      final observedEventOrder =
+          canaryEvents.map((event) => event['event']?.toString()).toList();
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-bridge-execution-haptic-canary',
+        'mode':
+            'native-production-port-bridge-execution-haptic-canary-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'canarySent': canarySent,
+        'hapticCanaryOk': hapticCanaryOk,
+        'ackEventOk': ackEventOk,
+        'toolPlanSummaryOk': toolPlanSummaryOk,
+        'executeRequestOk': executeRequestOk,
+        'executeAckOk': executeAckOk,
+        'toolUseOk': toolUseOk,
+        'toolResultOk': toolResultOk,
+        'summaryOk': summaryOk,
+        'eventOrderOk': eventOrderOk,
+        'endOk': endOk,
+        'eventsCount': canaryEvents.length,
+        'observedEventOrder': observedEventOrder,
+        'executeRequestEventsCount':
+            eventsNamed('bridge_execute_request').length,
+        'executeAckEventsCount': eventsNamed('bridge_execute_ack').length,
+        'toolUseEventsCount': eventsNamed('tool_use_frame').length,
+        'toolResultEventsCount': eventsNamed('tool_result_frame').length,
+        'routeStatus': endEvent['routeStatus'] ?? ack['routeStatus'],
+        'finishReason': endEvent['finishReason'],
+        'provider': ack['provider'],
+        'requestedModel': ack['requestedModel'],
+        'providerModel': ack['providerModel'],
+        'transport': ack['transport'],
+        'requestHash': ack['requestHash'] ?? endEvent['requestHash'],
+        'toolSelectionHash':
+            ack['toolSelectionHash'] ?? summaryEvent['toolSelectionHash'],
+        'dispatchHash': ack['dispatchHash'] ?? summaryEvent['dispatchHash'],
+        'bridgeRequestHash': bridgeRequest['bridgeRequestHash'] ??
+            summaryEvent['bridgeRequestHash'],
+        'executeAckHash':
+            executeAckEvent['executeAckHash'] ?? summaryEvent['executeAckHash'],
+        'command': summaryEvent['toolName'] ?? endEvent['toolName'],
+        'capability': summaryEvent['capability'] ?? endEvent['capability'],
+        'dartCapability': summaryEvent['dartCapability'],
+        'canaryAllowlist':
+            ack['canaryAllowlist'] ?? bridgeRequest['canaryAllowlist'],
+        'canaryAllowlistOk': summaryEvent['canaryAllowlistOk'] == true ||
+            endEvent['canaryAllowlistOk'] == true,
+        'durationMs': summaryEvent['durationMs'] ??
+            executeAck['durationMs'] ??
+            ack['hapticDurationMs'],
+        'durationBounded': durationOk(
+          summaryEvent['durationMs'] ?? executeAck['durationMs'],
+        ),
+        'resultStatus': summaryEvent['resultStatus'] ??
+            asMap(executeAck['result'])['status'],
+        'fixtureParityOk': ack['fixtureParityOk'] == true ||
+            summaryEvent['fixtureParityOk'] == true,
+        'dispatchParityOk': ack['dispatchParityOk'] == true ||
+            summaryEvent['dispatchParityOk'] == true,
+        'executeParityOk': summaryEvent['executeParityOk'] == true ||
+            endEvent['executeParityOk'] == true,
+        'validationOk': summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'transportInvocationEnabled':
+            ackEvent['transportInvocationEnabled'] == true ||
+                ack['transportInvocationEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabled': endEvent['bridgeExecutionEnabled'] == true,
+        if (canaryError != null) 'canaryError': canaryError.toString(),
+        'postCanaryGuardOk': postCanaryGuardOk,
+        'postCanaryRuntimeReported': postCanaryHealth['runtime'],
+        'postCanaryCanaryOnly': postCanaryProbe['canaryOnly'] == true,
+        'postCanaryChatRoutingEnabled':
+            postCanaryProbe['chatRoutingEnabled'] == true,
+        'postCanaryProviderCallsEnabled':
+            postCanaryProbe['providerCallsEnabled'] == true,
+        'postCanaryToolExecutionEnabled':
+            postCanaryProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMsTotal': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, executed one bounded haptic.vibrate bridge canary through Dart, and PRoot was restored.'
+            : 'Production-port haptic bridge execution canary is not promotable; PRoot rollback was attempted.',
+        'nextGate': 'production-port avatar bridge execution canary allowlist',
+      };
+      log('[NATIVE-HAPTIC-EXEC-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortBridgeHapticCanaryInFlight = false;
     }
   }
 
