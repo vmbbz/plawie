@@ -57,6 +57,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortToolDispatchInFlight = false;
   static bool _productionPortDartBridgeInFlight = false;
   static bool _productionPortDartBridgeOrderingInFlight = false;
+  static bool _productionPortBridgeReadOnlyCanaryInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -7288,6 +7289,747 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortDartBridgeOrderingInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortBridgeExecutionReadOnlyCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native production read-only bridge execution canary: check flash and list sensors',
+  }) async {
+    if (_productionPortBridgeReadOnlyCanaryInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-bridge-execution-readonly-canary',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port read-only bridge execution canary is already running.',
+      };
+    }
+
+    _productionPortBridgeReadOnlyCanaryInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final requestedModel =
+          model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+      final providerHint = requestedModel.contains('/')
+          ? requestedModel.split('/').first
+          : 'openrouter';
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var canarySent = false;
+      var ackEventOk = false;
+      var toolPlanSummaryOk = false;
+      var executeRequestOrderOk = false;
+      var executeAckOrderOk = false;
+      var toolUseOrderOk = false;
+      var toolResultOrderOk = false;
+      var summaryOk = false;
+      var eventOrderOk = false;
+      var endOk = false;
+      var readOnlyCanaryOk = false;
+      var postCanaryGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postCanaryHealth = <String, dynamic>{};
+      Map<String, dynamic> postCanaryProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> canaryEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? canaryError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      Map<String, dynamic> asMap(Object? value) => value is Map
+          ? value.map((key, value) => MapEntry(key.toString(), value))
+          : <String, dynamic>{};
+      List<Map<String, dynamic>> eventsNamed(String name) => canaryEvents
+          .where((event) => event['event'] == name)
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+      Map<String, dynamic> eventByOrder(String name, int orderIndex) {
+        for (final event in canaryEvents) {
+          if (event['event'] == name && event['orderIndex'] == orderIndex) {
+            return event;
+          }
+        }
+        return <String, dynamic>{};
+      }
+
+      bool providerStillDisabled(Map<String, dynamic> value) =>
+          value['providerCallsEnabled'] != true &&
+          value['transportInvocationEnabled'] != true;
+      bool executionEnabled(Map<String, dynamic> value) =>
+          value['executionEnabled'] == true &&
+          value['toolExecutionEnabled'] == true &&
+          value['bridgeExecutionEnabled'] == true;
+      bool toolFrameExecutionEnabled(Map<String, dynamic> value) =>
+          value['executionEnabled'] == true &&
+          value['toolExecutionEnabled'] == true;
+      String expectedCapability(String toolName) {
+        if (toolName == 'flash.status') return 'flash';
+        if (toolName == 'sensor.list') return 'sensor';
+        return 'unknown';
+      }
+
+      String expectedDartCapability(String toolName) {
+        if (toolName == 'flash.status') return 'FlashCapability';
+        if (toolName == 'sensor.list') return 'SensorCapability';
+        return 'unknown';
+      }
+
+      bool listMatchesStrings(Object? value, List<String> expected) {
+        if (value is! List || value.length != expected.length) return false;
+        for (var i = 0; i < expected.length; i++) {
+          if (value[i] != expected[i]) return false;
+        }
+        return true;
+      }
+
+      bool allowlistOk(Object? value) {
+        if (value is! List) return false;
+        final strings = value.map((entry) => entry.toString()).toSet();
+        return strings.length == 2 &&
+            strings.contains('flash.status') &&
+            strings.contains('sensor.list');
+      }
+
+      bool resultShapeOk(String toolName, Map<String, dynamic> result) {
+        if (toolName == 'flash.status') {
+          return result['on'] is bool;
+        }
+        if (toolName == 'sensor.list') {
+          final sensors = result['sensors'];
+          return sensors is List && sensors.isNotEmpty;
+        }
+        return false;
+      }
+
+      log(
+        '[NATIVE-BRIDGE-EXEC-OWNER] Opening read-only bridge execution canary.',
+      );
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Read-only bridge execution canary requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before read-only bridge execution canary.',
+          );
+        }
+
+        log('[NATIVE-BRIDGE-EXEC-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before read-only bridge execution canary.',
+          );
+        }
+
+        log(
+          '[NATIVE-BRIDGE-EXEC-OWNER] Starting native on 18789 and executing read-only allowlisted bridge calls.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError(
+            'Native read-only bridge execution canary did not start.',
+          );
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        canarySent = true;
+        canaryEvents = await _streamProductionNdjson(
+          '/gateway/chat-native-dart-bridge-readonly-canary-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-bridge-exec-readonly-request',
+            idempotencyKey: 'production-bridge-exec-readonly-idempotency-key',
+            model: requestedModel,
+            provider: providerHint,
+            message: prompt,
+          ),
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 30),
+        );
+
+        final ackEvent = _firstEvent(canaryEvents, 'ack');
+        final planEvent = _firstEvent(canaryEvents, 'tool_plan_summary');
+        final summaryEvent =
+            _firstEvent(canaryEvents, 'readonly_canary_summary');
+        final endEvent = _firstEvent(canaryEvents, 'end');
+        final ack = asMap(ackEvent['ack']);
+        const expectedTools = <String>['flash.status', 'sensor.list'];
+        final executeRequestEvents = eventsNamed('bridge_execute_request');
+        final executeAckEvents = eventsNamed('bridge_execute_ack');
+        final toolUseEvents = eventsNamed('tool_use_frame');
+        final toolResultEvents = eventsNamed('tool_result_frame');
+        final expectedEventOrder = <String>[
+          'ack',
+          'tool_plan_summary',
+          'bridge_execute_request',
+          'bridge_execute_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'bridge_execute_request',
+          'bridge_execute_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'readonly_canary_summary',
+          'end',
+        ];
+        final observedEventOrder =
+            canaryEvents.map((event) => event['event']?.toString()).toList();
+        eventOrderOk = observedEventOrder.length >= expectedEventOrder.length;
+        for (var i = 0; i < expectedEventOrder.length && eventOrderOk; i++) {
+          eventOrderOk = observedEventOrder[i] == expectedEventOrder[i];
+        }
+
+        ackEventOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == false &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'native_dart_bridge_readonly_canary' &&
+            ackEvent['routeStatus'] ==
+                'native_dart_bridge_readonly_canary_started' &&
+            ackEvent['acceptedForRouting'] == true &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == false &&
+            ackEvent['queueStatus'] == 'native_dart_bridge_readonly_canary' &&
+            providerStillDisabled(ackEvent) &&
+            executionEnabled(ackEvent) &&
+            ack['provider'] == 'openrouter' &&
+            ack['route'] == 'native_dart_bridge_readonly_canary' &&
+            ack['readOnlyPlanHash']?.toString().isNotEmpty == true &&
+            allowlistOk(ack['canaryAllowlist']) &&
+            ack['canaryAllowlistOk'] == true &&
+            ack['fixtureParityOk'] == true &&
+            ack['dispatchParityOk'] == true &&
+            ack['readOnly'] == true &&
+            providerStillDisabled(ack) &&
+            executionEnabled(ack);
+        toolPlanSummaryOk = planEvent['ok'] == true &&
+            planEvent['runtime'] == 'native-node-embedded' &&
+            planEvent['readOnlyPlanHash'] == ack['readOnlyPlanHash'] &&
+            planEvent['orderCount'] == 2 &&
+            listMatchesStrings(planEvent['expectedOrder'], expectedTools) &&
+            allowlistOk(planEvent['forcedAllowlist']) &&
+            planEvent['fixtureParityOk'] == true &&
+            planEvent['dispatchParityOk'] == true &&
+            planEvent['canaryAllowlistOk'] == true &&
+            planEvent['readOnly'] == true &&
+            providerStillDisabled(planEvent) &&
+            executionEnabled(planEvent);
+
+        bool executeRequestOkForOrder(int orderIndex, String toolName) {
+          final event = eventByOrder('bridge_execute_request', orderIndex);
+          final request = asMap(event['bridgeRequest']);
+          final input = asMap(request['input']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              event['endpoint'] ==
+                  'http://127.0.0.1:8765/api/native-gateway/dispatch-execute-canary' &&
+              request['type'] == 'native_tool_dispatch_execute_canary' &&
+              request['method'] == toolName &&
+              request['capability'] == expectedCapability(toolName) &&
+              request['dartCapability'] == expectedDartCapability(toolName) &&
+              request['requiresUiThread'] == false &&
+              request['orderIndex'] == orderIndex &&
+              request['orderCount'] == 2 &&
+              request['bridgeRequestHash']?.toString().isNotEmpty == true &&
+              request['dispatchHash']?.toString().isNotEmpty == true &&
+              request['cancellationToken']?.toString().isNotEmpty == true &&
+              allowlistOk(request['canaryAllowlist']) &&
+              input.isEmpty &&
+              request['readOnly'] == true &&
+              request['dryRun'] == false &&
+              providerStillDisabled(request) &&
+              executionEnabled(request);
+        }
+
+        bool executeAckOkForOrder(int orderIndex, String toolName) {
+          final request = asMap(
+            eventByOrder('bridge_execute_request', orderIndex)['bridgeRequest'],
+          );
+          final event = eventByOrder('bridge_execute_ack', orderIndex);
+          final executeAck = asMap(event['executeAck']);
+          final result = asMap(executeAck['result']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              event['statusCode'] == 200 &&
+              event['bridgeRequestHash'] == request['bridgeRequestHash'] &&
+              event['executeAckHash']?.toString().isNotEmpty == true &&
+              event['executeParityOk'] == true &&
+              event['resultStatus'] == 'ok' &&
+              event['resultShapeOk'] == true &&
+              executeAck['ok'] == true &&
+              executeAck['accepted'] == true &&
+              executeAck['executed'] == true &&
+              executeAck['runtime'] == 'flutter-dart' &&
+              executeAck['bridge'] == 'AgentSkillServer' &&
+              executeAck['source'] == 'native-dart-bridge-readonly-canary' &&
+              executeAck['routeStatus'] ==
+                  'native_dart_bridge_readonly_canary_ack' &&
+              executeAck['command'] == toolName &&
+              executeAck['commandKnown'] == true &&
+              executeAck['canaryAllowlistOk'] == true &&
+              executeAck['dryRun'] == false &&
+              executeAck['bridgeRequestHash'] == request['bridgeRequestHash'] &&
+              resultShapeOk(toolName, result) &&
+              providerStillDisabled(executeAck) &&
+              executionEnabled(executeAck);
+        }
+
+        bool toolUseOkForOrder(int orderIndex, String toolName) {
+          final event = eventByOrder('tool_use_frame', orderIndex);
+          final frame = asMap(event['frame']);
+          final input = asMap(frame['input']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              frame['type'] == 'tool_use' &&
+              frame['name'] == toolName &&
+              frame['runtime'] == 'native-node-embedded' &&
+              frame['source'] == 'native-dart-bridge-readonly-canary' &&
+              frame['dryRun'] == false &&
+              frame['readOnly'] == true &&
+              frame['canaryOnly'] == true &&
+              frame['orderIndex'] == orderIndex &&
+              frame['orderCount'] == 2 &&
+              frame['cancellationToken']?.toString().isNotEmpty == true &&
+              input.isEmpty &&
+              toolFrameExecutionEnabled(frame);
+        }
+
+        bool toolResultOkForOrder(int orderIndex, String toolName) {
+          final useFrame = asMap(
+            eventByOrder('tool_use_frame', orderIndex)['frame'],
+          );
+          final event = eventByOrder('tool_result_frame', orderIndex);
+          final frame = asMap(event['frame']);
+          final result = asMap(frame['result']);
+          final payload = asMap(result['result']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              frame['type'] == 'tool_result' &&
+              frame['name'] == toolName &&
+              frame['id'] == useFrame['id'] &&
+              frame['runtime'] == 'native-node-embedded' &&
+              frame['source'] == 'native-dart-bridge-readonly-canary' &&
+              frame['dryRun'] == false &&
+              frame['readOnly'] == true &&
+              result['ok'] == true &&
+              result['dryRun'] == false &&
+              result['executed'] == true &&
+              result['accepted'] == true &&
+              result['status'] == 'ok' &&
+              result['canaryAllowlistOk'] == true &&
+              result['resultShapeOk'] == true &&
+              result['readOnly'] == true &&
+              resultShapeOk(toolName, payload) &&
+              providerStillDisabled(result) &&
+              executionEnabled(result) &&
+              toolFrameExecutionEnabled(frame);
+        }
+
+        executeRequestOrderOk = executeRequestEvents.length == 2 &&
+            executeRequestOkForOrder(0, expectedTools[0]) &&
+            executeRequestOkForOrder(1, expectedTools[1]);
+        executeAckOrderOk = executeAckEvents.length == 2 &&
+            executeAckOkForOrder(0, expectedTools[0]) &&
+            executeAckOkForOrder(1, expectedTools[1]);
+        toolUseOrderOk = toolUseEvents.length == 2 &&
+            toolUseOkForOrder(0, expectedTools[0]) &&
+            toolUseOkForOrder(1, expectedTools[1]);
+        toolResultOrderOk = toolResultEvents.length == 2 &&
+            toolResultOkForOrder(0, expectedTools[0]) &&
+            toolResultOkForOrder(1, expectedTools[1]);
+        summaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['runtime'] == 'native-node-embedded' &&
+            summaryEvent['readOnlyPlanHash'] == ack['readOnlyPlanHash'] &&
+            summaryEvent['commandCount'] == 2 &&
+            listMatchesStrings(summaryEvent['expectedOrder'], expectedTools) &&
+            listMatchesStrings(summaryEvent['observedOrder'], expectedTools) &&
+            summaryEvent['canaryAllowlistOk'] == true &&
+            summaryEvent['executeParityOk'] == true &&
+            summaryEvent['validationOk'] == true &&
+            summaryEvent['readOnly'] == true &&
+            providerStillDisabled(summaryEvent) &&
+            executionEnabled(summaryEvent);
+        endOk = endEvent['ok'] == true &&
+            endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['routeStatus'] ==
+                'native_dart_bridge_readonly_canary_complete' &&
+            endEvent['finishReason'] ==
+                'native_dart_bridge_readonly_canary_complete' &&
+            endEvent['readOnlyPlanHash'] == ack['readOnlyPlanHash'] &&
+            endEvent['commandCount'] == 2 &&
+            listMatchesStrings(endEvent['expectedOrder'], expectedTools) &&
+            listMatchesStrings(endEvent['observedOrder'], expectedTools) &&
+            endEvent['canaryAllowlistOk'] == true &&
+            endEvent['executeParityOk'] == true &&
+            endEvent['validationOk'] == true &&
+            endEvent['readOnly'] == true &&
+            providerStillDisabled(endEvent) &&
+            executionEnabled(endEvent);
+        readOnlyCanaryOk = ackEventOk &&
+            toolPlanSummaryOk &&
+            executeRequestOrderOk &&
+            executeAckOrderOk &&
+            toolUseOrderOk &&
+            toolResultOrderOk &&
+            summaryOk &&
+            eventOrderOk &&
+            endOk;
+
+        postCanaryHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postCanaryProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postCanaryGuardOk = postCanaryHealth['ok'] == true &&
+            postCanaryHealth['runtime'] == 'native-node-embedded' &&
+            postCanaryHealth['port'] == AppConstants.gatewayPort &&
+            postCanaryHealth['productionPortBindCanary'] == true &&
+            postCanaryHealth['openclawStarted'] == false &&
+            postCanaryProbe['runtime'] == 'native-node-embedded' &&
+            postCanaryProbe['port'] == AppConstants.gatewayPort &&
+            postCanaryProbe['productionPortBindCanary'] == true &&
+            postCanaryProbe['canaryOnly'] == true &&
+            postCanaryProbe['productionReady'] == false &&
+            postCanaryProbe['openclawStarted'] == false &&
+            postCanaryProbe['chatRoutingEnabled'] == false &&
+            postCanaryProbe['providerCallsEnabled'] == false &&
+            postCanaryProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (canarySent) {
+          canaryError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          readOnlyCanaryOk &&
+          postCanaryGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final ackEvent = _firstEvent(canaryEvents, 'ack');
+      final summaryEvent = _firstEvent(canaryEvents, 'readonly_canary_summary');
+      final endEvent = _firstEvent(canaryEvents, 'end');
+      final ack = asMap(ackEvent['ack']);
+      final executeRequestEvents = eventsNamed('bridge_execute_request');
+      final executeAckEvents = eventsNamed('bridge_execute_ack');
+      final toolUseEvents = eventsNamed('tool_use_frame');
+      final toolResultEvents = eventsNamed('tool_result_frame');
+      final observedEventOrder =
+          canaryEvents.map((event) => event['event']?.toString()).toList();
+      final bridgeRequestHashes = executeRequestEvents
+          .map((event) => asMap(event['bridgeRequest'])['bridgeRequestHash'])
+          .where((value) => value != null)
+          .toList();
+      final executeAckHashes = executeAckEvents
+          .map((event) => event['executeAckHash'])
+          .where((value) => value != null)
+          .toList();
+      final resultStatuses = summaryEvent['resultStatuses'] is List
+          ? List<dynamic>.from(summaryEvent['resultStatuses'] as List)
+          : const <dynamic>[];
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-bridge-execution-readonly-canary',
+        'mode':
+            'native-production-port-bridge-execution-readonly-canary-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'canarySent': canarySent,
+        'readOnlyCanaryOk': readOnlyCanaryOk,
+        'ackEventOk': ackEventOk,
+        'toolPlanSummaryOk': toolPlanSummaryOk,
+        'executeRequestOrderOk': executeRequestOrderOk,
+        'executeAckOrderOk': executeAckOrderOk,
+        'toolUseOrderOk': toolUseOrderOk,
+        'toolResultOrderOk': toolResultOrderOk,
+        'summaryOk': summaryOk,
+        'eventOrderOk': eventOrderOk,
+        'endOk': endOk,
+        'eventsCount': canaryEvents.length,
+        'observedEventOrder': observedEventOrder,
+        'executeRequestEventsCount': executeRequestEvents.length,
+        'executeAckEventsCount': executeAckEvents.length,
+        'toolUseEventsCount': toolUseEvents.length,
+        'toolResultEventsCount': toolResultEvents.length,
+        'routeStatus': endEvent['routeStatus'] ?? ack['routeStatus'],
+        'finishReason': endEvent['finishReason'],
+        'provider': ack['provider'],
+        'requestedModel': ack['requestedModel'],
+        'providerModel': ack['providerModel'],
+        'transport': ack['transport'],
+        'requestHash': ack['requestHash'] ?? endEvent['requestHash'],
+        'readOnlyPlanHash':
+            ack['readOnlyPlanHash'] ?? summaryEvent['readOnlyPlanHash'],
+        'bridgeRequestHashes': bridgeRequestHashes,
+        'executeAckHashes': executeAckHashes,
+        'fixtureParityOk': ack['fixtureParityOk'] == true ||
+            summaryEvent['fixtureParityOk'] == true,
+        'dispatchParityOk': ack['dispatchParityOk'] == true ||
+            summaryEvent['dispatchParityOk'] == true,
+        'commandCount':
+            summaryEvent['commandCount'] ?? endEvent['commandCount'],
+        'expectedOrder':
+            summaryEvent['expectedOrder'] ?? endEvent['expectedOrder'],
+        'observedOrder':
+            summaryEvent['observedOrder'] ?? endEvent['observedOrder'],
+        'resultStatuses': resultStatuses,
+        'canaryAllowlist': ack['canaryAllowlist'],
+        'canaryAllowlistOk': summaryEvent['canaryAllowlistOk'] == true ||
+            endEvent['canaryAllowlistOk'] == true,
+        'executeParityOk': summaryEvent['executeParityOk'] == true ||
+            endEvent['executeParityOk'] == true,
+        'validationOk': summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'readOnly':
+            summaryEvent['readOnly'] == true || endEvent['readOnly'] == true,
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'transportInvocationEnabled':
+            ackEvent['transportInvocationEnabled'] == true ||
+                ack['transportInvocationEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabled': endEvent['bridgeExecutionEnabled'] == true,
+        if (canaryError != null) 'canaryError': canaryError.toString(),
+        'postCanaryGuardOk': postCanaryGuardOk,
+        'postCanaryRuntimeReported': postCanaryHealth['runtime'],
+        'postCanaryCanaryOnly': postCanaryProbe['canaryOnly'] == true,
+        'postCanaryChatRoutingEnabled':
+            postCanaryProbe['chatRoutingEnabled'] == true,
+        'postCanaryProviderCallsEnabled':
+            postCanaryProbe['providerCallsEnabled'] == true,
+        'postCanaryToolExecutionEnabled':
+            postCanaryProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, executed only read-only allowlisted bridge canaries through Dart, and PRoot was restored.'
+            : 'Production-port read-only bridge execution canary is not promotable; PRoot rollback was attempted.',
+        'nextGate': 'production-port haptic bridge execution canary allowlist',
+      };
+      log('[NATIVE-BRIDGE-EXEC-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortBridgeReadOnlyCanaryInFlight = false;
     }
   }
 

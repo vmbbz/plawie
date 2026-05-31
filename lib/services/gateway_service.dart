@@ -4195,6 +4195,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionBridgeExecutionReadOnlyPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-bridge-exec-owner',
+      '/native-production-bridge-exec',
+      '/native-readonly-exec-owner',
+      '/native-production-readonly-exec',
+      'native-bridge-exec-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production read-only bridge execution canary: check flash and list sensors';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production read-only bridge execution canary: check flash and list sensors'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -8091,6 +8117,96 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionBridgeExecutionReadOnlyMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionBridgeExecutionReadOnlyPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-BRIDGE-EXEC-OWNER] -> Opening production-port read-only bridge execution canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortBridgeExecutionReadOnlyCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-BRIDGE-EXEC-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final observedOrder = report['observedOrder'] is List
+          ? (report['observedOrder'] as List).join(', ')
+          : '';
+      final observedEventOrder = report['observedEventOrder'] is List
+          ? (report['observedEventOrder'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native production read-only bridge execution canary complete'
+            : 'Native production read-only bridge execution canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'canarySent: ${report['canarySent'] == true}',
+        'readOnlyCanaryOk: ${report['readOnlyCanaryOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'executeRequestOrderOk: ${report['executeRequestOrderOk'] == true}',
+        'executeAckOrderOk: ${report['executeAckOrderOk'] == true}',
+        'toolUseOrderOk: ${report['toolUseOrderOk'] == true}',
+        'toolResultOrderOk: ${report['toolResultOrderOk'] == true}',
+        'summaryOk: ${report['summaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'finishReason: ${report['finishReason'] ?? 'unknown'}',
+        'commandCount: ${report['commandCount'] ?? 0}',
+        'expectedOrder: ${_compactJsonValue(report['expectedOrder'])}',
+        'observedOrder: $observedOrder',
+        'observedEventOrder: $observedEventOrder',
+        'resultStatuses: ${_compactJsonValue(report['resultStatuses'])}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'readOnly: ${report['readOnly'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-BRIDGE-EXEC-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -8103,6 +8219,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionBridgeExecutionReadOnlyPayload(message) != null) {
+      yield* _sendNativeProductionBridgeExecutionReadOnlyMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionDartBridgeOrderingPayload(message) != null) {
       yield* _sendNativeProductionDartBridgeOrderingMessage(
