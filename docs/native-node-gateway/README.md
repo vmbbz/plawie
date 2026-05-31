@@ -99,6 +99,9 @@ native Node bind the real production port `18789` with routing/providers/tools
 still disabled, then stops native and rolls back to PRoot,
 can run an explicit `/native-port-bind-soak` that repeats the guarded `18789`
 handoff and rollback cycle with bounded diagnostics,
+can run an explicit `/native-runtime-owner` canary that lets embedded native
+Node own `18789` for a bounded guarded diagnostics window before automatically
+rolling back to PRoot,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -171,6 +174,7 @@ be safely generalized.
 | [43-native-runtime-selection-canary.md](43-native-runtime-selection-canary.md) | Explicit `/native-runtime-select` UI turns proving side-by-side runtime selection guards |
 | [44-native-production-port-bind-canary.md](44-native-production-port-bind-canary.md) | Explicit `/native-port-bind-canary` UI turns proving native can bind `18789` only after PRoot stop and rollback |
 | [45-native-production-port-bind-soak.md](45-native-production-port-bind-soak.md) | Explicit `/native-port-bind-soak` diagnostics proving repeatable guarded `18789` handoff and rollback |
+| [46-native-runtime-owner-canary.md](46-native-runtime-owner-canary.md) | Explicit `/native-runtime-owner` diagnostics proving bounded native ownership of `18789` with automatic PRoot rollback |
 
 ## Work Rules
 

@@ -122,6 +122,9 @@ class AgentSkillServer {
     } else if (request.method == 'POST' &&
         path == '/api/native-gateway/production-port-bind-soak') {
       await _handleNativeGatewayProductionPortBindSoak(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/runtime-owner-canary') {
+      await _handleNativeGatewayRuntimeOwnerCanary(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -201,6 +204,45 @@ class AgentSkillServer {
           : int.tryParse(rawCycles?.toString() ?? '') ?? 3;
       final report = await NativeGatewaySmokeService.runProductionPortBindSoak(
         cycles: cycles,
+        log: (message) => debugPrint('[GATEWAY] $message'),
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
+    }
+  }
+
+  Future<void> _handleNativeGatewayRuntimeOwnerCanary(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      final rawBody = await utf8.decoder.bind(request).join();
+      final body = rawBody.trim().isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(rawBody) as Map<String, dynamic>;
+      final rawHoldSeconds = body['holdSeconds'];
+      final holdSeconds = rawHoldSeconds is num
+          ? rawHoldSeconds.toInt()
+          : int.tryParse(rawHoldSeconds?.toString() ?? '') ?? 5;
+      final report = await NativeGatewaySmokeService.runRuntimeOwnerCanary(
+        holdSeconds: holdSeconds,
         log: (message) => debugPrint('[GATEWAY] $message'),
       );
       _sendJson(request, report);

@@ -3921,6 +3921,29 @@ $message''';
     return null;
   }
 
+  int? _nativeRuntimeOwnerCanaryHoldSeconds(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-runtime-owner',
+      '/native-owner-canary',
+      '/native-owner',
+      'native-runtime-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) return 5;
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        final firstToken =
+            payload.isEmpty ? null : payload.split(RegExp(r'\s+')).first;
+        return int.tryParse(firstToken ?? '') ?? 5;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -6922,6 +6945,68 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeRuntimeOwnerCanaryMessage(String message) async* {
+    final holdSeconds = _nativeRuntimeOwnerCanaryHoldSeconds(message);
+    if (holdSeconds == null) return;
+    _addActivity(
+      '[NATIVE-OWNER-CANARY] -> Opening temporary runtime owner canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService.runRuntimeOwnerCanary(
+        holdSeconds: holdSeconds,
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      final ownerProbeFailures = report['ownerProbeFailures'] is List
+          ? (report['ownerProbeFailures'] as List).length
+          : 0;
+      _addActivity(
+        '[NATIVE-OWNER-CANARY] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native runtime-owner canary complete'
+            : 'Native runtime-owner canary pending',
+        '',
+        'holdSeconds: ${report['holdSeconds'] ?? holdSeconds}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'nativeOwnerProbesOk: ${report['nativeOwnerProbesOk'] == true}',
+        'ownerProbeCount: ${report['ownerProbeCount'] ?? 0}',
+        'ownerProbeFailures: $ownerProbeFailures',
+        'nativePortReported: ${report['nativePortReported'] ?? 'unknown'}',
+        'nativeProductionPortBindCanary: ${report['nativeProductionPortBindCanary'] == true}',
+        'nativeCanaryOnly: ${report['nativeCanaryOnly'] == true}',
+        'nativeOpenClawStarted: ${report['nativeOpenClawStarted'] == true}',
+        'nativeChatRoutingEnabled: ${report['nativeChatRoutingEnabled'] == true}',
+        'nativeProviderCallsEnabled: ${report['nativeProviderCallsEnabled'] == true}',
+        'nativeToolExecutionEnabled: ${report['nativeToolExecutionEnabled'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? 'Runtime-owner canary finished.'}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-OWNER-CANARY] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6934,6 +7019,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeRuntimeOwnerCanaryHoldSeconds(message) != null) {
+      yield* _sendNativeRuntimeOwnerCanaryMessage(message);
+      return;
+    }
 
     if (_nativeProductionPortSoakCycles(message) != null) {
       yield* _sendNativeProductionPortSoakMessage(message);
