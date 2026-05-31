@@ -50,6 +50,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortRouteOwnerInFlight = false;
   static bool _productionPortProviderEnvelopeInFlight = false;
   static bool _productionPortProviderBuilderInFlight = false;
+  static bool _productionPortProviderTransportInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -2763,6 +2764,588 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderBuilderInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderTransportShimDryRun({
+    required void Function(String message) log,
+  }) async {
+    if (_productionPortProviderTransportInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-transport-shim-dry-run',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port provider transport shim dry-run is already running.',
+      };
+    }
+
+    _productionPortProviderTransportInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var transportDryRunSent = false;
+      var transportAckOk = false;
+      var transportShimOk = false;
+      var abortContractOk = false;
+      var transportGateOk = false;
+      var shimValidationOk = false;
+      var transportOrderOk = false;
+      var transportEndOk = false;
+      var transportDryRunOk = false;
+      var postTransportGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postTransportHealth = <String, dynamic>{};
+      Map<String, dynamic> postTransportProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> transportEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? transportError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-TRANSPORT-OWNER] Opening provider transport shim dry-run.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Provider transport shim dry-run requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before transport shim dry-run.',
+          );
+        }
+
+        log('[NATIVE-TRANSPORT-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before transport shim dry-run.',
+          );
+        }
+
+        log(
+          '[NATIVE-TRANSPORT-OWNER] Starting native on 18789 and proving '
+          'transport abort before DNS/TLS/provider billing.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError(
+            'Native provider transport shim dry-run did not start.',
+          );
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        transportDryRunSent = true;
+        transportEvents = await _streamProductionNdjson(
+          '/gateway/chat-provider-transport-shim-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-provider-transport-request',
+            idempotencyKey: 'production-provider-transport-idempotency-key',
+            model: 'openrouter/auto',
+            provider: 'openrouter',
+          ),
+          expectedStatus: 202,
+        );
+
+        final ackEvent = _firstEvent(transportEvents, 'ack');
+        final shimEvent = _firstEvent(transportEvents, 'transport_shim');
+        final abortEvent = _firstEvent(transportEvents, 'abort_contract');
+        final gateEvent = _firstEvent(transportEvents, 'transport_gate');
+        final validationEvent = _firstEvent(transportEvents, 'shim_validation');
+        final endEvent = _firstEvent(transportEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final transportShim = shimEvent['transportShim'] is Map
+            ? Map<String, dynamic>.from(shimEvent['transportShim'] as Map)
+            : <String, dynamic>{};
+        final transportObject = transportShim['transportObject'] is Map
+            ? Map<String, dynamic>.from(
+                transportShim['transportObject'] as Map,
+              )
+            : <String, dynamic>{};
+        final abortContract = abortEvent['abortContract'] is Map
+            ? Map<String, dynamic>.from(abortEvent['abortContract'] as Map)
+            : <String, dynamic>{};
+        final networkProbe = abortEvent['networkProbe'] is Map
+            ? Map<String, dynamic>.from(abortEvent['networkProbe'] as Map)
+            : <String, dynamic>{};
+        final transportGate = gateEvent['gate'] is Map
+            ? Map<String, dynamic>.from(gateEvent['gate'] as Map)
+            : <String, dynamic>{};
+        final shimValidation = validationEvent['shimValidation'] is Map
+            ? Map<String, dynamic>.from(
+                validationEvent['shimValidation'] as Map,
+              )
+            : <String, dynamic>{};
+        final observedOrder =
+            transportEvents.map((event) => event['event']?.toString()).toList();
+        const expectedOrder = <String>[
+          'ack',
+          'transport_shim',
+          'abort_contract',
+          'transport_gate',
+          'shim_validation',
+          'delta',
+          'delta',
+          'end',
+        ];
+        transportOrderOk = observedOrder.length >= expectedOrder.length;
+        for (var i = 0; i < expectedOrder.length && transportOrderOk; i++) {
+          transportOrderOk = observedOrder[i] == expectedOrder[i];
+        }
+
+        final headersHash = transportShim['headersHash']?.toString() ?? '';
+        final bodyHash = transportShim['bodyHash']?.toString() ?? '';
+        final requestHash = transportShim['requestHash']?.toString() ?? '';
+        final transportHash = transportShim['transportHash']?.toString() ?? '';
+        transportAckOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == true &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'disabled' &&
+            ackEvent['routeStatus'] == 'aborted_before_dns' &&
+            ackEvent['acceptedForRouting'] == false &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == true &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['providerCallsEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ackEvent['transportInvocationEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            ack['requestedModel'] == 'openrouter/auto' &&
+            ack['transport'] == 'openai-compatible-chat-completions' &&
+            ack['validationOk'] == true &&
+            ack['abortStage'] == 'before_dns' &&
+            ack['abortedLocally'] == true &&
+            ack['dnsLookupStarted'] == false &&
+            ack['tlsHandshakeStarted'] == false &&
+            ack['socketOpened'] == false &&
+            ack['requestBytesWritten'] == 0 &&
+            ack['providerBillingSurfaceReached'] == false &&
+            ack['transportInvocationEnabled'] == false &&
+            ack['providerCallsEnabled'] != true &&
+            ack['executionEnabled'] != true;
+        transportShimOk = shimEvent['ok'] == true &&
+            transportShim['provider'] == 'openrouter' &&
+            transportShim['requestedModel'] == 'openrouter/auto' &&
+            transportShim['providerModel'] == 'openrouter/auto' &&
+            transportShim['transport'] ==
+                'openai-compatible-chat-completions' &&
+            transportShim['stopBefore'] == 'dns_tls_socket_or_fetch' &&
+            transportShim['validationOk'] == true &&
+            headersHash.isNotEmpty &&
+            bodyHash.isNotEmpty &&
+            requestHash.isNotEmpty &&
+            transportHash.isNotEmpty &&
+            transportObject['adapter'] == 'native-node-fetch-compatible-shim' &&
+            transportObject['method'] == 'POST' &&
+            transportObject['streamExpected'] == true &&
+            transportObject['outboundNetworkEnabled'] == false &&
+            transportObject['transportInvocationEnabled'] == false &&
+            transportObject['providerCallsEnabled'] == false &&
+            transportObject['executionEnabled'] == false;
+        abortContractOk = abortEvent['ok'] == true &&
+            abortContract['abortControllerCreated'] == true &&
+            abortContract['signalAttached'] == true &&
+            abortContract['abortedLocally'] == true &&
+            abortContract['abortStage'] == 'before_dns' &&
+            networkProbe['dnsLookupStarted'] == false &&
+            networkProbe['tlsHandshakeStarted'] == false &&
+            networkProbe['socketOpened'] == false &&
+            networkProbe['requestBytesWritten'] == 0 &&
+            networkProbe['responseBytesRead'] == 0 &&
+            networkProbe['providerBillingSurfaceReached'] == false;
+        transportGateOk = gateEvent['ok'] == true &&
+            gateEvent['transportInvocationEnabled'] == false &&
+            gateEvent['providerCallsEnabled'] == false &&
+            transportGate['enabled'] == false &&
+            transportGate['status'] == 'aborted_locally' &&
+            transportGate['blockedBefore'] == 'dns_lookup';
+        shimValidationOk = validationEvent['ok'] == true &&
+            validationEvent['validationOk'] == true &&
+            shimValidation['adapterSelected'] == true &&
+            shimValidation['endpointResolved'] == true &&
+            shimValidation['signalAttached'] == true &&
+            shimValidation['abortedBeforeDns'] == true &&
+            shimValidation['noSocketOpened'] == true &&
+            shimValidation['noBytesWritten'] == true &&
+            shimValidation['billingSurfaceUnreached'] == true;
+        transportEndOk = endEvent['ok'] == true &&
+            endEvent['finishReason'] == 'provider_transport_shim_complete' &&
+            endEvent['provider'] == 'openrouter' &&
+            endEvent['requestedModel'] == 'openrouter/auto' &&
+            endEvent['validationOk'] == true &&
+            endEvent['transportInvocationEnabled'] == false &&
+            endEvent['providerCallsEnabled'] == false &&
+            endEvent['executionEnabled'] == false;
+        transportDryRunOk = transportAckOk &&
+            transportShimOk &&
+            abortContractOk &&
+            transportGateOk &&
+            shimValidationOk &&
+            transportOrderOk &&
+            transportEndOk;
+
+        postTransportHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postTransportProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postTransportGuardOk = postTransportHealth['ok'] == true &&
+            postTransportHealth['runtime'] == 'native-node-embedded' &&
+            postTransportHealth['port'] == AppConstants.gatewayPort &&
+            postTransportHealth['productionPortBindCanary'] == true &&
+            postTransportHealth['openclawStarted'] == false &&
+            postTransportProbe['runtime'] == 'native-node-embedded' &&
+            postTransportProbe['port'] == AppConstants.gatewayPort &&
+            postTransportProbe['productionPortBindCanary'] == true &&
+            postTransportProbe['canaryOnly'] == true &&
+            postTransportProbe['productionReady'] == false &&
+            postTransportProbe['openclawStarted'] == false &&
+            postTransportProbe['chatRoutingEnabled'] == false &&
+            postTransportProbe['providerCallsEnabled'] == false &&
+            postTransportProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (transportDryRunSent) {
+          transportError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          transportDryRunOk &&
+          postTransportGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final observedOrder =
+          transportEvents.map((event) => event['event']?.toString()).toList();
+      final ackEvent = _firstEvent(transportEvents, 'ack');
+      final shimEvent = _firstEvent(transportEvents, 'transport_shim');
+      final abortEvent = _firstEvent(transportEvents, 'abort_contract');
+      final gateEvent = _firstEvent(transportEvents, 'transport_gate');
+      final validationEvent = _firstEvent(transportEvents, 'shim_validation');
+      final endEvent = _firstEvent(transportEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final transportShim = shimEvent['transportShim'] is Map
+          ? Map<String, dynamic>.from(shimEvent['transportShim'] as Map)
+          : <String, dynamic>{};
+      final abortContract = abortEvent['abortContract'] is Map
+          ? Map<String, dynamic>.from(abortEvent['abortContract'] as Map)
+          : <String, dynamic>{};
+      final networkProbe = abortEvent['networkProbe'] is Map
+          ? Map<String, dynamic>.from(abortEvent['networkProbe'] as Map)
+          : <String, dynamic>{};
+      final transportGate = gateEvent['gate'] is Map
+          ? Map<String, dynamic>.from(gateEvent['gate'] as Map)
+          : <String, dynamic>{};
+      final shimValidation = validationEvent['shimValidation'] is Map
+          ? Map<String, dynamic>.from(
+              validationEvent['shimValidation'] as Map,
+            )
+          : <String, dynamic>{};
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-provider-transport-shim-dry-run',
+        'mode': 'native-production-port-provider-transport-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'transportDryRunSent': transportDryRunSent,
+        'transportDryRunOk': transportDryRunOk,
+        'transportAckOk': transportAckOk,
+        'transportShimOk': transportShimOk,
+        'abortContractOk': abortContractOk,
+        'transportGateOk': transportGateOk,
+        'shimValidationOk': shimValidationOk,
+        'transportOrderOk': transportOrderOk,
+        'transportEndOk': transportEndOk,
+        'transportEventsCount': transportEvents.length,
+        'transportObservedOrder': observedOrder,
+        'transportRouteStatus': ackEvent['routeStatus'] ?? ack['routeStatus'],
+        'transportFinishReason': endEvent['finishReason'],
+        'provider': transportShim['provider'] ?? ack['provider'],
+        'requestedModel':
+            transportShim['requestedModel'] ?? ack['requestedModel'],
+        'providerModel': transportShim['providerModel'],
+        'transport': transportShim['transport'] ?? ack['transport'],
+        'headersHash': transportShim['headersHash'] ?? ack['headersHash'],
+        'bodyHash': transportShim['bodyHash'] ?? ack['bodyHash'],
+        'requestHash': transportShim['requestHash'] ?? ack['requestHash'],
+        'transportHash': transportShim['transportHash'] ?? ack['transportHash'],
+        'validationOk': transportShim['validationOk'] == true ||
+            validationEvent['validationOk'] == true,
+        'abortStage': abortContract['abortStage'] ?? ack['abortStage'],
+        'abortedLocally': abortContract['abortedLocally'] == true ||
+            ack['abortedLocally'] == true,
+        'dnsLookupStarted': networkProbe['dnsLookupStarted'] == true ||
+            ack['dnsLookupStarted'] == true,
+        'tlsHandshakeStarted': networkProbe['tlsHandshakeStarted'] == true ||
+            ack['tlsHandshakeStarted'] == true,
+        'socketOpened':
+            networkProbe['socketOpened'] == true || ack['socketOpened'] == true,
+        'requestBytesWritten':
+            networkProbe['requestBytesWritten'] ?? ack['requestBytesWritten'],
+        'responseBytesRead': networkProbe['responseBytesRead'],
+        'providerBillingSurfaceReached':
+            networkProbe['providerBillingSurfaceReached'] == true ||
+                ack['providerBillingSurfaceReached'] == true,
+        'shimAdapterSelected': shimValidation['adapterSelected'] == true,
+        'shimEndpointResolved': shimValidation['endpointResolved'] == true,
+        'outboundNetworkEnabled': false,
+        'transportInvocationEnabled':
+            transportShim['transportInvocationEnabled'] == true ||
+                ackEvent['transportInvocationEnabled'] == true,
+        'transportGateEnabled': transportGate['enabled'] == true,
+        'transportGateStatus': transportGate['status'],
+        'transportBlockedBefore': transportGate['blockedBefore'],
+        'transportAcceptedForRouting': ackEvent['acceptedForRouting'] == true,
+        'transportProviderCallsEnabled':
+            ackEvent['providerCallsEnabled'] == true,
+        'transportExecutionEnabled': ackEvent['executionEnabled'] == true,
+        'transportRunId': ack['runId'],
+        'transportRequestId': ack['requestId'],
+        if (transportError != null) 'transportError': transportError.toString(),
+        'postTransportGuardOk': postTransportGuardOk,
+        'postTransportRuntimeReported': postTransportHealth['runtime'],
+        'postTransportCanaryOnly': postTransportProbe['canaryOnly'] == true,
+        'postTransportChatRoutingEnabled':
+            postTransportProbe['chatRoutingEnabled'] == true,
+        'postTransportProviderCallsEnabled':
+            postTransportProbe['providerCallsEnabled'] == true,
+        'postTransportToolExecutionEnabled':
+            postTransportProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, constructed the provider transport shim, aborted before DNS/TLS/provider billing, and PRoot was restored.'
+            : 'Production-port provider transport shim dry-run is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'native production-port bounded live provider canary with explicit provider calls toggle',
+      };
+      log('[NATIVE-TRANSPORT-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortProviderTransportInFlight = false;
     }
   }
 

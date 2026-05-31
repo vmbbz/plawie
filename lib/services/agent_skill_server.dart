@@ -135,6 +135,10 @@ class AgentSkillServer {
         path ==
             '/api/native-gateway/production-provider-request-builder-dry-run') {
       await _handleNativeGatewayProductionProviderRequestBuilderDryRun(request);
+    } else if (request.method == 'POST' &&
+        path ==
+            '/api/native-gateway/production-provider-transport-shim-dry-run') {
+      await _handleNativeGatewayProductionProviderTransportShimDryRun(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -349,6 +353,38 @@ class AgentSkillServer {
       await utf8.decoder.bind(request).join();
       final report = await NativeGatewaySmokeService
           .runProductionPortProviderRequestBuilderDryRun(
+        log: (message) => debugPrint('[GATEWAY] $message'),
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
+    }
+  }
+
+  Future<void> _handleNativeGatewayProductionProviderTransportShimDryRun(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      await utf8.decoder.bind(request).join();
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderTransportShimDryRun(
         log: (message) => debugPrint('[GATEWAY] $message'),
       );
       _sendJson(request, report);

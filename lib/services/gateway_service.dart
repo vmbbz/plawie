@@ -4014,6 +4014,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderTransportPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-transport-owner',
+      '/native-production-transport',
+      '/native-provider-transport-owner',
+      '/native-transport-shim-owner',
+      'native-transport-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'production provider transport shim dry-run';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'production provider transport shim dry-run'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7278,6 +7304,82 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderTransportMessage(
+    String message,
+  ) async* {
+    final payload = _nativeProductionProviderTransportPayload(message);
+    if (payload == null) return;
+    _addActivity(
+      '[NATIVE-TRANSPORT-OWNER] -> Opening production-port provider transport shim dry-run',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderTransportShimDryRun(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-TRANSPORT-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production provider transport shim dry-run complete'
+            : 'Native production provider transport shim dry-run pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'transportDryRunSent: ${report['transportDryRunSent'] == true}',
+        'transportDryRunOk: ${report['transportDryRunOk'] == true}',
+        'transportAckOk: ${report['transportAckOk'] == true}',
+        'transportShimOk: ${report['transportShimOk'] == true}',
+        'abortContractOk: ${report['abortContractOk'] == true}',
+        'transportGateOk: ${report['transportGateOk'] == true}',
+        'shimValidationOk: ${report['shimValidationOk'] == true}',
+        'transportOrderOk: ${report['transportOrderOk'] == true}',
+        'transportEndOk: ${report['transportEndOk'] == true}',
+        'transportRouteStatus: ${report['transportRouteStatus'] ?? 'unknown'}',
+        'transportFinishReason: ${report['transportFinishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'requestedModel: ${report['requestedModel'] ?? 'unknown'}',
+        'validationOk: ${report['validationOk'] == true}',
+        'abortStage: ${report['abortStage'] ?? 'unknown'}',
+        'abortedLocally: ${report['abortedLocally'] == true}',
+        'dnsLookupStarted: ${report['dnsLookupStarted'] == true}',
+        'tlsHandshakeStarted: ${report['tlsHandshakeStarted'] == true}',
+        'socketOpened: ${report['socketOpened'] == true}',
+        'requestBytesWritten: ${report['requestBytesWritten'] ?? 'unknown'}',
+        'providerBillingSurfaceReached: ${report['providerBillingSurfaceReached'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'transportProviderCallsEnabled: ${report['transportProviderCallsEnabled'] == true}',
+        'transportExecutionEnabled: ${report['transportExecutionEnabled'] == true}',
+        'postTransportGuardOk: ${report['postTransportGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-TRANSPORT-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7290,6 +7392,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderTransportPayload(message) != null) {
+      yield* _sendNativeProductionProviderTransportMessage(message);
+      return;
+    }
 
     if (_nativeProductionProviderBuilderPayload(message) != null) {
       yield* _sendNativeProductionProviderBuilderMessage(message);

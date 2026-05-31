@@ -187,6 +187,7 @@ be safely generalized.
 | [47-native-route-owner-dry-run.md](47-native-route-owner-dry-run.md) | Explicit `/native-route-owner` diagnostics proving native accepts route dry-runs on `18789` and rolls back to PRoot |
 | [48-native-provider-owner-envelope.md](48-native-provider-owner-envelope.md) | Explicit `/native-provider-owner` diagnostics proving native builds provider envelopes on `18789` while outbound network remains disabled |
 | [49-native-provider-owner-builder.md](49-native-provider-owner-builder.md) | Explicit `/native-builder-owner` diagnostics proving native normalizes provider requests on `18789` before transport invocation |
+| [50-native-provider-owner-transport.md](50-native-provider-owner-transport.md) | Explicit `/native-transport-owner` diagnostics proving native constructs transport on `18789` and aborts before DNS/provider billing |
 
 ## Work Rules
 
