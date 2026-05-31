@@ -97,6 +97,8 @@ an isolated side-by-side canary on `18790`,
 can run an explicit `/native-port-bind-canary` that stops PRoot, lets embedded
 native Node bind the real production port `18789` with routing/providers/tools
 still disabled, then stops native and rolls back to PRoot,
+can run an explicit `/native-port-bind-soak` that repeats the guarded `18789`
+handoff and rollback cycle with bounded diagnostics,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -168,6 +170,7 @@ be safely generalized.
 | [42-native-dart-bridge-avatar-canary.md](42-native-dart-bridge-avatar-canary.md) | Explicit `/native-dart-bridge-avatar` UI turns executing one protected visible avatar gesture canary |
 | [43-native-runtime-selection-canary.md](43-native-runtime-selection-canary.md) | Explicit `/native-runtime-select` UI turns proving side-by-side runtime selection guards |
 | [44-native-production-port-bind-canary.md](44-native-production-port-bind-canary.md) | Explicit `/native-port-bind-canary` UI turns proving native can bind `18789` only after PRoot stop and rollback |
+| [45-native-production-port-bind-soak.md](45-native-production-port-bind-soak.md) | Explicit `/native-port-bind-soak` diagnostics proving repeatable guarded `18789` handoff and rollback |
 
 ## Work Rules
 

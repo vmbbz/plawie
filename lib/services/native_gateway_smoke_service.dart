@@ -45,6 +45,7 @@ class NativeGatewaySmokeService {
   static bool _startupSelfTestInFlight = false;
   static bool _canaryComparisonInFlight = false;
   static bool _productionPortBindInFlight = false;
+  static bool _productionPortBindSoakInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -768,6 +769,122 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortBindInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runProductionPortBindSoak({
+    required void Function(String message) log,
+    int cycles = 3,
+  }) async {
+    if (_productionPortBindSoakInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-bind-soak',
+        'alreadyInFlight': true,
+        'decision': 'Production-port bind soak is already running.',
+      };
+    }
+
+    final requestedCycles = cycles;
+    final normalizedCycles = cycles.clamp(1, 5).toInt();
+    _productionPortBindSoakInFlight = true;
+    final startedAt = DateTime.now();
+    final reports = <Map<String, dynamic>>[];
+    Map<String, dynamic> finalProductionHealth = <String, dynamic>{};
+    Map<String, dynamic> finalNativeSmokeHealth = <String, dynamic>{};
+    Object? finalProductionHealthError;
+    Object? finalNativeSmokeHealthError;
+    var failedCycle = 0;
+
+    try {
+      log(
+        '[NATIVE-PORT-SOAK] Starting $normalizedCycles guarded '
+        'production-port bind cycles.',
+      );
+
+      for (var cycle = 1; cycle <= normalizedCycles; cycle++) {
+        log('[NATIVE-PORT-SOAK] Cycle $cycle/$normalizedCycles opening.');
+        final report = await runProductionPortBindCanary(log: log);
+        reports.add({
+          'cycle': cycle,
+          ...report,
+        });
+        if (report['ok'] != true) {
+          failedCycle = cycle;
+          log('[NATIVE-PORT-SOAK] Cycle $cycle failed; stopping soak.');
+          break;
+        }
+        if (cycle < normalizedCycles) {
+          await Future<void>.delayed(const Duration(seconds: 3));
+        }
+      }
+
+      try {
+        finalProductionHealth = await _probeProductionJson(
+          '/health',
+          attempts: 20,
+          retryDelay: const Duration(milliseconds: 500),
+          requestTimeout: const Duration(seconds: 1),
+        );
+      } catch (e) {
+        finalProductionHealthError = e;
+      }
+
+      try {
+        finalNativeSmokeHealth = await _probeHealth(
+          expectedRuntime: 'native-node-embedded',
+        );
+      } catch (e) {
+        finalNativeSmokeHealthError = e;
+      }
+
+      final passedCycles =
+          reports.where((report) => report['ok'] == true).length;
+      final finalProductionOk = finalProductionHealth['ok'] == true ||
+          finalProductionHealth['status'] == 'ok' ||
+          finalProductionHealth.isNotEmpty;
+      final finalNativeSmokeOk =
+          finalNativeSmokeHealth['runtime'] == 'native-node-embedded' &&
+              finalNativeSmokeHealth['port'] ==
+                  AppConstants.nativeGatewaySmokePort &&
+              finalNativeSmokeHealth['productionPortBindCanary'] != true &&
+              finalNativeSmokeHealth['openclawStarted'] == false;
+      final ok = failedCycle == 0 &&
+          passedCycles == normalizedCycles &&
+          finalProductionOk &&
+          finalNativeSmokeOk;
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-bind-soak',
+        'mode': 'repeat-stop-proot-bind-native-rollback-proot',
+        'requestedCycles': requestedCycles,
+        'cycles': normalizedCycles,
+        'passedCycles': passedCycles,
+        'failedCycle': failedCycle == 0 ? null : failedCycle,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'finalProductionHealthOk': finalProductionOk,
+        'finalProductionRuntimeReported': finalProductionHealth['runtime'],
+        if (finalProductionHealthError != null)
+          'finalProductionHealthError': finalProductionHealthError.toString(),
+        'finalNativeSmokeHealthOk': finalNativeSmokeOk,
+        'finalNativeSmokeRuntimeReported': finalNativeSmokeHealth['runtime'],
+        'finalNativeSmokePortReported': finalNativeSmokeHealth['port'],
+        if (finalNativeSmokeHealthError != null)
+          'finalNativeSmokeHealthError': finalNativeSmokeHealthError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'reports': reports,
+        'decision': ok
+            ? 'Native survived repeated guarded ownership handoffs; PRoot and smoke lanes were restored.'
+            : 'Production-port ownership soak is not promotable; inspect failedCycle and final health.',
+        'nextGate':
+            'hidden runtime-owner selection toggle with automatic rollback',
+      };
+      log('[NATIVE-PORT-SOAK] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortBindSoakInFlight = false;
     }
   }
 

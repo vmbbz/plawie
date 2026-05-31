@@ -3898,6 +3898,29 @@ $message''';
     return null;
   }
 
+  int? _nativeProductionPortSoakCycles(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-port-bind-soak',
+      '/native-production-port-soak',
+      '/native-production-soak',
+      'native-port-bind-soak',
+    };
+    for (final command in commands) {
+      if (lower == command) return 3;
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        final firstToken =
+            payload.isEmpty ? null : payload.split(RegExp(r'\s+')).first;
+        return int.tryParse(firstToken ?? '') ?? 3;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -6859,6 +6882,46 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionPortSoakMessage(String message) async* {
+    final cycles = _nativeProductionPortSoakCycles(message);
+    if (cycles == null) return;
+    _addActivity(
+      '[NATIVE-PORT-SOAK] -> Starting guarded production-port bind soak',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService.runProductionPortBindSoak(
+        cycles: cycles,
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-PORT-SOAK] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production-port bind soak complete'
+            : 'Native production-port bind soak pending',
+        '',
+        'cycles: ${report['cycles'] ?? cycles}',
+        'passedCycles: ${report['passedCycles'] ?? 0}',
+        'failedCycle: ${report['failedCycle'] ?? 'none'}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'finalProductionHealthOk: ${report['finalProductionHealthOk'] == true}',
+        'finalNativeSmokeHealthOk: ${report['finalNativeSmokeHealthOk'] == true}',
+        'durationMs: ${report['durationMs'] ?? 'unknown'}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? 'Production-port bind soak finished.'}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-PORT-SOAK] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -6871,6 +6934,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionPortSoakCycles(message) != null) {
+      yield* _sendNativeProductionPortSoakMessage(message);
+      return;
+    }
 
     if (_nativeProductionPortBindPayload(message) != null) {
       yield* _sendNativeProductionPortBindMessage(message);
