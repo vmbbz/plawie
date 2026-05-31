@@ -188,6 +188,7 @@ be safely generalized.
 | [48-native-provider-owner-envelope.md](48-native-provider-owner-envelope.md) | Explicit `/native-provider-owner` diagnostics proving native builds provider envelopes on `18789` while outbound network remains disabled |
 | [49-native-provider-owner-builder.md](49-native-provider-owner-builder.md) | Explicit `/native-builder-owner` diagnostics proving native normalizes provider requests on `18789` before transport invocation |
 | [50-native-provider-owner-transport.md](50-native-provider-owner-transport.md) | Explicit `/native-transport-owner` diagnostics proving native constructs transport on `18789` and aborts before DNS/provider billing |
+| [51-native-provider-owner-live.md](51-native-provider-owner-live.md) | Explicit `/native-live-owner` diagnostics proving one bounded provider call on `18789` with mandatory rollback |
 
 ## Work Rules
 

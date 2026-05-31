@@ -4040,6 +4040,31 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderLivePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-live-owner',
+      '/native-production-live',
+      '/native-provider-live-owner',
+      'native-live-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production provider live canary';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production provider live canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7380,6 +7405,90 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderLiveMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionProviderLivePayload(message);
+    if (payload == null) return;
+
+    final providerConfig =
+        await resolveNativeProviderLiveCanaryConfig(model: model);
+    if (providerConfig == null) {
+      yield '[Error] Native production provider live canary needs an OpenRouter model with a configured API key.';
+      return;
+    }
+
+    _addActivity(
+      '[NATIVE-LIVE-OWNER] -> Opening production-port provider live canary',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionPortProviderLiveCanary(
+        log: _addActivity,
+        providerConfig: providerConfig,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-LIVE-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production provider live canary complete'
+            : 'Native production provider live canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'liveCanarySent: ${report['liveCanarySent'] == true}',
+        'liveCanaryOk: ${report['liveCanaryOk'] == true}',
+        'liveSuccessOk: ${report['liveSuccessOk'] == true}',
+        'providerRequestOk: ${report['providerRequestOk'] == true}',
+        'providerCallStartedOk: ${report['providerCallStartedOk'] == true}',
+        'providerResponseOk: ${report['providerResponseOk'] == true}',
+        'providerErrorSurfaceOk: ${report['providerErrorSurfaceOk'] == true}',
+        'liveOrderOk: ${report['liveOrderOk'] == true}',
+        'liveEndOk: ${report['liveEndOk'] == true}',
+        'liveRouteStatus: ${report['liveRouteStatus'] ?? 'unknown'}',
+        'liveFinishReason: ${report['liveFinishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'maxTokens: ${report['maxTokens'] ?? 'unknown'}',
+        'apiKeyLoaded: ${report['apiKeyLoaded'] == true}',
+        'providerCallStarted: ${report['providerCallStarted'] == true}',
+        'providerBillingSurfaceReached: ${report['providerBillingSurfaceReached'] == true}',
+        'statusCode: ${report['statusCode'] ?? 'unknown'}',
+        'deltaCount: ${report['deltaCount'] ?? 0}',
+        'textChars: ${report['textChars'] ?? 0}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        'postLiveGuardOk: ${report['postLiveGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-LIVE-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7392,6 +7501,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderLivePayload(message) != null) {
+      yield* _sendNativeProductionProviderLiveMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionProviderTransportPayload(message) != null) {
       yield* _sendNativeProductionProviderTransportMessage(message);
@@ -8532,6 +8649,32 @@ $message''';
     } catch (_) {
       return null;
     }
+  }
+
+  Future<Map<String, dynamic>?> resolveNativeProviderLiveCanaryConfig({
+    String? model,
+  }) async {
+    final requestedModel = (model != null && model.trim().isNotEmpty)
+        ? model.trim()
+        : ModelProviderCatalog.defaultCloudFallbackModel;
+    final route = await _resolveFastCloudRoute(requestedModel);
+    if (route == null || route.provider != 'openrouter') return null;
+
+    final providerModel = route.model.trim();
+    final canaryProviderModel = providerModel == 'openrouter/auto'
+        ? ModelProviderCatalog.defaultCloudFallbackModel
+            .substring('${route.provider}/'.length)
+        : providerModel;
+    return <String, dynamic>{
+      'provider': route.provider,
+      'apiKey': route.apiKey,
+      'endpoint': route.url,
+      'model': canaryProviderModel,
+      'maxTokens': 32,
+      'timeoutMs': 45000,
+      'referer': 'https://github.com/vmbbz/plawie',
+      'title': 'Plawie Native Canary',
+    };
   }
 
   String? _extractProviderApiKey(Map<String, dynamic> config, String provider) {

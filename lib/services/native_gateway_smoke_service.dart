@@ -51,6 +51,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderEnvelopeInFlight = false;
   static bool _productionPortProviderBuilderInFlight = false;
   static bool _productionPortProviderTransportInFlight = false;
+  static bool _productionPortProviderLiveInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -3349,6 +3350,550 @@ class NativeGatewaySmokeService {
     }
   }
 
+  static Future<Map<String, dynamic>> runProductionPortProviderLiveCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt = 'native production provider live canary',
+  }) async {
+    if (_productionPortProviderLiveInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-live-canary',
+        'alreadyInFlight': true,
+        'decision': 'Production-port provider live canary is already running.',
+      };
+    }
+
+    _productionPortProviderLiveInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
+      final providerHint =
+          providerConfigForNative['provider']?.toString().trim();
+      final providerModel = providerConfigForNative['model']?.toString().trim();
+      final apiKeyLoaded =
+          providerConfigForNative['apiKey']?.toString().trim().isNotEmpty ==
+              true;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var liveCanarySent = false;
+      var liveAckOk = false;
+      var providerRequestOk = false;
+      var providerGateOk = false;
+      var providerCallStartedOk = false;
+      var providerResponseOk = false;
+      var providerErrorSurfaceOk = false;
+      var liveOrderOk = false;
+      var liveEndOk = false;
+      var liveSuccessOk = false;
+      var liveCanaryOk = false;
+      var postLiveGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postLiveHealth = <String, dynamic>{};
+      Map<String, dynamic> postLiveProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> liveEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? liveError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-LIVE-OWNER] Opening bounded provider live canary.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Provider live canary requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before live provider canary.',
+          );
+        }
+
+        log('[NATIVE-LIVE-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before live provider canary.',
+          );
+        }
+
+        log(
+          '[NATIVE-LIVE-OWNER] Starting native on 18789 for one bounded '
+          'provider call.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError('Native provider live canary did not start.');
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        liveCanarySent = true;
+        liveEvents = await _streamProductionNdjson(
+          '/gateway/chat-provider-live-canary-stream',
+          {
+            ..._sampleGatewayWsChatSendFrame(
+              requestId: 'production-provider-live-request',
+              idempotencyKey: 'production-provider-live-idempotency-key',
+              model: providerHint == null || providerHint.isEmpty
+                  ? null
+                  : '$providerHint/$providerModel',
+              provider: providerHint,
+              message: prompt,
+            ),
+            'nativeCanaryProviderConfig': providerConfigForNative,
+          },
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 70),
+        );
+
+        final ackEvent = _firstEvent(liveEvents, 'ack');
+        final requestEvent = _firstEvent(liveEvents, 'provider_request');
+        final gateEvent = _firstEvent(liveEvents, 'provider_gate');
+        final callStartedEvent =
+            _firstEvent(liveEvents, 'provider_call_started');
+        final responseEvent = _firstEvent(liveEvents, 'provider_response');
+        final providerErrorEvent = _firstEvent(liveEvents, 'provider_error');
+        final endEvent = _firstEvent(liveEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final providerRequest = requestEvent['providerRequest'] is Map
+            ? Map<String, dynamic>.from(
+                requestEvent['providerRequest'] as Map,
+              )
+            : <String, dynamic>{};
+        final gate = gateEvent['gate'] is Map
+            ? Map<String, dynamic>.from(gateEvent['gate'] as Map)
+            : <String, dynamic>{};
+        final rawProviderError =
+            providerErrorEvent['rawProviderError']?.toString() ??
+                (providerErrorEvent['error'] is Map
+                    ? (providerErrorEvent['error'] as Map)['raw']?.toString()
+                    : null) ??
+                '';
+        final deltaEvents =
+            liveEvents.where((event) => event['event'] == 'delta').toList();
+        final observedOrder =
+            liveEvents.map((event) => event['event']?.toString()).toList();
+        final firstEvents = observedOrder.take(4).toList();
+        liveOrderOk = firstEvents.length >= 2 &&
+            firstEvents[0] == 'ack' &&
+            firstEvents[1] == 'provider_request' &&
+            (firstEvents.length < 3 ||
+                firstEvents[2] == 'provider_call_started' ||
+                firstEvents[2] == 'provider_gate');
+
+        final maxTokens = providerRequest['maxTokens'];
+        final requestBodyBytes = providerRequest['requestBodyBytes'];
+        liveAckOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == false &&
+            ackEvent['parsed'] == true &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            ack['validationOk'] == true &&
+            ack['maxTokens'] is num &&
+            (ack['maxTokens'] as num) <= 32 &&
+            ack['requestBodyBytes'] is num &&
+            (ack['requestBodyBytes'] as num) > 0;
+        providerRequestOk = requestEvent['ok'] == true &&
+            providerRequest['provider'] == 'openrouter' &&
+            providerRequest['transport'] ==
+                'openai-compatible-chat-completions' &&
+            providerRequest['transportInvocationEnabled'] == true &&
+            providerRequest['providerCallsEnabled'] == true &&
+            maxTokens is num &&
+            maxTokens <= 32 &&
+            requestBodyBytes is num &&
+            requestBodyBytes > 0 &&
+            providerRequest['requestHash']?.toString().isNotEmpty == true;
+        providerGateOk = gateEvent.isEmpty ||
+            (gateEvent['ok'] == false &&
+                gate['enabled'] == false &&
+                gate['blockedBefore'] == 'fetch' &&
+                gateEvent['transportInvocationEnabled'] == false &&
+                gateEvent['providerCallsEnabled'] == false);
+        providerCallStartedOk = callStartedEvent['ok'] == true &&
+            callStartedEvent['provider'] == 'openrouter' &&
+            callStartedEvent['providerCallStarted'] == true &&
+            callStartedEvent['providerBillingSurfaceReached'] == true &&
+            callStartedEvent['requestBodyBytes'] is num &&
+            (callStartedEvent['requestBodyBytes'] as num) > 0;
+        providerResponseOk =
+            responseEvent['runtime'] == 'native-node-embedded' &&
+                responseEvent['provider'] == 'openrouter' &&
+                responseEvent['statusCode'] is num;
+        providerErrorSurfaceOk = providerErrorEvent.isNotEmpty &&
+            providerErrorEvent['runtime'] == 'native-node-embedded' &&
+            providerErrorEvent['provider'] == 'openrouter' &&
+            rawProviderError.isNotEmpty &&
+            providerErrorEvent['error'] is Map;
+        liveEndOk = endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['providerCallsEnabled'] == true &&
+            endEvent['executionEnabled'] == false &&
+            endEvent['finishReason'] != null;
+        liveSuccessOk = liveEndOk &&
+            endEvent['ok'] == true &&
+            endEvent['statusCode'] == 200 &&
+            deltaEvents.isNotEmpty &&
+            endEvent['textChars'] is num &&
+            (endEvent['textChars'] as num) > 0;
+        liveCanaryOk = liveAckOk &&
+            providerRequestOk &&
+            providerGateOk &&
+            providerCallStartedOk &&
+            (providerResponseOk || providerErrorSurfaceOk) &&
+            liveOrderOk &&
+            liveEndOk &&
+            (liveSuccessOk || providerErrorSurfaceOk);
+
+        postLiveHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postLiveProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postLiveGuardOk = postLiveHealth['ok'] == true &&
+            postLiveHealth['runtime'] == 'native-node-embedded' &&
+            postLiveHealth['port'] == AppConstants.gatewayPort &&
+            postLiveHealth['productionPortBindCanary'] == true &&
+            postLiveHealth['openclawStarted'] == false &&
+            postLiveProbe['runtime'] == 'native-node-embedded' &&
+            postLiveProbe['port'] == AppConstants.gatewayPort &&
+            postLiveProbe['productionPortBindCanary'] == true &&
+            postLiveProbe['canaryOnly'] == true &&
+            postLiveProbe['productionReady'] == false &&
+            postLiveProbe['openclawStarted'] == false &&
+            postLiveProbe['chatRoutingEnabled'] == false &&
+            postLiveProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (liveCanarySent) {
+          liveError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          liveCanaryOk &&
+          postLiveGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final observedOrder =
+          liveEvents.map((event) => event['event']?.toString()).toList();
+      final ackEvent = _firstEvent(liveEvents, 'ack');
+      final requestEvent = _firstEvent(liveEvents, 'provider_request');
+      final callStartedEvent = _firstEvent(liveEvents, 'provider_call_started');
+      final responseEvent = _firstEvent(liveEvents, 'provider_response');
+      final providerErrorEvent = _firstEvent(liveEvents, 'provider_error');
+      final endEvent = _firstEvent(liveEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final providerRequest = requestEvent['providerRequest'] is Map
+          ? Map<String, dynamic>.from(requestEvent['providerRequest'] as Map)
+          : <String, dynamic>{};
+      final rawProviderError =
+          providerErrorEvent['rawProviderError']?.toString() ??
+              (providerErrorEvent['error'] is Map
+                  ? (providerErrorEvent['error'] as Map)['raw']?.toString()
+                  : null) ??
+              '';
+      final deltaEvents =
+          liveEvents.where((event) => event['event'] == 'delta').toList();
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-provider-live-canary',
+        'mode': 'native-production-port-provider-live-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'liveCanarySent': liveCanarySent,
+        'liveCanaryOk': liveCanaryOk,
+        'liveSuccessOk': liveSuccessOk,
+        'liveAckOk': liveAckOk,
+        'providerRequestOk': providerRequestOk,
+        'providerGateOk': providerGateOk,
+        'providerCallStartedOk': providerCallStartedOk,
+        'providerResponseOk': providerResponseOk,
+        'providerErrorSurfaceOk': providerErrorSurfaceOk,
+        'liveOrderOk': liveOrderOk,
+        'liveEndOk': liveEndOk,
+        'liveEventsCount': liveEvents.length,
+        'liveObservedOrder': observedOrder,
+        'liveRouteStatus': ackEvent['routeStatus'] ?? ack['routeStatus'],
+        'liveFinishReason': endEvent['finishReason'],
+        'provider': providerRequest['provider'] ?? ack['provider'],
+        'requestedModel':
+            providerRequest['requestedModel'] ?? ack['requestedModel'],
+        'providerModel':
+            providerRequest['providerModel'] ?? ack['providerModel'],
+        'transport': providerRequest['transport'] ?? ack['transport'],
+        'requestHash': providerRequest['requestHash'] ?? ack['requestHash'],
+        'maxTokens': providerRequest['maxTokens'] ?? ack['maxTokens'],
+        'promptChars': providerRequest['promptChars'] ?? ack['promptChars'],
+        'requestBodyBytes':
+            providerRequest['requestBodyBytes'] ?? ack['requestBodyBytes'],
+        'apiKeyLoaded': apiKeyLoaded,
+        'providerCallStarted': callStartedEvent['providerCallStarted'] == true,
+        'providerBillingSurfaceReached':
+            callStartedEvent['providerBillingSurfaceReached'] == true,
+        'statusCode': responseEvent['statusCode'] ?? endEvent['statusCode'],
+        'contentType': responseEvent['contentType'],
+        'firstByteMs': responseEvent['firstByteMs'],
+        'firstTokenMs': endEvent['firstTokenMs'],
+        'durationMsProvider': endEvent['durationMs'],
+        'textChars': endEvent['textChars'],
+        'deltaCount': deltaEvents.length,
+        'rawProviderErrorForwarded': rawProviderError.isNotEmpty,
+        if (rawProviderError.isNotEmpty)
+          'rawProviderErrorPreview': rawProviderError.length > 500
+              ? rawProviderError.substring(0, 500)
+              : rawProviderError,
+        if (liveError != null) 'liveError': liveError.toString(),
+        'postLiveGuardOk': postLiveGuardOk,
+        'postLiveRuntimeReported': postLiveHealth['runtime'],
+        'postLiveCanaryOnly': postLiveProbe['canaryOnly'] == true,
+        'postLiveChatRoutingEnabled':
+            postLiveProbe['chatRoutingEnabled'] == true,
+        'postLiveProviderCallsEnabled':
+            postLiveProbe['providerCallsEnabled'] == true,
+        'postLiveToolExecutionEnabled':
+            postLiveProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? (liveSuccessOk
+                ? 'Native owned 18789, completed one bounded provider stream, and PRoot was restored.'
+                : 'Native owned 18789, reached provider and forwarded the raw provider error, and PRoot was restored.')
+            : 'Production-port provider live canary is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'production-port stream parser and cancellation parity under native owner',
+      };
+      log('[NATIVE-LIVE-OWNER] ${jsonEncode({
+            ...report,
+            'rawProviderErrorPreview':
+                rawProviderError.isEmpty ? null : '<redacted in activity log>',
+          })}');
+      return report;
+    } finally {
+      _productionPortProviderLiveInFlight = false;
+    }
+  }
+
   static Future<NativeGatewaySmokeReport> runLifecycleSmokeTest({
     required void Function(String message) log,
     String label = 'manual',
@@ -3772,6 +4317,7 @@ class NativeGatewaySmokeService {
     String idempotencyKey = 'probe-idempotency-key',
     String? model,
     String? provider,
+    String? message,
   }) {
     const mobileContext = '''
 <plawie_mobile_tool_context>
@@ -3788,7 +4334,9 @@ Can you wave right, take a camera picture, and vibrate once?''';
 
     final params = <String, dynamic>{
       'sessionKey': 'main',
-      'message': mobileContext,
+      'message': (message != null && message.trim().isNotEmpty)
+          ? message.trim()
+          : mobileContext,
       'idempotencyKey': idempotencyKey,
       'timeoutMs': 300000,
     };
@@ -3945,6 +4493,7 @@ Can you wave right, take a camera picture, and vibrate once?''';
     String path,
     Map<String, dynamic> payload, {
     required int expectedStatus,
+    Duration streamIdleTimeout = const Duration(seconds: 12),
   }) async {
     final client = http.Client();
     try {
@@ -3967,7 +4516,7 @@ Can you wave right, take a camera picture, and vibrate once?''';
       await for (final line in response.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .timeout(const Duration(seconds: 12))) {
+          .timeout(streamIdleTimeout)) {
         final trimmed = line.trim();
         if (trimmed.isEmpty) continue;
         final decoded = jsonDecode(trimmed);
