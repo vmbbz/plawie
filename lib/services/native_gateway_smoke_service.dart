@@ -56,6 +56,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderToolPlanInFlight = false;
   static bool _productionPortToolDispatchInFlight = false;
   static bool _productionPortDartBridgeInFlight = false;
+  static bool _productionPortDartBridgeOrderingInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -6507,6 +6508,786 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortDartBridgeInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortDartBridgeOrderingCancelDryRun({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native production Dart bridge ordering/cancel dry-run: wave right and vibrate once',
+  }) async {
+    if (_productionPortDartBridgeOrderingInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-dart-bridge-ordering-cancel',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port Dart bridge ordering/cancel dry-run is already running.',
+      };
+    }
+
+    _productionPortDartBridgeOrderingInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final requestedModel =
+          model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+      final providerHint = requestedModel.contains('/')
+          ? requestedModel.split('/').first
+          : 'openrouter';
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var orderingDryRunSent = false;
+      var ackEventOk = false;
+      var orderPlanOk = false;
+      var bridgeRequestOrderOk = false;
+      var bridgeAckOrderOk = false;
+      var toolUseOrderOk = false;
+      var toolResultOrderOk = false;
+      var cancelRequestOk = false;
+      var cancelAckOk = false;
+      var orderingSummaryOk = false;
+      var eventOrderOk = false;
+      var orderingEndOk = false;
+      var orderingCancelOk = false;
+      var postBridgeGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postBridgeHealth = <String, dynamic>{};
+      Map<String, dynamic> postBridgeProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> orderEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? orderingError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      Map<String, dynamic> asMap(Object? value) => value is Map
+          ? value.map((key, value) => MapEntry(key.toString(), value))
+          : <String, dynamic>{};
+      List<Map<String, dynamic>> eventsNamed(String name) => orderEvents
+          .where((event) => event['event'] == name)
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+      Map<String, dynamic> eventByOrder(String name, int orderIndex) {
+        for (final event in orderEvents) {
+          if (event['event'] == name && event['orderIndex'] == orderIndex) {
+            return event;
+          }
+        }
+        return <String, dynamic>{};
+      }
+
+      bool disabledFlags(Map<String, dynamic> value) =>
+          value['providerCallsEnabled'] != true &&
+          value['transportInvocationEnabled'] != true &&
+          value['executionEnabled'] != true &&
+          value['toolExecutionEnabled'] != true &&
+          value['bridgeExecutionEnabled'] != true;
+      bool listMatches(Object? value, List<int> expected) {
+        if (value is! List || value.length != expected.length) return false;
+        for (var i = 0; i < expected.length; i++) {
+          if (value[i] != expected[i]) return false;
+        }
+        return true;
+      }
+
+      log(
+        '[NATIVE-DART-BRIDGE-ORDER-OWNER] Opening bridge ordering/cancel dry-run.',
+      );
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Dart bridge ordering/cancel dry-run requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before Dart bridge ordering/cancel dry-run.',
+          );
+        }
+
+        log(
+          '[NATIVE-DART-BRIDGE-ORDER-OWNER] Stopping PRoot to release 18789.',
+        );
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before Dart bridge ordering/cancel dry-run.',
+          );
+        }
+
+        log(
+          '[NATIVE-DART-BRIDGE-ORDER-OWNER] Starting native on 18789 and sending ordered dry-run bridge requests.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError(
+            'Native Dart bridge ordering/cancel dry-run did not start.',
+          );
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        orderingDryRunSent = true;
+        orderEvents = await _streamProductionNdjson(
+          '/gateway/chat-native-dart-bridge-ordering-cancel-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-dart-bridge-order-request',
+            idempotencyKey: 'production-dart-bridge-order-idempotency-key',
+            model: requestedModel,
+            provider: providerHint,
+            message: prompt,
+          ),
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 25),
+        );
+
+        final ackEvent = _firstEvent(orderEvents, 'ack');
+        final orderPlanEvent = _firstEvent(orderEvents, 'order_plan');
+        final cancelRequestEvent = _firstEvent(orderEvents, 'cancel_request');
+        final cancelAckEvent = _firstEvent(orderEvents, 'cancel_ack');
+        final summaryEvent = _firstEvent(orderEvents, 'ordering_summary');
+        final endEvent = _firstEvent(orderEvents, 'end');
+        final ack = asMap(ackEvent['ack']);
+        final plannedOrder = orderPlanEvent['plannedOrder'] is List
+            ? List<dynamic>.from(orderPlanEvent['plannedOrder'] as List)
+            : const <dynamic>[];
+        const expectedOrder = <int>[0, 1, 2];
+        const cancelOrderIndex = 1;
+        final bridgeRequestEvents = eventsNamed('bridge_request');
+        final bridgeAckEvents = eventsNamed('bridge_ack');
+        final toolUseEvents = eventsNamed('tool_use_frame');
+        final toolResultEvents = eventsNamed('tool_result_frame');
+        final expectedEventOrder = <String>[
+          'ack',
+          'order_plan',
+          'bridge_request',
+          'bridge_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'bridge_request',
+          'bridge_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'bridge_request',
+          'bridge_ack',
+          'tool_use_frame',
+          'tool_result_frame',
+          'cancel_request',
+          'cancel_ack',
+          'ordering_summary',
+          'end',
+        ];
+        final observedEventOrder =
+            orderEvents.map((event) => event['event']?.toString()).toList();
+        eventOrderOk = observedEventOrder.length >= expectedEventOrder.length;
+        for (var i = 0; i < expectedEventOrder.length && eventOrderOk; i++) {
+          eventOrderOk = observedEventOrder[i] == expectedEventOrder[i];
+        }
+
+        ackEventOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == true &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'native_dart_bridge_ordering_cancel' &&
+            ackEvent['routeStatus'] ==
+                'native_dart_bridge_ordering_cancel_started' &&
+            ackEvent['acceptedForRouting'] == true &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == false &&
+            ackEvent['queueStatus'] == 'native_dart_bridge_ordering_cancel' &&
+            disabledFlags(ackEvent) &&
+            ack['provider'] == 'openrouter' &&
+            ack['route'] == 'native_dart_bridge_ordering_cancel' &&
+            ack['orderCount'] == 3 &&
+            ack['cancelOrderIndex'] == cancelOrderIndex &&
+            ack['orderingPlanHash']?.toString().isNotEmpty == true &&
+            ack['fixtureParityOk'] == true &&
+            ack['dispatchParityOk'] == true &&
+            disabledFlags(ack);
+        orderPlanOk = orderPlanEvent['ok'] == true &&
+            orderPlanEvent['runtime'] == 'native-node-embedded' &&
+            orderPlanEvent['orderCount'] == 3 &&
+            orderPlanEvent['cancelOrderIndex'] == cancelOrderIndex &&
+            orderPlanEvent['orderingPlanHash'] == ack['orderingPlanHash'] &&
+            plannedOrder.length == 3 &&
+            disabledFlags(orderPlanEvent);
+
+        bool requestOkForOrder(int orderIndex) {
+          final event = eventByOrder('bridge_request', orderIndex);
+          final request = asMap(event['bridgeRequest']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              event['endpoint'] ==
+                  'http://127.0.0.1:8765/api/native-gateway/dispatch-dry-run' &&
+              request['type'] == 'native_tool_dispatch_dry_run' &&
+              request['method'] == 'avatar.gesture' &&
+              request['capability'] == 'avatar' &&
+              request['dartCapability'] == 'AvatarCapability' &&
+              request['requiresUiThread'] == true &&
+              request['orderIndex'] == orderIndex &&
+              request['orderCount'] == 3 &&
+              request['orderingKey']?.toString().isNotEmpty == true &&
+              request['cancellationToken']?.toString().isNotEmpty == true &&
+              request['bridgeRequestHash']?.toString().isNotEmpty == true &&
+              request['dispatchHash']?.toString().isNotEmpty == true &&
+              request['dryRun'] == true &&
+              disabledFlags(request);
+        }
+
+        bool bridgeAckOkForOrder(int orderIndex) {
+          final requestEvent = eventByOrder('bridge_request', orderIndex);
+          final request = asMap(requestEvent['bridgeRequest']);
+          final event = eventByOrder('bridge_ack', orderIndex);
+          final bridgeAck = asMap(event['bridgeAck']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              event['statusCode'] == 200 &&
+              event['bridgeAckHash']?.toString().isNotEmpty == true &&
+              event['bridgeParityOk'] == true &&
+              bridgeAck['ok'] == true &&
+              bridgeAck['accepted'] == true &&
+              bridgeAck['runtime'] == 'flutter-dart' &&
+              bridgeAck['bridge'] == 'AgentSkillServer' &&
+              bridgeAck['source'] == 'native-dart-bridge-dry-run' &&
+              bridgeAck['routeStatus'] == 'native_dart_bridge_dry_run_ack' &&
+              bridgeAck['command'] == 'avatar.gesture' &&
+              bridgeAck['commandKnown'] == true &&
+              bridgeAck['capability'] == 'avatar' &&
+              bridgeAck['dartCapability'] == 'AvatarCapability' &&
+              bridgeAck['dryRun'] == true &&
+              bridgeAck['orderIndex'] == orderIndex &&
+              bridgeAck['orderCount'] == 3 &&
+              bridgeAck['orderingKey'] == request['orderingKey'] &&
+              bridgeAck['cancellationToken'] == request['cancellationToken'] &&
+              bridgeAck['bridgeRequestHash'] == request['bridgeRequestHash'] &&
+              bridgeAck['skippedReason'] == 'native_dart_bridge_dry_run_only' &&
+              disabledFlags(bridgeAck);
+        }
+
+        bool toolUseOkForOrder(int orderIndex) {
+          final request = asMap(
+            eventByOrder('bridge_request', orderIndex)['bridgeRequest'],
+          );
+          final event = eventByOrder('tool_use_frame', orderIndex);
+          final frame = asMap(event['frame']);
+          final input = asMap(frame['input']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              frame['type'] == 'tool_use' &&
+              frame['name'] == 'avatar.gesture' &&
+              frame['runtime'] == 'native-node-embedded' &&
+              frame['orderIndex'] == orderIndex &&
+              frame['cancellationToken'] == request['cancellationToken'] &&
+              input['gesture']?.toString().isNotEmpty == true &&
+              disabledFlags(frame);
+        }
+
+        bool toolResultOkForOrder(int orderIndex) {
+          final request = asMap(
+            eventByOrder('bridge_request', orderIndex)['bridgeRequest'],
+          );
+          final useFrame =
+              asMap(eventByOrder('tool_use_frame', orderIndex)['frame']);
+          final event = eventByOrder('tool_result_frame', orderIndex);
+          final frame = asMap(event['frame']);
+          final result = asMap(frame['result']);
+          return event['ok'] == true &&
+              event['runtime'] == 'native-node-embedded' &&
+              frame['type'] == 'tool_result' &&
+              frame['name'] == 'avatar.gesture' &&
+              frame['id'] == useFrame['id'] &&
+              frame['runtime'] == 'native-node-embedded' &&
+              frame['orderIndex'] == orderIndex &&
+              result['ok'] == true &&
+              result['dryRun'] == true &&
+              result['bridgeAckReceived'] == true &&
+              result['dartBridgeOk'] == true &&
+              result['dartAccepted'] == true &&
+              result['commandKnown'] == true &&
+              result['orderIndex'] == orderIndex &&
+              result['orderingKey'] == request['orderingKey'] &&
+              result['cancellationToken'] == request['cancellationToken'] &&
+              result['bridgeRequestHash'] == request['bridgeRequestHash'] &&
+              result['skippedReason'] == 'native_dart_bridge_dry_run_only' &&
+              disabledFlags(frame) &&
+              disabledFlags(result);
+        }
+
+        bridgeRequestOrderOk = bridgeRequestEvents.length == 3 &&
+            expectedOrder.every(requestOkForOrder);
+        bridgeAckOrderOk = bridgeAckEvents.length == 3 &&
+            expectedOrder.every(bridgeAckOkForOrder);
+        toolUseOrderOk =
+            toolUseEvents.length == 3 && expectedOrder.every(toolUseOkForOrder);
+        toolResultOrderOk = toolResultEvents.length == 3 &&
+            expectedOrder.every(toolResultOkForOrder);
+
+        final cancelRequest = asMap(cancelRequestEvent['cancelRequest']);
+        final cancelTargetRequest = asMap(
+          eventByOrder('bridge_request', cancelOrderIndex)['bridgeRequest'],
+        );
+        cancelRequestOk = cancelRequestEvent['ok'] == true &&
+            cancelRequestEvent['runtime'] == 'native-node-embedded' &&
+            cancelRequestEvent['orderIndex'] == cancelOrderIndex &&
+            cancelRequestEvent['endpoint'] ==
+                'http://127.0.0.1:8765/api/native-gateway/dispatch-cancel-dry-run' &&
+            cancelRequest['type'] == 'native_tool_dispatch_cancel_dry_run' &&
+            cancelRequest['targetRunId'] == cancelRequestEvent['runId'] &&
+            cancelRequest['targetCallId'] == cancelTargetRequest['callId'] &&
+            cancelRequest['targetBridgeRequestHash'] ==
+                cancelTargetRequest['bridgeRequestHash'] &&
+            cancelRequest['targetDispatchHash'] ==
+                cancelTargetRequest['dispatchHash'] &&
+            cancelRequest['orderIndex'] == cancelOrderIndex &&
+            cancelRequest['orderCount'] == 3 &&
+            cancelRequest['cancellationToken'] ==
+                cancelTargetRequest['cancellationToken'] &&
+            cancelRequest['cancelRequestHash']?.toString().isNotEmpty == true &&
+            cancelRequest['dryRun'] == true &&
+            disabledFlags(cancelRequest);
+        final cancelAck = asMap(cancelAckEvent['cancelAck']);
+        cancelAckOk = cancelAckEvent['ok'] == true &&
+            cancelAckEvent['runtime'] == 'native-node-embedded' &&
+            cancelAckEvent['orderIndex'] == cancelOrderIndex &&
+            cancelAckEvent['statusCode'] == 200 &&
+            cancelAckEvent['cancelAckHash']?.toString().isNotEmpty == true &&
+            cancelAckEvent['cancellationParityOk'] == true &&
+            cancelAck['ok'] == true &&
+            cancelAck['cancelAccepted'] == true &&
+            cancelAck['cancelRequested'] == true &&
+            cancelAck['cancelApplied'] == false &&
+            cancelAck['runtime'] == 'flutter-dart' &&
+            cancelAck['bridge'] == 'AgentSkillServer' &&
+            cancelAck['source'] == 'native-dart-bridge-ordering-cancel' &&
+            cancelAck['routeStatus'] ==
+                'native_dart_bridge_cancel_dry_run_ack' &&
+            cancelAck['targetRunId'] == cancelRequest['targetRunId'] &&
+            cancelAck['targetBridgeRequestHash'] ==
+                cancelRequest['targetBridgeRequestHash'] &&
+            cancelAck['orderIndex'] == cancelOrderIndex &&
+            cancelAck['orderCount'] == 3 &&
+            cancelAck['cancellationToken'] ==
+                cancelRequest['cancellationToken'] &&
+            cancelAck['cancellationState'] ==
+                'recorded_dry_run_no_active_execution' &&
+            cancelAck['skippedReason'] ==
+                'native_dart_bridge_cancel_dry_run_only' &&
+            disabledFlags(cancelAck);
+        orderingSummaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['runtime'] == 'native-node-embedded' &&
+            summaryEvent['orderingPlanHash'] == ack['orderingPlanHash'] &&
+            summaryEvent['orderCount'] == 3 &&
+            listMatches(summaryEvent['expectedOrder'], expectedOrder) &&
+            listMatches(summaryEvent['observedBridgeOrder'], expectedOrder) &&
+            listMatches(summaryEvent['observedResultOrder'], expectedOrder) &&
+            summaryEvent['uniqueRunIds'] == 3 &&
+            summaryEvent['orderingParityOk'] == true &&
+            summaryEvent['cancellationParityOk'] == true &&
+            summaryEvent['validationOk'] == true &&
+            summaryEvent['cancelOrderIndex'] == cancelOrderIndex &&
+            summaryEvent['cancelRequestHash'] ==
+                cancelRequest['cancelRequestHash'] &&
+            summaryEvent['cancelAckHash'] == cancelAckEvent['cancelAckHash'] &&
+            summaryEvent['targetRunId'] == cancelRequest['targetRunId'] &&
+            summaryEvent['targetBridgeRequestHash'] ==
+                cancelRequest['targetBridgeRequestHash'] &&
+            summaryEvent['cancellationState'] ==
+                'recorded_dry_run_no_active_execution' &&
+            summaryEvent['skippedReason'] ==
+                'native_dart_bridge_cancel_dry_run_only' &&
+            disabledFlags(summaryEvent);
+        orderingEndOk = endEvent['ok'] == true &&
+            endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['routeStatus'] ==
+                'native_dart_bridge_ordering_cancel_complete' &&
+            endEvent['finishReason'] ==
+                'native_dart_bridge_ordering_cancel_complete' &&
+            endEvent['orderingPlanHash'] == ack['orderingPlanHash'] &&
+            endEvent['orderCount'] == 3 &&
+            endEvent['orderingParityOk'] == true &&
+            endEvent['cancellationParityOk'] == true &&
+            endEvent['validationOk'] == true &&
+            endEvent['cancelOrderIndex'] == cancelOrderIndex &&
+            disabledFlags(endEvent);
+        orderingCancelOk = ackEventOk &&
+            orderPlanOk &&
+            bridgeRequestOrderOk &&
+            bridgeAckOrderOk &&
+            toolUseOrderOk &&
+            toolResultOrderOk &&
+            cancelRequestOk &&
+            cancelAckOk &&
+            orderingSummaryOk &&
+            eventOrderOk &&
+            orderingEndOk;
+
+        postBridgeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postBridgeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postBridgeGuardOk = postBridgeHealth['ok'] == true &&
+            postBridgeHealth['runtime'] == 'native-node-embedded' &&
+            postBridgeHealth['port'] == AppConstants.gatewayPort &&
+            postBridgeHealth['productionPortBindCanary'] == true &&
+            postBridgeHealth['openclawStarted'] == false &&
+            postBridgeProbe['runtime'] == 'native-node-embedded' &&
+            postBridgeProbe['port'] == AppConstants.gatewayPort &&
+            postBridgeProbe['productionPortBindCanary'] == true &&
+            postBridgeProbe['canaryOnly'] == true &&
+            postBridgeProbe['productionReady'] == false &&
+            postBridgeProbe['openclawStarted'] == false &&
+            postBridgeProbe['chatRoutingEnabled'] == false &&
+            postBridgeProbe['providerCallsEnabled'] == false &&
+            postBridgeProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (orderingDryRunSent) {
+          orderingError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          orderingCancelOk &&
+          postBridgeGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final ackEvent = _firstEvent(orderEvents, 'ack');
+      final cancelRequestEvent = _firstEvent(orderEvents, 'cancel_request');
+      final cancelAckEvent = _firstEvent(orderEvents, 'cancel_ack');
+      final summaryEvent = _firstEvent(orderEvents, 'ordering_summary');
+      final endEvent = _firstEvent(orderEvents, 'end');
+      final ack = asMap(ackEvent['ack']);
+      final bridgeRequestEvents = eventsNamed('bridge_request');
+      final bridgeAckEvents = eventsNamed('bridge_ack');
+      final toolUseEvents = eventsNamed('tool_use_frame');
+      final toolResultEvents = eventsNamed('tool_result_frame');
+      final cancelRequest = asMap(cancelRequestEvent['cancelRequest']);
+      final cancelAck = asMap(cancelAckEvent['cancelAck']);
+      final observedEventOrder =
+          orderEvents.map((event) => event['event']?.toString()).toList();
+      final bridgeRequestHashes = bridgeRequestEvents
+          .map((event) => asMap(event['bridgeRequest'])['bridgeRequestHash'])
+          .where((value) => value != null)
+          .toList();
+      final cancellationTokens = bridgeRequestEvents
+          .map((event) => asMap(event['bridgeRequest'])['cancellationToken'])
+          .where((value) => value != null)
+          .toList();
+      final runIds = bridgeRequestEvents
+          .map((event) => event['runId'])
+          .where((value) => value != null)
+          .toList();
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-dart-bridge-ordering-cancel',
+        'mode':
+            'native-production-port-dart-bridge-ordering-cancel-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'orderingDryRunSent': orderingDryRunSent,
+        'orderingCancelOk': orderingCancelOk,
+        'ackEventOk': ackEventOk,
+        'orderPlanOk': orderPlanOk,
+        'bridgeRequestOrderOk': bridgeRequestOrderOk,
+        'bridgeAckOrderOk': bridgeAckOrderOk,
+        'toolUseOrderOk': toolUseOrderOk,
+        'toolResultOrderOk': toolResultOrderOk,
+        'cancelRequestOk': cancelRequestOk,
+        'cancelAckOk': cancelAckOk,
+        'orderingSummaryOk': orderingSummaryOk,
+        'eventOrderOk': eventOrderOk,
+        'orderingEndOk': orderingEndOk,
+        'eventsCount': orderEvents.length,
+        'observedEventOrder': observedEventOrder,
+        'bridgeEventsCount': bridgeRequestEvents.length,
+        'bridgeAckEventsCount': bridgeAckEvents.length,
+        'toolUseEventsCount': toolUseEvents.length,
+        'toolResultEventsCount': toolResultEvents.length,
+        'routeStatus': endEvent['routeStatus'] ?? ack['routeStatus'],
+        'finishReason': endEvent['finishReason'],
+        'provider': ack['provider'],
+        'requestedModel': ack['requestedModel'],
+        'providerModel': ack['providerModel'],
+        'transport': ack['transport'],
+        'requestHash': ack['requestHash'] ?? endEvent['requestHash'],
+        'toolSelectionHash': ack['toolSelectionHash'],
+        'dispatchHash': ack['dispatchHash'],
+        'orderingPlanHash':
+            ack['orderingPlanHash'] ?? summaryEvent['orderingPlanHash'],
+        'fixtureHash': ack['fixtureHash'],
+        'fixtureParityOk': ack['fixtureParityOk'] == true,
+        'dispatchParityOk': ack['dispatchParityOk'] == true,
+        'orderCount': ack['orderCount'] ?? summaryEvent['orderCount'],
+        'cancelOrderIndex':
+            ack['cancelOrderIndex'] ?? summaryEvent['cancelOrderIndex'],
+        'expectedOrder': summaryEvent['expectedOrder'],
+        'observedBridgeOrder': summaryEvent['observedBridgeOrder'],
+        'observedResultOrder': summaryEvent['observedResultOrder'],
+        'uniqueRunIds': summaryEvent['uniqueRunIds'],
+        'orderingParityOk': summaryEvent['orderingParityOk'] == true ||
+            endEvent['orderingParityOk'] == true,
+        'cancellationParityOk':
+            cancelAckEvent['cancellationParityOk'] == true ||
+                summaryEvent['cancellationParityOk'] == true ||
+                endEvent['cancellationParityOk'] == true,
+        'validationOk': summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'bridgeRequestHashes': bridgeRequestHashes,
+        'cancellationTokens': cancellationTokens,
+        'runIds': runIds,
+        'cancelRequestHash': cancelRequest['cancelRequestHash'],
+        'cancelAckHash': cancelAckEvent['cancelAckHash'],
+        'targetRunId': cancelAck['targetRunId'],
+        'targetBridgeRequestHash': cancelAck['targetBridgeRequestHash'],
+        'cancelAccepted': cancelAck['cancelAccepted'] == true,
+        'cancelApplied': cancelAck['cancelApplied'] == true,
+        'cancellationState': cancelAck['cancellationState'],
+        'skippedReason':
+            cancelAck['skippedReason'] ?? summaryEvent['skippedReason'],
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'transportInvocationEnabled':
+            ackEvent['transportInvocationEnabled'] == true ||
+                ack['transportInvocationEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabled': endEvent['bridgeExecutionEnabled'] == true,
+        if (orderingError != null) 'orderingError': orderingError.toString(),
+        'postBridgeGuardOk': postBridgeGuardOk,
+        'postBridgeRuntimeReported': postBridgeHealth['runtime'],
+        'postBridgeCanaryOnly': postBridgeProbe['canaryOnly'] == true,
+        'postBridgeChatRoutingEnabled':
+            postBridgeProbe['chatRoutingEnabled'] == true,
+        'postBridgeProviderCallsEnabled':
+            postBridgeProbe['providerCallsEnabled'] == true,
+        'postBridgeToolExecutionEnabled':
+            postBridgeProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, sent ordered bridge dry-runs to Dart, recorded a dry-run cancellation ACK, and PRoot was restored.'
+            : 'Production-port Dart bridge ordering/cancel dry-run is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'production-port bounded native bridge execution canary allowlist',
+      };
+      log('[NATIVE-DART-BRIDGE-ORDER-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortDartBridgeOrderingInFlight = false;
     }
   }
 

@@ -4169,6 +4169,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionDartBridgeOrderingPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-dart-bridge-order-owner',
+      '/native-production-dart-bridge-order',
+      '/native-bridge-order-owner',
+      '/native-production-bridge-order',
+      'native-dart-bridge-order-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production Dart bridge ordering/cancel dry-run: wave right and vibrate once';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production Dart bridge ordering/cancel dry-run: wave right and vibrate once'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7967,6 +7993,104 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionDartBridgeOrderingMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionDartBridgeOrderingPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-DART-BRIDGE-ORDER-OWNER] -> Opening production-port bridge ordering/cancel dry-run',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortDartBridgeOrderingCancelDryRun(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DART-BRIDGE-ORDER-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final observedEventOrder = report['observedEventOrder'] is List
+          ? (report['observedEventOrder'] as List).join(', ')
+          : '';
+      final observedBridgeOrder = report['observedBridgeOrder'] is List
+          ? (report['observedBridgeOrder'] as List).join(', ')
+          : '';
+      final observedResultOrder = report['observedResultOrder'] is List
+          ? (report['observedResultOrder'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native production Dart bridge ordering/cancel dry-run complete'
+            : 'Native production Dart bridge ordering/cancel dry-run pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'orderingDryRunSent: ${report['orderingDryRunSent'] == true}',
+        'orderingCancelOk: ${report['orderingCancelOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'orderPlanOk: ${report['orderPlanOk'] == true}',
+        'bridgeRequestOrderOk: ${report['bridgeRequestOrderOk'] == true}',
+        'bridgeAckOrderOk: ${report['bridgeAckOrderOk'] == true}',
+        'toolUseOrderOk: ${report['toolUseOrderOk'] == true}',
+        'toolResultOrderOk: ${report['toolResultOrderOk'] == true}',
+        'cancelRequestOk: ${report['cancelRequestOk'] == true}',
+        'cancelAckOk: ${report['cancelAckOk'] == true}',
+        'orderingSummaryOk: ${report['orderingSummaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'orderingEndOk: ${report['orderingEndOk'] == true}',
+        'finishReason: ${report['finishReason'] ?? 'unknown'}',
+        'orderCount: ${report['orderCount'] ?? 0}',
+        'cancelOrderIndex: ${report['cancelOrderIndex'] ?? 'unknown'}',
+        'observedBridgeOrder: $observedBridgeOrder',
+        'observedResultOrder: $observedResultOrder',
+        'observedEventOrder: $observedEventOrder',
+        'orderingParityOk: ${report['orderingParityOk'] == true}',
+        'cancellationParityOk: ${report['cancellationParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'cancelAccepted: ${report['cancelAccepted'] == true}',
+        'cancelApplied: ${report['cancelApplied'] == true}',
+        'cancellationState: ${report['cancellationState'] ?? 'unknown'}',
+        'skippedReason: ${report['skippedReason'] ?? 'unknown'}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'postBridgeGuardOk: ${report['postBridgeGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DART-BRIDGE-ORDER-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7979,6 +8103,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionDartBridgeOrderingPayload(message) != null) {
+      yield* _sendNativeProductionDartBridgeOrderingMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionDartBridgePayload(message) != null) {
       yield* _sendNativeProductionDartBridgeMessage(
