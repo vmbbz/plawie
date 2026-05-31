@@ -108,6 +108,9 @@ block provider/tool execution, and roll back to PRoot,
 can run an explicit `/native-provider-owner` dry-run that lets embedded native
 Node own `18789`, build a redacted provider envelope with outbound network
 disabled, prove raw provider error forwarding contract, and roll back to PRoot,
+can run an explicit `/native-builder-owner` dry-run that lets embedded native
+Node own `18789`, normalize provider headers/body/request hashes, prove
+transport invocation remains disabled, and roll back to PRoot,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -183,6 +186,7 @@ be safely generalized.
 | [46-native-runtime-owner-canary.md](46-native-runtime-owner-canary.md) | Explicit `/native-runtime-owner` diagnostics proving bounded native ownership of `18789` with automatic PRoot rollback |
 | [47-native-route-owner-dry-run.md](47-native-route-owner-dry-run.md) | Explicit `/native-route-owner` diagnostics proving native accepts route dry-runs on `18789` and rolls back to PRoot |
 | [48-native-provider-owner-envelope.md](48-native-provider-owner-envelope.md) | Explicit `/native-provider-owner` diagnostics proving native builds provider envelopes on `18789` while outbound network remains disabled |
+| [49-native-provider-owner-builder.md](49-native-provider-owner-builder.md) | Explicit `/native-builder-owner` diagnostics proving native normalizes provider requests on `18789` before transport invocation |
 
 ## Work Rules
 

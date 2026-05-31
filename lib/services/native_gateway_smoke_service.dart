@@ -49,6 +49,7 @@ class NativeGatewaySmokeService {
   static bool _runtimeOwnerCanaryInFlight = false;
   static bool _productionPortRouteOwnerInFlight = false;
   static bool _productionPortProviderEnvelopeInFlight = false;
+  static bool _productionPortProviderBuilderInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -2203,6 +2204,565 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderEnvelopeInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderRequestBuilderDryRun({
+    required void Function(String message) log,
+  }) async {
+    if (_productionPortProviderBuilderInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-request-builder-dry-run',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port provider request builder dry-run is already running.',
+      };
+    }
+
+    _productionPortProviderBuilderInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var builderDryRunSent = false;
+      var builderAckOk = false;
+      var providerRequestOk = false;
+      var requestValidationOk = false;
+      var transportGateOk = false;
+      var providerErrorContractOk = false;
+      var builderOrderOk = false;
+      var builderEndOk = false;
+      var builderDryRunOk = false;
+      var postBuilderGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postBuilderHealth = <String, dynamic>{};
+      Map<String, dynamic> postBuilderProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> builderEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? builderError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-BUILDER-OWNER] Opening provider request builder dry-run.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Provider request builder dry-run requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before request builder dry-run.',
+          );
+        }
+
+        log('[NATIVE-BUILDER-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before request builder dry-run.',
+          );
+        }
+
+        log(
+          '[NATIVE-BUILDER-OWNER] Starting native on 18789 and normalizing '
+          'provider request with transport disabled.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError(
+            'Native provider request builder dry-run did not start.',
+          );
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        builderDryRunSent = true;
+        builderEvents = await _streamProductionNdjson(
+          '/gateway/chat-provider-request-builder-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-provider-builder-request',
+            idempotencyKey: 'production-provider-builder-idempotency-key',
+            model: 'openrouter/auto',
+            provider: 'openrouter',
+          ),
+          expectedStatus: 202,
+        );
+
+        final ackEvent = _firstEvent(builderEvents, 'ack');
+        final requestEvent = _firstEvent(builderEvents, 'provider_request');
+        final validationEvent =
+            _firstEvent(builderEvents, 'request_validation');
+        final transportGateEvent = _firstEvent(builderEvents, 'transport_gate');
+        final errorContractEvent =
+            _firstEvent(builderEvents, 'provider_error_contract');
+        final endEvent = _firstEvent(builderEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final requestBuilder = requestEvent['requestBuilder'] is Map
+            ? Map<String, dynamic>.from(
+                requestEvent['requestBuilder'] as Map,
+              )
+            : <String, dynamic>{};
+        final headerValidation = validationEvent['headerValidation'] is Map
+            ? Map<String, dynamic>.from(
+                validationEvent['headerValidation'] as Map,
+              )
+            : <String, dynamic>{};
+        final bodyValidation = validationEvent['bodyValidation'] is Map
+            ? Map<String, dynamic>.from(
+                validationEvent['bodyValidation'] as Map,
+              )
+            : <String, dynamic>{};
+        final providerConfigStatus =
+            validationEvent['providerConfigStatus'] is Map
+                ? Map<String, dynamic>.from(
+                    validationEvent['providerConfigStatus'] as Map,
+                  )
+                : <String, dynamic>{};
+        final transportGate = transportGateEvent['gate'] is Map
+            ? Map<String, dynamic>.from(transportGateEvent['gate'] as Map)
+            : <String, dynamic>{};
+        final errorContract = errorContractEvent['errorContract'] is Map
+            ? Map<String, dynamic>.from(
+                errorContractEvent['errorContract'] as Map,
+              )
+            : <String, dynamic>{};
+        final observedOrder =
+            builderEvents.map((event) => event['event']?.toString()).toList();
+        const expectedOrder = <String>[
+          'ack',
+          'provider_request',
+          'request_validation',
+          'transport_gate',
+          'provider_error_contract',
+          'delta',
+          'delta',
+          'end',
+        ];
+        builderOrderOk = observedOrder.length >= expectedOrder.length;
+        for (var i = 0; i < expectedOrder.length && builderOrderOk; i++) {
+          builderOrderOk = observedOrder[i] == expectedOrder[i];
+        }
+
+        final headersHash = requestBuilder['headersHash']?.toString() ?? '';
+        final bodyHash = requestBuilder['bodyHash']?.toString() ?? '';
+        final requestHash = requestBuilder['requestHash']?.toString() ?? '';
+        final errorFields = errorContract['fields'];
+        builderAckOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == true &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'disabled' &&
+            ackEvent['routeStatus'] == 'blocked_before_transport_invocation' &&
+            ackEvent['acceptedForRouting'] == false &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == true &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['providerCallsEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ackEvent['transportInvocationEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            ack['requestedModel'] == 'openrouter/auto' &&
+            ack['transport'] == 'openai-compatible-chat-completions' &&
+            ack['validationOk'] == true &&
+            ack['transportInvocationEnabled'] == false &&
+            ack['providerCallsEnabled'] != true &&
+            ack['executionEnabled'] != true;
+        providerRequestOk = requestEvent['ok'] == true &&
+            requestBuilder['provider'] == 'openrouter' &&
+            requestBuilder['requestedModel'] == 'openrouter/auto' &&
+            requestBuilder['providerModel'] == 'openrouter/auto' &&
+            requestBuilder['transport'] ==
+                'openai-compatible-chat-completions' &&
+            requestBuilder['method'] == 'POST' &&
+            requestBuilder['outboundNetworkEnabled'] == false &&
+            requestBuilder['transportInvocationEnabled'] == false &&
+            requestBuilder['providerCallsEnabled'] == false &&
+            requestBuilder['executionEnabled'] == false &&
+            headersHash.isNotEmpty &&
+            bodyHash.isNotEmpty &&
+            requestHash.isNotEmpty &&
+            requestBuilder['validationOk'] == true;
+        requestValidationOk = validationEvent['ok'] == true &&
+            validationEvent['validationOk'] == true &&
+            headerValidation['contentTypeOk'] == true &&
+            headerValidation['acceptOk'] == true &&
+            headerValidation['forbiddenHeadersPresent'] == false &&
+            headerValidation['rawSecretsPresent'] == false &&
+            bodyValidation['modelPresent'] == true &&
+            bodyValidation['messagesNormalized'] == true &&
+            bodyValidation['rawPromptRedacted'] == true &&
+            bodyValidation['streamMode'] == true &&
+            providerConfigStatus['mode'] == 'shape_only' &&
+            providerConfigStatus['apiKeyLoaded'] == false &&
+            providerConfigStatus['endpointResolved'] == true &&
+            providerConfigStatus['headersNormalized'] == true &&
+            providerConfigStatus['bodyNormalized'] == true;
+        transportGateOk = transportGateEvent['ok'] == true &&
+            transportGateEvent['transportInvocationEnabled'] == false &&
+            transportGateEvent['providerCallsEnabled'] == false &&
+            transportGate['enabled'] == false &&
+            transportGate['status'] == 'blocked' &&
+            transportGate['blockedBefore'] == 'fetch_or_http_request';
+        providerErrorContractOk = errorContractEvent['ok'] == true &&
+            errorContractEvent['provider'] == 'openrouter' &&
+            errorContract['rawProviderErrorForwarding'] == true &&
+            errorFields is List &&
+            errorFields.contains('rawError') &&
+            errorFields.contains('normalizedError.message');
+        builderEndOk = endEvent['ok'] == true &&
+            endEvent['finishReason'] == 'provider_request_builder_complete' &&
+            endEvent['provider'] == 'openrouter' &&
+            endEvent['requestedModel'] == 'openrouter/auto' &&
+            endEvent['validationOk'] == true &&
+            endEvent['transportInvocationEnabled'] == false &&
+            endEvent['providerCallsEnabled'] == false &&
+            endEvent['executionEnabled'] == false;
+        builderDryRunOk = builderAckOk &&
+            providerRequestOk &&
+            requestValidationOk &&
+            transportGateOk &&
+            providerErrorContractOk &&
+            builderOrderOk &&
+            builderEndOk;
+
+        postBuilderHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postBuilderProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postBuilderGuardOk = postBuilderHealth['ok'] == true &&
+            postBuilderHealth['runtime'] == 'native-node-embedded' &&
+            postBuilderHealth['port'] == AppConstants.gatewayPort &&
+            postBuilderHealth['productionPortBindCanary'] == true &&
+            postBuilderHealth['openclawStarted'] == false &&
+            postBuilderProbe['runtime'] == 'native-node-embedded' &&
+            postBuilderProbe['port'] == AppConstants.gatewayPort &&
+            postBuilderProbe['productionPortBindCanary'] == true &&
+            postBuilderProbe['canaryOnly'] == true &&
+            postBuilderProbe['productionReady'] == false &&
+            postBuilderProbe['openclawStarted'] == false &&
+            postBuilderProbe['chatRoutingEnabled'] == false &&
+            postBuilderProbe['providerCallsEnabled'] == false &&
+            postBuilderProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (builderDryRunSent) {
+          builderError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          builderDryRunOk &&
+          postBuilderGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final observedOrder =
+          builderEvents.map((event) => event['event']?.toString()).toList();
+      final ackEvent = _firstEvent(builderEvents, 'ack');
+      final requestEvent = _firstEvent(builderEvents, 'provider_request');
+      final validationEvent = _firstEvent(builderEvents, 'request_validation');
+      final transportGateEvent = _firstEvent(builderEvents, 'transport_gate');
+      final endEvent = _firstEvent(builderEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final requestBuilder = requestEvent['requestBuilder'] is Map
+          ? Map<String, dynamic>.from(requestEvent['requestBuilder'] as Map)
+          : <String, dynamic>{};
+      final providerConfigStatus =
+          validationEvent['providerConfigStatus'] is Map
+              ? Map<String, dynamic>.from(
+                  validationEvent['providerConfigStatus'] as Map,
+                )
+              : <String, dynamic>{};
+      final transportGate = transportGateEvent['gate'] is Map
+          ? Map<String, dynamic>.from(transportGateEvent['gate'] as Map)
+          : <String, dynamic>{};
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-provider-request-builder-dry-run',
+        'mode': 'native-production-port-provider-builder-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'builderDryRunSent': builderDryRunSent,
+        'builderDryRunOk': builderDryRunOk,
+        'builderAckOk': builderAckOk,
+        'providerRequestOk': providerRequestOk,
+        'requestValidationOk': requestValidationOk,
+        'transportGateOk': transportGateOk,
+        'providerErrorContractOk': providerErrorContractOk,
+        'builderOrderOk': builderOrderOk,
+        'builderEndOk': builderEndOk,
+        'builderEventsCount': builderEvents.length,
+        'builderObservedOrder': observedOrder,
+        'builderRouteStatus': ackEvent['routeStatus'] ?? ack['routeStatus'],
+        'builderFinishReason': endEvent['finishReason'],
+        'provider': requestBuilder['provider'] ?? ack['provider'],
+        'requestedModel':
+            requestBuilder['requestedModel'] ?? ack['requestedModel'],
+        'providerModel': requestBuilder['providerModel'],
+        'transport': requestBuilder['transport'] ?? ack['transport'],
+        'headersHash': requestBuilder['headersHash'] ?? ack['headersHash'],
+        'bodyHash': requestBuilder['bodyHash'] ?? ack['bodyHash'],
+        'requestHash': requestBuilder['requestHash'] ?? ack['requestHash'],
+        'validationOk': requestBuilder['validationOk'] == true ||
+            validationEvent['validationOk'] == true,
+        'providerConfigMode': providerConfigStatus['mode'],
+        'apiKeyLoaded': providerConfigStatus['apiKeyLoaded'] == true,
+        'outboundNetworkEnabled':
+            requestBuilder['outboundNetworkEnabled'] == true,
+        'transportInvocationEnabled':
+            requestBuilder['transportInvocationEnabled'] == true ||
+                ackEvent['transportInvocationEnabled'] == true,
+        'transportGateEnabled': transportGate['enabled'] == true,
+        'transportGateStatus': transportGate['status'],
+        'transportBlockedBefore': transportGate['blockedBefore'],
+        'builderAcceptedForRouting': ackEvent['acceptedForRouting'] == true,
+        'builderProviderCallsEnabled': ackEvent['providerCallsEnabled'] == true,
+        'builderExecutionEnabled': ackEvent['executionEnabled'] == true,
+        'builderRunId': ack['runId'],
+        'builderRequestId': ack['requestId'],
+        if (builderError != null) 'builderError': builderError.toString(),
+        'postBuilderGuardOk': postBuilderGuardOk,
+        'postBuilderRuntimeReported': postBuilderHealth['runtime'],
+        'postBuilderCanaryOnly': postBuilderProbe['canaryOnly'] == true,
+        'postBuilderChatRoutingEnabled':
+            postBuilderProbe['chatRoutingEnabled'] == true,
+        'postBuilderProviderCallsEnabled':
+            postBuilderProbe['providerCallsEnabled'] == true,
+        'postBuilderToolExecutionEnabled':
+            postBuilderProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, normalized the provider request, blocked transport invocation, and PRoot was restored.'
+            : 'Production-port provider request builder dry-run is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'native production-port transport shim dry-run before DNS/TLS/provider billing',
+      };
+      log('[NATIVE-BUILDER-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortProviderBuilderInFlight = false;
     }
   }
 
