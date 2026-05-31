@@ -105,6 +105,9 @@ rolling back to PRoot,
 can run an explicit `/native-route-owner` dry-run that lets embedded native
 Node own `18789`, accept a production-shaped `chat.send`, build a route plan,
 block provider/tool execution, and roll back to PRoot,
+can run an explicit `/native-provider-owner` dry-run that lets embedded native
+Node own `18789`, build a redacted provider envelope with outbound network
+disabled, prove raw provider error forwarding contract, and roll back to PRoot,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -179,6 +182,7 @@ be safely generalized.
 | [45-native-production-port-bind-soak.md](45-native-production-port-bind-soak.md) | Explicit `/native-port-bind-soak` diagnostics proving repeatable guarded `18789` handoff and rollback |
 | [46-native-runtime-owner-canary.md](46-native-runtime-owner-canary.md) | Explicit `/native-runtime-owner` diagnostics proving bounded native ownership of `18789` with automatic PRoot rollback |
 | [47-native-route-owner-dry-run.md](47-native-route-owner-dry-run.md) | Explicit `/native-route-owner` diagnostics proving native accepts route dry-runs on `18789` and rolls back to PRoot |
+| [48-native-provider-owner-envelope.md](48-native-provider-owner-envelope.md) | Explicit `/native-provider-owner` diagnostics proving native builds provider envelopes on `18789` while outbound network remains disabled |
 
 ## Work Rules
 

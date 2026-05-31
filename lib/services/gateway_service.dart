@@ -3965,6 +3965,29 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderEnvelopePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-provider-owner',
+      '/native-production-provider',
+      '/native-provider-envelope',
+      'native-provider-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) return 'production provider envelope dry-run';
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'production provider envelope dry-run'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7091,6 +7114,73 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderEnvelopeMessage(
+    String message,
+  ) async* {
+    final payload = _nativeProductionProviderEnvelopePayload(message);
+    if (payload == null) return;
+    _addActivity(
+      '[NATIVE-PROVIDER-OWNER] -> Opening production-port provider envelope dry-run',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderEnvelopeDryRun(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-PROVIDER-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production provider envelope dry-run complete'
+            : 'Native production provider envelope dry-run pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'providerDryRunSent: ${report['providerDryRunSent'] == true}',
+        'providerDryRunOk: ${report['providerDryRunOk'] == true}',
+        'providerAckOk: ${report['providerAckOk'] == true}',
+        'providerEnvelopeOk: ${report['providerEnvelopeOk'] == true}',
+        'providerGateOk: ${report['providerGateOk'] == true}',
+        'providerErrorContractOk: ${report['providerErrorContractOk'] == true}',
+        'providerOrderOk: ${report['providerOrderOk'] == true}',
+        'providerEndOk: ${report['providerEndOk'] == true}',
+        'providerRouteStatus: ${report['providerRouteStatus'] ?? 'unknown'}',
+        'providerFinishReason: ${report['providerFinishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'requestedModel: ${report['requestedModel'] ?? 'unknown'}',
+        'outboundNetworkEnabled: ${report['outboundNetworkEnabled'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'providerExecutionEnabled: ${report['providerExecutionEnabled'] == true}',
+        'postProviderGuardOk: ${report['postProviderGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-PROVIDER-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7103,6 +7193,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderEnvelopePayload(message) != null) {
+      yield* _sendNativeProductionProviderEnvelopeMessage(message);
+      return;
+    }
 
     if (_nativeProductionRouteOwnerPayload(message) != null) {
       yield* _sendNativeProductionRouteOwnerMessage(message);
