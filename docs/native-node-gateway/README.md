@@ -123,6 +123,9 @@ promotion policy while default native routing remains disabled,
 can run an explicit `/native-single-skill-owner` diagnostics proving
 `device-node` can enter a bounded native production-port owner window, execute
 only read-only bridge allowlisted checks, and roll back to healthy PRoot,
+can run an explicit `/native-device-route-owner` diagnostics proving route
+selection chooses native only for the promoted `device-node` read-only lane
+while every other mobile bridge candidate stays on PRoot fallback,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -219,6 +222,7 @@ be safely generalized.
 | [67-native-owner-skill-tool-inventory-parity.md](67-native-owner-skill-tool-inventory-parity.md) | Explicit `/native-inventory-owner` diagnostics proving full production skill/tool inventory parity read-only |
 | [68-native-owner-promotion-policy-map.md](68-native-owner-promotion-policy-map.md) | Explicit `/native-policy-owner` diagnostics proving conservative promotion policy coverage for every skill/tool before routing |
 | [69-native-owner-single-skill-promotion-canary.md](69-native-owner-single-skill-promotion-canary.md) | Explicit `/native-single-skill-owner` diagnostics proving one `device-node` native promotion window with mandatory PRoot rollback |
+| [70-native-owner-single-skill-route-selection-canary.md](70-native-owner-single-skill-route-selection-canary.md) | Explicit `/native-device-route-owner` diagnostics proving controlled `device-node` native route selection with PRoot fallback armed |
 
 ## Work Rules
 

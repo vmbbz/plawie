@@ -4384,6 +4384,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionSingleSkillRouteSelectionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-device-route-owner',
+      '/native-device-node-route-owner',
+      '/native-single-skill-route-owner',
+      '/native-skill-route-owner',
+      '/native-device-route-select-owner',
+      'native-device-route-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native controlled device-node route selection canary';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native controlled device-node route selection canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -9032,6 +9059,87 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionSingleSkillRouteSelectionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionSingleSkillRouteSelectionPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-SINGLE-SKILL-ROUTE] -> Opening controlled device-node route selection canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortSingleSkillRouteSelectionCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-SINGLE-SKILL-ROUTE] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final observedOrder = report['observedOrder'] is List
+          ? (report['observedOrder'] as List).join(', ')
+          : '';
+
+      yield [
+        ok
+            ? 'Native single-skill route selection canary complete'
+            : 'Native single-skill route selection canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'requestedToolHints: ${_compactJsonValue(report['requestedToolHints'])}',
+        'routeSelectionPolicyOk: ${report['routeSelectionPolicyOk'] == true}',
+        'routeDecision: ${_compactJsonValue(report['routeDecision'])}',
+        'nonPromotedFallbackOk: ${report['nonPromotedFallbackOk'] == true}',
+        'fallbackArmedBeforeExecution: ${report['fallbackArmedBeforeExecution'] == true}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'nativeRouteExecutedOk: ${report['nativeRouteExecutedOk'] == true}',
+        'singleSkillPolicyOk: ${report['singleSkillPolicyOk'] == true}',
+        'promotionWindowOpened: ${report['promotionWindowOpened'] == true}',
+        'readOnlyBridgeCanaryOk: ${report['readOnlyBridgeCanaryOk'] == true}',
+        'expectedOrder: ${_compactJsonValue(report['expectedOrder'])}',
+        'observedOrder: $observedOrder',
+        'executionScopeOk: ${report['executionScopeOk'] == true}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'providerCallsDisabledOk: ${report['providerCallsDisabledOk'] == true}',
+        'defaultRouteStillOffOk: ${report['defaultRouteStillOffOk'] == true}',
+        'boundedBridgeExecutionOnly: ${report['boundedBridgeExecutionOnly'] == true}',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'fallbackAfterCanaryOk: ${report['fallbackAfterCanaryOk'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'rollbackVerified: ${report['rollbackVerified'] == true}',
+        'rollbackPolicyOk: ${report['rollbackPolicyOk'] == true}',
+        'routeSelectionCanaryOk: ${report['routeSelectionCanaryOk'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-SINGLE-SKILL-ROUTE] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -9616,6 +9724,14 @@ $message''';
 
     if (_nativeProductionSingleSkillPromotionPayload(message) != null) {
       yield* _sendNativeProductionSingleSkillPromotionMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionSingleSkillRouteSelectionPayload(message) != null) {
+      yield* _sendNativeProductionSingleSkillRouteSelectionMessage(
         message,
         model: model,
       );

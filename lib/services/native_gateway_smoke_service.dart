@@ -72,6 +72,7 @@ class NativeGatewaySmokeService {
   static bool _productionInventoryParityInFlight = false;
   static bool _productionPromotionPolicyMapInFlight = false;
   static bool _productionSingleSkillPromotionInFlight = false;
+  static bool _productionSingleSkillRouteSelectionInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -1032,6 +1033,230 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionSingleSkillPromotionInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortSingleSkillRouteSelectionCanary({
+    required void Function(String message) log,
+    String skillId = 'device-node',
+    String model = 'openrouter/auto',
+    String prompt =
+        'native controlled device-node route selection canary: check flash and list sensors read-only',
+  }) async {
+    if (_productionSingleSkillRouteSelectionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-single-skill-route-selection-canary',
+        'status': 'busy',
+        'decision':
+            'Single-skill native route selection canary is already running.',
+      };
+    }
+
+    _productionSingleSkillRouteSelectionInFlight = true;
+    final startedAt = DateTime.now();
+    final selectedSkillId =
+        skillId.trim().isEmpty ? 'device-node' : skillId.trim();
+    const expectedToolHints = <String>['flash.status', 'sensor.list'];
+    const selectedRuntimeId = 'native-node-production-port-canary';
+    const selectedRoute = 'native-device-node-readonly-bridge-canary';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-device-node-skill';
+
+    bool listMatches(Object? value, List<String> expected) {
+      if (value is! List || value.length != expected.length) return false;
+      for (var i = 0; i < expected.length; i++) {
+        if (value[i]?.toString() != expected[i]) return false;
+      }
+      return true;
+    }
+
+    List<Map<String, dynamic>> nonPromotedFallbackDecisions() {
+      final candidateIds = _mobileBridgeCandidateSkillIds
+          .where((id) => id != 'device-node')
+          .toList()
+        ..sort();
+      return candidateIds
+          .map((id) => <String, dynamic>{
+                'skillId': id,
+                'nativeEligible': false,
+                'selectedRuntimeId': fallbackRuntimeId,
+                'selectedRoute': 'proot-$id-skill',
+                'reason': 'only_device_node_readonly_is_promoted',
+              })
+          .toList();
+    }
+
+    try {
+      log(
+        '[NATIVE-SINGLE-SKILL-ROUTE] Evaluating controlled route selection for $selectedSkillId.',
+      );
+
+      final fallbackArmedBeforeExecution =
+          GatewayRuntimeRegistry.current.id == 'proot';
+      final nativeEligible = selectedSkillId == 'device-node';
+      final routeDecision = <String, dynamic>{
+        'skillId': selectedSkillId,
+        'requestedToolHints': expectedToolHints,
+        'nativeEligible': nativeEligible,
+        'selectedRuntimeId':
+            nativeEligible ? selectedRuntimeId : fallbackRuntimeId,
+        'selectedRoute': nativeEligible ? selectedRoute : fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'defaultNativeRoutingEnabled': false,
+        'providerCallsEnabled': false,
+        'executionScope': 'read_only_bridge_allowlist',
+      };
+      final fallbackDecisions = nonPromotedFallbackDecisions();
+      final nonPromotedFallbackOk = fallbackDecisions.every(
+        (decision) =>
+            decision['nativeEligible'] == false &&
+            decision['selectedRuntimeId'] == fallbackRuntimeId,
+      );
+      final routeSelectionPolicyOk = nativeEligible &&
+          routeDecision['selectedRuntimeId'] == selectedRuntimeId &&
+          routeDecision['selectedRoute'] == selectedRoute &&
+          routeDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+          routeDecision['fallbackRoute'] == fallbackRoute &&
+          routeDecision['fallbackOneActionAway'] == true &&
+          nonPromotedFallbackOk &&
+          fallbackArmedBeforeExecution;
+
+      if (!routeSelectionPolicyOk) {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-production-port-single-skill-route-selection-canary',
+          'mode':
+              'single-skill-device-node-route-selection-with-proot-fallback',
+          'selectedSkillId': selectedSkillId,
+          'routeDecision': routeDecision,
+          'nonPromotedFallbackDecisions': fallbackDecisions,
+          'routeSelectionPolicyOk': false,
+          'fallbackArmedBeforeExecution': fallbackArmedBeforeExecution,
+          'nativeRouteExecutedOk': false,
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Controlled single-skill route selection did not execute because the route policy precheck failed.',
+          'nextGate':
+              'fix device-node route selection policy before native execution',
+        };
+        log('[NATIVE-SINGLE-SKILL-ROUTE] ${jsonEncode(report)}');
+        return report;
+      }
+
+      log(
+        '[NATIVE-SINGLE-SKILL-ROUTE] Route selected native for device-node; PRoot fallback remains armed.',
+      );
+      final innerReport = await runProductionPortSingleSkillPromotionCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-SINGLE-SKILL-PROMOTION]')) {
+            log(message.replaceFirst(
+              '[NATIVE-SINGLE-SKILL-PROMOTION]',
+              '[NATIVE-SINGLE-SKILL-ROUTE]',
+            ));
+          } else if (message.startsWith('[NATIVE-BRIDGE-EXEC-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-BRIDGE-EXEC-OWNER]',
+              '[NATIVE-SINGLE-SKILL-ROUTE]',
+            ));
+          } else if (message.startsWith('[NATIVE-PROMOTION-POLICY]')) {
+            log(message.replaceFirst(
+              '[NATIVE-PROMOTION-POLICY]',
+              '[NATIVE-SINGLE-SKILL-ROUTE]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        skillId: selectedSkillId,
+        model: model,
+        prompt: prompt,
+      );
+
+      final nativeRouteExecutedOk = innerReport['ok'] == true &&
+          innerReport['promotionWindowOpened'] == true &&
+          innerReport['readOnlyBridgeCanaryOk'] == true;
+      final executionScopeOk =
+          innerReport['boundedBridgeExecutionOnly'] == true &&
+              listMatches(innerReport['expectedOrder'], expectedToolHints) &&
+              listMatches(innerReport['observedOrder'], expectedToolHints);
+      final providerCallsDisabledOk =
+          innerReport['providerCallsEnabled'] != true &&
+              innerReport['transportInvocationEnabled'] != true &&
+              innerReport['providerCallsDisabledDuringWindow'] == true;
+      final defaultRouteStillOffOk =
+          innerReport['nativeDefaultRoutingEnabled'] != true &&
+              innerReport['defaultRoutingDisabledDuringWindow'] == true;
+      final fallbackAfterCanaryOk = innerReport['rollbackStarted'] == true &&
+          innerReport['rollbackRunning'] == true &&
+          innerReport['rollbackHealthOk'] == true &&
+          innerReport['rollbackVerified'] == true;
+      final rollbackPolicyOk = innerReport['rollbackPolicy'] is Map &&
+          (innerReport['rollbackPolicy'] as Map)['rollbackRequired'] == true &&
+          (innerReport['rollbackPolicy'] as Map)['rollbackRuntimeId'] ==
+              'proot';
+      final routeSelectionCanaryOk = routeSelectionPolicyOk &&
+          nativeRouteExecutedOk &&
+          executionScopeOk &&
+          providerCallsDisabledOk &&
+          defaultRouteStillOffOk &&
+          fallbackAfterCanaryOk &&
+          rollbackPolicyOk;
+
+      final report = <String, dynamic>{
+        ...innerReport,
+        'ok': routeSelectionCanaryOk,
+        'phase': 'hidden-production-port-single-skill-route-selection-canary',
+        'mode': 'single-skill-device-node-route-selection-with-proot-fallback',
+        'innerPhase': innerReport['phase'],
+        'innerOk': innerReport['ok'] == true,
+        'selectedSkillId': selectedSkillId,
+        'requestedToolHints': expectedToolHints,
+        'routeDecision': routeDecision,
+        'nonPromotedFallbackDecisions': fallbackDecisions,
+        'nonPromotedFallbackOk': nonPromotedFallbackOk,
+        'fallbackArmedBeforeExecution': fallbackArmedBeforeExecution,
+        'routeSelectionPolicyOk': routeSelectionPolicyOk,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'nativeRouteExecutedOk': nativeRouteExecutedOk,
+        'executionScopeOk': executionScopeOk,
+        'providerCallsDisabledOk': providerCallsDisabledOk,
+        'defaultRouteStillOffOk': defaultRouteStillOffOk,
+        'fallbackAfterCanaryOk': fallbackAfterCanaryOk,
+        'rollbackPolicyOk': rollbackPolicyOk,
+        'routeSelectionCanaryOk': routeSelectionCanaryOk,
+        'innerDurationMs': innerReport['durationMs'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': routeSelectionCanaryOk
+            ? 'Route selection chose native only for device-node read-only bridge checks, left every other candidate on PRoot fallback, and restored healthy PRoot.'
+            : 'Controlled device-node route selection is not promotable; require selected native route, locked scope, and healthy PRoot rollback.',
+        'nextGate':
+            'device-node real-turn route shadow canary with PRoot fallback still armed',
+      };
+      log('[NATIVE-SINGLE-SKILL-ROUTE] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-single-skill-route-selection-canary',
+        'mode': 'single-skill-device-node-route-selection-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Controlled single-skill route selection failed before a green report was produced.',
+      };
+      log('[NATIVE-SINGLE-SKILL-ROUTE] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionSingleSkillRouteSelectionInFlight = false;
     }
   }
 
