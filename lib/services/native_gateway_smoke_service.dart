@@ -53,6 +53,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderTransportInFlight = false;
   static bool _productionPortProviderLiveInFlight = false;
   static bool _productionPortProviderBackedChatInFlight = false;
+  static bool _productionPortChatResponseUiInFlight = false;
   static bool _productionPortProviderStreamParityInFlight = false;
   static bool _productionPortProviderToolPlanInFlight = false;
   static bool _productionPortToolDispatchInFlight = false;
@@ -3784,6 +3785,13 @@ class NativeGatewaySmokeService {
               '';
       final deltaEvents =
           liveEvents.where((event) => event['event'] == 'delta').toList();
+      final uiResponseText = deltaEvents
+          .map((event) => event['text']?.toString() ?? '')
+          .where((text) => text.isNotEmpty)
+          .join();
+      final uiResponseTextPreview = uiResponseText.length > 500
+          ? uiResponseText.substring(0, 500)
+          : uiResponseText;
       final redactedBodyShape = providerRequest['redactedBodyShape'] is Map
           ? Map<String, dynamic>.from(
               providerRequest['redactedBodyShape'] as Map,
@@ -3877,6 +3885,9 @@ class NativeGatewaySmokeService {
         'durationMsProvider': endEvent['durationMs'],
         'textChars': endEvent['textChars'],
         'deltaCount': deltaEvents.length,
+        'uiResponseText': uiResponseTextPreview,
+        'uiResponseTextChars': uiResponseText.length,
+        'uiResponseTextTruncated': uiResponseText.length > 500,
         'rawProviderErrorForwarded': rawProviderError.isNotEmpty,
         if (rawProviderError.isNotEmpty)
           'rawProviderErrorPreview': rawProviderError.length > 500
@@ -4039,6 +4050,126 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderBackedChatInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runProductionPortChatResponseUiCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt =
+        'native production chat response UI canary with PRoot rollback',
+  }) async {
+    if (_productionPortChatResponseUiInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-chat-response-ui-canary',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port chat response UI canary is already running.',
+      };
+    }
+
+    _productionPortChatResponseUiInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
+      final title = providerConfigForNative['title']?.toString().trim();
+      if (title == null || title.isEmpty) {
+        providerConfigForNative['title'] =
+            'Plawie Native Chat Response UI Canary';
+      }
+
+      log(
+        '[NATIVE-CHAT-UI-OWNER] Opening chat response UI canary with '
+        'PRoot rollback.',
+      );
+
+      final innerReport = await runProductionPortProviderBackedChatCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-CHAT-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-CHAT-OWNER]',
+              '[NATIVE-CHAT-UI-OWNER]',
+            ));
+          } else if (message.startsWith('[NATIVE-LIVE-OWNER]')) {
+            log(message.replaceFirst(
+              '[NATIVE-LIVE-OWNER]',
+              '[NATIVE-CHAT-UI-OWNER]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        providerConfig: providerConfigForNative,
+        prompt: prompt,
+      );
+
+      final uiResponseText = innerReport['uiResponseText']?.toString() ?? '';
+      final normalizedUiResponse =
+          uiResponseText.toLowerCase().replaceAll(RegExp(r'\s+'), '').trim();
+      final uiResponseVisibleOk = uiResponseText.trim().isNotEmpty &&
+          innerReport['uiResponseTextChars'] is num &&
+          (innerReport['uiResponseTextChars'] as num) > 0 &&
+          normalizedUiResponse.contains('native-ok');
+      final chatUiCanaryOk = innerReport['ok'] == true &&
+          innerReport['providerBackedChatOk'] == true &&
+          innerReport['toolExecutionDisabledOk'] == true &&
+          innerReport['requestHasToolSchemas'] == false &&
+          uiResponseVisibleOk &&
+          innerReport['rollbackHealthOk'] == true &&
+          innerReport['nativeSmokeRestored'] == true;
+
+      final report = <String, dynamic>{
+        ...innerReport,
+        'ok': chatUiCanaryOk,
+        'phase': 'hidden-production-port-chat-response-ui-canary',
+        'mode':
+            'native-production-port-chat-response-ui-canary-with-proot-rollback',
+        'innerPhase': innerReport['phase'],
+        'innerOk': innerReport['ok'] == true,
+        'chatUiCanaryOk': chatUiCanaryOk,
+        'uiResponseVisibleOk': uiResponseVisibleOk,
+        'uiResponseExpectedText': 'native-ok',
+        'uiResponseMatchedExpectedText':
+            normalizedUiResponse.contains('native-ok'),
+        'uiResponseText': uiResponseText,
+        'uiResponseTextChars': innerReport['uiResponseTextChars'] ?? 0,
+        'uiResponseTextTruncated':
+            innerReport['uiResponseTextTruncated'] == true,
+        'innerDurationMs': innerReport['durationMs'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': chatUiCanaryOk
+            ? 'Native owned 18789, produced a chat-visible provider response, kept tool execution disabled, and PRoot was restored.'
+            : 'Production-port chat response UI canary is not promotable; require visible native response text, tool execution disabled, and PRoot rollback.',
+        'nextGate':
+            'production-port native chat route selection canary with provider fallback',
+      };
+      log('[NATIVE-CHAT-UI-OWNER] ${jsonEncode({
+            ...report,
+            'uiResponseText': report['uiResponseText'] == null
+                ? null
+                : '<redacted in activity log>',
+            'rawProviderErrorPreview': report['rawProviderErrorPreview'] == null
+                ? null
+                : '<redacted in activity log>',
+          })}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-chat-response-ui-canary',
+        'mode':
+            'native-production-port-chat-response-ui-canary-with-proot-rollback',
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Production-port chat response UI canary failed before a report was produced.',
+      };
+      log('[NATIVE-CHAT-UI-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortChatResponseUiInFlight = false;
     }
   }
 
