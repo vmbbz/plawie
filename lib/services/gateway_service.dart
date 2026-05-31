@@ -4303,6 +4303,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionInventoryParityPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-inventory-owner',
+      '/native-skill-tool-parity-owner',
+      '/native-production-inventory',
+      '/native-production-skill-tool-parity',
+      '/native-skills-tools-owner',
+      'native-inventory-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production skill/tool inventory parity';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production skill/tool inventory parity'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -8733,6 +8760,75 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionInventoryParityMessage(
+    String message,
+  ) async* {
+    final payload = _nativeProductionInventoryParityPayload(message);
+    if (payload == null) return;
+
+    _addActivity(
+      '[NATIVE-INVENTORY-PARITY] -> Checking production skill/tool inventory parity',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionSkillToolInventoryParity(
+              log: _addActivity);
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-INVENTORY-PARITY] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final missingKnownSkills = report['missingKnownSkills'] is List
+          ? (report['missingKnownSkills'] as List).join(', ')
+          : '';
+      final missingMobileTools = report['missingMobileTools'] is List
+          ? (report['missingMobileTools'] as List).join(', ')
+          : '';
+      final missingToolHints = report['missingToolHints'] is List
+          ? (report['missingToolHints'] as List).join(', ')
+          : '';
+
+      yield [
+        ok
+            ? 'Native skill/tool inventory parity complete'
+            : 'Native skill/tool inventory parity pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'productionHealthOk: ${report['productionHealthOk'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeSafetyGatesOk: ${report['nativeSafetyGatesOk'] == true}',
+        'skillRegistryOk: ${report['skillRegistryOk'] == true}',
+        'skillParityOk: ${report['skillParityOk'] == true}',
+        'productionSkillCount: ${report['productionSkillCount'] ?? 0}',
+        'nativeSkillCount: ${report['nativeSkillCount'] ?? 0}',
+        'missingInNativeCount: ${report['missingInNativeCount'] ?? 0}',
+        'extraInNativeCount: ${report['extraInNativeCount'] ?? 0}',
+        'missingKnownSkills: $missingKnownSkills',
+        'mobileToolEndpointOk: ${report['mobileToolEndpointOk'] == true}',
+        'mobileToolCoreOk: ${report['mobileToolCoreOk'] == true}',
+        'mobileToolCount: ${report['mobileToolCount'] ?? 0}',
+        'missingMobileTools: $missingMobileTools',
+        'mobileToolHintOk: ${report['mobileToolHintOk'] == true}',
+        'mobileToolHintCount: ${report['mobileToolHintCount'] ?? 0}',
+        'missingToolHints: $missingToolHints',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-INVENTORY-PARITY] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -9304,6 +9400,11 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionInventoryParityPayload(message) != null) {
+      yield* _sendNativeProductionInventoryParityMessage(message);
+      return;
+    }
 
     if (_nativeProductionChatLoopContinuationPayload(message) != null) {
       yield* _sendNativeProductionChatLoopContinuationMessage(

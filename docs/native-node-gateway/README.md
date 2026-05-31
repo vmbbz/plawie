@@ -111,6 +111,12 @@ disabled, prove raw provider error forwarding contract, and roll back to PRoot,
 can run an explicit `/native-builder-owner` dry-run that lets embedded native
 Node own `18789`, normalize provider headers/body/request hashes, prove
 transport invocation remains disabled, and roll back to PRoot,
+can run an explicit `/native-chat-loop-owner` diagnostics proving native emits
+a chat-visible response after one live tool continuation and rolls back to
+PRoot,
+can run an explicit `/native-inventory-owner` diagnostics proving native sees
+the full production skill registry and mobile bridge tool surface read-only
+while PRoot remains primary,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
 without starting OpenClaw. Production Gateway startup still remains PRoot.
@@ -204,6 +210,7 @@ be safely generalized.
 | [64-native-owner-live-provider-tool-execution-canary.md](64-native-owner-live-provider-tool-execution-canary.md) | Explicit `/native-live-tool-exec-owner` diagnostics proving a live provider tool call maps to one bounded native-to-Dart execution allowlist |
 | [65-native-owner-live-provider-tool-continuation-canary.md](65-native-owner-live-provider-tool-continuation-canary.md) | Explicit `/native-live-tool-continue-owner` diagnostics proving live provider tool results continue to final provider text |
 | [66-native-owner-chat-loop-tool-continuation-canary.md](66-native-owner-chat-loop-tool-continuation-canary.md) | Explicit `/native-chat-loop-owner` diagnostics proving native emits a chat-visible response after one live tool continuation |
+| [67-native-owner-skill-tool-inventory-parity.md](67-native-owner-skill-tool-inventory-parity.md) | Explicit `/native-inventory-owner` diagnostics proving full production skill/tool inventory parity read-only |
 
 ## Work Rules
 

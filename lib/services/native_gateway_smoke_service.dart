@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import '../constants.dart';
 import 'gateway_runtime.dart';
+import 'native_bridge.dart';
 import 'native_gateway_shadow_parity_service.dart';
 
 class NativeGatewaySmokeReport {
@@ -67,6 +69,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderLiveToolExecutionInFlight = false;
   static bool _productionPortProviderLiveToolContinuationInFlight = false;
   static bool _productionPortNativeChatLoopContinuationInFlight = false;
+  static bool _productionInventoryParityInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -403,6 +406,186 @@ class NativeGatewaySmokeService {
         passed: false,
         message: e.toString(),
       );
+    }
+  }
+
+  static Future<Map<String, dynamic>> runProductionSkillToolInventoryParity({
+    required void Function(String message) log,
+  }) async {
+    if (_productionInventoryParityInFlight) {
+      return {
+        'ok': false,
+        'phase': 'production-skill-tool-inventory-parity',
+        'status': 'busy',
+        'decision':
+            'Production skill/tool inventory parity is already running.',
+      };
+    }
+
+    _productionInventoryParityInFlight = true;
+    final startedAt = DateTime.now();
+    var nativeStartedForProbe = false;
+    try {
+      final productionHealth = await _probeProductionJson(
+        '/health',
+        attempts: 20,
+        requestTimeout: const Duration(seconds: 5),
+      );
+      final productionHealthOk =
+          _productionHealthLooksLikeProot(productionHealth);
+
+      final nativeWasRunning = await _nodeRuntime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false)
+          .catchError((_) => false);
+      if (!nativeWasRunning) {
+        nativeStartedForProbe = await _nodeRuntime.start();
+      }
+
+      final nativeHealth =
+          await _probeHealth(expectedRuntime: 'native-node-embedded');
+      final nativeProbe = await _probeJson('/gateway/probe');
+      final capabilities = await _probeJson('/gateway/capabilities');
+      final skillRegistry = await _probeJson('/gateway/skill-registry');
+      final wsFrameShape = await _postJson(
+        '/gateway/ws-frame-shape',
+        _sampleGatewayWsChatSendFrame(
+          requestId: 'inventory-parity-ws-shape',
+          idempotencyKey: 'inventory-parity-idempotency',
+        ),
+        expectedStatus: 200,
+      );
+
+      final productionSkillIds = await _scanProductionSkillIds();
+      final nativeSkillIds = _skillIdsFromRegistry(skillRegistry);
+      final missingInNative =
+          _sortedDifference(productionSkillIds, nativeSkillIds);
+      final extraInNative =
+          _sortedDifference(nativeSkillIds, productionSkillIds);
+
+      final mobileTools = await _probeAgentSkillTools();
+      final mobileToolNames = _toolNamesFromAgentTools(mobileTools);
+      const requiredMobileTools = <String>{
+        'avatar-control',
+        'tts-voice',
+        'device-node',
+      };
+      final missingMobileTools =
+          _sortedDifference(requiredMobileTools, mobileToolNames);
+
+      final requestShape = wsFrameShape['requestShape'] is Map
+          ? Map<String, dynamic>.from(wsFrameShape['requestShape'] as Map)
+          : <String, dynamic>{};
+      final mobileToolHints = requestShape['mobileToolHints'] is List
+          ? (requestShape['mobileToolHints'] as List)
+              .map((value) => value.toString())
+              .toSet()
+          : <String>{};
+      const requiredToolHints = <String>{
+        'avatar.gesture',
+        'camera_snap',
+        'canvas.eval',
+        'canvas.navigate',
+        'canvas.snapshot',
+        'device_status',
+        'flash.status',
+        'haptic.vibrate',
+        'notifications.list',
+        'sensor.list',
+        'sensor.read',
+      };
+      final missingToolHints =
+          _sortedDifference(requiredToolHints, mobileToolHints);
+
+      const requiredProductionSkills = <String>{
+        'canvas',
+        'device-node',
+        'gestures',
+        'tts-voice',
+        'weather',
+      };
+      final missingKnownSkills =
+          _sortedDifference(requiredProductionSkills, nativeSkillIds);
+
+      final nativeSafetyGatesOk = nativeHealth['openclawStarted'] == false &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['providerCallsEnabled'] == false &&
+          skillRegistry['readOnly'] == true &&
+          skillRegistry['executionEnabled'] == false &&
+          capabilities['productionSkillsLoaded'] == false;
+      final skillRegistryOk = skillRegistry['ok'] == true &&
+          skillRegistry['skillCount'] is num &&
+          (skillRegistry['skillCount'] as num) >= 50;
+      final skillParityOk = productionSkillIds.length >= 50 &&
+          nativeSkillIds.length == productionSkillIds.length &&
+          missingInNative.isEmpty &&
+          extraInNative.isEmpty &&
+          missingKnownSkills.isEmpty;
+      final mobileToolEndpointOk =
+          mobileTools['tools'] is List && mobileToolNames.length >= 10;
+      final mobileToolCoreOk =
+          mobileToolEndpointOk && missingMobileTools.isEmpty;
+      final mobileToolHintOk = missingToolHints.isEmpty &&
+          requestShape['looksLikeProductionChatSend'] == true &&
+          requestShape['providerCallsEnabled'] == false &&
+          requestShape['executionEnabled'] == false;
+
+      final ok = productionHealthOk &&
+          nativeSafetyGatesOk &&
+          skillRegistryOk &&
+          skillParityOk &&
+          mobileToolCoreOk &&
+          mobileToolHintOk;
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'production-skill-tool-inventory-parity',
+        'mode': 'side-by-side-read-only',
+        'primaryRuntimeId': 'proot',
+        'nativeRuntimeId': 'native-node-embedded',
+        'productionHealthOk': productionHealthOk,
+        'productionHealthStatus': productionHealth['status'],
+        'nativeStartedForProbe': nativeStartedForProbe,
+        'nativeHealthOk': nativeHealth['ok'] == true,
+        'nativeSafetyGatesOk': nativeSafetyGatesOk,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeHealth['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        'skillRegistryOk': skillRegistryOk,
+        'skillParityOk': skillParityOk,
+        'productionSkillCount': productionSkillIds.length,
+        'nativeSkillCount': nativeSkillIds.length,
+        'missingInNativeCount': missingInNative.length,
+        'extraInNativeCount': extraInNative.length,
+        'missingKnownSkills': missingKnownSkills,
+        'missingInNativePreview': missingInNative.take(12).toList(),
+        'extraInNativePreview': extraInNative.take(12).toList(),
+        'countsByClass': skillRegistry['countsByClass'] ?? {},
+        'mobileToolEndpointOk': mobileToolEndpointOk,
+        'mobileToolCoreOk': mobileToolCoreOk,
+        'mobileToolCount': mobileToolNames.length,
+        'missingMobileTools': missingMobileTools,
+        'mobileToolHintOk': mobileToolHintOk,
+        'mobileToolHintCount': mobileToolHints.length,
+        'missingToolHints': missingToolHints,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native sees the full production skill registry read-only, the mobile bridge tools are present, and PRoot remains primary.'
+            : 'Inventory parity is not promotable; fix missing skills/tools before native promotion.',
+        'nextGate':
+            'promotion policy map for production skills/tools before any default native routing',
+      };
+      log('[NATIVE-INVENTORY-PARITY] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionInventoryParityInFlight = false;
     }
   }
 
@@ -11314,6 +11497,76 @@ class NativeGatewaySmokeService {
         message: e.toString(),
       );
     }
+  }
+
+  static Future<Set<String>> _scanProductionSkillIds() async {
+    final filesDir = await NativeBridge.getFilesDir();
+    final skillsDir =
+        Directory('$filesDir/rootfs/ubuntu/root/.openclaw/skills');
+    if (!await skillsDir.exists()) return <String>{};
+
+    final ids = <String>{};
+    await for (final entry in skillsDir.list(followLinks: false)) {
+      if (entry is! Directory) continue;
+      final id = entry.uri.pathSegments.isNotEmpty
+          ? entry.uri.pathSegments.where((segment) => segment.isNotEmpty).last
+          : '';
+      if (id.isNotEmpty && !id.startsWith('.')) ids.add(id);
+    }
+    return ids;
+  }
+
+  static Set<String> _skillIdsFromRegistry(Map<String, dynamic> registry) {
+    final skills = registry['skills'];
+    if (skills is! List) return <String>{};
+    return skills
+        .whereType<Map>()
+        .map((entry) => entry['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  static Future<Map<String, dynamic>> _probeAgentSkillTools() async {
+    final client = http.Client();
+    try {
+      Object? lastError;
+      for (var attempt = 0; attempt < 12; attempt++) {
+        try {
+          final response = await client
+              .get(Uri.parse('http://127.0.0.1:8765/api/tools'))
+              .timeout(const Duration(seconds: 2));
+          if (response.statusCode != 200) {
+            throw StateError('HTTP ${response.statusCode}: ${response.body}');
+          }
+          final decoded = jsonDecode(response.body);
+          if (decoded is! Map<String, dynamic>) {
+            throw StateError('AgentSkill tools payload was not a JSON object');
+          }
+          return decoded;
+        } catch (e) {
+          lastError = e;
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+      }
+      throw StateError('AgentSkill tools probe failed: $lastError');
+    } finally {
+      client.close();
+    }
+  }
+
+  static Set<String> _toolNamesFromAgentTools(Map<String, dynamic> payload) {
+    final tools = payload['tools'];
+    if (tools is! List) return <String>{};
+    return tools
+        .whereType<Map>()
+        .map((tool) => tool['name']?.toString() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet();
+  }
+
+  static List<String> _sortedDifference(Set<String> left, Set<String> right) {
+    final diff = left.difference(right).toList()..sort();
+    return diff;
   }
 
   static bool _preflightPassed(Object? value) {
