@@ -53,6 +53,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderTransportInFlight = false;
   static bool _productionPortProviderLiveInFlight = false;
   static bool _productionPortProviderStreamParityInFlight = false;
+  static bool _productionPortProviderToolPlanInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -4522,6 +4523,661 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderStreamParityInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderToolPlanCaptureCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native production provider tool plan capture: wave right and vibrate once',
+  }) async {
+    if (_productionPortProviderToolPlanInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-tool-plan-capture',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port provider tool-plan capture is already running.',
+      };
+    }
+
+    _productionPortProviderToolPlanInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final requestedModel =
+          model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+      final providerHint = requestedModel.contains('/')
+          ? requestedModel.split('/').first
+          : 'openrouter';
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var toolPlanCanarySent = false;
+      var toolPlanAckOk = false;
+      var toolCatalogOk = false;
+      var providerRequestOk = false;
+      var streamingFixtureOk = false;
+      var messageFixtureOk = false;
+      var unknownFixtureOk = false;
+      var malformedFixtureOk = false;
+      var toolPlanSummaryOk = false;
+      var toolPlanOrderOk = false;
+      var toolPlanEndOk = false;
+      var toolPlanCanaryOk = false;
+      var postToolPlanGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postToolPlanHealth = <String, dynamic>{};
+      Map<String, dynamic> postToolPlanProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> toolPlanEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? toolPlanError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-TOOL-PLAN-OWNER] Opening provider tool-plan capture.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Provider tool-plan capture requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before tool-plan capture.',
+          );
+        }
+
+        log('[NATIVE-TOOL-PLAN-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before tool-plan capture.',
+          );
+        }
+
+        log(
+          '[NATIVE-TOOL-PLAN-OWNER] Starting native on 18789 and capturing '
+          'provider tool-call plans with execution disabled.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError('Native provider tool-plan capture did not start.');
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        toolPlanCanarySent = true;
+        toolPlanEvents = await _streamProductionNdjson(
+          '/gateway/chat-provider-tool-plan-canary-stream',
+          _sampleGatewayWsChatSendFrame(
+            requestId: 'production-provider-tool-plan-request',
+            idempotencyKey: 'production-provider-tool-plan-idempotency-key',
+            model: requestedModel,
+            provider: providerHint,
+            message: prompt,
+          ),
+          expectedStatus: 202,
+        );
+
+        final ackEvent = _firstEvent(toolPlanEvents, 'ack');
+        final catalogEvent = _firstEvent(toolPlanEvents, 'tool_catalog');
+        final requestEvent = _firstEvent(toolPlanEvents, 'provider_request');
+        final streamingFixtureEvent =
+            _firstEvent(toolPlanEvents, 'streaming_tool_fixture');
+        final messageFixtureEvent =
+            _firstEvent(toolPlanEvents, 'message_tool_fixture');
+        final unknownFixtureEvent =
+            _firstEvent(toolPlanEvents, 'unknown_tool_fixture');
+        final malformedFixtureEvent =
+            _firstEvent(toolPlanEvents, 'malformed_arguments_fixture');
+        final summaryEvent = _firstEvent(toolPlanEvents, 'tool_plan_summary');
+        final endEvent = _firstEvent(toolPlanEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final providerRequest = requestEvent['providerRequest'] is Map
+            ? Map<String, dynamic>.from(
+                requestEvent['providerRequest'] as Map,
+              )
+            : <String, dynamic>{};
+        final bodyValidation = providerRequest['bodyValidation'] is Map
+            ? Map<String, dynamic>.from(
+                providerRequest['bodyValidation'] as Map)
+            : <String, dynamic>{};
+        final streamingFixture = streamingFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(
+                streamingFixtureEvent['fixture'] as Map,
+              )
+            : <String, dynamic>{};
+        final messageFixture = messageFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(messageFixtureEvent['fixture'] as Map)
+            : <String, dynamic>{};
+        final unknownFixture = unknownFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(unknownFixtureEvent['fixture'] as Map)
+            : <String, dynamic>{};
+        final malformedFixture = malformedFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(malformedFixtureEvent['fixture'] as Map)
+            : <String, dynamic>{};
+        final streamingParsed = streamingFixture['parsed'] is Map
+            ? Map<String, dynamic>.from(streamingFixture['parsed'] as Map)
+            : <String, dynamic>{};
+        final messageParsed = messageFixture['parsed'] is Map
+            ? Map<String, dynamic>.from(messageFixture['parsed'] as Map)
+            : <String, dynamic>{};
+        final unknownParsed = unknownFixture['parsed'] is Map
+            ? Map<String, dynamic>.from(unknownFixture['parsed'] as Map)
+            : <String, dynamic>{};
+        final malformedParsed = malformedFixture['parsed'] is Map
+            ? Map<String, dynamic>.from(malformedFixture['parsed'] as Map)
+            : <String, dynamic>{};
+        final toolPlanSummary = summaryEvent['toolPlanSummary'] is Map
+            ? Map<String, dynamic>.from(summaryEvent['toolPlanSummary'] as Map)
+            : <String, dynamic>{};
+        final toolFunctionNames = catalogEvent['toolFunctionNames'] is List
+            ? List<dynamic>.from(catalogEvent['toolFunctionNames'] as List)
+            : const <dynamic>[];
+        final gatewayToolNames = catalogEvent['gatewayToolNames'] is List
+            ? List<dynamic>.from(catalogEvent['gatewayToolNames'] as List)
+            : const <dynamic>[];
+        final observedOrder =
+            toolPlanEvents.map((event) => event['event']?.toString()).toList();
+        const expectedOrder = <String>[
+          'ack',
+          'tool_catalog',
+          'provider_request',
+          'streaming_tool_fixture',
+          'message_tool_fixture',
+          'unknown_tool_fixture',
+          'malformed_arguments_fixture',
+          'tool_plan_summary',
+          'end',
+        ];
+        toolPlanOrderOk = observedOrder.length >= expectedOrder.length;
+        for (var i = 0; i < expectedOrder.length && toolPlanOrderOk; i++) {
+          toolPlanOrderOk = observedOrder[i] == expectedOrder[i];
+        }
+
+        final selectedToolCount = catalogEvent['selectedToolCount'];
+        toolPlanAckOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == false &&
+            ackEvent['parsed'] == true &&
+            ackEvent['route'] == 'tool_plan_capture' &&
+            ackEvent['routeStatus'] == 'provider_tool_plan_capture_complete' &&
+            ackEvent['acceptedForRouting'] == true &&
+            ackEvent['acceptedForQueue'] == true &&
+            ackEvent['queuedForDryRun'] == false &&
+            ackEvent['queueStatus'] == 'provider_tool_plan_capture' &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['providerCallsEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ackEvent['toolExecutionEnabled'] == false &&
+            ackEvent['transportInvocationEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            ack['transport'] == 'openai-compatible-chat-completions' &&
+            ack['fixtureParityOk'] == true &&
+            ack['validationOk'] == true &&
+            ack['selectedToolCount'] is num &&
+            (ack['selectedToolCount'] as num) > 0 &&
+            ack['toolPlanCount'] == 1 &&
+            ack['allowedPlanCount'] == 1 &&
+            ack['blockedPlanCount'] == 0 &&
+            ack['providerCallsEnabled'] == false &&
+            ack['transportInvocationEnabled'] == false &&
+            ack['executionEnabled'] == false &&
+            ack['toolExecutionEnabled'] == false;
+        toolCatalogOk = catalogEvent['ok'] == true &&
+            selectedToolCount is num &&
+            selectedToolCount > 0 &&
+            toolFunctionNames.isNotEmpty &&
+            gatewayToolNames.isNotEmpty &&
+            catalogEvent['toolSelectionHash']?.toString().isNotEmpty == true &&
+            catalogEvent['schemaChars'] is num &&
+            (catalogEvent['schemaChars'] as num) > 0 &&
+            catalogEvent['executionEnabled'] == false &&
+            catalogEvent['toolExecutionEnabled'] == false;
+        providerRequestOk = requestEvent['ok'] == true &&
+            providerRequest['provider'] == 'openrouter' &&
+            providerRequest['transport'] ==
+                'openai-compatible-chat-completions' &&
+            providerRequest['selectedToolCount'] is num &&
+            (providerRequest['selectedToolCount'] as num) > 0 &&
+            providerRequest['toolFunctionNames'] is List &&
+            (providerRequest['toolFunctionNames'] as List).isNotEmpty &&
+            providerRequest['requestHash']?.toString().isNotEmpty == true &&
+            providerRequest['bodyHash']?.toString().isNotEmpty == true &&
+            bodyValidation['streamMode'] == true &&
+            bodyValidation['rawPromptRedacted'] == true &&
+            bodyValidation['toolSchemasAttached'] == true &&
+            bodyValidation['toolNamesValid'] == true &&
+            providerRequest['transportInvocationEnabled'] == false &&
+            providerRequest['providerCallsEnabled'] == false &&
+            providerRequest['executionEnabled'] == false &&
+            providerRequest['toolExecutionEnabled'] == false &&
+            providerRequest['stopBefore'] == 'provider_fetch_or_tool_dispatch';
+        streamingFixtureOk = streamingFixtureEvent['ok'] == true &&
+            streamingFixture['fixture'] ==
+                'openai-compatible-streaming-tool-call' &&
+            streamingFixture['parityOk'] == true &&
+            streamingParsed['toolPlanCount'] == 1 &&
+            streamingParsed['allowedPlanCount'] == 1 &&
+            streamingParsed['blockedPlanCount'] == 0 &&
+            streamingParsed['invalidArgumentCount'] == 0 &&
+            streamingParsed['finishReason'] == 'tool_calls' &&
+            streamingParsed['doneSeen'] == true &&
+            streamingParsed['executionEnabled'] == false &&
+            streamingParsed['toolExecutionEnabled'] == false;
+        messageFixtureOk = messageFixtureEvent['ok'] == true &&
+            messageFixture['fixture'] ==
+                'openai-compatible-message-tool-call' &&
+            messageFixture['parityOk'] == true &&
+            messageParsed['toolPlanCount'] == 1 &&
+            messageParsed['allowedPlanCount'] == 1 &&
+            messageParsed['blockedPlanCount'] == 0 &&
+            messageParsed['invalidArgumentCount'] == 0 &&
+            messageParsed['finishReason'] == 'tool_calls';
+        unknownFixtureOk = unknownFixtureEvent['ok'] == true &&
+            unknownFixture['fixture'] == 'unknown-tool-rejected' &&
+            unknownFixture['parityOk'] == true &&
+            unknownParsed['toolPlanCount'] == 1 &&
+            unknownParsed['allowedPlanCount'] == 0 &&
+            unknownParsed['blockedPlanCount'] == 1 &&
+            unknownParsed['unknownToolCount'] == 1;
+        malformedFixtureOk = malformedFixtureEvent['ok'] == true &&
+            malformedFixture['fixture'] ==
+                'malformed-tool-arguments-rejected' &&
+            malformedFixture['parityOk'] == true &&
+            malformedParsed['toolPlanCount'] == 1 &&
+            malformedParsed['allowedPlanCount'] == 0 &&
+            malformedParsed['blockedPlanCount'] == 1 &&
+            malformedParsed['invalidArgumentCount'] == 1;
+        toolPlanSummaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['fixtureParityOk'] == true &&
+            summaryEvent['validationOk'] == true &&
+            summaryEvent['providerCallsEnabled'] == false &&
+            summaryEvent['executionEnabled'] == false &&
+            summaryEvent['toolExecutionEnabled'] == false &&
+            toolPlanSummary['toolPlanCount'] == 1 &&
+            toolPlanSummary['allowedPlanCount'] == 1 &&
+            toolPlanSummary['blockedPlanCount'] == 0 &&
+            toolPlanSummary['finishReason'] == 'tool_calls' &&
+            toolPlanSummary['toolExecutionEnabled'] == false;
+        toolPlanEndOk = endEvent['ok'] == true &&
+            endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['routeStatus'] == 'provider_tool_plan_capture_complete' &&
+            endEvent['finishReason'] == 'tool_plan_capture_complete' &&
+            endEvent['fixtureParityOk'] == true &&
+            endEvent['validationOk'] == true &&
+            endEvent['selectedToolCount'] is num &&
+            (endEvent['selectedToolCount'] as num) > 0 &&
+            endEvent['toolPlanCount'] == 1 &&
+            endEvent['allowedPlanCount'] == 1 &&
+            endEvent['blockedPlanCount'] == 0 &&
+            endEvent['invalidArgumentCount'] == 0 &&
+            endEvent['providerCallsEnabled'] == false &&
+            endEvent['executionEnabled'] == false &&
+            endEvent['toolExecutionEnabled'] == false;
+        toolPlanCanaryOk = toolPlanAckOk &&
+            toolCatalogOk &&
+            providerRequestOk &&
+            streamingFixtureOk &&
+            messageFixtureOk &&
+            unknownFixtureOk &&
+            malformedFixtureOk &&
+            toolPlanSummaryOk &&
+            toolPlanOrderOk &&
+            toolPlanEndOk;
+
+        postToolPlanHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postToolPlanProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postToolPlanGuardOk = postToolPlanHealth['ok'] == true &&
+            postToolPlanHealth['runtime'] == 'native-node-embedded' &&
+            postToolPlanHealth['port'] == AppConstants.gatewayPort &&
+            postToolPlanHealth['productionPortBindCanary'] == true &&
+            postToolPlanHealth['openclawStarted'] == false &&
+            postToolPlanProbe['runtime'] == 'native-node-embedded' &&
+            postToolPlanProbe['port'] == AppConstants.gatewayPort &&
+            postToolPlanProbe['productionPortBindCanary'] == true &&
+            postToolPlanProbe['canaryOnly'] == true &&
+            postToolPlanProbe['productionReady'] == false &&
+            postToolPlanProbe['openclawStarted'] == false &&
+            postToolPlanProbe['chatRoutingEnabled'] == false &&
+            postToolPlanProbe['providerCallsEnabled'] == false &&
+            postToolPlanProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (toolPlanCanarySent) {
+          toolPlanError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          toolPlanCanaryOk &&
+          postToolPlanGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final ackEvent = _firstEvent(toolPlanEvents, 'ack');
+      final catalogEvent = _firstEvent(toolPlanEvents, 'tool_catalog');
+      final requestEvent = _firstEvent(toolPlanEvents, 'provider_request');
+      final summaryEvent = _firstEvent(toolPlanEvents, 'tool_plan_summary');
+      final endEvent = _firstEvent(toolPlanEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final providerRequest = requestEvent['providerRequest'] is Map
+          ? Map<String, dynamic>.from(requestEvent['providerRequest'] as Map)
+          : <String, dynamic>{};
+      final toolPlanSummary = summaryEvent['toolPlanSummary'] is Map
+          ? Map<String, dynamic>.from(summaryEvent['toolPlanSummary'] as Map)
+          : <String, dynamic>{};
+      final observedOrder =
+          toolPlanEvents.map((event) => event['event']?.toString()).toList();
+      final toolPlanNames = toolPlanSummary['toolPlanNames'] is List
+          ? List<dynamic>.from(toolPlanSummary['toolPlanNames'] as List)
+          : const <dynamic>[];
+      final gatewayToolNames = toolPlanSummary['gatewayToolNames'] is List
+          ? List<dynamic>.from(toolPlanSummary['gatewayToolNames'] as List)
+          : const <dynamic>[];
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-provider-tool-plan-capture',
+        'mode':
+            'native-production-port-provider-tool-plan-capture-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'toolPlanCanarySent': toolPlanCanarySent,
+        'toolPlanCanaryOk': toolPlanCanaryOk,
+        'toolPlanAckOk': toolPlanAckOk,
+        'toolCatalogOk': toolCatalogOk,
+        'providerRequestOk': providerRequestOk,
+        'streamingFixtureOk': streamingFixtureOk,
+        'messageFixtureOk': messageFixtureOk,
+        'unknownFixtureOk': unknownFixtureOk,
+        'malformedFixtureOk': malformedFixtureOk,
+        'toolPlanSummaryOk': toolPlanSummaryOk,
+        'toolPlanOrderOk': toolPlanOrderOk,
+        'toolPlanEndOk': toolPlanEndOk,
+        'toolPlanEventsCount': toolPlanEvents.length,
+        'toolPlanObservedOrder': observedOrder,
+        'toolPlanRouteStatus': ackEvent['routeStatus'] ?? ack['routeStatus'],
+        'toolPlanFinishReason': endEvent['finishReason'],
+        'provider': providerRequest['provider'] ?? ack['provider'],
+        'requestedModel':
+            providerRequest['requestedModel'] ?? ack['requestedModel'],
+        'providerModel':
+            providerRequest['providerModel'] ?? ack['providerModel'],
+        'transport': providerRequest['transport'] ?? ack['transport'],
+        'requestHash': providerRequest['requestHash'] ?? ack['requestHash'],
+        'bodyHash': providerRequest['bodyHash'] ?? ack['bodyHash'],
+        'toolSelectionHash':
+            providerRequest['toolSelectionHash'] ?? ack['toolSelectionHash'],
+        'fixtureHash': ack['fixtureHash'] ?? endEvent['fixtureHash'],
+        'fixtureParityOk': ack['fixtureParityOk'] == true ||
+            endEvent['fixtureParityOk'] == true,
+        'validationOk': ack['validationOk'] == true ||
+            summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'selectedToolCount':
+            catalogEvent['selectedToolCount'] ?? ack['selectedToolCount'],
+        'toolFunctionNames': catalogEvent['toolFunctionNames'],
+        'gatewayToolNames': catalogEvent['gatewayToolNames'],
+        'schemaChars': catalogEvent['schemaChars'],
+        'toolPlanCount':
+            toolPlanSummary['toolPlanCount'] ?? endEvent['toolPlanCount'],
+        'allowedPlanCount':
+            toolPlanSummary['allowedPlanCount'] ?? endEvent['allowedPlanCount'],
+        'blockedPlanCount':
+            toolPlanSummary['blockedPlanCount'] ?? endEvent['blockedPlanCount'],
+        'invalidArgumentCount': toolPlanSummary['invalidArgumentCount'] ??
+            endEvent['invalidArgumentCount'],
+        'unknownToolCount': toolPlanSummary['unknownToolCount'],
+        'toolPlanNames': toolPlanNames,
+        'capturedGatewayToolNames': gatewayToolNames,
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'transportInvocationEnabled':
+            providerRequest['transportInvocationEnabled'] == true ||
+                ackEvent['transportInvocationEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        if (toolPlanError != null) 'toolPlanError': toolPlanError.toString(),
+        'postToolPlanGuardOk': postToolPlanGuardOk,
+        'postToolPlanRuntimeReported': postToolPlanHealth['runtime'],
+        'postToolPlanCanaryOnly': postToolPlanProbe['canaryOnly'] == true,
+        'postToolPlanChatRoutingEnabled':
+            postToolPlanProbe['chatRoutingEnabled'] == true,
+        'postToolPlanProviderCallsEnabled':
+            postToolPlanProbe['providerCallsEnabled'] == true,
+        'postToolPlanToolExecutionEnabled':
+            postToolPlanProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native owned 18789, captured provider tool-call plans with provider/tool execution disabled, and PRoot was restored.'
+            : 'Production-port provider tool-plan capture is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'production-port native tool dispatch dry-run with execution disabled',
+      };
+      log('[NATIVE-TOOL-PLAN-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortProviderToolPlanInFlight = false;
     }
   }
 

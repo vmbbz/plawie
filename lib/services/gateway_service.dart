@@ -4091,6 +4091,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderToolPlanPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-tool-plan-owner',
+      '/native-production-tool-plan',
+      '/native-provider-tool-plan-owner',
+      '/native-tool-plan-capture-owner',
+      'native-tool-plan-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production provider tool plan capture: wave right and vibrate once';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production provider tool plan capture: wave right and vibrate once'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7604,6 +7630,98 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderToolPlanMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionProviderToolPlanPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-TOOL-PLAN-OWNER] -> Opening production-port tool-plan capture canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderToolPlanCaptureCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-TOOL-PLAN-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final toolNames = report['toolPlanNames'] is List
+          ? (report['toolPlanNames'] as List).join(', ')
+          : '';
+      final gatewayNames = report['capturedGatewayToolNames'] is List
+          ? (report['capturedGatewayToolNames'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native production tool-plan capture complete'
+            : 'Native production tool-plan capture pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'toolPlanCanarySent: ${report['toolPlanCanarySent'] == true}',
+        'toolPlanCanaryOk: ${report['toolPlanCanaryOk'] == true}',
+        'toolPlanAckOk: ${report['toolPlanAckOk'] == true}',
+        'toolCatalogOk: ${report['toolCatalogOk'] == true}',
+        'providerRequestOk: ${report['providerRequestOk'] == true}',
+        'streamingFixtureOk: ${report['streamingFixtureOk'] == true}',
+        'messageFixtureOk: ${report['messageFixtureOk'] == true}',
+        'unknownFixtureOk: ${report['unknownFixtureOk'] == true}',
+        'malformedFixtureOk: ${report['malformedFixtureOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'toolPlanOrderOk: ${report['toolPlanOrderOk'] == true}',
+        'toolPlanEndOk: ${report['toolPlanEndOk'] == true}',
+        'toolPlanRouteStatus: ${report['toolPlanRouteStatus'] ?? 'unknown'}',
+        'toolPlanFinishReason: ${report['toolPlanFinishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'selectedToolCount: ${report['selectedToolCount'] ?? 0}',
+        'toolPlanCount: ${report['toolPlanCount'] ?? 0}',
+        'allowedPlanCount: ${report['allowedPlanCount'] ?? 0}',
+        'blockedPlanCount: ${report['blockedPlanCount'] ?? 0}',
+        'invalidArgumentCount: ${report['invalidArgumentCount'] ?? 0}',
+        'unknownToolCount: ${report['unknownToolCount'] ?? 0}',
+        'toolPlanNames: $toolNames',
+        'gatewayToolNames: $gatewayNames',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'postToolPlanGuardOk: ${report['postToolPlanGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-TOOL-PLAN-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7616,6 +7734,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderToolPlanPayload(message) != null) {
+      yield* _sendNativeProductionProviderToolPlanMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionProviderStreamParityPayload(message) != null) {
       yield* _sendNativeProductionProviderStreamParityMessage(
