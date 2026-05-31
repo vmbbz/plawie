@@ -63,6 +63,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortBridgeReadOnlyCanaryInFlight = false;
   static bool _productionPortBridgeHapticCanaryInFlight = false;
   static bool _productionPortBridgeAvatarCanaryInFlight = false;
+  static bool _productionPortProviderToolPlanExecutionInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -9834,6 +9835,319 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortBridgeAvatarCanaryInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderToolPlanAllowlistedExecutionCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native production provider tool plan to allowlisted execution canary: vibrate once',
+  }) async {
+    if (_productionPortProviderToolPlanExecutionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase':
+            'hidden-production-port-provider-tool-plan-allowlisted-execution',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port provider tool-plan execution canary is already running.',
+      };
+    }
+
+    _productionPortProviderToolPlanExecutionInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final requestedModel =
+          model.trim().isEmpty ? 'openrouter/auto' : model.trim();
+
+      bool reportFlag(Map<String, dynamic> report, String key) =>
+          report[key] == true;
+      bool reportDisabled(Map<String, dynamic> report, String key) =>
+          report[key] != true;
+      int reportInt(Map<String, dynamic> report, String key) {
+        final value = report[key];
+        if (value is int) return value;
+        if (value is num) return value.round();
+        if (value == null) return 0;
+        return int.tryParse(value.toString()) ?? 0;
+      }
+
+      List<String> stringList(Object? value) {
+        if (value is! List) return const <String>[];
+        return value
+            .map((entry) => entry.toString().trim())
+            .where((entry) => entry.isNotEmpty)
+            .toList(growable: false);
+      }
+
+      String normalizeToolName(String value) => value
+          .trim()
+          .toLowerCase()
+          .replaceAll('_', '.')
+          .replaceAll('-', '.')
+          .replaceAll(RegExp(r'\.+'), '.');
+
+      bool hasTool(Iterable<String> names, String toolName) {
+        final normalizedTool = normalizeToolName(toolName);
+        final compactTool = normalizedTool.replaceAll('.', '');
+        for (final name in names) {
+          final normalized = normalizeToolName(name);
+          if (normalized == normalizedTool ||
+              normalized.replaceAll('.', '') == compactTool) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      bool allowlistContains(Map<String, dynamic> report, String toolName) {
+        final allowlist = stringList(report['canaryAllowlist']);
+        return hasTool(allowlist, toolName);
+      }
+
+      bool executionBaseOk(Map<String, dynamic> report) =>
+          reportFlag(report, 'ok') &&
+          reportFlag(report, 'canaryAllowlistOk') &&
+          reportFlag(report, 'executeParityOk') &&
+          reportFlag(report, 'validationOk') &&
+          reportDisabled(report, 'providerCallsEnabled') &&
+          reportDisabled(report, 'transportInvocationEnabled') &&
+          reportFlag(report, 'executionEnabled') &&
+          reportFlag(report, 'toolExecutionEnabled') &&
+          reportFlag(report, 'bridgeExecutionEnabled') &&
+          reportFlag(report, 'nativeStopped') &&
+          reportFlag(report, 'nativePortReleasedAfterStop') &&
+          reportFlag(report, 'rollbackHealthOk');
+
+      log(
+        '[NATIVE-TOOL-PLAN-EXEC-OWNER] Capturing provider tool intent before bounded execution.',
+      );
+
+      final captureReport =
+          await runProductionPortProviderToolPlanCaptureCanary(
+        log: log,
+        model: requestedModel,
+        prompt: prompt,
+      );
+
+      final capturedToolNames = <String>{
+        ...stringList(captureReport['toolPlanNames']),
+        ...stringList(captureReport['capturedGatewayToolNames']),
+      }.toList(growable: false);
+      final availableToolNames = <String>{
+        ...stringList(captureReport['toolFunctionNames']),
+        ...stringList(captureReport['gatewayToolNames']),
+      }.toList(growable: false);
+
+      final captureOk = reportFlag(captureReport, 'ok') &&
+          reportFlag(captureReport, 'toolPlanCanaryOk') &&
+          reportFlag(captureReport, 'toolPlanAckOk') &&
+          reportFlag(captureReport, 'toolCatalogOk') &&
+          reportFlag(captureReport, 'providerRequestOk') &&
+          reportFlag(captureReport, 'toolPlanSummaryOk') &&
+          reportInt(captureReport, 'allowedPlanCount') > 0 &&
+          reportDisabled(captureReport, 'providerCallsEnabled') &&
+          reportDisabled(captureReport, 'transportInvocationEnabled') &&
+          reportDisabled(captureReport, 'executionEnabled') &&
+          reportDisabled(captureReport, 'toolExecutionEnabled') &&
+          reportFlag(captureReport, 'rollbackHealthOk');
+
+      final plannedHaptic = hasTool(capturedToolNames, 'haptic.vibrate');
+      final plannedAvatar = hasTool(capturedToolNames, 'avatar.gesture');
+      final plannedReadOnly = hasTool(capturedToolNames, 'flash.status') &&
+          hasTool(capturedToolNames, 'sensor.list');
+
+      String? selectedExecutionCanary;
+      String selectedExecutionPrompt = prompt;
+      if (plannedHaptic) {
+        selectedExecutionCanary = 'haptic.vibrate';
+        selectedExecutionPrompt =
+            'native production provider-selected haptic bridge execution canary: vibrate once';
+      } else if (plannedAvatar) {
+        selectedExecutionCanary = 'avatar.gesture';
+        selectedExecutionPrompt =
+            'native production provider-selected avatar bridge execution canary: wave right';
+      } else if (plannedReadOnly) {
+        selectedExecutionCanary = 'flash.status,sensor.list';
+        selectedExecutionPrompt =
+            'native production provider-selected read-only bridge execution canary: check flash and list sensors';
+      }
+
+      final planToAllowlistMatchedOk =
+          captureOk && selectedExecutionCanary != null;
+
+      Map<String, dynamic> executionReport = <String, dynamic>{};
+      var executionOk = false;
+      var selectedAllowlist = const <String>[];
+      var executionCommand = 'none';
+
+      if (planToAllowlistMatchedOk) {
+        log(
+          '[NATIVE-TOOL-PLAN-EXEC-OWNER] Provider plan matched $selectedExecutionCanary; executing only that allowlisted bridge canary.',
+        );
+        if (selectedExecutionCanary == 'haptic.vibrate') {
+          executionReport = await runProductionPortBridgeExecutionHapticCanary(
+            log: log,
+            model: requestedModel,
+            prompt: selectedExecutionPrompt,
+          );
+          selectedAllowlist = const <String>['haptic.vibrate'];
+          executionCommand = 'haptic.vibrate';
+          executionOk = executionBaseOk(executionReport) &&
+              reportFlag(executionReport, 'hapticCanaryOk') &&
+              executionReport['command'] == 'haptic.vibrate' &&
+              allowlistContains(executionReport, 'haptic.vibrate') &&
+              reportFlag(executionReport, 'durationBounded');
+        } else if (selectedExecutionCanary == 'avatar.gesture') {
+          executionReport = await runProductionPortBridgeExecutionAvatarCanary(
+            log: log,
+            model: requestedModel,
+            prompt: selectedExecutionPrompt,
+          );
+          selectedAllowlist = const <String>['avatar.gesture'];
+          executionCommand = 'avatar.gesture';
+          executionOk = executionBaseOk(executionReport) &&
+              reportFlag(executionReport, 'avatarCanaryOk') &&
+              executionReport['command'] == 'avatar.gesture' &&
+              allowlistContains(executionReport, 'avatar.gesture') &&
+              reportFlag(executionReport, 'protectedGesture') &&
+              reportFlag(executionReport, 'arbitrationOk');
+        } else {
+          executionReport =
+              await runProductionPortBridgeExecutionReadOnlyCanary(
+            log: log,
+            model: requestedModel,
+            prompt: selectedExecutionPrompt,
+          );
+          selectedAllowlist = const <String>['flash.status', 'sensor.list'];
+          executionCommand = 'flash.status,sensor.list';
+          executionOk = executionBaseOk(executionReport) &&
+              reportFlag(executionReport, 'readOnlyCanaryOk') &&
+              reportFlag(executionReport, 'readOnly') &&
+              allowlistContains(executionReport, 'flash.status') &&
+              allowlistContains(executionReport, 'sensor.list');
+        }
+      }
+
+      final captureRollbackOk = reportFlag(captureReport, 'rollbackStarted') &&
+          reportFlag(captureReport, 'rollbackRunning') &&
+          reportFlag(captureReport, 'rollbackHealthOk');
+      final executionRollbackOk = executionReport.isNotEmpty &&
+          reportFlag(executionReport, 'rollbackStarted') &&
+          reportFlag(executionReport, 'rollbackRunning') &&
+          reportFlag(executionReport, 'rollbackHealthOk');
+      final providerDisabledDuringCaptureOk =
+          reportDisabled(captureReport, 'providerCallsEnabled') &&
+              reportDisabled(captureReport, 'transportInvocationEnabled');
+      final executionDisabledDuringCaptureOk =
+          reportDisabled(captureReport, 'executionEnabled') &&
+              reportDisabled(captureReport, 'toolExecutionEnabled');
+      final providerDisabledDuringExecutionOk = executionReport.isNotEmpty &&
+          reportDisabled(executionReport, 'providerCallsEnabled') &&
+          reportDisabled(
+            executionReport,
+            'transportInvocationEnabled',
+          );
+      final executionEnabledDuringSelectedCanaryOk =
+          executionReport.isNotEmpty &&
+              reportFlag(executionReport, 'executionEnabled') &&
+              reportFlag(executionReport, 'toolExecutionEnabled') &&
+              reportFlag(executionReport, 'bridgeExecutionEnabled');
+
+      final ok = captureOk &&
+          planToAllowlistMatchedOk &&
+          executionOk &&
+          captureRollbackOk &&
+          executionRollbackOk &&
+          providerDisabledDuringCaptureOk &&
+          executionDisabledDuringCaptureOk &&
+          providerDisabledDuringExecutionOk &&
+          executionEnabledDuringSelectedCanaryOk;
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase':
+            'hidden-production-port-provider-tool-plan-allowlisted-execution',
+        'mode':
+            'native-production-port-provider-tool-plan-to-allowlisted-execution-with-rollback',
+        'productionPort': AppConstants.gatewayPort,
+        'activeRuntimeId': GatewayRuntimeRegistry.current.id,
+        'temporaryOwnerRuntimeId': _productionPortRuntime.id,
+        'requestedModel': requestedModel,
+        'captureOk': captureOk,
+        'capturePhase': captureReport['phase'],
+        'captureMode': captureReport['mode'],
+        'captureToolPlanCanaryOk': captureReport['toolPlanCanaryOk'] == true,
+        'captureToolPlanAckOk': captureReport['toolPlanAckOk'] == true,
+        'captureProviderRequestOk': captureReport['providerRequestOk'] == true,
+        'captureToolPlanSummaryOk': captureReport['toolPlanSummaryOk'] == true,
+        'capturedToolNames': capturedToolNames,
+        'capturedToolPlanNames': stringList(captureReport['toolPlanNames']),
+        'capturedGatewayToolNames':
+            stringList(captureReport['capturedGatewayToolNames']),
+        'availableToolNames': availableToolNames,
+        'plannedHaptic': plannedHaptic,
+        'plannedAvatar': plannedAvatar,
+        'plannedReadOnly': plannedReadOnly,
+        'selectedExecutionCanary': selectedExecutionCanary,
+        'selectedExecutionCommand': executionCommand,
+        'selectedAllowlist': selectedAllowlist,
+        'planToAllowlistMatchedOk': planToAllowlistMatchedOk,
+        'executionOk': executionOk,
+        'executionPhase': executionReport['phase'],
+        'executionMode': executionReport['mode'],
+        'executionCommand': executionReport['command'] ?? executionCommand,
+        'executionFinishReason': executionReport['finishReason'],
+        'executionCanaryAllowlist': executionReport['canaryAllowlist'],
+        'executionCanaryAllowlistOk':
+            executionReport['canaryAllowlistOk'] == true,
+        'executionExecuteParityOk': executionReport['executeParityOk'] == true,
+        'executionValidationOk': executionReport['validationOk'] == true,
+        'executionResultStatus': executionReport['resultStatus'],
+        'providerDisabledDuringCaptureOk': providerDisabledDuringCaptureOk,
+        'executionDisabledDuringCaptureOk': executionDisabledDuringCaptureOk,
+        'providerDisabledDuringExecutionOk': providerDisabledDuringExecutionOk,
+        'executionEnabledDuringSelectedCanaryOk':
+            executionEnabledDuringSelectedCanaryOk,
+        'captureProviderCallsEnabled':
+            captureReport['providerCallsEnabled'] == true,
+        'captureTransportInvocationEnabled':
+            captureReport['transportInvocationEnabled'] == true,
+        'captureExecutionEnabled': captureReport['executionEnabled'] == true,
+        'captureToolExecutionEnabled':
+            captureReport['toolExecutionEnabled'] == true,
+        'executionProviderCallsEnabled':
+            executionReport['providerCallsEnabled'] == true,
+        'executionTransportInvocationEnabled':
+            executionReport['transportInvocationEnabled'] == true,
+        'executionExecutionEnabled':
+            executionReport['executionEnabled'] == true,
+        'executionToolExecutionEnabled':
+            executionReport['toolExecutionEnabled'] == true,
+        'executionBridgeExecutionEnabled':
+            executionReport['bridgeExecutionEnabled'] == true,
+        'captureRollbackOk': captureRollbackOk,
+        'executionRollbackOk': executionRollbackOk,
+        'captureNativeSmokeRestored':
+            captureReport['nativeSmokeRestored'] == true,
+        'executionNativeSmokeRestored':
+            executionReport['nativeSmokeRestored'] == true,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? 'Native captured a provider-style tool plan on 18789, mapped it to a matching bounded allowlist, executed only that bridge canary, and PRoot was restored.'
+            : (captureOk
+                ? 'Provider tool-plan capture succeeded, but the selected allowlisted execution canary is not promotable; PRoot rollback was attempted.'
+                : 'Provider tool-plan capture did not pass; allowlisted execution was not attempted.'),
+        'nextGate':
+            'production-port live provider tool-call to bounded native bridge execution canary',
+      };
+      log('[NATIVE-TOOL-PLAN-EXEC-OWNER] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionPortProviderToolPlanExecutionInFlight = false;
     }
   }
 

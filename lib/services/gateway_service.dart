@@ -4195,6 +4195,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderToolPlanExecutionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-tool-plan-exec-owner',
+      '/native-production-tool-plan-exec',
+      '/native-provider-tool-exec-owner',
+      '/native-provider-tool-plan-exec-owner',
+      '/native-tool-plan-allowlist-owner',
+      'native-tool-plan-exec-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production provider tool plan to allowlisted execution canary: vibrate once';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production provider tool plan to allowlisted execution canary: vibrate once'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -8191,6 +8218,91 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderToolPlanExecutionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionProviderToolPlanExecutionPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-TOOL-PLAN-EXEC-OWNER] -> Opening provider tool-plan to allowlisted execution canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderToolPlanAllowlistedExecutionCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-TOOL-PLAN-EXEC-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final capturedToolNames = report['capturedToolNames'] is List
+          ? (report['capturedToolNames'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native provider tool-plan execution canary complete'
+            : 'Native provider tool-plan execution canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'captureOk: ${report['captureOk'] == true}',
+        'captureToolPlanCanaryOk: ${report['captureToolPlanCanaryOk'] == true}',
+        'captureToolPlanAckOk: ${report['captureToolPlanAckOk'] == true}',
+        'captureProviderRequestOk: ${report['captureProviderRequestOk'] == true}',
+        'captureToolPlanSummaryOk: ${report['captureToolPlanSummaryOk'] == true}',
+        'capturedToolNames: $capturedToolNames',
+        'plannedHaptic: ${report['plannedHaptic'] == true}',
+        'plannedAvatar: ${report['plannedAvatar'] == true}',
+        'plannedReadOnly: ${report['plannedReadOnly'] == true}',
+        'selectedExecutionCanary: ${report['selectedExecutionCanary'] ?? 'none'}',
+        'selectedExecutionCommand: ${report['selectedExecutionCommand'] ?? 'none'}',
+        'selectedAllowlist: ${_compactJsonValue(report['selectedAllowlist'])}',
+        'planToAllowlistMatchedOk: ${report['planToAllowlistMatchedOk'] == true}',
+        'executionOk: ${report['executionOk'] == true}',
+        'executionCommand: ${report['executionCommand'] ?? 'none'}',
+        'executionFinishReason: ${report['executionFinishReason'] ?? 'unknown'}',
+        'executionCanaryAllowlist: ${_compactJsonValue(report['executionCanaryAllowlist'])}',
+        'executionCanaryAllowlistOk: ${report['executionCanaryAllowlistOk'] == true}',
+        'executionExecuteParityOk: ${report['executionExecuteParityOk'] == true}',
+        'executionValidationOk: ${report['executionValidationOk'] == true}',
+        'executionResultStatus: ${report['executionResultStatus'] ?? 'unknown'}',
+        'providerDisabledDuringCaptureOk: ${report['providerDisabledDuringCaptureOk'] == true}',
+        'executionDisabledDuringCaptureOk: ${report['executionDisabledDuringCaptureOk'] == true}',
+        'providerDisabledDuringExecutionOk: ${report['providerDisabledDuringExecutionOk'] == true}',
+        'executionEnabledDuringSelectedCanaryOk: ${report['executionEnabledDuringSelectedCanaryOk'] == true}',
+        'captureProviderCallsEnabled: ${report['captureProviderCallsEnabled'] == true}',
+        'captureTransportInvocationEnabled: ${report['captureTransportInvocationEnabled'] == true}',
+        'captureExecutionEnabled: ${report['captureExecutionEnabled'] == true}',
+        'captureToolExecutionEnabled: ${report['captureToolExecutionEnabled'] == true}',
+        'executionProviderCallsEnabled: ${report['executionProviderCallsEnabled'] == true}',
+        'executionTransportInvocationEnabled: ${report['executionTransportInvocationEnabled'] == true}',
+        'executionExecutionEnabled: ${report['executionExecutionEnabled'] == true}',
+        'executionToolExecutionEnabled: ${report['executionToolExecutionEnabled'] == true}',
+        'executionBridgeExecutionEnabled: ${report['executionBridgeExecutionEnabled'] == true}',
+        'captureRollbackOk: ${report['captureRollbackOk'] == true}',
+        'executionRollbackOk: ${report['executionRollbackOk'] == true}',
+        'captureNativeSmokeRestored: ${report['captureNativeSmokeRestored'] == true}',
+        'executionNativeSmokeRestored: ${report['executionNativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-TOOL-PLAN-EXEC-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -8762,6 +8874,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderToolPlanExecutionPayload(message) != null) {
+      yield* _sendNativeProductionProviderToolPlanExecutionMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionBridgeExecutionAvatarPayload(message) != null) {
       yield* _sendNativeProductionBridgeExecutionAvatarMessage(
