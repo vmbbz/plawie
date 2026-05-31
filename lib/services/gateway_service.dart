@@ -4065,6 +4065,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionProviderStreamParityPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-stream-owner',
+      '/native-production-stream',
+      '/native-stream-parity-owner',
+      '/native-provider-stream-owner',
+      'native-stream-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production provider stream parser parity';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production provider stream parser parity'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7489,6 +7515,95 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionProviderStreamParityMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionProviderStreamParityPayload(message);
+    if (payload == null) return;
+
+    final providerConfig =
+        await resolveNativeProviderLiveCanaryConfig(model: model);
+    if (providerConfig == null) {
+      yield '[Error] Native production stream parser parity needs an OpenRouter model with a configured API key.';
+      return;
+    }
+
+    _addActivity(
+      '[NATIVE-STREAM-OWNER] -> Opening production-port stream parser parity canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderStreamParserParityCanary(
+        log: _addActivity,
+        providerConfig: {
+          ...providerConfig,
+          'title': 'Plawie Native Stream Parser Parity',
+        },
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-STREAM-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      yield [
+        ok
+            ? 'Native production stream parser parity complete'
+            : 'Native production stream parser parity pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'parityCanarySent: ${report['parityCanarySent'] == true}',
+        'parityCanaryOk: ${report['parityCanaryOk'] == true}',
+        'streamSuccessOk: ${report['streamSuccessOk'] == true}',
+        'parserFixtureOk: ${report['parserFixtureOk'] == true}',
+        'errorFixtureOk: ${report['errorFixtureOk'] == true}',
+        'timeoutFixtureOk: ${report['timeoutFixtureOk'] == true}',
+        'cancellationFixtureOk: ${report['cancellationFixtureOk'] == true}',
+        'providerRequestOk: ${report['providerRequestOk'] == true}',
+        'providerCallStartedOk: ${report['providerCallStartedOk'] == true}',
+        'providerResponseOk: ${report['providerResponseOk'] == true}',
+        'providerErrorSurfaceOk: ${report['providerErrorSurfaceOk'] == true}',
+        'liveParserSummaryOk: ${report['liveParserSummaryOk'] == true}',
+        'parityOrderOk: ${report['parityOrderOk'] == true}',
+        'parityEndOk: ${report['parityEndOk'] == true}',
+        'parityRouteStatus: ${report['parityRouteStatus'] ?? 'unknown'}',
+        'parityFinishReason: ${report['parityFinishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'statusCode: ${report['statusCode'] ?? 'unknown'}',
+        'deltaCount: ${report['deltaCount'] ?? 0}',
+        'textChars: ${report['textChars'] ?? 0}',
+        'warningCount: ${report['warningCount'] ?? 0}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        'postParityGuardOk: ${report['postParityGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-STREAM-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7501,6 +7616,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionProviderStreamParityPayload(message) != null) {
+      yield* _sendNativeProductionProviderStreamParityMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionProviderLivePayload(message) != null) {
       yield* _sendNativeProductionProviderLiveMessage(

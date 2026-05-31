@@ -189,6 +189,7 @@ be safely generalized.
 | [49-native-provider-owner-builder.md](49-native-provider-owner-builder.md) | Explicit `/native-builder-owner` diagnostics proving native normalizes provider requests on `18789` before transport invocation |
 | [50-native-provider-owner-transport.md](50-native-provider-owner-transport.md) | Explicit `/native-transport-owner` diagnostics proving native constructs transport on `18789` and aborts before DNS/provider billing |
 | [51-native-provider-owner-live.md](51-native-provider-owner-live.md) | Explicit `/native-live-owner` diagnostics proving one bounded provider call on `18789` with mandatory rollback |
+| [52-native-provider-owner-stream-parity.md](52-native-provider-owner-stream-parity.md) | Explicit `/native-stream-owner` diagnostics proving stream parser/error/timeout/cancel parity on `18789` |
 
 ## Work Rules
 

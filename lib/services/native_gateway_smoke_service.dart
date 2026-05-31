@@ -52,6 +52,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderBuilderInFlight = false;
   static bool _productionPortProviderTransportInFlight = false;
   static bool _productionPortProviderLiveInFlight = false;
+  static bool _productionPortProviderStreamParityInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -3891,6 +3892,636 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionPortProviderLiveInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runProductionPortProviderStreamParserParityCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt = 'native production provider stream parser parity',
+  }) async {
+    if (_productionPortProviderStreamParityInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-production-port-provider-stream-parser-parity',
+        'alreadyInFlight': true,
+        'decision':
+            'Production-port provider stream parser parity is already running.',
+      };
+    }
+
+    _productionPortProviderStreamParityInFlight = true;
+    final startedAt = DateTime.now();
+
+    try {
+      final productionRuntime = GatewayRuntimeRegistry.current;
+      final ownerRuntime = _productionPortRuntime;
+      final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
+      final providerHint =
+          providerConfigForNative['provider']?.toString().trim();
+      final providerModel = providerConfigForNative['model']?.toString().trim();
+      final apiKeyLoaded =
+          providerConfigForNative['apiKey']?.toString().trim().isNotEmpty ==
+              true;
+      var nativeSmokeWasRunning = false;
+      var nativeSmokeStopRequested = false;
+      var nativeSmokeRestored = false;
+      var preflightProductionRunning = false;
+      var productionHealthOkBefore = false;
+      var prootStopRequested = false;
+      var productionPortReleased = false;
+      var nativeStarted = false;
+      var nativeRunning = false;
+      var nativeObservedAlive = false;
+      var parityCanarySent = false;
+      var parityAckOk = false;
+      var parserFixtureOk = false;
+      var errorFixtureOk = false;
+      var timeoutFixtureOk = false;
+      var cancellationFixtureOk = false;
+      var providerRequestOk = false;
+      var providerGateOk = false;
+      var providerCallStartedOk = false;
+      var providerResponseOk = false;
+      var providerErrorSurfaceOk = false;
+      var liveParserSummaryOk = false;
+      var streamSuccessOk = false;
+      var parityOrderOk = false;
+      var parityEndOk = false;
+      var parityCanaryOk = false;
+      var postParityGuardOk = false;
+      var nativeStopped = false;
+      var nativePortReleasedAfterStop = false;
+      var rollbackStarted = false;
+      var rollbackRunning = false;
+      var rollbackHealthOk = false;
+      Map<String, dynamic> productionBefore = <String, dynamic>{};
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Map<String, dynamic> nativeProbe = <String, dynamic>{};
+      Map<String, dynamic> postParityHealth = <String, dynamic>{};
+      Map<String, dynamic> postParityProbe = <String, dynamic>{};
+      Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+      List<Map<String, dynamic>> parityEvents = <Map<String, dynamic>>[];
+      Object? productionBeforeError;
+      Object? prootStopError;
+      Object? nativeError;
+      Object? parityError;
+      Object? nativeStopError;
+      Object? rollbackError;
+
+      log('[NATIVE-STREAM-OWNER] Opening stream parser parity canary.');
+
+      try {
+        nativeSmokeWasRunning = await _nodeRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        nativeSmokeStopRequested = await _nodeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false)
+            .catchError((_) => false);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+
+        preflightProductionRunning = await productionRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!preflightProductionRunning) {
+          await productionRuntime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 30), onTimeout: () => false)
+              .catchError((_) => false);
+          preflightProductionRunning = await productionRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+
+        try {
+          productionBefore = await _probeProductionJson(
+            '/health',
+            attempts: 12,
+            retryDelay: const Duration(milliseconds: 500),
+          );
+          productionHealthOkBefore =
+              _productionHealthLooksLikeProot(productionBefore);
+        } catch (e) {
+          productionBeforeError = e;
+        }
+
+        if (productionRuntime.id != 'proot') {
+          throw StateError(
+            'Provider stream parser parity requires PRoot as current runtime.',
+          );
+        }
+        if (!preflightProductionRunning || !productionHealthOkBefore) {
+          throw StateError(
+            'PRoot production runtime was not healthy before stream parser parity.',
+          );
+        }
+
+        log('[NATIVE-STREAM-OWNER] Stopping PRoot to release 18789.');
+        prootStopRequested = await productionRuntime
+            .stop()
+            .timeout(const Duration(seconds: 20), onTimeout: () => false);
+        productionPortReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 25),
+        );
+        if (!prootStopRequested || !productionPortReleased) {
+          throw StateError(
+            'Production port did not release cleanly before stream parser parity.',
+          );
+        }
+
+        log(
+          '[NATIVE-STREAM-OWNER] Starting native on 18789 for parser fixtures '
+          'and one bounded provider stream.',
+        );
+        nativeStarted = await ownerRuntime
+            .start()
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        if (!nativeStarted) {
+          throw StateError('Native stream parser parity did not start.');
+        }
+
+        nativeHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 60,
+          retryDelay: const Duration(milliseconds: 500),
+        );
+        nativeProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 12,
+          retryDelay: const Duration(milliseconds: 250),
+        );
+        nativeObservedAlive = true;
+        nativeRunning = await ownerRuntime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false)
+            .catchError((_) => false);
+
+        parityCanarySent = true;
+        parityEvents = await _streamProductionNdjson(
+          '/gateway/chat-provider-stream-parser-parity-stream',
+          {
+            ..._sampleGatewayWsChatSendFrame(
+              requestId: 'production-provider-stream-parity-request',
+              idempotencyKey:
+                  'production-provider-stream-parity-idempotency-key',
+              model: providerHint == null || providerHint.isEmpty
+                  ? null
+                  : '$providerHint/$providerModel',
+              provider: providerHint,
+              message: prompt,
+            ),
+            'nativeCanaryProviderConfig': providerConfigForNative,
+          },
+          expectedStatus: 202,
+          streamIdleTimeout: const Duration(seconds: 70),
+        );
+
+        final ackEvent = _firstEvent(parityEvents, 'ack');
+        final parserFixtureEvent = _firstEvent(parityEvents, 'parser_fixture');
+        final errorFixtureEvent = _firstEvent(parityEvents, 'error_fixture');
+        final timeoutFixtureEvent =
+            _firstEvent(parityEvents, 'timeout_fixture');
+        final cancellationFixtureEvent =
+            _firstEvent(parityEvents, 'cancellation_fixture');
+        final requestEvent = _firstEvent(parityEvents, 'provider_request');
+        final gateEvent = _firstEvent(parityEvents, 'provider_gate');
+        final callStartedEvent =
+            _firstEvent(parityEvents, 'provider_call_started');
+        final responseEvent = _firstEvent(parityEvents, 'provider_response');
+        final providerErrorEvent = _firstEvent(parityEvents, 'provider_error');
+        final summaryEvent = _firstEvent(parityEvents, 'live_parser_summary');
+        final endEvent = _firstEvent(parityEvents, 'end');
+        final ack = ackEvent['ack'] is Map
+            ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+            : <String, dynamic>{};
+        final providerRequest = requestEvent['providerRequest'] is Map
+            ? Map<String, dynamic>.from(
+                requestEvent['providerRequest'] as Map,
+              )
+            : <String, dynamic>{};
+        final parserFixture = parserFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(
+                parserFixtureEvent['fixture'] as Map,
+              )
+            : <String, dynamic>{};
+        final errorFixture = errorFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(errorFixtureEvent['fixture'] as Map)
+            : <String, dynamic>{};
+        final timeoutFixture = timeoutFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(timeoutFixtureEvent['fixture'] as Map)
+            : <String, dynamic>{};
+        final cancellationFixture = cancellationFixtureEvent['fixture'] is Map
+            ? Map<String, dynamic>.from(
+                cancellationFixtureEvent['fixture'] as Map,
+              )
+            : <String, dynamic>{};
+        final gate = gateEvent['gate'] is Map
+            ? Map<String, dynamic>.from(gateEvent['gate'] as Map)
+            : <String, dynamic>{};
+        final parserSummary = summaryEvent['parserSummary'] is Map
+            ? Map<String, dynamic>.from(summaryEvent['parserSummary'] as Map)
+            : <String, dynamic>{};
+        final rawProviderError =
+            providerErrorEvent['rawProviderError']?.toString() ??
+                (providerErrorEvent['error'] is Map
+                    ? (providerErrorEvent['error'] as Map)['raw']?.toString()
+                    : null) ??
+                '';
+        final deltaEvents =
+            parityEvents.where((event) => event['event'] == 'delta').toList();
+        final observedOrder =
+            parityEvents.map((event) => event['event']?.toString()).toList();
+        const prefixOrder = <String>[
+          'ack',
+          'parser_fixture',
+          'error_fixture',
+          'timeout_fixture',
+          'cancellation_fixture',
+          'provider_request',
+        ];
+        parityOrderOk = observedOrder.length >= prefixOrder.length;
+        for (var i = 0; i < prefixOrder.length && parityOrderOk; i++) {
+          parityOrderOk = observedOrder[i] == prefixOrder[i];
+        }
+
+        final maxTokens = providerRequest['maxTokens'];
+        final requestBodyBytes = providerRequest['requestBodyBytes'];
+        parityAckOk = ackEvent['ok'] == true &&
+            ackEvent['runtime'] == 'native-node-embedded' &&
+            ackEvent['canaryOnly'] == true &&
+            ackEvent['dryRun'] == false &&
+            ackEvent['parsed'] == true &&
+            ackEvent['chatRoutingEnabled'] == false &&
+            ackEvent['executionEnabled'] == false &&
+            ack['provider'] == 'openrouter' &&
+            ack['fixtureParityOk'] == true &&
+            ack['validationOk'] == true &&
+            ack['maxTokens'] is num &&
+            (ack['maxTokens'] as num) <= 32 &&
+            ack['requestBodyBytes'] is num &&
+            (ack['requestBodyBytes'] as num) > 0;
+        parserFixtureOk = parserFixtureEvent['ok'] == true &&
+            parserFixture['fixture'] == 'openai-compatible-sse-chunks' &&
+            parserFixture['parityOk'] == true;
+        errorFixtureOk = errorFixtureEvent['ok'] == true &&
+            errorFixture['fixture'] == 'provider-error-raw-forwarding' &&
+            errorFixture['rawProviderErrorForwarded'] == true &&
+            errorFixture['parityOk'] == true;
+        timeoutFixtureOk = timeoutFixtureEvent['ok'] == true &&
+            timeoutFixture['fixture'] == 'provider-timeout-normalization' &&
+            timeoutFixture['aborted'] == true &&
+            timeoutFixture['parityOk'] == true;
+        cancellationFixtureOk = cancellationFixtureEvent['ok'] == true &&
+            cancellationFixture['fixture'] ==
+                'provider-cancellation-contract' &&
+            cancellationFixture['signalAborted'] == true &&
+            cancellationFixture['parityOk'] == true;
+        providerRequestOk = requestEvent['ok'] == true &&
+            providerRequest['provider'] == 'openrouter' &&
+            providerRequest['transport'] ==
+                'openai-compatible-chat-completions' &&
+            providerRequest['transportInvocationEnabled'] == true &&
+            providerRequest['providerCallsEnabled'] == true &&
+            maxTokens is num &&
+            maxTokens <= 32 &&
+            requestBodyBytes is num &&
+            requestBodyBytes > 0 &&
+            providerRequest['requestHash']?.toString().isNotEmpty == true;
+        providerGateOk = gateEvent.isEmpty ||
+            (gateEvent['ok'] == false &&
+                gate['enabled'] == false &&
+                gate['blockedBefore'] == 'fetch' &&
+                gateEvent['transportInvocationEnabled'] == false &&
+                gateEvent['providerCallsEnabled'] == false);
+        providerCallStartedOk = callStartedEvent['ok'] == true &&
+            callStartedEvent['provider'] == 'openrouter' &&
+            callStartedEvent['providerCallStarted'] == true &&
+            callStartedEvent['providerBillingSurfaceReached'] == true &&
+            callStartedEvent['requestBodyBytes'] is num &&
+            (callStartedEvent['requestBodyBytes'] as num) > 0;
+        providerResponseOk =
+            responseEvent['runtime'] == 'native-node-embedded' &&
+                responseEvent['provider'] == 'openrouter' &&
+                responseEvent['statusCode'] is num;
+        providerErrorSurfaceOk = providerErrorEvent.isNotEmpty &&
+            providerErrorEvent['runtime'] == 'native-node-embedded' &&
+            providerErrorEvent['provider'] == 'openrouter' &&
+            rawProviderError.isNotEmpty &&
+            providerErrorEvent['error'] is Map;
+        liveParserSummaryOk = summaryEvent['ok'] == true &&
+            summaryEvent['fixtureParityOk'] == true &&
+            summaryEvent['liveParityOk'] == true &&
+            summaryEvent['parityOk'] == true &&
+            parserSummary['textChars'] is num &&
+            (parserSummary['textChars'] as num) > 0 &&
+            parserSummary['warningCount'] == 0;
+        parityEndOk = endEvent['runtime'] == 'native-node-embedded' &&
+            endEvent['fixtureParityOk'] == true &&
+            endEvent['providerCallsEnabled'] == true &&
+            endEvent['executionEnabled'] == false &&
+            endEvent['finishReason'] != null;
+        streamSuccessOk = parityEndOk &&
+            endEvent['ok'] == true &&
+            endEvent['statusCode'] == 200 &&
+            liveParserSummaryOk &&
+            deltaEvents.isNotEmpty;
+        parityCanaryOk = parityAckOk &&
+            parserFixtureOk &&
+            errorFixtureOk &&
+            timeoutFixtureOk &&
+            cancellationFixtureOk &&
+            providerRequestOk &&
+            providerGateOk &&
+            providerCallStartedOk &&
+            (providerResponseOk || providerErrorSurfaceOk) &&
+            parityOrderOk &&
+            parityEndOk &&
+            (streamSuccessOk || providerErrorSurfaceOk);
+
+        postParityHealth = await _probeProductionJson(
+          '/health',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postParityProbe = await _probeProductionJson(
+          '/gateway/probe',
+          expectedRuntime: 'native-node-embedded',
+          attempts: 5,
+          retryDelay: const Duration(milliseconds: 150),
+          requestTimeout: const Duration(seconds: 1),
+        );
+        postParityGuardOk = postParityHealth['ok'] == true &&
+            postParityHealth['runtime'] == 'native-node-embedded' &&
+            postParityHealth['port'] == AppConstants.gatewayPort &&
+            postParityHealth['productionPortBindCanary'] == true &&
+            postParityHealth['openclawStarted'] == false &&
+            postParityProbe['runtime'] == 'native-node-embedded' &&
+            postParityProbe['port'] == AppConstants.gatewayPort &&
+            postParityProbe['productionPortBindCanary'] == true &&
+            postParityProbe['canaryOnly'] == true &&
+            postParityProbe['productionReady'] == false &&
+            postParityProbe['openclawStarted'] == false &&
+            postParityProbe['chatRoutingEnabled'] == false &&
+            postParityProbe['toolExecutionEnabled'] != true;
+      } catch (e) {
+        if (parityCanarySent) {
+          parityError = e;
+        } else if (prootStopRequested ||
+            productionPortReleased ||
+            nativeStarted) {
+          nativeError = e;
+        } else {
+          prootStopError = e;
+        }
+      } finally {
+        try {
+          nativeStopped = await ownerRuntime
+              .stop()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false);
+        } catch (e) {
+          nativeStopError = e;
+        }
+        if (prootStopRequested || nativeStarted) {
+          nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+            timeout: const Duration(seconds: 35),
+          );
+        } else {
+          nativePortReleasedAfterStop = true;
+        }
+
+        try {
+          for (var attempt = 1; attempt <= 3; attempt++) {
+            rollbackStarted = await productionRuntime
+                .start(allowDuringSetup: true)
+                .timeout(const Duration(seconds: 40), onTimeout: () => false);
+            try {
+              rollbackHealth = await _probeProductionJson(
+                '/health',
+                attempts: 80,
+                retryDelay: const Duration(milliseconds: 750),
+                requestTimeout: const Duration(seconds: 1),
+              );
+              rollbackHealthOk =
+                  _productionHealthLooksLikeProot(rollbackHealth);
+            } catch (e) {
+              rollbackError = e;
+            }
+            rollbackRunning = await productionRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false)
+                .catchError((_) => false);
+            if (rollbackStarted && rollbackRunning && rollbackHealthOk) {
+              rollbackError = null;
+              break;
+            }
+            await Future<void>.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+
+        if ((nativeSmokeWasRunning || nativeSmokeStopRequested) &&
+            rollbackHealthOk) {
+          nativeSmokeRestored = await _nodeRuntime
+              .start()
+              .timeout(const Duration(seconds: 8), onTimeout: () => false)
+              .catchError((_) => false);
+        }
+      }
+
+      final nativeInitialGuardOk = nativeObservedAlive &&
+          nativeHealth['ok'] == true &&
+          nativeHealth['runtime'] == 'native-node-embedded' &&
+          nativeHealth['port'] == AppConstants.gatewayPort &&
+          nativeHealth['productionPortBindCanary'] == true &&
+          nativeHealth['openclawStarted'] == false &&
+          nativeProbe['runtime'] == 'native-node-embedded' &&
+          nativeProbe['port'] == AppConstants.gatewayPort &&
+          nativeProbe['productionPortBindCanary'] == true &&
+          nativeProbe['canaryOnly'] == true &&
+          nativeProbe['productionReady'] == false &&
+          nativeProbe['openclawStarted'] == false &&
+          nativeProbe['chatRoutingEnabled'] == false &&
+          nativeProbe['toolExecutionEnabled'] != true;
+      final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+      final ok = productionRuntime.id == 'proot' &&
+          preflightProductionRunning &&
+          productionHealthOkBefore &&
+          prootStopRequested &&
+          productionPortReleased &&
+          nativeStarted &&
+          nativeInitialGuardOk &&
+          parityCanaryOk &&
+          postParityGuardOk &&
+          nativeStopped &&
+          nativePortReleasedAfterStop &&
+          rollbackOk;
+      final observedOrder =
+          parityEvents.map((event) => event['event']?.toString()).toList();
+      final ackEvent = _firstEvent(parityEvents, 'ack');
+      final requestEvent = _firstEvent(parityEvents, 'provider_request');
+      final callStartedEvent =
+          _firstEvent(parityEvents, 'provider_call_started');
+      final responseEvent = _firstEvent(parityEvents, 'provider_response');
+      final providerErrorEvent = _firstEvent(parityEvents, 'provider_error');
+      final summaryEvent = _firstEvent(parityEvents, 'live_parser_summary');
+      final endEvent = _firstEvent(parityEvents, 'end');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final providerRequest = requestEvent['providerRequest'] is Map
+          ? Map<String, dynamic>.from(requestEvent['providerRequest'] as Map)
+          : <String, dynamic>{};
+      final parserSummary = summaryEvent['parserSummary'] is Map
+          ? Map<String, dynamic>.from(summaryEvent['parserSummary'] as Map)
+          : <String, dynamic>{};
+      final rawProviderError =
+          providerErrorEvent['rawProviderError']?.toString() ??
+              (providerErrorEvent['error'] is Map
+                  ? (providerErrorEvent['error'] as Map)['raw']?.toString()
+                  : null) ??
+              '';
+      final deltaEvents =
+          parityEvents.where((event) => event['event'] == 'delta').toList();
+
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'hidden-production-port-provider-stream-parser-parity',
+        'mode':
+            'native-production-port-provider-stream-parser-parity-with-rollback',
+        'activeRuntimeId': productionRuntime.id,
+        'temporaryOwnerRuntimeId': ownerRuntime.id,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeSmokePort': AppConstants.nativeGatewaySmokePort,
+        'nativeSmokeWasRunning': nativeSmokeWasRunning,
+        'nativeSmokeStopRequested': nativeSmokeStopRequested,
+        'nativeSmokeRestored': nativeSmokeRestored,
+        'preflightProductionRunning': preflightProductionRunning,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionRuntimeBefore': productionBefore['runtime'],
+        if (productionBeforeError != null)
+          'productionBeforeError': productionBeforeError.toString(),
+        'prootStopRequested': prootStopRequested,
+        if (prootStopError != null) 'prootStopError': prootStopError.toString(),
+        'productionPortReleased': productionPortReleased,
+        'nativeStarted': nativeStarted,
+        'nativeRunning': nativeRunning,
+        'nativeObservedAlive': nativeObservedAlive,
+        'nativeInitialGuardOk': nativeInitialGuardOk,
+        'nativeRuntimeReported': nativeHealth['runtime'],
+        'nativePortReported': nativeHealth['port'],
+        'nativeCanaryMode': nativeHealth['canaryMode'],
+        'nativeProductionPortBindCanary':
+            nativeHealth['productionPortBindCanary'] == true,
+        'nativeCanaryOnly': nativeProbe['canaryOnly'] == true,
+        'nativeOpenClawStarted': nativeProbe['openclawStarted'] == true,
+        'nativeChatRoutingEnabled': nativeProbe['chatRoutingEnabled'] == true,
+        'nativeProviderCallsEnabled':
+            nativeProbe['providerCallsEnabled'] == true,
+        'nativeToolExecutionEnabled':
+            nativeProbe['toolExecutionEnabled'] == true,
+        if (nativeError != null) 'nativeError': nativeError.toString(),
+        'parityCanarySent': parityCanarySent,
+        'parityCanaryOk': parityCanaryOk,
+        'streamSuccessOk': streamSuccessOk,
+        'parityAckOk': parityAckOk,
+        'parserFixtureOk': parserFixtureOk,
+        'errorFixtureOk': errorFixtureOk,
+        'timeoutFixtureOk': timeoutFixtureOk,
+        'cancellationFixtureOk': cancellationFixtureOk,
+        'providerRequestOk': providerRequestOk,
+        'providerGateOk': providerGateOk,
+        'providerCallStartedOk': providerCallStartedOk,
+        'providerResponseOk': providerResponseOk,
+        'providerErrorSurfaceOk': providerErrorSurfaceOk,
+        'liveParserSummaryOk': liveParserSummaryOk,
+        'parityOrderOk': parityOrderOk,
+        'parityEndOk': parityEndOk,
+        'parityEventsCount': parityEvents.length,
+        'parityObservedOrder': observedOrder,
+        'parityRouteStatus': ackEvent['routeStatus'] ?? ack['routeStatus'],
+        'parityFinishReason': endEvent['finishReason'],
+        'fixtureHash': ack['fixtureHash'] ?? endEvent['fixtureHash'],
+        'fixtureParityOk': ack['fixtureParityOk'] == true ||
+            endEvent['fixtureParityOk'] == true,
+        'provider': providerRequest['provider'] ?? ack['provider'],
+        'requestedModel':
+            providerRequest['requestedModel'] ?? ack['requestedModel'],
+        'providerModel':
+            providerRequest['providerModel'] ?? ack['providerModel'],
+        'transport': providerRequest['transport'] ?? ack['transport'],
+        'requestHash': providerRequest['requestHash'] ?? ack['requestHash'],
+        'maxTokens': providerRequest['maxTokens'] ?? ack['maxTokens'],
+        'promptChars': providerRequest['promptChars'] ?? ack['promptChars'],
+        'requestBodyBytes':
+            providerRequest['requestBodyBytes'] ?? ack['requestBodyBytes'],
+        'apiKeyLoaded': apiKeyLoaded,
+        'providerCallStarted': callStartedEvent['providerCallStarted'] == true,
+        'providerBillingSurfaceReached':
+            callStartedEvent['providerBillingSurfaceReached'] == true,
+        'statusCode': responseEvent['statusCode'] ?? endEvent['statusCode'],
+        'contentType': responseEvent['contentType'],
+        'firstByteMs': responseEvent['firstByteMs'],
+        'firstTokenMs': endEvent['firstTokenMs'],
+        'durationMsProvider': endEvent['durationMs'],
+        'textChars': endEvent['textChars'] ?? parserSummary['textChars'],
+        'warningCount':
+            endEvent['warningCount'] ?? parserSummary['warningCount'],
+        'deltaCount': deltaEvents.length,
+        'liveParserTextChars': parserSummary['textChars'],
+        'liveParserWarningCount': parserSummary['warningCount'],
+        'liveParityOk': summaryEvent['liveParityOk'] == true,
+        'rawProviderErrorForwarded': rawProviderError.isNotEmpty,
+        if (rawProviderError.isNotEmpty)
+          'rawProviderErrorPreview': rawProviderError.length > 500
+              ? rawProviderError.substring(0, 500)
+              : rawProviderError,
+        if (parityError != null) 'parityError': parityError.toString(),
+        'postParityGuardOk': postParityGuardOk,
+        'postParityRuntimeReported': postParityHealth['runtime'],
+        'postParityCanaryOnly': postParityProbe['canaryOnly'] == true,
+        'postParityChatRoutingEnabled':
+            postParityProbe['chatRoutingEnabled'] == true,
+        'postParityProviderCallsEnabled':
+            postParityProbe['providerCallsEnabled'] == true,
+        'postParityToolExecutionEnabled':
+            postParityProbe['toolExecutionEnabled'] == true,
+        'nativeStopped': nativeStopped,
+        if (nativeStopError != null)
+          'nativeStopError': nativeStopError.toString(),
+        'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+        'rollbackRuntimeId': 'proot',
+        'rollbackStarted': rollbackStarted,
+        'rollbackRunning': rollbackRunning,
+        'rollbackHealthOk': rollbackHealthOk,
+        'rollbackRuntimeReported': rollbackHealth['runtime'],
+        if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': ok
+            ? (streamSuccessOk
+                ? 'Native owned 18789, parsed a live provider stream, and PRoot was restored.'
+                : 'Native owned 18789, proved parser fixtures, reached provider, forwarded the raw provider error, and PRoot was restored.')
+            : 'Production-port stream parser parity is not promotable; PRoot rollback was attempted.',
+        'nextGate':
+            'production-port provider tool-call plan capture with execution disabled',
+      };
+      log('[NATIVE-STREAM-OWNER] ${jsonEncode({
+            ...report,
+            'rawProviderErrorPreview':
+                rawProviderError.isEmpty ? null : '<redacted in activity log>',
+          })}');
+      return report;
+    } finally {
+      _productionPortProviderStreamParityInFlight = false;
     }
   }
 

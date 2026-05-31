@@ -143,6 +143,10 @@ class AgentSkillServer {
     } else if (request.method == 'POST' &&
         path == '/api/native-gateway/production-provider-live-canary') {
       await _handleNativeGatewayProductionProviderLiveCanary(request);
+    } else if (request.method == 'POST' &&
+        path ==
+            '/api/native-gateway/production-provider-stream-parser-parity') {
+      await _handleNativeGatewayProductionProviderStreamParserParity(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -455,6 +459,75 @@ class AgentSkillServer {
         providerConfig: providerConfig,
         prompt: prompt == null || prompt.isEmpty
             ? 'native production provider live canary'
+            : prompt,
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
+    }
+  }
+
+  Future<void> _handleNativeGatewayProductionProviderStreamParserParity(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      final body = await utf8.decoder.bind(request).join();
+      Map<String, dynamic> args = <String, dynamic>{};
+      if (body.trim().isNotEmpty) {
+        final decoded = jsonDecode(body);
+        if (decoded is Map) {
+          args = decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      }
+      final prompt = args['prompt']?.toString().trim();
+      final model = args['model']?.toString().trim();
+      final explicitConfig = args['providerConfig'] is Map
+          ? Map<String, dynamic>.from(args['providerConfig'] as Map)
+          : null;
+      final providerConfig = explicitConfig ??
+          await GatewayService().resolveNativeProviderLiveCanaryConfig(
+            model: model,
+          );
+
+      if (providerConfig == null) {
+        _sendJson(
+            request,
+            {
+              'ok': false,
+              'error': 'openrouter_provider_config_unavailable',
+              'message':
+                  'No OpenRouter model/API key is configured for native stream parser parity.',
+            },
+            statusCode: HttpStatus.badRequest);
+        return;
+      }
+
+      final report = await NativeGatewaySmokeService
+          .runProductionPortProviderStreamParserParityCanary(
+        log: (message) => debugPrint('[GATEWAY] $message'),
+        providerConfig: {
+          ...providerConfig,
+          'title': 'Plawie Native Stream Parser Parity',
+        },
+        prompt: prompt == null || prompt.isEmpty
+            ? 'native production provider stream parser parity'
             : prompt,
       );
       _sendJson(request, report);
