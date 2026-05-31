@@ -1,6 +1,6 @@
 # OpenClaw Bundle Inventory
 
-Last updated: 2026-05-29
+Last updated: 2026-05-31
 
 Branch: `native-node-gateway-research`
 
@@ -14,12 +14,14 @@ Package path:
 
 ## Scope
 
-This is a read-only inventory of the OpenClaw package currently installed in
-the PRoot rootfs. It exists to decide what a native Android Gateway bundle must
-ship, rebuild, disable, or replace.
+This is an inventory of the OpenClaw package currently installed in the PRoot
+rootfs and mirrored into `assets/openclaw-node-modules.tar.gz`. It exists to
+decide what a native Android Gateway bundle must ship, rebuild, disable, or
+replace.
 
-This inventory did not modify Gateway config, stop/start Gateway, or write into
-the rootfs.
+On 2026-05-31 the PRoot baseline was refreshed from OpenClaw `2026.5.20` to
+`2026.5.28`, then the APK asset bundle was rebuilt from that verified phone
+install.
 
 ## Package Facts
 
@@ -28,26 +30,30 @@ Observed from `package.json`:
 | Field | Value |
 | --- | --- |
 | package | `openclaw` |
-| version | `2026.5.20` |
+| version | `2026.5.28` |
 | type | `module` |
 | main | `dist/index.js` |
 | bin | `openclaw -> openclaw.mjs` |
 | Node engine | `>=22.19.0` |
-| direct dependencies | `50` |
-| optional dependencies | `2` |
-| peer dependencies | `1` |
+| direct dependencies | `58` |
+| optional dependencies | `1` |
+| peer dependencies | `0` |
 
 Observed tree size:
 
 | Path | Size |
 | --- | --- |
-| OpenClaw package | about `668M` |
-| OpenClaw `node_modules` | about `551M` |
+| `/usr/local/lib/node_modules` | about `362M` |
+| OpenClaw package | about `344M` |
+| OpenClaw `node_modules` | about `240M` |
+| APK asset bundle | `54,295,181` bytes |
 
 Observed dependency tree:
 
-- `251` `package.json` files under `node_modules` at depth 2.
-- This is too large and Linux-oriented to bundle blindly into the APK.
+- `254` `package.json` files under `node_modules` at depth 2.
+- The refreshed default package is much smaller, but it is still a PRoot/Linux
+  runtime tree. Native Android must continue to prove each dependency surface
+  before routing production traffic through the embedded runtime.
 
 ## Direct Dependencies Of Interest
 
@@ -69,6 +75,9 @@ Portable or likely portable:
 - `qrcode`
 - `tar`
 - `jszip`
+- `rastermill`
+- `clawpdf`
+- `@silvia-odwyer/photon-node`
 
 Runtime-sensitive:
 
@@ -82,7 +91,6 @@ Runtime-sensitive:
 
 Optional but currently installed:
 
-- `sharp`
 - `sqlite-vec`
 
 ## Native Addon Findings
@@ -91,15 +99,28 @@ Native `.node` files were found in the installed package tree.
 
 | Package area | Observed file or metadata | Native concern |
 | --- | --- | --- |
-| `@napi-rs/canvas-linux-arm64-gnu` | `skia.linux-arm64-gnu.node`; package declares `os=linux`, `cpu=arm64`, `libc=glibc` | Not Android/Bionic-compatible as-is |
-| `@img/sharp-linux-arm64` | `lib/sharp-linux-arm64.node`; package declares `os=linux`, `cpu=arm64`, `libc=glibc` | Not Android/Bionic-compatible as-is |
 | `@lydell/node-pty-linux-arm64` | Linux arm64 package | PTY behavior is a core shell/runtime risk on Android |
 | `tree-sitter-bash` | prebuilt `tree-sitter-bash.node` for Linux/macOS/Windows | Needs Android build or replacement |
-| `koffi` | many platform `.node` builds, including Linux and musl | FFI package must be validated on Android or excluded |
-| nested clipboard packages | Linux GNU and musl clipboard `.node` files under `pi-coding-agent` | Desktop clipboard assumptions do not map cleanly to Android |
+| `@earendil-works/pi-tui` | Darwin and Windows `.node` prebuilds are present | Desktop terminal assumptions do not map cleanly to Android |
 
-Conclusion: the installed PRoot `node_modules` tree is a Linux runtime tree.
-Native Android must not reuse it directly.
+Conclusion: the installed PRoot `node_modules` tree is smaller than the
+`2026.5.20` baseline, and the previous default canvas/sharp native fanout is no
+longer present. It is still a Linux runtime tree. Native Android must not reuse
+it directly without the same canary gates used for provider, tool, stream, and
+bridge parity.
+
+## Refresh Validation
+
+Live phone checks after the refresh:
+
+| Check | Result |
+| --- | --- |
+| CLI version | `OpenClaw 2026.5.28 (e932160)` |
+| Gateway health | `/health -> {"ok": true, "status": "live"}` |
+| Loaded plugins | `12` attempted, `12` loaded |
+| UI reconnect | `client=openclaw-control-ui version=2026.5.28` |
+| Local tools endpoint | `10` bundled Plawie/mobile tools visible |
+| Local skills endpoint | `10` bundled Plawie/mobile skills visible |
 
 ## Host Tool And Filesystem Assumptions
 
