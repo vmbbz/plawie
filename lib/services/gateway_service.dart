@@ -4117,6 +4117,32 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionToolDispatchPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-dispatch-owner',
+      '/native-tool-dispatch-owner',
+      '/native-production-dispatch',
+      '/native-production-tool-dispatch',
+      'native-dispatch-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production tool dispatch dry-run: wave right and vibrate once';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production tool dispatch dry-run: wave right and vibrate once'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String _compactJsonValue(dynamic value) {
     if (value == null) return 'null';
     try {
@@ -7722,6 +7748,99 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionToolDispatchMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionToolDispatchPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-DISPATCH-OWNER] -> Opening production-port tool dispatch dry-run',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runProductionPortToolDispatchDryRun(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DISPATCH-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final toolNames = report['toolPlanNames'] is List
+          ? (report['toolPlanNames'] as List).join(', ')
+          : '';
+      final gatewayNames = report['gatewayToolNames'] is List
+          ? (report['gatewayToolNames'] as List).join(', ')
+          : '';
+      yield [
+        ok
+            ? 'Native production tool dispatch dry-run complete'
+            : 'Native production tool dispatch dry-run pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'dispatchDryRunSent: ${report['dispatchDryRunSent'] == true}',
+        'dispatchDryRunOk: ${report['dispatchDryRunOk'] == true}',
+        'dispatchAckOk: ${report['dispatchAckOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'dispatchPlanOk: ${report['dispatchPlanOk'] == true}',
+        'toolUseFrameOk: ${report['toolUseFrameOk'] == true}',
+        'toolResultFrameOk: ${report['toolResultFrameOk'] == true}',
+        'dispatchSummaryOk: ${report['dispatchSummaryOk'] == true}',
+        'dispatchOrderOk: ${report['dispatchOrderOk'] == true}',
+        'dispatchEndOk: ${report['dispatchEndOk'] == true}',
+        'dispatchRouteStatus: ${report['dispatchRouteStatus'] ?? 'unknown'}',
+        'dispatchFinishReason: ${report['dispatchFinishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'toolPlanCount: ${report['toolPlanCount'] ?? 0}',
+        'allowedPlanCount: ${report['allowedPlanCount'] ?? 0}',
+        'blockedPlanCount: ${report['blockedPlanCount'] ?? 0}',
+        'toolPlanNames: $toolNames',
+        'gatewayToolNames: $gatewayNames',
+        'toolName: ${report['toolName'] ?? 'unknown'}',
+        'capability: ${report['capability'] ?? 'unknown'}',
+        'dartCapability: ${report['dartCapability'] ?? 'unknown'}',
+        'wouldExecute: ${report['wouldExecute'] == true}',
+        'toolResultDryRun: ${report['toolResultDryRun'] == true}',
+        'skippedReason: ${report['skippedReason'] ?? 'unknown'}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'postDispatchGuardOk: ${report['postDispatchGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DISPATCH-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   /// Route a chat message to the correct backend based on model prefix.
   ///
   /// • local model routes → fllama NDK (on-device inference, no network, no gateway)
@@ -7734,6 +7853,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionToolDispatchPayload(message) != null) {
+      yield* _sendNativeProductionToolDispatchMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionProviderToolPlanPayload(message) != null) {
       yield* _sendNativeProductionProviderToolPlanMessage(

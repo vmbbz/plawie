@@ -191,6 +191,7 @@ be safely generalized.
 | [51-native-provider-owner-live.md](51-native-provider-owner-live.md) | Explicit `/native-live-owner` diagnostics proving one bounded provider call on `18789` with mandatory rollback |
 | [52-native-provider-owner-stream-parity.md](52-native-provider-owner-stream-parity.md) | Explicit `/native-stream-owner` diagnostics proving stream parser/error/timeout/cancel parity on `18789` |
 | [53-native-provider-owner-tool-plan.md](53-native-provider-owner-tool-plan.md) | Explicit `/native-tool-plan-owner` diagnostics proving provider tool-call plan capture on `18789` with execution disabled |
+| [54-native-owner-tool-dispatch-dry-run.md](54-native-owner-tool-dispatch-dry-run.md) | Explicit `/native-dispatch-owner` diagnostics proving synthetic tool dispatch/result frames on `18789` with execution disabled |
 
 ## Work Rules
 

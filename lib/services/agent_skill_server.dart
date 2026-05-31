@@ -150,6 +150,9 @@ class AgentSkillServer {
     } else if (request.method == 'POST' &&
         path == '/api/native-gateway/production-provider-tool-plan-capture') {
       await _handleNativeGatewayProductionProviderToolPlanCapture(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/native-gateway/production-tool-dispatch-dry-run') {
+      await _handleNativeGatewayProductionToolDispatchDryRun(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -577,6 +580,52 @@ class AgentSkillServer {
         model: model == null || model.isEmpty ? 'openrouter/auto' : model,
         prompt: prompt == null || prompt.isEmpty
             ? 'native production provider tool plan capture: wave right and vibrate once'
+            : prompt,
+      );
+      _sendJson(request, report);
+    } catch (e) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': e.toString(),
+          },
+          statusCode: HttpStatus.internalServerError);
+    }
+  }
+
+  Future<void> _handleNativeGatewayProductionToolDispatchDryRun(
+    HttpRequest request,
+  ) async {
+    if (!NativeGatewaySmokeService.diagnosticsEnabled) {
+      _sendJson(
+          request,
+          {
+            'ok': false,
+            'error': 'native_gateway_diagnostics_disabled',
+          },
+          statusCode: HttpStatus.forbidden);
+      return;
+    }
+
+    try {
+      final body = await utf8.decoder.bind(request).join();
+      Map<String, dynamic> args = <String, dynamic>{};
+      if (body.trim().isNotEmpty) {
+        final decoded = jsonDecode(body);
+        if (decoded is Map) {
+          args = decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      }
+      final prompt = args['prompt']?.toString().trim();
+      final model = args['model']?.toString().trim();
+
+      final report =
+          await NativeGatewaySmokeService.runProductionPortToolDispatchDryRun(
+        log: (message) => debugPrint('[GATEWAY] $message'),
+        model: model == null || model.isEmpty ? 'openrouter/auto' : model,
+        prompt: prompt == null || prompt.isEmpty
+            ? 'native production tool dispatch dry-run: wave right and vibrate once'
             : prompt,
       );
       _sendJson(request, report);
