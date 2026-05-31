@@ -499,6 +499,7 @@ function createMobileGatewayProbe({
     "/gateway/chat-provider-tool-plan-canary-stream",
     "/gateway/chat-provider-live-tool-execution-canary-stream",
     "/gateway/chat-provider-live-tool-continuation-canary-stream",
+    "/gateway/chat-loop-live-tool-continuation-canary-stream",
     "/gateway/chat-tool-dispatch-dry-run-stream",
     "/gateway/chat-native-dart-bridge-dry-run-stream",
     "/gateway/chat-native-dart-bridge-ordering-cancel-stream",
@@ -6352,24 +6353,38 @@ function createMobileGatewayProbe({
     res,
     options = {}
   ) {
-    const continuationEnabled = options.continuationEnabled === true;
-    const source = continuationEnabled
+    const chatLoopEnabled = options.chatLoopEnabled === true;
+    const continuationEnabled =
+      options.continuationEnabled === true || chatLoopEnabled;
+    const source = chatLoopEnabled
+      ? "native-chat-loop-tool-continuation-canary"
+      : continuationEnabled
       ? "provider-live-tool-continuation-canary"
       : "provider-live-tool-execution-canary";
-    const canaryMode = continuationEnabled
+    const canaryMode = chatLoopEnabled
+      ? "native-chat-loop-tool-continuation-canary"
+      : continuationEnabled
       ? "provider-live-tool-continuation-canary"
       : "provider-live-tool-execution-canary";
     const directCanary = true;
-    const routeName = continuationEnabled
+    const routeName = chatLoopEnabled
+      ? "native_chat_loop_tool_continuation_canary"
+      : continuationEnabled
       ? "live_provider_tool_continuation_canary"
       : "live_provider_tool_execution_canary";
-    const startingStatus = continuationEnabled
+    const startingStatus = chatLoopEnabled
+      ? "native_chat_loop_tool_continuation_starting"
+      : continuationEnabled
       ? "live_provider_tool_continuation_starting"
       : "live_provider_tool_call_starting";
-    const completeStatus = continuationEnabled
+    const completeStatus = chatLoopEnabled
+      ? "native_chat_loop_tool_continuation_canary_complete"
+      : continuationEnabled
       ? "live_provider_tool_continuation_canary_complete"
       : "live_provider_tool_execution_canary_complete";
-    const failedStatus = continuationEnabled
+    const failedStatus = chatLoopEnabled
+      ? "native_chat_loop_tool_continuation_canary_failed"
+      : continuationEnabled
       ? "live_provider_tool_continuation_canary_failed"
       : "live_provider_tool_execution_canary_failed";
 
@@ -6491,7 +6506,9 @@ function createMobileGatewayProbe({
         "content-type": "application/x-ndjson",
         "cache-control": "no-store",
         "x-plawie-native-canary": continuationEnabled
-          ? "provider-live-tool-continuation-canary"
+          ? chatLoopEnabled
+            ? "native-chat-loop-tool-continuation-canary"
+            : "provider-live-tool-continuation-canary"
           : "provider-live-tool-execution-canary"
       });
       writeEvent("ack", {
@@ -7130,6 +7147,7 @@ function createMobileGatewayProbe({
           let continuationStatusCode = null;
           let continuationContentType = "";
           let continuationTextChars = 0;
+          let continuationText = "";
           let continuationDeltaCount = 0;
           let continuationFirstTokenMs = null;
           let continuationFinishReason = null;
@@ -7238,6 +7256,7 @@ function createMobileGatewayProbe({
                 if (content.length > 0) {
                   continuationDeltaCount += 1;
                   continuationTextChars += content.length;
+                  continuationText += content;
                   continuationFirstTokenMs = Date.now() - continuationStartedAtMs;
                   writeEvent("continuation_delta", {
                     ok: true,
@@ -7255,6 +7274,7 @@ function createMobileGatewayProbe({
                 const content = raw.slice(0, 160);
                 continuationDeltaCount += 1;
                 continuationTextChars += content.length;
+                continuationText += content;
                 continuationFirstTokenMs = Date.now() - continuationStartedAtMs;
                 writeEvent("continuation_delta", {
                   ok: true,
@@ -7297,6 +7317,7 @@ function createMobileGatewayProbe({
                     if (content.length === 0) continue;
                     continuationDeltaCount += 1;
                     continuationTextChars += content.length;
+                    continuationText += content;
                     if (continuationFirstTokenMs == null) {
                       continuationFirstTokenMs =
                         Date.now() - continuationStartedAtMs;
@@ -7389,6 +7410,12 @@ function createMobileGatewayProbe({
             toolResultGesture: continuationRequest.normalizedToolResult.gesture,
             toolResultDurationMs:
               continuationRequest.normalizedToolResult.durationMs,
+            responseTextHash: metadataHash({
+              requestHash: continuationRequest.requestHash,
+              continuationText,
+              continuationTextChars,
+              continuationDeltaCount
+            }),
             continuationDeltaCount,
             continuationTextChars,
             continuationFirstTokenMs,
@@ -7404,6 +7431,44 @@ function createMobileGatewayProbe({
             toolExecutionEnabled: false,
             bridgeExecutionEnabled: false
           });
+          if (chatLoopEnabled) {
+            writeEvent("chat_response_frame", {
+              ok: continuationOk,
+              type: "res",
+              id: typeof payload?.id === "string" ? payload.id : null,
+              method: "chat.send",
+              runtime: "native-node-embedded",
+              source,
+              canaryMode,
+              runId: queued.runId,
+              frame: {
+                type: "chat.response",
+                role: "assistant",
+                text: continuationText,
+                textChars: continuationTextChars,
+                deltaCount: continuationDeltaCount,
+                finishReason: continuationFinishReason || "stream_complete",
+                provider: continuationRequest.provider,
+                requestHash: continuationRequest.requestHash,
+                firstRequestHash: liveRequest.requestHash,
+                toolName: expectedGatewayToolName,
+                toolResultStatus: continuationRequest.normalizedToolResult.status,
+                responseTextHash: metadataHash({
+                  requestHash: continuationRequest.requestHash,
+                  continuationText,
+                  continuationTextChars,
+                  continuationDeltaCount
+                })
+              },
+              continuationOk,
+              providerCallsEnabled: true,
+              providerCallsDuringExecutionEnabled: false,
+              transportInvocationEnabled: true,
+              executionEnabled: true,
+              toolExecutionEnabled: true,
+              bridgeExecutionEnabled: true
+            });
+          }
           writeEvent("end", {
             ok: executeParityOk && continuationOk,
             runtime: "native-node-embedded",
@@ -10304,6 +10369,13 @@ function createMobileGatewayProbe({
     if (pathname === "/gateway/chat-provider-live-tool-continuation-canary-stream") {
       handleChatProviderLiveToolExecutionCanaryStream(req, res, {
         continuationEnabled: true
+      });
+      return true;
+    }
+
+    if (pathname === "/gateway/chat-loop-live-tool-continuation-canary-stream") {
+      handleChatProviderLiveToolExecutionCanaryStream(req, res, {
+        chatLoopEnabled: true
       });
       return true;
     }

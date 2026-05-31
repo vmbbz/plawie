@@ -66,6 +66,7 @@ class NativeGatewaySmokeService {
   static bool _productionPortProviderToolPlanExecutionInFlight = false;
   static bool _productionPortProviderLiveToolExecutionInFlight = false;
   static bool _productionPortProviderLiveToolContinuationInFlight = false;
+  static bool _productionPortNativeChatLoopContinuationInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -10154,6 +10155,22 @@ class NativeGatewaySmokeService {
   }
 
   static Future<Map<String, dynamic>>
+      runProductionPortNativeChatLoopContinuationCanary({
+    required void Function(String message) log,
+    required Map<String, dynamic> providerConfig,
+    String prompt =
+        'native production chat loop continuation canary: vibrate once and answer',
+  }) {
+    return runProductionPortProviderLiveToolExecutionCanary(
+      log: log,
+      providerConfig: providerConfig,
+      prompt: prompt,
+      continueWithToolResult: true,
+      chatLoopWithToolContinuation: true,
+    );
+  }
+
+  static Future<Map<String, dynamic>>
       runProductionPortProviderLiveToolContinuationCanary({
     required void Function(String message) log,
     required Map<String, dynamic> providerConfig,
@@ -10175,53 +10192,76 @@ class NativeGatewaySmokeService {
     String prompt =
         'native production live provider tool-call to bounded bridge execution canary: wave right',
     bool continueWithToolResult = false,
+    bool chatLoopWithToolContinuation = false,
   }) async {
-    final phaseName = continueWithToolResult
-        ? 'hidden-production-port-live-provider-tool-continuation-canary'
-        : 'hidden-production-port-live-provider-tool-execution-canary';
-    final modeName = continueWithToolResult
-        ? 'native-production-port-live-provider-tool-result-continuation-with-rollback'
-        : 'native-production-port-live-provider-tool-call-to-bridge-execution-with-rollback';
-    final logTag = continueWithToolResult
-        ? '[NATIVE-LIVE-TOOL-CONTINUE]'
-        : '[NATIVE-LIVE-TOOL-OWNER]';
-    final expectedRoute = continueWithToolResult
-        ? 'live_provider_tool_continuation_canary'
-        : 'live_provider_tool_execution_canary';
-    final expectedStartingStatus = continueWithToolResult
-        ? 'live_provider_tool_continuation_starting'
-        : 'live_provider_tool_call_starting';
-    final expectedCompleteStatus = continueWithToolResult
-        ? 'live_provider_tool_continuation_canary_complete'
-        : 'live_provider_tool_execution_canary_complete';
+    final toolContinuationEnabled =
+        continueWithToolResult || chatLoopWithToolContinuation;
+    final phaseName = chatLoopWithToolContinuation
+        ? 'hidden-production-port-native-chat-loop-tool-continuation-canary'
+        : toolContinuationEnabled
+            ? 'hidden-production-port-live-provider-tool-continuation-canary'
+            : 'hidden-production-port-live-provider-tool-execution-canary';
+    final modeName = chatLoopWithToolContinuation
+        ? 'native-production-port-chat-loop-tool-continuation-with-rollback'
+        : toolContinuationEnabled
+            ? 'native-production-port-live-provider-tool-result-continuation-with-rollback'
+            : 'native-production-port-live-provider-tool-call-to-bridge-execution-with-rollback';
+    final logTag = chatLoopWithToolContinuation
+        ? '[NATIVE-CHAT-LOOP-CONTINUE]'
+        : toolContinuationEnabled
+            ? '[NATIVE-LIVE-TOOL-CONTINUE]'
+            : '[NATIVE-LIVE-TOOL-OWNER]';
+    final expectedRoute = chatLoopWithToolContinuation
+        ? 'native_chat_loop_tool_continuation_canary'
+        : toolContinuationEnabled
+            ? 'live_provider_tool_continuation_canary'
+            : 'live_provider_tool_execution_canary';
+    final expectedStartingStatus = chatLoopWithToolContinuation
+        ? 'native_chat_loop_tool_continuation_starting'
+        : toolContinuationEnabled
+            ? 'live_provider_tool_continuation_starting'
+            : 'live_provider_tool_call_starting';
+    final expectedCompleteStatus = chatLoopWithToolContinuation
+        ? 'native_chat_loop_tool_continuation_canary_complete'
+        : toolContinuationEnabled
+            ? 'live_provider_tool_continuation_canary_complete'
+            : 'live_provider_tool_execution_canary_complete';
     final expectedGatewayToolName =
-        continueWithToolResult ? 'haptic.vibrate' : 'avatar.gesture';
+        toolContinuationEnabled ? 'haptic.vibrate' : 'avatar.gesture';
     final expectedFunctionName =
-        continueWithToolResult ? 'haptic_vibrate' : 'avatar_gesture';
+        toolContinuationEnabled ? 'haptic_vibrate' : 'avatar_gesture';
     final expectedResultStatus =
-        continueWithToolResult ? 'vibrated' : 'started';
-    final expectedCapability = continueWithToolResult ? 'haptic' : 'avatar';
+        toolContinuationEnabled ? 'vibrated' : 'started';
+    final expectedCapability = toolContinuationEnabled ? 'haptic' : 'avatar';
     final expectedDartCapability =
-        continueWithToolResult ? 'HapticCapability' : 'AvatarCapability';
-    final expectedRequiresUiThread = !continueWithToolResult;
-    final endpointPath = continueWithToolResult
-        ? '/gateway/chat-provider-live-tool-continuation-canary-stream'
-        : '/gateway/chat-provider-live-tool-execution-canary-stream';
-    final alreadyInFlight = continueWithToolResult
-        ? _productionPortProviderLiveToolContinuationInFlight
-        : _productionPortProviderLiveToolExecutionInFlight;
+        toolContinuationEnabled ? 'HapticCapability' : 'AvatarCapability';
+    final expectedRequiresUiThread = !toolContinuationEnabled;
+    final endpointPath = chatLoopWithToolContinuation
+        ? '/gateway/chat-loop-live-tool-continuation-canary-stream'
+        : toolContinuationEnabled
+            ? '/gateway/chat-provider-live-tool-continuation-canary-stream'
+            : '/gateway/chat-provider-live-tool-execution-canary-stream';
+    final alreadyInFlight = chatLoopWithToolContinuation
+        ? _productionPortNativeChatLoopContinuationInFlight
+        : toolContinuationEnabled
+            ? _productionPortProviderLiveToolContinuationInFlight
+            : _productionPortProviderLiveToolExecutionInFlight;
     if (alreadyInFlight) {
       return <String, dynamic>{
         'ok': false,
         'phase': phaseName,
         'alreadyInFlight': true,
-        'decision': continueWithToolResult
-            ? 'Production-port live provider tool continuation canary is already running.'
-            : 'Production-port live provider tool execution canary is already running.',
+        'decision': chatLoopWithToolContinuation
+            ? 'Production-port native chat loop continuation canary is already running.'
+            : toolContinuationEnabled
+                ? 'Production-port live provider tool continuation canary is already running.'
+                : 'Production-port live provider tool execution canary is already running.',
       };
     }
 
-    if (continueWithToolResult) {
+    if (chatLoopWithToolContinuation) {
+      _productionPortNativeChatLoopContinuationInFlight = true;
+    } else if (toolContinuationEnabled) {
       _productionPortProviderLiveToolContinuationInFlight = true;
     } else {
       _productionPortProviderLiveToolExecutionInFlight = true;
@@ -10237,9 +10277,11 @@ class NativeGatewaySmokeService {
       providerConfigForNative['title'] =
           providerConfigForNative['title']?.toString().trim().isNotEmpty == true
               ? providerConfigForNative['title']
-              : continueWithToolResult
-                  ? 'Plawie Native Live Tool Continuation Canary'
-                  : 'Plawie Native Live Tool Execution Canary';
+              : chatLoopWithToolContinuation
+                  ? 'Plawie Native Chat Loop Continuation Canary'
+                  : toolContinuationEnabled
+                      ? 'Plawie Native Live Tool Continuation Canary'
+                      : 'Plawie Native Live Tool Execution Canary';
       final providerHint =
           providerConfigForNative['provider']?.toString().trim();
       final providerModel = providerConfigForNative['model']?.toString().trim();
@@ -10274,6 +10316,8 @@ class NativeGatewaySmokeService {
       var continuationProviderResponseOk = false;
       var continuationSummaryOk = false;
       var continuationOk = false;
+      var chatResponseFrameOk = false;
+      var chatLoopOk = false;
       var eventOrderOk = false;
       var endOk = false;
       var liveToolExecutionCanaryOk = false;
@@ -10461,6 +10505,8 @@ class NativeGatewaySmokeService {
             _firstEvent(canaryEvents, 'continuation_provider_response');
         final continuationSummaryEvent =
             _firstEvent(canaryEvents, 'continuation_summary');
+        final chatResponseEvent =
+            _firstEvent(canaryEvents, 'chat_response_frame');
         final endEvent = _firstEvent(canaryEvents, 'end');
         final ack = asMap(ackEvent['ack']);
         final providerRequest = asMap(requestEvent['providerRequest']);
@@ -10479,6 +10525,7 @@ class NativeGatewaySmokeService {
         final toolResultPayload = asMap(toolResult['result']);
         final continuationRequest =
             asMap(continuationRequestEvent['continuationRequest']);
+        final chatResponseFrame = asMap(chatResponseEvent['frame']);
         final rawProviderError =
             providerErrorEvent['rawProviderError']?.toString() ??
                 (providerErrorEvent['error'] is Map
@@ -10501,6 +10548,7 @@ class NativeGatewaySmokeService {
           if (continueWithToolResult) 'continuation_provider_call_started',
           if (continueWithToolResult) 'continuation_provider_response',
           if (continueWithToolResult) 'continuation_summary',
+          if (chatLoopWithToolContinuation) 'chat_response_frame',
           'end',
         ];
         eventOrderOk = true;
@@ -10769,6 +10817,27 @@ class NativeGatewaySmokeService {
                 continuationProviderCallStartedOk &&
                 continuationProviderResponseOk &&
                 continuationSummaryOk);
+        chatResponseFrameOk = !chatLoopWithToolContinuation ||
+            (chatResponseEvent['ok'] == true &&
+                chatResponseEvent['runtime'] == 'native-node-embedded' &&
+                chatResponseEvent['method'] == 'chat.send' &&
+                chatResponseFrame['type'] == 'chat.response' &&
+                chatResponseFrame['role'] == 'assistant' &&
+                chatResponseFrame['textChars'] is num &&
+                (chatResponseFrame['textChars'] as num) > 0 &&
+                chatResponseFrame['deltaCount'] is num &&
+                (chatResponseFrame['deltaCount'] as num) > 0 &&
+                chatResponseFrame['provider'] == 'openrouter' &&
+                chatResponseFrame['toolName'] == expectedGatewayToolName &&
+                chatResponseFrame['toolResultStatus'] == expectedResultStatus &&
+                chatResponseEvent['continuationOk'] == true &&
+                chatResponseEvent['providerCallsEnabled'] == true &&
+                chatResponseEvent['providerCallsDuringExecutionEnabled'] ==
+                    false &&
+                chatResponseEvent['transportInvocationEnabled'] == true &&
+                executionEnabled(chatResponseEvent));
+        chatLoopOk = !chatLoopWithToolContinuation ||
+            (continuationOk && chatResponseFrameOk);
         endOk = endEvent['ok'] == true &&
             endEvent['runtime'] == 'native-node-embedded' &&
             endEvent['routeStatus'] == expectedCompleteStatus &&
@@ -10803,6 +10872,7 @@ class NativeGatewaySmokeService {
             toolResultFrameOk &&
             executionSummaryOk &&
             continuationOk &&
+            chatLoopOk &&
             eventOrderOk &&
             endOk;
 
@@ -10942,10 +11012,13 @@ class NativeGatewaySmokeService {
           _firstEvent(canaryEvents, 'continuation_provider_response');
       final continuationSummaryEvent =
           _firstEvent(canaryEvents, 'continuation_summary');
+      final chatResponseEvent =
+          _firstEvent(canaryEvents, 'chat_response_frame');
       final providerRequest = asMap(requestEvent['providerRequest']);
       final toolPlanSummary = asMap(planEvent['toolPlanSummary']);
       final continuationRequest =
           asMap(continuationRequestEvent['continuationRequest']);
+      final chatResponseFrame = asMap(chatResponseEvent['frame']);
       final rawProviderError =
           providerErrorEvent['rawProviderError']?.toString() ??
               (providerErrorEvent['error'] is Map
@@ -10957,6 +11030,17 @@ class NativeGatewaySmokeService {
               '';
       final observedOrder =
           canaryEvents.map((event) => event['event']?.toString()).toList();
+      final continuationDeltaEvents = canaryEvents
+          .where((event) => event['event'] == 'continuation_delta')
+          .toList();
+      final continuationResponseText = continuationDeltaEvents
+          .map((event) => event['text']?.toString() ?? '')
+          .where((text) => text.isNotEmpty)
+          .join();
+      final continuationResponseTextPreview =
+          continuationResponseText.length > 500
+              ? continuationResponseText.substring(0, 500)
+              : continuationResponseText;
 
       final report = <String, dynamic>{
         'ok': ok,
@@ -10998,6 +11082,8 @@ class NativeGatewaySmokeService {
         'liveToolExecutionCanaryOk': liveToolExecutionCanaryOk,
         'liveToolContinuationCanaryOk':
             continueWithToolResult && liveToolExecutionCanaryOk,
+        'nativeChatLoopContinuationCanaryOk':
+            chatLoopWithToolContinuation && liveToolExecutionCanaryOk,
         'ackEventOk': ackEventOk,
         'toolCatalogOk': toolCatalogOk,
         'providerRequestOk': providerRequestOk,
@@ -11016,6 +11102,9 @@ class NativeGatewaySmokeService {
         'continuationProviderResponseOk': continuationProviderResponseOk,
         'continuationSummaryOk': continuationSummaryOk,
         'continuationOk': continuationOk,
+        'chatLoopWithToolContinuation': chatLoopWithToolContinuation,
+        'chatResponseFrameOk': chatResponseFrameOk,
+        'chatLoopOk': chatLoopOk,
         'eventOrderOk': eventOrderOk,
         'endOk': endOk,
         'eventsCount': canaryEvents.length,
@@ -11046,6 +11135,23 @@ class NativeGatewaySmokeService {
             continuationSummaryEvent['continuationFinishReason'],
         'continuationWarningCount':
             continuationSummaryEvent['continuationWarningCount'],
+        'continuationResponseText': continuationResponseTextPreview,
+        'continuationResponseTextChars': continuationResponseText.length,
+        'continuationResponseTextTruncated':
+            continuationResponseText.length > 500,
+        'chatResponseFrameTextChars': chatResponseFrame['textChars'],
+        'chatResponseFrameDeltaCount': chatResponseFrame['deltaCount'],
+        'chatResponseFrameFinishReason': chatResponseFrame['finishReason'],
+        'chatResponseFrameToolName': chatResponseFrame['toolName'],
+        'uiResponseText': chatLoopWithToolContinuation
+            ? continuationResponseTextPreview
+            : null,
+        'uiResponseTextChars': chatLoopWithToolContinuation
+            ? continuationResponseText.length
+            : null,
+        'uiResponseTextTruncated': chatLoopWithToolContinuation
+            ? continuationResponseText.length > 500
+            : null,
         'toolSelectionHash': endEvent['toolSelectionHash'],
         'dispatchHash': endEvent['dispatchHash'],
         'bridgeRequestHash': endEvent['bridgeRequestHash'],
@@ -11120,26 +11226,41 @@ class NativeGatewaySmokeService {
         if (rollbackError != null) 'rollbackError': rollbackError.toString(),
         'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
         'decision': ok
-            ? (continueWithToolResult
-                ? 'Native owned 18789, received one live provider tool call, executed only the bounded haptic bridge allowlist, continued with the tool result, received final provider text, and PRoot was restored.'
-                : 'Native owned 18789, received one live provider tool call, executed only the bounded avatar bridge allowlist, and PRoot was restored.')
+            ? (chatLoopWithToolContinuation
+                ? 'Native owned 18789, completed one chat-loop turn with a live tool continuation, surfaced final provider text, and PRoot was restored.'
+                : continueWithToolResult
+                    ? 'Native owned 18789, received one live provider tool call, executed only the bounded haptic bridge allowlist, continued with the tool result, received final provider text, and PRoot was restored.'
+                    : 'Native owned 18789, received one live provider tool call, executed only the bounded avatar bridge allowlist, and PRoot was restored.')
             : (providerErrorSurfaceOk
                 ? 'Native owned 18789, reached the provider but live tool execution did not complete; raw provider/bridge error was surfaced and PRoot rollback was attempted.'
-                : (continueWithToolResult
-                    ? 'Production-port live provider tool continuation canary is not promotable; PRoot rollback was attempted.'
-                    : 'Production-port live provider tool execution canary is not promotable; PRoot rollback was attempted.')),
-        'nextGate': continueWithToolResult
-            ? 'production-port native chat loop canary with one live tool continuation and rollback policy'
-            : 'production-port live provider tool result continuation canary with PRoot rollback',
+                : (chatLoopWithToolContinuation
+                    ? 'Production-port native chat loop continuation canary is not promotable; PRoot rollback was attempted.'
+                    : continueWithToolResult
+                        ? 'Production-port live provider tool continuation canary is not promotable; PRoot rollback was attempted.'
+                        : 'Production-port live provider tool execution canary is not promotable; PRoot rollback was attempted.')),
+        'nextGate': chatLoopWithToolContinuation
+            ? 'full production skill/tool inventory parity gate before native promotion'
+            : continueWithToolResult
+                ? 'production-port native chat loop canary with one live tool continuation and rollback policy'
+                : 'production-port live provider tool result continuation canary with PRoot rollback',
       };
       log('$logTag ${jsonEncode({
             ...report,
+            'continuationResponseText':
+                report['continuationResponseText'] == null
+                    ? null
+                    : '<redacted in activity log>',
+            'uiResponseText': report['uiResponseText'] == null
+                ? null
+                : '<redacted in activity log>',
             'rawProviderErrorPreview':
                 rawProviderError.isEmpty ? null : '<redacted in activity log>',
           })}');
       return report;
     } finally {
-      if (continueWithToolResult) {
+      if (chatLoopWithToolContinuation) {
+        _productionPortNativeChatLoopContinuationInFlight = false;
+      } else if (continueWithToolResult) {
         _productionPortProviderLiveToolContinuationInFlight = false;
       } else {
         _productionPortProviderLiveToolExecutionInFlight = false;

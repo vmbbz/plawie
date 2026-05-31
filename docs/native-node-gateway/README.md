@@ -203,6 +203,7 @@ be safely generalized.
 | [63-native-owner-provider-tool-plan-allowlisted-execution.md](63-native-owner-provider-tool-plan-allowlisted-execution.md) | Explicit `/native-tool-plan-exec-owner` diagnostics proving provider-style tool plans map to one bounded native-to-Dart execution allowlist |
 | [64-native-owner-live-provider-tool-execution-canary.md](64-native-owner-live-provider-tool-execution-canary.md) | Explicit `/native-live-tool-exec-owner` diagnostics proving a live provider tool call maps to one bounded native-to-Dart execution allowlist |
 | [65-native-owner-live-provider-tool-continuation-canary.md](65-native-owner-live-provider-tool-continuation-canary.md) | Explicit `/native-live-tool-continue-owner` diagnostics proving live provider tool results continue to final provider text |
+| [66-native-owner-chat-loop-tool-continuation-canary.md](66-native-owner-chat-loop-tool-continuation-canary.md) | Explicit `/native-chat-loop-owner` diagnostics proving native emits a chat-visible response after one live tool continuation |
 
 ## Work Rules
 

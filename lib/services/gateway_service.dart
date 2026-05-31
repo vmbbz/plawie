@@ -4276,6 +4276,33 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionChatLoopContinuationPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-chat-loop-owner',
+      '/native-chat-loop-continuation-owner',
+      '/native-production-chat-loop',
+      '/native-chat-tool-loop-owner',
+      '/native-tool-chat-loop-owner',
+      'native-chat-loop-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'native production chat loop continuation canary: vibrate once and answer';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'native production chat loop continuation canary: vibrate once and answer'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -8593,6 +8620,119 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeProductionChatLoopContinuationMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionChatLoopContinuationPayload(message);
+    if (payload == null) return;
+
+    final providerConfig =
+        await resolveNativeProviderLiveCanaryConfig(model: model);
+    if (providerConfig == null) {
+      yield '[Error] Native production chat loop continuation canary needs an OpenRouter model with a configured API key.';
+      return;
+    }
+
+    _addActivity(
+      '[NATIVE-CHAT-LOOP-CONTINUE] -> Opening production-port native chat loop continuation canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runProductionPortNativeChatLoopContinuationCanary(
+        log: _addActivity,
+        providerConfig: providerConfig,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      final uiResponseText = report['uiResponseText']?.toString().trim() ?? '';
+      final toolNames = report['toolPlanNames'] is List
+          ? (report['toolPlanNames'] as List).join(', ')
+          : '';
+      final rawProviderPreview =
+          report['rawProviderErrorPreview']?.toString().trim() ?? '';
+
+      _addActivity(
+        '[NATIVE-CHAT-LOOP-CONTINUE] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        if (uiResponseText.isNotEmpty) uiResponseText,
+        if (uiResponseText.isNotEmpty) '',
+        ok
+            ? 'Native chat loop continuation canary complete'
+            : 'Native chat loop continuation canary pending',
+        '',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'activeRuntimeId: ${report['activeRuntimeId'] ?? 'unknown'}',
+        'temporaryOwnerRuntimeId: ${report['temporaryOwnerRuntimeId'] ?? 'unknown'}',
+        'preflightProductionRunning: ${report['preflightProductionRunning'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'prootStopRequested: ${report['prootStopRequested'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeObservedAlive: ${report['nativeObservedAlive'] == true}',
+        'nativeInitialGuardOk: ${report['nativeInitialGuardOk'] == true}',
+        'nativeChatLoopContinuationCanaryOk: ${report['nativeChatLoopContinuationCanaryOk'] == true}',
+        'chatLoopOk: ${report['chatLoopOk'] == true}',
+        'chatResponseFrameOk: ${report['chatResponseFrameOk'] == true}',
+        'liveToolContinuationCanaryOk: ${report['liveToolContinuationCanaryOk'] == true}',
+        'continuationOk: ${report['continuationOk'] == true}',
+        'continuationProviderRequestOk: ${report['continuationProviderRequestOk'] == true}',
+        'continuationProviderCallStartedOk: ${report['continuationProviderCallStartedOk'] == true}',
+        'continuationProviderResponseOk: ${report['continuationProviderResponseOk'] == true}',
+        'continuationSummaryOk: ${report['continuationSummaryOk'] == true}',
+        'uiResponseTextChars: ${report['uiResponseTextChars'] ?? 0}',
+        'chatResponseFrameTextChars: ${report['chatResponseFrameTextChars'] ?? 0}',
+        'chatResponseFrameDeltaCount: ${report['chatResponseFrameDeltaCount'] ?? 0}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'routeStatus: ${report['routeStatus'] ?? 'unknown'}',
+        'finishReason: ${report['finishReason'] ?? 'unknown'}',
+        'provider: ${report['provider'] ?? 'unknown'}',
+        'providerModel: ${report['providerModel'] ?? 'unknown'}',
+        'statusCode: ${report['statusCode'] ?? 'unknown'}',
+        'continuationStatusCode: ${report['continuationStatusCode'] ?? 'unknown'}',
+        'continuationDeltaCount: ${report['continuationDeltaCount'] ?? 0}',
+        'continuationTextChars: ${report['continuationTextChars'] ?? 0}',
+        'toolPlanNames: $toolNames',
+        'command: ${report['command'] ?? 'unknown'}',
+        'toolDurationMs: ${report['toolDurationMs'] ?? 'unknown'}',
+        'resultStatus: ${report['resultStatus'] ?? 'unknown'}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'providerCallsDuringExecutionEnabled: ${report['providerCallsDuringExecutionEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'protectedGesture: ${report['protectedGesture'] == true}',
+        'providerBillingSurfaceReached: ${report['providerBillingSurfaceReached'] == true}',
+        'continuationProviderBillingSurfaceReached: ${report['continuationProviderBillingSurfaceReached'] == true}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        if (rawProviderPreview.isNotEmpty)
+          'rawProviderErrorPreview: $rawProviderPreview',
+        'postCanaryGuardOk: ${report['postCanaryGuardOk'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'nativeSmokeRestored: ${report['nativeSmokeRestored'] == true}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-CHAT-LOOP-CONTINUE] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionToolDispatchMessage(
     String message, {
     required String model,
@@ -9164,6 +9304,14 @@ $message''';
     String? sessionKey,
   }) async* {
     model = await _resolveModel(model);
+
+    if (_nativeProductionChatLoopContinuationPayload(message) != null) {
+      yield* _sendNativeProductionChatLoopContinuationMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
 
     if (_nativeProductionProviderLiveToolContinuationPayload(message) != null) {
       yield* _sendNativeProductionProviderLiveToolContinuationMessage(
