@@ -289,7 +289,7 @@ class HelpScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'This architecture operates entirely independent of cloud boundaries. The on-device PRoot gateway uses WebSockets and native MethodChannels (bionic-bypass.js) to manage complex tool-calling natively across local Android services.',
+            'This architecture keeps Gateway control on-device. The embedded native Node runtime speaks the OpenClaw Gateway protocol over loopback, while Android MethodChannels and the paired Device Node provide mobile tool access. PRoot remains available as a rollback shell, not the normal runtime.',
             style: GoogleFonts.outfit(
               fontSize: 13,
               color: Colors.white.withValues(alpha: 0.8),
@@ -306,7 +306,7 @@ class HelpScreen extends StatelessWidget {
               _buildFlagshipPill(
                   Icons.bolt_rounded, 'Fully Local', AppColors.statusAmber),
               _buildFlagshipPill(
-                  Icons.terminal_rounded, 'Native PRoot', Colors.blueAccent),
+                  Icons.terminal_rounded, 'Native Node', Colors.blueAccent),
             ],
           ),
         ],
