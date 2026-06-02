@@ -38,6 +38,7 @@ class NodeService {
       _capabilityHandlers = {};
   Future<bool> Function(String requestId)? approvePairingRequestViaGateway;
   String? _gatewayAuthToken;
+  String? _liveNativeCommandContractHash;
   Completer<String?>? _challengeCompleter;
   String? _cachedChallengeNonce;
   DateTime? _cachedChallengeReceivedAt;
@@ -392,6 +393,15 @@ class NodeService {
     final deviceId = _identity.deviceId ?? '';
     if (deviceId.isEmpty) return false;
 
+    if (await _liveNativePairingCoversDeclaredCommands()) {
+      return false;
+    }
+
+    if (await _nativeOwnerSelected() &&
+        await _nativeStoredContractAlreadyAccepted()) {
+      return false;
+    }
+
     try {
       if (await _pairedNodeCommandsCoverDeclared()) return false;
       if (await _readPendingNodePairingRequestIdFromStore() != null) {
@@ -410,6 +420,24 @@ class NodeService {
         return !declaredCommands.every(pairedCommands.contains);
       }
       return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _liveNativePairingCoversDeclaredCommands() async {
+    if (!await _nativeOwnerSelected()) return false;
+    if (_state.status != NodeStatus.paired || !_ws.isConnected) return false;
+    return _liveNativeCommandContractHash == _declaredCommandContractSignature();
+  }
+
+  Future<bool> _nativeStoredContractAlreadyAccepted() async {
+    try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      final token = prefs.nodeDeviceToken?.trim() ?? '';
+      if (token.isEmpty) return false;
+      return prefs.nodeCommandContractHash == _declaredCommandContractSignature();
     } catch (_) {
       return false;
     }
@@ -1005,6 +1033,12 @@ class NodeService {
         prefs.nodeDeviceToken = deviceToken;
       }
       _onConnected(response);
+      if (await _nativeOwnerSelected()) {
+        final signature = _declaredCommandContractSignature();
+        _liveNativeCommandContractHash = signature;
+        prefs.nodeCommandContractHash = signature;
+        return;
+      }
       if (await _pairedNodeSnapshotNeedsCommandRepair()) {
         await _approvePendingNodePairingSnapshot(prefs);
       }

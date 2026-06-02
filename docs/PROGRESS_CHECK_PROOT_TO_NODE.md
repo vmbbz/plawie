@@ -1314,3 +1314,35 @@ Release interpretation:
   provider key/network incident;
 - native-owner node pairing no longer depends on PRoot CLI fallback for the
   normal production path.
+
+## 2026-06-02 Native Node Reconnect Churn Fix
+
+Phone testing showed one remaining native-owner polish issue on the Device Node
+page: the node could connect successfully, then a stale persisted pairing
+snapshot caused the app to clear the token and reconnect again. The live
+connection already declared the full 42-command mobile contract, so the repair
+logic was over-trusting stale `.openclaw` pending/snapshot files.
+
+Code hardening now applied in `lib/services/node_service.dart`:
+
+- native-owner successful connect stamps the accepted command-contract hash;
+- while native is paired on a live WebSocket with the current command contract,
+  stale persisted snapshots no longer trigger repair;
+- when native has a stored node token and matching accepted command-contract
+  hash, stale pending files are ignored until the actual connect response says
+  pairing is required;
+- PRoot owner keeps the older persistent-snapshot repair path.
+
+Device evidence from the rebuilt public rollback APK:
+
+- installed over USB;
+- cold launched native owner;
+- process tree showed app + `:native_node_smoke`, with no PRoot process;
+- native Gateway reached RPC discovery and released node auto-connect;
+- node used cached token, declared 42 commands, received `Connect accepted`,
+  and logged `Paired and connected`;
+- after clearing logcat and waiting 45 seconds, no fresh node reconnect,
+  pairing-required, snapshot-repair, or disconnect lines appeared.
+
+Release interpretation: native Device Node startup no longer churns through
+visible connect/reconnect loops after a healthy command-contract connect.
