@@ -76,9 +76,9 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 16),
                       _buildHelpCard(
                         context,
-                        title: 'Ubuntu PRoot Sandbox',
+                        title: 'Native Node Gateway',
                         description:
-                            'We bundle a hardened Linux userland inside the APK. The OpenClaw Node.js execution environment runs securely within a PRoot sandbox on your processor — providing server-grade execution without root access.',
+                            'Plawie ships an embedded libnode.so runtime for the OpenClaw Gateway. Normal chat, tools, skills, dashboard access, and mobile bridges run through native app storage, with the older PRoot shell retained as an explicit rollback path.',
                         icon: Icons.terminal_rounded,
                         color: AppColors.statusAmber,
                       ),

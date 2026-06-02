@@ -1429,3 +1429,23 @@ Release interpretation: costless local inference is still available and now has
 a cleaner native-owner storage path. The remaining local-NDK loose end is
 Gateway-route hardening for long real turns with small models, not PRoot
 runtime dependency.
+
+## 2026-06-02 Release Copy Cleanup For Native Default
+
+Follow-up UI audit found stale PRoot-era wording after the native storage and
+runtime owner cleanup.
+
+Code polish now applied:
+
+- Help now describes the embedded native `libnode.so` Gateway as the normal
+  runtime, with PRoot retained as explicit rollback;
+- Local LLM requirements now describe CPU-only fllama and app-private
+  `local-llm` model storage instead of PRoot filesystem storage;
+- the status dashboard now labels the node process as the Device Node/mobile
+  tools bridge instead of an agent execution rootfs.
+
+Validation:
+
+- `flutter analyze lib/screens/management/local_llm_screen.dart
+  lib/screens/help_screen.dart lib/screens/management/status_dashboard.dart`
+  passed.

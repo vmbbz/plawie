@@ -84,8 +84,8 @@ class _StatusDashboardState extends State<StatusDashboard> {
                   const SizedBox(height: 12),
                     _buildServiceCard(
                       context,
-                      'OpenClaw Node',
-                      'Agent execution rootfs (PRoot)',
+                      'Device Node',
+                      'Mobile tools bridge and Gateway pairing',
                       _nodeRunning,
                       Icons.terminal_rounded,
                     ),

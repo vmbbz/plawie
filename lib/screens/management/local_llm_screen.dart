@@ -876,9 +876,9 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
           _specRow('Optimal', '16 GB RAM · 8 Gen 3 / Elite · ~20–30 tok/s'),
           const SizedBox(height: 8),
           const Text(
-            'Inference uses CPU only — GPU acceleration inside PRoot is not stable. '
+            'Inference uses CPU only — GPU acceleration is not used by fllama on this path. '
             'Expect 30–50% battery drain during active inference. '
-            'Models are stored inside the PRoot filesystem and survive app updates.',
+            'New downloads are stored in app-private local-llm storage and survive app updates.',
             style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.5),
           ),
           const SizedBox(height: 10),
