@@ -16,6 +16,13 @@ class OpenClawCommandService {
   static DateTime? _cacheTime;
   static const _cacheTtl = Duration(minutes: 5);
   static const _nativeVersionFallback = '2026.5.0';
+  static Future<void> Function(String reason)? _activeOwnerReloadHandler;
+
+  static void registerActiveOwnerReloadHandler(
+    Future<void> Function(String reason) handler,
+  ) {
+    _activeOwnerReloadHandler = handler;
+  }
 
   /// The 'Golden Path' runner: Bare command + explicit PATH security.
   /// Ensures binaries are found even if the environment is unstable.
@@ -292,11 +299,18 @@ class OpenClawCommandService {
   }
 
   /// Asks the running gateway to rescan and hot-reload skills.
-  static Future<void> reloadGateway() async {
+  static Future<void> reloadGateway({
+    String reason = 'OpenClaw config reload',
+  }) async {
     try {
       if (await _nativeOwnerSelected()) {
-        // Native production Gateway does not expose a mobile shell runner.
-        // Avoid silently spinning up PRoot just to execute `openclaw reload`.
+        // Native production Gateway has no mobile shell runner. Delegate to the
+        // active GatewayService instance so it can restart native with the same
+        // socket/settle-window discipline used by provider credential changes.
+        final handler = _activeOwnerReloadHandler;
+        if (handler != null) {
+          await handler(reason);
+        }
         return;
       }
       await _run('openclaw reload 2>/dev/null || true', timeout: 10);

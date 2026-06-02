@@ -99,11 +99,24 @@ class VoiceModelService {
   }
 
   Future<String> _ttsModelDir() async {
+    final path = await ttsModelDirForActiveOwner();
+    return path;
+  }
+
+  Future<String> ttsModelDirForActiveOwner() async {
     final filesDir = await NativeBridge.getFilesDir();
     final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
     return nativeOwner
         ? '$filesDir/native-node-embedded/native-home/.openclaw/models/tts'
         : '$filesDir/rootfs/ubuntu/root/.openclaw/models/tts';
+  }
+
+  Future<String> gatewayModelPathForActiveOwner(String modelId) async {
+    final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
+    if (nativeOwner) {
+      return '${await ttsModelDirForActiveOwner()}/$modelId.onnx';
+    }
+    return '/root/.openclaw/models/tts/$modelId.onnx';
   }
 
   Future<void> _downloadFile(

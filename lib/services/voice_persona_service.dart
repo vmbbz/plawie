@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'gateway_service.dart';
 import 'openclaw_service.dart';
 import 'preferences_service.dart';
+import 'voice_model_service.dart';
 
 /// Voice Persona service — uses official OpenClaw CLI for persona management.
 /// Personas are provider-agnostic; the gateway maps them to ElevenLabs/OpenAI/Piper voices.
@@ -40,7 +41,9 @@ class VoicePersonaService {
       try {
         await GatewayService().setTtsPersona(persona);
       } catch (_) {
-        await OpenClawCommandService.reloadGateway();
+        await OpenClawCommandService.reloadGateway(
+          reason: 'TTS persona update',
+        );
       }
 
       debugPrint(
@@ -73,7 +76,9 @@ class VoicePersonaService {
       try {
         await GatewayService().setTtsProvider(provider);
       } catch (_) {
-        await OpenClawCommandService.reloadGateway();
+        await OpenClawCommandService.reloadGateway(
+          reason: 'TTS provider update',
+        );
       }
     } catch (e) {
       debugPrint('VoicePersonaService: Failed to set TTS engine: $e');
@@ -83,7 +88,8 @@ class VoicePersonaService {
   /// Configure the gateway to use a specific offline model file
   Future<void> applyOfflineModel(String modelId) async {
     try {
-      final modelPath = '/root/.openclaw/models/tts/$modelId.onnx';
+      final modelPath =
+          await VoiceModelService().gatewayModelPathForActiveOwner(modelId);
       debugPrint('VoicePersonaService: Applying offline model: $modelPath');
 
       // Map the persona to use this local file.
@@ -93,7 +99,9 @@ class VoicePersonaService {
       );
 
       PreferencesService().offlineVoiceModel = modelId;
-      await OpenClawCommandService.reloadGateway();
+      await OpenClawCommandService.reloadGateway(
+        reason: 'offline TTS model update',
+      );
     } catch (e) {
       debugPrint('VoicePersonaService: Failed to apply offline model: $e');
     }

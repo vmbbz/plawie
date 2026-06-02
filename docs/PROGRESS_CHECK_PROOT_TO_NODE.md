@@ -1449,3 +1449,67 @@ Validation:
 - `flutter analyze lib/screens/management/local_llm_screen.dart
   lib/screens/help_screen.dart lib/screens/management/status_dashboard.dart`
   passed.
+
+## 2026-06-02 Native Config Apply / Reload Owner Boundary
+
+Follow-up audit found that the public rollback/native-default owner loop was
+already proven, but normal management changes still had one important native
+gap: `OpenClawCommandService.reloadGateway()` returned immediately under
+native owner. That meant some config edits could be written to native
+`openclaw.json` but not applied to the live Gateway until a later restart.
+
+Code hardening now applied:
+
+- `OpenClawCommandService.reloadGateway()` delegates native-owner reloads to a
+  registered active-owner handler instead of silently no-oping.
+- `GatewayService` registers that handler and applies native config changes via
+  the same bounded native restart, WebSocket reset, token invalidation, and
+  settle-window discipline already used for provider credential updates.
+- Native config apply now falls back to production `/health` evidence when the
+  isolated native process tracker reports a stale `false` running state.
+- PRoot owner keeps the existing `openclaw reload` CLI path.
+- Skills Manager now requests an owner-aware apply after `tools.allow` changes
+  and after PRoot-owner marketplace installs.
+- Voice persona/provider/offline-model changes now pass explicit reload reasons.
+- Offline TTS model config no longer hardcodes `/root/.openclaw/...` while
+  native owns; it uses the native app-storage TTS model path and keeps the
+  `/root/...` path only for PRoot rollback owner.
+
+Validation:
+
+- `flutter analyze lib/services/openclaw_service.dart
+  lib/services/gateway_service.dart lib/services/voice_model_service.dart
+  lib/services/voice_persona_service.dart
+  lib/screens/management/skills_manager.dart` passed.
+- rebuilt public rollback APK with
+  `PLAWIE_NATIVE_GATEWAY_RELEASE_VARIANT=public-rollback` and
+  `PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true`;
+- installed the APK over USB on `RZCX30KA9AW`;
+- cold native launch showed app + `:native_node_smoke`, with no live PRoot
+  process;
+- native reached Gateway RPC discovery and the Android node logged
+  `Connect accepted` plus `Paired and connected`;
+- toggling `Web Browser` in Skills -> Tools triggered:
+  `Native process running check was stale; using health-live evidence for
+  tools.allow update`,
+  `Restarting native Gateway to apply tools.allow update`, and
+  `Native Gateway restart requested for tools.allow update`;
+- after restart, native reached Gateway RPC discovery again, node reconnected,
+  and PRoot remained absent;
+- toggling `Web Browser` back on repeated the same native restart/apply path,
+  returned to RPC/node ready, and the UI showed `ALL ENABLED` with
+  `Web Browser` checked.
+
+Release interpretation: native-owner normal config edits now have a real live
+apply path. This closes the main "saved but not live" management gap without
+starting PRoot behind native ownership.
+
+Current remaining full-native loose ends:
+
+- Native ClawHub/marketplace install/update/uninstall still needs a real
+  native package-management implementation; current behavior is deliberately
+  visible as PRoot-rollback-only.
+- Gateway-mediated local NDK chat route still needs long-turn/session hardening;
+  direct local fllama inference remains available independently.
+- A final release build/install should verify the new owner-aware config apply
+  path on-device before public packaging.

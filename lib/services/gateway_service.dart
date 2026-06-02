@@ -21,6 +21,7 @@ import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
+import 'openclaw_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
 import 'tts_service.dart';
@@ -75,6 +76,9 @@ class GatewayService {
   GatewayService._internal() {
     NodeService().approvePairingRequestViaGateway =
         _approvePairingViaRpcForNode;
+    OpenClawCommandService.registerActiveOwnerReloadHandler(
+      applyActiveOwnerConfigChange,
+    );
   }
 
   Timer? _healthTimer;
@@ -10831,6 +10835,64 @@ $message''';
     } catch (e) {
       _addActivity('[Gateway] Native Gateway restart failed for $reason: $e');
       rethrow;
+    }
+  }
+
+  Future<void> applyActiveOwnerConfigChange(String reason) async {
+    await _refreshSelectedRuntimeOwner();
+    if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+      await NativeBridge.runInProot(
+        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+        'openclaw reload 2>/dev/null || true',
+        timeout: 15,
+      );
+      invalidateTokenCache();
+      disconnectWebSocket();
+      _markGatewaySettleWindow();
+      _addActivity('[Gateway] PRoot Gateway reload requested for $reason.');
+      return;
+    }
+
+    var running = await _runtime.isRunning().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => false,
+        );
+    if (!running) {
+      running = await _activeRuntimeHealthLooksLive();
+      if (running) {
+        _addActivity(
+          '[Gateway] Native process running check was stale; using health-live evidence for $reason.',
+        );
+      }
+    }
+    if (!running) {
+      _addActivity(
+        '[Gateway] Native config change recorded for $reason; Gateway is not running.',
+      );
+      return;
+    }
+
+    await _restartNativeRuntimeForConfigChange(reason);
+    invalidateTokenCache();
+  }
+
+  Future<bool> _activeRuntimeHealthLooksLive() async {
+    try {
+      final token = await retrieveTokenFromConfig().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => null,
+      );
+      final response = await _probeGatewayHealth(
+        token: token,
+        timeout: const Duration(seconds: 3),
+      );
+      final decoded = _decodeObject(response.body);
+      return response.statusCode < 500 &&
+          decoded != null &&
+          _gatewayHealthLooksLive(decoded);
+    } catch (_) {
+      return false;
     }
   }
 

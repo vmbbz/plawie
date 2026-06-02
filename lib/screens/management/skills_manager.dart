@@ -287,7 +287,9 @@ class _SkillsManagerState extends State<SkillsManager>
       }
 
       if (provider.state.status == GatewayStatus.running) {
-        await OpenClawCommandService.reloadGateway();
+        await OpenClawCommandService.reloadGateway(
+          reason: 'skill install: ${skill.installSlug}',
+        );
       }
       ClawHubService.instance.invalidateCache();
 
@@ -364,7 +366,9 @@ class _SkillsManagerState extends State<SkillsManager>
         );
       }
       if (provider.state.status == GatewayStatus.running) {
-        await OpenClawCommandService.reloadGateway();
+        await OpenClawCommandService.reloadGateway(
+          reason: 'skill install: $slug',
+        );
       }
       ClawHubService.instance.invalidateCache();
       navigator.pop();
@@ -1490,6 +1494,7 @@ class _ToolsTabState extends State<_ToolsTab> {
       );
       return;
     }
+    await OpenClawCommandService.reloadGateway(reason: 'tools.allow update');
     gateway.refreshRpcDiscovery();
   }
 
@@ -1518,6 +1523,7 @@ class _ToolsTabState extends State<_ToolsTab> {
       return;
     }
 
+    await OpenClawCommandService.reloadGateway(reason: 'tools.allow update');
     gateway.refreshRpcDiscovery();
     messenger.showSnackBar(
       const SnackBar(
