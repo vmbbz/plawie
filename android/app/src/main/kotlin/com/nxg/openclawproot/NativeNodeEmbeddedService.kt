@@ -8,26 +8,47 @@ import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.GZIPInputStream
 
 class NativeNodeEmbeddedService : Service() {
     private val startedAtMs = SystemClock.elapsedRealtime()
     private var activePort = PORT
     private var activeCanaryMode = "embedded-smoke"
+    private val fullGatewayBootstrapStartClaimed = AtomicBoolean(false)
 
     private data class PreflightBundle(
         val root: File,
         val manifest: File
     )
 
+    private data class FullGatewayBundle(
+        val root: File,
+        val packageDir: File,
+        val launcher: File,
+        val manifest: File,
+        val extractedNow: Boolean,
+        val entryCount: Int,
+        val fileCount: Int,
+        val androidTmpPatchCount: Int
+    )
+
     companion object {
         private const val TAG = "NativeNodeEmbedded"
+        private const val FULL_GATEWAY_BOOTSTRAP_MODE = "full-gateway-bootstrap"
+        private const val OPENCLAW_TARBALL_ASSET =
+            "flutter_assets/assets/openclaw-node-modules.tar.gz"
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         private const val EXTRA_PORT = "port"
@@ -90,7 +111,39 @@ class NativeNodeEmbeddedService : Service() {
             return
         }
 
+        if (
+            activeCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE &&
+            requestedCanaryMode != FULL_GATEWAY_BOOTSTRAP_MODE
+        ) {
+            appendLog(
+                "start ignored; full Gateway bootstrap is already preparing " +
+                    "activePort=$activePort requestedPort=$requestedPort " +
+                    "requestedMode=$requestedCanaryMode"
+            )
+            return
+        }
+
         if (NativeNodeBridge.running()) {
+            if (activePort != requestedPort || activeCanaryMode != requestedCanaryMode) {
+                appendLog(
+                    "start replacing stale embedded Node runtime " +
+                        "activePort=$activePort activeMode=$activeCanaryMode " +
+                        "requestedPort=$requestedPort requestedMode=$requestedCanaryMode"
+                )
+                fullGatewayBootstrapStartClaimed.set(false)
+                stopSelf()
+                if (Application.getProcessName().contains(":native_node_smoke")) {
+                    Thread {
+                        Thread.sleep(100)
+                        Process.killProcess(Process.myPid())
+                    }.apply {
+                        name = "NativeNodeEmbedded-replace-stale-runtime"
+                        isDaemon = true
+                        start()
+                    }
+                }
+                return
+            }
             appendLog(
                 "start ignored; embedded Node already running " +
                     "activePort=$activePort activeMode=$activeCanaryMode " +
@@ -102,13 +155,71 @@ class NativeNodeEmbeddedService : Service() {
         activePort = requestedPort
         activeCanaryMode = requestedCanaryMode
 
+        if (requestedCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE) {
+            if (!fullGatewayBootstrapStartClaimed.compareAndSet(false, true)) {
+                appendLog(
+                    "start ignored; full Gateway bootstrap already starting or started " +
+                        "activePort=$activePort requestedPort=$requestedPort"
+                )
+                return
+            }
+            Thread {
+                startFullGatewayBootstrapRuntime(requestedPort, requestedCanaryMode)
+            }.apply {
+                name = "NativeNodeEmbedded-full-gateway-bootstrap"
+                isDaemon = true
+                start()
+            }
+            return
+        }
+
+        startSmokeRuntime(requestedPort, requestedCanaryMode)
+    }
+
+    private fun startSmokeRuntime(requestedPort: Int, requestedCanaryMode: String) {
         val preflight = preparePreflightBundle(requestedPort, requestedCanaryMode)
         val script = writeSmokeScript(preflight, requestedPort, requestedCanaryMode)
-        appendLog(
-            "starting embedded Node health runtime on http://$HOST:$requestedPort " +
-                "canaryMode=$requestedCanaryMode"
+        startNodeScript(
+            script,
+            requestedPort,
+            requestedCanaryMode,
+            "embedded Node health runtime"
         )
+    }
 
+    private fun startFullGatewayBootstrapRuntime(requestedPort: Int, requestedCanaryMode: String) {
+        try {
+            val bundle = prepareFullGatewayBundle(requestedPort, requestedCanaryMode)
+            val script = writeFullGatewayBootstrapScript(bundle, requestedPort, requestedCanaryMode)
+            appendLog(
+                "prepared full OpenClaw bundle packageDir=${bundle.packageDir.absolutePath} " +
+                    "launcher=${bundle.launcher.absolutePath} extractedNow=${bundle.extractedNow} " +
+                    "entries=${bundle.entryCount} files=${bundle.fileCount}"
+            )
+            startNodeScript(
+                script,
+                requestedPort,
+                requestedCanaryMode,
+                "embedded Node full OpenClaw Gateway bootstrap"
+            )
+        } catch (e: Exception) {
+            fullGatewayBootstrapStartClaimed.set(false)
+            appendLog("full Gateway bootstrap preparation failed: ${e.message}")
+            Log.e(TAG, "Full Gateway bootstrap preparation failed", e)
+            stopSelf()
+        }
+    }
+
+    private fun startNodeScript(
+        script: File,
+        requestedPort: Int,
+        requestedCanaryMode: String,
+        label: String
+    ) {
+        appendLog(
+            "starting $label on $HOST:$requestedPort canaryMode=$requestedCanaryMode " +
+                "script=${script.absolutePath}"
+        )
         val args = arrayOf("plawie-native-node", script.absolutePath)
         val result = NativeNodeBridge.start(args)
         appendLog("bridge start result code=${result.code} message=${result.message}")
@@ -120,7 +231,10 @@ class NativeNodeEmbeddedService : Service() {
 
     private fun stopEmbeddedRuntime(startId: Int) {
         val stopGeneration = lifecycleGeneration.incrementAndGet()
-        appendLog("stop requested; terminating isolated native Node process")
+        appendLog(
+            "stop requested; terminating isolated native Node process " +
+                "activePort=$activePort activeMode=$activeCanaryMode"
+        )
         stopSelf(startId)
 
         if (Application.getProcessName().contains(":native_node_smoke")) {
@@ -199,7 +313,7 @@ class NativeNodeEmbeddedService : Service() {
                 .put("missingAssets", JSONArray(missing))
                 .put(
                     "nodeModulesTarAssetPresent",
-                    assetExists("flutter_assets/assets/openclaw-node-modules.tar.gz")
+                    assetExists(OPENCLAW_TARBALL_ASSET)
                 )
                 .put("productionGatewayPort", 18789)
                 .put("smokePort", PORT)
@@ -214,6 +328,197 @@ class NativeNodeEmbeddedService : Service() {
                 "missing=${missing.size}"
         )
         return PreflightBundle(dir, manifest)
+    }
+
+    private fun prepareFullGatewayBundle(port: Int, canaryMode: String): FullGatewayBundle {
+        val dir = File(workDir(applicationContext), "full-openclaw")
+        val packageDir = File(dir, "lib/node_modules/openclaw")
+        val launcher = File(packageDir, "openclaw.mjs")
+        val packageJson = File(packageDir, "package.json")
+        val runMainEntry = File(packageDir, "dist/cli/run-main.js")
+        val typeboxPackage = File(packageDir, "node_modules/typebox/package.json")
+        val requiredFiles = listOf(
+            launcher,
+            packageJson,
+            runMainEntry,
+            typeboxPackage
+        )
+        var extractedNow = false
+        var entryCount = 0
+        var fileCount = 0
+
+        val missingRequiredFiles = requiredFiles.filterNot { it.exists() }
+        if (missingRequiredFiles.isNotEmpty()) {
+            appendLog(
+                "full OpenClaw bundle cache invalid; missing=" +
+                    missingRequiredFiles.joinToString(",") { it.relativeTo(dir).path }
+            )
+            if (dir.exists()) dir.deleteRecursively()
+            dir.mkdirs()
+            val counts = extractOpenClawTarball(dir)
+            extractedNow = true
+            entryCount = counts.first
+            fileCount = counts.second
+        } else {
+            fileCount = countExistingFiles(dir)
+            entryCount = fileCount
+        }
+        val androidTmpPatchCount = patchOpenClawAndroidTmpDirs(
+            packageDir,
+            File(workDir(applicationContext), "tmp/openclaw")
+        )
+
+        if (!launcher.exists()) {
+            throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
+        }
+        if (!packageJson.exists()) {
+            throw IllegalStateException("OpenClaw package.json missing after extraction: ${packageJson.absolutePath}")
+        }
+        if (!runMainEntry.exists()) {
+            throw IllegalStateException("OpenClaw mobile-safe run-main entry missing after extraction: ${runMainEntry.absolutePath}")
+        }
+        if (!typeboxPackage.exists()) {
+            throw IllegalStateException("OpenClaw required dependency typebox missing after extraction: ${typeboxPackage.absolutePath}")
+        }
+
+        val manifest = File(dir, "full_gateway_manifest.json")
+        manifest.writeText(
+            JSONObject()
+                .put("bundleKind", "full-openclaw-gateway")
+                .put("bundleRoot", dir.absolutePath)
+                .put("packageDir", packageDir.absolutePath)
+                .put("launcher", launcher.absolutePath)
+                .put("runMainEntry", runMainEntry.absolutePath)
+                .put("packageJson", packageJson.absolutePath)
+                .put("typeboxPackage", typeboxPackage.absolutePath)
+                .put("asset", OPENCLAW_TARBALL_ASSET)
+                .put("extractedNow", extractedNow)
+                .put("entryCount", entryCount)
+                .put("fileCount", fileCount)
+                .put("androidTmpPatchCount", androidTmpPatchCount)
+                .put("bindHost", HOST)
+                .put("bindPort", port)
+                .put("canaryMode", canaryMode)
+                .put("productionGatewayPort", PRODUCTION_PORT)
+                .put("smokePort", PORT)
+                .toString()
+        )
+
+        return FullGatewayBundle(
+            root = dir,
+            packageDir = packageDir,
+            launcher = launcher,
+            manifest = manifest,
+            extractedNow = extractedNow,
+            entryCount = entryCount,
+            fileCount = fileCount,
+            androidTmpPatchCount = androidTmpPatchCount
+        )
+    }
+
+    private fun patchOpenClawAndroidTmpDirs(packageDir: File, nativeTmpDir: File): Int {
+        nativeTmpDir.mkdirs()
+        val distDir = File(packageDir, "dist")
+        if (!distDir.exists()) return 0
+
+        val sourceLiteral = "const POSIX_OPENCLAW_TMP_DIR = \"/tmp/openclaw\";"
+        val replacement = "const POSIX_OPENCLAW_TMP_DIR = ${JSONObject.quote(nativeTmpDir.absolutePath)};"
+        var patchedCount = 0
+
+        distDir.listFiles()
+            ?.filter { file ->
+                file.isFile &&
+                    file.name.startsWith("tmp-openclaw-dir-") &&
+                    file.name.endsWith(".js")
+            }
+            ?.forEach { file ->
+                val raw = file.readText()
+                if (raw.contains(sourceLiteral) && !raw.contains(replacement)) {
+                    file.writeText(raw.replace(sourceLiteral, replacement))
+                    patchedCount++
+                }
+            }
+
+        if (patchedCount > 0) {
+            appendLog(
+                "patched OpenClaw Android tmp dir files=$patchedCount " +
+                    "tmpDir=${nativeTmpDir.absolutePath}"
+            )
+        }
+        return patchedCount
+    }
+
+    private fun extractOpenClawTarball(targetRoot: File): Pair<Int, Int> {
+        val canonicalRoot = targetRoot.canonicalFile
+        var entryCount = 0
+        var fileCount = 0
+
+        assets.open(OPENCLAW_TARBALL_ASSET).use { rawInput ->
+            BufferedInputStream(rawInput, 256 * 1024).use { buffered ->
+                GZIPInputStream(buffered).use { gzip ->
+                    TarArchiveInputStream(gzip).use { tar ->
+                        var entry: TarArchiveEntry? = tar.nextEntry
+                        while (entry != null) {
+                            entryCount++
+                            val normalized = normalizeTarEntryName(entry.name)
+                            if (normalized == null) {
+                                appendLog("skipped unsafe OpenClaw tar entry name=${entry.name}")
+                                entry = tar.nextEntry
+                                continue
+                            }
+
+                            val outFile = File(canonicalRoot, normalized)
+                            val canonicalOut = outFile.canonicalFile
+                            if (!canonicalOut.path.startsWith(canonicalRoot.path + File.separator)) {
+                                appendLog("skipped escaping OpenClaw tar entry name=${entry.name}")
+                                entry = tar.nextEntry
+                                continue
+                            }
+
+                            when {
+                                entry.isDirectory -> canonicalOut.mkdirs()
+                                entry.isSymbolicLink || entry.isLink -> {
+                                    appendLog("skipped OpenClaw tar link entry name=${entry.name}")
+                                }
+                                entry.isFile -> {
+                                    canonicalOut.parentFile?.mkdirs()
+                                    FileOutputStream(canonicalOut).use { output ->
+                                        tar.copyTo(output)
+                                    }
+                                    if ((entry.mode and 0b001_001_001) != 0) {
+                                        canonicalOut.setExecutable(true, false)
+                                    }
+                                    fileCount++
+                                }
+                            }
+                            entry = tar.nextEntry
+                        }
+                    }
+                }
+            }
+        }
+
+        if (fileCount == 0) {
+            throw IllegalStateException("OpenClaw tarball extraction produced no files")
+        }
+        return Pair(entryCount, fileCount)
+    }
+
+    private fun normalizeTarEntryName(rawName: String): String? {
+        val name = rawName
+            .replace('\\', '/')
+            .removePrefix("./")
+            .trim()
+        if (name.isEmpty()) return null
+        if (name.startsWith("/") || name.contains("../") || name == ".." || name.contains(":")) {
+            return null
+        }
+        return name
+    }
+
+    private fun countExistingFiles(root: File): Int {
+        if (!root.exists()) return 0
+        return root.walkTopDown().count { it.isFile }
     }
 
     private fun writeSmokeScript(
@@ -392,6 +697,321 @@ class NativeNodeEmbeddedService : Service() {
             });
             """.trimIndent()
         )
+        return script
+    }
+
+    private fun writeFullGatewayBootstrapScript(
+        bundle: FullGatewayBundle,
+        port: Int,
+        canaryMode: String
+    ): File {
+        val dir = workDir(applicationContext)
+        dir.mkdirs()
+
+        val script = File(dir, "full_gateway_bootstrap.mjs")
+        val packageDir = JSONObject.quote(bundle.packageDir.absolutePath)
+        val launcherPath = JSONObject.quote(bundle.launcher.absolutePath)
+        val manifestPath = JSONObject.quote(bundle.manifest.absolutePath)
+        val nativeHome = JSONObject.quote(File(dir, "native-home").absolutePath)
+        val nativeStateDir = JSONObject.quote(File(dir, "native-home/.openclaw").absolutePath)
+        val prootStateDir = JSONObject.quote(
+            File(filesDir, "rootfs/ubuntu/root/.openclaw").absolutePath
+        )
+        val nativeTmp = JSONObject.quote(File(dir, "tmp").absolutePath)
+        val nativeCache = JSONObject.quote(File(dir, "cache").absolutePath)
+        val quotedCanaryMode = JSONObject.quote(canaryMode)
+
+        script.writeText(
+            """
+            import fs from "node:fs";
+            import os from "node:os";
+            import path from "node:path";
+            import process from "node:process";
+            import { syncBuiltinESMExports } from "node:module";
+            import { pathToFileURL } from "node:url";
+
+            const packageDir = $packageDir;
+            const launcherPath = $launcherPath;
+            const mobileRunMainPath = path.join(packageDir, "dist/cli/run-main.js");
+            const manifestPath = $manifestPath;
+            const nativeHome = $nativeHome;
+            const nativeStateDir = $nativeStateDir;
+            const prootStateDir = $prootStateDir;
+            const nativeTmp = $nativeTmp;
+            const nativeCache = $nativeCache;
+            const host = "$HOST";
+            const port = $port;
+            const canaryMode = $quotedCanaryMode;
+
+            for (const writableDir of [nativeHome, nativeStateDir, nativeTmp, nativeCache]) {
+              fs.mkdirSync(writableDir, { recursive: true });
+            }
+
+            const readJsonFile = (filePath) => {
+              try {
+                if (!fs.existsSync(filePath)) return {};
+                return JSON.parse(fs.readFileSync(filePath, "utf8"));
+              } catch {
+                return {};
+              }
+            };
+            const deepMerge = (base, overlay) => {
+              const out = { ...(base || {}) };
+              for (const [key, value] of Object.entries(overlay || {})) {
+                if (
+                  value &&
+                  typeof value === "object" &&
+                  !Array.isArray(value) &&
+                  out[key] &&
+                  typeof out[key] === "object" &&
+                  !Array.isArray(out[key])
+                ) {
+                  out[key] = deepMerge(out[key], value);
+                } else {
+                  out[key] = value;
+                }
+              }
+              return out;
+            };
+            const rewriteRootBackedPaths = (value) => {
+              if (typeof value === "string") {
+                if (value === "/root") return nativeHome;
+                if (value === "/root/.openclaw") return nativeStateDir;
+                if (value.startsWith("/root/.openclaw/")) {
+                  return path.join(nativeStateDir, value.slice("/root/.openclaw/".length));
+                }
+                return value;
+              }
+              if (Array.isArray(value)) {
+                return value.map((entry) => rewriteRootBackedPaths(entry));
+              }
+              if (value && typeof value === "object") {
+                const out = {};
+                for (const [key, entry] of Object.entries(value)) {
+                  out[key] = rewriteRootBackedPaths(entry);
+                }
+                return out;
+              }
+              return value;
+            };
+            const clampNativeOutputTokenCaps = (value, maxOutputTokens = 1024) => {
+              const changes = [];
+              const visit = (entry, location) => {
+                if (!entry || typeof entry !== "object") return;
+                if (Array.isArray(entry)) {
+                  entry.forEach((child, index) => visit(child, location + "[" + index + "]"));
+                  return;
+                }
+                for (const [key, child] of Object.entries(entry)) {
+                  const childLocation = location ? location + "." + key : key;
+                  if (key === "maxTokens" || key === "max_tokens") {
+                    const numeric = Number(child);
+                    if (Number.isFinite(numeric) && numeric > maxOutputTokens) {
+                      changes.push({
+                        path: childLocation,
+                        from: numeric,
+                        to: maxOutputTokens
+                      });
+                      entry[key] = maxOutputTokens;
+                    }
+                  } else {
+                    visit(child, childLocation);
+                  }
+                }
+              };
+              visit(value, "config");
+              return changes;
+            };
+            const makeGatewayToken = () =>
+              "plawie-native-" +
+              Date.now().toString(36) +
+              "-" +
+              Math.random().toString(36).slice(2, 18);
+            const ensureNativeOpenClawConfig = () => {
+              const prootConfigPath = path.join(prootStateDir, "openclaw.json");
+              const nativeConfigPath = path.join(nativeStateDir, "openclaw.json");
+              const prootEnvPath = path.join(prootStateDir, ".env");
+              const nativeEnvPath = path.join(nativeStateDir, ".env");
+              const prootConfig = readJsonFile(prootConfigPath);
+              const existingNativeConfig = readJsonFile(nativeConfigPath);
+              const existingNativeAuth =
+                existingNativeConfig.gateway && existingNativeConfig.gateway.auth
+                  ? existingNativeConfig.gateway.auth
+                  : {};
+              const config = rewriteRootBackedPaths(
+                deepMerge(existingNativeConfig, prootConfig)
+              );
+              const outputCapClamp = clampNativeOutputTokenCaps(config);
+              config.gateway = config.gateway && typeof config.gateway === "object"
+                ? config.gateway
+                : {};
+              config.gateway.auth = config.gateway.auth && typeof config.gateway.auth === "object"
+                ? config.gateway.auth
+                : {};
+              delete config.gateway.auth.unauthenticatedLocalhost;
+              const prootGatewayAuth = prootConfig.gateway && prootConfig.gateway.auth
+                ? prootConfig.gateway.auth
+                : {};
+              const configuredToken =
+                existingNativeAuth.token ||
+                prootGatewayAuth.token ||
+                config.gateway.auth.token ||
+                (prootConfig.auth && prootConfig.auth.token) ||
+                makeGatewayToken();
+              config.gateway.auth.token = configuredToken;
+              config.gateway.auth.mode = "token";
+              fs.writeFileSync(nativeConfigPath, JSON.stringify(config, null, 2));
+              if (fs.existsSync(prootEnvPath)) {
+                fs.copyFileSync(prootEnvPath, nativeEnvPath);
+              }
+              return {
+                nativeConfigPath,
+                prootConfigFound: fs.existsSync(prootConfigPath),
+                nativeEnvSynced: fs.existsSync(nativeEnvPath),
+                tokenConfigured: Boolean(config.gateway.auth.token),
+                outputCapClampCount: outputCapClamp.length,
+                outputCapClamp: outputCapClamp.slice(0, 12),
+              };
+            };
+            const nativeConfigStatus = ensureNativeOpenClawConfig();
+
+            process.env.HOME = nativeHome;
+            process.env.OPENCLAW_HOME = nativeHome;
+            process.env.OPENCLAW_STATE_DIR = nativeStateDir;
+            process.env.XDG_CACHE_HOME = nativeCache;
+            process.env.TMPDIR = nativeTmp;
+            process.env.TEMP = nativeTmp;
+            process.env.TMP = nativeTmp;
+            process.env.NODE_DISABLE_COMPILE_CACHE = "1";
+            process.env.OPENCLAW_GATEWAY_STARTUP_TRACE = "1";
+            process.env.OPENCLAW_DISABLE_CLI_STARTUP_HELP_FAST_PATH = "1";
+            process.env.NO_COLOR = "1";
+            try {
+              Object.defineProperty(os, "tmpdir", {
+                value: () => nativeTmp,
+                configurable: true
+              });
+              Object.defineProperty(os, "homedir", {
+                value: () => nativeHome,
+                configurable: true
+              });
+              syncBuiltinESMExports();
+            } catch (error) {
+              process.stderr.write(
+                `[NATIVE-NODE-FULL-GATEWAY] failed to patch os paths: ${'$'}{
+                  error?.stack || error?.message || String(error)
+                }\n`
+              );
+            }
+
+            process.chdir(packageDir);
+            process.argv = [
+              process.argv[0] || "plawie-native-node",
+              launcherPath,
+              "gateway",
+              "run",
+              "--port",
+              String(port),
+              "--bind",
+              "loopback",
+              "--allow-unconfigured",
+              "--verbose"
+            ];
+
+            const bootstrapMarker = path.join(nativeStateDir, "native-full-gateway-bootstrap.json");
+            const bootstrapStdioLog = path.join(
+              nativeStateDir,
+              "native-full-gateway-bootstrap-stdio.log"
+            );
+            const formatError = (error) => error?.stack || error?.message || String(error);
+            const appendBootstrapLog = (line) => {
+              try {
+                fs.appendFileSync(bootstrapStdioLog, `[${'$'}{new Date().toISOString()}] ${'$'}{line}\n`);
+              } catch {
+                // Keep diagnostics best-effort so logging never breaks startup.
+              }
+            };
+            const writeBootstrapMarker = (stage, extra = {}) => {
+              try {
+                fs.writeFileSync(bootstrapMarker, JSON.stringify({
+                  phase: "full-gateway-bootstrap",
+                  openclawStarted: stage,
+                  fullSkillRegistryLoaded: "pending",
+                  chatRoutingEnabled: "pending",
+                  host,
+                  port,
+                  canaryMode,
+                  packageDir,
+                  launcherPath,
+                  mobileRunMainPath,
+                  manifestPath,
+                  nativeConfigStatus,
+                  argv: process.argv.slice(1),
+                  node: process.version,
+                  platform: process.platform,
+                  arch: process.arch,
+                  updatedAt: new Date().toISOString(),
+                  ...extra
+                }, null, 2));
+              } catch {
+                // Marker updates are diagnostic only.
+              }
+            };
+            const wrapWritableStream = (stream, name) => {
+              const originalWrite = stream.write.bind(stream);
+              stream.write = (chunk, encoding, callback) => {
+                const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+                if (text.includes("[gateway] http server listening")) {
+                  writeBootstrapMarker("http-listening", { httpListeningAt: new Date().toISOString() });
+                }
+                if (text.includes("[gateway] ready")) {
+                  writeBootstrapMarker("gateway-ready", { readyAt: new Date().toISOString() });
+                }
+                appendBootstrapLog(`${'$'}{name}: ${'$'}{text.replace(/\s+${'$'}/, "")}`);
+                return originalWrite(chunk, encoding, callback);
+              };
+            };
+
+            writeBootstrapMarker("launching", { startedAt: new Date().toISOString() });
+            fs.writeFileSync(bootstrapStdioLog, "");
+            wrapWritableStream(process.stdout, "stdout");
+            wrapWritableStream(process.stderr, "stderr");
+            process.on("warning", (warning) => {
+              appendBootstrapLog(`warning: ${'$'}{formatError(warning)}`);
+            });
+            process.on("unhandledRejection", (reason) => {
+              const message = formatError(reason);
+              writeBootstrapMarker("unhandled-rejection", { error: message });
+              appendBootstrapLog(`unhandledRejection: ${'$'}{message}`);
+            });
+            process.on("uncaughtException", (error) => {
+              const message = formatError(error);
+              writeBootstrapMarker("uncaught-exception", { error: message });
+              appendBootstrapLog(`uncaughtException: ${'$'}{message}`);
+            });
+            const nativeOriginalExit = process.exit.bind(process);
+            process.exit = (code = 0) => {
+              writeBootstrapMarker("process-exit", { exitCode: code });
+              appendBootstrapLog(`process.exit(${'$'}{code})`);
+              return nativeOriginalExit(code);
+            };
+
+            console.error(`[NATIVE-NODE-FULL-GATEWAY] launching mobile-safe runCli gateway run on ${'$'}{host}:${'$'}{port}`);
+            try {
+              writeBootstrapMarker("before-run-main-import");
+              const { runCli } = await import(pathToFileURL(mobileRunMainPath).href);
+              writeBootstrapMarker("before-run-cli");
+              await runCli(process.argv);
+              writeBootstrapMarker("run-cli-returned");
+            } catch (error) {
+              const message = formatError(error);
+              writeBootstrapMarker("caught-error", { error: message });
+              console.error(`[NATIVE-NODE-FULL-GATEWAY] bootstrap failed: ${'$'}{message}`);
+              throw error;
+            }
+            """.trimIndent()
+        )
+
         return script
     }
 

@@ -215,9 +215,13 @@ class GatewayConnection {
     // Wait for connect response (type: 'res' matching our connect ID)
     try {
       await _handshakeCompleter!.future.timeout(const Duration(seconds: 15));
-    } catch (_) {
+    } on TimeoutException {
+      _onDisconnect(closeReason: 'handshake-timeout');
+      return false;
+    } catch (e) {
+      final reason = e.toString().trim();
       _onDisconnect(
-        closeReason: 'handshake-timeout',
+        closeReason: reason.isEmpty ? 'handshake-failed' : reason,
       );
       return false;
     }

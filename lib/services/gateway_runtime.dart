@@ -147,6 +147,72 @@ class NativeNodeProductionPortCanaryRuntime implements GatewayRuntime {
   }
 }
 
+class NativeNodeFullGatewayBootstrapRuntime implements GatewayRuntime {
+  const NativeNodeFullGatewayBootstrapRuntime();
+
+  @override
+  String get id => 'native-node-full-gateway-bootstrap';
+
+  @override
+  String get label => 'Embedded Native Node Full Gateway Bootstrap Runtime';
+
+  @override
+  Stream<String> get logStream => const Stream<String>.empty();
+
+  @override
+  Future<bool> start({bool allowDuringSetup = false}) {
+    return NativeBridge.startNativeNodeFullGatewayBootstrapRuntime();
+  }
+
+  @override
+  Future<bool> stop() {
+    return NativeBridge.stopNativeNodeSmokeRuntime();
+  }
+
+  @override
+  Future<bool> isRunning() {
+    return NativeBridge.isNativeNodeFullGatewayBootstrapRuntimeRunning();
+  }
+
+  @override
+  Future<String> getLogs() {
+    return NativeBridge.getNativeNodeSmokeRuntimeLogs();
+  }
+}
+
+class NativeNodeFullGatewayProductionRuntime implements GatewayRuntime {
+  const NativeNodeFullGatewayProductionRuntime();
+
+  @override
+  String get id => 'native-node-full-gateway-production';
+
+  @override
+  String get label => 'Embedded Native Node Full Gateway Production Runtime';
+
+  @override
+  Stream<String> get logStream => const Stream<String>.empty();
+
+  @override
+  Future<bool> start({bool allowDuringSetup = false}) {
+    return NativeBridge.startNativeNodeFullGatewayProductionRuntime();
+  }
+
+  @override
+  Future<bool> stop() {
+    return NativeBridge.stopNativeNodeSmokeRuntime();
+  }
+
+  @override
+  Future<bool> isRunning() {
+    return NativeBridge.isNativeNodeFullGatewayProductionRuntimeRunning();
+  }
+
+  @override
+  Future<String> getLogs() {
+    return NativeBridge.getNativeNodeSmokeRuntimeLogs();
+  }
+}
+
 class GatewayRuntimeRegistry {
   GatewayRuntimeRegistry._();
 
@@ -157,4 +223,29 @@ class GatewayRuntimeRegistry {
       const NativeNodeProcessGatewayRuntime();
   static final GatewayRuntime nativeNodeProductionPortCanary =
       const NativeNodeProductionPortCanaryRuntime();
+  static final GatewayRuntime nativeNodeFullGatewayBootstrap =
+      const NativeNodeFullGatewayBootstrapRuntime();
+  static final GatewayRuntime nativeNodeFullGatewayProduction =
+      const NativeNodeFullGatewayProductionRuntime();
+
+  static GatewayRuntime runtimeForId(String? id) {
+    switch (id) {
+      case 'native-node-full-gateway-production':
+        return nativeNodeFullGatewayProduction;
+      case 'native-node-full-gateway-bootstrap':
+        return nativeNodeFullGatewayBootstrap;
+      case 'native-node-production-port-canary':
+        return nativeNodeProductionPortCanary;
+      case 'native-node-embedded-smoke':
+        return nativeNodeProcessSmoke;
+      case 'native-node-smoke':
+        return nativeNodeSmoke;
+      case 'proot':
+      case null:
+      case '':
+        return current;
+      default:
+        return current;
+    }
+  }
 }

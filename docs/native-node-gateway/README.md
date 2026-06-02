@@ -1,14 +1,13 @@
 # Native Node Gateway Research Track
 
-Last updated: 2026-05-31
+Last updated: 2026-06-02
 
 Branch: `native-node-gateway-research`
 
 ## Purpose
 
-This track researches and stages a possible replacement for the current PRoot
-Gateway runtime with a native Android Node.js runtime. The work is deliberately
-separate from the production Gateway sequence.
+This track researches, stages, and now release-hardens the replacement of the
+current PRoot Gateway runtime with a native Android Node.js runtime.
 
 The production rule is unchanged:
 
@@ -16,11 +15,24 @@ The production rule is unchanged:
 > PRoot startup, config hardening, pairing, dashboard, chat, tools, skills, or
 > node-capability flow until every gate in this track is passed.
 
+Current release-boundary status:
+
+> Embedded native Node has passed the fresh-key native default release gate.
+> It can own production port `18789`, process a normal provider-backed chat
+> turn, return visible assistant text, roll back to PRoot, and preserve sticky
+> PRoot rollback across relaunch. PRoot is now documented as the emergency
+> rollback runtime, not the intended default production owner.
+
+For the current architecture, switch commands, rollback commands, diagnostics
+flags, ports, paths, and cleanup rules, use
+[82-release-boundary-architecture-runbook.md](82-release-boundary-architecture-runbook.md).
+For developer-facing positioning and the `libnode.so` distribution story, use
+[83-libnode-release-and-developer-positioning.md](83-libnode-release-and-developer-positioning.md).
+
 ## Current Direction
 
-The preferred long-term direction is a Bionic-native Node runtime behind a
-`GatewayRuntime` abstraction, not a glibc compatibility layer and not an
-immediate PRoot replacement.
+The selected release direction is a Bionic-native embedded Node runtime behind a
+`GatewayRuntime` abstraction, not a glibc compatibility layer.
 
 The migration should keep this contract stable:
 
@@ -32,8 +44,9 @@ Flutter UI
   -> operator WebSocket / RPC / node / tools / skills
 ```
 
-`ProotGatewayRuntime` remains the production implementation until
-`NativeNodeGatewayRuntime` passes the validation matrix.
+`native-node-full-gateway-production` is now the intended production owner after
+the release gate. `ProotGatewayRuntime` remains present as the emergency
+rollback implementation.
 
 ## Current Branch Status
 
@@ -126,9 +139,53 @@ only read-only bridge allowlisted checks, and roll back to healthy PRoot,
 can run an explicit `/native-device-route-owner` diagnostics proving route
 selection chooses native only for the promoted `device-node` read-only lane
 while every other mobile bridge candidate stays on PRoot fallback,
+can run an explicit `/native-device-route-shadow-owner` diagnostics proving a
+real `chat.send` shaped `device-node` turn can be shadow-parsed and
+shadow-routed by native while PRoot remains the active production owner,
+can run an explicit `/native-device-exec-owner` diagnostics proving a real
+`chat.send` shaped `device-node` turn can execute only native read-only bridge
+allowlisted calls while PRoot remains primary,
+can run an explicit `/native-device-selector-owner` diagnostics proving the
+hidden runtime selector chooses native only for the promoted `device-node`
+read-only real-turn lane and keeps PRoot as automatic fallback,
+can run an explicit `/native-device-tool-plan-owner` diagnostics proving
+provider-style tool-plan handoff stays bounded to the promoted `device-node`
+read-only allowlist with PRoot fallback for unsupported plans,
+can run an explicit `/native-device-soak-owner` diagnostics proving repeated
+promoted `device-node` selector/handoff cycles survive cancellation, error,
+hot-reload-style repetition, and rollback policy checks,
+can run an explicit `/native-next-candidate-owner` diagnostics selecting
+`gestures` as the next safest mobile bridge candidate, limited to
+`avatar.gesture` `wave right`, while `canvas`, `tts-voice`, and unsupported
+gesture shapes remain on PRoot fallback,
+can run an explicit `/native-gestures-route-shadow-owner` diagnostics proving a
+real `chat.send` shaped gestures turn can be shadow-parsed and shadow-routed
+for `avatar.gesture` `wave right` while PRoot remains primary and native
+execution stays disabled,
+can run an explicit `/native-gestures-exec-owner` diagnostics proving that same
+`avatar.gesture` `wave right` lane can execute one protected native-to-Dart
+avatar bridge call with visible tool evidence while PRoot remains primary and
+provider calls stay disabled,
+can run an explicit `/native-gestures-soak-owner` diagnostics proving repeated
+protected `avatar.gesture` `wave right` selector/handoff cycles survive
+cancellation/error policy probes, hot-reload-style repetition, visible tool
+evidence checks, and PRoot rollback discipline,
+can run an explicit `/native-gestures-selector-owner` diagnostics proving a
+hidden gestures runtime selector toggle can choose only the protected
+`avatar.gesture` `wave right` native lane, restore the toggle to disabled, and
+keep unsupported gestures/mixed tool plans on PRoot fallback,
+can run an explicit `/native-haptic-candidate-owner` diagnostics selecting
+`haptic.vibrate` as the next bounded mobile bridge lane while keeping
+notifications, sensor.read, tts, canvas, camera, and wider gestures on PRoot
+fallback with execution disabled,
+uses USB forwarding carefully during device tests: `18789`, `18790`, and
+host-side inspection of `8765` may use `adb forward`, but `8765` must not be
+`adb reverse` mapped because it is owned by the phone-side `AgentSkillServer`,
 verifies Node built-ins and Intl, exposes harmless
 Gateway-shaped probe endpoints on `127.0.0.1:18790`, and reports readiness
-without starting OpenClaw. Production Gateway startup still remains PRoot.
+without starting OpenClaw. The older status text in this long phase summary is
+historical; current production startup is governed by the selected runtime owner
+preference and the native-default cutover marker.
 
 The first direct Node 22 Android build attempt proved the official source path
 can configure and produce major artifacts. The follow-up offline build produced
@@ -223,16 +280,30 @@ be safely generalized.
 | [68-native-owner-promotion-policy-map.md](68-native-owner-promotion-policy-map.md) | Explicit `/native-policy-owner` diagnostics proving conservative promotion policy coverage for every skill/tool before routing |
 | [69-native-owner-single-skill-promotion-canary.md](69-native-owner-single-skill-promotion-canary.md) | Explicit `/native-single-skill-owner` diagnostics proving one `device-node` native promotion window with mandatory PRoot rollback |
 | [70-native-owner-single-skill-route-selection-canary.md](70-native-owner-single-skill-route-selection-canary.md) | Explicit `/native-device-route-owner` diagnostics proving controlled `device-node` native route selection with PRoot fallback armed |
+| [71-native-owner-device-route-shadow-canary.md](71-native-owner-device-route-shadow-canary.md) | Explicit `/native-device-route-shadow-owner` diagnostics proving real-turn `device-node` route shadowing with PRoot fallback armed |
+| [72-native-owner-device-real-turn-execution-canary.md](72-native-owner-device-real-turn-execution-canary.md) | Explicit `/native-device-exec-owner` diagnostics proving real-turn `device-node` native read-only execution with PRoot fallback armed |
+| [73-native-owner-device-runtime-selector-canary.md](73-native-owner-device-runtime-selector-canary.md) | Explicit `/native-device-selector-owner` diagnostics proving hidden `device-node` runtime selection with automatic PRoot fallback |
+| [74-native-owner-device-provider-tool-plan-handoff.md](74-native-owner-device-provider-tool-plan-handoff.md) | Explicit `/native-device-tool-plan-owner` diagnostics proving provider-style handoff remains bounded to the promoted `device-node` read-only allowlist |
+| [75-native-owner-device-selector-handoff-soak.md](75-native-owner-device-selector-handoff-soak.md) | Explicit `/native-device-soak-owner` diagnostics proving repeated promoted `device-node` selector/handoff cycles with cancellation/error/rollback policy checks |
+| [76-native-owner-next-mobile-bridge-candidate.md](76-native-owner-next-mobile-bridge-candidate.md) | Explicit `/native-next-candidate-owner` diagnostics selecting `gestures` as the next safest bridge candidate with PRoot fallback discipline |
+| [77-native-owner-gestures-route-shadow-canary.md](77-native-owner-gestures-route-shadow-canary.md) | Explicit `/native-gestures-route-shadow-owner` diagnostics proving `avatar.gesture wave right` can be shadow-routed with execution disabled |
+| [78-native-owner-gestures-protected-execution-canary.md](78-native-owner-gestures-protected-execution-canary.md) | Explicit `/native-gestures-exec-owner` diagnostics proving protected `avatar.gesture wave right` execution with PRoot fallback armed |
+| [79-native-owner-gestures-selector-handoff-soak.md](79-native-owner-gestures-selector-handoff-soak.md) | Explicit `/native-gestures-soak-owner` diagnostics proving repeated protected gestures selector/handoff cycles with PRoot fallback armed |
+| [80-native-owner-gestures-runtime-selector-canary.md](80-native-owner-gestures-runtime-selector-canary.md) | Explicit `/native-gestures-selector-owner` diagnostics proving a bounded gestures runtime selector toggle with PRoot fallback armed |
+| [81-native-owner-haptic-bridge-candidate.md](81-native-owner-haptic-bridge-candidate.md) | Explicit `/native-haptic-candidate-owner` diagnostics selecting `haptic.vibrate` as the next bounded bridge lane |
+| [82-release-boundary-architecture-runbook.md](82-release-boundary-architecture-runbook.md) | Current release-boundary architecture, runtime ids, ports, switch/rollback commands, diagnostics flags, and cleanup |
+| [83-libnode-release-and-developer-positioning.md](83-libnode-release-and-developer-positioning.md) | Developer-facing `libnode.so` value story, package boundaries, efficiency story, and claims that are safe to make |
 
 ## Work Rules
 
-- Keep PRoot as the default and fallback during research.
-- Do not change `GatewayService.start()` behavior until a runtime interface is
-  introduced and PRoot parity is proven.
+- Keep PRoot available as the emergency rollback runtime.
+- Do not remove PRoot packaging until a later cleanup release proves rollback is
+  no longer required.
 - Do not change port `18789`, auth token semantics, dashboard URL behavior, or
   operator WebSocket handshake.
 - Do not change model routing, tool policy, node pairing, or skills
   registration as part of native runtime plumbing.
-- Every phase must be reversible by switching runtime preference back to PRoot.
+- Every release-hardening phase must be reversible by switching runtime
+  preference back to PRoot.
 - Native runtime failures must surface as diagnostics, not as silent fallback
   corruption or Gateway config churn.

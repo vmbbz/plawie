@@ -5,7 +5,9 @@ import android.os.SystemClock
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.net.InetSocketAddress
 import java.net.HttpURLConnection
+import java.net.Socket
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -44,6 +46,14 @@ class NativeNodeSmokeProcess(
         return startOnPort(PRODUCTION_PORT, "production-port-bind-canary")
     }
 
+    fun startFullGatewayBootstrap(): Boolean {
+        return startOnPort(PORT, "full-gateway-bootstrap")
+    }
+
+    fun startFullGatewayProduction(): Boolean {
+        return startOnPort(PRODUCTION_PORT, "full-gateway-bootstrap")
+    }
+
     fun startOnPort(port: Int, canaryMode: String): Boolean {
         if (isRunningOnPort(port)) {
             appendLog("start ignored; embedded Node smoke runtime already alive")
@@ -69,6 +79,35 @@ class NativeNodeSmokeProcess(
                     "run a debug build so CMake emits libplawie_node_bridge.so"
             )
             return false
+        }
+
+        if (port == PRODUCTION_PORT || canaryMode == "full-gateway-bootstrap") {
+            val legacySmokeListening = isTcpListening(PORT)
+            val productionListening = isTcpListening(PRODUCTION_PORT)
+            if (!legacySmokeListening || productionListening) {
+                appendLog(
+                    "production pre-start cleanup skipped " +
+                        "legacySmokeListening=$legacySmokeListening " +
+                        "productionListening=$productionListening " +
+                        "port=$port canaryMode=$canaryMode"
+                )
+            } else {
+                try {
+                    NativeNodeEmbeddedService.stop(context.applicationContext)
+                    appendLog(
+                        "requested stale embedded Node service stop before production start " +
+                            "port=$port canaryMode=$canaryMode"
+                    )
+                    Thread.sleep(600)
+                    val deadline = SystemClock.elapsedRealtime() + 3000L
+                    while (SystemClock.elapsedRealtime() < deadline) {
+                        if (!isTcpListening(PORT) && !isTcpListening(PRODUCTION_PORT)) break
+                        Thread.sleep(100)
+                    }
+                } catch (e: Exception) {
+                    appendLog("production pre-start cleanup failed: ${e.message}")
+                }
+            }
         }
 
         return try {
@@ -114,6 +153,14 @@ class NativeNodeSmokeProcess(
         return isRunningOnPort(PRODUCTION_PORT)
     }
 
+    fun isFullGatewayBootstrapRunning(): Boolean {
+        return isTcpListening(PORT)
+    }
+
+    fun isFullGatewayProductionRunning(): Boolean {
+        return isTcpListening(PRODUCTION_PORT)
+    }
+
     fun isRunningOnPort(port: Int): Boolean {
         return probeHealth(port)?.optString("runtime") == "native-node-embedded"
     }
@@ -143,6 +190,17 @@ class NativeNodeSmokeProcess(
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun isTcpListening(port: Int): Boolean {
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(HOST, port), 300)
+            }
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

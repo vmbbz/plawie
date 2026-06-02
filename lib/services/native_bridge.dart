@@ -316,6 +316,20 @@ class NativeBridge {
         false;
   }
 
+  static Future<bool> startNativeNodeFullGatewayBootstrapRuntime() async {
+    return await _channel.invokeMethod<bool>(
+          'startNativeNodeFullGatewayBootstrapRuntime',
+        ) ??
+        false;
+  }
+
+  static Future<bool> startNativeNodeFullGatewayProductionRuntime() async {
+    return await _channel.invokeMethod<bool>(
+          'startNativeNodeFullGatewayProductionRuntime',
+        ) ??
+        false;
+  }
+
   static Future<bool> stopNativeNodeSmokeRuntime() async {
     return await _channel.invokeMethod<bool>('stopNativeNodeSmokeRuntime') ??
         false;
@@ -330,6 +344,20 @@ class NativeBridge {
   static Future<bool> isNativeNodeProductionPortCanaryRuntimeRunning() async {
     return await _channel.invokeMethod<bool>(
           'isNativeNodeProductionPortCanaryRuntimeRunning',
+        ) ??
+        false;
+  }
+
+  static Future<bool> isNativeNodeFullGatewayBootstrapRuntimeRunning() async {
+    return await _channel.invokeMethod<bool>(
+          'isNativeNodeFullGatewayBootstrapRuntimeRunning',
+        ) ??
+        false;
+  }
+
+  static Future<bool> isNativeNodeFullGatewayProductionRuntimeRunning() async {
+    return await _channel.invokeMethod<bool>(
+          'isNativeNodeFullGatewayProductionRuntimeRunning',
         ) ??
         false;
   }

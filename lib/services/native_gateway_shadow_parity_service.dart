@@ -2529,6 +2529,7 @@ class NativeGatewayShadowParityService {
               'durationMs': rawAck['durationMs'],
               'protectedGesture': rawAck['protectedGesture'],
               'arbitration': rawAck['arbitration'],
+              'canaryAllowlist': rawAck['canaryAllowlist'],
             },
           };
           continue;

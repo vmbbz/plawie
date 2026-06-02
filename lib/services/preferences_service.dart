@@ -17,6 +17,9 @@ class PreferencesService {
   static const _keyNodePublicKey = 'node_ed25519_public';
   static const _keyNodeGatewayToken = 'node_gateway_token';
   static const _keyGatewayToken = 'gateway_token';
+  static const _keyGatewayRuntimeOwner = 'gateway_runtime_owner';
+  static const _keyNativeGatewayDefaultCutoverApplied =
+      'native_gateway_default_cutover_applied';
   static const _keyLastApprovedRequestId = 'last_approved_request_id';
   static const _keySetupInProgress = 'setup_in_progress';
   static const _keyNodeCommandContractHash = 'node_command_contract_hash';
@@ -116,6 +119,39 @@ class PreferencesService {
 
   String get gatewayToken => _p.getString(_keyGatewayToken) ?? '';
   set gatewayToken(String value) => _p.setString(_keyGatewayToken, value);
+
+  static const gatewayRuntimeOwnerProot = 'proot';
+  static const gatewayRuntimeOwnerNativeProduction =
+      'native-node-full-gateway-production';
+
+  String get gatewayRuntimeOwner =>
+      _p.getString(_keyGatewayRuntimeOwner) ??
+      gatewayRuntimeOwnerNativeProduction;
+  set gatewayRuntimeOwner(String value) {
+    final normalized = value.trim().isEmpty
+        ? gatewayRuntimeOwnerNativeProduction
+        : value.trim();
+    _p.setString(_keyGatewayRuntimeOwner, normalized);
+  }
+
+  bool get nativeGatewayDefaultCutoverApplied =>
+      _p.getBool(_keyNativeGatewayDefaultCutoverApplied) ?? false;
+
+  Future<bool> applyNativeGatewayDefaultCutoverIfNeeded() async {
+    if (nativeGatewayDefaultCutoverApplied || !setupComplete) return false;
+
+    final current = _p.getString(_keyGatewayRuntimeOwner);
+    final shouldPromote =
+        current == null || current == gatewayRuntimeOwnerProot;
+    if (shouldPromote) {
+      await _p.setString(
+        _keyGatewayRuntimeOwner,
+        gatewayRuntimeOwnerNativeProduction,
+      );
+    }
+    await _p.setBool(_keyNativeGatewayDefaultCutoverApplied, true);
+    return shouldPromote;
+  }
 
   int? get nodeGatewayPort {
     final val = _p.getInt(_keyNodeGatewayPort);

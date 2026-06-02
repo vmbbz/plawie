@@ -10,7 +10,9 @@ import 'services/ui_chrome_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await PreferencesService().init();
+  final prefs = PreferencesService();
+  await prefs.init();
+  await prefs.applyNativeGatewayDefaultCutoverIfNeeded();
   await UiChromeService.applyFromPreferences();
   NativeBridge.init();
 

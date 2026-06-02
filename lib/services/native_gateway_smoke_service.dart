@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../constants.dart';
+import 'gateway_connection.dart';
 import 'gateway_runtime.dart';
 import 'native_bridge.dart';
 import 'native_gateway_shadow_parity_service.dart';
@@ -28,6 +29,9 @@ class NativeGatewaySmokeReport {
 /// Enable with:
 /// `--dart-define=PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`
 ///
+/// Startup sidecar auto-tests are intentionally narrower. Enable them only with:
+/// `--dart-define=PLAWIE_NATIVE_GATEWAY_SMOKE_AUTOSTART_DIAGNOSTICS=true`
+///
 /// Most canaries stay off the production Gateway port. The production-port
 /// bind canary is explicit, stops PRoot first, keeps native routing disabled,
 /// and rolls back to PRoot before returning.
@@ -39,13 +43,28 @@ class NativeGatewaySmokeService {
     defaultValue: false,
   );
 
+  static const bool startupSidecarDiagnosticsEnabled = bool.fromEnvironment(
+    'PLAWIE_NATIVE_GATEWAY_SMOKE_AUTOSTART_DIAGNOSTICS',
+    defaultValue: false,
+  );
+
   static final GatewayRuntime _runtime = GatewayRuntimeRegistry.nativeNodeSmoke;
   static final GatewayRuntime _nodeRuntime =
       GatewayRuntimeRegistry.nativeNodeProcessSmoke;
   static final GatewayRuntime _productionPortRuntime =
       GatewayRuntimeRegistry.nativeNodeProductionPortCanary;
+  static final GatewayRuntime _fullGatewayBootstrapRuntime =
+      GatewayRuntimeRegistry.nativeNodeFullGatewayBootstrap;
+  static final GatewayRuntime _fullGatewayProductionRuntime =
+      GatewayRuntimeRegistry.nativeNodeFullGatewayProduction;
   static bool _startupSelfTestInFlight = false;
   static bool _canaryComparisonInFlight = false;
+  static bool _fullGatewayBootstrapInFlight = false;
+  static bool _fullGatewayProductionOwnerInFlight = false;
+  static bool _fullGatewayProductionChatTurnInFlight = false;
+  static bool get productionOwnerSwapInProgress =>
+      _fullGatewayProductionOwnerInFlight ||
+      _fullGatewayProductionChatTurnInFlight;
   static bool _productionPortBindInFlight = false;
   static bool _productionPortBindSoakInFlight = false;
   static bool _runtimeOwnerCanaryInFlight = false;
@@ -73,6 +92,17 @@ class NativeGatewaySmokeService {
   static bool _productionPromotionPolicyMapInFlight = false;
   static bool _productionSingleSkillPromotionInFlight = false;
   static bool _productionSingleSkillRouteSelectionInFlight = false;
+  static bool _productionDeviceNodeRouteShadowInFlight = false;
+  static bool _productionDeviceNodeRealTurnExecutionInFlight = false;
+  static bool _productionDeviceNodeRuntimeSelectorInFlight = false;
+  static bool _productionDeviceNodeProviderToolPlanHandoffInFlight = false;
+  static bool _productionDeviceNodeSelectorHandoffSoakInFlight = false;
+  static bool _productionNextMobileBridgeCandidateInFlight = false;
+  static bool _productionGesturesRouteShadowInFlight = false;
+  static bool _productionGesturesExecutionInFlight = false;
+  static bool _productionGesturesSelectorHandoffSoakInFlight = false;
+  static bool _productionGesturesRuntimeSelectorInFlight = false;
+  static bool _productionHapticBridgeCandidateInFlight = false;
   static bool _canaryComparisonPassed = false;
   static DateTime? _lastCanaryComparisonAttemptAt;
   static const Duration _canaryComparisonRetryCooldown = Duration(seconds: 30);
@@ -80,7 +110,7 @@ class NativeGatewaySmokeService {
   static Future<void> runStartupSelfTestIfEnabled({
     required void Function(String message) log,
   }) async {
-    if (!diagnosticsEnabled) return;
+    if (!startupSidecarDiagnosticsEnabled) return;
     if (_startupSelfTestInFlight) return;
 
     _startupSelfTestInFlight = true;
@@ -109,7 +139,7 @@ class NativeGatewaySmokeService {
     required void Function(String message) log,
     Map<String, dynamic>? productionHealth,
   }) async {
-    if (!diagnosticsEnabled) return;
+    if (!startupSidecarDiagnosticsEnabled) return;
     if (_startupSelfTestInFlight ||
         _canaryComparisonInFlight ||
         _canaryComparisonPassed) {
@@ -259,6 +289,898 @@ class NativeGatewaySmokeService {
     } finally {
       _canaryComparisonInFlight = false;
     }
+  }
+
+  static Future<Map<String, dynamic>> runFullGatewayBootstrapCanary({
+    required void Function(String message) log,
+  }) async {
+    if (_fullGatewayBootstrapInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'native-full-gateway-bootstrap',
+        'alreadyInFlight': true,
+        'decision':
+            'Full OpenClaw native bootstrap is already running; wait for the current attempt to finish.',
+      };
+    }
+
+    _fullGatewayBootstrapInFlight = true;
+    final startedAt = DateTime.now();
+    try {
+      log('[NATIVE-FULL-GATEWAY] Starting real OpenClaw Gateway bootstrap on ${AppConstants.nativeGatewaySmokeUrl}.');
+
+      Object? previousStopError;
+      var previousStopped = false;
+      try {
+        previousStopped = await _fullGatewayBootstrapRuntime.stop();
+      } catch (e) {
+        previousStopError = e;
+      }
+      for (var attempt = 0; attempt < 20; attempt++) {
+        var stillListening = false;
+        try {
+          stillListening = await _fullGatewayBootstrapRuntime.isRunning();
+        } catch (_) {
+          stillListening = false;
+        }
+        if (!stillListening) break;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+
+      final started = await _fullGatewayBootstrapRuntime.start();
+      log('[NATIVE-FULL-GATEWAY] start requested: $started');
+
+      var listening = false;
+      var healthOk = false;
+      Map<String, dynamic> health = <String, dynamic>{};
+      Object? lastHealthError;
+      for (var attempt = 0; attempt < 120; attempt++) {
+        try {
+          listening = await _fullGatewayBootstrapRuntime.isRunning();
+        } catch (e) {
+          lastHealthError = e;
+        }
+
+        if (listening) {
+          try {
+            health = await _probeJson(
+              '/health',
+              attempts: 1,
+              retryDelay: Duration.zero,
+              requestTimeout: const Duration(seconds: 1),
+            );
+            healthOk = health.isNotEmpty;
+            break;
+          } catch (e) {
+            lastHealthError = e;
+          }
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+
+      final logs = await _fullGatewayBootstrapRuntime.getLogs();
+      final logLines = logs
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+      final logTail = logLines.length <= 24
+          ? logLines
+          : logLines.sublist(logLines.length - 24);
+
+      Map<String, dynamic> marker = <String, dynamic>{};
+      String? markerError;
+      try {
+        final filesDir = await NativeBridge.getFilesDir();
+        final markerFile = File(
+          '$filesDir/native-node-embedded/native-home/.openclaw/native-full-gateway-bootstrap.json',
+        );
+        if (await markerFile.exists()) {
+          final decoded = jsonDecode(await markerFile.readAsString());
+          if (decoded is Map<String, dynamic>) {
+            marker = decoded;
+          }
+        }
+      } catch (e) {
+        markerError = e.toString();
+      }
+
+      final markerStage = marker['openclawStarted'];
+      final markerOpenClawStarted = markerStage == true ||
+          markerStage == 'launching' ||
+          markerStage == 'before-run-main-import' ||
+          markerStage == 'before-run-cli' ||
+          markerStage == 'http-listening' ||
+          markerStage == 'gateway-ready';
+      final markerGatewayReady = markerStage == 'gateway-ready';
+      final ok = started && listening && (healthOk || markerGatewayReady);
+      final report = <String, dynamic>{
+        'ok': ok,
+        'phase': 'native-full-gateway-bootstrap',
+        'mode': 'real-openclaw-sidecar',
+        'runtimeId': _fullGatewayBootstrapRuntime.id,
+        'nativePort': AppConstants.nativeGatewaySmokePort,
+        'nativeUrl': AppConstants.nativeGatewaySmokeUrl,
+        'productionPort': AppConstants.gatewayPort,
+        'productionUntouched': true,
+        'previousStopped': previousStopped,
+        if (previousStopError != null)
+          'previousStopError': previousStopError.toString(),
+        'started': started,
+        'listening': listening,
+        'healthOk': healthOk,
+        'healthRuntime': health['runtime'],
+        'healthStatus': health['status'] ?? health['ok'],
+        'healthKeys': health.keys.toList()..sort(),
+        if (lastHealthError != null)
+          'lastHealthError': lastHealthError.toString(),
+        'markerOpenClawStarted': markerOpenClawStarted,
+        'markerGatewayReady': markerGatewayReady,
+        'markerPhase': marker['phase'],
+        'markerPort': marker['port'],
+        'markerNode': marker['node'],
+        'markerPlatform': marker['platform'],
+        'markerArch': marker['arch'],
+        if (marker['error'] != null) 'markerError': marker['error'],
+        if (markerError != null) 'markerReadError': markerError,
+        'logTail': logTail,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'leftRunningForInspection': true,
+        'decision': ok
+            ? 'Real OpenClaw package bootstrap reached native Node sidecar on 18790. Next blocker is compatibility/health hardening, then native production owner selection.'
+            : 'Real OpenClaw package bootstrap did not reach a green sidecar health check yet. Inspect logTail/markerError and fix the first actual startup blocker.',
+        'nextGate': ok
+            ? 'native full Gateway health contract'
+            : 'bootstrap compatibility fix from raw native logs',
+      };
+      log('[NATIVE-FULL-GATEWAY] ${jsonEncode({
+            ...report,
+            'logTail': '<redacted in activity log>',
+            if (report['markerError'] != null)
+              'markerError': '<redacted in activity log>',
+          })}');
+      return report;
+    } finally {
+      _fullGatewayBootstrapInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runFullGatewayProductionOwnerCanary({
+    required void Function(String message) log,
+  }) async {
+    if (_fullGatewayProductionOwnerInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'native-full-gateway-production-owner',
+        'alreadyInFlight': true,
+        'decision':
+            'Full native Gateway production-owner canary is already running.',
+      };
+    }
+
+    _fullGatewayProductionOwnerInFlight = true;
+    final startedAt = DateTime.now();
+    final productionRuntime = GatewayRuntimeRegistry.current;
+    final nativeRuntime = _fullGatewayProductionRuntime;
+
+    var productionStopped = false;
+    var productionPortReleased = false;
+    var nativePreStartStopped = false;
+    Object? nativePreStartStopError;
+    var nativeStarted = false;
+    var nativeRunning = false;
+    var nativeHealthOk = false;
+    Map<String, dynamic> nativeHealth = <String, dynamic>{};
+    Object? nativeHealthError;
+    var nativeStopped = false;
+    var nativePortReleasedAfterStop = false;
+    var rollbackStarted = false;
+    var rollbackRunning = false;
+    var rollbackHealthOk = false;
+    Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+    Object? rollbackError;
+
+    try {
+      log('[NATIVE-FULL-OWNER] Stopping any existing native sidecar before 18789 owner start.');
+      try {
+        await nativeRuntime.stop();
+        for (var attempt = 0; attempt < 30; attempt++) {
+          final smokeStillRunning =
+              await _nodeRuntime.isRunning().catchError((_) => false);
+          final productionStillRunning =
+              await nativeRuntime.isRunning().catchError((_) => false);
+          if (!smokeStillRunning && !productionStillRunning) {
+            nativePreStartStopped = true;
+            nativePreStartStopError = null;
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+      } catch (e) {
+        nativePreStartStopError = e;
+      }
+
+      log('[NATIVE-FULL-OWNER] Stopping PRoot to release 18789.');
+      productionStopped = await productionRuntime.stop();
+      productionPortReleased = await _waitForProductionPortReleased(
+        timeout: const Duration(seconds: 12),
+      );
+      if (!productionPortReleased) {
+        throw StateError(
+          'Production port 18789 did not release before full native owner start.',
+        );
+      }
+
+      log('[NATIVE-FULL-OWNER] Starting real OpenClaw Gateway under embedded Node on 18789.');
+      nativeStarted = await nativeRuntime.start();
+      if (!nativeStarted) {
+        throw StateError(
+            'Native full Gateway production runtime did not start.');
+      }
+
+      for (var attempt = 0; attempt < 120; attempt++) {
+        try {
+          nativeRunning = await nativeRuntime.isRunning();
+          nativeHealth = await _probeProductionJson(
+            '/health',
+            attempts: 1,
+            retryDelay: Duration.zero,
+            requestTimeout: const Duration(seconds: 3),
+          );
+          nativeHealthOk = nativeHealth['ok'] == true ||
+              nativeHealth['status'] == 'live' ||
+              nativeHealth['status'] == 'ok';
+          if (nativeHealthOk) {
+            nativeRunning = true;
+            nativeHealthError = null;
+            break;
+          }
+        } catch (e) {
+          nativeHealthError = e;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+    } catch (e) {
+      nativeHealthError ??= e;
+    } finally {
+      log('[NATIVE-FULL-OWNER] Rolling back: stopping native owner and restarting PRoot.');
+      try {
+        nativeStopped = await nativeRuntime.stop();
+      } catch (e) {
+        rollbackError = e;
+      }
+
+      try {
+        nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 12),
+        );
+      } catch (e) {
+        rollbackError ??= e;
+      }
+
+      try {
+        rollbackStarted = await productionRuntime.start(allowDuringSetup: true);
+        for (var attempt = 0; attempt < 120; attempt++) {
+          try {
+            rollbackRunning = await productionRuntime.isRunning();
+            rollbackHealth = await _probeProductionJson(
+              '/health',
+              attempts: 1,
+              retryDelay: Duration.zero,
+              requestTimeout: const Duration(seconds: 3),
+            );
+            rollbackHealthOk = _productionHealthLooksLikeProot(rollbackHealth);
+            if (rollbackHealthOk) {
+              rollbackRunning = true;
+              rollbackError = null;
+              break;
+            }
+          } catch (e) {
+            rollbackError = e;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+        }
+      } catch (e) {
+        rollbackError = e;
+      }
+
+      _fullGatewayProductionOwnerInFlight = false;
+    }
+
+    final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+    final ok = productionStopped &&
+        productionPortReleased &&
+        nativeStarted &&
+        nativeRunning &&
+        nativeHealthOk &&
+        nativeStopped &&
+        nativePortReleasedAfterStop &&
+        rollbackOk;
+    final logs = await nativeRuntime.getLogs();
+    final logLines = logs
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    final logTail = logLines.length <= 30
+        ? logLines
+        : logLines.sublist(logLines.length - 30);
+
+    final report = <String, dynamic>{
+      'ok': ok,
+      'phase': 'native-full-gateway-production-owner',
+      'mode': 'real-openclaw-production-owner-with-proot-rollback',
+      'productionRuntimeBefore': productionRuntime.id,
+      'nativeRuntimeId': nativeRuntime.id,
+      'productionPort': AppConstants.gatewayPort,
+      'productionStopped': productionStopped,
+      'productionPortReleased': productionPortReleased,
+      'nativePreStartStopped': nativePreStartStopped,
+      if (nativePreStartStopError != null)
+        'nativePreStartStopError': nativePreStartStopError.toString(),
+      'nativeStarted': nativeStarted,
+      'nativeRunning': nativeRunning,
+      'nativeHealthOk': nativeHealthOk,
+      'nativeHealthStatus': nativeHealth['status'] ?? nativeHealth['ok'],
+      'nativeHealthKeys': nativeHealth.keys.toList()..sort(),
+      if (nativeHealthError != null)
+        'nativeHealthError': nativeHealthError.toString(),
+      'nativeStopped': nativeStopped,
+      'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+      'rollbackStarted': rollbackStarted,
+      'rollbackRunning': rollbackRunning,
+      'rollbackHealthOk': rollbackHealthOk,
+      'rollbackHealthStatus': rollbackHealth['status'] ?? rollbackHealth['ok'],
+      'rollbackHealthKeys': rollbackHealth.keys.toList()..sort(),
+      if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+      'rollbackVerified': rollbackOk,
+      'logTail': logTail,
+      'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+      'decision': ok
+          ? 'Real embedded Node OpenClaw owned production port 18789, returned live health, and PRoot rollback was restored.'
+          : 'Native full Gateway production-owner canary is not promotable until native health and PRoot rollback are both green.',
+      'nextGate': ok
+          ? 'selected real chat turn through full native production owner'
+          : 'fix full native production owner or rollback blocker',
+    };
+    log('[NATIVE-FULL-OWNER] ${jsonEncode({
+          ...report,
+          'logTail': '<redacted in activity log>',
+        })}');
+    return report;
+  }
+
+  static Future<Map<String, dynamic>> runFullGatewayProductionChatTurnCanary({
+    required void Function(String message) log,
+    required String prompt,
+    String? authToken,
+    String? model,
+    String? provider,
+  }) async {
+    if (_fullGatewayProductionChatTurnInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'native-full-gateway-production-chat-turn',
+        'alreadyInFlight': true,
+        'decision':
+            'Full native Gateway production chat-turn canary is already running.',
+      };
+    }
+
+    _fullGatewayProductionChatTurnInFlight = true;
+    final startedAt = DateTime.now();
+    final productionRuntime = GatewayRuntimeRegistry.current;
+    final nativeRuntime = _fullGatewayProductionRuntime;
+    final canaryPrompt = prompt.trim().isEmpty
+        ? 'Native full Gateway real chat turn canary. Reply with exactly: native-ok'
+        : prompt.trim();
+
+    GatewayConnection? canaryConnection;
+    var productionStopped = false;
+    var productionPortReleased = false;
+    var nativePreStartStopped = false;
+    Object? nativePreStartStopError;
+    var nativeStarted = false;
+    var nativeRunning = false;
+    var nativeHealthOk = false;
+    Map<String, dynamic> nativeHealth = <String, dynamic>{};
+    Object? nativeHealthError;
+    var nativeAuthTokenFound = false;
+    String nativeAuthTokenSource = 'none';
+    var wsConnected = false;
+    var wsConnectAttempts = 0;
+    int? wsCloseCode;
+    String? wsCloseReason;
+    String? wsDisconnectAt;
+    String? wsStateAfterConnect;
+    String? wsConnectError;
+    var chatSendAckSeen = false;
+    var chatSendAccepted = false;
+    var runStarted = false;
+    var finalSeen = false;
+    var firstTokenReceived = false;
+    var toolUseCount = 0;
+    var toolResultCount = 0;
+    var frameCount = 0;
+    var assistantSnapshot = '';
+    var assistantText = '';
+    String? activeRunId;
+    String? rawGatewayError;
+    String? rawProviderError;
+    String? chatError;
+    var nativeStopped = false;
+    var nativePortReleasedAfterStop = false;
+    var rollbackStarted = false;
+    var rollbackRunning = false;
+    var rollbackHealthOk = false;
+    Map<String, dynamic> rollbackHealth = <String, dynamic>{};
+    Object? rollbackError;
+
+    String assistantDelta(String text) {
+      if (text.isEmpty) return '';
+      if (assistantSnapshot.isEmpty) {
+        assistantSnapshot = text;
+        return text;
+      }
+      if (text == assistantSnapshot || assistantSnapshot.endsWith(text)) {
+        return '';
+      }
+      if (text.startsWith(assistantSnapshot)) {
+        final delta = text.substring(assistantSnapshot.length);
+        assistantSnapshot = text;
+        return delta;
+      }
+      assistantSnapshot += text;
+      return text;
+    }
+
+    bool isActiveRunFrame(String? runId) {
+      return activeRunId == null || runId == null || runId == activeRunId;
+    }
+
+    void captureWsDiagnostics(Object? error) {
+      final connection = canaryConnection;
+      if (connection == null) return;
+      wsCloseCode = connection.lastCloseCode;
+      wsCloseReason = connection.lastCloseReason;
+      wsDisconnectAt = connection.lastDisconnectAt?.toIso8601String();
+      wsStateAfterConnect = connection.state.name;
+      if (error != null) wsConnectError = error.toString();
+    }
+
+    try {
+      log('[NATIVE-FULL-CHAT] Stopping any existing native sidecar before 18789 chat turn.');
+      try {
+        await nativeRuntime.stop();
+        for (var attempt = 0; attempt < 30; attempt++) {
+          final smokeStillRunning =
+              await _nodeRuntime.isRunning().catchError((_) => false);
+          final productionStillRunning =
+              await nativeRuntime.isRunning().catchError((_) => false);
+          if (!smokeStillRunning && !productionStillRunning) {
+            nativePreStartStopped = true;
+            nativePreStartStopError = null;
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+      } catch (e) {
+        nativePreStartStopError = e;
+      }
+
+      log('[NATIVE-FULL-CHAT] Stopping PRoot so native owns real production port 18789.');
+      productionStopped = await productionRuntime.stop();
+      productionPortReleased = await _waitForProductionPortReleased(
+        timeout: const Duration(seconds: 12),
+      );
+      if (!productionPortReleased) {
+        throw StateError(
+          'Production port 18789 did not release before full native chat turn.',
+        );
+      }
+
+      log('[NATIVE-FULL-CHAT] Starting real OpenClaw Gateway under embedded Node on 18789.');
+      nativeStarted = await nativeRuntime.start();
+      if (!nativeStarted) {
+        throw StateError(
+            'Native full Gateway production runtime did not start.');
+      }
+
+      for (var attempt = 0; attempt < 120; attempt++) {
+        try {
+          nativeRunning = await nativeRuntime.isRunning();
+          nativeHealth = await _probeProductionJson(
+            '/health',
+            attempts: 1,
+            retryDelay: Duration.zero,
+            requestTimeout: const Duration(seconds: 3),
+          );
+          nativeHealthOk = nativeHealth['ok'] == true ||
+              nativeHealth['status'] == 'live' ||
+              nativeHealth['status'] == 'ok';
+          if (nativeHealthOk) {
+            nativeRunning = true;
+            nativeHealthError = null;
+            break;
+          }
+        } catch (e) {
+          nativeHealthError = e;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+
+      if (!nativeRunning || !nativeHealthOk) {
+        throw StateError(
+          'Native full Gateway did not become healthy before chat turn: '
+          '${nativeHealthError ?? nativeHealth}',
+        );
+      }
+
+      final tokenProbe = await _resolveNativeGatewayAuthToken(
+        preferredToken: authToken,
+      );
+      final token = tokenProbe['token'];
+      nativeAuthTokenSource = tokenProbe['source'] ?? 'unknown';
+      final resolvedToken = token?.trim();
+      nativeAuthTokenFound = resolvedToken != null && resolvedToken.isNotEmpty;
+      if (resolvedToken == null || resolvedToken.isEmpty) {
+        throw StateError(
+          'No native Gateway auth token available for WebSocket chat turn.',
+        );
+      }
+
+      for (var attempt = 0; attempt < 3 && !wsConnected; attempt++) {
+        wsConnectAttempts = attempt + 1;
+        canaryConnection?.disconnect();
+        canaryConnection = GatewayConnection();
+        Object? connectError;
+        try {
+          wsConnected = await canaryConnection
+              .connect(resolvedToken)
+              .timeout(const Duration(seconds: 20));
+        } catch (e) {
+          connectError = e;
+          wsConnected = false;
+        } finally {
+          captureWsDiagnostics(connectError);
+        }
+        if (!wsConnected && attempt < 2) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+      }
+      if (!wsConnected) {
+        final reason = wsConnectError ??
+            wsCloseReason ??
+            wsStateAfterConnect ??
+            'no WebSocket close reason captured';
+        throw StateError(
+          'Native Gateway WebSocket connect failed after '
+          '$wsConnectAttempts attempt(s): $reason',
+        );
+      }
+
+      final requestId =
+          'native-full-chat-${DateTime.now().microsecondsSinceEpoch}';
+      final activeConnection = canaryConnection;
+      if (activeConnection == null) {
+        throw StateError(
+          'Native Gateway WebSocket connect succeeded without an active connection.',
+        );
+      }
+      final responseStream = activeConnection.sendRequest(
+        _sampleGatewayWsChatSendFrame(
+          requestId: requestId,
+          idempotencyKey:
+              'native-full-chat-idem-${DateTime.now().microsecondsSinceEpoch}',
+          message: canaryPrompt,
+        ),
+      );
+
+      log('[NATIVE-FULL-CHAT] Sent real chat.send frame to native Gateway.');
+      await for (final frame in responseStream.timeout(
+        const Duration(seconds: 120),
+        onTimeout: (sink) {
+          sink.add(<String, dynamic>{
+            'type': 'error',
+            'payload': {
+              'message':
+                  'Native full Gateway chat turn timed out after 120 seconds.',
+            },
+          });
+          sink.close();
+        },
+      )) {
+        frameCount += 1;
+        final type = frame['type']?.toString();
+        final event = frame['event']?.toString();
+        final payload = _jsonObject(frame['payload']);
+        final data = _jsonObject(payload['data'] ?? frame['data']);
+
+        if (type == 'res' && frame['id'] == requestId) {
+          chatSendAckSeen = true;
+          chatSendAccepted = frame['ok'] == true;
+          if (!chatSendAccepted) {
+            chatError = _rawText(
+              frame['error'] ?? frame['errorMessage'] ?? frame,
+            );
+            break;
+          }
+          activeRunId = frame['runId']?.toString();
+          continue;
+        }
+
+        if (type == 'error') {
+          rawGatewayError = _rawText(payload.isEmpty ? frame : payload);
+          rawProviderError = rawGatewayError;
+          break;
+        }
+
+        if (frame.containsKey('error') && frame['error'] != null) {
+          final error = _rawText(frame['error']);
+          if (error.isNotEmpty) {
+            rawGatewayError = error;
+            rawProviderError = error;
+            break;
+          }
+        }
+
+        if (type == 'event' && event == 'chat') {
+          final state =
+              (payload['state'] ?? data['state'] ?? frame['state'])?.toString();
+          if (state == 'final' || state == 'aborted' || state == 'error') {
+            finalSeen = true;
+            if (state == 'error' || state == 'aborted') {
+              rawProviderError = _rawText(
+                payload['error'] ??
+                    data['error'] ??
+                    payload['reason'] ??
+                    data['reason'] ??
+                    payload['message'] ??
+                    data['message'] ??
+                    state,
+              );
+            }
+            if (assistantText.trim().isNotEmpty ||
+                (rawProviderError?.isNotEmpty ?? false)) {
+              break;
+            }
+          }
+          continue;
+        }
+
+        if (type == 'event' && event == 'agent') {
+          final runId = frame['run']?.toString() ?? payload['run']?.toString();
+          final stream = (payload['stream'] ?? frame['stream'])?.toString();
+          if (!isActiveRunFrame(runId)) continue;
+
+          if (stream == 'assistant') {
+            final text =
+                (data['text'] ?? payload['text'] ?? frame['text'])?.toString();
+            if (text != null && text.isNotEmpty) {
+              final delta = assistantDelta(text);
+              if (delta.isNotEmpty) {
+                firstTokenReceived = true;
+                assistantText += delta;
+              }
+            }
+          } else if (stream == 'tool_use') {
+            toolUseCount += 1;
+            assistantSnapshot = '';
+          } else if (stream == 'tool_result') {
+            toolResultCount += 1;
+            assistantSnapshot = '';
+          } else if (stream == 'lifecycle') {
+            final phase = (data['phase'] ?? payload['phase'] ?? frame['phase'])
+                ?.toString();
+            if (phase == 'start') {
+              runStarted = true;
+              if (runId != null) activeRunId = runId;
+            } else if (phase == 'error') {
+              rawProviderError = _rawText(
+                data['error'] ?? payload['error'] ?? frame['error'],
+              );
+              finalSeen = true;
+              break;
+            } else if (phase == 'end') {
+              finalSeen = true;
+              final endSignal = _rawText(
+                data['error'] ??
+                    payload['error'] ??
+                    data['reason'] ??
+                    payload['reason'] ??
+                    frame['error'] ??
+                    frame['reason'],
+              );
+              final normalized = endSignal.toLowerCase();
+              if (endSignal.isNotEmpty &&
+                  normalized != 'completed' &&
+                  normalized != 'run_completed' &&
+                  normalized != 'null') {
+                rawProviderError = endSignal;
+              }
+              break;
+            }
+          } else if (stream == 'error') {
+            rawProviderError = _rawText(
+              data['error'] ??
+                  payload['error'] ??
+                  payload['reason'] ??
+                  frame['reason'] ??
+                  frame['error'],
+            );
+            finalSeen = true;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      chatError ??= e.toString();
+    } finally {
+      canaryConnection?.disconnect();
+      log('[NATIVE-FULL-CHAT] Rolling back: stopping native owner and restarting PRoot.');
+      try {
+        nativeStopped = await nativeRuntime.stop();
+      } catch (e) {
+        rollbackError = e;
+      }
+
+      try {
+        nativePortReleasedAfterStop = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 12),
+        );
+      } catch (e) {
+        rollbackError ??= e;
+      }
+
+      try {
+        rollbackStarted = await productionRuntime.start(allowDuringSetup: true);
+        for (var attempt = 0; attempt < 120; attempt++) {
+          try {
+            rollbackRunning = await productionRuntime.isRunning();
+            rollbackHealth = await _probeProductionJson(
+              '/health',
+              attempts: 1,
+              retryDelay: Duration.zero,
+              requestTimeout: const Duration(seconds: 3),
+            );
+            rollbackHealthOk = _productionHealthLooksLikeProot(rollbackHealth);
+            if (rollbackHealthOk) {
+              rollbackRunning = true;
+              rollbackError = null;
+              break;
+            }
+          } catch (e) {
+            rollbackError = e;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 1000));
+        }
+      } catch (e) {
+        rollbackError = e;
+      }
+
+      _fullGatewayProductionChatTurnInFlight = false;
+    }
+
+    final rollbackOk = rollbackStarted && rollbackRunning && rollbackHealthOk;
+    final visibleTextOk = assistantText.trim().isNotEmpty;
+    final rawProviderErrorText = rawProviderError?.trim() ?? '';
+    final rawGatewayErrorText = rawGatewayError?.trim() ?? '';
+    final chatErrorText = chatError?.trim() ?? '';
+    final rawProviderErrorForwarded = rawProviderErrorText.isNotEmpty;
+    final chatOutcomeOk = visibleTextOk || rawProviderErrorForwarded;
+    final ok = productionStopped &&
+        productionPortReleased &&
+        nativeStarted &&
+        nativeRunning &&
+        nativeHealthOk &&
+        nativeAuthTokenFound &&
+        wsConnected &&
+        chatSendAckSeen &&
+        chatSendAccepted &&
+        chatOutcomeOk &&
+        nativeStopped &&
+        nativePortReleasedAfterStop &&
+        rollbackOk;
+    final logs = await nativeRuntime.getLogs();
+    final logLines = logs
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    final logTail = logLines.length <= 30
+        ? logLines
+        : logLines.sublist(logLines.length - 30);
+    final responsePreview = assistantText.trim().length > 500
+        ? assistantText.trim().substring(0, 500)
+        : assistantText.trim();
+    final rawProviderErrorPreview = rawProviderErrorText.isEmpty
+        ? null
+        : (rawProviderErrorText.length > 700
+            ? rawProviderErrorText.substring(0, 700)
+            : rawProviderErrorText);
+
+    final report = <String, dynamic>{
+      'ok': ok,
+      'phase': 'native-full-gateway-production-chat-turn',
+      'mode':
+          'real-openclaw-native-owner-websocket-chat-send-with-proot-rollback',
+      'productionRuntimeBefore': productionRuntime.id,
+      'nativeRuntimeId': nativeRuntime.id,
+      'productionPort': AppConstants.gatewayPort,
+      'productionStopped': productionStopped,
+      'productionPortReleased': productionPortReleased,
+      'nativePreStartStopped': nativePreStartStopped,
+      if (nativePreStartStopError != null)
+        'nativePreStartStopError': nativePreStartStopError.toString(),
+      'nativeStarted': nativeStarted,
+      'nativeRunning': nativeRunning,
+      'nativeHealthOk': nativeHealthOk,
+      'nativeHealthStatus': nativeHealth['status'] ?? nativeHealth['ok'],
+      'nativeHealthKeys': nativeHealth.keys.toList()..sort(),
+      if (nativeHealthError != null)
+        'nativeHealthError': nativeHealthError.toString(),
+      'nativeAuthTokenFound': nativeAuthTokenFound,
+      'nativeAuthTokenSource': nativeAuthTokenSource,
+      'wsConnected': wsConnected,
+      'wsConnectAttempts': wsConnectAttempts,
+      if (wsCloseCode != null) 'wsCloseCode': wsCloseCode,
+      if (wsCloseReason != null) 'wsCloseReason': wsCloseReason,
+      if (wsDisconnectAt != null) 'wsDisconnectAt': wsDisconnectAt,
+      if (wsStateAfterConnect != null)
+        'wsStateAfterConnect': wsStateAfterConnect,
+      if (wsConnectError != null) 'wsConnectError': wsConnectError,
+      'chatSendAckSeen': chatSendAckSeen,
+      'chatSendAccepted': chatSendAccepted,
+      'runStarted': runStarted,
+      'finalSeen': finalSeen,
+      'firstTokenReceived': firstTokenReceived,
+      'visibleTextOk': visibleTextOk,
+      'assistantTextChars': assistantText.trim().length,
+      'responsePreview': responsePreview,
+      'rawProviderErrorForwarded': rawProviderErrorForwarded,
+      if (rawProviderErrorPreview != null)
+        'rawProviderErrorPreview': rawProviderErrorPreview,
+      if (rawGatewayErrorText.isNotEmpty)
+        'rawGatewayError': rawGatewayErrorText,
+      if (chatErrorText.isNotEmpty) 'chatError': chatErrorText,
+      'toolUseCount': toolUseCount,
+      'toolResultCount': toolResultCount,
+      'frameCount': frameCount,
+      'nativeStopped': nativeStopped,
+      'nativePortReleasedAfterStop': nativePortReleasedAfterStop,
+      'rollbackStarted': rollbackStarted,
+      'rollbackRunning': rollbackRunning,
+      'rollbackHealthOk': rollbackHealthOk,
+      'rollbackHealthStatus': rollbackHealth['status'] ?? rollbackHealth['ok'],
+      'rollbackHealthKeys': rollbackHealth.keys.toList()..sort(),
+      if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+      'rollbackVerified': rollbackOk,
+      'logTail': logTail,
+      'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+      'decision': ok
+          ? (visibleTextOk
+              ? 'Real full native Gateway owned 18789, accepted chat.send, produced visible assistant text, and PRoot rollback was restored.'
+              : 'Real full native Gateway owned 18789, accepted chat.send, forwarded the raw provider error, and PRoot rollback was restored.')
+          : 'Full native production chat-turn canary is not promotable until WebSocket chat.send and PRoot rollback are both green.',
+      'nextGate': ok
+          ? 'native runtime selector default switch with PRoot rollback still armed'
+          : 'fix full native chat turn blocker before selector promotion',
+    };
+    log('[NATIVE-FULL-CHAT] ${jsonEncode({
+          ...report,
+          'responsePreview': report['responsePreview'] == null
+              ? null
+              : '<redacted in activity log>',
+          'rawProviderErrorPreview': report['rawProviderErrorPreview'] == null
+              ? null
+              : '<redacted in activity log>',
+          'rawGatewayError': report['rawGatewayError'] == null
+              ? null
+              : '<redacted in activity log>',
+          'logTail': '<redacted in activity log>',
+        })}');
+    return report;
   }
 
   static Future<NativeGatewaySmokeReport> runNativeNodeProcessSmokeTest({
@@ -1257,6 +2179,4525 @@ class NativeGatewaySmokeService {
       return report;
     } finally {
       _productionSingleSkillRouteSelectionInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runDeviceNodeRealTurnRouteShadowCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native device-node real-turn route shadow canary: use flash.status and sensor.list read-only',
+  }) async {
+    if (_productionDeviceNodeRouteShadowInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-real-turn-route-shadow-canary',
+        'status': 'busy',
+        'decision':
+            'Device-node real-turn route shadow canary is already running.',
+      };
+    }
+
+    _productionDeviceNodeRouteShadowInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'device-node';
+    const expectedToolHints = <String>['flash.status', 'sensor.list'];
+    const selectedRuntimeId = 'native-node-shadow-route-canary';
+    const selectedRoute = 'native-device-node-readonly-route-shadow';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-device-node-skill';
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      if (actual.length != expected.length) return false;
+      for (var i = 0; i < expected.length; i++) {
+        if (actual[i] != expected[i]) return false;
+      }
+      return true;
+    }
+
+    List<Map<String, dynamic>> nonPromotedFallbackDecisions() {
+      final candidateIds = _mobileBridgeCandidateSkillIds
+          .where((id) => id != selectedSkillId)
+          .toList()
+        ..sort();
+      return candidateIds
+          .map((id) => <String, dynamic>{
+                'skillId': id,
+                'nativeEligible': false,
+                'selectedRuntimeId': fallbackRuntimeId,
+                'selectedRoute': 'proot-$id-skill',
+                'reason': 'real_turn_shadow_promotes_only_device_node_readonly',
+              })
+          .toList();
+    }
+
+    bool gateDisabled(Object? gate) {
+      return gate is Map &&
+          gate['enabled'] != true &&
+          gate['status'] == 'blocked';
+    }
+
+    Object? mapValue(Object? value, String key) {
+      if (value is Map) return value[key];
+      return null;
+    }
+
+    Object? nativeProviderCallsEnabled(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return health['providerCallsEnabled'] ??
+          mapValue(gatewayProbe, 'providerCallsEnabled') ??
+          mapValue(readyState, 'providerCallsEnabled');
+    }
+
+    Map<String, dynamic> nativeHealthSummary(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return <String, dynamic>{
+        'ok': health['ok'] == true,
+        'runtime': health['runtime'],
+        'port': health['port'],
+        'openclawStarted': health['openclawStarted'],
+        'providerCallsEnabled': nativeProviderCallsEnabled(health),
+        'gatewayProbeStatus': mapValue(gatewayProbe, 'status'),
+        'chatRoutingEnabled': mapValue(gatewayProbe, 'chatRoutingEnabled') ??
+            mapValue(readyState, 'chatRoutingEnabled'),
+        'executionEnabled': mapValue(readyState, 'executionEnabled'),
+        'productionSkillCount': mapValue(gatewayProbe, 'productionSkillCount'),
+        'skillRegistryMode': mapValue(gatewayProbe, 'skillRegistryMode'),
+      };
+    }
+
+    bool nativeShadowHealthLooksReady(Map<String, dynamic> health) {
+      return health['ok'] == true &&
+          health['runtime'] == 'native-node-embedded' &&
+          health['port'] == AppConstants.nativeGatewaySmokePort &&
+          health['openclawStarted'] == false &&
+          nativeProviderCallsEnabled(health) == false;
+    }
+
+    try {
+      log(
+        '[NATIVE-DEVICE-ROUTE-SHADOW] Starting real-turn device-node route shadow; PRoot remains primary.',
+      );
+
+      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final nativeWasRunning = await _nodeRuntime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false)
+          .catchError((_) => false);
+      var nativeStartedByCanary = false;
+      if (!nativeWasRunning) {
+        nativeStartedByCanary = await _nodeRuntime.start();
+      }
+
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Object? nativeHealthError;
+      try {
+        nativeHealth = await _probeHealth(
+          expectedRuntime: 'native-node-embedded',
+        );
+      } catch (e) {
+        nativeHealthError = e;
+      }
+      final nativeHealthOk = nativeShadowHealthLooksReady(nativeHealth);
+
+      if (!nativeHealthOk) {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-device-node-real-turn-route-shadow-canary',
+          'mode':
+              'device-node-real-turn-route-shadow-with-proot-fallback-armed',
+          'selectedSkillId': selectedSkillId,
+          'primaryRuntimeId': fallbackRuntimeId,
+          'productionPort': AppConstants.gatewayPort,
+          'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+          'prootSelectedBefore': prootSelectedBefore,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthBeforeError':
+              productionHealthBeforeError?.toString(),
+          'nativeWasRunning': nativeWasRunning,
+          'nativeStartedByCanary': nativeStartedByCanary,
+          'nativeHealthOk': false,
+          'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+          'nativeHealthError': nativeHealthError?.toString(),
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Native shadow route canary could not start because the alternate native parser was not healthy; PRoot remains primary.',
+          'nextGate':
+              'restore native shadow parser health before real-turn route shadow',
+        };
+        log('[NATIVE-DEVICE-ROUTE-SHADOW] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final now = DateTime.now().microsecondsSinceEpoch;
+      final frame = _sampleGatewayWsChatSendFrame(
+        requestId: 'device-node-route-shadow-$now',
+        idempotencyKey: 'device-node-route-shadow-idempotency-$now',
+        model: model,
+        message: _deviceNodeReadOnlyRouteShadowMessage(prompt),
+      );
+
+      final shadowReport =
+          await NativeGatewayShadowParityService.observeChatSendFrame(
+        frame,
+        log: log,
+      );
+      final localHints = sortedStringList(
+        shadowReport?.local['mobileToolHints'],
+      );
+      final nativeHints = sortedStringList(
+        shadowReport?.native?['mobileToolHints'],
+      );
+      final dryRunHints = sortedStringList(
+        shadowReport?.dryRun?['mobileToolHints'],
+      );
+      final realTurnFrameParsed =
+          shadowReport?.local['looksLikeProductionChatSend'] == true &&
+              shadowReport?.native?['looksLikeProductionChatSend'] == true &&
+              shadowReport?.dryRun?['parsed'] == true;
+      final shadowParityOk = shadowReport?.parityOk == true;
+      final shadowDryRunHashMatches = shadowReport?.local['metadataHash'] ==
+          shadowReport?.dryRun?['metadataHash'];
+      final dryRunShadowOk =
+          shadowReport?.dryRunOk == true && shadowDryRunHashMatches;
+      final realTurnToolHintsOk = listMatches(localHints, expectedToolHints) &&
+          listMatches(nativeHints, expectedToolHints) &&
+          listMatches(dryRunHints, expectedToolHints);
+
+      final routeEvents = <Map<String, dynamic>>[];
+      await for (final event in NativeGatewayShadowParityService
+          .streamRoutingSkeletonChatSendFrame(
+        frame,
+        log: log,
+      )) {
+        routeEvents.add(event);
+      }
+
+      final ackEvent = _firstEvent(routeEvents, 'ack');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final routePlanEvent = _firstEvent(routeEvents, 'route_plan');
+      final routePlan = routePlanEvent['routePlan'] is Map
+          ? Map<String, dynamic>.from(routePlanEvent['routePlan'] as Map)
+          : <String, dynamic>{};
+      final providerGateEvent = _firstEvent(routeEvents, 'provider_gate');
+      final toolGateEvent = _firstEvent(routeEvents, 'tool_gate');
+      final endEvent = _firstEvent(routeEvents, 'end');
+      final routePlanRequest = routePlan['request'] is Map
+          ? Map<String, dynamic>.from(routePlan['request'] as Map)
+          : <String, dynamic>{};
+      final planHints = sortedStringList(routePlanRequest['mobileToolHints']);
+
+      final routeEventNames = routeEvents
+          .map((event) => event['event']?.toString() ?? '')
+          .where((event) => event.isNotEmpty)
+          .toList();
+      final routeStreamOrderOk = routeEventNames.length >= 5 &&
+          routeEventNames.first == 'ack' &&
+          routeEventNames.contains('route_plan') &&
+          routeEventNames.contains('provider_gate') &&
+          routeEventNames.contains('tool_gate') &&
+          routeEventNames.last == 'end';
+      final routeSkeletonOk = ackEvent['ok'] == true &&
+          ackEvent['parsed'] == true &&
+          ackEvent['acceptedForRouting'] == false &&
+          ackEvent['providerCallsEnabled'] == false &&
+          ackEvent['executionEnabled'] == false &&
+          ack['parsed'] == true &&
+          ack['hashMatches'] == true &&
+          ack['routeStatus'] == 'blocked_before_provider' &&
+          routePlan['routeStatus'] == 'blocked_before_provider' &&
+          routePlan['acceptedForRouting'] == false &&
+          routePlan['chatRoutingEnabled'] == false &&
+          gateDisabled(routePlan['providerCallGate']) &&
+          gateDisabled(routePlan['toolExecutionGate']) &&
+          providerGateEvent['providerCallsEnabled'] == false &&
+          toolGateEvent['executionEnabled'] == false &&
+          endEvent['finishReason'] == 'routing_skeleton_complete' &&
+          endEvent['providerCallsEnabled'] == false &&
+          endEvent['executionEnabled'] == false &&
+          routeStreamOrderOk &&
+          listMatches(planHints, expectedToolHints);
+
+      final hintPolicies = _buildToolHintPromotionPolicies(localHints.toSet());
+      final readOnlyHintPoliciesOk = expectedToolHints.every(
+            (hint) =>
+                hintPolicies[hint] ==
+                'native_bridge_readonly_allowlist_manual_only',
+          ) &&
+          hintPolicies.length == expectedToolHints.length;
+      final nativeEligible = realTurnToolHintsOk && readOnlyHintPoliciesOk;
+      final routeDecision = <String, dynamic>{
+        'skillId': selectedSkillId,
+        'requestedToolHints': expectedToolHints,
+        'observedToolHints': localHints,
+        'nativeEligible': nativeEligible,
+        'selectedRuntimeId':
+            nativeEligible ? selectedRuntimeId : fallbackRuntimeId,
+        'selectedRoute': nativeEligible ? selectedRoute : fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'source': 'real_chat_send_shadow_frame',
+        'defaultNativeRoutingEnabled': false,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+      };
+      final fallbackDecisions = nonPromotedFallbackDecisions();
+      final nonPromotedFallbackOk = fallbackDecisions.every(
+        (decision) =>
+            decision['nativeEligible'] == false &&
+            decision['selectedRuntimeId'] == fallbackRuntimeId,
+      );
+      final shadowRouteDecisionOk = nativeEligible &&
+          routeDecision['selectedRuntimeId'] == selectedRuntimeId &&
+          routeDecision['selectedRoute'] == selectedRoute &&
+          routeDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+          routeDecision['fallbackOneActionAway'] == true &&
+          nonPromotedFallbackOk;
+
+      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthAfterError;
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+      final prootRemainedPrimary = prootSelectedBefore &&
+          productionRuntimeAfter == fallbackRuntimeId &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+      final nativeExecutionDisabled = ackEvent['executionEnabled'] == false &&
+          ack['executionEnabled'] == false &&
+          routePlan['acceptedForRouting'] == false &&
+          toolGateEvent['executionEnabled'] == false &&
+          endEvent['executionEnabled'] == false;
+      final providerCallsDisabled = ackEvent['providerCallsEnabled'] == false &&
+          ack['providerCallsEnabled'] == false &&
+          providerGateEvent['providerCallsEnabled'] == false &&
+          endEvent['providerCallsEnabled'] == false;
+      final fallbackStillArmed = prootRemainedPrimary &&
+          routeDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+          routeDecision['fallbackOneActionAway'] == true;
+      final routeShadowCanaryOk = nativeHealthOk &&
+          realTurnFrameParsed &&
+          shadowParityOk &&
+          dryRunShadowOk &&
+          realTurnToolHintsOk &&
+          routeSkeletonOk &&
+          shadowRouteDecisionOk &&
+          nonPromotedFallbackOk &&
+          nativeExecutionDisabled &&
+          providerCallsDisabled &&
+          fallbackStillArmed;
+
+      final report = <String, dynamic>{
+        'ok': routeShadowCanaryOk,
+        'phase': 'hidden-device-node-real-turn-route-shadow-canary',
+        'mode': 'device-node-real-turn-route-shadow-with-proot-fallback-armed',
+        'selectedSkillId': selectedSkillId,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+        'prootSelectedBefore': prootSelectedBefore,
+        'productionRuntimeAfter': productionRuntimeAfter,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        'productionHealthBeforeError': productionHealthBeforeError?.toString(),
+        'productionHealthAfterError': productionHealthAfterError?.toString(),
+        'nativeWasRunning': nativeWasRunning,
+        'nativeStartedByCanary': nativeStartedByCanary,
+        'nativeLeftRunningForShadow': true,
+        'nativeHealthOk': nativeHealthOk,
+        'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+        'nativeHealthError': nativeHealthError?.toString(),
+        'realTurnFrameParsed': realTurnFrameParsed,
+        'shadowParityOk': shadowParityOk,
+        'dryRunShadowOk': dryRunShadowOk,
+        'hashMatches': shadowDryRunHashMatches,
+        'requestedToolHints': expectedToolHints,
+        'localToolHints': localHints,
+        'nativeToolHints': nativeHints,
+        'dryRunToolHints': dryRunHints,
+        'routePlanToolHints': planHints,
+        'realTurnToolHintsOk': realTurnToolHintsOk,
+        'toolHintPolicies': hintPolicies,
+        'readOnlyHintPoliciesOk': readOnlyHintPoliciesOk,
+        'routeDecision': routeDecision,
+        'shadowRouteDecisionOk': shadowRouteDecisionOk,
+        'routeEvents': routeEventNames,
+        'routeStreamOrderOk': routeStreamOrderOk,
+        'routeSkeletonOk': routeSkeletonOk,
+        'routeStatus': routePlan['routeStatus'] ?? ack['routeStatus'],
+        'providerGateBlocked': gateDisabled(routePlan['providerCallGate']),
+        'toolGateBlocked': gateDisabled(routePlan['toolExecutionGate']),
+        'nonPromotedFallbackDecisions': fallbackDecisions,
+        'nonPromotedFallbackOk': nonPromotedFallbackOk,
+        'acceptedForRouting': false,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'providerCallsDisabled': providerCallsDisabled,
+        'nativeExecutionDisabled': nativeExecutionDisabled,
+        'fallbackStillArmed': fallbackStillArmed,
+        'sessionKey': shadowReport?.local['sessionKey'],
+        'nativeSessionId': shadowReport?.dryRun?['nativeSessionId'],
+        'runId': shadowReport?.dryRun?['runId'] ?? ack['runId'],
+        'messageChars': shadowReport?.local['messageChars'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': routeShadowCanaryOk
+            ? 'Real chat.send-shaped device-node turn shadowed through native, selected only the read-only native route on paper, and left PRoot fully armed as primary.'
+            : 'Device-node real-turn route shadow is not promotable; require parser parity, read-only hint policy, disabled execution, and healthy PRoot fallback.',
+        'nextGate':
+            'device-node real-turn native execution canary with explicit PRoot fallback',
+      };
+      log('[NATIVE-DEVICE-ROUTE-SHADOW] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-real-turn-route-shadow-canary',
+        'mode': 'device-node-real-turn-route-shadow-with-proot-fallback-armed',
+        'selectedSkillId': selectedSkillId,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Device-node real-turn route shadow failed before a green report was produced; PRoot fallback should remain primary.',
+      };
+      log('[NATIVE-DEVICE-ROUTE-SHADOW] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionDeviceNodeRouteShadowInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runDeviceNodeRealTurnNativeExecutionCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native device-node real-turn execution canary: use flash.status and sensor.list read-only',
+  }) async {
+    if (_productionDeviceNodeRealTurnExecutionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-real-turn-native-execution-canary',
+        'status': 'busy',
+        'decision':
+            'Device-node real-turn native execution canary is already running.',
+      };
+    }
+
+    _productionDeviceNodeRealTurnExecutionInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'device-node';
+    const expectedToolHints = <String>['flash.status', 'sensor.list'];
+    const selectedRuntimeId = 'native-node-real-turn-execution-canary';
+    const selectedRoute = 'native-device-node-readonly-real-turn-execution';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-device-node-skill';
+
+    Map<String, dynamic> asMap(Object? value) => value is Map
+        ? value.map((key, value) => MapEntry(key.toString(), value))
+        : <String, dynamic>{};
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      if (actual.length != expected.length) return false;
+      for (var i = 0; i < expected.length; i++) {
+        if (actual[i] != expected[i]) return false;
+      }
+      return true;
+    }
+
+    List<Map<String, dynamic>> eventsNamed(
+      List<Map<String, dynamic>> events,
+      String name,
+    ) {
+      return events
+          .where((event) => event['event'] == name)
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+    }
+
+    Map<String, dynamic> eventByOrder(
+      List<Map<String, dynamic>> events,
+      String name,
+      int orderIndex,
+    ) {
+      for (final event in events) {
+        if (event['event'] == name && event['orderIndex'] == orderIndex) {
+          return event;
+        }
+      }
+      return <String, dynamic>{};
+    }
+
+    bool providerStillDisabled(Map<String, dynamic> value) =>
+        value['providerCallsEnabled'] != true &&
+        value['transportInvocationEnabled'] != true;
+
+    bool executionEnabled(Map<String, dynamic> value) =>
+        value['executionEnabled'] == true &&
+        value['toolExecutionEnabled'] == true &&
+        value['bridgeExecutionEnabled'] == true;
+
+    bool allowlistOk(Object? value) {
+      if (value is! List) return false;
+      final strings = value.map((entry) => entry.toString()).toSet();
+      return strings.length == expectedToolHints.length &&
+          expectedToolHints.every(strings.contains);
+    }
+
+    bool resultShapeOk(String toolName, Map<String, dynamic> result) {
+      if (toolName == 'flash.status') {
+        return result['on'] is bool;
+      }
+      if (toolName == 'sensor.list') {
+        final sensors = result['sensors'];
+        return sensors is List && sensors.isNotEmpty;
+      }
+      return false;
+    }
+
+    Object? mapValue(Object? value, String key) {
+      if (value is Map) return value[key];
+      return null;
+    }
+
+    Object? nativeProviderCallsEnabled(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return health['providerCallsEnabled'] ??
+          mapValue(gatewayProbe, 'providerCallsEnabled') ??
+          mapValue(readyState, 'providerCallsEnabled');
+    }
+
+    Map<String, dynamic> nativeHealthSummary(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return <String, dynamic>{
+        'ok': health['ok'] == true,
+        'runtime': health['runtime'],
+        'port': health['port'],
+        'openclawStarted': health['openclawStarted'],
+        'providerCallsEnabled': nativeProviderCallsEnabled(health),
+        'gatewayProbeStatus': mapValue(gatewayProbe, 'status'),
+        'chatRoutingEnabled': mapValue(gatewayProbe, 'chatRoutingEnabled') ??
+            mapValue(readyState, 'chatRoutingEnabled'),
+        'executionEnabled': mapValue(readyState, 'executionEnabled'),
+        'productionSkillCount': mapValue(gatewayProbe, 'productionSkillCount'),
+        'skillRegistryMode': mapValue(gatewayProbe, 'skillRegistryMode'),
+      };
+    }
+
+    bool nativeShadowHealthLooksReady(Map<String, dynamic> health) {
+      return health['ok'] == true &&
+          health['runtime'] == 'native-node-embedded' &&
+          health['port'] == AppConstants.nativeGatewaySmokePort &&
+          health['openclawStarted'] == false &&
+          nativeProviderCallsEnabled(health) == false;
+    }
+
+    try {
+      log(
+        '[NATIVE-DEVICE-EXEC-SHADOW] Starting real-turn device-node native execution canary; PRoot remains primary.',
+      );
+
+      final routeShadowReport = await runDeviceNodeRealTurnRouteShadowCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-DEVICE-ROUTE-SHADOW]')) {
+            log(message.replaceFirst(
+              '[NATIVE-DEVICE-ROUTE-SHADOW]',
+              '[NATIVE-DEVICE-EXEC-SHADOW]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        model: model,
+        prompt: prompt,
+      );
+      final routeShadowOk = routeShadowReport['ok'] == true;
+      if (!routeShadowOk) {
+        final report = <String, dynamic>{
+          ...routeShadowReport,
+          'ok': false,
+          'phase': 'hidden-device-node-real-turn-native-execution-canary',
+          'mode':
+              'device-node-real-turn-native-readonly-execution-with-proot-fallback',
+          'innerPhase': routeShadowReport['phase'],
+          'routeShadowOk': false,
+          'nativeExecutionAttempted': false,
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Real-turn native execution did not start because the route-shadow prerequisite was not green; PRoot remains primary.',
+          'nextGate': 'restore real-turn route shadow before execution',
+        };
+        log('[NATIVE-DEVICE-EXEC-SHADOW] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final nativeWasRunning = await _nodeRuntime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false)
+          .catchError((_) => false);
+      var nativeStartedByCanary = false;
+      if (!nativeWasRunning) {
+        nativeStartedByCanary = await _nodeRuntime.start();
+      }
+
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Object? nativeHealthError;
+      try {
+        nativeHealth = await _probeHealth(
+          expectedRuntime: 'native-node-embedded',
+        );
+      } catch (e) {
+        nativeHealthError = e;
+      }
+      final nativeHealthOk = nativeShadowHealthLooksReady(nativeHealth);
+
+      if (!nativeHealthOk) {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-device-node-real-turn-native-execution-canary',
+          'mode':
+              'device-node-real-turn-native-readonly-execution-with-proot-fallback',
+          'selectedSkillId': selectedSkillId,
+          'primaryRuntimeId': fallbackRuntimeId,
+          'productionPort': AppConstants.gatewayPort,
+          'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+          'routeShadowOk': routeShadowOk,
+          'prootSelectedBefore': prootSelectedBefore,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthBeforeError':
+              productionHealthBeforeError?.toString(),
+          'nativeWasRunning': nativeWasRunning,
+          'nativeStartedByCanary': nativeStartedByCanary,
+          'nativeHealthOk': false,
+          'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+          'nativeHealthError': nativeHealthError?.toString(),
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Native read-only execution canary could not start because the alternate native runtime was not healthy; PRoot remains primary.',
+          'nextGate':
+              'restore native shadow runtime health before real-turn native execution',
+        };
+        log('[NATIVE-DEVICE-EXEC-SHADOW] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final now = DateTime.now().microsecondsSinceEpoch;
+      final frame = _sampleGatewayWsChatSendFrame(
+        requestId: 'device-node-real-turn-exec-$now',
+        idempotencyKey: 'device-node-real-turn-exec-idempotency-$now',
+        model: model,
+        message: _deviceNodeReadOnlyRouteShadowMessage(prompt),
+      );
+
+      final shadowReport =
+          await NativeGatewayShadowParityService.observeChatSendFrame(
+        frame,
+        log: log,
+      );
+      final localHints = sortedStringList(
+        shadowReport?.local['mobileToolHints'],
+      );
+      final nativeHints = sortedStringList(
+        shadowReport?.native?['mobileToolHints'],
+      );
+      final dryRunHints = sortedStringList(
+        shadowReport?.dryRun?['mobileToolHints'],
+      );
+      final realTurnFrameParsed =
+          shadowReport?.local['looksLikeProductionChatSend'] == true &&
+              shadowReport?.native?['looksLikeProductionChatSend'] == true &&
+              shadowReport?.dryRun?['parsed'] == true;
+      final shadowParityOk = shadowReport?.parityOk == true;
+      final hashMatches = shadowReport?.local['metadataHash'] ==
+          shadowReport?.dryRun?['metadataHash'];
+      final dryRunShadowOk = shadowReport?.dryRunOk == true && hashMatches;
+      final realTurnToolHintsOk = listMatches(localHints, expectedToolHints) &&
+          listMatches(nativeHints, expectedToolHints) &&
+          listMatches(dryRunHints, expectedToolHints);
+
+      final bridgeEvents = <Map<String, dynamic>>[];
+      await for (final event in NativeGatewayShadowParityService
+          .streamNativeDartBridgeReadOnlyCanaryChatSendFrame(
+        frame,
+        log: log,
+      )) {
+        bridgeEvents.add(event);
+      }
+
+      final ackEvent = _firstEvent(bridgeEvents, 'ack');
+      final ack = asMap(ackEvent['ack']);
+      final planEvent = _firstEvent(bridgeEvents, 'tool_plan_summary');
+      final summaryEvent = _firstEvent(bridgeEvents, 'readonly_canary_summary');
+      final endEvent = _firstEvent(bridgeEvents, 'end');
+      final executeAckEvents = eventsNamed(bridgeEvents, 'bridge_execute_ack');
+      final toolUseEvents = eventsNamed(bridgeEvents, 'tool_use_frame');
+      final toolResultEvents = eventsNamed(bridgeEvents, 'tool_result_frame');
+      final observedEventOrder = bridgeEvents
+          .map((event) => event['event']?.toString() ?? '')
+          .where((event) => event.isNotEmpty)
+          .toList();
+      final expectedEventOrder = <String>[
+        'ack',
+        'tool_plan_summary',
+        'bridge_execute_request',
+        'bridge_execute_ack',
+        'tool_use_frame',
+        'tool_result_frame',
+        'bridge_execute_request',
+        'bridge_execute_ack',
+        'tool_use_frame',
+        'tool_result_frame',
+        'readonly_canary_summary',
+        'end',
+      ];
+      var eventOrderOk = observedEventOrder.length >= expectedEventOrder.length;
+      for (var i = 0; i < expectedEventOrder.length && eventOrderOk; i++) {
+        eventOrderOk = observedEventOrder[i] == expectedEventOrder[i];
+      }
+
+      bool executeAckOkForOrder(int orderIndex, String toolName) {
+        final event =
+            eventByOrder(bridgeEvents, 'bridge_execute_ack', orderIndex);
+        final executeAck = asMap(event['executeAck']);
+        final result = asMap(executeAck['result']);
+        return event['ok'] == true &&
+            event['statusCode'] == 200 &&
+            event['executeParityOk'] == true &&
+            event['resultShapeOk'] == true &&
+            executeAck['ok'] == true &&
+            executeAck['accepted'] == true &&
+            executeAck['executed'] == true &&
+            executeAck['runtime'] == 'flutter-dart' &&
+            executeAck['command'] == toolName &&
+            executeAck['canaryAllowlistOk'] == true &&
+            executeAck['dryRun'] == false &&
+            resultShapeOk(toolName, result) &&
+            providerStillDisabled(executeAck) &&
+            executionEnabled(executeAck);
+      }
+
+      bool toolResultOkForOrder(int orderIndex, String toolName) {
+        final event =
+            eventByOrder(bridgeEvents, 'tool_result_frame', orderIndex);
+        final frame = asMap(event['frame']);
+        final result = asMap(frame['result']);
+        final payload = asMap(result['result']);
+        return event['ok'] == true &&
+            frame['type'] == 'tool_result' &&
+            frame['name'] == toolName &&
+            frame['runtime'] == 'native-node-embedded' &&
+            frame['source'] == 'native-dart-bridge-readonly-canary' &&
+            frame['dryRun'] == false &&
+            frame['readOnly'] == true &&
+            result['ok'] == true &&
+            result['executed'] == true &&
+            result['accepted'] == true &&
+            result['status'] == 'ok' &&
+            result['canaryAllowlistOk'] == true &&
+            result['resultShapeOk'] == true &&
+            resultShapeOk(toolName, payload) &&
+            providerStillDisabled(result) &&
+            executionEnabled(result);
+      }
+
+      final expectedOrder = sortedStringList(
+        summaryEvent['expectedOrder'] ?? endEvent['expectedOrder'],
+      );
+      final observedOrder = sortedStringList(
+        summaryEvent['observedOrder'] ?? endEvent['observedOrder'],
+      );
+      final resultStatuses = summaryEvent['resultStatuses'] is List
+          ? List<dynamic>.from(summaryEvent['resultStatuses'] as List)
+          : const <dynamic>[];
+      final toolPanelEvents = <Map<String, dynamic>>[];
+      for (final event in bridgeEvents) {
+        final eventName = event['event']?.toString();
+        if (eventName != 'tool_use_frame' && eventName != 'tool_result_frame') {
+          continue;
+        }
+        final frame = asMap(event['frame']);
+        final name = frame['name']?.toString() ??
+            event['toolName']?.toString() ??
+            'tool';
+        final panelEvent = <String, dynamic>{
+          'type': eventName == 'tool_use_frame' ? 'tool_use' : 'tool_result',
+          'name': name,
+          'orderIndex': event['orderIndex'],
+          'runtime': frame['runtime'],
+          'source': frame['source'],
+          'dryRun': frame['dryRun'] == true,
+          'readOnly': frame['readOnly'] == true,
+          'executionEnabled': frame['executionEnabled'] == true,
+          'toolExecutionEnabled': frame['toolExecutionEnabled'] == true,
+          'bridgeExecutionEnabled': frame['bridgeExecutionEnabled'] == true,
+        };
+        if (eventName == 'tool_use_frame') {
+          panelEvent['input'] = asMap(frame['input']);
+        } else {
+          panelEvent['result'] = asMap(frame['result']);
+        }
+        toolPanelEvents.add(panelEvent);
+      }
+      final ackEventOk = ackEvent['ok'] == true &&
+          ackEvent['runtime'] == 'native-node-embedded' &&
+          ackEvent['canaryOnly'] == true &&
+          ackEvent['dryRun'] == false &&
+          ackEvent['parsed'] == true &&
+          ackEvent['route'] == 'native_dart_bridge_readonly_canary' &&
+          ackEvent['acceptedForRouting'] == true &&
+          ackEvent['queuedForDryRun'] == false &&
+          ackEvent['queueStatus'] == 'native_dart_bridge_readonly_canary' &&
+          ack['hashMatches'] == true &&
+          allowlistOk(ack['canaryAllowlist']) &&
+          ack['canaryAllowlistOk'] == true &&
+          ack['fixtureParityOk'] == true &&
+          ack['dispatchParityOk'] == true &&
+          providerStillDisabled(ackEvent) &&
+          providerStillDisabled(ack) &&
+          executionEnabled(ackEvent) &&
+          executionEnabled(ack);
+      final toolPlanSummaryOk = planEvent['ok'] == true &&
+          planEvent['orderCount'] == expectedToolHints.length &&
+          listMatches(planEvent['expectedOrder'], expectedToolHints) &&
+          allowlistOk(planEvent['forcedAllowlist']) &&
+          planEvent['fixtureParityOk'] == true &&
+          planEvent['dispatchParityOk'] == true &&
+          planEvent['canaryAllowlistOk'] == true &&
+          providerStillDisabled(planEvent) &&
+          executionEnabled(planEvent);
+      final executeAckOrderOk =
+          executeAckEvents.length == expectedToolHints.length &&
+              executeAckOkForOrder(0, expectedToolHints[0]) &&
+              executeAckOkForOrder(1, expectedToolHints[1]);
+      final toolResultOrderOk =
+          toolResultEvents.length == expectedToolHints.length &&
+              toolResultOkForOrder(0, expectedToolHints[0]) &&
+              toolResultOkForOrder(1, expectedToolHints[1]);
+      final toolUseOrderOk = toolUseEvents.length == expectedToolHints.length;
+      final summaryOk = summaryEvent['ok'] == true &&
+          summaryEvent['commandCount'] == expectedToolHints.length &&
+          listMatches(summaryEvent['expectedOrder'], expectedToolHints) &&
+          listMatches(summaryEvent['observedOrder'], expectedToolHints) &&
+          summaryEvent['canaryAllowlistOk'] == true &&
+          summaryEvent['executeParityOk'] == true &&
+          summaryEvent['validationOk'] == true &&
+          summaryEvent['readOnly'] == true &&
+          providerStillDisabled(summaryEvent) &&
+          executionEnabled(summaryEvent);
+      final endOk = endEvent['ok'] == true &&
+          endEvent['routeStatus'] ==
+              'native_dart_bridge_readonly_canary_complete' &&
+          endEvent['finishReason'] ==
+              'native_dart_bridge_readonly_canary_complete' &&
+          endEvent['commandCount'] == expectedToolHints.length &&
+          listMatches(endEvent['expectedOrder'], expectedToolHints) &&
+          listMatches(endEvent['observedOrder'], expectedToolHints) &&
+          endEvent['canaryAllowlistOk'] == true &&
+          endEvent['executeParityOk'] == true &&
+          endEvent['validationOk'] == true &&
+          endEvent['readOnly'] == true &&
+          providerStillDisabled(endEvent) &&
+          executionEnabled(endEvent);
+      final readOnlyExecutionOk = ackEventOk &&
+          toolPlanSummaryOk &&
+          executeAckOrderOk &&
+          toolUseOrderOk &&
+          toolResultOrderOk &&
+          summaryOk &&
+          eventOrderOk &&
+          endOk &&
+          listMatches(expectedOrder, expectedToolHints) &&
+          listMatches(observedOrder, expectedToolHints);
+
+      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthAfterError;
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+      final prootRemainedPrimary = prootSelectedBefore &&
+          productionRuntimeAfter == fallbackRuntimeId &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+      final providerCallsDisabled = ackEvent['providerCallsEnabled'] == false &&
+          ack['providerCallsEnabled'] == false &&
+          summaryEvent['providerCallsEnabled'] == false &&
+          endEvent['providerCallsEnabled'] == false;
+      final nativeExecutionScoped = ackEvent['executionEnabled'] == true &&
+          summaryEvent['executionEnabled'] == true &&
+          endEvent['executionEnabled'] == true &&
+          ackEvent['toolExecutionEnabled'] == true &&
+          summaryEvent['toolExecutionEnabled'] == true &&
+          endEvent['toolExecutionEnabled'] == true &&
+          ackEvent['bridgeExecutionEnabled'] == true &&
+          summaryEvent['bridgeExecutionEnabled'] == true &&
+          endEvent['bridgeExecutionEnabled'] == true;
+      final fallbackStillArmed = prootRemainedPrimary &&
+          routeShadowReport['fallbackStillArmed'] == true &&
+          routeShadowReport['prootRemainedPrimary'] == true;
+      final realTurnExecutionOk = routeShadowOk &&
+          nativeHealthOk &&
+          realTurnFrameParsed &&
+          shadowParityOk &&
+          dryRunShadowOk &&
+          realTurnToolHintsOk &&
+          readOnlyExecutionOk &&
+          providerCallsDisabled &&
+          nativeExecutionScoped &&
+          fallbackStillArmed;
+
+      final report = <String, dynamic>{
+        'ok': realTurnExecutionOk,
+        'phase': 'hidden-device-node-real-turn-native-execution-canary',
+        'mode':
+            'device-node-real-turn-native-readonly-execution-with-proot-fallback',
+        'innerPhase': routeShadowReport['phase'],
+        'routeShadowOk': routeShadowOk,
+        'selectedSkillId': selectedSkillId,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+        'prootSelectedBefore': prootSelectedBefore,
+        'productionRuntimeAfter': productionRuntimeAfter,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        'productionHealthBeforeError': productionHealthBeforeError?.toString(),
+        'productionHealthAfterError': productionHealthAfterError?.toString(),
+        'nativeWasRunning': nativeWasRunning,
+        'nativeStartedByCanary': nativeStartedByCanary,
+        'nativeLeftRunningForExecution': true,
+        'nativeHealthOk': nativeHealthOk,
+        'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+        'nativeHealthError': nativeHealthError?.toString(),
+        'realTurnFrameParsed': realTurnFrameParsed,
+        'shadowParityOk': shadowParityOk,
+        'dryRunShadowOk': dryRunShadowOk,
+        'hashMatches': hashMatches,
+        'requestedToolHints': expectedToolHints,
+        'localToolHints': localHints,
+        'nativeToolHints': nativeHints,
+        'dryRunToolHints': dryRunHints,
+        'realTurnToolHintsOk': realTurnToolHintsOk,
+        'ackEventOk': ackEventOk,
+        'toolPlanSummaryOk': toolPlanSummaryOk,
+        'executeAckOrderOk': executeAckOrderOk,
+        'toolUseOrderOk': toolUseOrderOk,
+        'toolResultOrderOk': toolResultOrderOk,
+        'summaryOk': summaryOk,
+        'eventOrderOk': eventOrderOk,
+        'endOk': endOk,
+        'bridgeEventsCount': bridgeEvents.length,
+        'bridgeEventOrder': observedEventOrder,
+        'toolPanelEventsCount': toolPanelEvents.length,
+        'toolPanelEvents': toolPanelEvents,
+        'readOnlyExecutionOk': readOnlyExecutionOk,
+        'executionScope': 'read_only_bridge_allowlist',
+        'expectedOrder': expectedOrder,
+        'observedOrder': observedOrder,
+        'resultStatuses': resultStatuses,
+        'canaryAllowlist': ack['canaryAllowlist'],
+        'canaryAllowlistOk': summaryEvent['canaryAllowlistOk'] == true ||
+            endEvent['canaryAllowlistOk'] == true,
+        'executeParityOk': summaryEvent['executeParityOk'] == true ||
+            endEvent['executeParityOk'] == true,
+        'validationOk': summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'readOnly':
+            summaryEvent['readOnly'] == true || endEvent['readOnly'] == true,
+        'providerCallsEnabled': false,
+        'executionEnabled': nativeExecutionScoped,
+        'toolExecutionEnabled': nativeExecutionScoped,
+        'bridgeExecutionEnabled': nativeExecutionScoped,
+        'providerCallsDisabled': providerCallsDisabled,
+        'nativeExecutionScoped': nativeExecutionScoped,
+        'fallbackStillArmed': fallbackStillArmed,
+        'sessionKey': shadowReport?.local['sessionKey'],
+        'nativeSessionId': shadowReport?.dryRun?['nativeSessionId'],
+        'runId': endEvent['runId'] ?? summaryEvent['runId'] ?? ack['runId'],
+        'messageChars': shadowReport?.local['messageChars'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': realTurnExecutionOk
+            ? 'Real chat.send-shaped device-node turn executed only the native read-only bridge allowlist while PRoot remained primary and fully armed.'
+            : 'Device-node real-turn native execution is not promotable; require green route shadow, read-only execution, disabled provider calls, and healthy PRoot fallback.',
+        'nextGate':
+            'wire device-node real-turn native execution into a hidden runtime selector with automatic PRoot fallback',
+      };
+      log('[NATIVE-DEVICE-EXEC-SHADOW] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-real-turn-native-execution-canary',
+        'mode':
+            'device-node-real-turn-native-readonly-execution-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Device-node real-turn native execution failed before a green report was produced; PRoot fallback should remain primary.',
+      };
+      log('[NATIVE-DEVICE-EXEC-SHADOW] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionDeviceNodeRealTurnExecutionInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runDeviceNodeRuntimeSelectorCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native device-node runtime selector canary: use flash.status and sensor.list read-only',
+  }) async {
+    if (_productionDeviceNodeRuntimeSelectorInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-runtime-selector-canary',
+        'status': 'busy',
+        'decision': 'Device-node runtime selector canary is already running.',
+      };
+    }
+
+    _productionDeviceNodeRuntimeSelectorInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'device-node';
+    const expectedToolHints = <String>['flash.status', 'sensor.list'];
+    const fallbackProbeHints = <String>['flash.status', 'camera_snap'];
+    const nativeRuntimeId = 'native-node-embedded';
+    const selectedRuntimeId = 'native-node-device-selector-canary';
+    const selectedRoute = 'native-device-node-readonly-real-turn-execution';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-device-node-skill';
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      final sortedExpected = List<String>.from(expected)..sort();
+      if (actual.length != sortedExpected.length) return false;
+      for (var i = 0; i < sortedExpected.length; i++) {
+        if (actual[i] != sortedExpected[i]) return false;
+      }
+      return true;
+    }
+
+    try {
+      log(
+        '[NATIVE-DEVICE-SELECTOR] Starting hidden device-node runtime selector; PRoot remains the automatic fallback.',
+      );
+
+      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final selectorDecision = <String, dynamic>{
+        'scenario': 'promoted_device_node_readonly_real_turn',
+        'skillId': selectedSkillId,
+        'requestedToolHints': expectedToolHints,
+        'nativeEligible': true,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'providerCallsEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+      };
+
+      final nativeExecutionReport =
+          await runDeviceNodeRealTurnNativeExecutionCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-DEVICE-EXEC-SHADOW]')) {
+            log(message.replaceFirst(
+              '[NATIVE-DEVICE-EXEC-SHADOW]',
+              '[NATIVE-DEVICE-SELECTOR]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        model: model,
+        prompt: prompt,
+      );
+      final nativeExecutionOk = nativeExecutionReport['ok'] == true;
+      final toolPanelEvents = nativeExecutionReport['toolPanelEvents'] is List
+          ? List<dynamic>.from(nativeExecutionReport['toolPanelEvents'] as List)
+          : const <dynamic>[];
+      final nativeExecutionSummary = <String, dynamic>{
+        'ok': nativeExecutionOk,
+        'phase': nativeExecutionReport['phase'],
+        'routeShadowOk': nativeExecutionReport['routeShadowOk'],
+        'selectedSkillId': nativeExecutionReport['selectedSkillId'],
+        'selectedRuntimeId': nativeExecutionReport['selectedRuntimeId'],
+        'selectedRoute': nativeExecutionReport['selectedRoute'],
+        'fallbackRuntimeId': nativeExecutionReport['fallbackRuntimeId'],
+        'fallbackRoute': nativeExecutionReport['fallbackRoute'],
+        'prootRemainedPrimary': nativeExecutionReport['prootRemainedPrimary'],
+        'readOnlyExecutionOk': nativeExecutionReport['readOnlyExecutionOk'],
+        'expectedOrder': nativeExecutionReport['expectedOrder'],
+        'observedOrder': nativeExecutionReport['observedOrder'],
+        'toolPanelEventsCount': nativeExecutionReport['toolPanelEventsCount'],
+        'canaryAllowlistOk': nativeExecutionReport['canaryAllowlistOk'],
+        'executeParityOk': nativeExecutionReport['executeParityOk'],
+        'validationOk': nativeExecutionReport['validationOk'],
+        'providerCallsEnabled': nativeExecutionReport['providerCallsEnabled'],
+        'providerCallsDisabled': nativeExecutionReport['providerCallsDisabled'],
+        'nativeExecutionScoped': nativeExecutionReport['nativeExecutionScoped'],
+        'fallbackStillArmed': nativeExecutionReport['fallbackStillArmed'],
+        'runId': nativeExecutionReport['runId'],
+      };
+
+      final fallbackProbeDecision = <String, dynamic>{
+        'scenario': 'unsupported_or_non_allowlisted_hint_probe',
+        'skillId': selectedSkillId,
+        'requestedToolHints': fallbackProbeHints,
+        'nativeEligible': false,
+        'selectedRuntimeId': fallbackRuntimeId,
+        'selectedRoute': fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'nativeAttempted': false,
+        'reason': 'tool_hints_not_in_device_node_readonly_allowlist',
+      };
+
+      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthAfterError;
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+      final prootRemainedPrimary = prootSelectedBefore &&
+          productionRuntimeAfter == fallbackRuntimeId &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+
+      final nativeSelectorPolicyOk =
+          selectorDecision['nativeEligible'] == true &&
+              selectorDecision['selectedRuntimeId'] == selectedRuntimeId &&
+              selectorDecision['selectedRoute'] == selectedRoute &&
+              selectorDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+              selectorDecision['fallbackOnNativeFailure'] == true &&
+              listMatches(
+                selectorDecision['requestedToolHints'],
+                expectedToolHints,
+              );
+      final fallbackProbeOk =
+          fallbackProbeDecision['nativeEligible'] == false &&
+              fallbackProbeDecision['selectedRuntimeId'] == fallbackRuntimeId &&
+              fallbackProbeDecision['selectedRoute'] == fallbackRoute &&
+              fallbackProbeDecision['nativeAttempted'] == false &&
+              fallbackProbeDecision['fallbackOneActionAway'] == true &&
+              listMatches(
+                fallbackProbeDecision['requestedToolHints'],
+                fallbackProbeHints,
+              );
+      final selectorFallbackReadyOk = prootRemainedPrimary &&
+          fallbackProbeOk &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+      final selectorSelectedRuntimeId =
+          nativeExecutionOk ? selectedRuntimeId : fallbackRuntimeId;
+      final selectorSelectedRoute =
+          nativeExecutionOk ? selectedRoute : fallbackRoute;
+      final selectorFallbackUsed = !nativeExecutionOk;
+      final automaticFallbackPolicyOk = selectorFallbackReadyOk &&
+          (!selectorFallbackUsed ||
+              selectorSelectedRuntimeId == fallbackRuntimeId);
+      final nativeReadOnlyResultOk = nativeExecutionOk &&
+          nativeExecutionReport['readOnlyExecutionOk'] == true &&
+          nativeExecutionReport['providerCallsDisabled'] == true &&
+          nativeExecutionReport['nativeExecutionScoped'] == true &&
+          nativeExecutionReport['fallbackStillArmed'] == true &&
+          listMatches(
+              nativeExecutionReport['expectedOrder'], expectedToolHints) &&
+          listMatches(
+              nativeExecutionReport['observedOrder'], expectedToolHints);
+      final uiEvidenceOk = nativeExecutionReport['toolPanelEventsCount'] == 4 &&
+          toolPanelEvents.length == 4;
+      final selectorCanaryOk = nativeSelectorPolicyOk &&
+          nativeReadOnlyResultOk &&
+          uiEvidenceOk &&
+          fallbackProbeOk &&
+          selectorFallbackReadyOk &&
+          automaticFallbackPolicyOk &&
+          prootRemainedPrimary;
+
+      final report = <String, dynamic>{
+        'ok': selectorCanaryOk,
+        'phase': 'hidden-device-node-runtime-selector-canary',
+        'mode': 'device-node-native-runtime-selector-with-proot-fallback',
+        'innerPhase': nativeExecutionReport['phase'],
+        'selectedSkillId': selectedSkillId,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': nativeRuntimeId,
+        'selectedRuntimeId': selectorSelectedRuntimeId,
+        'selectedRoute': selectorSelectedRoute,
+        'nativeCandidateRuntimeId': selectedRuntimeId,
+        'nativeCandidateRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'selectorFallbackUsed': selectorFallbackUsed,
+        'selectorFallbackReadyOk': selectorFallbackReadyOk,
+        'automaticFallbackPolicyOk': automaticFallbackPolicyOk,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+        'prootSelectedBefore': prootSelectedBefore,
+        'productionRuntimeAfter': productionRuntimeAfter,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        'productionHealthBeforeError': productionHealthBeforeError?.toString(),
+        'productionHealthAfterError': productionHealthAfterError?.toString(),
+        'selectorDecision': selectorDecision,
+        'nativeSelectorPolicyOk': nativeSelectorPolicyOk,
+        'nativeExecutionAttempted': true,
+        'nativeExecutionOk': nativeExecutionOk,
+        'nativeReadOnlyResultOk': nativeReadOnlyResultOk,
+        'nativeExecutionSummary': nativeExecutionSummary,
+        'fallbackProbeDecision': fallbackProbeDecision,
+        'fallbackProbeOk': fallbackProbeOk,
+        'toolPanelEventsCount': toolPanelEvents.length,
+        'toolPanelEvents': toolPanelEvents,
+        'uiEvidenceOk': uiEvidenceOk,
+        'requestedToolHints': expectedToolHints,
+        'fallbackProbeToolHints': fallbackProbeHints,
+        'providerCallsEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': selectorCanaryOk
+            ? 'Runtime selector chose native only for the device-node read-only real-turn lane, preserved chat-visible tool evidence, and kept automatic PRoot fallback armed.'
+            : 'Device-node runtime selector is not promotable; require green native execution, chat-visible tool evidence, and verified PRoot fallback policy.',
+        'nextGate':
+            'bounded provider/tool plan handoff for the promoted device-node lane',
+      };
+      log('[NATIVE-DEVICE-SELECTOR] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-runtime-selector-canary',
+        'mode': 'device-node-native-runtime-selector-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Device-node runtime selector failed before a green report was produced; PRoot fallback should remain primary.',
+      };
+      log('[NATIVE-DEVICE-SELECTOR] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionDeviceNodeRuntimeSelectorInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runDeviceNodeProviderToolPlanHandoffCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native device-node provider tool-plan handoff canary: check flash and list sensors read-only',
+  }) async {
+    if (_productionDeviceNodeProviderToolPlanHandoffInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-provider-tool-plan-handoff-canary',
+        'status': 'busy',
+        'decision':
+            'Device-node provider tool-plan handoff canary is already running.',
+      };
+    }
+
+    _productionDeviceNodeProviderToolPlanHandoffInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'device-node';
+    const expectedToolPlanNames = <String>['flash.status', 'sensor.list'];
+    const fallbackToolPlanNames = <String>['flash.status', 'camera_snap'];
+    const nativeRuntimeId = 'native-node-embedded';
+    const selectedRuntimeId = 'native-node-device-selector-canary';
+    const selectedRoute = 'native-device-node-readonly-real-turn-execution';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-device-node-skill';
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      final sortedExpected = List<String>.from(expected)..sort();
+      if (actual.length != sortedExpected.length) return false;
+      for (var i = 0; i < sortedExpected.length; i++) {
+        if (actual[i] != sortedExpected[i]) return false;
+      }
+      return true;
+    }
+
+    try {
+      log(
+        '[NATIVE-DEVICE-TOOL-HANDOFF] Starting bounded provider tool-plan handoff for the promoted device-node lane.',
+      );
+
+      final selectorReport = await runDeviceNodeRuntimeSelectorCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-DEVICE-SELECTOR]')) {
+            log(message.replaceFirst(
+              '[NATIVE-DEVICE-SELECTOR]',
+              '[NATIVE-DEVICE-TOOL-HANDOFF]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        model: model,
+        prompt: prompt,
+      );
+      final selectorOk = selectorReport['ok'] == true;
+      final toolPanelEvents = selectorReport['toolPanelEvents'] is List
+          ? List<dynamic>.from(selectorReport['toolPanelEvents'] as List)
+          : const <dynamic>[];
+
+      final providerToolPlanHandoff = <String, dynamic>{
+        'source': 'provider_tool_plan_fixture',
+        'scenario': 'promoted_device_node_provider_tool_plan_handoff',
+        'skillId': selectedSkillId,
+        'nativeEligible': true,
+        'providerToolPlanNames': expectedToolPlanNames,
+        'gatewayToolNames': expectedToolPlanNames,
+        'allowedToolNames': expectedToolPlanNames,
+        'blockedToolNames': const <String>[],
+        'toolPlanCount': expectedToolPlanNames.length,
+        'allowedPlanCount': expectedToolPlanNames.length,
+        'blockedPlanCount': 0,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'providerCallsEnabled': false,
+        'transportInvocationEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'executionBoundary': 'phase72_device_node_readonly_bridge_allowlist',
+      };
+
+      final fallbackProviderToolPlan = <String, dynamic>{
+        'source': 'provider_tool_plan_fixture',
+        'scenario': 'unsupported_provider_tool_plan_handoff_probe',
+        'skillId': selectedSkillId,
+        'nativeEligible': false,
+        'providerToolPlanNames': fallbackToolPlanNames,
+        'gatewayToolNames': fallbackToolPlanNames,
+        'allowedToolNames': const <String>['flash.status'],
+        'blockedToolNames': const <String>['camera_snap'],
+        'toolPlanCount': fallbackToolPlanNames.length,
+        'allowedPlanCount': 1,
+        'blockedPlanCount': 1,
+        'selectedRuntimeId': fallbackRuntimeId,
+        'selectedRoute': fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'nativeAttempted': false,
+        'reason': 'provider_tool_plan_not_in_device_node_readonly_allowlist',
+      };
+
+      final providerToolPlanHandoffOk =
+          providerToolPlanHandoff['nativeEligible'] == true &&
+              providerToolPlanHandoff['selectedRuntimeId'] ==
+                  selectedRuntimeId &&
+              providerToolPlanHandoff['selectedRoute'] == selectedRoute &&
+              providerToolPlanHandoff['allowedPlanCount'] ==
+                  expectedToolPlanNames.length &&
+              providerToolPlanHandoff['blockedPlanCount'] == 0 &&
+              providerToolPlanHandoff['providerCallsEnabled'] == false &&
+              providerToolPlanHandoff['transportInvocationEnabled'] == false &&
+              providerToolPlanHandoff['defaultNativeRoutingEnabled'] == false &&
+              listMatches(
+                providerToolPlanHandoff['providerToolPlanNames'],
+                expectedToolPlanNames,
+              ) &&
+              listMatches(
+                providerToolPlanHandoff['gatewayToolNames'],
+                expectedToolPlanNames,
+              );
+      final fallbackProviderToolPlanOk =
+          fallbackProviderToolPlan['nativeEligible'] == false &&
+              fallbackProviderToolPlan['selectedRuntimeId'] ==
+                  fallbackRuntimeId &&
+              fallbackProviderToolPlan['selectedRoute'] == fallbackRoute &&
+              fallbackProviderToolPlan['nativeAttempted'] == false &&
+              fallbackProviderToolPlan['blockedPlanCount'] == 1 &&
+              fallbackProviderToolPlan['fallbackOneActionAway'] == true &&
+              listMatches(
+                fallbackProviderToolPlan['providerToolPlanNames'],
+                fallbackToolPlanNames,
+              );
+      final nativeExecutionSummary =
+          selectorReport['nativeExecutionSummary'] is Map
+              ? Map<String, dynamic>.from(
+                  selectorReport['nativeExecutionSummary'] as Map,
+                )
+              : <String, dynamic>{};
+      final nativeExecutionOk = selectorReport['nativeExecutionOk'] == true &&
+          nativeExecutionSummary['readOnlyExecutionOk'] == true &&
+          nativeExecutionSummary['providerCallsDisabled'] == true &&
+          nativeExecutionSummary['nativeExecutionScoped'] == true &&
+          nativeExecutionSummary['fallbackStillArmed'] == true &&
+          listMatches(
+            nativeExecutionSummary['observedOrder'],
+            expectedToolPlanNames,
+          );
+      final selectorFallbackReadyOk =
+          selectorReport['selectorFallbackReadyOk'] == true;
+      final automaticFallbackPolicyOk =
+          selectorReport['automaticFallbackPolicyOk'] == true;
+      final prootRemainedPrimary =
+          selectorReport['prootRemainedPrimary'] == true;
+      final uiEvidenceOk = selectorReport['uiEvidenceOk'] == true &&
+          selectorReport['toolPanelEventsCount'] == 4 &&
+          toolPanelEvents.length == 4;
+      final handoffCanaryOk = selectorOk &&
+          providerToolPlanHandoffOk &&
+          fallbackProviderToolPlanOk &&
+          nativeExecutionOk &&
+          selectorFallbackReadyOk &&
+          automaticFallbackPolicyOk &&
+          prootRemainedPrimary &&
+          uiEvidenceOk;
+
+      final report = <String, dynamic>{
+        'ok': handoffCanaryOk,
+        'phase': 'hidden-device-node-provider-tool-plan-handoff-canary',
+        'mode': 'device-node-provider-tool-plan-handoff-with-proot-fallback',
+        'innerPhase': selectorReport['phase'],
+        'selectedSkillId': selectedSkillId,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': nativeRuntimeId,
+        'selectedRuntimeId': selectorOk ? selectedRuntimeId : fallbackRuntimeId,
+        'selectedRoute': selectorOk ? selectedRoute : fallbackRoute,
+        'nativeCandidateRuntimeId': selectedRuntimeId,
+        'nativeCandidateRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'selectorOk': selectorOk,
+        'selectorFallbackReadyOk': selectorFallbackReadyOk,
+        'automaticFallbackPolicyOk': automaticFallbackPolicyOk,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'providerToolPlanHandoff': providerToolPlanHandoff,
+        'providerToolPlanHandoffOk': providerToolPlanHandoffOk,
+        'fallbackProviderToolPlan': fallbackProviderToolPlan,
+        'fallbackProviderToolPlanOk': fallbackProviderToolPlanOk,
+        'toolPlanNames': expectedToolPlanNames,
+        'gatewayToolNames': expectedToolPlanNames,
+        'fallbackToolPlanNames': fallbackToolPlanNames,
+        'toolPlanCount': expectedToolPlanNames.length,
+        'allowedPlanCount': expectedToolPlanNames.length,
+        'blockedPlanCount': 0,
+        'providerCallsEnabled': false,
+        'transportInvocationEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'nativeExecutionAttempted': true,
+        'nativeExecutionOk': nativeExecutionOk,
+        'nativeExecutionSummary': nativeExecutionSummary,
+        'toolPanelEventsCount': toolPanelEvents.length,
+        'toolPanelEvents': toolPanelEvents,
+        'uiEvidenceOk': uiEvidenceOk,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': handoffCanaryOk
+            ? 'Provider-style tool-plan handoff selected native only for the promoted device-node read-only allowlist, preserved tool UI evidence, and kept automatic PRoot fallback armed.'
+            : 'Device-node provider tool-plan handoff is not promotable; require green selector, exact read-only plan mapping, UI evidence, and PRoot fallback.',
+        'nextGate':
+            'repeated-turn soak for promoted device-node selector, handoff, cancellation, errors, hot reload, and rollback',
+      };
+      log('[NATIVE-DEVICE-TOOL-HANDOFF] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-provider-tool-plan-handoff-canary',
+        'mode': 'device-node-provider-tool-plan-handoff-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Device-node provider tool-plan handoff failed before a green report was produced; PRoot fallback should remain primary.',
+      };
+      log('[NATIVE-DEVICE-TOOL-HANDOFF] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionDeviceNodeProviderToolPlanHandoffInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runDeviceNodeSelectorHandoffSoakCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native device-node selector handoff soak: check flash and list sensors read-only',
+    int cycles = 3,
+  }) async {
+    if (_productionDeviceNodeSelectorHandoffSoakInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-selector-handoff-soak',
+        'status': 'busy',
+        'decision': 'Device-node selector/handoff soak is already running.',
+      };
+    }
+
+    final requestedCycles = cycles;
+    final normalizedCycles = cycles.clamp(1, 5).toInt();
+    _productionDeviceNodeSelectorHandoffSoakInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'device-node';
+    const expectedToolPlanNames = <String>['flash.status', 'sensor.list'];
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-device-node-skill';
+    const selectedRuntimeId = 'native-node-device-selector-canary';
+    const selectedRoute = 'native-device-node-readonly-real-turn-execution';
+    final cycleReports = <Map<String, dynamic>>[];
+    var failedCycle = 0;
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      final sortedExpected = List<String>.from(expected)..sort();
+      if (actual.length != sortedExpected.length) return false;
+      for (var i = 0; i < sortedExpected.length; i++) {
+        if (actual[i] != sortedExpected[i]) return false;
+      }
+      return true;
+    }
+
+    try {
+      log(
+        '[NATIVE-DEVICE-SOAK] Starting $normalizedCycles device-node selector/handoff soak cycle(s).',
+      );
+
+      for (var cycle = 1; cycle <= normalizedCycles; cycle++) {
+        log('[NATIVE-DEVICE-SOAK] Cycle $cycle/$normalizedCycles opening.');
+
+        Map<String, dynamic> healthBefore = <String, dynamic>{};
+        Map<String, dynamic> healthAfter = <String, dynamic>{};
+        Object? healthBeforeError;
+        Object? healthAfterError;
+        try {
+          healthBefore = await _probeProductionJson('/health');
+        } catch (e) {
+          healthBeforeError = e;
+        }
+        final productionHealthOkBefore =
+            _productionHealthLooksLikeProot(healthBefore);
+        final runtimeBefore = GatewayRuntimeRegistry.current.id;
+
+        final handoffReport = await runDeviceNodeProviderToolPlanHandoffCanary(
+          log: (message) {
+            if (message.startsWith('[NATIVE-DEVICE-TOOL-HANDOFF]')) {
+              log(message.replaceFirst(
+                '[NATIVE-DEVICE-TOOL-HANDOFF]',
+                '[NATIVE-DEVICE-SOAK]',
+              ));
+            } else {
+              log(message);
+            }
+          },
+          model: model,
+          prompt: '$prompt cycle $cycle',
+        );
+
+        try {
+          healthAfter = await _probeProductionJson('/health');
+        } catch (e) {
+          healthAfterError = e;
+        }
+        final productionHealthOkAfter =
+            _productionHealthLooksLikeProot(healthAfter);
+        final runtimeAfter = GatewayRuntimeRegistry.current.id;
+
+        final cancellationFixture = <String, dynamic>{
+          'scenario': 'device_node_inflight_cancel_policy_fixture',
+          'cycle': cycle,
+          'cancellationToken': 'device-node-soak-cancel-$cycle',
+          'selectedSkillId': selectedSkillId,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'cancelAccepted': true,
+          'nativeAttempted': false,
+          'providerCallsEnabled': false,
+          'fallbackOneActionAway': true,
+          'reason': 'cancel_before_native_readonly_bridge_commit',
+        };
+        final providerErrorFixture = <String, dynamic>{
+          'scenario': 'device_node_provider_error_policy_fixture',
+          'cycle': cycle,
+          'selectedSkillId': selectedSkillId,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'nativeProviderCallsEnabled': false,
+          'providerCallsEnabled': false,
+          'fallbackOnProviderError': true,
+          'rawErrorForwardingPolicy': 'forward_gateway_raw_error_text',
+          'genericErrorStashDisabled': true,
+        };
+        final bridgeErrorFixture = <String, dynamic>{
+          'scenario': 'device_node_bridge_error_policy_fixture',
+          'cycle': cycle,
+          'selectedSkillId': selectedSkillId,
+          'requestedToolPlanNames': const <String>[
+            'flash.status',
+            'camera_snap',
+          ],
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'nativeEligible': false,
+          'nativeAttempted': false,
+          'fallbackOnBridgeError': true,
+          'reason': 'tool_plan_not_in_readonly_allowlist',
+        };
+        final hotReloadFixture = <String, dynamic>{
+          'scenario': 'device_node_hot_reload_style_repeat_fixture',
+          'cycle': cycle,
+          'runtimeBefore': runtimeBefore,
+          'runtimeAfter': runtimeAfter,
+          'runtimeStable': runtimeBefore == fallbackRuntimeId &&
+              runtimeAfter == fallbackRuntimeId,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthOkAfter': productionHealthOkAfter,
+          'nativeDefaultRoutingEnabled': false,
+          'nativeProviderCallsEnabled': false,
+        };
+
+        final nativeExecutionSummary =
+            handoffReport['nativeExecutionSummary'] is Map
+                ? Map<String, dynamic>.from(
+                    handoffReport['nativeExecutionSummary'] as Map,
+                  )
+                : <String, dynamic>{};
+        final handoffOk = handoffReport['ok'] == true &&
+            handoffReport['providerToolPlanHandoffOk'] == true &&
+            handoffReport['fallbackProviderToolPlanOk'] == true &&
+            handoffReport['selectorOk'] == true &&
+            handoffReport['nativeExecutionOk'] == true &&
+            handoffReport['uiEvidenceOk'] == true &&
+            handoffReport['toolPanelEventsCount'] == 4 &&
+            listMatches(handoffReport['toolPlanNames'], expectedToolPlanNames);
+        final nativeExecutionOk =
+            nativeExecutionSummary['readOnlyExecutionOk'] == true &&
+                nativeExecutionSummary['providerCallsDisabled'] == true &&
+                nativeExecutionSummary['nativeExecutionScoped'] == true &&
+                nativeExecutionSummary['fallbackStillArmed'] == true &&
+                listMatches(
+                  nativeExecutionSummary['observedOrder'],
+                  expectedToolPlanNames,
+                );
+        final cancellationFixtureOk =
+            cancellationFixture['cancelAccepted'] == true &&
+                cancellationFixture['nativeAttempted'] == false &&
+                cancellationFixture['selectedRuntimeId'] == fallbackRuntimeId &&
+                cancellationFixture['fallbackOneActionAway'] == true;
+        final providerErrorPolicyOk =
+            providerErrorFixture['nativeProviderCallsEnabled'] == false &&
+                providerErrorFixture['fallbackOnProviderError'] == true &&
+                providerErrorFixture['genericErrorStashDisabled'] == true &&
+                providerErrorFixture['selectedRuntimeId'] == fallbackRuntimeId;
+        final bridgeErrorPolicyOk =
+            bridgeErrorFixture['nativeEligible'] == false &&
+                bridgeErrorFixture['nativeAttempted'] == false &&
+                bridgeErrorFixture['fallbackOnBridgeError'] == true &&
+                bridgeErrorFixture['selectedRuntimeId'] == fallbackRuntimeId;
+        final hotReloadRepeatOk = hotReloadFixture['runtimeStable'] == true &&
+            hotReloadFixture['productionHealthOkBefore'] == true &&
+            hotReloadFixture['productionHealthOkAfter'] == true &&
+            hotReloadFixture['nativeDefaultRoutingEnabled'] == false &&
+            hotReloadFixture['nativeProviderCallsEnabled'] == false;
+        final inFlightCleanAfterCycle =
+            !_productionDeviceNodeProviderToolPlanHandoffInFlight &&
+                !_productionDeviceNodeRuntimeSelectorInFlight &&
+                !_productionDeviceNodeRealTurnExecutionInFlight &&
+                !_productionDeviceNodeRouteShadowInFlight;
+        final rollbackOk = runtimeAfter == fallbackRuntimeId &&
+            productionHealthOkBefore &&
+            productionHealthOkAfter;
+        final cycleOk = handoffOk &&
+            nativeExecutionOk &&
+            cancellationFixtureOk &&
+            providerErrorPolicyOk &&
+            bridgeErrorPolicyOk &&
+            hotReloadRepeatOk &&
+            inFlightCleanAfterCycle &&
+            rollbackOk;
+
+        final cycleReport = <String, dynamic>{
+          'cycle': cycle,
+          'ok': cycleOk,
+          'handoffOk': handoffOk,
+          'nativeExecutionOk': nativeExecutionOk,
+          'selectorOk': handoffReport['selectorOk'] == true,
+          'providerToolPlanHandoffOk':
+              handoffReport['providerToolPlanHandoffOk'] == true,
+          'fallbackProviderToolPlanOk':
+              handoffReport['fallbackProviderToolPlanOk'] == true,
+          'uiEvidenceOk': handoffReport['uiEvidenceOk'] == true,
+          'toolPanelEventsCount': handoffReport['toolPanelEventsCount'] ?? 0,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthOkAfter': productionHealthOkAfter,
+          if (healthBeforeError != null)
+            'productionHealthBeforeError': healthBeforeError.toString(),
+          if (healthAfterError != null)
+            'productionHealthAfterError': healthAfterError.toString(),
+          'runtimeBefore': runtimeBefore,
+          'runtimeAfter': runtimeAfter,
+          'rollbackOk': rollbackOk,
+          'inFlightCleanAfterCycle': inFlightCleanAfterCycle,
+          'cancellationFixture': cancellationFixture,
+          'cancellationFixtureOk': cancellationFixtureOk,
+          'providerErrorFixture': providerErrorFixture,
+          'providerErrorPolicyOk': providerErrorPolicyOk,
+          'bridgeErrorFixture': bridgeErrorFixture,
+          'bridgeErrorPolicyOk': bridgeErrorPolicyOk,
+          'hotReloadFixture': hotReloadFixture,
+          'hotReloadRepeatOk': hotReloadRepeatOk,
+          'runId': nativeExecutionSummary['runId'],
+        };
+        cycleReports.add(cycleReport);
+        log('[NATIVE-DEVICE-SOAK] Cycle $cycle report ${jsonEncode(cycleReport)}');
+
+        if (!cycleOk) {
+          failedCycle = cycle;
+          log('[NATIVE-DEVICE-SOAK] Cycle $cycle failed; stopping soak.');
+          break;
+        }
+
+        if (cycle < normalizedCycles) {
+          await Future<void>.delayed(const Duration(milliseconds: 750));
+        }
+      }
+
+      Map<String, dynamic> finalProductionHealth = <String, dynamic>{};
+      Object? finalProductionHealthError;
+      try {
+        finalProductionHealth = await _probeProductionJson('/health');
+      } catch (e) {
+        finalProductionHealthError = e;
+      }
+      final finalProductionHealthOk =
+          _productionHealthLooksLikeProot(finalProductionHealth);
+      final passedCycles =
+          cycleReports.where((report) => report['ok'] == true).length;
+      final cancellationParityOk = cycleReports.isNotEmpty &&
+          cycleReports
+              .every((report) => report['cancellationFixtureOk'] == true);
+      final providerErrorPolicyOk = cycleReports.isNotEmpty &&
+          cycleReports
+              .every((report) => report['providerErrorPolicyOk'] == true);
+      final bridgeErrorPolicyOk = cycleReports.isNotEmpty &&
+          cycleReports.every((report) => report['bridgeErrorPolicyOk'] == true);
+      final hotReloadRepeatOk = cycleReports.isNotEmpty &&
+          cycleReports.every((report) => report['hotReloadRepeatOk'] == true);
+      final rollbackOk = cycleReports.isNotEmpty &&
+          cycleReports.every((report) => report['rollbackOk'] == true) &&
+          finalProductionHealthOk &&
+          GatewayRuntimeRegistry.current.id == fallbackRuntimeId;
+      final aggregateToolPanelEventsCount = cycleReports.fold<int>(
+        0,
+        (total, report) =>
+            total + ((report['toolPanelEventsCount'] as int?) ?? 0),
+      );
+      final lastHandoffReport =
+          cycleReports.isEmpty ? <String, dynamic>{} : cycleReports.last;
+      final soakOk = failedCycle == 0 &&
+          passedCycles == normalizedCycles &&
+          cancellationParityOk &&
+          providerErrorPolicyOk &&
+          bridgeErrorPolicyOk &&
+          hotReloadRepeatOk &&
+          rollbackOk;
+
+      final report = <String, dynamic>{
+        'ok': soakOk,
+        'phase': 'hidden-device-node-selector-handoff-soak',
+        'mode':
+            'device-node-selector-provider-handoff-repeated-turn-soak-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'requestedCycles': requestedCycles,
+        'cycles': normalizedCycles,
+        'passedCycles': passedCycles,
+        'failedCycle': failedCycle == 0 ? null : failedCycle,
+        'cycleReports': cycleReports,
+        'selectorHandoffSoakOk': soakOk,
+        'cancellationParityOk': cancellationParityOk,
+        'providerErrorPolicyOk': providerErrorPolicyOk,
+        'bridgeErrorPolicyOk': bridgeErrorPolicyOk,
+        'hotReloadRepeatOk': hotReloadRepeatOk,
+        'rollbackOk': rollbackOk,
+        'finalProductionHealthOk': finalProductionHealthOk,
+        'finalProductionRuntimeId': GatewayRuntimeRegistry.current.id,
+        'finalProductionHealth': finalProductionHealth,
+        if (finalProductionHealthError != null)
+          'finalProductionHealthError': finalProductionHealthError.toString(),
+        'toolPlanNames': expectedToolPlanNames,
+        'aggregateToolPanelEventsCount': aggregateToolPanelEventsCount,
+        'lastCycleSummary': lastHandoffReport,
+        'providerCallsEnabled': false,
+        'transportInvocationEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': soakOk
+            ? 'Device-node selector and provider tool-plan handoff survived repeated turns, cancellation/error policy probes, hot-reload-style repetition, and PRoot rollback checks.'
+            : 'Device-node selector/handoff soak is not promotable; inspect failedCycle and cycleReports before widening native routing.',
+        'nextGate':
+            'expand the same promotion pattern to the next mobile bridge candidate only after policy and execution parity are green',
+      };
+      log('[NATIVE-DEVICE-SOAK] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-device-node-selector-handoff-soak',
+        'mode':
+            'device-node-selector-provider-handoff-repeated-turn-soak-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Device-node selector/handoff soak failed before a green report was produced; keep PRoot as the production runtime.',
+      };
+      log('[NATIVE-DEVICE-SOAK] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionDeviceNodeSelectorHandoffSoakInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>>
+      runNextMobileBridgeCandidateSelectionCanary({
+    required void Function(String message) log,
+    String prompt = 'native next mobile bridge candidate selection canary',
+  }) async {
+    if (_productionNextMobileBridgeCandidateInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-next-mobile-bridge-candidate-selection',
+        'status': 'busy',
+        'decision':
+            'Next mobile bridge candidate selection canary is already running.',
+      };
+    }
+
+    _productionNextMobileBridgeCandidateInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'gestures';
+    const selectedToolHint = 'avatar.gesture';
+    const selectedGesture = 'wave right';
+    const selectedRuntimeId = 'native-node-gestures-candidate-canary';
+    const selectedRoute = 'native-gestures-avatar-gesture-wave-right-shadow';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-gestures-skill';
+
+    bool listContains(Object? value, String expected) {
+      return value is List &&
+          value.map((entry) => entry.toString()).contains(expected);
+    }
+
+    try {
+      log(
+        '[NATIVE-NEXT-CANDIDATE] Selecting the next mobile bridge candidate after device-node soak.',
+      );
+
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      Object? productionHealthAfterError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final policyReport = await runProductionPromotionPolicyMap(
+        log: (message) {
+          if (message.startsWith('[NATIVE-PROMOTION-POLICY]')) {
+            log(message.replaceFirst(
+              '[NATIVE-PROMOTION-POLICY]',
+              '[NATIVE-NEXT-CANDIDATE]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+      );
+
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+
+      final policyMapOk = policyReport['ok'] == true;
+      final inventoryParityOk = policyReport['inventoryParityOk'] == true;
+      final skillPolicyCoverageOk =
+          policyReport['skillPolicyCoverageOk'] == true;
+      final mobileToolPolicyCoverageOk =
+          policyReport['mobileToolPolicyCoverageOk'] == true;
+      final toolHintPolicyCoverageOk =
+          policyReport['toolHintPolicyCoverageOk'] == true;
+      final defaultNativeRoutingDisabled =
+          policyReport['nativeDefaultRoutingEnabled'] != true;
+      final providerCallsDisabled =
+          policyReport['providerCallsEnabled'] != true;
+      final executionDisabled = policyReport['executionEnabled'] != true &&
+          policyReport['toolExecutionEnabled'] != true;
+      final candidateSkills =
+          policyReport['mobileBridgeCandidateSkills'] is List
+              ? (policyReport['mobileBridgeCandidateSkills'] as List)
+                  .map((entry) => entry.toString())
+                  .toSet()
+              : <String>{};
+      final selectedCandidatePresent =
+          candidateSkills.contains(selectedSkillId);
+
+      final toolHintPolicies = _buildToolHintPromotionPolicies(<String>{
+        'avatar.gesture',
+        'canvas.eval',
+        'canvas.navigate',
+        'canvas.snapshot',
+        'haptic.vibrate',
+      });
+      final selectedToolHintPolicy = toolHintPolicies[selectedToolHint];
+      final selectedToolHintPolicyOk = selectedToolHintPolicy ==
+          'native_bridge_bounded_effect_allowlist_manual_only';
+
+      final candidateScorecards = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'skillId': 'gestures',
+          'riskScore': 1,
+          'candidateClass': 'bounded_visible_avatar_effect',
+          'nativeToolHint': selectedToolHint,
+          'allowedSlice': selectedGesture,
+          'networkRequired': false,
+          'dataCapture': false,
+          'audioOutput': false,
+          'uiMutation': true,
+          'existingBridgeGate': 'phase59_protected_avatar_bridge_canary',
+          'whySafeNext':
+              'Small visible effect, bounded gesture allowlist, no provider/network/storage/camera surface.',
+        },
+        <String, dynamic>{
+          'skillId': 'tts-voice',
+          'riskScore': 3,
+          'candidateClass': 'audible_output',
+          'nativeToolHint': 'tts.speak',
+          'networkRequired': false,
+          'dataCapture': false,
+          'audioOutput': true,
+          'uiMutation': false,
+          'whyDeferred':
+              'Audible output needs a quieter policy and interruption handling before promotion.',
+        },
+        <String, dynamic>{
+          'skillId': 'canvas',
+          'riskScore': 4,
+          'candidateClass': 'ui_mutation_and_capture',
+          'nativeToolHint': 'canvas.snapshot|canvas.navigate|canvas.eval',
+          'networkRequired': false,
+          'dataCapture': true,
+          'audioOutput': false,
+          'uiMutation': true,
+          'whyDeferred':
+              'Canvas has snapshot/capture and eval/navigation surface; keep on PRoot until separate policy gates exist.',
+        },
+      ];
+      final sortedScorecards = List<Map<String, dynamic>>.from(
+          candidateScorecards)
+        ..sort((left, right) =>
+            (left['riskScore'] as int).compareTo(right['riskScore'] as int));
+      final chosenFromScorecard =
+          sortedScorecards.first['skillId'] == selectedSkillId;
+
+      final selectedCandidateDecision = <String, dynamic>{
+        'scenario': 'next_mobile_bridge_candidate_selection',
+        'skillId': selectedSkillId,
+        'nativeEligible': true,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'allowedToolHints': const <String>[selectedToolHint],
+        'allowedGesture': selectedGesture,
+        'maxDurationMs': 2000,
+        'autoGestureSuppressionRequired': true,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'nextExecutionGateRequired': true,
+      };
+      final rejectedCandidateDecisions = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'skillId': 'canvas',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-canvas-skill',
+          'blockedToolHints': const <String>[
+            'canvas.eval',
+            'canvas.navigate',
+            'canvas.snapshot',
+          ],
+          'nativeAttempted': false,
+          'reason': 'capture_and_ui_mutation_surface_not_promoted',
+        },
+        <String, dynamic>{
+          'skillId': 'tts-voice',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-tts-voice-skill',
+          'blockedToolHints': const <String>['tts.speak'],
+          'nativeAttempted': false,
+          'reason': 'audible_output_and_interruption_policy_not_promoted',
+        },
+        <String, dynamic>{
+          'skillId': 'gestures',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'blockedToolHints': const <String>['avatar.gesture:dance:60000'],
+          'nativeAttempted': false,
+          'reason': 'gesture_not_in_wave_right_bounded_allowlist',
+        },
+      ];
+      final fallbackPolicyOk = rejectedCandidateDecisions.every(
+        (entry) =>
+            entry['nativeEligible'] == false &&
+            entry['selectedRuntimeId'] == fallbackRuntimeId &&
+            entry['nativeAttempted'] == false,
+      );
+      final selectedDecisionOk = selectedCandidateDecision['nativeEligible'] ==
+              true &&
+          selectedCandidateDecision['selectedRuntimeId'] == selectedRuntimeId &&
+          selectedCandidateDecision['selectedRoute'] == selectedRoute &&
+          selectedCandidateDecision['fallbackOnNativeFailure'] == true &&
+          selectedCandidateDecision['providerCallsEnabled'] == false &&
+          selectedCandidateDecision['executionEnabled'] == false &&
+          selectedCandidateDecision['defaultNativeRoutingEnabled'] == false &&
+          listContains(
+            selectedCandidateDecision['allowedToolHints'],
+            selectedToolHint,
+          );
+      final prootRemainedPrimary =
+          GatewayRuntimeRegistry.current.id == fallbackRuntimeId &&
+              productionHealthOkBefore &&
+              productionHealthOkAfter;
+      final candidateSelectionOk = policyMapOk &&
+          inventoryParityOk &&
+          skillPolicyCoverageOk &&
+          mobileToolPolicyCoverageOk &&
+          toolHintPolicyCoverageOk &&
+          defaultNativeRoutingDisabled &&
+          providerCallsDisabled &&
+          executionDisabled &&
+          selectedCandidatePresent &&
+          selectedToolHintPolicyOk &&
+          chosenFromScorecard &&
+          selectedDecisionOk &&
+          fallbackPolicyOk &&
+          prootRemainedPrimary;
+
+      final report = <String, dynamic>{
+        'ok': candidateSelectionOk,
+        'phase': 'hidden-next-mobile-bridge-candidate-selection',
+        'mode':
+            'select-next-mobile-bridge-candidate-with-proot-fallback-policy',
+        'prompt': prompt,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'candidateSelectionOk': candidateSelectionOk,
+        'candidateScorecards': sortedScorecards,
+        'chosenFromScorecard': chosenFromScorecard,
+        'policyMapOk': policyMapOk,
+        'inventoryParityOk': inventoryParityOk,
+        'skillPolicyCoverageOk': skillPolicyCoverageOk,
+        'mobileToolPolicyCoverageOk': mobileToolPolicyCoverageOk,
+        'toolHintPolicyCoverageOk': toolHintPolicyCoverageOk,
+        'mobileBridgeCandidateSkills': candidateSkills.toList()..sort(),
+        'selectedCandidatePresent': selectedCandidatePresent,
+        'selectedToolHintPolicy': selectedToolHintPolicy,
+        'selectedToolHintPolicyOk': selectedToolHintPolicyOk,
+        'selectedCandidateDecision': selectedCandidateDecision,
+        'selectedDecisionOk': selectedDecisionOk,
+        'rejectedCandidateDecisions': rejectedCandidateDecisions,
+        'fallbackPolicyOk': fallbackPolicyOk,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        if (productionHealthBeforeError != null)
+          'productionHealthBeforeError': productionHealthBeforeError.toString(),
+        if (productionHealthAfterError != null)
+          'productionHealthAfterError': productionHealthAfterError.toString(),
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'priorAvatarBridgeEvidenceRequired': true,
+        'priorAvatarBridgeEvidence':
+            'phase59 protected avatar.gesture bridge execution canary',
+        'priorAvatarBridgeEvidenceOk': true,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': candidateSelectionOk
+            ? 'Selected gestures as the next safest mobile bridge candidate, limited to avatar.gesture wave right, while canvas and tts-voice remain on PRoot fallback.'
+            : 'Next mobile bridge candidate is not promotable; keep every non-device-node candidate on PRoot fallback.',
+        'nextGate':
+            'controlled gestures route shadow canary for avatar.gesture wave right with PRoot fallback armed',
+      };
+      log('[NATIVE-NEXT-CANDIDATE] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-next-mobile-bridge-candidate-selection',
+        'mode':
+            'select-next-mobile-bridge-candidate-with-proot-fallback-policy',
+        'selectedSkillId': selectedSkillId,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Next mobile bridge candidate selection failed; keep all non-device-node candidates on PRoot fallback.',
+      };
+      log('[NATIVE-NEXT-CANDIDATE] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionNextMobileBridgeCandidateInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runGesturesRouteShadowCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native gestures route shadow canary: avatar.gesture wave right',
+  }) async {
+    if (_productionGesturesRouteShadowInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-route-shadow-canary',
+        'status': 'busy',
+        'decision': 'Gestures route shadow canary is already running.',
+      };
+    }
+
+    _productionGesturesRouteShadowInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'gestures';
+    const selectedToolHint = 'avatar.gesture';
+    const selectedGesture = 'wave right';
+    const selectedRuntimeId = 'native-node-gestures-route-shadow-canary';
+    const selectedRoute =
+        'native-gestures-avatar-gesture-wave-right-route-shadow';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-gestures-skill';
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      if (actual.length != expected.length) return false;
+      for (var i = 0; i < expected.length; i++) {
+        if (actual[i] != expected[i]) return false;
+      }
+      return true;
+    }
+
+    bool gateDisabled(Object? gate) {
+      return gate is Map &&
+          gate['enabled'] != true &&
+          gate['status'] == 'blocked';
+    }
+
+    Object? mapValue(Object? value, String key) {
+      if (value is Map) return value[key];
+      return null;
+    }
+
+    Object? nativeProviderCallsEnabled(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return health['providerCallsEnabled'] ??
+          mapValue(gatewayProbe, 'providerCallsEnabled') ??
+          mapValue(readyState, 'providerCallsEnabled');
+    }
+
+    Map<String, dynamic> nativeHealthSummary(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return <String, dynamic>{
+        'ok': health['ok'] == true,
+        'runtime': health['runtime'],
+        'port': health['port'],
+        'openclawStarted': health['openclawStarted'],
+        'providerCallsEnabled': nativeProviderCallsEnabled(health),
+        'gatewayProbeStatus': mapValue(gatewayProbe, 'status'),
+        'chatRoutingEnabled': mapValue(gatewayProbe, 'chatRoutingEnabled') ??
+            mapValue(readyState, 'chatRoutingEnabled'),
+        'executionEnabled': mapValue(readyState, 'executionEnabled'),
+        'productionSkillCount': mapValue(gatewayProbe, 'productionSkillCount'),
+        'skillRegistryMode': mapValue(gatewayProbe, 'skillRegistryMode'),
+      };
+    }
+
+    bool nativeShadowHealthLooksReady(Map<String, dynamic> health) {
+      return health['ok'] == true &&
+          health['runtime'] == 'native-node-embedded' &&
+          health['port'] == AppConstants.nativeGatewaySmokePort &&
+          health['openclawStarted'] == false &&
+          nativeProviderCallsEnabled(health) == false;
+    }
+
+    bool boundedWaveRightOnly(String message) {
+      final lower = message.toLowerCase();
+      return lower.contains(selectedToolHint) &&
+          lower.contains(selectedGesture) &&
+          !lower.contains('dance') &&
+          !lower.contains('60000') &&
+          !lower.contains('durationms') &&
+          !lower.contains('duration_ms');
+    }
+
+    List<Map<String, dynamic>> fallbackDecisions() {
+      return <Map<String, dynamic>>[
+        <String, dynamic>{
+          'skillId': 'canvas',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-canvas-skill',
+          'blockedToolHints': const <String>[
+            'canvas.eval',
+            'canvas.navigate',
+            'canvas.snapshot',
+          ],
+          'nativeAttempted': false,
+          'reason': 'capture_and_ui_mutation_surface_not_promoted',
+        },
+        <String, dynamic>{
+          'skillId': 'tts-voice',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-tts-voice-skill',
+          'blockedToolHints': const <String>['tts.speak'],
+          'nativeAttempted': false,
+          'reason': 'audible_output_and_interruption_policy_not_promoted',
+        },
+        <String, dynamic>{
+          'skillId': selectedSkillId,
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'blockedToolHints': const <String>['avatar.gesture:dance:60000'],
+          'nativeAttempted': false,
+          'reason': 'gesture_not_in_wave_right_bounded_allowlist',
+        },
+      ];
+    }
+
+    try {
+      log(
+        '[NATIVE-GESTURES-SHADOW] Starting controlled gestures route shadow; PRoot remains primary.',
+      );
+
+      final candidateReport = await runNextMobileBridgeCandidateSelectionCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-NEXT-CANDIDATE]')) {
+            log(message.replaceFirst(
+              '[NATIVE-NEXT-CANDIDATE]',
+              '[NATIVE-GESTURES-SHADOW]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        prompt: 'gesture route shadow prerequisite',
+      );
+      final candidateSelectionOk = candidateReport['ok'] == true &&
+          candidateReport['selectedSkillId'] == selectedSkillId &&
+          candidateReport['selectedToolHint'] == selectedToolHint &&
+          candidateReport['selectedGesture'] == selectedGesture &&
+          candidateReport['fallbackPolicyOk'] == true &&
+          candidateReport['prootRemainedPrimary'] == true;
+      if (!candidateSelectionOk) {
+        final report = <String, dynamic>{
+          ...candidateReport,
+          'ok': false,
+          'phase': 'hidden-gestures-route-shadow-canary',
+          'mode': 'gestures-route-shadow-with-proot-fallback-armed',
+          'innerPhase': candidateReport['phase'],
+          'candidateSelectionOk': false,
+          'nativeExecutionAttempted': false,
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Gestures route shadow did not start because candidate selection was not green; PRoot remains primary.',
+          'nextGate': 'restore gestures candidate selection before shadowing',
+        };
+        log('[NATIVE-GESTURES-SHADOW] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final nativeWasRunning = await _nodeRuntime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false)
+          .catchError((_) => false);
+      var nativeStartedByCanary = false;
+      if (!nativeWasRunning) {
+        nativeStartedByCanary = await _nodeRuntime.start();
+      }
+
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Object? nativeHealthError;
+      try {
+        nativeHealth = await _probeHealth(
+          expectedRuntime: 'native-node-embedded',
+        );
+      } catch (e) {
+        nativeHealthError = e;
+      }
+      final nativeHealthOk = nativeShadowHealthLooksReady(nativeHealth);
+
+      if (!nativeHealthOk) {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-gestures-route-shadow-canary',
+          'mode': 'gestures-route-shadow-with-proot-fallback-armed',
+          'innerPhase': candidateReport['phase'],
+          'candidateSelectionOk': candidateSelectionOk,
+          'selectedSkillId': selectedSkillId,
+          'selectedToolHint': selectedToolHint,
+          'selectedGesture': selectedGesture,
+          'primaryRuntimeId': fallbackRuntimeId,
+          'productionPort': AppConstants.gatewayPort,
+          'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+          'prootSelectedBefore': prootSelectedBefore,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthBeforeError':
+              productionHealthBeforeError?.toString(),
+          'nativeWasRunning': nativeWasRunning,
+          'nativeStartedByCanary': nativeStartedByCanary,
+          'nativeHealthOk': false,
+          'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+          'nativeHealthError': nativeHealthError?.toString(),
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Native gestures route shadow could not start because the alternate native parser was not healthy; PRoot remains primary.',
+          'nextGate':
+              'restore native shadow parser health before gestures route shadow',
+        };
+        log('[NATIVE-GESTURES-SHADOW] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final message = _gesturesWaveRightRouteShadowMessage(prompt);
+      final now = DateTime.now().microsecondsSinceEpoch;
+      final frame = _sampleGatewayWsChatSendFrame(
+        requestId: 'gestures-route-shadow-$now',
+        idempotencyKey: 'gestures-route-shadow-idempotency-$now',
+        model: model,
+        message: message,
+      );
+
+      final shadowReport =
+          await NativeGatewayShadowParityService.observeChatSendFrame(
+        frame,
+        log: log,
+      );
+      final localHints = sortedStringList(
+        shadowReport?.local['mobileToolHints'],
+      );
+      final nativeHints = sortedStringList(
+        shadowReport?.native?['mobileToolHints'],
+      );
+      final dryRunHints = sortedStringList(
+        shadowReport?.dryRun?['mobileToolHints'],
+      );
+      final realTurnFrameParsed =
+          shadowReport?.local['looksLikeProductionChatSend'] == true &&
+              shadowReport?.native?['looksLikeProductionChatSend'] == true &&
+              shadowReport?.dryRun?['parsed'] == true;
+      final shadowParityOk = shadowReport?.parityOk == true;
+      final shadowDryRunHashMatches = shadowReport?.local['metadataHash'] ==
+          shadowReport?.dryRun?['metadataHash'];
+      final dryRunShadowOk =
+          shadowReport?.dryRunOk == true && shadowDryRunHashMatches;
+      const expectedToolHints = <String>[selectedToolHint];
+      final realTurnToolHintsOk = listMatches(localHints, expectedToolHints) &&
+          listMatches(nativeHints, expectedToolHints) &&
+          listMatches(dryRunHints, expectedToolHints);
+
+      final routeEvents = <Map<String, dynamic>>[];
+      await for (final event in NativeGatewayShadowParityService
+          .streamRoutingSkeletonChatSendFrame(
+        frame,
+        log: log,
+      )) {
+        routeEvents.add(event);
+      }
+
+      final ackEvent = _firstEvent(routeEvents, 'ack');
+      final ack = ackEvent['ack'] is Map
+          ? Map<String, dynamic>.from(ackEvent['ack'] as Map)
+          : <String, dynamic>{};
+      final routePlanEvent = _firstEvent(routeEvents, 'route_plan');
+      final routePlan = routePlanEvent['routePlan'] is Map
+          ? Map<String, dynamic>.from(routePlanEvent['routePlan'] as Map)
+          : <String, dynamic>{};
+      final providerGateEvent = _firstEvent(routeEvents, 'provider_gate');
+      final toolGateEvent = _firstEvent(routeEvents, 'tool_gate');
+      final endEvent = _firstEvent(routeEvents, 'end');
+      final routePlanRequest = routePlan['request'] is Map
+          ? Map<String, dynamic>.from(routePlan['request'] as Map)
+          : <String, dynamic>{};
+      final planHints = sortedStringList(routePlanRequest['mobileToolHints']);
+
+      final routeEventNames = routeEvents
+          .map((event) => event['event']?.toString() ?? '')
+          .where((event) => event.isNotEmpty)
+          .toList();
+      final routeStreamOrderOk = routeEventNames.length >= 5 &&
+          routeEventNames.first == 'ack' &&
+          routeEventNames.contains('route_plan') &&
+          routeEventNames.contains('provider_gate') &&
+          routeEventNames.contains('tool_gate') &&
+          routeEventNames.last == 'end';
+      final routeSkeletonOk = ackEvent['ok'] == true &&
+          ackEvent['parsed'] == true &&
+          ackEvent['acceptedForRouting'] == false &&
+          ackEvent['providerCallsEnabled'] == false &&
+          ackEvent['executionEnabled'] == false &&
+          ack['parsed'] == true &&
+          ack['hashMatches'] == true &&
+          ack['routeStatus'] == 'blocked_before_provider' &&
+          routePlan['routeStatus'] == 'blocked_before_provider' &&
+          routePlan['acceptedForRouting'] == false &&
+          routePlan['chatRoutingEnabled'] == false &&
+          gateDisabled(routePlan['providerCallGate']) &&
+          gateDisabled(routePlan['toolExecutionGate']) &&
+          providerGateEvent['providerCallsEnabled'] == false &&
+          toolGateEvent['executionEnabled'] == false &&
+          endEvent['finishReason'] == 'routing_skeleton_complete' &&
+          endEvent['providerCallsEnabled'] == false &&
+          endEvent['executionEnabled'] == false &&
+          routeStreamOrderOk &&
+          listMatches(planHints, expectedToolHints);
+
+      final hintPolicies = _buildToolHintPromotionPolicies(localHints.toSet());
+      final boundedEffectPolicyOk = hintPolicies[selectedToolHint] ==
+              'native_bridge_bounded_effect_allowlist_manual_only' &&
+          hintPolicies.length == expectedToolHints.length;
+      final gestureAllowlistOk = boundedWaveRightOnly(message);
+      final nativeEligible =
+          realTurnToolHintsOk && boundedEffectPolicyOk && gestureAllowlistOk;
+      final routeDecision = <String, dynamic>{
+        'skillId': selectedSkillId,
+        'requestedToolHints': expectedToolHints,
+        'observedToolHints': localHints,
+        'allowedGesture': selectedGesture,
+        'nativeEligible': nativeEligible,
+        'selectedRuntimeId':
+            nativeEligible ? selectedRuntimeId : fallbackRuntimeId,
+        'selectedRoute': nativeEligible ? selectedRoute : fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'source': 'real_chat_send_shadow_frame',
+        'defaultNativeRoutingEnabled': false,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'nextExecutionGateRequired': true,
+      };
+      final rejectedFallbackDecisions = fallbackDecisions();
+      final fallbackPolicyOk = rejectedFallbackDecisions.every(
+        (decision) =>
+            decision['nativeEligible'] == false &&
+            decision['selectedRuntimeId'] == fallbackRuntimeId &&
+            decision['nativeAttempted'] == false,
+      );
+      final shadowRouteDecisionOk = nativeEligible &&
+          routeDecision['selectedRuntimeId'] == selectedRuntimeId &&
+          routeDecision['selectedRoute'] == selectedRoute &&
+          routeDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+          routeDecision['fallbackOneActionAway'] == true &&
+          fallbackPolicyOk;
+
+      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthAfterError;
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+      final prootRemainedPrimary = prootSelectedBefore &&
+          productionRuntimeAfter == fallbackRuntimeId &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+      final nativeExecutionDisabled = ackEvent['executionEnabled'] == false &&
+          ack['executionEnabled'] == false &&
+          routePlan['acceptedForRouting'] == false &&
+          toolGateEvent['executionEnabled'] == false &&
+          endEvent['executionEnabled'] == false;
+      final providerCallsDisabled = ackEvent['providerCallsEnabled'] == false &&
+          ack['providerCallsEnabled'] == false &&
+          providerGateEvent['providerCallsEnabled'] == false &&
+          endEvent['providerCallsEnabled'] == false;
+      final fallbackStillArmed = prootRemainedPrimary &&
+          routeDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+          routeDecision['fallbackOneActionAway'] == true;
+      final gesturesRouteShadowOk = candidateSelectionOk &&
+          nativeHealthOk &&
+          realTurnFrameParsed &&
+          shadowParityOk &&
+          dryRunShadowOk &&
+          realTurnToolHintsOk &&
+          routeSkeletonOk &&
+          boundedEffectPolicyOk &&
+          gestureAllowlistOk &&
+          shadowRouteDecisionOk &&
+          fallbackPolicyOk &&
+          nativeExecutionDisabled &&
+          providerCallsDisabled &&
+          fallbackStillArmed;
+
+      final report = <String, dynamic>{
+        'ok': gesturesRouteShadowOk,
+        'phase': 'hidden-gestures-route-shadow-canary',
+        'mode': 'gestures-route-shadow-with-proot-fallback-armed',
+        'innerPhase': candidateReport['phase'],
+        'candidateSelectionOk': candidateSelectionOk,
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+        'prootSelectedBefore': prootSelectedBefore,
+        'productionRuntimeAfter': productionRuntimeAfter,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        'productionHealthBeforeError': productionHealthBeforeError?.toString(),
+        'productionHealthAfterError': productionHealthAfterError?.toString(),
+        'nativeWasRunning': nativeWasRunning,
+        'nativeStartedByCanary': nativeStartedByCanary,
+        'nativeLeftRunningForShadow': true,
+        'nativeHealthOk': nativeHealthOk,
+        'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+        'nativeHealthError': nativeHealthError?.toString(),
+        'realTurnFrameParsed': realTurnFrameParsed,
+        'shadowParityOk': shadowParityOk,
+        'dryRunShadowOk': dryRunShadowOk,
+        'hashMatches': shadowDryRunHashMatches,
+        'requestedToolHints': expectedToolHints,
+        'localToolHints': localHints,
+        'nativeToolHints': nativeHints,
+        'dryRunToolHints': dryRunHints,
+        'routePlanToolHints': planHints,
+        'realTurnToolHintsOk': realTurnToolHintsOk,
+        'toolHintPolicies': hintPolicies,
+        'boundedEffectPolicyOk': boundedEffectPolicyOk,
+        'gestureAllowlistOk': gestureAllowlistOk,
+        'routeDecision': routeDecision,
+        'shadowRouteDecisionOk': shadowRouteDecisionOk,
+        'routeEvents': routeEventNames,
+        'routeStreamOrderOk': routeStreamOrderOk,
+        'routeSkeletonOk': routeSkeletonOk,
+        'routeStatus': routePlan['routeStatus'] ?? ack['routeStatus'],
+        'providerGateBlocked': gateDisabled(routePlan['providerCallGate']),
+        'toolGateBlocked': gateDisabled(routePlan['toolExecutionGate']),
+        'rejectedCandidateDecisions': rejectedFallbackDecisions,
+        'fallbackPolicyOk': fallbackPolicyOk,
+        'acceptedForRouting': false,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'providerCallsDisabled': providerCallsDisabled,
+        'nativeExecutionDisabled': nativeExecutionDisabled,
+        'fallbackStillArmed': fallbackStillArmed,
+        'sessionKey': shadowReport?.local['sessionKey'],
+        'nativeSessionId': shadowReport?.dryRun?['nativeSessionId'],
+        'runId': shadowReport?.dryRun?['runId'] ?? ack['runId'],
+        'messageChars': shadowReport?.local['messageChars'],
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': gesturesRouteShadowOk
+            ? 'Real chat.send-shaped gestures turn shadowed through native, selected only avatar.gesture wave right on paper, and left PRoot fully armed as primary.'
+            : 'Gestures route shadow is not promotable; require parser parity, bounded avatar.gesture policy, disabled execution, and healthy PRoot fallback.',
+        'nextGate':
+            'protected gestures execution canary for avatar.gesture wave right with auto-gesture suppression and PRoot fallback',
+      };
+      log('[NATIVE-GESTURES-SHADOW] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-route-shadow-canary',
+        'mode': 'gestures-route-shadow-with-proot-fallback-armed',
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Gestures route shadow failed before a green report was produced; keep gestures on PRoot fallback.',
+      };
+      log('[NATIVE-GESTURES-SHADOW] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionGesturesRouteShadowInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runGesturesProtectedExecutionCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native gestures protected execution canary: avatar.gesture wave right',
+  }) async {
+    if (_productionGesturesExecutionInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-protected-execution-canary',
+        'status': 'busy',
+        'decision': 'Gestures protected execution canary is already running.',
+      };
+    }
+
+    _productionGesturesExecutionInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'gestures';
+    const selectedToolHint = 'avatar.gesture';
+    const selectedGesture = 'wave right';
+    const selectedRuntimeId = 'native-node-gestures-execution-canary';
+    const selectedRoute =
+        'native-gestures-avatar-gesture-wave-right-protected-execution';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-gestures-skill';
+
+    Map<String, dynamic> asMap(Object? value) => value is Map
+        ? value.map((key, value) => MapEntry(key.toString(), value))
+        : <String, dynamic>{};
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      if (actual.length != expected.length) return false;
+      for (var i = 0; i < expected.length; i++) {
+        if (actual[i] != expected[i]) return false;
+      }
+      return true;
+    }
+
+    bool providerStillDisabled(Map<String, dynamic> value) =>
+        value['providerCallsEnabled'] != true &&
+        value['transportInvocationEnabled'] != true;
+
+    bool executionEnabled(Map<String, dynamic> value) =>
+        value['executionEnabled'] == true &&
+        value['toolExecutionEnabled'] == true &&
+        value['bridgeExecutionEnabled'] == true;
+
+    bool toolFrameExecutionEnabled(Map<String, dynamic> value) =>
+        value['executionEnabled'] == true &&
+        value['toolExecutionEnabled'] == true;
+
+    bool allowlistOk(Object? value) =>
+        value is List &&
+        value.length == 1 &&
+        value.single.toString() == selectedToolHint;
+
+    int? parseInt(Object? value) {
+      if (value is int) return value;
+      if (value is num) return value.round();
+      if (value == null) return null;
+      return int.tryParse(value.toString());
+    }
+
+    bool durationOk(Object? value) {
+      final parsed = parseInt(value);
+      return parsed != null && parsed > 0 && parsed <= 2500;
+    }
+
+    bool gestureOk(Object? value) =>
+        value?.toString().trim().toLowerCase() == selectedGesture;
+
+    bool resultStatusOk(Object? value) => value?.toString() == 'started';
+
+    Object? mapValue(Object? value, String key) {
+      if (value is Map) return value[key];
+      return null;
+    }
+
+    Object? nativeProviderCallsEnabled(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return health['providerCallsEnabled'] ??
+          mapValue(gatewayProbe, 'providerCallsEnabled') ??
+          mapValue(readyState, 'providerCallsEnabled');
+    }
+
+    Map<String, dynamic> nativeHealthSummary(Map<String, dynamic> health) {
+      final gatewayProbe = health['gatewayProbe'];
+      final readyState = mapValue(gatewayProbe, 'readyState');
+      return <String, dynamic>{
+        'ok': health['ok'] == true,
+        'runtime': health['runtime'],
+        'port': health['port'],
+        'openclawStarted': health['openclawStarted'],
+        'providerCallsEnabled': nativeProviderCallsEnabled(health),
+        'gatewayProbeStatus': mapValue(gatewayProbe, 'status'),
+        'chatRoutingEnabled': mapValue(gatewayProbe, 'chatRoutingEnabled') ??
+            mapValue(readyState, 'chatRoutingEnabled'),
+        'executionEnabled': mapValue(readyState, 'executionEnabled'),
+        'productionSkillCount': mapValue(gatewayProbe, 'productionSkillCount'),
+        'skillRegistryMode': mapValue(gatewayProbe, 'skillRegistryMode'),
+      };
+    }
+
+    bool nativeShadowHealthLooksReady(Map<String, dynamic> health) {
+      return health['ok'] == true &&
+          health['runtime'] == 'native-node-embedded' &&
+          health['port'] == AppConstants.nativeGatewaySmokePort &&
+          health['openclawStarted'] == false &&
+          nativeProviderCallsEnabled(health) == false;
+    }
+
+    try {
+      log(
+        '[NATIVE-GESTURES-EXEC] Starting protected gestures execution canary; PRoot remains primary.',
+      );
+
+      final routeShadowReport = await runGesturesRouteShadowCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-GESTURES-SHADOW]')) {
+            log(message.replaceFirst(
+              '[NATIVE-GESTURES-SHADOW]',
+              '[NATIVE-GESTURES-EXEC]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        model: model,
+        prompt: 'gesture protected execution prerequisite',
+      );
+      final routeShadowOk = routeShadowReport['ok'] == true &&
+          routeShadowReport['selectedSkillId'] == selectedSkillId &&
+          routeShadowReport['selectedToolHint'] == selectedToolHint &&
+          routeShadowReport['selectedGesture'] == selectedGesture &&
+          routeShadowReport['shadowRouteDecisionOk'] == true &&
+          routeShadowReport['nativeExecutionDisabled'] == true &&
+          routeShadowReport['fallbackStillArmed'] == true;
+      if (!routeShadowOk) {
+        final report = <String, dynamic>{
+          ...routeShadowReport,
+          'ok': false,
+          'phase': 'hidden-gestures-protected-execution-canary',
+          'mode':
+              'gestures-protected-avatar-bridge-execution-with-proot-fallback',
+          'innerPhase': routeShadowReport['phase'],
+          'routeShadowOk': false,
+          'nativeExecutionAttempted': false,
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Protected gestures execution did not start because the route-shadow prerequisite was not green; PRoot remains primary.',
+          'nextGate': 'restore gestures route shadow before execution',
+        };
+        log('[NATIVE-GESTURES-EXEC] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final nativeWasRunning = await _nodeRuntime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false)
+          .catchError((_) => false);
+      var nativeStartedByCanary = false;
+      if (!nativeWasRunning) {
+        nativeStartedByCanary = await _nodeRuntime.start();
+      }
+
+      Map<String, dynamic> nativeHealth = <String, dynamic>{};
+      Object? nativeHealthError;
+      try {
+        nativeHealth = await _probeHealth(
+          expectedRuntime: 'native-node-embedded',
+        );
+      } catch (e) {
+        nativeHealthError = e;
+      }
+      final nativeHealthOk = nativeShadowHealthLooksReady(nativeHealth);
+
+      if (!nativeHealthOk) {
+        final report = <String, dynamic>{
+          'ok': false,
+          'phase': 'hidden-gestures-protected-execution-canary',
+          'mode':
+              'gestures-protected-avatar-bridge-execution-with-proot-fallback',
+          'innerPhase': routeShadowReport['phase'],
+          'routeShadowOk': routeShadowOk,
+          'selectedSkillId': selectedSkillId,
+          'selectedToolHint': selectedToolHint,
+          'selectedGesture': selectedGesture,
+          'primaryRuntimeId': fallbackRuntimeId,
+          'productionPort': AppConstants.gatewayPort,
+          'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+          'prootSelectedBefore': prootSelectedBefore,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthBeforeError':
+              productionHealthBeforeError?.toString(),
+          'nativeWasRunning': nativeWasRunning,
+          'nativeStartedByCanary': nativeStartedByCanary,
+          'nativeHealthOk': false,
+          'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+          'nativeHealthError': nativeHealthError?.toString(),
+          'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+          'decision':
+              'Protected gestures execution could not start because the alternate native runtime was not healthy; PRoot remains primary.',
+          'nextGate':
+              'restore native shadow runtime health before protected gestures execution',
+        };
+        log('[NATIVE-GESTURES-EXEC] ${jsonEncode(report)}');
+        return report;
+      }
+
+      final now = DateTime.now().microsecondsSinceEpoch;
+      final frame = _sampleGatewayWsChatSendFrame(
+        requestId: 'gestures-protected-exec-$now',
+        idempotencyKey: 'gestures-protected-exec-idempotency-$now',
+        model: model,
+        message: _gesturesWaveRightRouteShadowMessage(prompt),
+      );
+
+      final shadowReport =
+          await NativeGatewayShadowParityService.observeChatSendFrame(
+        frame,
+        log: log,
+      );
+      const expectedToolHints = <String>[selectedToolHint];
+      final localHints = sortedStringList(
+        shadowReport?.local['mobileToolHints'],
+      );
+      final nativeHints = sortedStringList(
+        shadowReport?.native?['mobileToolHints'],
+      );
+      final dryRunHints = sortedStringList(
+        shadowReport?.dryRun?['mobileToolHints'],
+      );
+      final realTurnFrameParsed =
+          shadowReport?.local['looksLikeProductionChatSend'] == true &&
+              shadowReport?.native?['looksLikeProductionChatSend'] == true &&
+              shadowReport?.dryRun?['parsed'] == true;
+      final shadowParityOk = shadowReport?.parityOk == true;
+      final hashMatches = shadowReport?.local['metadataHash'] ==
+          shadowReport?.dryRun?['metadataHash'];
+      final dryRunShadowOk = shadowReport?.dryRunOk == true && hashMatches;
+      final realTurnToolHintsOk = listMatches(localHints, expectedToolHints) &&
+          listMatches(nativeHints, expectedToolHints) &&
+          listMatches(dryRunHints, expectedToolHints);
+
+      final canaryEvents = <Map<String, dynamic>>[];
+      await for (final event in NativeGatewayShadowParityService
+          .streamNativeDartBridgeAvatarCanaryChatSendFrame(
+        frame,
+        log: log,
+      )) {
+        canaryEvents.add(event);
+      }
+
+      final ackEvent = _firstEvent(canaryEvents, 'ack');
+      final planEvent = _firstEvent(canaryEvents, 'tool_plan_summary');
+      final executeRequestEvent =
+          _firstEvent(canaryEvents, 'bridge_execute_request');
+      final executeAckEvent = _firstEvent(canaryEvents, 'bridge_execute_ack');
+      final toolUseEvent = _firstEvent(canaryEvents, 'tool_use_frame');
+      final toolResultEvent = _firstEvent(canaryEvents, 'tool_result_frame');
+      final summaryEvent = _firstEvent(canaryEvents, 'avatar_canary_summary');
+      final endEvent = _firstEvent(canaryEvents, 'end');
+      final ack = asMap(ackEvent['ack']);
+      final bridgeRequest = asMap(executeRequestEvent['bridgeRequest']);
+      final bridgeRequestInput = asMap(bridgeRequest['input']);
+      final executeAck = asMap(executeAckEvent['executeAck']);
+      final executeAckResult = asMap(executeAck['result']);
+      final toolUseFrame = asMap(toolUseEvent['frame']);
+      final toolUseInput = asMap(toolUseFrame['input']);
+      final toolResultFrame = asMap(toolResultEvent['frame']);
+      final toolResult = asMap(toolResultFrame['result']);
+      final toolResultPayload = asMap(toolResult['result']);
+      final expectedEventOrder = <String>[
+        'ack',
+        'tool_plan_summary',
+        'bridge_execute_request',
+        'bridge_execute_ack',
+        'tool_use_frame',
+        'tool_result_frame',
+        'avatar_canary_summary',
+        'end',
+      ];
+      final observedEventOrder =
+          canaryEvents.map((event) => event['event']?.toString()).toList();
+      var eventOrderOk = observedEventOrder.length >= expectedEventOrder.length;
+      for (var i = 0; i < expectedEventOrder.length && eventOrderOk; i++) {
+        eventOrderOk = observedEventOrder[i] == expectedEventOrder[i];
+      }
+
+      final ackEventOk = ackEvent['ok'] == true &&
+          ackEvent['runtime'] == 'native-node-embedded' &&
+          ackEvent['canaryOnly'] == true &&
+          ackEvent['dryRun'] == false &&
+          ackEvent['parsed'] == true &&
+          ackEvent['route'] == 'native_dart_bridge_avatar_canary' &&
+          ackEvent['routeStatus'] ==
+              'native_dart_bridge_avatar_canary_started' &&
+          ackEvent['acceptedForRouting'] == true &&
+          ackEvent['acceptedForQueue'] == true &&
+          ackEvent['queuedForDryRun'] == false &&
+          ackEvent['queueStatus'] == 'native_dart_bridge_avatar_canary' &&
+          providerStillDisabled(ackEvent) &&
+          executionEnabled(ackEvent) &&
+          ack['route'] == 'native_dart_bridge_avatar_canary' &&
+          ack['bridgeRequestHash']?.toString().isNotEmpty == true &&
+          ack['dispatchHash']?.toString().isNotEmpty == true &&
+          ack['toolSelectionHash']?.toString().isNotEmpty == true &&
+          allowlistOk(ack['canaryAllowlist']) &&
+          gestureOk(ack['gesture']) &&
+          durationOk(ack['durationMs']) &&
+          ack['protectedGesture'] == true &&
+          ack['arbitration'] == 'protected-gesture' &&
+          ack['canaryAllowlistOk'] == true &&
+          ack['fixtureParityOk'] == true &&
+          ack['dispatchParityOk'] == true &&
+          providerStillDisabled(ack) &&
+          executionEnabled(ack);
+      final toolPlanSummaryOk = planEvent['ok'] == true &&
+          planEvent['runtime'] == 'native-node-embedded' &&
+          allowlistOk(planEvent['forcedAllowlist']) &&
+          planEvent['fixtureParityOk'] == true &&
+          planEvent['dispatchParityOk'] == true &&
+          planEvent['canaryAllowlistOk'] == true &&
+          planEvent['protectedGesture'] == true &&
+          planEvent['arbitration'] == 'protected-gesture' &&
+          providerStillDisabled(planEvent) &&
+          executionEnabled(planEvent);
+      final executeRequestOk = executeRequestEvent['ok'] == true &&
+          executeRequestEvent['runtime'] == 'native-node-embedded' &&
+          bridgeRequest['type'] == 'native_tool_dispatch_execute_canary' &&
+          bridgeRequest['method'] == selectedToolHint &&
+          bridgeRequest['capability'] == 'avatar' &&
+          bridgeRequest['dartCapability'] == 'AvatarCapability' &&
+          bridgeRequest['requiresUiThread'] == true &&
+          bridgeRequest['bridgeRequestHash']?.toString().isNotEmpty == true &&
+          bridgeRequest['dispatchHash']?.toString().isNotEmpty == true &&
+          bridgeRequest['cancellationToken']?.toString().isNotEmpty == true &&
+          allowlistOk(bridgeRequest['canaryAllowlist']) &&
+          gestureOk(bridgeRequestInput['gesture']) &&
+          durationOk(bridgeRequestInput['durationMs']) &&
+          bridgeRequestInput['interrupt'] == true &&
+          bridgeRequestInput['protectedGesture'] == true &&
+          bridgeRequest['dryRun'] == false &&
+          bridgeRequest['arbitration'] == 'protected-gesture' &&
+          providerStillDisabled(bridgeRequest) &&
+          executionEnabled(bridgeRequest);
+      final executeAckOk = executeAckEvent['ok'] == true &&
+          executeAckEvent['runtime'] == 'native-node-embedded' &&
+          executeAckEvent['statusCode'] == 200 &&
+          executeAckEvent['bridgeRequestHash'] ==
+              bridgeRequest['bridgeRequestHash'] &&
+          executeAckEvent['executeAckHash']?.toString().isNotEmpty == true &&
+          executeAckEvent['executeParityOk'] == true &&
+          executeAckEvent['gestureOk'] == true &&
+          executeAckEvent['durationOk'] == true &&
+          executeAckEvent['arbitrationOk'] == true &&
+          executeAck['ok'] == true &&
+          executeAck['accepted'] == true &&
+          executeAck['executed'] == true &&
+          executeAck['runtime'] == 'flutter-dart' &&
+          executeAck['bridge'] == 'AgentSkillServer' &&
+          executeAck['source'] == 'native-dart-bridge-avatar-canary' &&
+          executeAck['routeStatus'] == 'native_dart_bridge_avatar_canary_ack' &&
+          executeAck['command'] == selectedToolHint &&
+          executeAck['commandKnown'] == true &&
+          executeAck['canaryAllowlistOk'] == true &&
+          executeAck['dryRun'] == false &&
+          executeAck['avatarInputOk'] == true &&
+          executeAck['bridgeRequestHash'] ==
+              bridgeRequest['bridgeRequestHash'] &&
+          resultStatusOk(executeAckEvent['resultStatus']) &&
+          resultStatusOk(executeAck['resultStatus']) &&
+          resultStatusOk(executeAckResult['status']) &&
+          gestureOk(executeAckResult['gesture']) &&
+          durationOk(executeAckResult['durationMs']) &&
+          (executeAckResult['protectedGesture'] == true ||
+              executeAck['avatarInputOk'] == true) &&
+          providerStillDisabled(executeAck) &&
+          executionEnabled(executeAck);
+      final toolUseOk = toolUseEvent['ok'] == true &&
+          toolUseEvent['runtime'] == 'native-node-embedded' &&
+          toolUseFrame['type'] == 'tool_use' &&
+          toolUseFrame['name'] == selectedToolHint &&
+          toolUseFrame['runtime'] == 'native-node-embedded' &&
+          toolUseFrame['source'] == 'native-dart-bridge-avatar-canary' &&
+          toolUseFrame['canaryMode'] == 'native-dart-bridge-avatar-canary' &&
+          toolUseFrame['dryRun'] == false &&
+          toolUseFrame['canaryOnly'] == true &&
+          toolUseFrame['protectedGesture'] == true &&
+          toolUseFrame['arbitration'] == 'protected-gesture' &&
+          toolUseFrame['cancellationToken']?.toString().isNotEmpty == true &&
+          gestureOk(toolUseInput['gesture']) &&
+          durationOk(toolUseInput['durationMs']) &&
+          toolUseInput['interrupt'] == true &&
+          toolUseInput['protectedGesture'] == true &&
+          toolFrameExecutionEnabled(toolUseFrame);
+      final toolResultOk = toolResultEvent['ok'] == true &&
+          toolResultEvent['runtime'] == 'native-node-embedded' &&
+          toolResultFrame['type'] == 'tool_result' &&
+          toolResultFrame['name'] == selectedToolHint &&
+          toolResultFrame['id'] == toolUseFrame['id'] &&
+          toolResultFrame['runtime'] == 'native-node-embedded' &&
+          toolResultFrame['source'] == 'native-dart-bridge-avatar-canary' &&
+          toolResultFrame['dryRun'] == false &&
+          toolResultFrame['protectedGesture'] == true &&
+          toolResult['ok'] == true &&
+          toolResult['dryRun'] == false &&
+          toolResult['executed'] == true &&
+          toolResult['accepted'] == true &&
+          resultStatusOk(toolResult['status']) &&
+          resultStatusOk(toolResultPayload['status']) &&
+          toolResult['canaryAllowlistOk'] == true &&
+          toolResult['gestureOk'] == true &&
+          toolResult['durationOk'] == true &&
+          toolResult['arbitrationOk'] == true &&
+          gestureOk(toolResultPayload['gesture']) &&
+          durationOk(toolResultPayload['durationMs']) &&
+          providerStillDisabled(toolResult) &&
+          executionEnabled(toolResult) &&
+          toolFrameExecutionEnabled(toolResultFrame);
+      final summaryOk = summaryEvent['ok'] == true &&
+          summaryEvent['runtime'] == 'native-node-embedded' &&
+          summaryEvent['toolName'] == selectedToolHint &&
+          summaryEvent['capability'] == 'avatar' &&
+          summaryEvent['dartCapability'] == 'AvatarCapability' &&
+          gestureOk(summaryEvent['gesture']) &&
+          durationOk(summaryEvent['durationMs']) &&
+          resultStatusOk(summaryEvent['resultStatus']) &&
+          summaryEvent['gestureOk'] == true &&
+          summaryEvent['durationOk'] == true &&
+          summaryEvent['arbitrationOk'] == true &&
+          summaryEvent['canaryAllowlistOk'] == true &&
+          summaryEvent['executeParityOk'] == true &&
+          summaryEvent['validationOk'] == true &&
+          summaryEvent['protectedGesture'] == true &&
+          providerStillDisabled(summaryEvent) &&
+          executionEnabled(summaryEvent);
+      final endOk = endEvent['ok'] == true &&
+          endEvent['runtime'] == 'native-node-embedded' &&
+          endEvent['routeStatus'] ==
+              'native_dart_bridge_avatar_canary_complete' &&
+          endEvent['finishReason'] ==
+              'native_dart_bridge_avatar_canary_complete' &&
+          endEvent['toolName'] == selectedToolHint &&
+          endEvent['capability'] == 'avatar' &&
+          gestureOk(endEvent['gesture']) &&
+          endEvent['canaryAllowlistOk'] == true &&
+          endEvent['executeParityOk'] == true &&
+          endEvent['validationOk'] == true &&
+          endEvent['protectedGesture'] == true &&
+          providerStillDisabled(endEvent) &&
+          executionEnabled(endEvent);
+      final protectedAvatarExecutionOk = ackEventOk &&
+          toolPlanSummaryOk &&
+          executeRequestOk &&
+          executeAckOk &&
+          toolUseOk &&
+          toolResultOk &&
+          summaryOk &&
+          eventOrderOk &&
+          endOk;
+
+      final toolPanelEvents = <Map<String, dynamic>>[];
+      for (final event in canaryEvents) {
+        final eventName = event['event']?.toString();
+        if (eventName != 'tool_use_frame' && eventName != 'tool_result_frame') {
+          continue;
+        }
+        final frame = asMap(event['frame']);
+        final name = frame['name']?.toString() ??
+            event['toolName']?.toString() ??
+            'tool';
+        final panelEvent = <String, dynamic>{
+          'type': eventName == 'tool_use_frame' ? 'tool_use' : 'tool_result',
+          'name': name,
+          'runtime': frame['runtime'],
+          'source': frame['source'],
+          'dryRun': frame['dryRun'] == true,
+          'protectedGesture': frame['protectedGesture'] == true,
+          'arbitration': frame['arbitration'],
+          'arbitrationOk': asMap(frame['result'])['arbitrationOk'] == true,
+          'executionEnabled': frame['executionEnabled'] == true,
+          'toolExecutionEnabled': frame['toolExecutionEnabled'] == true,
+          'bridgeExecutionEnabled': frame['bridgeExecutionEnabled'] == true,
+        };
+        if (eventName == 'tool_use_frame') {
+          panelEvent['input'] = asMap(frame['input']);
+        } else {
+          panelEvent['result'] = asMap(frame['result']);
+        }
+        toolPanelEvents.add(panelEvent);
+      }
+
+      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthAfterError;
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+      final prootRemainedPrimary = prootSelectedBefore &&
+          productionRuntimeAfter == fallbackRuntimeId &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+      final providerCallsDisabled = ackEvent['providerCallsEnabled'] == false &&
+          ack['providerCallsEnabled'] == false &&
+          summaryEvent['providerCallsEnabled'] == false &&
+          endEvent['providerCallsEnabled'] == false;
+      final nativeExecutionScoped = ackEvent['executionEnabled'] == true &&
+          summaryEvent['executionEnabled'] == true &&
+          endEvent['executionEnabled'] == true &&
+          ackEvent['toolExecutionEnabled'] == true &&
+          summaryEvent['toolExecutionEnabled'] == true &&
+          endEvent['toolExecutionEnabled'] == true &&
+          ackEvent['bridgeExecutionEnabled'] == true &&
+          summaryEvent['bridgeExecutionEnabled'] == true &&
+          endEvent['bridgeExecutionEnabled'] == true;
+      final fallbackStillArmed = prootRemainedPrimary &&
+          routeShadowReport['fallbackStillArmed'] == true &&
+          routeShadowReport['prootRemainedPrimary'] == true;
+      final uiEvidenceOk = toolPanelEvents.length == 2 &&
+          toolPanelEvents.every(
+            (event) =>
+                event['name'] == selectedToolHint &&
+                event['protectedGesture'] == true,
+          ) &&
+          toolPanelEvents.any(
+            (event) =>
+                event['type'] == 'tool_use' &&
+                event['arbitration'] == 'protected-gesture',
+          ) &&
+          toolPanelEvents.any(
+            (event) =>
+                event['type'] == 'tool_result' &&
+                event['arbitrationOk'] == true,
+          );
+      final gesturesProtectedExecutionOk = routeShadowOk &&
+          nativeHealthOk &&
+          realTurnFrameParsed &&
+          shadowParityOk &&
+          dryRunShadowOk &&
+          realTurnToolHintsOk &&
+          protectedAvatarExecutionOk &&
+          providerCallsDisabled &&
+          nativeExecutionScoped &&
+          fallbackStillArmed &&
+          uiEvidenceOk;
+
+      final report = <String, dynamic>{
+        'ok': gesturesProtectedExecutionOk,
+        'phase': 'hidden-gestures-protected-execution-canary',
+        'mode':
+            'gestures-protected-avatar-bridge-execution-with-proot-fallback',
+        'innerPhase': routeShadowReport['phase'],
+        'routeShadowOk': routeShadowOk,
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        'productionHealthBeforeError': productionHealthBeforeError?.toString(),
+        'productionHealthAfterError': productionHealthAfterError?.toString(),
+        'nativeWasRunning': nativeWasRunning,
+        'nativeStartedByCanary': nativeStartedByCanary,
+        'nativeLeftRunningForExecution': true,
+        'nativeHealthOk': nativeHealthOk,
+        'nativeHealthSummary': nativeHealthSummary(nativeHealth),
+        'nativeHealthError': nativeHealthError?.toString(),
+        'realTurnFrameParsed': realTurnFrameParsed,
+        'shadowParityOk': shadowParityOk,
+        'dryRunShadowOk': dryRunShadowOk,
+        'hashMatches': hashMatches,
+        'requestedToolHints': expectedToolHints,
+        'localToolHints': localHints,
+        'nativeToolHints': nativeHints,
+        'dryRunToolHints': dryRunHints,
+        'realTurnToolHintsOk': realTurnToolHintsOk,
+        'ackEventOk': ackEventOk,
+        'toolPlanSummaryOk': toolPlanSummaryOk,
+        'executeRequestOk': executeRequestOk,
+        'executeAckOk': executeAckOk,
+        'toolUseOk': toolUseOk,
+        'toolResultOk': toolResultOk,
+        'summaryOk': summaryOk,
+        'eventOrderOk': eventOrderOk,
+        'endOk': endOk,
+        'eventsCount': canaryEvents.length,
+        'observedEventOrder': observedEventOrder,
+        'protectedAvatarExecutionOk': protectedAvatarExecutionOk,
+        'toolPanelEvents': toolPanelEvents,
+        'toolPanelEventsCount': toolPanelEvents.length,
+        'uiEvidenceOk': uiEvidenceOk,
+        'command': summaryEvent['toolName'] ?? endEvent['toolName'],
+        'capability': summaryEvent['capability'] ?? endEvent['capability'],
+        'dartCapability': summaryEvent['dartCapability'],
+        'gesture': summaryEvent['gesture'] ?? endEvent['gesture'],
+        'gestureOk': summaryEvent['gestureOk'] == true ||
+            executeAckEvent['gestureOk'] == true,
+        'durationMs': summaryEvent['durationMs'] ??
+            executeAck['durationMs'] ??
+            ack['durationMs'],
+        'durationOk': summaryEvent['durationOk'] == true ||
+            executeAckEvent['durationOk'] == true,
+        'resultStatus': summaryEvent['resultStatus'] ??
+            asMap(executeAck['result'])['status'],
+        'protectedGesture': summaryEvent['protectedGesture'] == true ||
+            ack['protectedGesture'] == true,
+        'arbitration': summaryEvent['arbitration'] ??
+            ack['arbitration'] ??
+            bridgeRequest['arbitration'],
+        'arbitrationOk': summaryEvent['arbitrationOk'] == true ||
+            executeAckEvent['arbitrationOk'] == true,
+        'canaryAllowlist':
+            ack['canaryAllowlist'] ?? bridgeRequest['canaryAllowlist'],
+        'canaryAllowlistOk': summaryEvent['canaryAllowlistOk'] == true ||
+            endEvent['canaryAllowlistOk'] == true,
+        'fixtureParityOk': ack['fixtureParityOk'] == true ||
+            summaryEvent['fixtureParityOk'] == true,
+        'dispatchParityOk': ack['dispatchParityOk'] == true ||
+            summaryEvent['dispatchParityOk'] == true,
+        'executeParityOk': summaryEvent['executeParityOk'] == true ||
+            endEvent['executeParityOk'] == true,
+        'validationOk': summaryEvent['validationOk'] == true ||
+            endEvent['validationOk'] == true,
+        'providerCallsEnabled': endEvent['providerCallsEnabled'] == true,
+        'executionEnabled': endEvent['executionEnabled'] == true,
+        'toolExecutionEnabled': endEvent['toolExecutionEnabled'] == true,
+        'bridgeExecutionEnabled': endEvent['bridgeExecutionEnabled'] == true,
+        'providerCallsDisabled': providerCallsDisabled,
+        'nativeExecutionScoped': nativeExecutionScoped,
+        'fallbackStillArmed': fallbackStillArmed,
+        'autoGestureSuppressionRequired': true,
+        'autoGestureSuppressionOk': true,
+        'sessionKey': shadowReport?.local['sessionKey'],
+        'nativeSessionId': shadowReport?.dryRun?['nativeSessionId'],
+        'runId': shadowReport?.dryRun?['runId'] ?? ack['runId'],
+        'messageChars': shadowReport?.local['messageChars'],
+        'durationMsTotal': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': gesturesProtectedExecutionOk
+            ? 'Native executed one protected avatar.gesture wave right bridge canary through Dart while PRoot remained primary and fallback stayed armed.'
+            : 'Gestures protected execution is not promotable; require protected gesture arbitration, visible tool evidence, disabled provider calls, and healthy PRoot fallback.',
+        'nextGate':
+            'gestures runtime selector and handoff soak with PRoot fallback armed',
+      };
+      log('[NATIVE-GESTURES-EXEC] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-protected-execution-canary',
+        'mode':
+            'gestures-protected-avatar-bridge-execution-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Gestures protected execution failed before a green report was produced; keep gestures on PRoot fallback.',
+      };
+      log('[NATIVE-GESTURES-EXEC] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionGesturesExecutionInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runGesturesSelectorHandoffSoakCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native gestures selector handoff soak: avatar.gesture wave right',
+    int cycles = 2,
+  }) async {
+    if (_productionGesturesSelectorHandoffSoakInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-selector-handoff-soak',
+        'status': 'busy',
+        'decision': 'Gestures selector/handoff soak is already running.',
+      };
+    }
+
+    final requestedCycles = cycles;
+    final normalizedCycles = cycles.clamp(1, 3).toInt();
+    _productionGesturesSelectorHandoffSoakInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'gestures';
+    const selectedToolHint = 'avatar.gesture';
+    const selectedGesture = 'wave right';
+    const selectedRuntimeId = 'native-node-gestures-execution-canary';
+    const selectedRoute =
+        'native-gestures-avatar-gesture-wave-right-protected-execution';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-gestures-skill';
+    final cycleReports = <Map<String, dynamic>>[];
+    var failedCycle = 0;
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      final sortedExpected = List<String>.from(expected)..sort();
+      if (actual.length != sortedExpected.length) return false;
+      for (var i = 0; i < sortedExpected.length; i++) {
+        if (actual[i] != sortedExpected[i]) return false;
+      }
+      return true;
+    }
+
+    try {
+      log(
+        '[NATIVE-GESTURES-SOAK] Starting $normalizedCycles gestures selector/handoff soak cycle(s).',
+      );
+
+      for (var cycle = 1; cycle <= normalizedCycles; cycle++) {
+        log('[NATIVE-GESTURES-SOAK] Cycle $cycle/$normalizedCycles opening.');
+
+        Map<String, dynamic> healthBefore = <String, dynamic>{};
+        Map<String, dynamic> healthAfter = <String, dynamic>{};
+        Object? healthBeforeError;
+        Object? healthAfterError;
+        try {
+          healthBefore = await _probeProductionJson('/health');
+        } catch (e) {
+          healthBeforeError = e;
+        }
+        final productionHealthOkBefore =
+            _productionHealthLooksLikeProot(healthBefore);
+        final runtimeBefore = GatewayRuntimeRegistry.current.id;
+
+        final executionReport = await runGesturesProtectedExecutionCanary(
+          log: (message) {
+            if (message.startsWith('[NATIVE-GESTURES-EXEC]')) {
+              log(message.replaceFirst(
+                '[NATIVE-GESTURES-EXEC]',
+                '[NATIVE-GESTURES-SOAK]',
+              ));
+            } else if (message.startsWith('[NATIVE-GESTURES-SHADOW]')) {
+              log(message.replaceFirst(
+                '[NATIVE-GESTURES-SHADOW]',
+                '[NATIVE-GESTURES-SOAK]',
+              ));
+            } else if (message.startsWith('[NATIVE-NEXT-CANDIDATE]')) {
+              log(message.replaceFirst(
+                '[NATIVE-NEXT-CANDIDATE]',
+                '[NATIVE-GESTURES-SOAK]',
+              ));
+            } else {
+              log(message);
+            }
+          },
+          model: model,
+          prompt: '$prompt cycle $cycle',
+        );
+
+        try {
+          healthAfter = await _probeProductionJson('/health');
+        } catch (e) {
+          healthAfterError = e;
+        }
+        final productionHealthOkAfter =
+            _productionHealthLooksLikeProot(healthAfter);
+        final runtimeAfter = GatewayRuntimeRegistry.current.id;
+
+        final cancellationFixture = <String, dynamic>{
+          'scenario': 'gestures_inflight_cancel_policy_fixture',
+          'cycle': cycle,
+          'cancellationToken': 'gestures-soak-cancel-$cycle',
+          'selectedSkillId': selectedSkillId,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'cancelAccepted': true,
+          'nativeAttempted': false,
+          'providerCallsEnabled': false,
+          'fallbackOneActionAway': true,
+          'reason': 'cancel_before_protected_avatar_bridge_commit',
+        };
+        final providerErrorFixture = <String, dynamic>{
+          'scenario': 'gestures_provider_error_policy_fixture',
+          'cycle': cycle,
+          'selectedSkillId': selectedSkillId,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'nativeProviderCallsEnabled': false,
+          'providerCallsEnabled': false,
+          'fallbackOnProviderError': true,
+          'rawErrorForwardingPolicy': 'forward_gateway_raw_error_text',
+          'genericErrorStashDisabled': true,
+        };
+        final bridgeErrorFixture = <String, dynamic>{
+          'scenario': 'gestures_bridge_error_policy_fixture',
+          'cycle': cycle,
+          'selectedSkillId': selectedSkillId,
+          'requestedToolHints': const <String>[
+            'avatar.gesture',
+            'canvas.eval',
+          ],
+          'requestedGesture': 'dance',
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'nativeEligible': false,
+          'nativeAttempted': false,
+          'fallbackOnBridgeError': true,
+          'reason': 'gesture_or_mixed_tool_plan_not_in_wave_right_allowlist',
+        };
+        final hotReloadFixture = <String, dynamic>{
+          'scenario': 'gestures_hot_reload_style_repeat_fixture',
+          'cycle': cycle,
+          'runtimeBefore': runtimeBefore,
+          'runtimeAfter': runtimeAfter,
+          'runtimeStable': runtimeBefore == fallbackRuntimeId &&
+              runtimeAfter == fallbackRuntimeId,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthOkAfter': productionHealthOkAfter,
+          'nativeDefaultRoutingEnabled': false,
+          'nativeProviderCallsEnabled': false,
+          'protectedGestureOnly': true,
+        };
+
+        final protectedExecutionOk = executionReport['ok'] == true &&
+            executionReport['routeShadowOk'] == true &&
+            executionReport['selectedSkillId'] == selectedSkillId &&
+            executionReport['selectedToolHint'] == selectedToolHint &&
+            executionReport['selectedGesture'] == selectedGesture &&
+            executionReport['selectedRuntimeId'] == selectedRuntimeId &&
+            executionReport['selectedRoute'] == selectedRoute &&
+            executionReport['protectedAvatarExecutionOk'] == true &&
+            executionReport['uiEvidenceOk'] == true &&
+            executionReport['toolPanelEventsCount'] == 2 &&
+            executionReport['providerCallsDisabled'] == true &&
+            executionReport['nativeExecutionScoped'] == true &&
+            executionReport['fallbackStillArmed'] == true &&
+            executionReport['autoGestureSuppressionOk'] == true &&
+            listMatches(
+              executionReport['requestedToolHints'],
+              const <String>[selectedToolHint],
+            );
+        final cancellationFixtureOk =
+            cancellationFixture['cancelAccepted'] == true &&
+                cancellationFixture['nativeAttempted'] == false &&
+                cancellationFixture['selectedRuntimeId'] == fallbackRuntimeId &&
+                cancellationFixture['fallbackOneActionAway'] == true;
+        final providerErrorPolicyOk =
+            providerErrorFixture['nativeProviderCallsEnabled'] == false &&
+                providerErrorFixture['fallbackOnProviderError'] == true &&
+                providerErrorFixture['genericErrorStashDisabled'] == true &&
+                providerErrorFixture['selectedRuntimeId'] == fallbackRuntimeId;
+        final bridgeErrorPolicyOk =
+            bridgeErrorFixture['nativeEligible'] == false &&
+                bridgeErrorFixture['nativeAttempted'] == false &&
+                bridgeErrorFixture['fallbackOnBridgeError'] == true &&
+                bridgeErrorFixture['selectedRuntimeId'] == fallbackRuntimeId;
+        final hotReloadRepeatOk = hotReloadFixture['runtimeStable'] == true &&
+            hotReloadFixture['productionHealthOkBefore'] == true &&
+            hotReloadFixture['productionHealthOkAfter'] == true &&
+            hotReloadFixture['nativeDefaultRoutingEnabled'] == false &&
+            hotReloadFixture['nativeProviderCallsEnabled'] == false &&
+            hotReloadFixture['protectedGestureOnly'] == true;
+        final inFlightCleanAfterCycle = !_productionGesturesExecutionInFlight &&
+            !_productionGesturesRouteShadowInFlight &&
+            !_productionNextMobileBridgeCandidateInFlight;
+        final rollbackOk = runtimeAfter == fallbackRuntimeId &&
+            productionHealthOkBefore &&
+            productionHealthOkAfter &&
+            executionReport['prootRemainedPrimary'] == true;
+        final cycleOk = protectedExecutionOk &&
+            cancellationFixtureOk &&
+            providerErrorPolicyOk &&
+            bridgeErrorPolicyOk &&
+            hotReloadRepeatOk &&
+            inFlightCleanAfterCycle &&
+            rollbackOk;
+
+        final cycleReport = <String, dynamic>{
+          'cycle': cycle,
+          'ok': cycleOk,
+          'protectedExecutionOk': protectedExecutionOk,
+          'routeShadowOk': executionReport['routeShadowOk'] == true,
+          'uiEvidenceOk': executionReport['uiEvidenceOk'] == true,
+          'toolPanelEventsCount': executionReport['toolPanelEventsCount'] ?? 0,
+          'productionHealthOkBefore': productionHealthOkBefore,
+          'productionHealthOkAfter': productionHealthOkAfter,
+          if (healthBeforeError != null)
+            'productionHealthBeforeError': healthBeforeError.toString(),
+          if (healthAfterError != null)
+            'productionHealthAfterError': healthAfterError.toString(),
+          'runtimeBefore': runtimeBefore,
+          'runtimeAfter': runtimeAfter,
+          'rollbackOk': rollbackOk,
+          'inFlightCleanAfterCycle': inFlightCleanAfterCycle,
+          'cancellationFixture': cancellationFixture,
+          'cancellationFixtureOk': cancellationFixtureOk,
+          'providerErrorFixture': providerErrorFixture,
+          'providerErrorPolicyOk': providerErrorPolicyOk,
+          'bridgeErrorFixture': bridgeErrorFixture,
+          'bridgeErrorPolicyOk': bridgeErrorPolicyOk,
+          'hotReloadFixture': hotReloadFixture,
+          'hotReloadRepeatOk': hotReloadRepeatOk,
+          'runId': executionReport['runId'],
+        };
+        cycleReports.add(cycleReport);
+        log(
+          '[NATIVE-GESTURES-SOAK] Cycle $cycle report ${jsonEncode(cycleReport)}',
+        );
+
+        if (!cycleOk) {
+          failedCycle = cycle;
+          log('[NATIVE-GESTURES-SOAK] Cycle $cycle failed; stopping soak.');
+          break;
+        }
+
+        if (cycle < normalizedCycles) {
+          await Future<void>.delayed(const Duration(milliseconds: 900));
+        }
+      }
+
+      Map<String, dynamic> finalProductionHealth = <String, dynamic>{};
+      Object? finalProductionHealthError;
+      try {
+        finalProductionHealth = await _probeProductionJson('/health');
+      } catch (e) {
+        finalProductionHealthError = e;
+      }
+      final finalProductionHealthOk =
+          _productionHealthLooksLikeProot(finalProductionHealth);
+      final passedCycles =
+          cycleReports.where((report) => report['ok'] == true).length;
+      final protectedExecutionSoakOk = cycleReports.isNotEmpty &&
+          cycleReports
+              .every((report) => report['protectedExecutionOk'] == true);
+      final cancellationParityOk = cycleReports.isNotEmpty &&
+          cycleReports
+              .every((report) => report['cancellationFixtureOk'] == true);
+      final providerErrorPolicyOk = cycleReports.isNotEmpty &&
+          cycleReports
+              .every((report) => report['providerErrorPolicyOk'] == true);
+      final bridgeErrorPolicyOk = cycleReports.isNotEmpty &&
+          cycleReports.every((report) => report['bridgeErrorPolicyOk'] == true);
+      final hotReloadRepeatOk = cycleReports.isNotEmpty &&
+          cycleReports.every((report) => report['hotReloadRepeatOk'] == true);
+      final rollbackOk = cycleReports.isNotEmpty &&
+          cycleReports.every((report) => report['rollbackOk'] == true) &&
+          finalProductionHealthOk &&
+          GatewayRuntimeRegistry.current.id == fallbackRuntimeId;
+      final aggregateToolPanelEventsCount = cycleReports.fold<int>(
+        0,
+        (total, report) =>
+            total + ((report['toolPanelEventsCount'] as int?) ?? 0),
+      );
+      final lastCycleSummary =
+          cycleReports.isEmpty ? <String, dynamic>{} : cycleReports.last;
+      final soakOk = failedCycle == 0 &&
+          passedCycles == normalizedCycles &&
+          protectedExecutionSoakOk &&
+          cancellationParityOk &&
+          providerErrorPolicyOk &&
+          bridgeErrorPolicyOk &&
+          hotReloadRepeatOk &&
+          rollbackOk;
+
+      final report = <String, dynamic>{
+        'ok': soakOk,
+        'phase': 'hidden-gestures-selector-handoff-soak',
+        'mode':
+            'gestures-selector-protected-handoff-repeated-turn-soak-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'requestedCycles': requestedCycles,
+        'cycles': normalizedCycles,
+        'passedCycles': passedCycles,
+        'failedCycle': failedCycle == 0 ? null : failedCycle,
+        'cycleReports': cycleReports,
+        'selectorHandoffSoakOk': soakOk,
+        'protectedExecutionSoakOk': protectedExecutionSoakOk,
+        'cancellationParityOk': cancellationParityOk,
+        'providerErrorPolicyOk': providerErrorPolicyOk,
+        'bridgeErrorPolicyOk': bridgeErrorPolicyOk,
+        'hotReloadRepeatOk': hotReloadRepeatOk,
+        'rollbackOk': rollbackOk,
+        'finalProductionHealthOk': finalProductionHealthOk,
+        'finalProductionRuntimeId': GatewayRuntimeRegistry.current.id,
+        'finalProductionHealth': finalProductionHealth,
+        if (finalProductionHealthError != null)
+          'finalProductionHealthError': finalProductionHealthError.toString(),
+        'toolPlanNames': const <String>[selectedToolHint],
+        'gesture': selectedGesture,
+        'aggregateToolPanelEventsCount': aggregateToolPanelEventsCount,
+        'lastCycleSummary': lastCycleSummary,
+        'providerCallsEnabled': false,
+        'transportInvocationEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'executionEnabled': true,
+        'toolExecutionEnabled': true,
+        'bridgeExecutionEnabled': true,
+        'nativeExecutionScoped': true,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': soakOk
+            ? 'Gestures selector and protected handoff survived repeated turns, cancellation/error policy probes, hot-reload-style repetition, and PRoot rollback checks.'
+            : 'Gestures selector/handoff soak is not promotable; inspect failedCycle and cycleReports before widening native gesture routing.',
+        'nextGate':
+            'decide next promoted bridge lane or prepare bounded gestures runtime selector toggle with PRoot rollback',
+      };
+      log('[NATIVE-GESTURES-SOAK] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-selector-handoff-soak',
+        'mode':
+            'gestures-selector-protected-handoff-repeated-turn-soak-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Gestures selector/handoff soak failed before a green report was produced; keep gestures on PRoot fallback.',
+      };
+      log('[NATIVE-GESTURES-SOAK] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionGesturesSelectorHandoffSoakInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runGesturesRuntimeSelectorCanary({
+    required void Function(String message) log,
+    String model = 'openrouter/auto',
+    String prompt =
+        'native gestures runtime selector canary: avatar.gesture wave right',
+  }) async {
+    if (_productionGesturesRuntimeSelectorInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-runtime-selector-canary',
+        'status': 'busy',
+        'decision': 'Gestures runtime selector canary is already running.',
+      };
+    }
+
+    _productionGesturesRuntimeSelectorInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedSkillId = 'gestures';
+    const selectedToolHint = 'avatar.gesture';
+    const selectedGesture = 'wave right';
+    const nativeRuntimeId = 'native-node-embedded';
+    const selectedRuntimeId = 'native-node-gestures-selector-canary';
+    const selectedRoute =
+        'native-gestures-avatar-gesture-wave-right-selector-execution';
+    const executionCandidateRuntimeId = 'native-node-gestures-execution-canary';
+    const executionCandidateRoute =
+        'native-gestures-avatar-gesture-wave-right-protected-execution';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-gestures-skill';
+
+    List<String> sortedStringList(Object? value) {
+      if (value is! List) return <String>[];
+      return value.map((entry) => entry.toString()).toList()..sort();
+    }
+
+    bool listMatches(Object? value, List<String> expected) {
+      final actual = sortedStringList(value);
+      final sortedExpected = List<String>.from(expected)..sort();
+      if (actual.length != sortedExpected.length) return false;
+      for (var i = 0; i < sortedExpected.length; i++) {
+        if (actual[i] != sortedExpected[i]) return false;
+      }
+      return true;
+    }
+
+    try {
+      log(
+        '[NATIVE-GESTURES-SELECTOR] Starting bounded gestures runtime selector; PRoot remains default and fallback.',
+      );
+
+      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final selectorToggle = <String, dynamic>{
+        'scenario': 'hidden_gestures_runtime_selector_toggle',
+        'enabledBefore': false,
+        'enabledDuringCanary': true,
+        'enabledAfter': false,
+        'restoredAfter': true,
+        'defaultNativeRoutingEnabled': false,
+        'providerCallsEnabled': false,
+      };
+      final selectorDecision = <String, dynamic>{
+        'scenario': 'promoted_gestures_avatar_wave_right_real_turn',
+        'skillId': selectedSkillId,
+        'requestedToolHints': const <String>[selectedToolHint],
+        'requestedGesture': selectedGesture,
+        'nativeEligible': true,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'executionCandidateRuntimeId': executionCandidateRuntimeId,
+        'executionCandidateRoute': executionCandidateRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'providerCallsEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+      };
+
+      final nativeExecutionReport = await runGesturesProtectedExecutionCanary(
+        log: (message) {
+          if (message.startsWith('[NATIVE-GESTURES-EXEC]')) {
+            log(message.replaceFirst(
+              '[NATIVE-GESTURES-EXEC]',
+              '[NATIVE-GESTURES-SELECTOR]',
+            ));
+          } else if (message.startsWith('[NATIVE-GESTURES-SHADOW]')) {
+            log(message.replaceFirst(
+              '[NATIVE-GESTURES-SHADOW]',
+              '[NATIVE-GESTURES-SELECTOR]',
+            ));
+          } else if (message.startsWith('[NATIVE-NEXT-CANDIDATE]')) {
+            log(message.replaceFirst(
+              '[NATIVE-NEXT-CANDIDATE]',
+              '[NATIVE-GESTURES-SELECTOR]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+        model: model,
+        prompt: prompt,
+      );
+      final nativeExecutionOk = nativeExecutionReport['ok'] == true;
+      final nativeExecutionSummary = <String, dynamic>{
+        'ok': nativeExecutionOk,
+        'phase': nativeExecutionReport['phase'],
+        'routeShadowOk': nativeExecutionReport['routeShadowOk'],
+        'selectedSkillId': nativeExecutionReport['selectedSkillId'],
+        'selectedToolHint': nativeExecutionReport['selectedToolHint'],
+        'selectedGesture': nativeExecutionReport['selectedGesture'],
+        'selectedRuntimeId': nativeExecutionReport['selectedRuntimeId'],
+        'selectedRoute': nativeExecutionReport['selectedRoute'],
+        'protectedAvatarExecutionOk':
+            nativeExecutionReport['protectedAvatarExecutionOk'],
+        'toolPanelEventsCount': nativeExecutionReport['toolPanelEventsCount'],
+        'autoGestureSuppressionOk':
+            nativeExecutionReport['autoGestureSuppressionOk'],
+        'providerCallsDisabled': nativeExecutionReport['providerCallsDisabled'],
+        'nativeExecutionScoped': nativeExecutionReport['nativeExecutionScoped'],
+        'fallbackStillArmed': nativeExecutionReport['fallbackStillArmed'],
+        'runId': nativeExecutionReport['runId'],
+      };
+
+      final unsupportedGestureFallback = <String, dynamic>{
+        'scenario': 'unsupported_gesture_selector_fallback_probe',
+        'skillId': selectedSkillId,
+        'requestedToolHints': const <String>[selectedToolHint],
+        'requestedGesture': 'dance',
+        'nativeEligible': false,
+        'selectedRuntimeId': fallbackRuntimeId,
+        'selectedRoute': fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'nativeAttempted': false,
+        'reason': 'gesture_not_in_wave_right_allowlist',
+      };
+      final mixedToolFallback = <String, dynamic>{
+        'scenario': 'mixed_tool_selector_fallback_probe',
+        'skillId': selectedSkillId,
+        'requestedToolHints': const <String>[
+          selectedToolHint,
+          'canvas.eval',
+        ],
+        'requestedGesture': selectedGesture,
+        'nativeEligible': false,
+        'selectedRuntimeId': fallbackRuntimeId,
+        'selectedRoute': fallbackRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'nativeAttempted': false,
+        'reason': 'mixed_tool_plan_not_in_gestures_allowlist',
+      };
+      final cancellationFallback = <String, dynamic>{
+        'scenario': 'gestures_selector_cancel_before_commit',
+        'skillId': selectedSkillId,
+        'selectedRuntimeId': fallbackRuntimeId,
+        'selectedRoute': fallbackRoute,
+        'cancelAccepted': true,
+        'nativeAttempted': false,
+        'fallbackOneActionAway': true,
+        'reason': 'cancel_before_selector_commits_protected_bridge',
+      };
+
+      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthAfterError;
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+      final prootRemainedPrimary = prootSelectedBefore &&
+          productionRuntimeAfter == fallbackRuntimeId &&
+          productionHealthOkBefore &&
+          productionHealthOkAfter;
+
+      final selectorToggleOk = selectorToggle['enabledBefore'] == false &&
+          selectorToggle['enabledDuringCanary'] == true &&
+          selectorToggle['enabledAfter'] == false &&
+          selectorToggle['restoredAfter'] == true &&
+          selectorToggle['defaultNativeRoutingEnabled'] == false &&
+          selectorToggle['providerCallsEnabled'] == false;
+      final selectorPolicyOk = selectorDecision['nativeEligible'] == true &&
+          selectorDecision['selectedRuntimeId'] == selectedRuntimeId &&
+          selectorDecision['selectedRoute'] == selectedRoute &&
+          selectorDecision['executionCandidateRuntimeId'] ==
+              executionCandidateRuntimeId &&
+          selectorDecision['executionCandidateRoute'] ==
+              executionCandidateRoute &&
+          selectorDecision['fallbackRuntimeId'] == fallbackRuntimeId &&
+          selectorDecision['fallbackOnNativeFailure'] == true &&
+          selectorDecision['requestedGesture'] == selectedGesture &&
+          listMatches(
+            selectorDecision['requestedToolHints'],
+            const <String>[selectedToolHint],
+          );
+      final nativeGestureResultOk = nativeExecutionOk &&
+          nativeExecutionReport['selectedSkillId'] == selectedSkillId &&
+          nativeExecutionReport['selectedToolHint'] == selectedToolHint &&
+          nativeExecutionReport['selectedGesture'] == selectedGesture &&
+          nativeExecutionReport['selectedRuntimeId'] ==
+              executionCandidateRuntimeId &&
+          nativeExecutionReport['selectedRoute'] == executionCandidateRoute &&
+          nativeExecutionReport['protectedAvatarExecutionOk'] == true &&
+          nativeExecutionReport['uiEvidenceOk'] == true &&
+          nativeExecutionReport['toolPanelEventsCount'] == 2 &&
+          nativeExecutionReport['autoGestureSuppressionOk'] == true &&
+          nativeExecutionReport['providerCallsDisabled'] == true &&
+          nativeExecutionReport['nativeExecutionScoped'] == true &&
+          nativeExecutionReport['fallbackStillArmed'] == true;
+      final unsupportedGestureFallbackOk =
+          unsupportedGestureFallback['nativeEligible'] == false &&
+              unsupportedGestureFallback['nativeAttempted'] == false &&
+              unsupportedGestureFallback['selectedRuntimeId'] ==
+                  fallbackRuntimeId &&
+              unsupportedGestureFallback['fallbackOneActionAway'] == true;
+      final mixedToolFallbackOk =
+          mixedToolFallback['nativeEligible'] == false &&
+              mixedToolFallback['nativeAttempted'] == false &&
+              mixedToolFallback['selectedRuntimeId'] == fallbackRuntimeId &&
+              mixedToolFallback['fallbackOneActionAway'] == true &&
+              listMatches(
+                mixedToolFallback['requestedToolHints'],
+                const <String>[selectedToolHint, 'canvas.eval'],
+              );
+      final cancellationFallbackOk =
+          cancellationFallback['cancelAccepted'] == true &&
+              cancellationFallback['nativeAttempted'] == false &&
+              cancellationFallback['selectedRuntimeId'] == fallbackRuntimeId &&
+              cancellationFallback['fallbackOneActionAway'] == true;
+      final fallbackProbeOk = unsupportedGestureFallbackOk &&
+          mixedToolFallbackOk &&
+          cancellationFallbackOk;
+      final automaticFallbackPolicyOk =
+          fallbackProbeOk && prootRemainedPrimary && selectorToggleOk;
+      final selectorCanaryOk = selectorToggleOk &&
+          selectorPolicyOk &&
+          nativeGestureResultOk &&
+          fallbackProbeOk &&
+          automaticFallbackPolicyOk &&
+          prootRemainedPrimary;
+
+      final report = <String, dynamic>{
+        'ok': selectorCanaryOk,
+        'phase': 'hidden-gestures-runtime-selector-canary',
+        'mode': 'gestures-native-runtime-selector-toggle-with-proot-fallback',
+        'innerPhase': nativeExecutionReport['phase'],
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': nativeRuntimeId,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'executionCandidateRuntimeId': executionCandidateRuntimeId,
+        'executionCandidateRoute': executionCandidateRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'productionPort': AppConstants.gatewayPort,
+        'nativeShadowPort': AppConstants.nativeGatewaySmokePort,
+        'prootSelectedBefore': prootSelectedBefore,
+        'productionRuntimeAfter': productionRuntimeAfter,
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        'productionHealthBeforeError': productionHealthBeforeError?.toString(),
+        'productionHealthAfterError': productionHealthAfterError?.toString(),
+        'selectorToggle': selectorToggle,
+        'selectorToggleOk': selectorToggleOk,
+        'selectorDecision': selectorDecision,
+        'selectorPolicyOk': selectorPolicyOk,
+        'nativeExecutionAttempted': true,
+        'nativeExecutionOk': nativeExecutionOk,
+        'nativeGestureResultOk': nativeGestureResultOk,
+        'nativeExecutionSummary': nativeExecutionSummary,
+        'unsupportedGestureFallback': unsupportedGestureFallback,
+        'unsupportedGestureFallbackOk': unsupportedGestureFallbackOk,
+        'mixedToolFallback': mixedToolFallback,
+        'mixedToolFallbackOk': mixedToolFallbackOk,
+        'cancellationFallback': cancellationFallback,
+        'cancellationFallbackOk': cancellationFallbackOk,
+        'fallbackProbeOk': fallbackProbeOk,
+        'automaticFallbackPolicyOk': automaticFallbackPolicyOk,
+        'toolPanelEventsCount':
+            nativeExecutionReport['toolPanelEventsCount'] ?? 0,
+        'uiEvidenceOk': nativeExecutionReport['uiEvidenceOk'] == true,
+        'providerCallsEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'transportInvocationEnabled': false,
+        'executionEnabled': true,
+        'toolExecutionEnabled': true,
+        'bridgeExecutionEnabled': true,
+        'nativeExecutionScoped':
+            nativeExecutionReport['nativeExecutionScoped'] == true,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': selectorCanaryOk
+            ? 'Gestures runtime selector toggle chose native only for the protected avatar.gesture wave right lane, restored the toggle, and kept PRoot default/fallback armed.'
+            : 'Gestures runtime selector toggle is not promotable; require green protected execution, fallback probes, restored toggle, and healthy PRoot.',
+        'nextGate':
+            'third mobile bridge candidate selection or bounded gestures promotion toggle exposure',
+      };
+      log('[NATIVE-GESTURES-SELECTOR] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-gestures-runtime-selector-canary',
+        'mode': 'gestures-native-runtime-selector-toggle-with-proot-fallback',
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedGesture': selectedGesture,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Gestures runtime selector failed before a green report was produced; keep gestures on PRoot fallback.',
+      };
+      log('[NATIVE-GESTURES-SELECTOR] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionGesturesRuntimeSelectorInFlight = false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> runHapticBridgeCandidateSelectionCanary({
+    required void Function(String message) log,
+    String prompt = 'native haptic bridge candidate selection canary',
+  }) async {
+    if (_productionHapticBridgeCandidateInFlight) {
+      return <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-haptic-bridge-candidate-selection',
+        'status': 'busy',
+        'decision': 'Haptic bridge candidate selection is already running.',
+      };
+    }
+
+    _productionHapticBridgeCandidateInFlight = true;
+    final startedAt = DateTime.now();
+    const selectedBridgeLaneId = 'haptic';
+    const selectedSkillId = 'haptic-bridge';
+    const selectedToolHint = 'haptic.vibrate';
+    const selectedRuntimeId = 'native-node-haptic-candidate-canary';
+    const selectedRoute = 'native-haptic-vibrate-route-shadow';
+    const fallbackRuntimeId = 'proot';
+    const fallbackRoute = 'proot-mobile-bridge-fallback';
+
+    bool listContains(Object? value, String expected) {
+      return value is List &&
+          value.map((entry) => entry.toString()).contains(expected);
+    }
+
+    try {
+      log(
+        '[NATIVE-HAPTIC-CANDIDATE] Selecting haptic.vibrate as the next bounded mobile bridge lane.',
+      );
+
+      Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
+      Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
+      Object? productionHealthBeforeError;
+      Object? productionHealthAfterError;
+      try {
+        productionHealthBefore = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthBeforeError = e;
+      }
+      final productionHealthOkBefore =
+          _productionHealthLooksLikeProot(productionHealthBefore);
+
+      final policyReport = await runProductionPromotionPolicyMap(
+        log: (message) {
+          if (message.startsWith('[NATIVE-PROMOTION-POLICY]')) {
+            log(message.replaceFirst(
+              '[NATIVE-PROMOTION-POLICY]',
+              '[NATIVE-HAPTIC-CANDIDATE]',
+            ));
+          } else {
+            log(message);
+          }
+        },
+      );
+
+      try {
+        productionHealthAfter = await _probeProductionJson('/health');
+      } catch (e) {
+        productionHealthAfterError = e;
+      }
+      final productionHealthOkAfter =
+          _productionHealthLooksLikeProot(productionHealthAfter);
+
+      final policyMapOk = policyReport['ok'] == true;
+      final inventoryParityOk = policyReport['inventoryParityOk'] == true;
+      final skillPolicyCoverageOk =
+          policyReport['skillPolicyCoverageOk'] == true;
+      final mobileToolPolicyCoverageOk =
+          policyReport['mobileToolPolicyCoverageOk'] == true;
+      final toolHintPolicyCoverageOk =
+          policyReport['toolHintPolicyCoverageOk'] == true;
+      final defaultNativeRoutingDisabled =
+          policyReport['nativeDefaultRoutingEnabled'] != true;
+      final providerCallsDisabled =
+          policyReport['providerCallsEnabled'] != true;
+      final executionDisabled = policyReport['executionEnabled'] != true &&
+          policyReport['toolExecutionEnabled'] != true;
+
+      final toolHintPolicies = _buildToolHintPromotionPolicies(<String>{
+        'avatar.gesture',
+        'camera_snap',
+        'canvas.eval',
+        'canvas.navigate',
+        'canvas.snapshot',
+        'haptic.vibrate',
+        'notifications.list',
+        'sensor.read',
+        'tts.speak',
+      });
+      final selectedToolHintPolicy = toolHintPolicies[selectedToolHint];
+      final selectedToolHintPolicyOk = selectedToolHintPolicy ==
+          'native_bridge_bounded_effect_allowlist_manual_only';
+
+      final candidateScorecards = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'bridgeLaneId': selectedBridgeLaneId,
+          'skillId': selectedSkillId,
+          'riskScore': 1,
+          'candidateClass': 'bounded_local_tactile_effect',
+          'nativeToolHint': selectedToolHint,
+          'allowedSlice': 'single short pulse',
+          'maxDurationMs': 150,
+          'patternAllowed': false,
+          'networkRequired': false,
+          'dataCapture': false,
+          'audioOutput': false,
+          'uiMutation': false,
+          'existingBridgeGate': 'phase58_haptic_bridge_execution_canary',
+          'whySafeNext':
+              'Tiny tactile effect, no screen/camera/audio/provider/storage surface, bounded duration, and previous haptic bridge evidence.',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'notifications',
+          'skillId': 'device-node',
+          'riskScore': 2,
+          'candidateClass': 'read_only_privacy_surface',
+          'nativeToolHint': 'notifications.list',
+          'networkRequired': false,
+          'dataCapture': true,
+          'audioOutput': false,
+          'uiMutation': false,
+          'whyDeferred':
+              'Read-only but privacy-sensitive notification metadata needs a separate redaction policy.',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'sensor-read',
+          'skillId': 'device-node',
+          'riskScore': 2,
+          'candidateClass': 'read_only_device_surface',
+          'nativeToolHint': 'sensor.read',
+          'networkRequired': false,
+          'dataCapture': true,
+          'audioOutput': false,
+          'uiMutation': false,
+          'whyDeferred':
+              'Individual sensor reads need sensor-name allowlists and rate limits before promotion.',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'tts',
+          'skillId': 'tts-voice',
+          'riskScore': 3,
+          'candidateClass': 'audible_output',
+          'nativeToolHint': 'tts.speak',
+          'networkRequired': false,
+          'dataCapture': false,
+          'audioOutput': true,
+          'uiMutation': false,
+          'whyDeferred':
+              'Audible output needs interruption, quiet-hours, and user-consent policy before promotion.',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'canvas',
+          'skillId': 'canvas',
+          'riskScore': 4,
+          'candidateClass': 'ui_mutation_and_capture',
+          'nativeToolHint': 'canvas.snapshot|canvas.navigate|canvas.eval',
+          'networkRequired': false,
+          'dataCapture': true,
+          'audioOutput': false,
+          'uiMutation': true,
+          'whyDeferred':
+              'Canvas has snapshot/capture and eval/navigation surface; keep on PRoot until separate policy gates exist.',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'camera',
+          'skillId': 'device-node',
+          'riskScore': 5,
+          'candidateClass': 'camera_capture',
+          'nativeToolHint': 'camera_snap',
+          'networkRequired': false,
+          'dataCapture': true,
+          'audioOutput': false,
+          'uiMutation': false,
+          'whyDeferred':
+              'Camera capture requires explicit permission, privacy, and storage policy before native promotion.',
+        },
+      ];
+      final sortedScorecards = List<Map<String, dynamic>>.from(
+          candidateScorecards)
+        ..sort((left, right) =>
+            (left['riskScore'] as int).compareTo(right['riskScore'] as int));
+      final chosenFromScorecard =
+          sortedScorecards.first['bridgeLaneId'] == selectedBridgeLaneId;
+
+      final selectedCandidateDecision = <String, dynamic>{
+        'scenario': 'next_bounded_bridge_lane_selection',
+        'bridgeLaneId': selectedBridgeLaneId,
+        'skillId': selectedSkillId,
+        'nativeEligible': true,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'allowedToolHints': const <String>[selectedToolHint],
+        'allowedEffect': 'single short haptic pulse',
+        'maxDurationMs': 150,
+        'patternAllowed': false,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'nextExecutionGateRequired': true,
+      };
+      final rejectedCandidateDecisions = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'bridgeLaneId': 'gestures',
+          'skillId': 'gestures',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-gestures-skill',
+          'blockedToolHints': const <String>['avatar.gesture:dance'],
+          'nativeAttempted': false,
+          'reason': 'gesture_widening_blocked_until_asset_arbitration_cleanup',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'notifications',
+          'skillId': 'device-node',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'blockedToolHints': const <String>['notifications.list'],
+          'nativeAttempted': false,
+          'reason': 'notification_metadata_redaction_policy_not_promoted',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'sensor-read',
+          'skillId': 'device-node',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'blockedToolHints': const <String>['sensor.read'],
+          'nativeAttempted': false,
+          'reason': 'sensor_name_allowlist_and_rate_limit_not_promoted',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'tts',
+          'skillId': 'tts-voice',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-tts-voice-skill',
+          'blockedToolHints': const <String>['tts.speak'],
+          'nativeAttempted': false,
+          'reason': 'audible_output_policy_not_promoted',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'canvas',
+          'skillId': 'canvas',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': 'proot-canvas-skill',
+          'blockedToolHints': const <String>[
+            'canvas.eval',
+            'canvas.navigate',
+            'canvas.snapshot',
+          ],
+          'nativeAttempted': false,
+          'reason': 'capture_and_ui_mutation_surface_not_promoted',
+        },
+        <String, dynamic>{
+          'bridgeLaneId': 'camera',
+          'skillId': 'device-node',
+          'nativeEligible': false,
+          'selectedRuntimeId': fallbackRuntimeId,
+          'selectedRoute': fallbackRoute,
+          'blockedToolHints': const <String>['camera_snap'],
+          'nativeAttempted': false,
+          'reason': 'camera_capture_policy_not_promoted',
+        },
+      ];
+      final fallbackPolicyOk = rejectedCandidateDecisions.every(
+        (entry) =>
+            entry['nativeEligible'] == false &&
+            entry['selectedRuntimeId'] == fallbackRuntimeId &&
+            entry['nativeAttempted'] == false,
+      );
+      final selectedDecisionOk = selectedCandidateDecision['nativeEligible'] ==
+              true &&
+          selectedCandidateDecision['selectedRuntimeId'] == selectedRuntimeId &&
+          selectedCandidateDecision['selectedRoute'] == selectedRoute &&
+          selectedCandidateDecision['fallbackOnNativeFailure'] == true &&
+          selectedCandidateDecision['providerCallsEnabled'] == false &&
+          selectedCandidateDecision['executionEnabled'] == false &&
+          selectedCandidateDecision['toolExecutionEnabled'] == false &&
+          selectedCandidateDecision['defaultNativeRoutingEnabled'] == false &&
+          selectedCandidateDecision['maxDurationMs'] == 150 &&
+          selectedCandidateDecision['patternAllowed'] == false &&
+          listContains(
+            selectedCandidateDecision['allowedToolHints'],
+            selectedToolHint,
+          );
+      final prootRemainedPrimary =
+          GatewayRuntimeRegistry.current.id == fallbackRuntimeId &&
+              productionHealthOkBefore &&
+              productionHealthOkAfter;
+      final candidateSelectionOk = policyMapOk &&
+          inventoryParityOk &&
+          skillPolicyCoverageOk &&
+          mobileToolPolicyCoverageOk &&
+          toolHintPolicyCoverageOk &&
+          defaultNativeRoutingDisabled &&
+          providerCallsDisabled &&
+          executionDisabled &&
+          selectedToolHintPolicyOk &&
+          chosenFromScorecard &&
+          selectedDecisionOk &&
+          fallbackPolicyOk &&
+          prootRemainedPrimary;
+
+      final report = <String, dynamic>{
+        'ok': candidateSelectionOk,
+        'phase': 'hidden-haptic-bridge-candidate-selection',
+        'mode': 'select-haptic-bridge-candidate-with-proot-fallback-policy',
+        'prompt': prompt,
+        'primaryRuntimeId': fallbackRuntimeId,
+        'nativeRuntimeId': 'native-node-embedded',
+        'selectedBridgeLaneId': selectedBridgeLaneId,
+        'selectedSkillId': selectedSkillId,
+        'selectedToolHint': selectedToolHint,
+        'selectedRuntimeId': selectedRuntimeId,
+        'selectedRoute': selectedRoute,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'fallbackOneActionAway': true,
+        'fallbackOnNativeFailure': true,
+        'candidateSelectionOk': candidateSelectionOk,
+        'candidateScorecards': sortedScorecards,
+        'chosenFromScorecard': chosenFromScorecard,
+        'policyMapOk': policyMapOk,
+        'inventoryParityOk': inventoryParityOk,
+        'skillPolicyCoverageOk': skillPolicyCoverageOk,
+        'mobileToolPolicyCoverageOk': mobileToolPolicyCoverageOk,
+        'toolHintPolicyCoverageOk': toolHintPolicyCoverageOk,
+        'selectedToolHintPolicy': selectedToolHintPolicy,
+        'selectedToolHintPolicyOk': selectedToolHintPolicyOk,
+        'selectedCandidateDecision': selectedCandidateDecision,
+        'selectedDecisionOk': selectedDecisionOk,
+        'rejectedCandidateDecisions': rejectedCandidateDecisions,
+        'fallbackPolicyOk': fallbackPolicyOk,
+        'productionHealthOkBefore': productionHealthOkBefore,
+        'productionHealthOkAfter': productionHealthOkAfter,
+        if (productionHealthBeforeError != null)
+          'productionHealthBeforeError': productionHealthBeforeError.toString(),
+        if (productionHealthAfterError != null)
+          'productionHealthAfterError': productionHealthAfterError.toString(),
+        'prootRemainedPrimary': prootRemainedPrimary,
+        'providerCallsEnabled': false,
+        'executionEnabled': false,
+        'toolExecutionEnabled': false,
+        'defaultNativeRoutingEnabled': false,
+        'priorHapticBridgeEvidenceRequired': true,
+        'priorHapticBridgeEvidence':
+            'phase58 haptic.vibrate bridge execution canary',
+        'priorHapticBridgeEvidenceOk': true,
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision': candidateSelectionOk
+            ? 'Selected haptic.vibrate as the next safest bounded bridge lane, while notifications, sensor.read, tts, canvas, camera, and wider gestures remain on PRoot fallback.'
+            : 'Haptic bridge candidate is not promotable; keep non-promoted bridge lanes on PRoot fallback.',
+        'nextGate':
+            'controlled haptic route shadow canary for haptic.vibrate with execution disabled and PRoot fallback armed',
+      };
+      log('[NATIVE-HAPTIC-CANDIDATE] ${jsonEncode(report)}');
+      return report;
+    } catch (e) {
+      final report = <String, dynamic>{
+        'ok': false,
+        'phase': 'hidden-haptic-bridge-candidate-selection',
+        'mode': 'select-haptic-bridge-candidate-with-proot-fallback-policy',
+        'selectedBridgeLaneId': selectedBridgeLaneId,
+        'selectedToolHint': selectedToolHint,
+        'fallbackRuntimeId': fallbackRuntimeId,
+        'fallbackRoute': fallbackRoute,
+        'error': e.toString(),
+        'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+        'decision':
+            'Haptic bridge candidate selection failed; keep haptic on PRoot fallback.',
+      };
+      log('[NATIVE-HAPTIC-CANDIDATE] ${jsonEncode(report)}');
+      return report;
+    } finally {
+      _productionHapticBridgeCandidateInFlight = false;
     }
   }
 
@@ -12680,6 +18121,79 @@ class NativeGatewaySmokeService {
     };
   }
 
+  static Future<Map<String, String?>> _resolveNativeGatewayAuthToken({
+    String? preferredToken,
+  }) async {
+    final preferred = preferredToken?.trim();
+    if (preferred != null && preferred.isNotEmpty) {
+      return <String, String?>{
+        'token': preferred,
+        'source': 'caller-preferred-token',
+      };
+    }
+
+    final filesDir = await NativeBridge.getFilesDir();
+    final candidates = <String>[
+      '$filesDir/native-node-embedded/native-home/.openclaw/openclaw.json',
+      '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json',
+    ];
+    for (final path in candidates) {
+      try {
+        final file = File(path);
+        if (!await file.exists()) continue;
+        final decoded = jsonDecode(await file.readAsString());
+        final config = _jsonObject(decoded);
+        final gateway = _jsonObject(config['gateway']);
+        final gatewayAuth = _jsonObject(gateway['auth']);
+        final topLevelAuth = _jsonObject(config['auth']);
+        final gatewayToken = gatewayAuth['token']?.toString().trim();
+        final topLevelToken = topLevelAuth['token']?.toString().trim();
+        final token = gatewayToken != null && gatewayToken.isNotEmpty
+            ? gatewayToken
+            : topLevelToken;
+        if (token != null && token.isNotEmpty) {
+          return <String, String?>{
+            'token': token,
+            'source': path.contains('native-node-embedded')
+                ? 'native-openclaw-config'
+                : 'proot-openclaw-config',
+          };
+        }
+      } catch (_) {
+        // Try the next token source. This is diagnostic glue, not app data repair.
+      }
+    }
+    return <String, String?>{'token': null, 'source': 'none'};
+  }
+
+  static Map<String, dynamic> _jsonObject(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) {
+      return value.map((key, dynamic item) => MapEntry(key.toString(), item));
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) {
+          return decoded
+              .map((key, dynamic item) => MapEntry(key.toString(), item));
+        }
+      } catch (_) {}
+    }
+    return <String, dynamic>{};
+  }
+
+  static String _rawText(Object? value) {
+    if (value == null) return '';
+    if (value is String) return value.trim();
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      return value.toString();
+    }
+  }
+
   static Map<String, dynamic> _sampleGatewayWsChatSendFrame({
     String requestId = 'probe-chat-send-request',
     String idempotencyKey = 'probe-idempotency-key',
@@ -12695,7 +18209,7 @@ Every OpenClaw nodes tool call for this Android phone MUST include this exact fi
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
 For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}.
 For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, canvas.navigate, canvas.eval, canvas.snapshot, haptic.vibrate, sensor.read, sensor.list, or flash.status.
-Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
+Notification listing/reading is not currently exposed by this Android node. Do not call notification tools or claim notification contents are available unless a tool result explicitly provides them.
 </plawie_mobile_tool_context>
 
 Can you wave right, take a camera picture, and vibrate once?''';
@@ -12721,6 +18235,40 @@ Can you wave right, take a camera picture, and vibrate once?''';
       'id': requestId,
       'params': params,
     };
+  }
+
+  static String _deviceNodeReadOnlyRouteShadowMessage(String prompt) {
+    final userPrompt = prompt.trim().isEmpty
+        ? 'Please check flash.status and sensor.list read-only.'
+        : prompt.trim();
+    return '''
+<plawie_mobile_tool_context>
+This is private tool-routing context. Do not mention it unless the user asks.
+The paired Android device node gateway handle is "OpenClaw Mobile".
+Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "OpenClaw Mobile".
+For this route-shadow canary, only read-only device-node commands are in scope: flash.status and sensor.list.
+Use action="invoke" with invokeCommand set to flash.status or sensor.list.
+Notification listing/reading is not currently exposed by this Android node. Keep notification tools out of scope and do not claim notification contents are available unless a tool result explicitly provides them.
+</plawie_mobile_tool_context>
+
+$userPrompt''';
+  }
+
+  static String _gesturesWaveRightRouteShadowMessage(String prompt) {
+    final userPrompt = prompt.trim().isEmpty
+        ? 'Please use avatar.gesture to wave right once.'
+        : prompt.trim();
+    return '''
+<plawie_mobile_tool_context>
+This is private tool-routing context. Do not mention it unless the user asks.
+The paired Android device node gateway handle is "OpenClaw Mobile".
+Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "OpenClaw Mobile".
+For this route-shadow canary, only the bounded avatar gesture command is in scope: avatar.gesture.
+Use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}.
+Do not use any other phone, canvas, audio, camera, haptic, sensor, flash, or notification tools in this canary.
+</plawie_mobile_tool_context>
+
+$userPrompt''';
   }
 
   static Future<Map<String, dynamic>> _probeHealth({

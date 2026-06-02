@@ -72,7 +72,7 @@ class GatewayService {
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
   StreamSubscription<Map<String, dynamic>>? _gatewayEventSubscription;
-  final GatewayRuntime _runtime = GatewayRuntimeRegistry.current;
+  GatewayRuntime _runtime = GatewayRuntimeRegistry.current;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
   bool _rpcDiscoveryDone =
@@ -121,6 +121,9 @@ class GatewayService {
   bool _nodeAutoConnectInFlight = false;
   bool _hungGatewayRestartInFlight = false;
   bool _modelAliasRepairInFlight = false;
+  bool _nativeFullSelectorSoakInFlight = false;
+  bool _nativeFullSelectorPressureSoakInFlight = false;
+  bool _nativeDefaultOwnerSwitchInFlight = false;
   bool _runtimeLogged = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
@@ -196,6 +199,23 @@ class GatewayService {
     if (_runtimeLogged) return;
     _runtimeLogged = true;
     _addActivity('[RUNTIME] Gateway runtime: ${_runtime.label}');
+  }
+
+  bool get _nativeOwnerTransitionInProgress =>
+      _nativeDefaultOwnerSwitchInFlight ||
+      NativeGatewaySmokeService.productionOwnerSwapInProgress;
+
+  Future<void> _refreshSelectedRuntimeOwner() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    final selectedRuntime = GatewayRuntimeRegistry.runtimeForId(
+      prefs.gatewayRuntimeOwner,
+    );
+    if (selectedRuntime.id == _runtime.id) return;
+    _runtime = selectedRuntime;
+    _runtimeLogged = false;
+    await _logSubscription?.cancel();
+    _logSubscription = null;
   }
 
   bool get _hasGatewayConfigTransition {
@@ -949,6 +969,12 @@ class GatewayService {
 
   /// Proactive Auto-Heal: Runs diagnostics and attempts targeted fixes without a full setup.
   Future<void> _triggerPassiveAutoHeal() async {
+    if (_nativeOwnerTransitionInProgress) {
+      debugPrint(
+        '[GATEWAY] Passive auto-heal paused during native owner swap canary.',
+      );
+      return;
+    }
     if (_isAutoHealingInProgress) return;
     _isAutoHealingInProgress = true;
     _addActivity('[SYS] Proactive Auto-Healing: Identifying the issue...');
@@ -1078,9 +1104,19 @@ class GatewayService {
   /// Prevents double-spawns and handles self-healing.
   Future<void> attachOrStart(
       {bool autoStart = false, bool forceStart = false}) async {
+    await _refreshSelectedRuntimeOwner();
     _logRuntimeOnce();
+    var nativeProductionOwner = _runtime.id ==
+        GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id;
     // LOCK: Prevent concurrent start/stop cycles
     if (_isStarting || _isStopping) return;
+    if (_nativeOwnerTransitionInProgress) {
+      debugPrint(
+        '[GATEWAY] Start/attach suppressed during native owner swap canary.',
+      );
+      _addActivity('[SYS] Gateway auto-start paused for native owner canary.');
+      return;
+    }
 
     final prefs = PreferencesService();
     await prefs.init();
@@ -1092,6 +1128,18 @@ class GatewayService {
         _addActivity('[SYS] Bootstrap incomplete. Gateway cannot start.');
       }
       return;
+    }
+
+    final cutoverApplied =
+        await prefs.applyNativeGatewayDefaultCutoverIfNeeded();
+    if (cutoverApplied) {
+      await _refreshSelectedRuntimeOwner();
+      nativeProductionOwner = _runtime.id ==
+          GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id;
+      _logRuntimeOnce();
+      _addActivity(
+        '[NATIVE-CUTOVER] Native Node is now the default Gateway owner.',
+      );
     }
 
     // 1. ALWAYS check if already running and attach if so. Android process
@@ -1150,7 +1198,9 @@ class GatewayService {
       // Attach path is intentionally non-mutating. Any config write while a
       // live gateway is booting can trigger a reload/restart and wipe the
       // just-established websocket/pairing state.
-      await _verifyGatewayConfigHardened(reason: 'attach-existing');
+      if (!nativeProductionOwner) {
+        await _verifyGatewayConfigHardened(reason: 'attach-existing');
+      }
 
       // Re-probe token after hardening to avoid stale cache.
       await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
@@ -1208,7 +1258,13 @@ class GatewayService {
       }
 
       await NativeBridge.acquirePartialWakeLock();
-      await _configureGateway();
+      if (nativeProductionOwner) {
+        _addActivity(
+          '[NATIVE-DEFAULT] Skipping PRoot config rewrite for native startup.',
+        );
+      } else {
+        await _configureGateway();
+      }
 
       await Future.delayed(const Duration(milliseconds: 300));
       final success = await _runtime.start(
@@ -1248,7 +1304,9 @@ class GatewayService {
       _lastTokenFetch = null;
       NodeService().clearCachedToken();
 
-      await _verifyGatewayConfigHardened(reason: 'post-start');
+      if (!nativeProductionOwner) {
+        await _verifyGatewayConfigHardened(reason: 'post-start');
+      }
 
       // Force token re-acquisition after start so the connection never
       // uses stale auth from a previous process.
@@ -1262,6 +1320,28 @@ class GatewayService {
       _startHealthCheck();
       unawaited(_checkHealth());
     } catch (e) {
+      if (nativeProductionOwner) {
+        final rollbackReport = await _restoreProotDefaultOwner(
+          reason: 'native-default-startup-failed: $e',
+        );
+        if (rollbackReport['ok'] == true) {
+          _addActivity(
+            '[NATIVE-CUTOVER] Native default startup failed; PRoot rollback verified.',
+          );
+          return;
+        }
+        _updateState(_state.copyWith(
+          status: GatewayStatus.error,
+          errorMessage:
+              'Native default startup failed and PRoot rollback did not fully verify: $e',
+          logs: [
+            ..._state.logs,
+            '[ERROR] Native default startup failed: $e',
+            '[ERROR] PRoot rollback report: $rollbackReport',
+          ],
+        ));
+        return;
+      }
       final attached =
           await _attachToExistingGatewayAfterStartFailure(e.toString());
       if (attached) return;
@@ -2446,6 +2526,7 @@ HEARTBEAT_OK.
   Future<void> stop() async {
     if (_isStopping) return;
     _isStopping = true;
+    await _refreshSelectedRuntimeOwner();
     _rpcDiscoveryDone = false; // reset so next start re-runs discovery
     _healthTimer?.cancel();
     _logSubscription?.cancel();
@@ -3430,6 +3511,10 @@ HEARTBEAT_OK.
     required String reason,
     bool allowDuringWarmup = false,
   }) async {
+    if (_nativeOwnerTransitionInProgress) {
+      _addActivity('[NODE] Auto-connect suppressed during native owner swap.');
+      return;
+    }
     if (_nodeAutoConnectInFlight) return;
     final wsConnected =
         _connection?.state == GatewayConnectionState.connected ||
@@ -4411,6 +4496,401 @@ $message''';
     return null;
   }
 
+  String? _nativeProductionDeviceNodeRouteShadowPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    final normalizedLower = lower
+        .replaceAll(RegExp(r'[\s.。．]+$'), '')
+        .replaceAll(RegExp(r'^/+'), '');
+    const commands = <String>{
+      '/native-device-route-shadow-owner',
+      '/native-device-node-route-shadow-owner',
+      '/native-real-turn-route-shadow-owner',
+      '/native-device-real-turn-shadow-owner',
+      '/native-device-route-shadow',
+      'native-device-route-shadow-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native device-node real-turn route shadow canary';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final commandWithoutSlash = command.replaceFirst(RegExp(r'^/+'), '');
+        final payload =
+            trimmedLeft.substring(commandWithoutSlash.length).trimLeft();
+        return payload.isEmpty
+            ? 'native device-node real-turn route shadow canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeProductionDeviceNodeExecutionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    final normalizedLower = lower
+        .replaceAll(RegExp(r'[\s.。．]+$'), '')
+        .replaceAll(RegExp(r'^/+'), '');
+    const commands = <String>{
+      '/native-device-exec-owner',
+      '/native-device-execution-owner',
+      '/native-device-node-exec-owner',
+      '/native-device-real-turn-exec-owner',
+      '/native-device-route-exec-owner',
+      'native-device-exec-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native device-node real-turn execution canary';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final commandWithoutSlash = command.replaceFirst(RegExp(r'^/+'), '');
+        final payload =
+            trimmedLeft.substring(commandWithoutSlash.length).trimLeft();
+        return payload.isEmpty
+            ? 'native device-node real-turn execution canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeProductionDeviceNodeRuntimeSelectorPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-device-selector-owner',
+      '/native-device-runtime-selector-owner',
+      '/native-device-runtime-owner',
+      '/native-device-route-selector-owner',
+      '/native-device-select-owner',
+      'native-device-selector-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native device-node runtime selector canary';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native device-node runtime selector canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeProductionDeviceNodeProviderToolPlanPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-device-tool-plan-owner',
+      '/native-device-provider-tool-plan-owner',
+      '/native-device-plan-owner',
+      '/native-device-tool-handoff-owner',
+      '/native-device-provider-handoff-owner',
+      'native-device-tool-plan-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native device-node provider tool-plan handoff canary';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native device-node provider tool-plan handoff canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeProductionDeviceNodeSelectorHandoffSoakPayload(
+    String message,
+  ) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-device-soak-owner',
+      '/native-device-handoff-soak-owner',
+      '/native-device-selector-soak-owner',
+      '/native-device-tool-plan-soak-owner',
+      '/native-device-repeated-turn-soak-owner',
+      'native-device-soak-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native device-node selector handoff soak';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native device-node selector handoff soak'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeNextMobileBridgeCandidatePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-next-candidate-owner',
+      '/native-next-mobile-candidate-owner',
+      '/native-next-bridge-candidate-owner',
+      '/native-gestures-candidate-owner',
+      '/native-gestures-select-owner',
+      'native-next-candidate-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native next mobile bridge candidate selection canary';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native next mobile bridge candidate selection canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeGesturesRouteShadowPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-gestures-route-shadow-owner',
+      '/native-gesture-route-shadow-owner',
+      '/native-avatar-gesture-shadow-owner',
+      '/native-gestures-shadow-owner',
+      '/native-gesture-shadow-owner',
+      'native-gestures-route-shadow-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native gestures route shadow canary: avatar.gesture wave right';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native gestures route shadow canary: avatar.gesture wave right'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeGesturesExecutionPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-gestures-exec-owner',
+      '/native-gesture-exec-owner',
+      '/native-gestures-execution-owner',
+      '/native-avatar-gesture-exec-owner',
+      '/native-avatar-gesture-execution-owner',
+      '/native-gesture-protected-owner',
+      'native-gestures-exec-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native gestures protected execution canary: avatar.gesture wave right';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native gestures protected execution canary: avatar.gesture wave right'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeGesturesSelectorHandoffSoakPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-gestures-soak-owner',
+      '/native-gesture-soak-owner',
+      '/native-gestures-handoff-soak-owner',
+      '/native-gestures-selector-soak-owner',
+      '/native-avatar-gesture-soak-owner',
+      '/native-avatar-gesture-handoff-owner',
+      'native-gestures-soak-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native gestures selector handoff soak: avatar.gesture wave right';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native gestures selector handoff soak: avatar.gesture wave right'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeGesturesRuntimeSelectorPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-gestures-selector-owner',
+      '/native-gesture-selector-owner',
+      '/native-gestures-runtime-selector-owner',
+      '/native-avatar-gesture-selector-owner',
+      '/native-avatar-gesture-runtime-selector-owner',
+      '/native-gesture-toggle-owner',
+      'native-gestures-selector-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native gestures runtime selector canary: avatar.gesture wave right';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native gestures runtime selector canary: avatar.gesture wave right'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeHapticBridgeCandidatePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final commandSource = trimmedLeft.replaceFirst(RegExp(r'^/+'), '');
+    final normalizedLower =
+        commandSource.toLowerCase().replaceAll(RegExp(r'[\s.。．]+$'), '');
+    const commands = <String>{
+      '/native-haptic-candidate-owner',
+      '/native-haptic-bridge-candidate-owner',
+      '/native-next-haptic-candidate-owner',
+      '/native-third-candidate-owner',
+      '/native-third-bridge-candidate-owner',
+      '/native-haptic-select-owner',
+      'native-haptic-candidate-owner',
+    };
+    for (final command in commands) {
+      final normalizedCommand =
+          command.toLowerCase().replaceAll(RegExp(r'^/+'), '');
+      if (normalizedLower == normalizedCommand) {
+        return 'native haptic bridge candidate selection canary';
+      }
+      if (normalizedLower.startsWith('$normalizedCommand ')) {
+        final payload =
+            commandSource.substring(normalizedCommand.length).trim();
+        return payload.isEmpty
+            ? 'native haptic bridge candidate selection canary'
+            : payload;
+      }
+    }
+    return null;
+  }
+
   String? _nativeProductionToolDispatchPayload(String message) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -4574,6 +5054,244 @@ $message''';
     } catch (_) {
       return value.toString();
     }
+  }
+
+  String? _nativeFullGatewayBootstrapPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-full-gateway-bootstrap',
+      '/native-full-gateway',
+      '/native-openclaw-bootstrap',
+      '/native-real-gateway',
+      'native-full-gateway-bootstrap',
+    };
+    for (final command in commands) {
+      if (lower == command) return 'full OpenClaw native bootstrap';
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty ? 'full OpenClaw native bootstrap' : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeFullGatewayProductionOwnerPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-full-owner',
+      '/native-full-production-owner',
+      '/native-real-owner',
+      '/native-openclaw-owner',
+      'native-full-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) return 'full native OpenClaw production owner';
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'full native OpenClaw production owner'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeFullGatewayProductionChatTurnPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-full-chat-turn',
+      '/native-full-production-chat-turn',
+      '/native-real-chat-turn',
+      '/native-cutover-chat',
+      'native-full-chat-turn',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'Native full Gateway real chat turn canary. Reply with exactly: native-ok';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'Native full Gateway real chat turn canary. Reply with exactly: native-ok'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeFullGatewayRuntimeSelectorPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-full-selector-owner',
+      '/native-runtime-selector-owner',
+      '/native-select-native-owner',
+      '/native-full-runtime-selector',
+      'native-full-selector-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'Native runtime selector chat turn canary. Reply with exactly: native-selector-ok';
+      }
+      if (lower.startsWith('$command ')) {
+        final payload = trimmedLeft.substring(command.length).trimLeft();
+        return payload.isEmpty
+            ? 'Native runtime selector chat turn canary. Reply with exactly: native-selector-ok'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  String? _nativeFullGatewayRuntimeSelectorSoakPayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-full-selector-soak-owner',
+      '/native-full-runtime-selector-soak',
+      '/native-selector-soak-owner',
+      '/native-primary-soak-owner',
+      'native-full-selector-soak-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'Native selector soak real chat turn. Reply with exactly: native-selector-soak-ok';
+      }
+      if (lower.startsWith('$command ')) {
+        final rawPayload = trimmedLeft.substring(command.length).trimLeft();
+        final payload = rawPayload
+            .replaceFirst(
+              RegExp(r'^cycles\s*[=:]\s*\d+\s*', caseSensitive: false),
+              '',
+            )
+            .trimLeft();
+        return payload.isEmpty
+            ? 'Native selector soak real chat turn. Reply with exactly: native-selector-soak-ok'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  int _nativeFullGatewayRuntimeSelectorSoakCycles(String message) {
+    final explicit = RegExp(
+      r'(?:^|\s)cycles\s*[=:]\s*(\d+)(?:\s|$)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final parsed = int.tryParse(explicit?.group(1) ?? '') ?? 2;
+    return parsed.clamp(1, 3).toInt();
+  }
+
+  int _nativeFullGatewayRuntimeSelectorPressureCycles(String message) {
+    final explicit = RegExp(
+      r'(?:^|\s)cycles\s*[=:]?\s*(\d+)(?:\s|$)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final parsed = int.tryParse(explicit?.group(1) ?? '') ?? 1;
+    return parsed.clamp(1, 2).toInt();
+  }
+
+  String? _nativeFullGatewayRuntimeSelectorPressurePayload(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return null;
+    }
+
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    const commands = <String>{
+      '/native-full-selector-pressure-owner',
+      '/native-full-pressure-soak-owner',
+      '/native-primary-pressure-soak-owner',
+      '/native-default-pressure-owner',
+      'native-full-selector-pressure-owner',
+    };
+    for (final command in commands) {
+      if (lower == command) {
+        return 'Native pressure soak real chat turn. Reply with exactly: native-pressure-ok';
+      }
+      if (lower.startsWith('$command ')) {
+        final rawPayload = trimmedLeft.substring(command.length).trimLeft();
+        final payload = rawPayload
+            .replaceFirst(
+              RegExp(r'^cycles\s*[=:]\s*\d+\s*', caseSensitive: false),
+              '',
+            )
+            .trimLeft();
+        return payload.isEmpty
+            ? 'Native pressure soak real chat turn. Reply with exactly: native-pressure-ok'
+            : payload;
+      }
+    }
+    return null;
+  }
+
+  bool _nativeDefaultOwnerSwitchCommandMatches(
+    String message,
+    Set<String> commands,
+  ) {
+    final trimmedLeft = message.trimLeft();
+    final lower = trimmedLeft.toLowerCase();
+    for (final command in commands) {
+      if (lower == command || lower.startsWith('$command ')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _nativeDefaultOwnerEnableRequested(String message) {
+    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+        !NativeGatewaySmokeService.diagnosticsEnabled) {
+      return false;
+    }
+    return _nativeDefaultOwnerSwitchCommandMatches(message, const <String>{
+      '/native-default-owner-enable',
+      '/native-default-owner-on',
+      '/native-default-native-owner',
+      '/native-default-owner-switch',
+      '/native-switch-default-owner',
+      'native-default-owner-enable',
+    });
+  }
+
+  bool _nativeDefaultOwnerRollbackRequested(String message) {
+    return _nativeDefaultOwnerSwitchCommandMatches(message, const <String>{
+      '/native-default-owner-rollback',
+      '/native-default-owner-off',
+      '/native-rollback-proot',
+      '/proot-rollback',
+      '/restore-proot-owner',
+      'native-default-owner-rollback',
+    });
   }
 
   Map<String, dynamic> _nativeCanaryChatSendFrame({
@@ -7473,6 +8191,75 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeFullGatewayBootstrapMessage(String message) async* {
+    final payload = _nativeFullGatewayBootstrapPayload(message);
+    if (payload == null) return;
+
+    _addActivity(
+      '[NATIVE-FULL-GATEWAY] -> Starting real OpenClaw package under embedded native Node',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runFullGatewayBootstrapCanary(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-FULL-GATEWAY] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final healthKeys = report['healthKeys'] is List
+          ? (report['healthKeys'] as List).join(', ')
+          : '';
+      final logTail = report['logTail'] is List
+          ? (report['logTail'] as List).join('\n')
+          : '';
+
+      yield [
+        ok
+            ? 'Native full OpenClaw Gateway bootstrap complete'
+            : 'Native full OpenClaw Gateway bootstrap pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'runtimeId: ${report['runtimeId'] ?? 'unknown'}',
+        'nativeUrl: ${report['nativeUrl'] ?? 'unknown'}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'productionUntouched: ${report['productionUntouched'] == true}',
+        'previousStopped: ${report['previousStopped'] == true}',
+        'started: ${report['started'] == true}',
+        'listening: ${report['listening'] == true}',
+        'healthOk: ${report['healthOk'] == true}',
+        'healthRuntime: ${report['healthRuntime'] ?? 'unknown'}',
+        'healthStatus: ${report['healthStatus'] ?? 'unknown'}',
+        'healthKeys: $healthKeys',
+        'markerOpenClawStarted: ${report['markerOpenClawStarted'] == true}',
+        'markerPhase: ${report['markerPhase'] ?? 'unknown'}',
+        'markerPort: ${report['markerPort'] ?? 'unknown'}',
+        'markerNode: ${report['markerNode'] ?? 'unknown'}',
+        'markerPlatform: ${report['markerPlatform'] ?? 'unknown'}',
+        'markerArch: ${report['markerArch'] ?? 'unknown'}',
+        if (report['lastHealthError'] != null)
+          'lastHealthError: ${report['lastHealthError']}',
+        if (report['markerError'] != null)
+          'markerError: ${report['markerError']}',
+        'leftRunningForInspection: ${report['leftRunningForInspection'] == true}',
+        'durationMs: ${report['durationMs'] ?? 0}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        if (logTail.isNotEmpty) '',
+        if (logTail.isNotEmpty) 'logTail:',
+        if (logTail.isNotEmpty) logTail,
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-FULL-GATEWAY] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
   Stream<String> _sendNativeProductionPortBindMessage(String message) async* {
     final payload = _nativeProductionPortBindPayload(message);
     if (payload == null) return;
@@ -8841,6 +9628,1095 @@ $message''';
     }
   }
 
+  Stream<String> _sendNativeFullGatewayProductionOwnerMessage(
+    String message,
+  ) async* {
+    final payload = _nativeFullGatewayProductionOwnerPayload(message);
+    if (payload == null) return;
+
+    _addActivity(
+      '[NATIVE-FULL-OWNER] -> Starting real OpenClaw production-owner canary',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runFullGatewayProductionOwnerCanary(
+        log: _addActivity,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-FULL-OWNER] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final nativeHealthKeys = report['nativeHealthKeys'] is List
+          ? (report['nativeHealthKeys'] as List).join(', ')
+          : '';
+      final rollbackHealthKeys = report['rollbackHealthKeys'] is List
+          ? (report['rollbackHealthKeys'] as List).join(', ')
+          : '';
+      final logTail = report['logTail'] is List
+          ? (report['logTail'] as List).join('\n')
+          : '';
+
+      yield [
+        ok
+            ? 'Native full Gateway production-owner canary complete'
+            : 'Native full Gateway production-owner canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'productionRuntimeBefore: ${report['productionRuntimeBefore'] ?? 'unknown'}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'productionStopped: ${report['productionStopped'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeRunning: ${report['nativeRunning'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeHealthStatus: ${report['nativeHealthStatus'] ?? 'unknown'}',
+        'nativeHealthKeys: $nativeHealthKeys',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'rollbackVerified: ${report['rollbackVerified'] == true}',
+        'rollbackHealthStatus: ${report['rollbackHealthStatus'] ?? 'unknown'}',
+        'rollbackHealthKeys: $rollbackHealthKeys',
+        if (report['nativeHealthError'] != null)
+          'nativeHealthError: ${report['nativeHealthError']}',
+        if (report['rollbackError'] != null)
+          'rollbackError: ${report['rollbackError']}',
+        'durationMs: ${report['durationMs'] ?? 0}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        if (logTail.isNotEmpty) '',
+        if (logTail.isNotEmpty) 'logTail:',
+        if (logTail.isNotEmpty) logTail,
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-FULL-OWNER] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeFullGatewayProductionChatTurnMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeFullGatewayProductionChatTurnPayload(message);
+    if (payload == null) return;
+
+    _addActivity(
+      '[NATIVE-FULL-CHAT] -> Starting real native Gateway chat.send canary',
+    );
+
+    String? token;
+    try {
+      token = await retrieveTokenFromConfig(force: true);
+    } catch (_) {}
+
+    // The temporary canary connection owns the native WebSocket for this turn.
+    // Disconnect the normal PRoot socket first so its reconnect loop does not
+    // attach to the native owner while the rollback test is in progress.
+    disconnectWebSocket();
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runFullGatewayProductionChatTurnCanary(
+        log: _addActivity,
+        prompt: payload,
+        authToken: token,
+        model: model,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-FULL-CHAT] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+      final nativeHealthKeys = report['nativeHealthKeys'] is List
+          ? (report['nativeHealthKeys'] as List).join(', ')
+          : '';
+      final rollbackHealthKeys = report['rollbackHealthKeys'] is List
+          ? (report['rollbackHealthKeys'] as List).join(', ')
+          : '';
+      final logTail = report['logTail'] is List
+          ? (report['logTail'] as List).join('\n')
+          : '';
+      final responsePreview = report['responsePreview']?.toString() ?? '';
+      final rawProviderErrorPreview =
+          report['rawProviderErrorPreview']?.toString() ?? '';
+
+      yield [
+        ok
+            ? 'Native full Gateway real chat turn complete'
+            : 'Native full Gateway real chat turn pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'productionRuntimeBefore: ${report['productionRuntimeBefore'] ?? 'unknown'}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'productionStopped: ${report['productionStopped'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeRunning: ${report['nativeRunning'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeHealthStatus: ${report['nativeHealthStatus'] ?? 'unknown'}',
+        'nativeHealthKeys: $nativeHealthKeys',
+        'nativeAuthTokenFound: ${report['nativeAuthTokenFound'] == true}',
+        'nativeAuthTokenSource: ${report['nativeAuthTokenSource'] ?? 'unknown'}',
+        'wsConnected: ${report['wsConnected'] == true}',
+        'chatSendAckSeen: ${report['chatSendAckSeen'] == true}',
+        'chatSendAccepted: ${report['chatSendAccepted'] == true}',
+        'runStarted: ${report['runStarted'] == true}',
+        'firstTokenReceived: ${report['firstTokenReceived'] == true}',
+        'finalSeen: ${report['finalSeen'] == true}',
+        'visibleTextOk: ${report['visibleTextOk'] == true}',
+        'assistantTextChars: ${report['assistantTextChars'] ?? 0}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        'toolUseCount: ${report['toolUseCount'] ?? 0}',
+        'toolResultCount: ${report['toolResultCount'] ?? 0}',
+        'frameCount: ${report['frameCount'] ?? 0}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'rollbackVerified: ${report['rollbackVerified'] == true}',
+        'rollbackHealthStatus: ${report['rollbackHealthStatus'] ?? 'unknown'}',
+        'rollbackHealthKeys: $rollbackHealthKeys',
+        if (report['nativeHealthError'] != null)
+          'nativeHealthError: ${report['nativeHealthError']}',
+        if (report['chatError'] != null) 'chatError: ${report['chatError']}',
+        if (report['rollbackError'] != null)
+          'rollbackError: ${report['rollbackError']}',
+        'durationMs: ${report['durationMs'] ?? 0}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        if (responsePreview.isNotEmpty) '',
+        if (responsePreview.isNotEmpty) 'responsePreview:',
+        if (responsePreview.isNotEmpty) responsePreview,
+        if (rawProviderErrorPreview.isNotEmpty) '',
+        if (rawProviderErrorPreview.isNotEmpty) 'rawProviderError:',
+        if (rawProviderErrorPreview.isNotEmpty) rawProviderErrorPreview,
+        if (logTail.isNotEmpty) '',
+        if (logTail.isNotEmpty) 'logTail:',
+        if (logTail.isNotEmpty) logTail,
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-FULL-CHAT] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeFullGatewayRuntimeSelectorMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeFullGatewayRuntimeSelectorPayload(message);
+    if (payload == null) return;
+
+    const selectedOwnerId = 'native-node-full-gateway-production';
+    const rollbackOwnerId = 'proot';
+    final prefs = PreferencesService();
+    await prefs.init();
+    final ownerBefore = prefs.gatewayRuntimeOwner;
+    var ownerDuring = ownerBefore;
+    var ownerAfter = ownerBefore;
+    var selectorSetOk = false;
+    var selectorRestoredOk = false;
+
+    _addActivity(
+      '[NATIVE-FULL-SELECTOR] -> Selecting native full Gateway owner for one guarded chat turn',
+    );
+
+    String? token;
+    try {
+      token = await retrieveTokenFromConfig(force: true);
+    } catch (_) {}
+
+    disconnectWebSocket();
+
+    try {
+      prefs.gatewayRuntimeOwner = selectedOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      ownerDuring = prefs.gatewayRuntimeOwner;
+      selectorSetOk =
+          ownerDuring == selectedOwnerId && _runtime.id == selectedOwnerId;
+
+      final report = await NativeGatewaySmokeService
+          .runFullGatewayProductionChatTurnCanary(
+        log: _addActivity,
+        prompt: payload,
+        authToken: token,
+        model: model,
+      );
+
+      prefs.gatewayRuntimeOwner = rollbackOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      ownerAfter = prefs.gatewayRuntimeOwner;
+      selectorRestoredOk =
+          ownerAfter == rollbackOwnerId && _runtime.id == rollbackOwnerId;
+
+      final innerOk = report['ok'] == true;
+      final ok = selectorSetOk && innerOk && selectorRestoredOk;
+      _addActivity(
+        '[NATIVE-FULL-SELECTOR] ${ok ? 'OK' : 'PENDING'} '
+        '${ok ? 'Native selector chose full native owner for one chat turn and restored PRoot fallback.' : 'Native selector is not promotable until selection, chat turn, and PRoot restore are all green.'}',
+      );
+
+      final rollbackHealthKeys = report['rollbackHealthKeys'] is List
+          ? (report['rollbackHealthKeys'] as List).join(', ')
+          : '';
+      final rawProviderErrorPreview =
+          report['rawProviderErrorPreview']?.toString() ?? '';
+
+      yield [
+        ok
+            ? 'Native production runtime selector canary complete'
+            : 'Native production runtime selector canary pending',
+        '',
+        'phase: native-full-gateway-runtime-selector',
+        'mode: select-native-owner-for-one-chat-turn-with-proot-rollback',
+        'ownerBefore: $ownerBefore',
+        'ownerDuring: $ownerDuring',
+        'ownerAfter: $ownerAfter',
+        'selectedOwnerId: $selectedOwnerId',
+        'rollbackOwnerId: $rollbackOwnerId',
+        'selectorSetOk: $selectorSetOk',
+        'selectorRestoredOk: $selectorRestoredOk',
+        'innerPhase: ${report['phase'] ?? 'unknown'}',
+        'innerOk: $innerOk',
+        'productionStopped: ${report['productionStopped'] == true}',
+        'productionPortReleased: ${report['productionPortReleased'] == true}',
+        'nativeStarted: ${report['nativeStarted'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'wsConnected: ${report['wsConnected'] == true}',
+        'wsConnectAttempts: ${report['wsConnectAttempts'] ?? 0}',
+        'chatSendAckSeen: ${report['chatSendAckSeen'] == true}',
+        'chatSendAccepted: ${report['chatSendAccepted'] == true}',
+        'visibleTextOk: ${report['visibleTextOk'] == true}',
+        'rawProviderErrorForwarded: ${report['rawProviderErrorForwarded'] == true}',
+        'nativeStopped: ${report['nativeStopped'] == true}',
+        'nativePortReleasedAfterStop: ${report['nativePortReleasedAfterStop'] == true}',
+        'rollbackStarted: ${report['rollbackStarted'] == true}',
+        'rollbackRunning: ${report['rollbackRunning'] == true}',
+        'rollbackHealthOk: ${report['rollbackHealthOk'] == true}',
+        'rollbackVerified: ${report['rollbackVerified'] == true}',
+        'rollbackHealthStatus: ${report['rollbackHealthStatus'] ?? 'unknown'}',
+        'rollbackHealthKeys: $rollbackHealthKeys',
+        if (report['chatError'] != null) 'chatError: ${report['chatError']}',
+        if (report['rollbackError'] != null)
+          'rollbackError: ${report['rollbackError']}',
+        'durationMs: ${report['durationMs'] ?? 0}',
+        if (rawProviderErrorPreview.isNotEmpty) '',
+        if (rawProviderErrorPreview.isNotEmpty) 'rawProviderError:',
+        if (rawProviderErrorPreview.isNotEmpty) rawProviderErrorPreview,
+        '',
+        ok
+            ? 'Native runtime selector can now select full native for a guarded real chat turn and restore PRoot afterward.'
+            : 'Native runtime selector remains pending; keep PRoot default until this is green.',
+        'nextGate: native primary soak with selector enabled and rollback still armed',
+      ].join('\n');
+    } catch (e) {
+      prefs.gatewayRuntimeOwner = rollbackOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-FULL-SELECTOR] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeFullGatewayRuntimeSelectorSoakMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeFullGatewayRuntimeSelectorSoakPayload(message);
+    if (payload == null) return;
+
+    if (_nativeFullSelectorSoakInFlight) {
+      yield 'Native full selector soak is already running.';
+      return;
+    }
+
+    const selectedOwnerId = 'native-node-full-gateway-production';
+    const rollbackOwnerId = 'proot';
+    final cycles = _nativeFullGatewayRuntimeSelectorSoakCycles(message);
+    final prefs = PreferencesService();
+    await prefs.init();
+    final ownerBefore = prefs.gatewayRuntimeOwner;
+    var ownerAfter = ownerBefore;
+    var failedCycle = 0;
+    Object? soakError;
+    final cycleReports = <Map<String, dynamic>>[];
+
+    _addActivity(
+      '[NATIVE-FULL-SOAK] -> Starting $cycles native selector production chat cycle(s)',
+    );
+
+    String? token;
+    try {
+      token = await retrieveTokenFromConfig(force: true);
+    } catch (_) {}
+
+    disconnectWebSocket();
+    _nativeFullSelectorSoakInFlight = true;
+
+    try {
+      for (var cycle = 1; cycle <= cycles; cycle++) {
+        _addActivity('[NATIVE-FULL-SOAK] Cycle $cycle/$cycles starting.');
+
+        prefs.gatewayRuntimeOwner = selectedOwnerId;
+        await _refreshSelectedRuntimeOwner();
+        final ownerDuring = prefs.gatewayRuntimeOwner;
+        final selectorSetOk =
+            ownerDuring == selectedOwnerId && _runtime.id == selectedOwnerId;
+
+        final cyclePrompt = [
+          payload,
+          'Soak cycle $cycle/$cycles. Reply with exactly: native-selector-soak-$cycle',
+        ].join('\n');
+
+        final report = await NativeGatewaySmokeService
+            .runFullGatewayProductionChatTurnCanary(
+          log: _addActivity,
+          prompt: cyclePrompt,
+          authToken: token,
+          model: model,
+        );
+
+        prefs.gatewayRuntimeOwner = rollbackOwnerId;
+        await _refreshSelectedRuntimeOwner();
+        final ownerRestored = prefs.gatewayRuntimeOwner;
+        final selectorRestoredOk =
+            ownerRestored == rollbackOwnerId && _runtime.id == rollbackOwnerId;
+        final innerOk = report['ok'] == true;
+        final cycleOk = selectorSetOk && innerOk && selectorRestoredOk;
+
+        cycleReports.add(<String, dynamic>{
+          'cycle': cycle,
+          'ok': cycleOk,
+          'ownerDuring': ownerDuring,
+          'ownerRestored': ownerRestored,
+          'selectorSetOk': selectorSetOk,
+          'selectorRestoredOk': selectorRestoredOk,
+          'innerOk': innerOk,
+          'visibleTextOk': report['visibleTextOk'] == true,
+          'rawProviderErrorForwarded':
+              report['rawProviderErrorForwarded'] == true,
+          'assistantTextChars': report['assistantTextChars'] ?? 0,
+          'chatSendAccepted': report['chatSendAccepted'] == true,
+          'rollbackVerified': report['rollbackVerified'] == true,
+          'rollbackHealthOk': report['rollbackHealthOk'] == true,
+          'durationMs': report['durationMs'] ?? 0,
+          if (report['chatError'] != null) 'chatError': report['chatError'],
+          if (report['rawProviderErrorPreview'] != null)
+            'rawProviderErrorPreview': report['rawProviderErrorPreview'],
+        });
+
+        _addActivity(
+          '[NATIVE-FULL-SOAK] Cycle $cycle/$cycles ${cycleOk ? 'OK' : 'PENDING'}',
+        );
+
+        if (!cycleOk) {
+          failedCycle = cycle;
+          break;
+        }
+
+        if (cycle < cycles) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+      }
+    } catch (e) {
+      soakError = e;
+      failedCycle = failedCycle == 0 ? cycleReports.length + 1 : failedCycle;
+      _addActivity('[NATIVE-FULL-SOAK] ERROR $e');
+    } finally {
+      prefs.gatewayRuntimeOwner = rollbackOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      ownerAfter = prefs.gatewayRuntimeOwner;
+      _nativeFullSelectorSoakInFlight = false;
+    }
+
+    final completedCycles = cycleReports.length;
+    final ok = failedCycle == 0 &&
+        completedCycles == cycles &&
+        ownerAfter == rollbackOwnerId &&
+        _runtime.id == rollbackOwnerId;
+    final summaryLines = cycleReports.map((report) {
+      final rawProviderError = report['rawProviderErrorForwarded'] == true
+          ? ' rawProviderError'
+          : '';
+      return 'cycle ${report['cycle']}: ok=${report['ok']} visibleTextOk=${report['visibleTextOk']} chatSendAccepted=${report['chatSendAccepted']} rollbackVerified=${report['rollbackVerified']} durationMs=${report['durationMs']}$rawProviderError';
+    }).toList();
+
+    _addActivity(
+      '[NATIVE-FULL-SOAK] ${ok ? 'OK' : 'PENDING'} '
+      '${ok ? 'Native selector survived repeated real chat turns with PRoot rollback.' : 'Native selector soak is not promotable; inspect failedCycle and cycle reports.'}',
+    );
+
+    yield [
+      ok
+          ? 'Native primary selector soak complete'
+          : 'Native primary selector soak pending',
+      '',
+      'phase: native-full-gateway-runtime-selector-soak',
+      'mode: repeated-native-owner-real-chat-turns-with-proot-rollback',
+      'ownerBefore: $ownerBefore',
+      'ownerAfter: $ownerAfter',
+      'selectedOwnerId: $selectedOwnerId',
+      'rollbackOwnerId: $rollbackOwnerId',
+      'cyclesRequested: $cycles',
+      'cyclesCompleted: $completedCycles',
+      'failedCycle: $failedCycle',
+      'allCyclesOk: $ok',
+      if (soakError != null) 'soakError: $soakError',
+      '',
+      ...summaryLines,
+      '',
+      ok
+          ? 'Native primary selector is ready for a longer soak/default-owner rollback gate.'
+          : 'Keep PRoot default; fix the failed selector soak cycle before widening native ownership.',
+      'nextGate: longer native primary soak, restart/failure pressure, then default-owner rollback switch',
+    ].join('\n');
+  }
+
+  Stream<String> _sendNativeFullGatewayRuntimeSelectorPressureMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeFullGatewayRuntimeSelectorPressurePayload(message);
+    if (payload == null) return;
+
+    if (_nativeFullSelectorPressureSoakInFlight) {
+      yield 'Native full selector pressure soak is already running.';
+      return;
+    }
+
+    const selectedOwnerId = 'native-node-full-gateway-production';
+    const rollbackOwnerId = 'proot';
+    final cycles = _nativeFullGatewayRuntimeSelectorPressureCycles(message);
+    final prefs = PreferencesService();
+    await prefs.init();
+    final ownerBefore = prefs.gatewayRuntimeOwner;
+    var ownerAfter = ownerBefore;
+    Object? pressureError;
+    var failedCycle = 0;
+    var forcedRollbackOk = false;
+    final cycleReports = <Map<String, dynamic>>[];
+
+    _addActivity(
+      '[NATIVE-FULL-PRESSURE] -> Starting $cycles native selector chat cycle(s) plus forced rollback probe',
+    );
+
+    String? token;
+    try {
+      token = await retrieveTokenFromConfig(force: true);
+    } catch (_) {}
+
+    disconnectWebSocket();
+    _nativeFullSelectorPressureSoakInFlight = true;
+
+    try {
+      for (var cycle = 1; cycle <= cycles; cycle++) {
+        _addActivity(
+          '[NATIVE-FULL-PRESSURE] Chat cycle $cycle/$cycles starting.',
+        );
+
+        prefs.gatewayRuntimeOwner = selectedOwnerId;
+        await _refreshSelectedRuntimeOwner();
+        final ownerDuring = prefs.gatewayRuntimeOwner;
+        final selectorSetOk =
+            ownerDuring == selectedOwnerId && _runtime.id == selectedOwnerId;
+
+        final report = await NativeGatewaySmokeService
+            .runFullGatewayProductionChatTurnCanary(
+          log: _addActivity,
+          prompt: [
+            payload,
+            'Pressure cycle $cycle/$cycles. Reply with exactly: native-pressure-$cycle',
+          ].join('\n'),
+          authToken: token,
+          model: model,
+        );
+
+        prefs.gatewayRuntimeOwner = rollbackOwnerId;
+        await _refreshSelectedRuntimeOwner();
+        final ownerRestored = prefs.gatewayRuntimeOwner;
+        final selectorRestoredOk =
+            ownerRestored == rollbackOwnerId && _runtime.id == rollbackOwnerId;
+        final cycleOk =
+            selectorSetOk && report['ok'] == true && selectorRestoredOk;
+
+        cycleReports.add(<String, dynamic>{
+          'cycle': cycle,
+          'ok': cycleOk,
+          'selectorSetOk': selectorSetOk,
+          'selectorRestoredOk': selectorRestoredOk,
+          'visibleTextOk': report['visibleTextOk'] == true,
+          'rawProviderErrorForwarded':
+              report['rawProviderErrorForwarded'] == true,
+          'chatSendAccepted': report['chatSendAccepted'] == true,
+          'rollbackVerified': report['rollbackVerified'] == true,
+          'rollbackHealthOk': report['rollbackHealthOk'] == true,
+          'durationMs': report['durationMs'] ?? 0,
+          if (report['chatError'] != null) 'chatError': report['chatError'],
+          if (report['rawProviderErrorPreview'] != null)
+            'rawProviderErrorPreview': report['rawProviderErrorPreview'],
+        });
+
+        _addActivity(
+          '[NATIVE-FULL-PRESSURE] Chat cycle $cycle/$cycles ${cycleOk ? 'OK' : 'PENDING'}',
+        );
+
+        if (!cycleOk) {
+          failedCycle = cycle;
+          break;
+        }
+      }
+
+      if (failedCycle == 0) {
+        _addActivity(
+          '[NATIVE-FULL-PRESSURE] Forced rollback probe starting.',
+        );
+        prefs.gatewayRuntimeOwner = selectedOwnerId;
+        await _refreshSelectedRuntimeOwner();
+        final forcedOwnerSetOk = prefs.gatewayRuntimeOwner == selectedOwnerId &&
+            _runtime.id == selectedOwnerId;
+        final forcedReport =
+            await NativeGatewaySmokeService.runFullGatewayProductionOwnerCanary(
+          log: _addActivity,
+        );
+        prefs.gatewayRuntimeOwner = rollbackOwnerId;
+        await _refreshSelectedRuntimeOwner();
+        final forcedOwnerRestoredOk =
+            prefs.gatewayRuntimeOwner == rollbackOwnerId &&
+                _runtime.id == rollbackOwnerId;
+        forcedRollbackOk = forcedOwnerSetOk &&
+            forcedReport['ok'] == true &&
+            forcedOwnerRestoredOk &&
+            forcedReport['rollbackVerified'] == true;
+        _addActivity(
+          '[NATIVE-FULL-PRESSURE] Forced rollback probe ${forcedRollbackOk ? 'OK' : 'PENDING'}',
+        );
+        cycleReports.add(<String, dynamic>{
+          'cycle': 'forced-rollback',
+          'ok': forcedRollbackOk,
+          'selectorSetOk': forcedOwnerSetOk,
+          'selectorRestoredOk': forcedOwnerRestoredOk,
+          'nativeHealthOk': forcedReport['nativeHealthOk'] == true,
+          'nativeStopped': forcedReport['nativeStopped'] == true,
+          'rollbackVerified': forcedReport['rollbackVerified'] == true,
+          'rollbackHealthOk': forcedReport['rollbackHealthOk'] == true,
+          'durationMs': forcedReport['durationMs'] ?? 0,
+          if (forcedReport['nativeHealthError'] != null)
+            'nativeHealthError': forcedReport['nativeHealthError'],
+          if (forcedReport['rollbackError'] != null)
+            'rollbackError': forcedReport['rollbackError'],
+        });
+      }
+    } catch (e) {
+      pressureError = e;
+      _addActivity('[NATIVE-FULL-PRESSURE] ERROR $e');
+    } finally {
+      prefs.gatewayRuntimeOwner = rollbackOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      ownerAfter = prefs.gatewayRuntimeOwner;
+      _nativeFullSelectorPressureSoakInFlight = false;
+    }
+
+    final chatCyclesOk = failedCycle == 0 &&
+        cycleReports
+                .where((report) => report['cycle'] != 'forced-rollback')
+                .length ==
+            cycles &&
+        cycleReports
+            .where((report) => report['cycle'] != 'forced-rollback')
+            .every((report) => report['ok'] == true);
+    final ok = pressureError == null &&
+        chatCyclesOk &&
+        forcedRollbackOk &&
+        ownerAfter == rollbackOwnerId &&
+        _runtime.id == rollbackOwnerId;
+    final summaryLines = cycleReports.map((report) {
+      if (report['cycle'] == 'forced-rollback') {
+        return 'forcedRollback: ok=${report['ok']} nativeHealthOk=${report['nativeHealthOk']} nativeStopped=${report['nativeStopped']} rollbackVerified=${report['rollbackVerified']} durationMs=${report['durationMs']}';
+      }
+      final rawProviderError = report['rawProviderErrorForwarded'] == true
+          ? ' rawProviderError'
+          : '';
+      return 'cycle ${report['cycle']}: ok=${report['ok']} visibleTextOk=${report['visibleTextOk']} chatSendAccepted=${report['chatSendAccepted']} rollbackVerified=${report['rollbackVerified']} durationMs=${report['durationMs']}$rawProviderError';
+    }).toList();
+
+    _addActivity(
+      '[NATIVE-FULL-PRESSURE] ${ok ? 'OK' : 'PENDING'} '
+      '${ok ? 'Native selector survived chat failure pressure and forced owner rollback.' : 'Native selector pressure gate is not promotable; inspect cycle reports.'}',
+    );
+
+    yield [
+      ok
+          ? 'Native primary pressure soak complete'
+          : 'Native primary pressure soak pending',
+      '',
+      'phase: native-full-gateway-runtime-selector-pressure-soak',
+      'mode: native-chat-provider-failure-plus-forced-owner-rollback',
+      'ownerBefore: $ownerBefore',
+      'ownerAfter: $ownerAfter',
+      'selectedOwnerId: $selectedOwnerId',
+      'rollbackOwnerId: $rollbackOwnerId',
+      'chatCyclesRequested: $cycles',
+      'failedCycle: $failedCycle',
+      'chatCyclesOk: $chatCyclesOk',
+      'forcedRollbackOk: $forcedRollbackOk',
+      'allPressureOk: $ok',
+      if (pressureError != null) 'pressureError: $pressureError',
+      '',
+      ...summaryLines,
+      '',
+      ok
+          ? 'Native primary selector survived bounded failure pressure. Next is the default-owner rollback switch.'
+          : 'Keep PRoot default; fix the failed pressure gate before default-owner work.',
+      'nextGate: native default-owner switch with explicit PRoot rollback',
+    ].join('\n');
+  }
+
+  Future<bool> _waitForRuntimeStopped(
+    GatewayRuntime runtime, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final running = await runtime.isRunning().catchError((_) => false);
+      if (!running) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    return false;
+  }
+
+  Future<bool> _waitForProductionPortReleased({
+    Duration timeout = const Duration(seconds: 18),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        await _probeGatewayHealth(
+          timeout: const Duration(milliseconds: 900),
+        );
+      } catch (_) {
+        return true;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    return false;
+  }
+
+  Future<Map<String, dynamic>> _waitForProductionHealthPayload({
+    Duration timeout = const Duration(seconds: 75),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    Object? lastError;
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final token = await retrieveTokenFromConfig()
+            .timeout(const Duration(seconds: 2), onTimeout: () => null);
+        final response = await _probeGatewayHealth(
+          token: token,
+          timeout: const Duration(seconds: 3),
+        );
+        final decoded = _decodeObject(response.body);
+        if (response.statusCode < 500 && decoded != null) {
+          return decoded;
+        }
+        lastError = 'HTTP ${response.statusCode}: ${response.body}';
+      } catch (e) {
+        lastError = e;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    throw TimeoutException(
+      'Production Gateway health did not become ready: $lastError',
+    );
+  }
+
+  bool _gatewayHealthLooksLive(Map<String, dynamic> health) {
+    if (health.isEmpty) return false;
+    return health['ok'] == true ||
+        health['status'] == 'ok' ||
+        health['status'] == 'live';
+  }
+
+  Future<Map<String, dynamic>> _restoreProotDefaultOwner({
+    required String reason,
+  }) async {
+    const rollbackOwnerId = 'proot';
+    final prefs = PreferencesService();
+    await prefs.init();
+    final ownerBefore = prefs.gatewayRuntimeOwner;
+    final nativeRuntime =
+        GatewayRuntimeRegistry.nativeNodeFullGatewayProduction;
+    final prootRuntime = GatewayRuntimeRegistry.current;
+    final startedAt = DateTime.now();
+
+    var selectorRestoredOk = false;
+    var nativeStopRequested = false;
+    var nativeStopped = false;
+    var nativePortReleased = false;
+    var prootStarted = false;
+    var prootRunning = false;
+    var prootHealthOk = false;
+    Map<String, dynamic> prootHealth = <String, dynamic>{};
+    Object? rollbackError;
+
+    _addActivity('[NATIVE-DEFAULT-ROLLBACK] -> Restoring PRoot owner: $reason');
+    disconnectWebSocket();
+    _healthTimer?.cancel();
+
+    try {
+      prefs.gatewayRuntimeOwner = rollbackOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      selectorRestoredOk = prefs.gatewayRuntimeOwner == rollbackOwnerId &&
+          _runtime.id == rollbackOwnerId;
+
+      try {
+        nativeStopRequested = await nativeRuntime
+            .stop()
+            .timeout(const Duration(seconds: 15), onTimeout: () => false);
+        nativeStopped = await _waitForRuntimeStopped(
+          nativeRuntime,
+          timeout: const Duration(seconds: 12),
+        );
+      } catch (e) {
+        rollbackError = e;
+      }
+
+      nativePortReleased = await _waitForProductionPortReleased(
+        timeout: const Duration(seconds: 20),
+      );
+
+      prootStarted = await prootRuntime
+          .start(allowDuringSetup: true)
+          .timeout(const Duration(seconds: 45), onTimeout: () => false);
+      for (var attempt = 0; attempt < 80; attempt++) {
+        try {
+          prootRunning = await prootRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false);
+          prootHealth = await _waitForProductionHealthPayload(
+            timeout: const Duration(seconds: 3),
+          );
+          prootHealthOk = _gatewayHealthLooksLive(prootHealth) &&
+              prootHealth['runtime'] != 'native-node-embedded';
+          if (prootStarted && prootRunning && prootHealthOk) {
+            rollbackError = null;
+            break;
+          }
+        } catch (e) {
+          rollbackError = e;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 750));
+      }
+    } catch (e) {
+      rollbackError = e;
+    }
+
+    if (prootHealthOk) {
+      _runtime = prootRuntime;
+      _runtimeLogged = false;
+      _connection?.dispose();
+      _connection = null;
+      _cachedToken = null;
+      _lastTokenFetch = null;
+      NodeService().clearCachedToken();
+      _consecutiveFailures = 0;
+      _httpWaitingSince = null;
+      _markGatewaySettleWindow();
+      _subscribeLogs();
+      _startHealthCheck();
+      _updateState(_state.copyWith(
+        status: GatewayStatus.running,
+        clearError: true,
+        startedAt: _state.startedAt ?? DateTime.now(),
+        isReady: true,
+        isInteractiveReady: false,
+        isWebsocketConnected: false,
+        detailedHealth: prootHealth,
+      ));
+      unawaited(_checkHealth());
+    }
+
+    final nativeStopVerified = nativeStopRequested && nativeStopped;
+    final ok = selectorRestoredOk &&
+        nativePortReleased &&
+        prootStarted &&
+        prootRunning &&
+        prootHealthOk;
+    final report = <String, dynamic>{
+      'ok': ok,
+      'phase': 'native-default-owner-rollback',
+      'reason': reason,
+      'ownerBefore': ownerBefore,
+      'ownerAfter': prefs.gatewayRuntimeOwner,
+      'selectorRestoredOk': selectorRestoredOk,
+      'nativeStopRequested': nativeStopRequested,
+      'nativeStopped': nativeStopped,
+      'nativeStopVerified': nativeStopVerified,
+      'nativePortReleased': nativePortReleased,
+      'prootStarted': prootStarted,
+      'prootRunning': prootRunning,
+      'prootHealthOk': prootHealthOk,
+      'prootHealthStatus': prootHealth['status'] ?? prootHealth['ok'],
+      'prootHealthKeys': prootHealth.keys.toList()..sort(),
+      if (rollbackError != null) 'rollbackError': rollbackError.toString(),
+      'durationMs': DateTime.now().difference(startedAt).inMilliseconds,
+      'decision': ok
+          ? 'PRoot is restored as the selected production owner.'
+          : 'PRoot rollback was attempted but did not reach verified production health.',
+    };
+    _addActivity('[NATIVE-DEFAULT-ROLLBACK] ${ok ? 'OK' : 'PENDING'}');
+    return report;
+  }
+
+  Stream<String> _sendNativeDefaultOwnerRollbackMessage(String message) async* {
+    if (!_nativeDefaultOwnerRollbackRequested(message)) return;
+
+    if (_nativeDefaultOwnerSwitchInFlight) {
+      yield 'Native default-owner transition is already running.';
+      return;
+    }
+
+    _nativeDefaultOwnerSwitchInFlight = true;
+    try {
+      final report =
+          await _restoreProotDefaultOwner(reason: 'explicit-chat-command');
+      final ok = report['ok'] == true;
+      yield [
+        ok ? 'PRoot rollback complete' : 'PRoot rollback pending',
+        '',
+        'phase: ${report['phase']}',
+        'ownerBefore: ${report['ownerBefore']}',
+        'ownerAfter: ${report['ownerAfter']}',
+        'selectorRestoredOk: ${report['selectorRestoredOk']}',
+        'nativeStopRequested: ${report['nativeStopRequested']}',
+        'nativeStopped: ${report['nativeStopped']}',
+        'nativeStopVerified: ${report['nativeStopVerified']}',
+        'nativePortReleased: ${report['nativePortReleased']}',
+        'prootStarted: ${report['prootStarted']}',
+        'prootRunning: ${report['prootRunning']}',
+        'prootHealthOk: ${report['prootHealthOk']}',
+        'prootHealthStatus: ${report['prootHealthStatus'] ?? 'unknown'}',
+        if (report['rollbackError'] != null)
+          'rollbackError: ${report['rollbackError']}',
+        'durationMs: ${report['durationMs']}',
+        '',
+        '${report['decision']}',
+      ].join('\n');
+    } finally {
+      _nativeDefaultOwnerSwitchInFlight = false;
+    }
+  }
+
+  Stream<String> _sendNativeDefaultOwnerEnableMessage(String message) async* {
+    if (!_nativeDefaultOwnerEnableRequested(message)) return;
+
+    if (_nativeDefaultOwnerSwitchInFlight) {
+      yield 'Native default-owner transition is already running.';
+      return;
+    }
+
+    const selectedOwnerId = 'native-node-full-gateway-production';
+    const rollbackOwnerId = 'proot';
+    final prefs = PreferencesService();
+    await prefs.init();
+    final ownerBefore = prefs.gatewayRuntimeOwner;
+    final nativeRuntime =
+        GatewayRuntimeRegistry.nativeNodeFullGatewayProduction;
+    final prootRuntime = GatewayRuntimeRegistry.current;
+    final startedAt = DateTime.now();
+
+    var nativePreStartStopped = false;
+    var prootStopped = false;
+    var productionPortReleased = false;
+    var selectorSetOk = false;
+    var nativeStarted = false;
+    var nativeRunning = false;
+    var nativeHealthOk = false;
+    var wsConnected = false;
+    Map<String, dynamic> nativeHealth = <String, dynamic>{};
+    Map<String, dynamic>? rollbackReport;
+    Object? switchError;
+    Object? wsConnectError;
+
+    _nativeDefaultOwnerSwitchInFlight = true;
+    _addActivity(
+      '[NATIVE-DEFAULT-SWITCH] -> Persisting native as production owner.',
+    );
+    disconnectWebSocket();
+    _healthTimer?.cancel();
+
+    try {
+      await nativeRuntime.stop();
+      nativePreStartStopped = await _waitForRuntimeStopped(
+        nativeRuntime,
+        timeout: const Duration(seconds: 10),
+      );
+
+      prootStopped = await prootRuntime
+          .stop()
+          .timeout(const Duration(seconds: 20), onTimeout: () => false);
+      productionPortReleased = await _waitForProductionPortReleased(
+        timeout: const Duration(seconds: 22),
+      );
+      if (!productionPortReleased) {
+        throw StateError(
+          'Production port 18789 did not release before native default start.',
+        );
+      }
+
+      prefs.gatewayRuntimeOwner = selectedOwnerId;
+      await _refreshSelectedRuntimeOwner();
+      selectorSetOk = prefs.gatewayRuntimeOwner == selectedOwnerId &&
+          _runtime.id == selectedOwnerId;
+      if (!selectorSetOk) {
+        throw StateError('Native runtime owner preference did not take.');
+      }
+
+      await NativeBridge.acquirePartialWakeLock();
+      nativeStarted = await nativeRuntime
+          .start()
+          .timeout(const Duration(seconds: 30), onTimeout: () => false);
+      if (!nativeStarted) {
+        throw StateError('Native default owner did not start.');
+      }
+
+      for (var attempt = 0; attempt < 120; attempt++) {
+        try {
+          nativeRunning = await nativeRuntime
+              .isRunning()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false);
+          nativeHealth = await _waitForProductionHealthPayload(
+            timeout: const Duration(seconds: 3),
+          );
+          nativeHealthOk = _gatewayHealthLooksLive(nativeHealth);
+          if (nativeHealthOk) {
+            switchError = null;
+            break;
+          }
+        } catch (e) {
+          switchError = e;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+
+      if (!nativeHealthOk) {
+        throw StateError(
+          'Native default owner did not become healthy: '
+          'nativeRunning=$nativeRunning '
+          'health=${nativeHealth.isEmpty ? 'empty' : nativeHealth} '
+          'error=${switchError ?? 'none'}',
+        );
+      }
+
+      _connection?.dispose();
+      _connection = null;
+      _cachedToken = null;
+      _lastTokenFetch = null;
+      NodeService().clearCachedToken();
+      _consecutiveFailures = 0;
+      _httpWaitingSince = null;
+      _markGatewaySettleWindow();
+      _subscribeLogs();
+      _startHealthCheck();
+      _updateState(_state.copyWith(
+        status: GatewayStatus.running,
+        clearError: true,
+        startedAt: _state.startedAt ?? DateTime.now(),
+        isReady: true,
+        isInteractiveReady: false,
+        isWebsocketConnected: false,
+        detailedHealth: nativeHealth,
+      ));
+
+      try {
+        final token = await retrieveTokenFromConfig(force: true)
+            .timeout(const Duration(seconds: 5), onTimeout: () => null);
+        if (token != null && token.isNotEmpty) {
+          wsConnected = await _ensureWebSocket(token)
+              .timeout(const Duration(seconds: 15), onTimeout: () => false);
+        }
+      } catch (e) {
+        wsConnectError = e;
+      }
+      unawaited(_checkHealth());
+    } catch (e) {
+      switchError = e;
+      rollbackReport = await _restoreProotDefaultOwner(
+          reason: 'failed-native-default-start');
+    } finally {
+      _nativeDefaultOwnerSwitchInFlight = false;
+    }
+
+    final ownerAfter = prefs.gatewayRuntimeOwner;
+    final ok = switchError == null &&
+        ownerAfter == selectedOwnerId &&
+        selectorSetOk &&
+        prootStopped &&
+        productionPortReleased &&
+        nativeStarted &&
+        nativeHealthOk;
+    final rollbackOk = rollbackReport == null || rollbackReport['ok'] == true;
+    final nativeHealthKeys = nativeHealth.keys.toList()..sort();
+
+    _addActivity(
+      '[NATIVE-DEFAULT-SWITCH] ${ok ? 'OK' : 'PENDING'} '
+      '${ok ? 'Native is now the selected production owner.' : 'Native default switch did not fully verify.'} '
+      'ownerAfter=$ownerAfter selectorSetOk=$selectorSetOk '
+      'prootStopped=$prootStopped portReleased=$productionPortReleased '
+      'nativeStarted=$nativeStarted nativeRunning=$nativeRunning '
+      'nativeHealthOk=$nativeHealthOk wsConnected=$wsConnected '
+      'switchError=${switchError ?? 'none'} '
+      'wsConnectError=${wsConnectError ?? 'none'} '
+      'rollbackAttempted=${rollbackReport != null}',
+    );
+
+    yield [
+      ok ? 'Native default owner enabled' : 'Native default owner pending',
+      '',
+      'phase: native-default-owner-switch',
+      'mode: persistent-native-production-owner-with-explicit-proot-rollback',
+      'ownerBefore: $ownerBefore',
+      'ownerAfter: $ownerAfter',
+      'selectedOwnerId: $selectedOwnerId',
+      'rollbackOwnerId: $rollbackOwnerId',
+      'nativePreStartStopped: $nativePreStartStopped',
+      'prootStopped: $prootStopped',
+      'productionPortReleased: $productionPortReleased',
+      'selectorSetOk: $selectorSetOk',
+      'nativeStarted: $nativeStarted',
+      'nativeRunning: $nativeRunning',
+      'nativeHealthOk: $nativeHealthOk',
+      'nativeHealthStatus: ${nativeHealth['status'] ?? nativeHealth['ok'] ?? 'unknown'}',
+      'nativeHealthKeys: $nativeHealthKeys',
+      'wsConnected: $wsConnected',
+      'rollbackAttempted: ${rollbackReport != null}',
+      'rollbackOk: $rollbackOk',
+      if (switchError != null) 'switchError: $switchError',
+      if (wsConnectError != null) 'wsConnectError: $wsConnectError',
+      if (rollbackReport != null)
+        'rollbackPhase: ${rollbackReport['phase']} ownerAfterRollback: ${rollbackReport['ownerAfter']} prootHealthOk: ${rollbackReport['prootHealthOk']}',
+      'durationMs: ${DateTime.now().difference(startedAt).inMilliseconds}',
+      '',
+      ok
+          ? 'Native is now persisted as the default production owner. Use /native-default-owner-rollback to restore PRoot.'
+          : 'Native default owner is not promotable from this run; PRoot rollback was attempted.',
+      'nextGate: cold-start/restart with native as selected default, then release-window rollback switch',
+    ].join('\n');
+  }
+
   Stream<String> _sendNativeProductionInventoryParityMessage(
     String message,
   ) async* {
@@ -9136,6 +11012,1042 @@ $message''';
     } catch (e) {
       final raw = _rawGatewayErrorText(e);
       _addActivity('[NATIVE-SINGLE-SKILL-ROUTE] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeProductionDeviceNodeRouteShadowMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionDeviceNodeRouteShadowPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-DEVICE-ROUTE-SHADOW] -> Opening real-turn device-node route shadow canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runDeviceNodeRealTurnRouteShadowCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DEVICE-ROUTE-SHADOW] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native device-node real-turn route shadow canary complete'
+            : 'Native device-node real-turn route shadow canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'productionPort: ${report['productionPort'] ?? 'unknown'}',
+        'nativeShadowPort: ${report['nativeShadowPort'] ?? 'unknown'}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeLeftRunningForShadow: ${report['nativeLeftRunningForShadow'] == true}',
+        'realTurnFrameParsed: ${report['realTurnFrameParsed'] == true}',
+        'shadowParityOk: ${report['shadowParityOk'] == true}',
+        'dryRunShadowOk: ${report['dryRunShadowOk'] == true}',
+        'hashMatches: ${report['hashMatches'] == true}',
+        'requestedToolHints: ${_compactJsonValue(report['requestedToolHints'])}',
+        'localToolHints: ${_compactJsonValue(report['localToolHints'])}',
+        'nativeToolHints: ${_compactJsonValue(report['nativeToolHints'])}',
+        'dryRunToolHints: ${_compactJsonValue(report['dryRunToolHints'])}',
+        'routePlanToolHints: ${_compactJsonValue(report['routePlanToolHints'])}',
+        'realTurnToolHintsOk: ${report['realTurnToolHintsOk'] == true}',
+        'readOnlyHintPoliciesOk: ${report['readOnlyHintPoliciesOk'] == true}',
+        'routeDecision: ${_compactJsonValue(report['routeDecision'])}',
+        'shadowRouteDecisionOk: ${report['shadowRouteDecisionOk'] == true}',
+        'routeEvents: ${_compactJsonValue(report['routeEvents'])}',
+        'routeStreamOrderOk: ${report['routeStreamOrderOk'] == true}',
+        'routeSkeletonOk: ${report['routeSkeletonOk'] == true}',
+        'routeStatus: ${report['routeStatus'] ?? 'unknown'}',
+        'providerGateBlocked: ${report['providerGateBlocked'] == true}',
+        'toolGateBlocked: ${report['toolGateBlocked'] == true}',
+        'nonPromotedFallbackOk: ${report['nonPromotedFallbackOk'] == true}',
+        'acceptedForRouting: ${report['acceptedForRouting'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'providerCallsDisabled: ${report['providerCallsDisabled'] == true}',
+        'nativeExecutionDisabled: ${report['nativeExecutionDisabled'] == true}',
+        'fallbackStillArmed: ${report['fallbackStillArmed'] == true}',
+        'sessionKey: ${report['sessionKey'] ?? 'unknown'}',
+        'runId: ${report['runId'] ?? 'unknown'}',
+        'messageChars: ${report['messageChars'] ?? 0}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DEVICE-ROUTE-SHADOW] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeProductionDeviceNodeExecutionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionDeviceNodeExecutionPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-DEVICE-EXEC-SHADOW] -> Opening real-turn device-node native execution canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runDeviceNodeRealTurnNativeExecutionCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DEVICE-EXEC-SHADOW] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      final toolPanelEvents = report['toolPanelEvents'] is List
+          ? List<dynamic>.from(report['toolPanelEvents'] as List)
+          : const <dynamic>[];
+      for (final panelEvent in toolPanelEvents) {
+        if (panelEvent is! Map) continue;
+        final event = Map<String, dynamic>.from(panelEvent);
+        final type = event['type']?.toString();
+        final name = event['name']?.toString() ?? 'tool';
+        if (type == 'tool_use') {
+          final input = event['input'] is Map
+              ? Map<String, dynamic>.from(event['input'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        } else if (type == 'tool_result') {
+          final result = event['result'] is Map
+              ? Map<String, dynamic>.from(event['result'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        }
+      }
+
+      yield [
+        ok
+            ? 'Native device-node real-turn execution canary complete'
+            : 'Native device-node real-turn execution canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'innerPhase: ${report['innerPhase'] ?? 'unknown'}',
+        'routeShadowOk: ${report['routeShadowOk'] == true}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeLeftRunningForExecution: ${report['nativeLeftRunningForExecution'] == true}',
+        'realTurnFrameParsed: ${report['realTurnFrameParsed'] == true}',
+        'shadowParityOk: ${report['shadowParityOk'] == true}',
+        'dryRunShadowOk: ${report['dryRunShadowOk'] == true}',
+        'hashMatches: ${report['hashMatches'] == true}',
+        'requestedToolHints: ${_compactJsonValue(report['requestedToolHints'])}',
+        'localToolHints: ${_compactJsonValue(report['localToolHints'])}',
+        'nativeToolHints: ${_compactJsonValue(report['nativeToolHints'])}',
+        'dryRunToolHints: ${_compactJsonValue(report['dryRunToolHints'])}',
+        'realTurnToolHintsOk: ${report['realTurnToolHintsOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'executeAckOrderOk: ${report['executeAckOrderOk'] == true}',
+        'toolUseOrderOk: ${report['toolUseOrderOk'] == true}',
+        'toolResultOrderOk: ${report['toolResultOrderOk'] == true}',
+        'summaryOk: ${report['summaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'toolPanelEventsCount: ${report['toolPanelEventsCount'] ?? 0}',
+        'readOnlyExecutionOk: ${report['readOnlyExecutionOk'] == true}',
+        'executionScope: ${report['executionScope'] ?? 'unknown'}',
+        'expectedOrder: ${_compactJsonValue(report['expectedOrder'])}',
+        'observedOrder: ${_compactJsonValue(report['observedOrder'])}',
+        'resultStatuses: ${_compactJsonValue(report['resultStatuses'])}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'providerCallsDisabled: ${report['providerCallsDisabled'] == true}',
+        'nativeExecutionScoped: ${report['nativeExecutionScoped'] == true}',
+        'fallbackStillArmed: ${report['fallbackStillArmed'] == true}',
+        'sessionKey: ${report['sessionKey'] ?? 'unknown'}',
+        'runId: ${report['runId'] ?? 'unknown'}',
+        'messageChars: ${report['messageChars'] ?? 0}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DEVICE-EXEC-SHADOW] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeProductionDeviceNodeRuntimeSelectorMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionDeviceNodeRuntimeSelectorPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-DEVICE-SELECTOR] -> Opening device-node runtime selector canary',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runDeviceNodeRuntimeSelectorCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DEVICE-SELECTOR] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      final toolPanelEvents = report['toolPanelEvents'] is List
+          ? List<dynamic>.from(report['toolPanelEvents'] as List)
+          : const <dynamic>[];
+      for (final panelEvent in toolPanelEvents) {
+        if (panelEvent is! Map) continue;
+        final event = Map<String, dynamic>.from(panelEvent);
+        final type = event['type']?.toString();
+        final name = event['name']?.toString() ?? 'tool';
+        if (type == 'tool_use') {
+          final input = event['input'] is Map
+              ? Map<String, dynamic>.from(event['input'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        } else if (type == 'tool_result') {
+          final result = event['result'] is Map
+              ? Map<String, dynamic>.from(event['result'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        }
+      }
+
+      yield [
+        ok
+            ? 'Native device-node runtime selector canary complete'
+            : 'Native device-node runtime selector canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'innerPhase: ${report['innerPhase'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'nativeCandidateRuntimeId: ${report['nativeCandidateRuntimeId'] ?? 'unknown'}',
+        'nativeCandidateRoute: ${report['nativeCandidateRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'selectorFallbackUsed: ${report['selectorFallbackUsed'] == true}',
+        'selectorFallbackReadyOk: ${report['selectorFallbackReadyOk'] == true}',
+        'automaticFallbackPolicyOk: ${report['automaticFallbackPolicyOk'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'nativeSelectorPolicyOk: ${report['nativeSelectorPolicyOk'] == true}',
+        'nativeExecutionAttempted: ${report['nativeExecutionAttempted'] == true}',
+        'nativeExecutionOk: ${report['nativeExecutionOk'] == true}',
+        'nativeReadOnlyResultOk: ${report['nativeReadOnlyResultOk'] == true}',
+        'fallbackProbeOk: ${report['fallbackProbeOk'] == true}',
+        'uiEvidenceOk: ${report['uiEvidenceOk'] == true}',
+        'toolPanelEventsCount: ${report['toolPanelEventsCount'] ?? 0}',
+        'requestedToolHints: ${_compactJsonValue(report['requestedToolHints'])}',
+        'fallbackProbeToolHints: ${_compactJsonValue(report['fallbackProbeToolHints'])}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'selectorDecision: ${_compactJsonValue(report['selectorDecision'])}',
+        'fallbackProbeDecision: ${_compactJsonValue(report['fallbackProbeDecision'])}',
+        'nativeExecutionSummary: ${_compactJsonValue(report['nativeExecutionSummary'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DEVICE-SELECTOR] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeProductionDeviceNodeProviderToolPlanMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeProductionDeviceNodeProviderToolPlanPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-DEVICE-TOOL-HANDOFF] -> Opening device-node provider tool-plan handoff canary',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runDeviceNodeProviderToolPlanHandoffCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DEVICE-TOOL-HANDOFF] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      final toolPanelEvents = report['toolPanelEvents'] is List
+          ? List<dynamic>.from(report['toolPanelEvents'] as List)
+          : const <dynamic>[];
+      for (final panelEvent in toolPanelEvents) {
+        if (panelEvent is! Map) continue;
+        final event = Map<String, dynamic>.from(panelEvent);
+        final type = event['type']?.toString();
+        final name = event['name']?.toString() ?? 'tool';
+        if (type == 'tool_use') {
+          final input = event['input'] is Map
+              ? Map<String, dynamic>.from(event['input'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        } else if (type == 'tool_result') {
+          final result = event['result'] is Map
+              ? Map<String, dynamic>.from(event['result'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        }
+      }
+
+      yield [
+        ok
+            ? 'Native device-node provider tool-plan handoff canary complete'
+            : 'Native device-node provider tool-plan handoff canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'innerPhase: ${report['innerPhase'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'nativeCandidateRuntimeId: ${report['nativeCandidateRuntimeId'] ?? 'unknown'}',
+        'nativeCandidateRoute: ${report['nativeCandidateRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'selectorOk: ${report['selectorOk'] == true}',
+        'selectorFallbackReadyOk: ${report['selectorFallbackReadyOk'] == true}',
+        'automaticFallbackPolicyOk: ${report['automaticFallbackPolicyOk'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'providerToolPlanHandoffOk: ${report['providerToolPlanHandoffOk'] == true}',
+        'fallbackProviderToolPlanOk: ${report['fallbackProviderToolPlanOk'] == true}',
+        'nativeExecutionAttempted: ${report['nativeExecutionAttempted'] == true}',
+        'nativeExecutionOk: ${report['nativeExecutionOk'] == true}',
+        'uiEvidenceOk: ${report['uiEvidenceOk'] == true}',
+        'toolPanelEventsCount: ${report['toolPanelEventsCount'] ?? 0}',
+        'toolPlanNames: ${_compactJsonValue(report['toolPlanNames'])}',
+        'gatewayToolNames: ${_compactJsonValue(report['gatewayToolNames'])}',
+        'fallbackToolPlanNames: ${_compactJsonValue(report['fallbackToolPlanNames'])}',
+        'toolPlanCount: ${report['toolPlanCount'] ?? 0}',
+        'allowedPlanCount: ${report['allowedPlanCount'] ?? 0}',
+        'blockedPlanCount: ${report['blockedPlanCount'] ?? 0}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'providerToolPlanHandoff: ${_compactJsonValue(report['providerToolPlanHandoff'])}',
+        'fallbackProviderToolPlan: ${_compactJsonValue(report['fallbackProviderToolPlan'])}',
+        'nativeExecutionSummary: ${_compactJsonValue(report['nativeExecutionSummary'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DEVICE-TOOL-HANDOFF] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeProductionDeviceNodeSelectorHandoffSoakMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload =
+        _nativeProductionDeviceNodeSelectorHandoffSoakPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+    final cycleMatch = RegExp(r'^\s*(\d+)\b').firstMatch(payload);
+    final requestedCycles =
+        cycleMatch == null ? 3 : int.tryParse(cycleMatch.group(1) ?? '') ?? 3;
+    final prompt = cycleMatch == null
+        ? payload
+        : payload.substring(cycleMatch.end).trim().isEmpty
+            ? 'native device-node selector handoff soak'
+            : payload.substring(cycleMatch.end).trim();
+
+    _addActivity(
+      '[NATIVE-DEVICE-SOAK] -> Opening device-node selector/handoff soak',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runDeviceNodeSelectorHandoffSoakCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: prompt,
+        cycles: requestedCycles,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-DEVICE-SOAK] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native device-node selector/handoff soak complete'
+            : 'Native device-node selector/handoff soak pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'requestedCycles: ${report['requestedCycles'] ?? requestedCycles}',
+        'cycles: ${report['cycles'] ?? requestedCycles}',
+        'passedCycles: ${report['passedCycles'] ?? 0}',
+        'failedCycle: ${report['failedCycle'] ?? 'none'}',
+        'selectorHandoffSoakOk: ${report['selectorHandoffSoakOk'] == true}',
+        'cancellationParityOk: ${report['cancellationParityOk'] == true}',
+        'providerErrorPolicyOk: ${report['providerErrorPolicyOk'] == true}',
+        'bridgeErrorPolicyOk: ${report['bridgeErrorPolicyOk'] == true}',
+        'hotReloadRepeatOk: ${report['hotReloadRepeatOk'] == true}',
+        'rollbackOk: ${report['rollbackOk'] == true}',
+        'finalProductionHealthOk: ${report['finalProductionHealthOk'] == true}',
+        'finalProductionRuntimeId: ${report['finalProductionRuntimeId'] ?? 'unknown'}',
+        'toolPlanNames: ${_compactJsonValue(report['toolPlanNames'])}',
+        'aggregateToolPanelEventsCount: ${report['aggregateToolPanelEventsCount'] ?? 0}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'cycleReports: ${_compactJsonValue(report['cycleReports'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-DEVICE-SOAK] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeNextMobileBridgeCandidateMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeNextMobileBridgeCandidatePayload(message);
+    if (payload == null) return;
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-NEXT-CANDIDATE] -> Selecting next mobile bridge candidate',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runNextMobileBridgeCandidateSelectionCanary(
+        log: _addActivity,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-NEXT-CANDIDATE] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native next mobile bridge candidate selection complete'
+            : 'Native next mobile bridge candidate selection pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'requestedModel: $requestedModel',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'selectedToolHint: ${report['selectedToolHint'] ?? 'unknown'}',
+        'selectedGesture: ${report['selectedGesture'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'candidateSelectionOk: ${report['candidateSelectionOk'] == true}',
+        'chosenFromScorecard: ${report['chosenFromScorecard'] == true}',
+        'policyMapOk: ${report['policyMapOk'] == true}',
+        'inventoryParityOk: ${report['inventoryParityOk'] == true}',
+        'skillPolicyCoverageOk: ${report['skillPolicyCoverageOk'] == true}',
+        'mobileToolPolicyCoverageOk: ${report['mobileToolPolicyCoverageOk'] == true}',
+        'toolHintPolicyCoverageOk: ${report['toolHintPolicyCoverageOk'] == true}',
+        'mobileBridgeCandidateSkills: ${report['mobileBridgeCandidateSkills'] is List ? (report['mobileBridgeCandidateSkills'] as List).join(', ') : ''}',
+        'selectedCandidatePresent: ${report['selectedCandidatePresent'] == true}',
+        'selectedToolHintPolicy: ${report['selectedToolHintPolicy'] ?? 'unknown'}',
+        'selectedToolHintPolicyOk: ${report['selectedToolHintPolicyOk'] == true}',
+        'selectedDecisionOk: ${report['selectedDecisionOk'] == true}',
+        'fallbackPolicyOk: ${report['fallbackPolicyOk'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'priorAvatarBridgeEvidenceOk: ${report['priorAvatarBridgeEvidenceOk'] == true}',
+        'candidateScorecards: ${_compactJsonValue(report['candidateScorecards'])}',
+        'selectedCandidateDecision: ${_compactJsonValue(report['selectedCandidateDecision'])}',
+        'rejectedCandidateDecisions: ${_compactJsonValue(report['rejectedCandidateDecisions'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-NEXT-CANDIDATE] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeGesturesRouteShadowMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeGesturesRouteShadowPayload(message);
+    if (payload == null) return;
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-GESTURES-SHADOW] -> Opening controlled gestures route shadow',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runGesturesRouteShadowCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-GESTURES-SHADOW] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native gestures route shadow canary complete'
+            : 'Native gestures route shadow canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'innerPhase: ${report['innerPhase'] ?? 'unknown'}',
+        'candidateSelectionOk: ${report['candidateSelectionOk'] == true}',
+        'requestedModel: $requestedModel',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'selectedToolHint: ${report['selectedToolHint'] ?? 'unknown'}',
+        'selectedGesture: ${report['selectedGesture'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeLeftRunningForShadow: ${report['nativeLeftRunningForShadow'] == true}',
+        'realTurnFrameParsed: ${report['realTurnFrameParsed'] == true}',
+        'shadowParityOk: ${report['shadowParityOk'] == true}',
+        'dryRunShadowOk: ${report['dryRunShadowOk'] == true}',
+        'hashMatches: ${report['hashMatches'] == true}',
+        'requestedToolHints: ${_compactJsonValue(report['requestedToolHints'])}',
+        'localToolHints: ${_compactJsonValue(report['localToolHints'])}',
+        'nativeToolHints: ${_compactJsonValue(report['nativeToolHints'])}',
+        'dryRunToolHints: ${_compactJsonValue(report['dryRunToolHints'])}',
+        'routePlanToolHints: ${_compactJsonValue(report['routePlanToolHints'])}',
+        'realTurnToolHintsOk: ${report['realTurnToolHintsOk'] == true}',
+        'boundedEffectPolicyOk: ${report['boundedEffectPolicyOk'] == true}',
+        'gestureAllowlistOk: ${report['gestureAllowlistOk'] == true}',
+        'routeDecision: ${_compactJsonValue(report['routeDecision'])}',
+        'shadowRouteDecisionOk: ${report['shadowRouteDecisionOk'] == true}',
+        'routeEvents: ${_compactJsonValue(report['routeEvents'])}',
+        'routeStreamOrderOk: ${report['routeStreamOrderOk'] == true}',
+        'routeSkeletonOk: ${report['routeSkeletonOk'] == true}',
+        'routeStatus: ${report['routeStatus'] ?? 'unknown'}',
+        'providerGateBlocked: ${report['providerGateBlocked'] == true}',
+        'toolGateBlocked: ${report['toolGateBlocked'] == true}',
+        'fallbackPolicyOk: ${report['fallbackPolicyOk'] == true}',
+        'acceptedForRouting: ${report['acceptedForRouting'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'providerCallsDisabled: ${report['providerCallsDisabled'] == true}',
+        'nativeExecutionDisabled: ${report['nativeExecutionDisabled'] == true}',
+        'fallbackStillArmed: ${report['fallbackStillArmed'] == true}',
+        'sessionKey: ${report['sessionKey'] ?? 'unknown'}',
+        'runId: ${report['runId'] ?? 'unknown'}',
+        'messageChars: ${report['messageChars'] ?? 0}',
+        'rejectedCandidateDecisions: ${_compactJsonValue(report['rejectedCandidateDecisions'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-GESTURES-SHADOW] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeGesturesExecutionMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeGesturesExecutionPayload(message);
+    if (payload == null) return;
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-GESTURES-EXEC] -> Opening protected gestures execution canary',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runGesturesProtectedExecutionCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-GESTURES-EXEC] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      final toolPanelEvents = report['toolPanelEvents'] is List
+          ? List<dynamic>.from(report['toolPanelEvents'] as List)
+          : const <dynamic>[];
+      for (final panelEvent in toolPanelEvents) {
+        if (panelEvent is! Map) continue;
+        final event = Map<String, dynamic>.from(panelEvent);
+        final type = event['type']?.toString();
+        final name = event['name']?.toString() ?? 'tool';
+        if (type == 'tool_use') {
+          final input = event['input'] is Map
+              ? Map<String, dynamic>.from(event['input'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_USE:$name:${jsonEncode(input)}\x00';
+        } else if (type == 'tool_result') {
+          final result = event['result'] is Map
+              ? Map<String, dynamic>.from(event['result'] as Map)
+              : <String, dynamic>{};
+          yield '\x00TOOL_RESULT:$name:${jsonEncode(result)}\x00';
+        }
+      }
+
+      yield [
+        ok
+            ? 'Native gestures protected execution canary complete'
+            : 'Native gestures protected execution canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'innerPhase: ${report['innerPhase'] ?? 'unknown'}',
+        'routeShadowOk: ${report['routeShadowOk'] == true}',
+        'requestedModel: $requestedModel',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'selectedToolHint: ${report['selectedToolHint'] ?? 'unknown'}',
+        'selectedGesture: ${report['selectedGesture'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'nativeHealthOk: ${report['nativeHealthOk'] == true}',
+        'nativeLeftRunningForExecution: ${report['nativeLeftRunningForExecution'] == true}',
+        'realTurnFrameParsed: ${report['realTurnFrameParsed'] == true}',
+        'shadowParityOk: ${report['shadowParityOk'] == true}',
+        'dryRunShadowOk: ${report['dryRunShadowOk'] == true}',
+        'hashMatches: ${report['hashMatches'] == true}',
+        'requestedToolHints: ${_compactJsonValue(report['requestedToolHints'])}',
+        'localToolHints: ${_compactJsonValue(report['localToolHints'])}',
+        'nativeToolHints: ${_compactJsonValue(report['nativeToolHints'])}',
+        'dryRunToolHints: ${_compactJsonValue(report['dryRunToolHints'])}',
+        'realTurnToolHintsOk: ${report['realTurnToolHintsOk'] == true}',
+        'ackEventOk: ${report['ackEventOk'] == true}',
+        'toolPlanSummaryOk: ${report['toolPlanSummaryOk'] == true}',
+        'executeRequestOk: ${report['executeRequestOk'] == true}',
+        'executeAckOk: ${report['executeAckOk'] == true}',
+        'toolUseOk: ${report['toolUseOk'] == true}',
+        'toolResultOk: ${report['toolResultOk'] == true}',
+        'summaryOk: ${report['summaryOk'] == true}',
+        'eventOrderOk: ${report['eventOrderOk'] == true}',
+        'endOk: ${report['endOk'] == true}',
+        'protectedAvatarExecutionOk: ${report['protectedAvatarExecutionOk'] == true}',
+        'toolPanelEventsCount: ${report['toolPanelEventsCount'] ?? 0}',
+        'uiEvidenceOk: ${report['uiEvidenceOk'] == true}',
+        'command: ${report['command'] ?? 'unknown'}',
+        'gesture: ${report['gesture'] ?? 'unknown'}',
+        'gestureOk: ${report['gestureOk'] == true}',
+        'durationMs: ${report['durationMs'] ?? 'unknown'}',
+        'durationOk: ${report['durationOk'] == true}',
+        'resultStatus: ${report['resultStatus'] ?? 'unknown'}',
+        'protectedGesture: ${report['protectedGesture'] == true}',
+        'arbitration: ${report['arbitration'] ?? 'unknown'}',
+        'arbitrationOk: ${report['arbitrationOk'] == true}',
+        'autoGestureSuppressionRequired: ${report['autoGestureSuppressionRequired'] == true}',
+        'autoGestureSuppressionOk: ${report['autoGestureSuppressionOk'] == true}',
+        'canaryAllowlistOk: ${report['canaryAllowlistOk'] == true}',
+        'fixtureParityOk: ${report['fixtureParityOk'] == true}',
+        'dispatchParityOk: ${report['dispatchParityOk'] == true}',
+        'executeParityOk: ${report['executeParityOk'] == true}',
+        'validationOk: ${report['validationOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'providerCallsDisabled: ${report['providerCallsDisabled'] == true}',
+        'nativeExecutionScoped: ${report['nativeExecutionScoped'] == true}',
+        'fallbackStillArmed: ${report['fallbackStillArmed'] == true}',
+        'observedEventOrder: ${_compactJsonValue(report['observedEventOrder'])}',
+        'sessionKey: ${report['sessionKey'] ?? 'unknown'}',
+        'runId: ${report['runId'] ?? 'unknown'}',
+        'messageChars: ${report['messageChars'] ?? 0}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-GESTURES-EXEC] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeGesturesSelectorHandoffSoakMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeGesturesSelectorHandoffSoakPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+    final cycleMatch = RegExp(r'^\s*(\d+)\b').firstMatch(payload);
+    final requestedCycles =
+        cycleMatch == null ? 2 : int.tryParse(cycleMatch.group(1) ?? '') ?? 2;
+    final prompt = cycleMatch == null
+        ? payload
+        : payload.substring(cycleMatch.end).trim().isEmpty
+            ? 'native gestures selector handoff soak: avatar.gesture wave right'
+            : payload.substring(cycleMatch.end).trim();
+
+    _addActivity(
+      '[NATIVE-GESTURES-SOAK] -> Opening gestures selector/handoff soak',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runGesturesSelectorHandoffSoakCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: prompt,
+        cycles: requestedCycles,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-GESTURES-SOAK] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native gestures selector/handoff soak complete'
+            : 'Native gestures selector/handoff soak pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'requestedModel: $requestedModel',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'selectedToolHint: ${report['selectedToolHint'] ?? 'unknown'}',
+        'selectedGesture: ${report['selectedGesture'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'requestedCycles: ${report['requestedCycles'] ?? requestedCycles}',
+        'cycles: ${report['cycles'] ?? requestedCycles}',
+        'passedCycles: ${report['passedCycles'] ?? 0}',
+        'failedCycle: ${report['failedCycle'] ?? 'none'}',
+        'selectorHandoffSoakOk: ${report['selectorHandoffSoakOk'] == true}',
+        'protectedExecutionSoakOk: ${report['protectedExecutionSoakOk'] == true}',
+        'cancellationParityOk: ${report['cancellationParityOk'] == true}',
+        'providerErrorPolicyOk: ${report['providerErrorPolicyOk'] == true}',
+        'bridgeErrorPolicyOk: ${report['bridgeErrorPolicyOk'] == true}',
+        'hotReloadRepeatOk: ${report['hotReloadRepeatOk'] == true}',
+        'rollbackOk: ${report['rollbackOk'] == true}',
+        'finalProductionHealthOk: ${report['finalProductionHealthOk'] == true}',
+        'finalProductionRuntimeId: ${report['finalProductionRuntimeId'] ?? 'unknown'}',
+        'toolPlanNames: ${_compactJsonValue(report['toolPlanNames'])}',
+        'gesture: ${report['gesture'] ?? 'unknown'}',
+        'aggregateToolPanelEventsCount: ${report['aggregateToolPanelEventsCount'] ?? 0}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'nativeExecutionScoped: ${report['nativeExecutionScoped'] == true}',
+        'cycleReports: ${_compactJsonValue(report['cycleReports'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-GESTURES-SOAK] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeGesturesRuntimeSelectorMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeGesturesRuntimeSelectorPayload(message);
+    if (payload == null) return;
+
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-GESTURES-SELECTOR] -> Opening gestures runtime selector canary',
+    );
+
+    try {
+      final report =
+          await NativeGatewaySmokeService.runGesturesRuntimeSelectorCanary(
+        log: _addActivity,
+        model: requestedModel,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-GESTURES-SELECTOR] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native gestures runtime selector canary complete'
+            : 'Native gestures runtime selector canary pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'innerPhase: ${report['innerPhase'] ?? 'unknown'}',
+        'requestedModel: $requestedModel',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'selectedToolHint: ${report['selectedToolHint'] ?? 'unknown'}',
+        'selectedGesture: ${report['selectedGesture'] ?? 'unknown'}',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'executionCandidateRuntimeId: ${report['executionCandidateRuntimeId'] ?? 'unknown'}',
+        'executionCandidateRoute: ${report['executionCandidateRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'selectorToggleOk: ${report['selectorToggleOk'] == true}',
+        'selectorPolicyOk: ${report['selectorPolicyOk'] == true}',
+        'nativeExecutionAttempted: ${report['nativeExecutionAttempted'] == true}',
+        'nativeExecutionOk: ${report['nativeExecutionOk'] == true}',
+        'nativeGestureResultOk: ${report['nativeGestureResultOk'] == true}',
+        'unsupportedGestureFallbackOk: ${report['unsupportedGestureFallbackOk'] == true}',
+        'mixedToolFallbackOk: ${report['mixedToolFallbackOk'] == true}',
+        'cancellationFallbackOk: ${report['cancellationFallbackOk'] == true}',
+        'fallbackProbeOk: ${report['fallbackProbeOk'] == true}',
+        'automaticFallbackPolicyOk: ${report['automaticFallbackPolicyOk'] == true}',
+        'toolPanelEventsCount: ${report['toolPanelEventsCount'] ?? 0}',
+        'uiEvidenceOk: ${report['uiEvidenceOk'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'transportInvocationEnabled: ${report['transportInvocationEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'bridgeExecutionEnabled: ${report['bridgeExecutionEnabled'] == true}',
+        'nativeExecutionScoped: ${report['nativeExecutionScoped'] == true}',
+        'selectorToggle: ${_compactJsonValue(report['selectorToggle'])}',
+        'selectorDecision: ${_compactJsonValue(report['selectorDecision'])}',
+        'unsupportedGestureFallback: ${_compactJsonValue(report['unsupportedGestureFallback'])}',
+        'mixedToolFallback: ${_compactJsonValue(report['mixedToolFallback'])}',
+        'cancellationFallback: ${_compactJsonValue(report['cancellationFallback'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-GESTURES-SELECTOR] ERROR $raw');
+      yield '[Error] $raw';
+    }
+  }
+
+  Stream<String> _sendNativeHapticBridgeCandidateMessage(
+    String message, {
+    required String model,
+  }) async* {
+    final payload = _nativeHapticBridgeCandidatePayload(message);
+    if (payload == null) return;
+    final requestedModel = model.trim().isEmpty ? 'openrouter/auto' : model;
+
+    _addActivity(
+      '[NATIVE-HAPTIC-CANDIDATE] -> Selecting haptic bridge candidate',
+    );
+
+    try {
+      final report = await NativeGatewaySmokeService
+          .runHapticBridgeCandidateSelectionCanary(
+        log: _addActivity,
+        prompt: payload,
+      );
+      final ok = report['ok'] == true;
+      _addActivity(
+        '[NATIVE-HAPTIC-CANDIDATE] ${ok ? 'OK' : 'PENDING'} '
+        '${report['decision'] ?? ''}',
+      );
+
+      yield [
+        ok
+            ? 'Native haptic bridge candidate selection complete'
+            : 'Native haptic bridge candidate selection pending',
+        '',
+        'phase: ${report['phase'] ?? 'unknown'}',
+        'mode: ${report['mode'] ?? 'unknown'}',
+        'requestedModel: $requestedModel',
+        'primaryRuntimeId: ${report['primaryRuntimeId'] ?? 'unknown'}',
+        'nativeRuntimeId: ${report['nativeRuntimeId'] ?? 'unknown'}',
+        'selectedBridgeLaneId: ${report['selectedBridgeLaneId'] ?? 'unknown'}',
+        'selectedSkillId: ${report['selectedSkillId'] ?? 'unknown'}',
+        'selectedToolHint: ${report['selectedToolHint'] ?? 'unknown'}',
+        'selectedRuntimeId: ${report['selectedRuntimeId'] ?? 'unknown'}',
+        'selectedRoute: ${report['selectedRoute'] ?? 'unknown'}',
+        'fallbackRuntimeId: ${report['fallbackRuntimeId'] ?? 'unknown'}',
+        'fallbackRoute: ${report['fallbackRoute'] ?? 'unknown'}',
+        'fallbackOneActionAway: ${report['fallbackOneActionAway'] == true}',
+        'fallbackOnNativeFailure: ${report['fallbackOnNativeFailure'] == true}',
+        'candidateSelectionOk: ${report['candidateSelectionOk'] == true}',
+        'chosenFromScorecard: ${report['chosenFromScorecard'] == true}',
+        'policyMapOk: ${report['policyMapOk'] == true}',
+        'inventoryParityOk: ${report['inventoryParityOk'] == true}',
+        'skillPolicyCoverageOk: ${report['skillPolicyCoverageOk'] == true}',
+        'mobileToolPolicyCoverageOk: ${report['mobileToolPolicyCoverageOk'] == true}',
+        'toolHintPolicyCoverageOk: ${report['toolHintPolicyCoverageOk'] == true}',
+        'selectedToolHintPolicy: ${report['selectedToolHintPolicy'] ?? 'unknown'}',
+        'selectedToolHintPolicyOk: ${report['selectedToolHintPolicyOk'] == true}',
+        'selectedDecisionOk: ${report['selectedDecisionOk'] == true}',
+        'fallbackPolicyOk: ${report['fallbackPolicyOk'] == true}',
+        'productionHealthOkBefore: ${report['productionHealthOkBefore'] == true}',
+        'productionHealthOkAfter: ${report['productionHealthOkAfter'] == true}',
+        'prootRemainedPrimary: ${report['prootRemainedPrimary'] == true}',
+        'providerCallsEnabled: ${report['providerCallsEnabled'] == true}',
+        'executionEnabled: ${report['executionEnabled'] == true}',
+        'toolExecutionEnabled: ${report['toolExecutionEnabled'] == true}',
+        'defaultNativeRoutingEnabled: ${report['defaultNativeRoutingEnabled'] == true}',
+        'priorHapticBridgeEvidenceOk: ${report['priorHapticBridgeEvidenceOk'] == true}',
+        'candidateScorecards: ${_compactJsonValue(report['candidateScorecards'])}',
+        'selectedCandidateDecision: ${_compactJsonValue(report['selectedCandidateDecision'])}',
+        'rejectedCandidateDecisions: ${_compactJsonValue(report['rejectedCandidateDecisions'])}',
+        'nextGate: ${report['nextGate'] ?? 'unknown'}',
+        '',
+        '${report['decision'] ?? payload}',
+      ].join('\n');
+    } catch (e) {
+      final raw = _rawGatewayErrorText(e);
+      _addActivity('[NATIVE-HAPTIC-CANDIDATE] ERROR $raw');
       yield '[Error] $raw';
     }
   }
@@ -9712,6 +12624,58 @@ $message''';
   }) async* {
     model = await _resolveModel(model);
 
+    if (_nativeDefaultOwnerRollbackRequested(message)) {
+      yield* _sendNativeDefaultOwnerRollbackMessage(message);
+      return;
+    }
+
+    if (_nativeDefaultOwnerEnableRequested(message)) {
+      yield* _sendNativeDefaultOwnerEnableMessage(message);
+      return;
+    }
+
+    if (_nativeFullGatewayRuntimeSelectorPressurePayload(message) != null) {
+      yield* _sendNativeFullGatewayRuntimeSelectorPressureMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeFullGatewayRuntimeSelectorSoakPayload(message) != null) {
+      yield* _sendNativeFullGatewayRuntimeSelectorSoakMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeFullGatewayRuntimeSelectorPayload(message) != null) {
+      yield* _sendNativeFullGatewayRuntimeSelectorMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeFullGatewayProductionChatTurnPayload(message) != null) {
+      yield* _sendNativeFullGatewayProductionChatTurnMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeFullGatewayProductionOwnerPayload(message) != null) {
+      yield* _sendNativeFullGatewayProductionOwnerMessage(message);
+      return;
+    }
+
+    if (_nativeFullGatewayBootstrapPayload(message) != null) {
+      yield* _sendNativeFullGatewayBootstrapMessage(message);
+      return;
+    }
+
     if (_nativeProductionInventoryParityPayload(message) != null) {
       yield* _sendNativeProductionInventoryParityMessage(message);
       return;
@@ -9732,6 +12696,95 @@ $message''';
 
     if (_nativeProductionSingleSkillRouteSelectionPayload(message) != null) {
       yield* _sendNativeProductionSingleSkillRouteSelectionMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionDeviceNodeRouteShadowPayload(message) != null) {
+      yield* _sendNativeProductionDeviceNodeRouteShadowMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionDeviceNodeExecutionPayload(message) != null) {
+      yield* _sendNativeProductionDeviceNodeExecutionMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionDeviceNodeRuntimeSelectorPayload(message) != null) {
+      yield* _sendNativeProductionDeviceNodeRuntimeSelectorMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionDeviceNodeProviderToolPlanPayload(message) != null) {
+      yield* _sendNativeProductionDeviceNodeProviderToolPlanMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeProductionDeviceNodeSelectorHandoffSoakPayload(message) !=
+        null) {
+      yield* _sendNativeProductionDeviceNodeSelectorHandoffSoakMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeNextMobileBridgeCandidatePayload(message) != null) {
+      yield* _sendNativeNextMobileBridgeCandidateMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeGesturesRouteShadowPayload(message) != null) {
+      yield* _sendNativeGesturesRouteShadowMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeGesturesExecutionPayload(message) != null) {
+      yield* _sendNativeGesturesExecutionMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeGesturesSelectorHandoffSoakPayload(message) != null) {
+      yield* _sendNativeGesturesSelectorHandoffSoakMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeGesturesRuntimeSelectorPayload(message) != null) {
+      yield* _sendNativeGesturesRuntimeSelectorMessage(
+        message,
+        model: model,
+      );
+      return;
+    }
+
+    if (_nativeHapticBridgeCandidatePayload(message) != null) {
+      yield* _sendNativeHapticBridgeCandidateMessage(
         message,
         model: model,
       );

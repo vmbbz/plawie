@@ -1,6 +1,6 @@
 # Tools, Skills, And Gateway Intelligence Architecture
 
-Last updated: 2026-05-28
+Last updated: 2026-06-02
 
 Engineers touching `gateway_service.dart`, `openclaw_service.dart`,
 `model_provider_catalog.dart`, `local_llm_service.dart`, or the Skills Manager
@@ -17,6 +17,60 @@ screen should read this before changing tool behavior.
 
 Do not mix these layers. A string that is valid as an Android node command is
 not automatically valid in `tools.allow`.
+
+## Gateway Plugins Are Not The Same As Device Capabilities
+
+Current on-device logs show the same 12 startup Gateway plugins loading under
+both PRoot and embedded native Node:
+
+```text
+browser
+canvas
+device-pair
+file-transfer
+google
+memory-core
+microsoft
+openai
+openrouter
+phone-control
+talk-voice
+xai
+```
+
+Those plugins are OpenClaw runtime extensions. They are not the same as the
+Android node command list and they are not the same as the Skills Manager tool
+schemas. Native provider/catalog expansion later loaded 45 provider/catalog
+plugins and exposed 177 Gateway methods, but startup plugins, provider plugins,
+skill tools, and phone bridge commands remain separate release contracts.
+
+Read the surfaces this way:
+
+| Surface | Where to inspect | Meaning |
+| --- | --- | --- |
+| Gateway plugins | Gateway log `[plugins] loading ...` lines | OpenClaw extensions loaded by the runtime |
+| Skills/tools catalog | Bot Management > Skills > Tools, or `GET /api/tools` on the phone node host | Tool schemas exposed by Plawie's skills service |
+| Android node capabilities | Node Device Page, `gateway.nodes.allowCommands` | Concrete phone bridge commands allowed through `AgentSkillServer` |
+
+The current phone-side `/api/tools` catalog contains:
+
+```text
+avatar-control
+tts-voice
+device-node
+avatar_overlay
+base-chain
+twilio-voice
+agent-card
+molt-launch
+valeo-sentinel
+moonpay
+```
+
+The current Android node command allowlist contains avatar, camera, canvas,
+flashlight/torch, location, screen recording, sensor, and haptic commands. It
+does not currently prove a generic third-party app launcher or a safe WhatsApp
+message-sending command.
 
 ## Gateway `tools.allow`
 
@@ -91,6 +145,22 @@ Device capabilities belong in node command policy, for example:
 ```
 
 Node command declarations and Gateway tool allowlists are separate contracts.
+
+## Phone-Control Release Boundary
+
+`phone-control` being loaded means the Gateway extension is present. It does
+not by itself guarantee that every Android phone action is available.
+
+For an agent request such as opening WhatsApp and sending a message, release-safe
+support requires a specific Android bridge command and policy. The safe first
+version should be "compose/open with the message prepared, then require user
+confirmation." Silent third-party messaging should not be claimed or enabled
+without explicit consent, permission review, and a tested rollback-safe command
+path.
+
+Until such a command exists in `gateway.nodes.allowCommands` and is backed by
+`AgentSkillServer`, the correct behavior is to report the action as unsupported
+or to open a user-confirmed compose flow if one is implemented.
 
 ## Direct Local NDK Tools
 

@@ -54,6 +54,10 @@ class MainActivity : FlutterActivity() {
     private val EVENT_CHANNEL = "com.nxg.openclawproot/gateway_logs"
     companion object {
         const val ACTION_PIP_MIC = "com.nxg.openclawproot.ACTION_PIP_MIC"
+        const val ACTION_DEBUG_NATIVE_FULL_GATEWAY_BOOTSTRAP =
+            "com.nxg.openclawproot.DEBUG_NATIVE_FULL_GATEWAY_BOOTSTRAP"
+        const val ACTION_DEBUG_NATIVE_FULL_GATEWAY_PRODUCTION =
+            "com.nxg.openclawproot.DEBUG_NATIVE_FULL_GATEWAY_PRODUCTION"
         const val URL_CHANNEL_ID = "openclaw_urls"
         const val NOTIFICATION_PERMISSION_REQUEST = 1001
         const val SCREEN_CAPTURE_REQUEST = 1002
@@ -68,6 +72,8 @@ class MainActivity : FlutterActivity() {
     private var pipMethodChannel: MethodChannel? = null
     private var nativeTts: TextToSpeech? = null
     private var nativeTtsReady: Boolean = false
+    private var debugNativeFullGatewayBootstrapStarted: Boolean = false
+    private var debugNativeFullGatewayProductionStarted: Boolean = false
 
     // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
     private var hotwordEventSink: EventChannel.EventSink? = null
@@ -85,6 +91,11 @@ class MainActivity : FlutterActivity() {
                 methodChannel?.invokeMethod("onNetworkChanged", false)
             }
         }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        handleDebugNativeFullGatewayBootstrapIntent(intent)
+        super.onCreate(savedInstanceState)
     }
 
     // BroadcastReceiver that relays HotwordService detections to Flutter via EventChannel
@@ -116,6 +127,7 @@ class MainActivity : FlutterActivity() {
         processManager = ProcessManager(applicationContext, filesDir, nativeLibDir)
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
         nativeNodeSmokeProcess = NativeNodeSmokeProcess(applicationContext, nativeLibDir)
+        handleDebugNativeFullGatewayBootstrapIntent(intent)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
         MethodChannel(
@@ -282,6 +294,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "startGateway" -> {
                     try {
+                        if (debugNativeFullGatewayProductionStarted) {
+                            Log.i(
+                                "MainActivity",
+                                "startGateway ignored while native full Gateway production debug run is active"
+                            )
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
                         val allowDuringSetup = call.argument<Boolean>("allowDuringSetup") ?: false
                         if (!allowDuringSetup && !SetupGuards.canAutomateGateway(this)) {
                             Log.i("MainActivity", "startGateway ignored until setup completes")
@@ -324,19 +344,47 @@ class MainActivity : FlutterActivity() {
                     result.success(NativeGatewaySmokeServer.getRecentLogs())
                 }
                 "startNativeNodeSmokeRuntime" -> {
-                    result.success(nativeNodeSmokeProcess.start())
+                    if (debugNativeFullGatewayBootstrapStarted) {
+                        result.success(nativeNodeSmokeProcess.startFullGatewayBootstrap())
+                    } else {
+                        result.success(nativeNodeSmokeProcess.start())
+                    }
                 }
                 "startNativeNodeProductionPortCanaryRuntime" -> {
                     result.success(nativeNodeSmokeProcess.startProductionPortCanary())
                 }
+                "startNativeNodeFullGatewayBootstrapRuntime" -> {
+                    result.success(nativeNodeSmokeProcess.startFullGatewayBootstrap())
+                }
+                "startNativeNodeFullGatewayProductionRuntime" -> {
+                    result.success(nativeNodeSmokeProcess.startFullGatewayProduction())
+                }
                 "stopNativeNodeSmokeRuntime" -> {
-                    result.success(nativeNodeSmokeProcess.stop())
+                    val stopped = nativeNodeSmokeProcess.stop()
+                    if (debugNativeFullGatewayBootstrapStarted ||
+                        debugNativeFullGatewayProductionStarted
+                    ) {
+                        Log.i(
+                            "MainActivity",
+                            "Clearing native full Gateway debug ownership after stop request " +
+                                "stopped=$stopped"
+                        )
+                    }
+                    debugNativeFullGatewayBootstrapStarted = false
+                    debugNativeFullGatewayProductionStarted = false
+                    result.success(stopped)
                 }
                 "isNativeNodeSmokeRuntimeRunning" -> {
                     result.success(nativeNodeSmokeProcess.isRunning())
                 }
                 "isNativeNodeProductionPortCanaryRuntimeRunning" -> {
                     result.success(nativeNodeSmokeProcess.isProductionPortCanaryRunning())
+                }
+                "isNativeNodeFullGatewayBootstrapRuntimeRunning" -> {
+                    result.success(nativeNodeSmokeProcess.isFullGatewayBootstrapRunning())
+                }
+                "isNativeNodeFullGatewayProductionRuntimeRunning" -> {
+                    result.success(nativeNodeSmokeProcess.isFullGatewayProductionRunning())
                 }
                 "getNativeNodeSmokeRuntimeLogs" -> {
                     result.success(nativeNodeSmokeProcess.getRecentLogs())
@@ -798,6 +846,58 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDebugNativeFullGatewayBootstrapIntent(intent)
+    }
+
+    private fun handleDebugNativeFullGatewayBootstrapIntent(intent: Intent?) {
+        val action = intent?.action
+        val productionMode = action == ACTION_DEBUG_NATIVE_FULL_GATEWAY_PRODUCTION
+        if (action != ACTION_DEBUG_NATIVE_FULL_GATEWAY_BOOTSTRAP && !productionMode) return
+        if (
+            (!productionMode && debugNativeFullGatewayBootstrapStarted) ||
+            (productionMode && debugNativeFullGatewayProductionStarted)
+        ) {
+            Log.i("MainActivity", "Native full Gateway debug intent already handled")
+            return
+        }
+
+        val isDebuggable =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!isDebuggable) {
+            Log.w("MainActivity", "Ignoring native full Gateway bootstrap debug intent in release build")
+            return
+        }
+
+        if (!::nativeNodeSmokeProcess.isInitialized) {
+            nativeNodeSmokeProcess =
+                NativeNodeSmokeProcess(applicationContext, applicationInfo.nativeLibraryDir)
+        }
+
+        if (productionMode) {
+            debugNativeFullGatewayProductionStarted = true
+        } else {
+            debugNativeFullGatewayBootstrapStarted = true
+        }
+        Log.i(
+            "MainActivity",
+            "Handling native full Gateway debug intent productionMode=$productionMode"
+        )
+        Thread {
+            val started = if (productionMode) {
+                nativeNodeSmokeProcess.startFullGatewayProduction()
+            } else {
+                nativeNodeSmokeProcess.startFullGatewayBootstrap()
+            }
+            Log.i(
+                "MainActivity",
+                "Debug native full Gateway intent handled; productionMode=$productionMode started=$started"
+            )
+        }.start()
     }
 
     private fun requestNotificationPermission() {
