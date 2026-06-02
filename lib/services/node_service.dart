@@ -36,6 +36,7 @@ class NodeService {
   NodeState _state = const NodeState();
   final Map<String, Future<NodeFrame> Function(String, Map<String, dynamic>)>
       _capabilityHandlers = {};
+  Future<bool> Function(String requestId)? approvePairingRequestViaGateway;
   String? _gatewayAuthToken;
   Completer<String?>? _challengeCompleter;
   String? _cachedChallengeNonce;
@@ -54,6 +55,57 @@ class NodeService {
   bool get isConnected => _ws.isConnected;
 
   void clearCachedToken() => _gatewayAuthToken = null;
+
+  Future<bool> _nativeOwnerSelected() async {
+    try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      return prefs.gatewayRuntimeOwner ==
+          PreferencesService.gatewayRuntimeOwnerNativeProduction;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<String>> _openClawStoreRoots() async {
+    final filesDir = await NativeBridge.getFilesDir();
+    final nativeRoot = '$filesDir/native-node-embedded/native-home/.openclaw';
+    final prootRoot = '$filesDir/rootfs/ubuntu/root/.openclaw';
+    final nativeSelected = await _nativeOwnerSelected();
+    return nativeSelected
+        ? <String>[nativeRoot, prootRoot]
+        : <String>[prootRoot, nativeRoot];
+  }
+
+  Future<List<File>> _openClawStoreFiles(String relativePath) async {
+    final roots = await _openClawStoreRoots();
+    return roots.map((root) => File('$root/$relativePath')).toList();
+  }
+
+  Future<Object?> _readFirstOpenClawStoreJson(String relativePath) async {
+    for (final file in await _openClawStoreFiles(relativePath)) {
+      try {
+        if (!await file.exists()) continue;
+        final raw = await file.readAsString();
+        if (raw.trim().isEmpty) continue;
+        return jsonDecode(raw);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  Future<List<Object>> _readAllOpenClawStoreJson(String relativePath) async {
+    final values = <Object>[];
+    for (final file in await _openClawStoreFiles(relativePath)) {
+      try {
+        if (!await file.exists()) continue;
+        final raw = await file.readAsString();
+        if (raw.trim().isEmpty) continue;
+        values.add(jsonDecode(raw) as Object);
+      } catch (_) {}
+    }
+    return values;
+  }
 
   void _updateState(NodeState newState) {
     _state = newState;
@@ -228,6 +280,16 @@ class NodeService {
     String? successLog,
   }) async {
     if (deviceId.isEmpty) return false;
+    if (await _nativeOwnerSelected()) {
+      final removed =
+          await _removePairedGatewayDeviceFromNativeStores(deviceId);
+      if (removed && successLog != null) log(successLog);
+      if (!removed) {
+        log('[NODE] Native owner: no paired-node store record found to remove; skipping PRoot CLI.');
+      }
+      return removed;
+    }
+
     try {
       await NativeBridge.runInProot(
         '$kOpenClawCommand devices remove ${NativeBridge.shellQuote(deviceId)} --json',
@@ -251,6 +313,80 @@ class NodeService {
     }
   }
 
+  Future<bool> _removePairedGatewayDeviceFromNativeStores(
+    String deviceId,
+  ) async {
+    var removed = false;
+    for (final relativePath in const [
+      'devices/paired.json',
+      'nodes/paired.json',
+    ]) {
+      final file = (await _openClawStoreFiles(relativePath)).first;
+      try {
+        if (!await file.exists()) continue;
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is! Map) continue;
+        final map = Map<String, dynamic>.from(decoded);
+        if (_removeDeviceRecordFromJsonMap(map, deviceId)) {
+          await file.writeAsString(jsonEncode(map));
+          removed = true;
+        }
+      } catch (_) {}
+    }
+    return removed;
+  }
+
+  bool _removeDeviceRecordFromJsonMap(
+    Map<String, dynamic> map,
+    String deviceId,
+  ) {
+    var removed = false;
+    if (map.remove(deviceId) != null) removed = true;
+
+    for (final key in map.keys.toList()) {
+      final value = map[key];
+      if (value is Map) {
+        final child = Map<String, dynamic>.from(value);
+        final mentionsDevice = _containsStringValue(child, deviceId);
+        final mentionsNodeRole =
+            _containsStringValue(child, AppConstants.nodeRole);
+        if (mentionsDevice && mentionsNodeRole) {
+          map.remove(key);
+          removed = true;
+          continue;
+        }
+        if (_removeDeviceRecordFromJsonMap(child, deviceId)) {
+          map[key] = child;
+          removed = true;
+        }
+      } else if (value is List) {
+        final filtered = <Object?>[];
+        for (final child in value) {
+          if (child is Map) {
+            final childMap = Map<String, dynamic>.from(child);
+            final mentionsDevice = _containsStringValue(childMap, deviceId);
+            final mentionsNodeRole =
+                _containsStringValue(childMap, AppConstants.nodeRole);
+            if (mentionsDevice && mentionsNodeRole) {
+              removed = true;
+              continue;
+            }
+            if (_removeDeviceRecordFromJsonMap(childMap, deviceId)) {
+              filtered.add(childMap);
+              removed = true;
+              continue;
+            }
+          }
+          filtered.add(child);
+        }
+        if (filtered.length != value.length) {
+          map[key] = filtered;
+        }
+      }
+    }
+    return removed;
+  }
+
   Future<bool> _pairedNodeSnapshotNeedsCommandRepair() async {
     if (_capabilityHandlers.isEmpty) return false;
     final deviceId = _identity.deviceId ?? '';
@@ -262,21 +398,18 @@ class NodeService {
         return true;
       }
 
-      final filesDir = await NativeBridge.getFilesDir();
-      final pairedPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/devices/paired.json';
-      final pairedFile = File(pairedPath);
-      if (!await pairedFile.exists()) return false;
-
-      final decoded = jsonDecode(await pairedFile.readAsString());
-      final record = _findDeviceRecord(decoded, deviceId);
-      if (record == null) return false;
-      if (!_recordHasRole(record, AppConstants.nodeRole)) return false;
-
       final declaredCommands = _capabilityHandlers.keys.toSet();
-      final pairedCommands = _stringSet(record['commands']);
-      if (pairedCommands.isEmpty) return true;
-      return !declaredCommands.every(pairedCommands.contains);
+      for (final decoded
+          in await _readAllOpenClawStoreJson('devices/paired.json')) {
+        final record = _findDeviceRecord(decoded, deviceId);
+        if (record == null) continue;
+        if (!_recordHasRole(record, AppConstants.nodeRole)) continue;
+
+        final pairedCommands = _stringSet(record['commands']);
+        if (pairedCommands.isEmpty) return true;
+        return !declaredCommands.every(pairedCommands.contains);
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -302,13 +435,8 @@ class NodeService {
     final deviceId = _identity.deviceId ?? '';
     if (deviceId.isEmpty) return null;
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final pairedPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/paired.json';
-      final pairedFile = File(pairedPath);
-      if (!await pairedFile.exists()) return null;
-
-      final decoded = jsonDecode(await pairedFile.readAsString());
+      final decoded = await _readFirstOpenClawStoreJson('nodes/paired.json');
+      if (decoded == null) return null;
       final record = _findDeviceRecord(decoded, deviceId);
       if (record == null) return null;
       return _stringSet(record['commands']);
@@ -321,13 +449,8 @@ class NodeService {
     final deviceId = _identity.deviceId ?? '';
     if (deviceId.isEmpty) return null;
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final pairedPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/devices/paired.json';
-      final pairedFile = File(pairedPath);
-      if (!await pairedFile.exists()) return null;
-
-      final decoded = jsonDecode(await pairedFile.readAsString());
+      final decoded = await _readFirstOpenClawStoreJson('devices/paired.json');
+      if (decoded == null) return null;
       final record = _findDeviceRecord(decoded, deviceId);
       if (record == null) return null;
       if (!_recordHasRole(record, AppConstants.nodeRole)) return null;
@@ -342,6 +465,24 @@ class NodeService {
   ) async {
     final requestId = await _readPendingNodePairingRequestIdFromStore();
     if (requestId == null || requestId.isEmpty) return false;
+
+    if (await _nativeOwnerSelected()) {
+      log('[NODE] Native owner: approving pending node command snapshot $requestId via Gateway RPC...');
+      final approved =
+          await approvePairingRequestViaGateway?.call(requestId) ?? false;
+      if (!approved) {
+        log('[NODE] Native owner: Gateway RPC approval unavailable for pending node snapshot');
+        return false;
+      }
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (await _pairedNodeCommandsCoverDeclared()) {
+        prefs.nodeCommandContractHash = _declaredCommandContractSignature();
+        log('[NODE] Approved node command snapshot via Gateway RPC');
+        return true;
+      }
+      log('[NODE] Native owner: Gateway RPC approval completed but command snapshot is still missing');
+      return false;
+    }
 
     log('[NODE] Approving pending node command snapshot $requestId via OpenClaw nodes CLI...');
     _gatewayAuthToken ??= await _readGatewayToken();
@@ -388,21 +529,20 @@ class NodeService {
     final deviceId = _identity.deviceId ?? '';
     if (deviceId.isEmpty) return null;
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final pendingPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/pending.json';
-      final pendingFile = File(pendingPath);
-      if (!await pendingFile.exists()) return null;
-
-      final content = await pendingFile.readAsString();
-      return NativeBridge.extractPendingDeviceRequestId(
-        content,
-        deviceId: deviceId,
-        role: AppConstants.nodeRole,
-      );
+      for (final file in await _openClawStoreFiles('nodes/pending.json')) {
+        if (!await file.exists()) continue;
+        final content = await file.readAsString();
+        final requestId = NativeBridge.extractPendingDeviceRequestId(
+          content,
+          deviceId: deviceId,
+          role: AppConstants.nodeRole,
+        );
+        if (requestId != null && requestId.isNotEmpty) return requestId;
+      }
     } catch (_) {
       return null;
     }
+    return null;
   }
 
   Map<String, dynamic>? _findDeviceRecord(Object? value, String deviceId) {
@@ -725,16 +865,17 @@ class NodeService {
     //    as GatewayService.retrieveTokenFromConfig(). This is always current,
     //    even after `openclaw reload` generates a new token.
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final configPath = '$filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json';
-      final content = await File(configPath).readAsString();
-      final config = jsonDecode(content) as Map<String, dynamic>;
-      final token = config['gateway']?['auth']?['token'] as String? ??
-          config['gateway']?['token'] as String? ??
-          config['auth']?['token'] as String?;
-      if (token != null && token.isNotEmpty) {
-        log('[NODE] Gateway token read from openclaw.json');
-        return token;
+      for (final file in await _openClawStoreFiles('openclaw.json')) {
+        if (!await file.exists()) continue;
+        final content = await file.readAsString();
+        final config = jsonDecode(content) as Map<String, dynamic>;
+        final token = config['gateway']?['auth']?['token'] as String? ??
+            config['gateway']?['token'] as String? ??
+            config['auth']?['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          log('[NODE] Gateway token read from ${file.path}');
+          return token;
+        }
       }
     } catch (_) {}
 
@@ -1209,8 +1350,41 @@ class NodeService {
     final requestLabel = requestId == null || requestId.isEmpty
         ? 'latest pending node request'
         : requestId;
-    log('[NODE] Pairing required — approving $requestLabel via OpenClaw CLI...');
     _gatewayAuthToken ??= await _readGatewayToken();
+    if (await _nativeOwnerSelected()) {
+      log('[NODE] Pairing required — approving $requestLabel via Gateway RPC.');
+      var requestIdToApprove = requestId?.trim() ?? '';
+      if (requestIdToApprove.isEmpty ||
+          !_uuidPattern.hasMatch(requestIdToApprove)) {
+        requestIdToApprove = await _readPendingNodeRequestIdFromStore(
+              fallbackRequestId: requestIdToApprove,
+            ) ??
+            '';
+      }
+      if (requestIdToApprove.isEmpty ||
+          !_uuidPattern.hasMatch(requestIdToApprove)) {
+        throw StateError('No valid pending node pairing request found');
+      }
+      final approved =
+          await approvePairingRequestViaGateway?.call(requestIdToApprove) ??
+              false;
+      if (!approved) {
+        throw UnsupportedError(
+          'Native owner could not approve node pairing via Gateway RPC. '
+          'PRoot CLI fallback is rollback-only.',
+        );
+      }
+      await Future.delayed(const Duration(milliseconds: 250));
+      final token = await _readApprovedNodeTokenFromStore();
+      if (token != null && token.isNotEmpty) {
+        log('[NODE] Native owner: recovered approved node token after RPC approval');
+        return token;
+      }
+      log('[NODE] Native owner: RPC approved pairing; token will be learned on reconnect');
+      return null;
+    }
+
+    log('[NODE] Pairing required — approving $requestLabel via OpenClaw CLI...');
     final gatewayUrl =
         'ws://${_state.gatewayHost ?? AppConstants.gatewayHost}:${_state.gatewayPort ?? AppConstants.gatewayPort}';
     var requestIdToApprove = requestId?.trim() ?? '';
@@ -1319,25 +1493,27 @@ class NodeService {
     required String gatewayUrl,
     required String? token,
   }) async {
-    try {
-      final explicitArgs = token != null && token.isNotEmpty
-          ? ' --url ${NativeBridge.shellQuote(gatewayUrl)}'
-              ' --token ${NativeBridge.shellQuote(token)}'
-          : '';
-      final output = await NativeBridge.runInProot(
-        '$kOpenClawCommand devices list --json$explicitArgs',
-        timeout: 20,
-      );
-      final cliRequestId = NativeBridge.extractPendingDeviceRequestId(
-        output,
-        requestedId: fallbackRequestId,
-        deviceId: _identity.deviceId,
-        role: AppConstants.nodeRole,
-      );
-      if (cliRequestId != null && cliRequestId.isNotEmpty) {
-        return cliRequestId;
-      }
-    } catch (_) {}
+    if (!await _nativeOwnerSelected()) {
+      try {
+        final explicitArgs = token != null && token.isNotEmpty
+            ? ' --url ${NativeBridge.shellQuote(gatewayUrl)}'
+                ' --token ${NativeBridge.shellQuote(token)}'
+            : '';
+        final output = await NativeBridge.runInProot(
+          '$kOpenClawCommand devices list --json$explicitArgs',
+          timeout: 20,
+        );
+        final cliRequestId = NativeBridge.extractPendingDeviceRequestId(
+          output,
+          requestedId: fallbackRequestId,
+          deviceId: _identity.deviceId,
+          role: AppConstants.nodeRole,
+        );
+        if (cliRequestId != null && cliRequestId.isNotEmpty) {
+          return cliRequestId;
+        }
+      } catch (_) {}
+    }
 
     return _readPendingNodeRequestIdFromStore(
       fallbackRequestId: fallbackRequestId,
@@ -1348,13 +1524,11 @@ class NodeService {
     required String fallbackRequestId,
   }) async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final paths = [
-        '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/pending.json',
-        '$filesDir/rootfs/ubuntu/root/.openclaw/devices/pending.json',
+      final files = [
+        ...await _openClawStoreFiles('nodes/pending.json'),
+        ...await _openClawStoreFiles('devices/pending.json'),
       ];
-      for (final path in paths) {
-        final pendingFile = File(path);
+      for (final pendingFile in files) {
         if (!await pendingFile.exists()) continue;
         final content = await pendingFile.readAsString();
         final requestId = NativeBridge.extractPendingDeviceRequestId(
@@ -1399,18 +1573,16 @@ class NodeService {
 
   Future<String?> _readApprovedNodeTokenFromDeviceStore() async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final pairedPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/devices/paired.json';
-      final pairedFile = File(pairedPath);
-      if (!await pairedFile.exists()) return null;
-
-      final decoded = jsonDecode(await pairedFile.readAsString());
       final nodeId = _identity.deviceId ?? '';
-      return _findTokenForDevice(decoded, nodeId);
+      for (final decoded
+          in await _readAllOpenClawStoreJson('devices/paired.json')) {
+        final token = _findTokenForDevice(decoded, nodeId);
+        if (token != null && token.isNotEmpty) return token;
+      }
     } catch (_) {
       return null;
     }
+    return null;
   }
 
   String? _findTokenForDevice(Object? value, String deviceId) {
@@ -1481,53 +1653,50 @@ class NodeService {
 
   Future<String?> _readApprovedNodeTokenFromPairedStore() async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final pairedPath =
-          '$filesDir/rootfs/ubuntu/root/.openclaw/nodes/paired.json';
-      final pairedFile = File(pairedPath);
-      if (!await pairedFile.exists()) return null;
-
-      final decoded =
-          jsonDecode(await pairedFile.readAsString()) as Map<String, dynamic>;
       final nodeId = _identity.deviceId ?? '';
-      final record = decoded[nodeId];
-      if (record is! Map) return null;
-
-      final token = record['token'] as String?;
-      return token != null && token.isNotEmpty ? token : null;
+      for (final decoded
+          in await _readAllOpenClawStoreJson('nodes/paired.json')) {
+        if (decoded is! Map) continue;
+        final map = Map<String, dynamic>.from(decoded);
+        final record = map[nodeId];
+        if (record is Map) {
+          final token = record['token'] as String?;
+          if (token != null && token.isNotEmpty) return token;
+        }
+        final token = _findTokenForDevice(map, nodeId);
+        if (token != null && token.isNotEmpty) return token;
+      }
     } catch (_) {
       return null;
     }
+    return null;
   }
 
   Future<String?> _readApprovedNodeTokenFromNodeStore() async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final nodePath = '$filesDir/rootfs/ubuntu/root/.openclaw/node.json';
-      final nodeFile = File(nodePath);
-      if (!await nodeFile.exists()) return null;
-
-      final decoded =
-          jsonDecode(await nodeFile.readAsString()) as Map<String, dynamic>;
-      final directToken = decoded['token'];
-      if (directToken is String && directToken.isNotEmpty) {
-        return directToken;
-      }
-
-      final deviceToken = decoded['deviceToken'];
-      if (deviceToken is String && deviceToken.isNotEmpty) {
-        return deviceToken;
-      }
-
-      final gateway = decoded['gateway'];
-      if (gateway is Map) {
-        final nestedToken = gateway['token'];
-        if (nestedToken is String && nestedToken.isNotEmpty) {
-          return nestedToken;
+      for (final decoded in await _readAllOpenClawStoreJson('node.json')) {
+        if (decoded is! Map) continue;
+        final map = Map<String, dynamic>.from(decoded);
+        final directToken = map['token'];
+        if (directToken is String && directToken.isNotEmpty) {
+          return directToken;
         }
-        final nestedDeviceToken = gateway['deviceToken'];
-        if (nestedDeviceToken is String && nestedDeviceToken.isNotEmpty) {
-          return nestedDeviceToken;
+
+        final deviceToken = map['deviceToken'];
+        if (deviceToken is String && deviceToken.isNotEmpty) {
+          return deviceToken;
+        }
+
+        final gateway = map['gateway'];
+        if (gateway is Map) {
+          final nestedToken = gateway['token'];
+          if (nestedToken is String && nestedToken.isNotEmpty) {
+            return nestedToken;
+          }
+          final nestedDeviceToken = gateway['deviceToken'];
+          if (nestedDeviceToken is String && nestedDeviceToken.isNotEmpty) {
+            return nestedDeviceToken;
+          }
         }
       }
     } catch (_) {}

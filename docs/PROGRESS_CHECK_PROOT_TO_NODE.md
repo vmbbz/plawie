@@ -1264,3 +1264,53 @@ Release interpretation:
   readiness rather than sending immediately after health-live.
 - Owner switching is still intentionally explicit: PRoot remains available as
   rollback, not as a background co-owner.
+
+## 2026-06-02 Native Chat Timing and Node Pairing RPC Gate
+
+This gate focused on the two production-readiness questions raised during RC
+testing: whether the native path itself is slow, and whether native-owner node
+pairing still had hidden PRoot assumptions.
+
+Code hardening now applied:
+
+- chat lifecycle logs now include send-to-accept, accept-to-first-token,
+  total, accept-to-complete, and first-output-to-complete timings;
+- `GatewayService` exposes the existing `device.pair.approve` RPC approval path
+  to `NodeService`;
+- `NodeService` reads `.openclaw` state from the active owner first, using the
+  native embedded home while native owns and PRoot rootfs while PRoot owns;
+- native-owner node pairing approval now uses Gateway RPC instead of silently
+  falling back to the PRoot CLI;
+- native-owner paired-node removal edits the native `.openclaw` stores directly
+  and skips PRoot CLI cleanup unless PRoot is the selected owner.
+
+Device evidence from the instrumented build:
+
+- native chat reached Gateway accept in under one second;
+- the slow observed native turn was provider first-token latency after Gateway
+  accept, not local `libnode.so` dispatch;
+- once the provider produced a token, visible completion finished almost
+  immediately;
+- PRoot rollback also reached Gateway accept quickly after proper readiness
+  waiting, but in the unstable provider/network window it repeatedly produced no
+  first token before the no-first-token watchdog rebuilt the chat lane.
+
+Native node pairing regression and fix:
+
+- an early native pairing attempt looped because a cached token was reused while
+  the pending native Gateway pairing request was not approved;
+- the final patched build approved the pending request through Gateway RPC,
+  recovered the approved token from the native store, reconnected, declared the
+  mobile command set, and logged `Connect accepted` plus `Paired and connected`;
+- the final process tree showed only the app process plus `:native_node_smoke`,
+  with no PRoot process while native owned production port `18789`.
+
+Release interpretation:
+
+- native local Gateway overhead is currently healthy; provider/model selection
+  is the main latency lever for plain chat;
+- PRoot remains a valid rollback owner, but rollback chat must continue to block
+  early sends until full chat-lane readiness and should be retested after any
+  provider key/network incident;
+- native-owner node pairing no longer depends on PRoot CLI fallback for the
+  normal production path.

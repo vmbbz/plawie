@@ -72,7 +72,10 @@ class GatewayService {
 
   static final GatewayService _instance = GatewayService._internal();
   factory GatewayService() => _instance;
-  GatewayService._internal();
+  GatewayService._internal() {
+    NodeService().approvePairingRequestViaGateway =
+        _approvePairingViaRpcForNode;
+  }
 
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
@@ -3264,6 +3267,10 @@ HEARTBEAT_OK.
     return false;
   }
 
+  Future<bool> _approvePairingViaRpcForNode(String requestId) {
+    return _tryApprovePairingViaRpc(requestId);
+  }
+
   String? _missingOperatorApprovalScope(Object? value) {
     String text;
     if (value is String) {
@@ -4018,6 +4025,12 @@ HEARTBEAT_OK.
       return 'Gateway/provider returned an empty error payload.';
     }
     return normalized;
+  }
+
+  String _formatChatElapsed(Duration duration) {
+    final ms = duration.inMilliseconds;
+    if (ms < 1000) return '${ms}ms';
+    return '${(ms / 1000).toStringAsFixed(1)}s';
   }
 
   String _rawGatewayErrorText(Object? value,
@@ -13767,6 +13780,8 @@ $message''';
         requestStartedAt.add(noFirstTokenTimeout);
     Timer? inactivityWatchdog;
     var visibleChatOutputSeen = false;
+    DateTime? gatewayAcceptedAt;
+    DateTime? firstVisibleOutputAt;
 
     void markRelevantGatewayActivity() {
       lastRelevantGatewayActivityAt = DateTime.now();
@@ -13774,6 +13789,7 @@ $message''';
 
     void markVisibleChatOutput() {
       visibleChatOutputSeen = true;
+      firstVisibleOutputAt ??= DateTime.now();
       markRelevantGatewayActivity();
     }
 
@@ -13935,7 +13951,9 @@ $message''';
               finishChatWithError(msg);
             } else {
               activeRunId = frame['runId'] as String?;
-              _addActivity('[CHAT] ← Gateway accepted (streaming...)');
+              gatewayAcceptedAt = DateTime.now();
+              _addActivity('[CHAT] ← Gateway accepted '
+                  '(sendToAccept=${_formatChatElapsed(gatewayAcceptedAt!.difference(requestStartedAt))})');
             }
             return;
           }
@@ -14015,7 +14033,13 @@ $message''';
                 if (delta.isEmpty) return;
                 if (firstToken) {
                   firstToken = false;
-                  _addActivity('[CHAT] ✓ First token received');
+                  final assistantFirstTokenAt = DateTime.now();
+                  firstVisibleOutputAt ??= assistantFirstTokenAt;
+                  final acceptedAt = gatewayAcceptedAt;
+                  final ttftStart = acceptedAt ?? requestStartedAt;
+                  _addActivity('[CHAT] ✓ First token received '
+                      '(acceptToFirst=${_formatChatElapsed(assistantFirstTokenAt.difference(ttftStart))}, '
+                      'total=${_formatChatElapsed(assistantFirstTokenAt.difference(requestStartedAt))})');
                 }
                 chunkController.add(delta);
               }
@@ -14209,7 +14233,21 @@ $message''';
       await for (final chunk in chunkController.stream) {
         yield chunk;
       }
-      _addActivity('[CHAT] ✓ Complete');
+      final completedAt = DateTime.now();
+      final timing = <String>[
+        'total=${_formatChatElapsed(completedAt.difference(requestStartedAt))}',
+      ];
+      final acceptedAt = gatewayAcceptedAt;
+      if (acceptedAt != null) {
+        timing.add(
+            'acceptToComplete=${_formatChatElapsed(completedAt.difference(acceptedAt))}');
+      }
+      final firstOutputAt = firstVisibleOutputAt;
+      if (firstOutputAt != null) {
+        timing.add(
+            'firstToComplete=${_formatChatElapsed(completedAt.difference(firstOutputAt))}');
+      }
+      _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
       yield '[Error] WebSocket chat error: $e';
