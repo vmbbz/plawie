@@ -10738,6 +10738,7 @@ $message''';
           );
           nativeHealthOk = _gatewayHealthLooksLive(nativeHealth);
           if (nativeHealthOk) {
+            nativeRunning = true;
             switchError = null;
             break;
           }

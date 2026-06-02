@@ -199,6 +199,9 @@ Public rollback-shaped APK evidence:
   released the native port, and returned health-live;
 - `/native-default-owner-enable` from chat restored native as selected
   production owner, removed live PRoot processes, and returned health-live.
+- the rebuilt RC pass also verified the fresh owner-enable report now shows
+  `nativeRunning: true` with `nativeHealthOk: true`; see
+  [88-public-rollback-rc-package-pass.md](88-public-rollback-rc-package-pass.md).
 
 ## Current Decision
 

@@ -947,6 +947,10 @@ Observed results:
   released native ownership, and returned health-live;
 - `/native-default-owner-enable` from chat restored native default, removed live
   PRoot processes, and returned health-live.
+- the final rebuilt public rollback RC pass corrected and reverified the owner
+  switch report so `nativeRunning: true` is shown with `nativeHealthOk: true`
+  after `/native-default-owner-enable`; see
+  [88-public-rollback-rc-package-pass.md](native-node-gateway/88-public-rollback-rc-package-pass.md).
 
 Current classification: the first public rollback-shaped release package gate
 passed. PRoot is still packaged and proven as rollback, but native Node is the

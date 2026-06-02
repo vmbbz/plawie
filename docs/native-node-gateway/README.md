@@ -48,6 +48,9 @@ For the deferred local NDK Gateway bridge-chat hardening issue, use
 For runtime package scope, PRoot-only optional packages, partner skills, and
 the internal no-PRoot package proof switch, use
 [87-runtime-package-scope-and-no-proot-proof.md](87-runtime-package-scope-and-no-proot-proof.md).
+For the final public rollback release-candidate package install/chat/
+rollback/re-enable pass, use
+[88-public-rollback-rc-package-pass.md](88-public-rollback-rc-package-pass.md).
 
 ## Current Direction
 
