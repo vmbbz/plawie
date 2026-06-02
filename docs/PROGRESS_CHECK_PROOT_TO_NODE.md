@@ -1538,3 +1538,83 @@ Validation:
 
 Release interpretation: user-created or edited skill overrides are no longer a
 "saved but not live" trap under native ownership.
+
+## 2026-06-02 Native ClawHub Workspace Skill Mutation
+
+The next blocker was the real native marketplace path. Earlier hardening made
+ClawHub mutation visibly PRoot-rollback-only because native owner did not expose
+an OpenClaw shell. Follow-up audit of the bundled OpenClaw implementation
+showed a safer native route:
+
+- `openclaw skills install <slug>` downloads a ClawHub skill archive from
+  `/api/v1/download`;
+- the archive must contain a root `SKILL.md`/skill document;
+- install target is the active agent workspace under `skills/<slug>`;
+- ClawHub origin metadata lives in `.clawhub/origin.json`;
+- tracked installs live in the workspace `.clawhub/lock.json`.
+
+Code hardening now applied:
+
+- added `NativeClawHubSkillInstaller`;
+- native install downloads the ClawHub skill zip, validates the skill document
+  root marker, safely extracts only non-escaping paths, writes OpenClaw-style
+  `.clawhub` origin/lock metadata, and applies the active Gateway owner;
+- native update overwrites the workspace skill through the same safe path;
+- native uninstall removes the native workspace skill, updates the lockfile, and
+  applies the active Gateway owner;
+- `SkillsService.installSkill` and `SkillsService.uninstallSkill` now use this
+  native workspace mutation path under native owner;
+- Skills Manager install buttons now use native workspace install while native
+  owns, and preserve the existing OpenClaw CLI/fallback path while PRoot owns.
+
+Validation:
+
+- `flutter analyze lib/services/native_clawhub_skill_installer.dart
+  lib/services/skills_service.dart lib/screens/management/skills_manager.dart
+  lib/pages/agent_skills_page.dart lib/widgets/skill_install_hero.dart`
+  passed.
+
+Release interpretation: native owner now supports ClawHub skill archive
+install/uninstall/update for workspace/instruction skills without starting
+PRoot. This does not claim arbitrary native plugin/package installation; code
+plugins and npm/native dependency installs remain a separate package-management
+class and should stay explicit.
+
+## 2026-06-02 Native ClawHub Release UI Validation
+
+Follow-up phone validation found one important release-state bug: native
+Gateway had the active skill inventory, but the Discover tab was marking cards
+from a folder-only scan. In the public rollback release install, that scan was
+empty, so already-active skills such as `weather` still showed `GET`.
+
+Code hardening now applied:
+
+- ClawHub search now parses the current REST `items` response shape;
+- exact slug lookup is pinned before broad/trending ClawHub results, so a
+  search for `weather` returns the actual Weather skill first;
+- installed-slug matching is normalized case-insensitively;
+- Discover now combines local scan fallback with the live GatewayProvider
+  active-skill inventory already used by My Skills;
+- Discover cards are re-marked at render time, so late gateway inventory
+  updates immediately remove stale `GET` buttons.
+
+Validation:
+
+- `flutter analyze lib/screens/management/skills_manager.dart
+  lib/services/clawhub_service.dart` passed.
+- rebuilt public rollback APK with
+  `PLAWIE_NATIVE_GATEWAY_RELEASE_VARIANT=public-rollback` and
+  `PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true`;
+- installed the APK over USB on `RZCX30KA9AW`;
+- native owner reached `/health` on `18789` with
+  `{"ok":true,"status":"live"}`;
+- process list showed only `com.nxg.openclawproot` and
+  `com.nxg.openclawproot:native_node_smoke`, with no PRoot process;
+- Bot Management reported native Gateway `58` skills and `19` tools;
+- Skills -> Discover rendered `Weather`, `Github`, `Coding Agent`,
+  `Summarize`, and `Session-logs` as `ACTIVE`, with no `GET` button for
+  those live native Gateway skills.
+
+Release interpretation: the native-owner marketplace UI now reflects the live
+Gateway inventory instead of accidentally treating native as empty. This closes
+the "native skill installed but UI still offers install" blocker.

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/skills_service.dart';
 import '../constants/openclaw_paths.dart';
+import '../services/clawhub_service.dart';
 import '../services/openclaw_service.dart';
 
 class AgentSkillsPage extends StatefulWidget {
@@ -75,6 +76,29 @@ class _AgentSkillsPageState extends State<AgentSkillsPage>
     setState(() => _isSearching = true);
 
     try {
+      if (await OpenClawCommandService.isNativeOwnerSelected()) {
+        final installed = (await OpenClawCommandService.getInstalledSkills())
+            .map((id) => id.toLowerCase())
+            .toSet();
+        final results = await ClawHubService.instance.search(
+          query,
+          installedSlugs: installed,
+        );
+        setState(() {
+          _discoverResults = results
+              .map((skill) => {
+                    'id': skill.slug,
+                    'slug': skill.slug,
+                    'name': skill.name,
+                    'description': skill.description,
+                    'version': skill.version,
+                    'author': skill.author,
+                  })
+              .toList();
+        });
+        return;
+      }
+
       // Primary search pattern: JSON output with download sorting
       String result = await OpenClawCommandService.runCliForActiveOwner(
         '$kOpenClawCommand skills search "$query" --json --limit 20 --sort downloads',

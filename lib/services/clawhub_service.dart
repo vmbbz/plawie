@@ -49,19 +49,29 @@ class ClawHubService {
     String query, {
     Set<String> installedSlugs = const {},
   }) async {
-    if (query.trim().isEmpty) return [];
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) return [];
+    final normalizedQuery = trimmedQuery.toLowerCase();
 
-    final cacheKey = 'search:${query.trim().toLowerCase()}';
+    final cacheKey = 'search:$normalizedQuery';
     final cached = _cache[cacheKey];
     if (cached != null && !cached.isExpired) {
       return _markInstalled(cached.results, installedSlugs);
     }
 
-    // Try REST API first — works without PRoot/gateway.
-    final apiResults = await _searchFromApi(query);
-    if (apiResults.isNotEmpty) {
-      _cache[cacheKey] = _CacheEntry(apiResults);
-      return _markInstalled(apiResults, installedSlugs);
+    // Try exact slug REST lookup first. The ClawHub list endpoint can return
+    // broad/trending results for short queries; exact hits must stay first.
+    final exact = await infoFromApi(normalizedQuery);
+
+    // Try REST API list search next — works without PRoot/gateway.
+    final apiResults = await _searchFromApi(trimmedQuery);
+    final mergedApi = _dedupeSkills([
+      if (exact != null) exact,
+      ...apiResults,
+    ]);
+    if (mergedApi.isNotEmpty) {
+      _cache[cacheKey] = _CacheEntry(mergedApi);
+      return _markInstalled(mergedApi, installedSlugs);
     }
 
     // Fallback: PRoot CLI (requires PRoot owner to be selected).
@@ -69,8 +79,8 @@ class ClawHubService {
 
     try {
       final raw = await NativeBridge.runInProot(
-        'openclaw skills search "${_sanitize(query)}" --json 2>/dev/null || '
-        'openclaw skill search "${_sanitize(query)}" --json 2>/dev/null',
+        'openclaw skills search "${_sanitize(trimmedQuery)}" --json 2>/dev/null || '
+        'openclaw skill search "${_sanitize(trimmedQuery)}" --json 2>/dev/null',
         timeout: 20,
       );
 
@@ -89,8 +99,12 @@ class ClawHubService {
         }
       }
 
-      _cache[cacheKey] = _CacheEntry(skills);
-      return _markInstalled(skills, installedSlugs);
+      final merged = _dedupeSkills([
+        if (exact != null) exact,
+        ...skills,
+      ]);
+      _cache[cacheKey] = _CacheEntry(merged);
+      return _markInstalled(merged, installedSlugs);
     } catch (_) {
       return [];
     }
@@ -111,11 +125,16 @@ class ClawHubService {
         final decoded = jsonDecode(response.body);
         final list = decoded is List
             ? decoded
-            : (decoded is Map ? decoded['results'] ?? decoded['skills'] ?? decoded['data'] : null);
+            : (decoded is Map
+                ? decoded['items'] ??
+                    decoded['results'] ??
+                    decoded['skills'] ??
+                    decoded['data']
+                : null);
         if (list is List) {
           final results = list
               .whereType<Map<String, dynamic>>()
-              .map(ClawHubSkill.fromJson)
+              .map(_skillFromApiListItem)
               .where((s) => s.slug.isNotEmpty)
               .toList();
           if (results.isNotEmpty) return results;
@@ -125,6 +144,51 @@ class ClawHubService {
 
     // 2. npm registry fallback — searches @openclaw/* packages directly.
     return _searchFromNpm(query);
+  }
+
+  ClawHubSkill _skillFromApiListItem(Map<String, dynamic> item) {
+    final slug = item['slug']?.toString() ??
+        item['id']?.toString() ??
+        item['name']?.toString() ??
+        '';
+    final stats = item['stats'] as Map<String, dynamic>? ?? {};
+    final tags = item['tags'] as Map<String, dynamic>? ?? {};
+    final latestVersion = item['latestVersion'] as Map<String, dynamic>? ?? {};
+    final owner = item['owner'] as Map<String, dynamic>? ?? {};
+    return ClawHubSkill(
+      slug: slug,
+      name: item['displayName']?.toString() ??
+          item['title']?.toString() ??
+          item['name']?.toString() ??
+          slug,
+      description:
+          item['summary']?.toString() ?? item['description']?.toString() ?? '',
+      version: latestVersion['version']?.toString() ??
+          item['version']?.toString() ??
+          tags['latest']?.toString() ??
+          '',
+      author: owner['displayName']?.toString() ??
+          owner['handle']?.toString() ??
+          item['author']?.toString() ??
+          '',
+      stars: (stats['stars'] as num?)?.toInt(),
+      downloadCount: (stats['downloads'] as num?)?.toInt(),
+      currentInstalls: (stats['installsCurrent'] as num?)?.toInt(),
+      ownerHandle: owner['handle']?.toString(),
+      ownerAvatarUrl: owner['image']?.toString(),
+    );
+  }
+
+  List<ClawHubSkill> _dedupeSkills(List<ClawHubSkill> skills) {
+    final seen = <String>{};
+    final result = <ClawHubSkill>[];
+    for (final skill in skills) {
+      final slug = skill.slug.toLowerCase();
+      if (slug.isEmpty || seen.contains(slug)) continue;
+      seen.add(slug);
+      result.add(skill);
+    }
+    return result;
   }
 
   /// npm registry search for @openclaw/* packages matching [query].
@@ -243,8 +307,12 @@ class ClawHubService {
     Set<String> installedSlugs = const {},
   }) async {
     final results = <ClawHubSkill>[];
+    final normalizedInstalled = installedSlugs
+        .map((slug) => slug.trim().toLowerCase())
+        .where((slug) => slug.isNotEmpty)
+        .toSet();
     for (final slug in slugs) {
-      final installed = installedSlugs.contains(slug);
+      final installed = normalizedInstalled.contains(slug.trim().toLowerCase());
       // REST API first — fast, gives stars/downloads
       final fromApi = await infoFromApi(slug, isInstalled: installed);
       if (fromApi != null && fromApi.description.isNotEmpty) {
@@ -374,8 +442,17 @@ class ClawHubService {
     Set<String> installedSlugs,
   ) {
     if (installedSlugs.isEmpty) return skills;
+    final normalizedInstalled = installedSlugs
+        .map((slug) => slug.trim().toLowerCase())
+        .where((slug) => slug.isNotEmpty)
+        .toSet();
     return skills
-        .map((s) => s.copyWith(isInstalled: installedSlugs.contains(s.slug)))
+        .map(
+          (s) => s.copyWith(
+            isInstalled:
+                normalizedInstalled.contains(s.slug.trim().toLowerCase()),
+          ),
+        )
         .toList();
   }
 

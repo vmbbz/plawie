@@ -243,7 +243,7 @@ class OpenClawCommandService {
     try {
       if (await _nativeOwnerSelected()) {
         final scanned = await _scanInstalledSkillIds();
-        if (scanned.isNotEmpty) return scanned;
+        return scanned;
       }
 
       final result = await _run(

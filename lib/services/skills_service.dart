@@ -12,13 +12,16 @@ import 'native_bridge.dart';
 import 'base_service.dart';
 import 'gateway_service.dart';
 import 'avatar_gesture_catalog.dart';
+import 'clawhub_service.dart';
 import '../constants/openclaw_paths.dart';
+import 'native_clawhub_skill_installer.dart';
 
 /// Skills System — Thin UI + Native Bridge architecture.
 /// This service acts as the UI manager and execution router for on-device native
 /// skills, while delegating marketplace/package mutation to the selected
 /// Gateway owner. Native owner can read bundled/already-installed skills but
-/// does not expose a mobile OpenClaw shell for marketplace installs yet.
+/// performs ClawHub skill mutation through direct native workspace installs
+/// instead of opening a mobile OpenClaw shell.
 class SkillsService {
   static final SkillsService _instance = SkillsService._internal();
   factory SkillsService() => _instance;
@@ -167,12 +170,34 @@ class SkillsService {
 
   /// Installs a skill via the OpenClaw CLI and triggers a forensic awareness sync.
   Future<bool> installSkill(String id, {bool silent = false}) async {
+    final report = await installSkillDetailed(id, silent: silent);
+    return report.ok;
+  }
+
+  Future<SkillInstallReport> installSkillDetailed(
+    String id, {
+    bool silent = false,
+  }) async {
     try {
       if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
-      if (await OpenClawCommandService.isNativeOwnerSelected()) {
-        throw UnsupportedError(
-          'Marketplace install is PRoot rollback-only until native package '
-          'installation is implemented.',
+      final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
+      _logger.i('Installing skill $id via ${nativeOwner ? 'native' : 'PRoot'} owner');
+
+      if (nativeOwner) {
+        final result = await NativeClawHubSkillInstaller.instance
+            .install(id)
+            .timeout(const Duration(seconds: 90));
+        if (!result.ok) {
+          throw UnsupportedError(result.error ?? 'Native skill install failed.');
+        }
+        await ensureAgentAwareness(fullSync: false);
+        if (!silent) _broadcast(SkillsEvent.skillInstalled(id));
+        return SkillInstallReport(
+          ok: true,
+          id: result.slug,
+          message:
+              'Installed native workspace skill ${result.slug}@${result.version ?? 'latest'}',
+          targetPath: result.targetPath,
         );
       }
 
@@ -187,10 +212,20 @@ class SkillsService {
       await ensureAgentAwareness(fullSync: true);
 
       if (!silent) _broadcast(SkillsEvent.skillInstalled(id));
-      return true;
+      return SkillInstallReport(
+        ok: true,
+        id: id,
+        message: result,
+      );
     } catch (e) {
       if (!silent) _broadcast(SkillsEvent.skillError(id, e.toString()));
-      return false;
+      _logger.e('Skill install failed for $id: $e');
+      return SkillInstallReport(
+        ok: false,
+        id: id,
+        message: 'error: $e',
+        error: e.toString(),
+      );
     }
   }
 
@@ -198,10 +233,16 @@ class SkillsService {
   Future<bool> uninstallSkill(String id, {bool silent = false}) async {
     try {
       if (await OpenClawCommandService.isNativeOwnerSelected()) {
-        throw UnsupportedError(
-          'Marketplace uninstall is PRoot rollback-only until native package '
-          'installation is implemented.',
-        );
+        final result =
+            await NativeClawHubSkillInstaller.instance.uninstall(id);
+        if (!result.ok) {
+          throw UnsupportedError(
+            result.error ?? 'Native skill uninstall failed.',
+          );
+        }
+        await ensureAgentAwareness(fullSync: false);
+        if (!silent) _broadcast(SkillsEvent.skillUninstalled(id));
+        return true;
       }
 
       final result = await OpenClawCommandService.runCliForActiveOwner(
@@ -227,6 +268,20 @@ class SkillsService {
   /// Fetch full skill details (YAML info) from the PRoot workspace.
   Future<Map<String, dynamic>?> getSkillDetails(String id) async {
     try {
+      if (await OpenClawCommandService.isNativeOwnerSelected()) {
+        final api = await ClawHubService.instance.infoFromApi(id);
+        if (api == null) return null;
+        return {
+          'id': api.slug,
+          'slug': api.slug,
+          'name': api.name,
+          'description': api.description,
+          'version': api.version,
+          'author': api.author,
+          'source': 'clawhub',
+        };
+      }
+
       final output = await OpenClawCommandService.runCliForActiveOwner(
         '$kOpenClawCommand skills info $id --json',
       );
@@ -245,8 +300,26 @@ class SkillsService {
     final profile = await _readLocalSkillProfile(id);
     if (profile != null) return profile;
 
-    // 2. Fallback: ClawHub lookup via CLI
+    // 2. Fallback: ClawHub lookup. Native owner uses REST only; PRoot
+    // rollback may use the OpenClaw CLI because the shell is intentionally
+    // available in that owner.
     try {
+      if (await OpenClawCommandService.isNativeOwnerSelected()) {
+        final detail = await ClawHubService.instance.infoFromApi(id);
+        if (detail != null) {
+          return {
+            'id': detail.slug,
+            'name': detail.name,
+            'description': detail.description,
+            'verified': detail.ownerHandle != null,
+            'iconUrl': detail.ownerAvatarUrl,
+            'tools': ['ClawHub Skill', 'Gateway Skill Package'],
+            'examples': 'Try: "Hey Plawie, use ${detail.name}"',
+          };
+        }
+        throw StateError('ClawHub profile unavailable for $id');
+      }
+
       final result = await OpenClawCommandService.runCliForActiveOwner(
         '$kOpenClawCommand skills info $id --json',
       );
@@ -855,4 +928,20 @@ class SkillResult {
   SkillResult({required this.success, this.data, this.error});
   factory SkillResult.success(dynamic d) => SkillResult(success: true, data: d);
   factory SkillResult.error(String e) => SkillResult(success: false, error: e);
+}
+
+class SkillInstallReport {
+  final bool ok;
+  final String id;
+  final String message;
+  final String? error;
+  final String? targetPath;
+
+  const SkillInstallReport({
+    required this.ok,
+    required this.id,
+    required this.message,
+    this.error,
+    this.targetPath,
+  });
 }

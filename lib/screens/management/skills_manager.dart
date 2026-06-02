@@ -18,6 +18,7 @@ import '../../services/local_llm_service.dart';
 import '../../services/node_service.dart';
 import '../../services/openclaw_service.dart';
 import '../../services/preferences_service.dart';
+import '../../services/skills_service.dart';
 import 'skills/agent_wallet_page.dart';
 import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
@@ -124,6 +125,26 @@ const _premiumSkills = [
   ),
 ];
 
+Set<String> _gatewaySkillSlugs(List<Map<String, dynamic>>? skills) {
+  if (skills == null || skills.isEmpty) return const {};
+  final ids = <String>{};
+  for (final skill in skills) {
+    for (final key in const ['id', 'slug', 'name', 'skillId', 'title']) {
+      final raw = skill[key]?.toString().trim();
+      if (raw == null || raw.isEmpty) continue;
+      final lower = raw.toLowerCase();
+      ids.add(lower);
+      ids.add(
+        lower
+            .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+            .replaceAll(RegExp(r'^-+|-+$'), ''),
+      );
+    }
+  }
+  ids.remove('');
+  return ids;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Root widget
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,21 +237,6 @@ class _SkillsManagerState extends State<SkillsManager>
     );
   }
 
-  Future<bool> _blockNativeMarketplaceInstall(
-    ScaffoldMessengerState messenger,
-  ) async {
-    if (!await OpenClawCommandService.isNativeOwnerSelected()) return false;
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Marketplace install is PRoot rollback-only for now. Native can use bundled and already-installed skills.',
-        ),
-        duration: Duration(seconds: 4),
-      ),
-    );
-    return true;
-  }
-
   // ── Shared install logic (called from My Skills + Discover) ────────────────
 
   Future<void> _installSkill(
@@ -251,9 +257,6 @@ class _SkillsManagerState extends State<SkillsManager>
       return;
     }
 
-    if (await _blockNativeMarketplaceInstall(messenger)) return;
-    if (!context.mounted) return;
-
     showModalBottomSheet(
       context: context,
       isDismissible: false,
@@ -262,31 +265,45 @@ class _SkillsManagerState extends State<SkillsManager>
     );
 
     try {
-      final installCmd = await OpenClawCommandService.getSkillInstallCommand(
-          skill.installSlug!);
+      final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
+      debugPrint(
+        '[NativeClawHubUI] Premium install owner native=$nativeOwner '
+        'slug=${skill.installSlug}',
+      );
       String cliResult;
-      try {
-        cliResult = await OpenClawCommandService.runCliForActiveOwner(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
-          '&& $installCmd --yes',
-          timeout: 60,
-        );
-      } catch (_) {
-        cliResult = 'error:';
+      if (nativeOwner) {
+        final report = await SkillsService()
+            .installSkillDetailed(skill.installSlug!)
+            .timeout(const Duration(seconds: 95));
+        cliResult = report.ok
+            ? report.message
+            : 'error: ${report.error ?? report.message}';
+      } else {
+        final installCmd = await OpenClawCommandService.getSkillInstallCommand(
+            skill.installSlug!);
+        try {
+          cliResult = await OpenClawCommandService.runCliForActiveOwner(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
+            '&& $installCmd --yes',
+            timeout: 60,
+          );
+        } catch (_) {
+          cliResult = 'error:';
+        }
+
+        // Fallback to direct npx clawhub install if the gateway command fails or is unavailable
+        if (cliResult.toLowerCase().contains('error:') ||
+            cliResult.toLowerCase().contains('too many arguments') ||
+            cliResult.toLowerCase().contains('unknown command')) {
+          cliResult = await OpenClawCommandService.runCliForActiveOwner(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
+            '&& npx --yes clawhub install ${skill.installSlug}',
+            timeout: 60,
+          );
+        }
       }
 
-      // Fallback to direct npx clawhub install if the gateway command fails or is unavailable
-      if (cliResult.toLowerCase().contains('error:') ||
-          cliResult.toLowerCase().contains('too many arguments') ||
-          cliResult.toLowerCase().contains('unknown command')) {
-        cliResult = await OpenClawCommandService.runCliForActiveOwner(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
-          '&& npx --yes clawhub install ${skill.installSlug}',
-          timeout: 60,
-        );
-      }
-
-      if (provider.state.status == GatewayStatus.running) {
+      if (!nativeOwner && provider.state.status == GatewayStatus.running) {
         await OpenClawCommandService.reloadGateway(
           reason: 'skill install: ${skill.installSlug}',
         );
@@ -334,12 +351,10 @@ class _SkillsManagerState extends State<SkillsManager>
     String slug,
     String displayTitle,
   ) async {
+    debugPrint('[NativeClawHubUI] Install requested: $slug');
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = Provider.of<GatewayProvider>(context, listen: false);
-
-    if (await _blockNativeMarketplaceInstall(messenger)) return;
-    if (!context.mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -349,23 +364,36 @@ class _SkillsManagerState extends State<SkillsManager>
     );
 
     try {
-      final installCmd =
-          await OpenClawCommandService.getSkillInstallCommand(slug);
+      final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
+      debugPrint(
+        '[NativeClawHubUI] Discover install owner native=$nativeOwner slug=$slug',
+      );
       String cliResult;
-      try {
-        cliResult = await OpenClawCommandService.runCliForActiveOwner(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
-          '&& $installCmd',
-          timeout: 60,
-        );
-      } catch (_) {
-        cliResult = await OpenClawCommandService.runCliForActiveOwner(
-          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
-          '&& npx --yes clawhub install $slug',
-          timeout: 60,
-        );
+      if (nativeOwner) {
+        final report = await SkillsService()
+            .installSkillDetailed(slug)
+            .timeout(const Duration(seconds: 95));
+        cliResult = report.ok
+            ? report.message
+            : 'error: ${report.error ?? report.message}';
+      } else {
+        final installCmd =
+            await OpenClawCommandService.getSkillInstallCommand(slug);
+        try {
+          cliResult = await OpenClawCommandService.runCliForActiveOwner(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
+            '&& $installCmd',
+            timeout: 60,
+          );
+        } catch (_) {
+          cliResult = await OpenClawCommandService.runCliForActiveOwner(
+            'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
+            '&& npx --yes clawhub install $slug',
+            timeout: 60,
+          );
+        }
       }
-      if (provider.state.status == GatewayStatus.running) {
+      if (!nativeOwner && provider.state.status == GatewayStatus.running) {
         await OpenClawCommandService.reloadGateway(
           reason: 'skill install: $slug',
         );
@@ -441,6 +469,8 @@ class _SkillsManagerState extends State<SkillsManager>
 
   @override
   Widget build(BuildContext context) {
+    final liveSkillSlugs =
+        _gatewaySkillSlugs(context.watch<GatewayProvider>().activeSkills);
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -461,6 +491,7 @@ class _SkillsManagerState extends State<SkillsManager>
                   onShowPrompt: (skill) => _showInstallPrompt(context, skill),
                 ),
                 _DiscoverTab(
+                  liveInstalledSlugs: liveSkillSlugs,
                   onInstall: (slug, title) =>
                       _installBySlug(context, slug, title),
                 ),
@@ -959,8 +990,12 @@ class _MySkillsTabState extends State<_MySkillsTab> {
 
 class _DiscoverTab extends StatefulWidget {
   final Future<void> Function(String slug, String title) onInstall;
+  final Set<String> liveInstalledSlugs;
 
-  const _DiscoverTab({required this.onInstall});
+  const _DiscoverTab({
+    required this.onInstall,
+    required this.liveInstalledSlugs,
+  });
 
   @override
   State<_DiscoverTab> createState() => _DiscoverTabState();
@@ -977,6 +1012,27 @@ class _DiscoverTabState extends State<_DiscoverTab>
   bool _searched = false;
   int _rateLimitCountdown = 0;
   Set<String> _installedSlugs = {};
+
+  Set<String> _normalizeInstalledSlugs(Iterable<String> ids) {
+    return ids
+        .map((id) => id.trim().toLowerCase())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Set<String> _effectiveInstalledSlugs() {
+    return <String>{
+      ..._installedSlugs,
+      ..._normalizeInstalledSlugs(widget.liveInstalledSlugs),
+    };
+  }
+
+  ClawHubSkill _withInstalledState(ClawHubSkill skill) {
+    return skill.copyWith(
+      isInstalled:
+          _effectiveInstalledSlugs().contains(skill.slug.trim().toLowerCase()),
+    );
+  }
 
   // Curated featured slugs shown before the user searches.
   // These are confirmed to exist in the ClawHub NPM registry
@@ -1015,7 +1071,17 @@ class _DiscoverTabState extends State<_DiscoverTab>
   Future<void> _loadInstalledThenFeatured() async {
     final ids = await OpenClawCommandService.getInstalledSkills();
     if (!mounted) return;
-    setState(() => _installedSlugs = ids.toSet());
+    final normalized = _normalizeInstalledSlugs(ids);
+    final effective = <String>{
+      ...normalized,
+      ..._normalizeInstalledSlugs(widget.liveInstalledSlugs),
+    };
+    debugPrint(
+      "[NativeClawHubUI] installed slugs scanned=${normalized.length} "
+      "live=${widget.liveInstalledSlugs.length} "
+      "effective=${effective.length} weather=${effective.contains('weather')}",
+    );
+    setState(() => _installedSlugs = normalized);
     await _loadFeatured();
   }
 
@@ -1024,10 +1090,25 @@ class _DiscoverTabState extends State<_DiscoverTab>
   Future<void> _refreshInstalledStatus() async {
     final ids = await OpenClawCommandService.getInstalledSkills();
     if (!mounted) return;
+    final normalized = _normalizeInstalledSlugs(ids);
+    final effective = <String>{
+      ...normalized,
+      ..._normalizeInstalledSlugs(widget.liveInstalledSlugs),
+    };
+    debugPrint(
+      "[NativeClawHubUI] refreshed installed slugs scanned=${normalized.length} "
+      "live=${widget.liveInstalledSlugs.length} "
+      "effective=${effective.length} weather=${effective.contains('weather')}",
+    );
     setState(() {
-      _installedSlugs = ids.toSet();
+      _installedSlugs = normalized;
       _results = _results
-          .map((s) => s.copyWith(isInstalled: _installedSlugs.contains(s.slug)))
+          .map(
+            (s) => s.copyWith(
+              isInstalled:
+                  effective.contains(s.slug.trim().toLowerCase()),
+            ),
+          )
           .toList();
     });
   }
@@ -1038,7 +1119,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
     try {
       final results = await ClawHubService.instance.fetchFeatured(
         _featuredSlugs,
-        installedSlugs: _installedSlugs,
+        installedSlugs: _effectiveInstalledSlugs(),
       );
       if (mounted && !_searched) {
         setState(() {
@@ -1081,7 +1162,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
     try {
       final results = await ClawHubService.instance.search(
         query,
-        installedSlugs: _installedSlugs,
+        installedSlugs: _effectiveInstalledSlugs(),
       );
       if (ClawHubService.instance.isRateLimited) {
         _startCountdown(ClawHubService.instance.secondsUntilReset);
@@ -1136,6 +1217,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final displayResults = _results.map(_withInstalledState).toList();
     return Column(
       children: [
         // ── Search bar ──────────────────────────────────────────────────────
@@ -1211,7 +1293,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-              : _results.isEmpty
+              : displayResults.isEmpty
                   ? (_searched
                       ? _NoResultsWithSuggestions(
                           query: _searchCtrl.text,
@@ -1226,16 +1308,20 @@ class _DiscoverTabState extends State<_DiscoverTab>
                         ))
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-                      itemCount: _results.length,
+                      itemCount: displayResults.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, i) => _DiscoverCard(
-                        skill: _results[i],
+                        skill: displayResults[i],
                         onInstall: _rateLimitCountdown > 0
                             ? null
                             : () async {
+                                debugPrint(
+                                  '[NativeClawHubUI] Discover install tapped: '
+                                  '${displayResults[i].slug}',
+                                );
                                 await widget.onInstall(
-                                  _results[i].slug,
-                                  _results[i].name,
+                                  displayResults[i].slug,
+                                  displayResults[i].name,
                                 );
                                 await _refreshInstalledStatus();
                               },
@@ -2298,7 +2384,7 @@ class _ServiceCard extends StatelessWidget {
 
 class _DiscoverCard extends StatelessWidget {
   final ClawHubSkill skill;
-  final VoidCallback? onInstall;
+  final Future<void> Function()? onInstall;
 
   const _DiscoverCard({required this.skill, required this.onInstall});
 
@@ -2365,7 +2451,7 @@ class _DiscoverCard extends StatelessWidget {
         accentColor: color,
         icon: icon,
         onInstall:
-            onInstall != null ? (slug, name) async => onInstall!() : null,
+            onInstall != null ? (slug, name) async => await onInstall!() : null,
       ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
@@ -2484,24 +2570,27 @@ class _DiscoverCard extends StatelessWidget {
             // GET button (quick install, no sheet)
             if (!skill.isInstalled && onInstall != null) ...[
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onInstall,
-                child: Container(
+              TextButton(
+                onPressed: () async => await onInstall!(),
+                style: TextButton.styleFrom(
+                  foregroundColor: color,
+                  backgroundColor: color.withValues(alpha: 0.12),
+                  minimumSize: const Size(56, 34),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: color.withValues(alpha: 0.3)),
+                    side: BorderSide(color: color.withValues(alpha: 0.3)),
                   ),
-                  child: Text(
-                    'GET',
-                    style: TextStyle(
-                        color: color,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8),
-                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  'GET',
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8),
                 ),
               ),
             ],
