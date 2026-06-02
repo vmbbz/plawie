@@ -5,6 +5,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val internalNoProotProof =
+    (project.findProperty("plawieInternalNoProotProof") as String?)
+        ?.toBooleanStrictOrNull() == true
+
 android {
     namespace = "com.nxg.openclawproot"
     compileSdk = 36
@@ -60,6 +64,15 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            if (internalNoProotProof) {
+                excludes += setOf(
+                    "**/libproot.so",
+                    "**/libprootloader.so",
+                    "**/libprootloader32.so",
+                    "**/libproot_wrapper.sh",
+                    "**/libtalloc.so",
+                )
+            }
         }
     }
 

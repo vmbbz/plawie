@@ -200,6 +200,40 @@ Silent third-party app messaging should not be claimed as complete just because
 `phone-control` is loaded. It requires a concrete Android bridge command,
 permission review, UI confirmation policy, and a tested Gateway tool contract.
 
+## Runtime Package Scope
+
+Native `libnode.so` does not require user-downloadable Linux packages to run
+the Gateway.
+
+Native Gateway requirements are bundled or app-owned:
+
+- `libnode.so`;
+- `libplawie_node_bridge.so`;
+- `assets/openclaw-node-modules.tar.gz`;
+- native OpenClaw home/config mirror;
+- Android node host on `127.0.0.1:8765`;
+- fllama/NDK runtime for direct local inference.
+
+Go and Homebrew are PRoot rollback shell extras. They are useful only if an
+operator intentionally enters the emergency Ubuntu/PRoot environment and wants
+Linux development tooling there. They are not required by native Gateway,
+provider chat, streaming, OpenClaw startup plugins, Android node capabilities,
+or direct local LLM inference.
+
+Twilio and Calls are partner skill surfaces. They are credential and service
+dependent integrations managed from Bot Management > Skills, not native runtime
+packages. Current Gateway startup plugin logs do not show Twilio or Calls as
+separate required startup plugins.
+
+Release UI rule:
+
+- Packages page should present PRoot rollback extras separately from partner
+  skills.
+- Settings should label PRoot rootfs/Node/OpenClaw/Go/Homebrew as rollback
+  state.
+- Skills page should describe Twilio/Calls as Gateway skills/integrations, not
+  app runtime packages.
+
 ## Memory And Efficiency
 
 Native `libnode.so` does not make the Gateway free; it still runs OpenClaw,

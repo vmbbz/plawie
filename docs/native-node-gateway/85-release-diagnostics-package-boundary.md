@@ -103,6 +103,16 @@ flutter build apk --release `
 Do not set broad diagnostics or sidecar autostart for the public rollback
 build.
 
+Internal no-PRoot package proof:
+
+```powershell
+.\gradlew :app:assembleRelease `
+  -PplawieInternalNoProotProof=true
+```
+
+This property excludes PRoot native libraries from that internal APK only. Do
+not use it for the public rollback build.
+
 ## Package Boundary For First Native-Default Release
 
 Include:
@@ -115,6 +125,13 @@ Include:
 - NDK Gateway bridge on `11435`;
 - Android node host on `8765`;
 - docs and release notes explaining native default + PRoot rollback.
+
+Not native Gateway prerequisites:
+
+- Go;
+- Homebrew;
+- Twilio partner skill package;
+- Calls partner skill package.
 
 Exclude from public release behavior:
 

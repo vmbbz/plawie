@@ -104,8 +104,8 @@ const _premiumSkills = [
   _SkillEntry(
     id: 'local-llm',
     title: 'Local LLM',
-    subtitle: 'llama-server',
-    description: 'Run offline LLM on-device via llama-server inside PRoot',
+    subtitle: 'Native NDK',
+    description: 'Run offline GGUF models on-device without API keys or PRoot',
     icon: Icons.memory_rounded,
     color: Color(0xFF0097A7),
     hasPage: true,
@@ -1224,7 +1224,8 @@ class _DiscoverTabState extends State<_DiscoverTab>
 //
 // SKILLS vs TOOLS — the distinction that matters:
 //
-//   SKILLS   = npm packages that give the agent NEW CAPABILITIES
+//   SKILLS   = Gateway skill packages/integrations that give the agent
+//              NEW CAPABILITIES
 //              (weather, github, voice-call, coding-agent, ...)
 //              Installed via: openclaw skills install <name>
 //              Live in:       node_modules/@openclaw/<name>/
@@ -1575,7 +1576,7 @@ class _ToolsTabState extends State<_ToolsTab> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'npm packages that give the agent new capabilities',
+                              'Gateway skill packages and integrations that give the agent new capabilities',
                               style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.white.withValues(alpha: 0.55)),
@@ -3080,7 +3081,7 @@ class _LocalLlmCard extends StatelessWidget {
                           fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 2),
                   Text(
-                    'llama-server · on-device · no API key',
+                    'native NDK · on-device · no API key',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.45),
                         fontSize: 11),
@@ -3402,7 +3403,7 @@ class _InstallPromptSheet extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Skill will be installed into your running OpenClaw gateway instance.',
+                      'Skill is managed by the OpenClaw gateway. It is not a native runtime package.',
                       style:
                           TextStyle(fontSize: 12, color: AppColors.statusAmber),
                     ),

@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 
-/// Metadata for an optional development tool that can be installed
-/// inside proot Ubuntu environment.
+/// Runtime scope for package-like entries shown in the app.
+enum OptionalPackageScope {
+  prootRollbackExtra,
+  partnerSkill,
+}
+
+/// Metadata for optional runtime extras and partner skills.
 class OptionalPackage {
   final String id;
   final String name;
   final String description;
   final IconData icon;
   final Color color;
+  final OptionalPackageScope scope;
   final String installCommand;
   final String uninstallCommand;
   final String checkPath;
@@ -21,6 +27,7 @@ class OptionalPackage {
     required this.description,
     required this.icon,
     required this.color,
+    required this.scope,
     required this.installCommand,
     required this.uninstallCommand,
     required this.checkPath,
@@ -32,17 +39,16 @@ class OptionalPackage {
   static const goPackage = OptionalPackage(
     id: 'go',
     name: 'Go (Golang)',
-    description: 'Go programming language compiler and tools',
+    description: 'Go compiler for the emergency PRoot rollback shell',
     icon: Icons.integration_instructions,
     color: Colors.cyan,
-    installCommand:
-        'set -e; '
+    scope: OptionalPackageScope.prootRollbackExtra,
+    installCommand: 'set -e; '
         'echo ">>> Installing Go via apt..."; '
         'apt-get update -qq && apt-get install -y golang; '
         'go version; '
         'echo ">>> GO_INSTALL_COMPLETE"',
-    uninstallCommand:
-        'set -e; '
+    uninstallCommand: 'set -e; '
         'echo ">>> Removing Go..."; '
         'apt-get remove -y golang golang-go && apt-get autoremove -y; '
         'echo ">>> GO_UNINSTALL_COMPLETE"',
@@ -55,11 +61,11 @@ class OptionalPackage {
   static final brewPackage = OptionalPackage(
     id: 'brew',
     name: 'Homebrew',
-    description: 'The missing package manager for Linux',
+    description: 'Linux package manager for the emergency PRoot rollback shell',
     icon: Icons.science,
     color: Colors.amber,
-    installCommand:
-        'set -e; '
+    scope: OptionalPackageScope.prootRollbackExtra,
+    installCommand: 'set -e; '
         'echo ">>> Installing Homebrew (this may take a while)..."; '
         'touch /.dockerenv; '
         'apt-get update -qq && apt-get install -y -qq '
@@ -73,8 +79,7 @@ class OptionalPackage {
         'eval /home/linuxbrew/.linuxbrew/bin/brew shellenv; '
         'brew --version; '
         'echo ">>> BREW_INSTALL_COMPLETE"',
-    uninstallCommand:
-        'set -e; '
+    uninstallCommand: 'set -e; '
         'echo ">>> Removing Homebrew..."; '
         'touch /.dockerenv; '
         'curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh -o /tmp/uninstall.sh; '
@@ -89,14 +94,14 @@ class OptionalPackage {
     commandType: SkillCommandType.install,
   );
 
-  // Example skill packages with new syntax
   static const twilioSkill = OptionalPackage(
     id: 'twilio',
     name: 'Twilio Integration',
-    description: 'Send and receive SMS/MMS via Twilio API',
+    description: 'Partner messaging skill managed from Bot Management > Skills',
     icon: Icons.phone_android,
     color: Colors.red,
-    installCommand: 'openclaw skills install twilio',  // plural: modern syntax
+    scope: OptionalPackageScope.partnerSkill,
+    installCommand: 'openclaw skills install twilio', // plural: modern syntax
     uninstallCommand: 'openclaw skills uninstall twilio',
     checkPath: 'opt/skills/twilio/package.json',
     estimatedSize: '~25 MB',
@@ -107,10 +112,11 @@ class OptionalPackage {
   static const callsSkill = OptionalPackage(
     id: 'calls',
     name: 'Calls',
-    description: 'ERC-8004 identity on Base chain',
+    description: 'Twilio ConversationRelay voice skill managed from Skills',
     icon: Icons.call,
     color: Colors.blue,
-    installCommand: 'openclaw skills install calls',  // plural: modern syntax
+    scope: OptionalPackageScope.partnerSkill,
+    installCommand: 'openclaw skills install calls', // plural: modern syntax
     uninstallCommand: 'openclaw skills uninstall calls',
     checkPath: 'opt/skills/calls/package.json',
     estimatedSize: '~15 MB',
@@ -121,14 +127,37 @@ class OptionalPackage {
   /// All available optional packages.
   static final all = [goPackage, brewPackage, twilioSkill, callsSkill];
 
+  static List<OptionalPackage> get prootRollbackExtras => all
+      .where((pkg) => pkg.scope == OptionalPackageScope.prootRollbackExtra)
+      .toList(growable: false);
+
+  static List<OptionalPackage> get partnerSkills => all
+      .where((pkg) => pkg.scope == OptionalPackageScope.partnerSkill)
+      .toList(growable: false);
+
+  bool get canInstallFromPackagesPage =>
+      scope == OptionalPackageScope.prootRollbackExtra;
+
+  String get scopeLabel => switch (scope) {
+        OptionalPackageScope.prootRollbackExtra => 'PRoot rollback only',
+        OptionalPackageScope.partnerSkill => 'Partner skill',
+      };
+
+  String get releaseNote => switch (scope) {
+        OptionalPackageScope.prootRollbackExtra =>
+          'Not required by the native libnode.so Gateway.',
+        OptionalPackageScope.partnerSkill =>
+          'No Linux package required; configure from Skills.',
+      };
+
   /// Sentinel for uninstall completion (derived from install sentinel).
   String get uninstallSentinel =>
       completionSentinel.replaceFirst('INSTALL', 'UNINSTALL');
 }
 
 enum SkillCommandType {
-  install,     // openclaw skill install <name>
-  add,         // openclaw skill add <url>
-  register,     // openclaw skill register <path>
-  update,       // openclaw skills update --all
+  install, // openclaw skill install <name>
+  add, // openclaw skill add <url>
+  register, // openclaw skill register <path>
+  update, // openclaw skills update --all
 }

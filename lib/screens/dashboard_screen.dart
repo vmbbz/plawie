@@ -119,7 +119,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           _BlobDashCard(
                             title: 'Terminal',
-                            subtitle: 'Ubuntu Shell',
+                            subtitle: 'PRoot rollback shell',
                             icon: Icons.terminal_rounded,
                             iconColor: Colors.cyanAccent,
                             widthFactor: 0.48,
@@ -258,8 +258,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 .push(_zoomRoute(const LogsScreen())),
                           ),
                           _BlobDashCard(
-                            title: 'Packages',
-                            subtitle: 'Go, Brew, toolkits',
+                            title: 'Runtime Extras',
+                            subtitle: 'PRoot extras, skills',
                             icon: Icons.extension_rounded,
                             iconColor: Colors.purpleAccent,
                             widthFactor: 0.48,

@@ -951,3 +951,25 @@ Observed results:
 Current classification: the first public rollback-shaped release package gate
 passed. PRoot is still packaged and proven as rollback, but native Node is the
 intended default owner.
+
+## 2026-06-02 Runtime Package Scope Polish
+
+The release UI now distinguishes native Gateway requirements from old
+Linux/PRoot package assumptions:
+
+- Native `libnode.so` Gateway does not require Go, Homebrew, Twilio, or Calls
+  packages to boot or serve chat.
+- Go and Homebrew are labeled as PRoot rollback shell extras.
+- Twilio and Calls are labeled as partner skills managed from Bot Management >
+  Skills, not native runtime packages.
+- Packages, setup, settings, dashboard, skills, and Calls UI copy were updated
+  to avoid presenting PRoot-only packages as native Gateway prerequisites.
+- The internal no-PRoot package proof now has an explicit Gradle property:
+
+  ```powershell
+  .\gradlew :app:assembleRelease `
+    -PplawieInternalNoProotProof=true
+  ```
+
+  That property excludes PRoot native libraries only for the internal proof
+  artifact. Public rollback builds still package PRoot as emergency rollback.

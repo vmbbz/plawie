@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -81,6 +81,12 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   }
 
   Future<void> _installPackage(OptionalPackage package) async {
+    if (!package.canInstallFromPackagesPage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${package.name} is managed from Skills.')),
+      );
+      return;
+    }
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => PackageInstallScreen(package: package),
@@ -210,7 +216,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                   shaderCallback: (bounds) => LinearGradient(
                     colors: isDark
                         ? [Colors.white, AppColors.statusGreen]
-                        : [AppColors.darkBg, AppColors.darkBg.withValues(alpha: 0.8)],
+                        : [
+                            AppColors.darkBg,
+                            AppColors.darkBg.withValues(alpha: 0.8)
+                          ],
                   ).createShader(bounds),
                   child: Text(
                     'Setup Plawie',
@@ -267,8 +276,8 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           Expanded(
             child: Text(
               _started
-                  ? 'Setting up the environment. This may take several minutes.'
-                  : 'This will download Ubuntu, Node.js, and Plawie into a self-contained environment.',
+                  ? 'Preparing the Gateway environment. This may take several minutes.'
+                  : 'Native Node Gateway is built into Plawie. Setup prepares OpenClaw state and the emergency PRoot rollback environment.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: isDark
                     ? AppColors.inverseText.withValues(alpha: 0.9)
@@ -489,10 +498,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
 
   Widget _buildSteps(SetupState state, ThemeData theme, bool isDark) {
     final steps = [
-      (1, 'Download Ubuntu rootfs', SetupStep.downloadingRootfs),
-      (2, 'Extract rootfs', SetupStep.extractingRootfs),
-      (3, 'Install Node.js', SetupStep.installingNode),
-      (4, 'Install Plawie', SetupStep.installingOpenClaw),
+      (1, 'Download emergency PRoot rootfs', SetupStep.downloadingRootfs),
+      (2, 'Extract rollback rootfs', SetupStep.extractingRootfs),
+      (3, 'Install rollback Node.js', SetupStep.installingNode),
+      (4, 'Install rollback OpenClaw', SetupStep.installingOpenClaw),
       (5, 'Configure Bionic Bypass', SetupStep.configuringBypass),
     ];
 
@@ -518,7 +527,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
-              'OPTIONAL PACKAGES',
+              'OPTIONAL PROOT ROLLBACK EXTRAS',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
@@ -527,7 +536,18 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
             ),
           ),
           const SizedBox(height: 8),
-          for (final pkg in OptionalPackage.all)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Text(
+              'The native libnode.so Gateway does not require these extras.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color:
+                    theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.72),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final pkg in OptionalPackage.prootRollbackExtras)
             _buildPackageTile(theme, pkg, isDark),
         ],
       ],

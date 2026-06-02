@@ -62,7 +62,10 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
 
   Future<void> _refreshData() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     final result = await SkillsService()
         .executeSkill('twilio_voice', parameters: {'method': 'get_status'});
@@ -71,9 +74,14 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
     if (result.success) {
       final raw = result.data;
       if (raw is Map<String, dynamic>) {
-        setState(() { _data = raw; _loading = false; });
+        setState(() {
+          _data = raw;
+          _loading = false;
+        });
       } else {
-        setState(() { _loading = false; });
+        setState(() {
+          _loading = false;
+        });
       }
     } else {
       setState(() {
@@ -123,13 +131,17 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                _buildRuntimeScopeBanner(context),
+                                const SizedBox(height: 16),
                                 _buildNumberCard(context),
                                 const SizedBox(height: 32),
-                                _buildSectionHeader(context, 'Voice Orchestration'),
+                                _buildSectionHeader(
+                                    context, 'Voice Orchestration'),
                                 const SizedBox(height: 16),
                                 _buildRelayToggles(context),
                                 const SizedBox(height: 32),
-                                _buildSectionHeader(context, 'Recent Conversations'),
+                                _buildSectionHeader(
+                                    context, 'Recent Conversations'),
                                 const SizedBox(height: 16),
                                 _buildCallLogs(context),
                               ],
@@ -148,14 +160,16 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
     return Stack(
       children: [
         Positioned(
-          top: 40, left: 10,
+          top: 40,
+          left: 10,
           child: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white70),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ),
         SafeArea(
-          child: SkillInstallHero(skill: skill, onInstalled: () => setState(() {})),
+          child: SkillInstallHero(
+              skill: skill, onInstalled: () => setState(() {})),
         ),
       ],
     );
@@ -172,13 +186,43 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off_rounded, color: AppColors.statusAmber, size: 18),
+          const Icon(Icons.cloud_off_rounded,
+              color: AppColors.statusAmber, size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Text(_error ?? 'Gateway offline',
-                style: const TextStyle(color: AppColors.statusAmber, fontSize: 12)),
+                style: const TextStyle(
+                    color: AppColors.statusAmber, fontSize: 12)),
           ),
-          TextButton(onPressed: _refreshData, child: const Text('Retry', style: TextStyle(fontSize: 12))),
+          TextButton(
+              onPressed: _refreshData,
+              child: const Text('Retry', style: TextStyle(fontSize: 12))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRuntimeScopeBanner(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.statusAmber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border:
+            Border.all(color: AppColors.statusAmber.withValues(alpha: 0.22)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.info_outline_rounded,
+              color: AppColors.statusAmber, size: 18),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Twilio Calls is a partner skill with external credentials. It is not required by the native libnode.so Gateway runtime.',
+              style: TextStyle(
+                  color: AppColors.statusAmber, fontSize: 12, height: 1.35),
+            ),
+          ),
         ],
       ),
     );
@@ -199,7 +243,9 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
-                color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5)),
+                color: Theme.of(context)
+                    .scaffoldBackgroundColor
+                    .withValues(alpha: 0.5)),
           ),
         ),
       ),
@@ -213,15 +259,20 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
     final activeSessions = (_data['concurrent_sessions'] ?? 0) as num;
     final inbound = (_data['inbound_count'] ?? 0) as num;
     final durationH = (_data['total_duration_h'] ?? 0) as num;
-    final durationDisplay = durationH == 0 ? '--' : '${durationH.toStringAsFixed(1)}h';
+    final durationDisplay =
+        durationH == 0 ? '--' : '${durationH.toStringAsFixed(1)}h';
 
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.05)),
       ),
       child: Column(
         children: [
@@ -230,8 +281,10 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1), shape: BoxShape.circle),
-                child: const Icon(Icons.phone_in_talk_rounded, color: Colors.redAccent),
+                    color: Colors.red.withValues(alpha: 0.1),
+                    shape: BoxShape.circle),
+                child: const Icon(Icons.phone_in_talk_rounded,
+                    color: Colors.redAccent),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -239,19 +292,23 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Active Virtual Number',
-                        style: TextStyle(color: AppColors.statusGrey, fontSize: 11)),
+                        style: TextStyle(
+                            color: AppColors.statusGrey, fontSize: 11)),
                     Text(
                       displayNumber,
                       style: GoogleFonts.firaCode(
                           fontSize: phoneNumber.isEmpty ? 14 : 20,
                           fontWeight: FontWeight.bold,
-                          color: phoneNumber.isEmpty ? AppColors.statusGrey : null),
+                          color: phoneNumber.isEmpty
+                              ? AppColors.statusGrey
+                              : null),
                     ),
                   ],
                 ),
               ),
               if (phoneNumber.isNotEmpty)
-                const Icon(Icons.verified_user_rounded, color: AppColors.statusGreen, size: 18),
+                const Icon(Icons.verified_user_rounded,
+                    color: AppColors.statusGreen, size: 18),
             ],
           ),
           const SizedBox(height: 24),
@@ -273,8 +330,10 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
   Widget _buildMiniStat(String label, String value) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.statusGrey)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        Text(label,
+            style: const TextStyle(fontSize: 10, color: AppColors.statusGrey)),
+        Text(value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
       ],
     );
   }
@@ -298,20 +357,27 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.05)),
       ),
       child: Column(
         children: [
           // Twilio ConversationRelay — WebSocket bidirectional audio relay
           _buildToggleRow('ConversationRelay', relayEnabled, Icons.hub_rounded,
-              subtitle: 'Twilio WebSocket audio relay', onChanged: _setRelayEnabled),
+              subtitle: 'Twilio WebSocket audio relay',
+              onChanged: _setRelayEnabled),
           const Divider(height: 24),
           // deepgramSmartFormat transcription
-          _buildToggleRow('Transcription', transcriptionEnabled, Icons.subtitles_rounded,
-              subtitle: 'Deepgram speech-to-text', onChanged: _setTranscriptionEnabled),
+          _buildToggleRow(
+              'Transcription', transcriptionEnabled, Icons.subtitles_rounded,
+              subtitle: 'Deepgram speech-to-text',
+              onChanged: _setTranscriptionEnabled),
           const Divider(height: 24),
           // Human handoff — future feature, shown as static UI
           _buildToggleRow('Human Escalation', false, Icons.person_add_rounded,
@@ -323,7 +389,11 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
                   color: AppColors.statusGrey.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Text('SOON', style: TextStyle(fontSize: 9, color: AppColors.statusGrey, fontWeight: FontWeight.bold)),
+                child: const Text('SOON',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: AppColors.statusGrey,
+                        fontWeight: FontWeight.bold)),
               )),
         ],
       ),
@@ -334,15 +404,21 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
       {String? subtitle, ValueChanged<bool>? onChanged, Widget? trailing}) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: value ? AppColors.statusGreen : AppColors.statusGrey),
+        Icon(icon,
+            size: 20,
+            color: value ? AppColors.statusGreen : AppColors.statusGrey),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
               if (subtitle != null)
-                Text(subtitle, style: const TextStyle(fontSize: 10, color: AppColors.statusGrey)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 10, color: AppColors.statusGrey)),
             ],
           ),
         ),
@@ -366,8 +442,8 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
         alignment: Alignment.center,
         child: Column(
           children: [
-            Icon(Icons.call_missed_rounded, size: 36,
-                color: AppColors.statusGrey.withValues(alpha: 0.4)),
+            Icon(Icons.call_missed_rounded,
+                size: 36, color: AppColors.statusGrey.withValues(alpha: 0.4)),
             const SizedBox(height: 12),
             Text(
               _isEnabled ? 'No calls yet' : 'Install skill to see call history',
@@ -409,10 +485,14 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.black.withValues(alpha: 0.01),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.03)
+            : Colors.black.withValues(alpha: 0.01),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.02)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.02)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,19 +503,23 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
               Row(
                 children: [
                   Icon(
-                    isInbound ? Icons.call_received_rounded : Icons.call_made_rounded,
+                    isInbound
+                        ? Icons.call_received_rounded
+                        : Icons.call_made_rounded,
                     size: 14,
                     color: isInbound ? Colors.blueAccent : Colors.orangeAccent,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     displayNumber.isNotEmpty ? displayNumber : direction,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ],
               ),
               Text(durationDisplay,
-                  style: GoogleFonts.firaCode(fontSize: 11, color: AppColors.statusGrey)),
+                  style: GoogleFonts.firaCode(
+                      fontSize: 11, color: AppColors.statusGrey)),
             ],
           ),
           const SizedBox(height: 4),
@@ -453,7 +537,9 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
                 Text(
                   status.toUpperCase(),
                   style: TextStyle(
-                      color: status == 'failed' ? AppColors.statusRed : AppColors.statusAmber,
+                      color: status == 'failed'
+                          ? AppColors.statusRed
+                          : AppColors.statusAmber,
                       fontSize: 9,
                       fontWeight: FontWeight.bold),
                 ),
@@ -463,7 +549,10 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
             const SizedBox(height: 8),
             Text(
               summary,
-              style: TextStyle(color: AppColors.statusGrey, fontSize: 11, fontStyle: FontStyle.italic),
+              style: TextStyle(
+                  color: AppColors.statusGrey,
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

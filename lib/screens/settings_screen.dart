@@ -260,8 +260,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ListTile(
                         title: const Text('All Files Access (Pro)'),
                         subtitle: Text(_hasFullStorageAccess
-                            ? 'Granted — /sdcard mounted to PRoot'
-                            : 'Disabled — PRoot is sandboxed'),
+                            ? 'Granted - available to the PRoot rollback shell'
+                            : 'Disabled - only affects PRoot rollback shell access'),
                         leading: Icon(
                           Icons.folder_shared,
                           color: _hasFullStorageAccess
@@ -279,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content: Text(
-                                      'Phone storage is mounted at /root/sdcard inside PRoot')),
+                                      'Phone storage mount is for the PRoot rollback shell. Native Gateway uses app-private storage.')),
                             );
                           }
                         },
@@ -702,41 +702,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         leading: const Icon(Icons.memory),
                       ),
                       ListTile(
-                        title: const Text('PRoot path'),
-                        subtitle: Text(_prootPath),
+                        title: const Text('PRoot rollback path'),
+                        subtitle: Text(_prootPath.isEmpty
+                            ? 'Emergency rollback runtime only'
+                            : _prootPath),
                         leading: const Icon(Icons.folder),
                       ),
                       ListTile(
-                        title: const Text('Rootfs'),
+                        title: const Text('PRoot rollback rootfs'),
                         subtitle: Text(_status['rootfsExists'] == true
-                            ? 'Installed'
+                            ? 'Installed - rollback only'
                             : 'Not installed'),
                         leading: const Icon(Icons.storage),
                       ),
                       ListTile(
-                        title: const Text('Node.js'),
+                        title: const Text('PRoot Node.js'),
                         subtitle: Text(_status['nodeInstalled'] == true
-                            ? 'Installed'
+                            ? 'Installed - rollback only'
                             : 'Not installed'),
                         leading: const Icon(Icons.code),
                       ),
                       ListTile(
-                        title: const Text('OpenClaw Gateway'),
+                        title: const Text('PRoot OpenClaw Gateway'),
                         subtitle: Text(_status['openclawInstalled'] == true
-                            ? 'Installed'
+                            ? 'Installed - rollback only'
                             : 'Not installed'),
                         leading: const Icon(Icons.cloud),
                       ),
                       ListTile(
-                        title: const Text('Go (Golang)'),
-                        subtitle:
-                            Text(_goInstalled ? 'Installed' : 'Not installed'),
+                        title: const Text('Go (PRoot optional)'),
+                        subtitle: Text(_goInstalled
+                            ? 'Installed - not used by native Gateway'
+                            : 'Not installed - not required by native Gateway'),
                         leading: const Icon(Icons.integration_instructions),
                       ),
                       ListTile(
-                        title: const Text('Homebrew'),
-                        subtitle: Text(
-                            _brewInstalled ? 'Installed' : 'Not installed'),
+                        title: const Text('Homebrew (PRoot optional)'),
+                        subtitle: Text(_brewInstalled
+                            ? 'Installed - not used by native Gateway'
+                            : 'Not installed - not required by native Gateway'),
                         leading: const Icon(Icons.science),
                       ),
                       const Divider(),

@@ -36,6 +36,12 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
   @override
   void initState() {
     super.initState();
+    if (!widget.package.canInstallFromPackagesPage) {
+      _loading = false;
+      _error =
+          '${widget.package.name} is managed from Bot Management > Skills, not installed as a Linux package.';
+      return;
+    }
     NativeBridge.startTerminalService();
     _startProcess();
   }
@@ -51,12 +57,13 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
 
       // Adapt command based on OpenClaw version
       final adaptedCommand = await OpenClawCommandService.adaptSkillCommand(
-        widget.isUninstall ? widget.package.uninstallCommand : widget.package.installCommand
-      );
+          widget.isUninstall
+              ? widget.package.uninstallCommand
+              : widget.package.installCommand);
 
       final cmdArgs = List<String>.from(args);
-      cmdArgs.removeLast(); 
-      cmdArgs.removeLast(); 
+      cmdArgs.removeLast();
+      cmdArgs.removeLast();
       cmdArgs.addAll(['/bin/bash', '-lc', adaptedCommand]);
 
       _process = await Process.start(
@@ -97,8 +104,9 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
 
   void _handleOutput(String data, String sentinel) {
     if (!mounted) return;
-    
-    final newLines = data.split('\n').where((line) => line.trim().isNotEmpty).toList();
+
+    final newLines =
+        data.split('\n').where((line) => line.trim().isNotEmpty).toList();
     if (newLines.isEmpty) return;
 
     setState(() {
@@ -146,7 +154,8 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
               _buildAppBar(context, action),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24.0, vertical: 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -159,87 +168,90 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
               SliverFillRemaining(
                 child: Column(
                   children: [
-          if (_loading)
-            const Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('Starting task...'),
-                  ],
-                ),
-              ),
-            )
-          else if (_error != null)
-            Expanded(
-               child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-                      const SizedBox(height: 16),
-                      Text('Error: $_error', textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.error)),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _loading = true;
-                            _error = null;
-                            _finished = false;
-                            _logs.clear();
-                          });
-                          _startProcess();
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
+                    if (_loading)
+                      const Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('Starting task...'),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (_error != null)
+                      Expanded(
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.error_outline,
+                                    size: 48, color: theme.colorScheme.error),
+                                const SizedBox(height: 16),
+                                Text('Error: $_error',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        color: theme.colorScheme.error)),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _loading = true;
+                                      _error = null;
+                                      _finished = false;
+                                      _logs.clear();
+                                    });
+                                    _startProcess();
+                                  },
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: Container(
+                          color: Colors.black,
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: _logs.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: SelectableText(
+                                  _logs[index],
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else 
-            Expanded(
-               child: Container(
-                 color: Colors.black,
-                 child: ListView.builder(
-                   controller: _scrollController,
-                   padding: const EdgeInsets.all(12),
-                   itemCount: _logs.length,
-                   itemBuilder: (context, index) {
-                     return Padding(
-                       padding: const EdgeInsets.only(bottom: 2),
-                       child: SelectableText(
-                         _logs[index],
-                         style: const TextStyle(
-                           fontFamily: 'monospace',
-                           color: Colors.white70,
-                           fontSize: 12,
-                           height: 1.3,
-                         ),
-                       ),
-                     );
-                   },
-                 ),
-               ),
-            ),
-          
-          if (_finished)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  icon: const Icon(Icons.check),
-                  label: const Text('Done'),
-                ),
-              ),
-            ),
+                    if (_finished)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            icon: const Icon(Icons.check),
+                            label: const Text('Done'),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -311,6 +323,15 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
             fontSize: 15,
             color: Colors.white.withValues(alpha: 0.7),
             height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          widget.package.releaseNote,
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            color: Colors.white.withValues(alpha: 0.45),
+            height: 1.4,
           ),
         ),
       ],

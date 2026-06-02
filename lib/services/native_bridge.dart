@@ -381,6 +381,8 @@ class NativeBridge {
   }
 
   static Future<int> extractDebPackages() async {
+    // PRoot rollback maintenance only. Native libnode.so does not use these
+    // Linux package assets to start the Gateway.
     return await _channel.invokeMethod('extractDebPackages');
   }
 

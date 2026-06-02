@@ -95,6 +95,16 @@ Known remaining PRoot-state dependencies before final removal:
 
 ## Required Gates Before No-PRoot Internal Build
 
+Package proof switch:
+
+```powershell
+.\gradlew :app:assembleRelease `
+  -PplawieInternalNoProotProof=true
+```
+
+That proof APK excludes PRoot native libraries but does not change the public
+native-default rollback build.
+
 1. Native `.openclaw` home becomes canonical for config/auth/session reads.
 2. PRoot hydration is replaced with native state migration.
 3. PRoot repair/setup flows are removed or isolated behind a legacy branch.

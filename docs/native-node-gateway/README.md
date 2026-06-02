@@ -45,6 +45,9 @@ For the exact diagnostics/package boundary for the first native-default release,
 use [85-release-diagnostics-package-boundary.md](85-release-diagnostics-package-boundary.md).
 For the deferred local NDK Gateway bridge-chat hardening issue, use
 [86-local-ndk-gateway-route-hardening-loose-end.md](86-local-ndk-gateway-route-hardening-loose-end.md).
+For runtime package scope, PRoot-only optional packages, partner skills, and
+the internal no-PRoot package proof switch, use
+[87-runtime-package-scope-and-no-proot-proof.md](87-runtime-package-scope-and-no-proot-proof.md).
 
 ## Current Direction
 
@@ -313,6 +316,7 @@ be safely generalized.
 | [84-release-variants-and-proot-removal-plan.md](84-release-variants-and-proot-removal-plan.md) | Debug/internal/public variant plan and staged path from native-default rollback build to final no-PRoot build |
 | [85-release-diagnostics-package-boundary.md](85-release-diagnostics-package-boundary.md) | Exact diagnostics flags, owner-switch policy, and package boundary for the public native-default rollback build |
 | [86-local-ndk-gateway-route-hardening-loose-end.md](86-local-ndk-gateway-route-hardening-loose-end.md) | Deferred hardening for `plawie_ndk/local-llm` Gateway-to-NDK bridge chat |
+| [87-runtime-package-scope-and-no-proot-proof.md](87-runtime-package-scope-and-no-proot-proof.md) | Runtime package scope, PRoot-only extras, partner skills, and internal no-PRoot proof packaging |
 
 ## Work Rules
 

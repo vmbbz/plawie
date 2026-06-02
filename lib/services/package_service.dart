@@ -2,8 +2,8 @@ import 'dart:io';
 import '../models/optional_package.dart';
 import 'native_bridge.dart';
 
-/// Checks installation status of optional packages by looking for
-/// their binaries on the host filesystem (no proot needed).
+/// Checks installation status of PRoot rollback extras by looking inside the
+/// Ubuntu rootfs from Android. This is not native libnode.so runtime health.
 class PackageService {
   static String? _rootfsDir;
 
