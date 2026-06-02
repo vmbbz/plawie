@@ -135,11 +135,14 @@ class _SkillConfigEditorState extends State<SkillConfigEditor> {
       await Directory(file.parent.path).create(recursive: true);
       await file.writeAsString(text, flush: true);
       _resolvedHostPath = hostPath;
+      await OpenClawCommandService.reloadGateway(
+        reason: 'skill config override: ${widget.skillId}',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Saved to $targetPath'),
+            content: Text('✅ Saved and applied to $targetPath'),
             backgroundColor: AppColors.statusGreen,
           ),
         );
@@ -276,8 +279,7 @@ system_prompt: |
                             child: Text(
                               'This is a gateway-managed skill. '
                               'Changes you save here create a workspace override '
-                              'that OpenClaw loads instead of the npm default. '
-                              'Restart or refresh the active Gateway owner to apply.',
+                              'that OpenClaw loads instead of the npm default.',
                               style: const TextStyle(
                                   fontSize: 12,
                                   color: AppColors.statusAmber,

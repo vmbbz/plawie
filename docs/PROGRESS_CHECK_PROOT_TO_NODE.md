@@ -1513,3 +1513,28 @@ Current remaining full-native loose ends:
   direct local fllama inference remains available independently.
 - A final release build/install should verify the new owner-aware config apply
   path on-device before public packaging.
+
+## 2026-06-02 Skill Override Apply Boundary
+
+Follow-up code audit found one more normal management path that could write
+native-owner state without applying it immediately: the skill configuration
+editor. Saving a workspace override created or updated the active-owner
+`SKILL.yaml`, but the UI only told the user to restart or refresh the Gateway.
+
+Code hardening now applied:
+
+- saving a skill workspace override now calls
+  `OpenClawCommandService.reloadGateway(reason: 'skill config override: <id>')`;
+- under native owner, that flows through the active-owner config apply handler
+  and bounded native restart path validated above;
+- under PRoot owner, it keeps the PRoot `openclaw reload` path;
+- the save success message now says the override was saved and applied;
+- the stale "restart or refresh" notice was removed from the editor copy.
+
+Validation:
+
+- `flutter analyze lib/screens/management/skills/skill_config_editor.dart`
+  passed.
+
+Release interpretation: user-created or edited skill overrides are no longer a
+"saved but not live" trap under native ownership.
