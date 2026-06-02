@@ -1,13 +1,25 @@
 # OpenClaw Boot Sequence
 
-Last updated: 2026-05-28
+Last updated: 2026-06-02
 
 This is the production startup contract for Plawie on Android.
 
 ## Core Principle
 
 Gateway boot and device pairing must never depend on optional local inference.
-The stable sequence is:
+The native-default release sequence is:
+
+1. Select the Gateway runtime owner.
+2. If native is selected, start embedded `libnode.so` OpenClaw on `18789`.
+3. If sticky rollback selected PRoot, start PRoot OpenClaw on `18789`.
+4. Wait for HTTP readiness and authenticated dashboard token.
+5. Wait for operator WebSocket, RPC health, default skills, and tool discovery.
+6. Release local device-node auto-connect.
+7. Approve local pairing/scopes.
+8. Enter the app with Gateway, Node, and dashboard ready.
+9. Start local model features only after the Gateway baseline is stable.
+
+The old PRoot setup/repair sequence remains only for emergency rollback:
 
 1. Install or repair OpenClaw in PRoot.
 2. Write one hardened config before the first Gateway start.
@@ -64,6 +76,11 @@ Pre-start hardening writes:
 Cloud chat is Gateway-first by default. This keeps skills, tool visibility,
 Talk/TTS, session behavior, node actions, and diagnostics in one lane. Direct
 provider routing is not the release default.
+
+Native `libnode.so` only changes the Gateway owner for Gateway-backed rows. It
+does not remove fllama. `local-llm/...` remains costless/offline after model
+download, and `plawie_ndk/local-llm` remains the manual Gateway-to-local-model
+bridge on `11435`.
 
 ## Gateway Chat Sessions
 

@@ -814,14 +814,21 @@ class GatewayService {
 
     try {
       final filesDir = await getFilesDir();
-      final authFile = File(
-        '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
-      );
-      await Directory(authFile.parent.path).create(recursive: true);
+      final authFiles = <File>[
+        File(
+          '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
+        ),
+      ];
+      final nativeAuthFile = await _existingNativeAuthProfilesFile();
+      if (nativeAuthFile != null) authFiles.add(nativeAuthFile);
 
       Map<String, dynamic> store = <String, dynamic>{};
-      if (await authFile.exists()) {
-        final raw = await authFile.readAsString();
+      final sourceFile = authFiles.firstWhere(
+        (file) => file.existsSync(),
+        orElse: () => authFiles.first,
+      );
+      if (await sourceFile.exists()) {
+        final raw = await sourceFile.readAsString();
         if (raw.trim().isNotEmpty) {
           final decoded = jsonDecode(raw);
           if (decoded is Map) store = _deepCastMap(decoded);
@@ -849,7 +856,11 @@ class GatewayService {
       profile.remove('tokenRef');
       profiles[profileId] = profile;
 
-      await _writeStringAtomically(authFile, _canonicalJsonSignature(store));
+      final content = _canonicalJsonSignature(store);
+      for (final authFile in authFiles) {
+        await Directory(authFile.parent.path).create(recursive: true);
+        await _writeStringAtomically(authFile, content);
+      }
     } catch (e) {
       debugPrint('[GatewayService] Auth profile patch error: $e');
     }
@@ -1572,6 +1583,22 @@ class GatewayService {
     return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
   }
 
+  Future<String> _nativeOpenClawConfigPath() async {
+    return '${await getFilesDir()}/native-node-embedded/native-home/.openclaw/openclaw.json';
+  }
+
+  Future<File?> _existingNativeOpenClawConfigFile() async {
+    final file = File(await _nativeOpenClawConfigPath());
+    return await file.exists() ? file : null;
+  }
+
+  Future<File?> _existingNativeAuthProfilesFile() async {
+    final file = File(
+      '${await getFilesDir()}/native-node-embedded/native-home/.openclaw/agents/main/agent/auth-profiles.json',
+    );
+    return await file.exists() ? file : null;
+  }
+
   Future<void> _ensureWorkspaceHeartbeatFile() async {
     try {
       final workspace = Directory(
@@ -1654,6 +1681,7 @@ HEARTBEAT_OK.
       _syncLocalGatewayRemoteCredentials(config);
       final nextSignature = _canonicalJsonSignature(config);
 
+      var writePrimary = true;
       if (await file.exists()) {
         try {
           final existingRaw = await file.readAsString();
@@ -1664,7 +1692,7 @@ HEARTBEAT_OK.
                 _deepCastMap(decoded),
               );
               if (currentSignature == nextSignature) {
-                return;
+                writePrimary = false;
               }
             }
           }
@@ -1673,7 +1701,30 @@ HEARTBEAT_OK.
         }
       }
 
-      await _writeStringAtomically(file, nextSignature);
+      if (writePrimary) {
+        await _writeStringAtomically(file, nextSignature);
+      }
+
+      final nativeConfigFile = await _existingNativeOpenClawConfigFile();
+      if (nativeConfigFile != null) {
+        var writeNative = true;
+        try {
+          final existingRaw = await nativeConfigFile.readAsString();
+          if (existingRaw.trim().isNotEmpty) {
+            final decoded = jsonDecode(existingRaw);
+            if (decoded is Map) {
+              writeNative = _canonicalJsonSignature(_deepCastMap(decoded)) !=
+                  nextSignature;
+            }
+          }
+        } catch (_) {
+          writeNative = true;
+        }
+        if (writeNative) {
+          await Directory(nativeConfigFile.parent.path).create(recursive: true);
+          await _writeStringAtomically(nativeConfigFile, nextSignature);
+        }
+      }
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
     }
@@ -2009,22 +2060,32 @@ HEARTBEAT_OK.
         return true;
       }
 
-      final authFile = File(
-        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
-      );
-      if (!await authFile.exists()) return false;
-      final raw = await authFile.readAsString();
-      if (raw.trim().isEmpty) return false;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return false;
-      final profiles = decoded['profiles'];
-      if (profiles is! Map) return false;
-      final profile = profiles[authProfileIdForProvider(normalized)];
-      if (profile is! Map) return false;
-      return _credentialValueLooksSet(profile['key']) ||
-          _credentialValueLooksSet(profile['token']) ||
-          _credentialValueLooksSet(profile['keyRef']) ||
-          _credentialValueLooksSet(profile['tokenRef']);
+      final authFiles = <File>[
+        File(
+          '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
+        ),
+      ];
+      final nativeAuthFile = await _existingNativeAuthProfilesFile();
+      if (nativeAuthFile != null) authFiles.add(nativeAuthFile);
+
+      for (final authFile in authFiles) {
+        if (!await authFile.exists()) continue;
+        final raw = await authFile.readAsString();
+        if (raw.trim().isEmpty) continue;
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) continue;
+        final profiles = decoded['profiles'];
+        if (profiles is! Map) continue;
+        final profile = profiles[authProfileIdForProvider(normalized)];
+        if (profile is! Map) continue;
+        if (_credentialValueLooksSet(profile['key']) ||
+            _credentialValueLooksSet(profile['token']) ||
+            _credentialValueLooksSet(profile['keyRef']) ||
+            _credentialValueLooksSet(profile['tokenRef'])) {
+          return true;
+        }
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -2289,12 +2350,18 @@ HEARTBEAT_OK.
       if (!gatewayRunningForBridgeUpdate) {
         _beginGatewayConfigTransition('NDK bridge provider update');
       }
-      await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-        'openclaw reload 2>/dev/null || true',
-        timeout: 15,
-      );
+      if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+        await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin && '
+          'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+          'openclaw reload 2>/dev/null || true',
+          timeout: 15,
+        );
+      } else {
+        _addActivity(
+          '[NDK-BRIDGE] Native Gateway owner active; skipping PRoot CLI reload.',
+        );
+      }
       disconnectWebSocket();
     }
   }

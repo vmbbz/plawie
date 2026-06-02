@@ -1,6 +1,6 @@
 # Plawie Model Provider Implementation
 
-Last updated: 2026-05-28
+Last updated: 2026-06-02
 
 This document is the implementation contract for model selection, provider keys,
 Gateway routing, local NDK inference, and the manual NDK Gateway bridge.
@@ -18,6 +18,11 @@ Plawie exposes three model execution lanes:
 Embedded Ollama Local and Ollama Cloud are deprecated for the launch path. They
 are hidden from setup, chat, and settings. Stale `ollama/...` model IDs migrate
 to the safe catalog fallback.
+
+The PRoot to embedded native Node migration changes only the Gateway owner for
+Gateway-backed lanes. It does not remove Private Offline Mode. Users can still
+download Qwen/Smol/GGUF models from Local LLM and run `local-llm/...` cost-free
+on device through fllama.
 
 ## Central Sources
 
@@ -130,6 +135,11 @@ Gateway provider block using `ModelProviderCatalog.mergeProviderConfig()` so the
 bridge always has the correct API type, base URL, context window, and max token
 cap.
 
+Under native Gateway ownership, the same bridge provider is consumed by
+OpenClaw running under `libnode.so` on `18789`. Under PRoot rollback ownership,
+the same provider is consumed by PRoot Gateway. The bridge itself stays a Dart
+service on `11435` and should not depend on PRoot.
+
 Bridge tool-call behavior is implemented:
 
 1. Gateway sends OpenAI-style messages and `tools`.
@@ -150,6 +160,9 @@ complex tool planning.
 - Settings model picker lists catalog models plus active direct local model.
 - Local LLM page shows NDK/offline guidance.
 - Direct local model can chat without Gateway.
+- Direct local model can chat when native Gateway is stopped or PRoot is absent.
 - Gateway bridge starts only after explicit user action.
+- Gateway bridge works under native Gateway ownership when the bridge server is
+  running on `11435`.
 - Bridge tool test shows either a real Gateway tool round trip or a clear model
   limitation.

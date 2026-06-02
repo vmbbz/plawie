@@ -78,6 +78,15 @@ Important distinction:
 Local LLM and voice/TTS engines are separate app capabilities. They do not own
 the OpenClaw Gateway port and are not substitutes for the Gateway runtime owner.
 
+Local NDK LLM remains in the product:
+
+- `local-llm/...` bypasses Gateway and runs directly through fllama.
+- `plawie_ndk/local-llm` keeps Gateway as tool/session owner and routes model
+  generation through the manual Dart bridge on `127.0.0.1:11435`.
+- Native `libnode.so` replaces the Gateway owner, not fllama.
+- PRoot removal must not remove the Local LLM page, direct GGUF inference, or
+  the NDK bridge.
+
 ## Ports
 
 | Port | Owner | Use |
@@ -85,6 +94,7 @@ the OpenClaw Gateway port and are not substitutes for the Gateway runtime owner.
 | `127.0.0.1:18789` | exactly one production runtime | Production OpenClaw Gateway HTTP and WebSocket |
 | `127.0.0.1:18790` | native diagnostics sidecar only | Native smoke/bootstrap diagnostics, not production |
 | `127.0.0.1:8765` | phone-side `AgentSkillServer` | Host inspection may use `adb forward`; do not `adb reverse` it |
+| `127.0.0.1:11435` | optional Dart NDK bridge | Manual OpenAI-compatible local model provider for `plawie_ndk/local-llm` |
 
 Host inspection over USB usually maps:
 
@@ -95,6 +105,24 @@ adb -s RZCX30KA9AW forward tcp:28790 tcp:18790
 
 Do not treat those host ports as app architecture. They are only USB inspection
 tunnels.
+
+## Diagnostics And Release Variants
+
+The release boundary has three practical variants:
+
+| Variant | Native owner default | PRoot packaged | Diagnostics commands | Intended use |
+| --- | --- | --- | --- | --- |
+| Debug/internal diagnostics | Native, unless sticky rollback | Yes | Broad hidden canaries enabled | Engineering and field validation |
+| Public rollback build | Native | Yes | Rollback available; broad canaries disabled | First native-default public release |
+| No-PRoot branch build | Native | No | Rollback replaced by native repair/reset | Later cleanup branch after rollback is no longer needed |
+
+Rules:
+
+- Public builds must not autostart `18790`.
+- Public builds must keep rollback available while PRoot is packaged.
+- Debug/internal builds may expose the wide canary command set.
+- No-PRoot builds must prove local NDK direct and NDK bridge routes before PRoot
+  payload removal.
 
 ## Native Node Package Path
 
@@ -475,3 +503,6 @@ failure is fixed.
 - Diagnostics sidecars must not create hidden background memory use in release.
 - PRoot rootfs cleanup should be a later release decision after rollback is no
   longer required.
+- Local `local-llm/...` must keep working without Gateway or PRoot.
+- Manual `plawie_ndk/local-llm` must work under native Gateway ownership when
+  the Dart bridge on `11435` is running.

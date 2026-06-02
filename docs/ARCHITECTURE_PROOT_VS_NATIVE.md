@@ -253,6 +253,83 @@ Before public release, verify all of these:
 | Compact NDK bridge | `plawie_ndk/local-llm` | Requires Gateway and bridge server |
 | Legacy Ollama | `ollama/...` | Deprecated, not a normal route |
 
+## Local NDK LLM Is Still In Play
+
+The PRoot to native Node migration does not remove on-device inference.
+
+Users can still download and run Qwen, Smol, or other supported GGUF models
+from the Local LLM page. Those models run through fllama/llama.cpp NDK inside
+the app and keep the `local-llm/...` route:
+
+```text
+Chat selects local-llm/...
+  -> Gateway is bypassed
+  -> LocalLlmService.chat()
+  -> fllamaInference()
+  -> on-device GGUF model
+```
+
+That path remains costless/offline after the model is downloaded. It does not
+need PRoot and it does not need native `libnode.so`.
+
+The native `libnode.so` migration affects Gateway-owned routes only. It changes
+which runtime owns OpenClaw on `18789`; it does not replace fllama.
+
+## Native HTTP Bridge For Local Model Inference
+
+The NDK Gateway bridge also remains useful:
+
+```text
+Gateway model: plawie_ndk/local-llm
+Gateway owner: native libnode.so or PRoot
+Bridge: http://127.0.0.1:11435/v1
+Model runtime: LocalLlmService / fllama
+```
+
+This bridge is the path for "use the OpenClaw Gateway, but send the model call
+to a compact local model." It lets Gateway keep ownership of tools, sessions,
+node context, and tool-result continuation while the actual token generation is
+done by the local NDK model.
+
+Native `libnode.so` does not make this bridge obsolete. It makes it cleaner:
+
+- PRoot no longer has to host the Gateway before the bridge can be used.
+- The bridge remains a Dart/app-side service on `11435`.
+- Gateway-to-bridge traffic stays loopback-only.
+- Small local models still need compact prompts and bounded tool schemas.
+
+Direct local mode and bridge mode are intentionally different:
+
+| Mode | Uses Gateway? | Tool owner | Best for |
+| --- | --- | --- | --- |
+| `local-llm/...` | No | Dart local loop | private/offline chat, low overhead |
+| `plawie_ndk/local-llm` | Yes | OpenClaw Gateway | local model with Gateway tool transport |
+
+## PRoot Removal Plan For This Branch
+
+This branch should eventually remove PRoot entirely, while `main` can remain
+the robust PRoot-based fallback/product line.
+
+Removal must be staged:
+
+1. Native default release:
+   native owns fresh installs; PRoot remains packaged as emergency rollback.
+2. Native no-rollback internal build:
+   remove PRoot autostart paths and prove native startup, provider chat, node
+   host pairing, local LLM direct mode, and NDK bridge mode.
+3. State migration:
+   migrate OpenClaw config, credentials, sessions, skills, and node pairing out
+   of `$filesDir/rootfs/ubuntu/root/.openclaw/` into the app-owned native
+   `.openclaw` home.
+4. Package cleanup:
+   remove the Ubuntu rootfs payload, PRoot binary/service wrappers, PRoot repair
+   flows, and PRoot-only docs.
+5. Public no-PRoot release:
+   ship only after native rollback/failure handling no longer depends on PRoot.
+
+Current branch state is stage 1 moving toward stage 2. PRoot files and process
+paths are still present because rollback is still intentionally supported.
+
 ## Deprecated Paths
 
 The app no longer treats these as production architecture:
