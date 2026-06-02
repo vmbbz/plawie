@@ -1401,3 +1401,31 @@ silently relies on PRoot for normal browsing/profile/cache behavior. The
 remaining marketplace blocker is explicit and product-visible: native needs a
 real package install/update/uninstall implementation before ClawHub mutation is
 fully native.
+
+## 2026-06-02 Local NDK / Native Storage Hardening
+
+Local NDK inference remains in the release plan. It is not being dropped by the
+native `libnode.so` Gateway migration; it is a separate, costless on-device
+inference path that can also be exposed through the experimental NDK Gateway
+bridge.
+
+Code hardening now applied:
+
+- Local LLM CPU core detection no longer shells into PRoot; it uses the Android
+  runtime processor count directly;
+- new GGUF and mmproj downloads now install into
+  `files/local-llm/models/...`, not `files/rootfs/root/.openclaw/models/...`;
+- existing legacy downloads under the old rootfs-shaped model path remain
+  readable so users do not have to redownload models;
+- fllama activation prefers the native app-storage model path and falls back to
+  legacy rootfs-shaped files only when already present.
+
+Validation:
+
+- `flutter analyze lib/services/local_llm_service.dart
+  lib/screens/management/local_llm_screen.dart` passed.
+
+Release interpretation: costless local inference is still available and now has
+a cleaner native-owner storage path. The remaining local-NDK loose end is
+Gateway-route hardening for long real turns with small models, not PRoot
+runtime dependency.

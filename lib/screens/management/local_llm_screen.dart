@@ -1,11 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:clawa/app.dart';
 import 'package:clawa/services/gateway_service.dart';
 import 'package:clawa/services/local_llm_service.dart';
 import 'package:clawa/services/ndk_gateway_bridge_service.dart';
-import 'package:clawa/services/native_bridge.dart';
 
 class LocalLlmScreen extends StatefulWidget {
   const LocalLlmScreen({super.key});
@@ -81,11 +81,7 @@ class _LocalLlmScreenState extends State<LocalLlmScreen>
 
   Future<void> _readCpuCoreCount() async {
     try {
-      final result = await NativeBridge.runInProot(
-        'grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo "8"',
-        timeout: 5,
-      );
-      final count = int.tryParse(result.trim()) ?? 8;
+      final count = Platform.numberOfProcessors;
       final clampedCount = count.clamp(2, 12);
       if (_state.threads > 4 && !_service.isInferring) {
         // Keep first-run local inference friendly to average phones. Users can

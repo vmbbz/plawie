@@ -60,10 +60,12 @@ class LocalLlmModel {
 
   String get filename => '$id.gguf';
   String get prootModelPath => '/root/.openclaw/models/$filename';
+  String get localModelRelativePath => 'local-llm/models/$filename';
 
   // mmproj paths (only valid when isMultimodal == true)
   String get mmProjFilename => '$id-mmproj.gguf';
   String get prootMmProjPath => '/root/.openclaw/models/$mmProjFilename';
+  String get localMmProjRelativePath => 'local-llm/models/$mmProjFilename';
 }
 
 const _modelCatalog = [
@@ -1210,17 +1212,41 @@ class LocalLlmService {
   Future<bool> isModelDownloaded(LocalLlmModel model) =>
       _isModelInstalled(model);
 
+  Future<String> _filesDirPath() => NativeBridge.getFilesDir();
+
+  String _nativeModelPath(String filesDir, LocalLlmModel model) =>
+      '$filesDir/${model.localModelRelativePath}';
+
+  String _legacyProotModelPath(String filesDir, LocalLlmModel model) =>
+      '$filesDir/rootfs${model.prootModelPath}';
+
+  String _nativeMmProjPath(String filesDir, LocalLlmModel model) =>
+      '$filesDir/${model.localMmProjRelativePath}';
+
+  String _legacyProotMmProjPath(String filesDir, LocalLlmModel model) =>
+      '$filesDir/rootfs${model.prootMmProjPath}';
+
+  Future<File?> _firstExistingLargeFile(List<String> paths) async {
+    for (final path in paths) {
+      final file = File(path);
+      if (!await file.exists()) continue;
+      if (await file.length() > 1048576) return file;
+    }
+    return null;
+  }
+
   // --------------------------------------------------------------------------
   // Private — Model Download
   // --------------------------------------------------------------------------
 
   Future<bool> _isModelInstalled(LocalLlmModel model) async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final hostPath = '$filesDir/rootfs${model.prootModelPath}';
-      final file = File(hostPath);
-      if (!await file.exists()) return false;
-      return await file.length() > 1048576; // > 1 MB
+      final filesDir = await _filesDirPath();
+      final file = await _firstExistingLargeFile([
+        _nativeModelPath(filesDir, model),
+        _legacyProotModelPath(filesDir, model),
+      ]);
+      return file != null;
     } catch (_) {
       return false;
     }
@@ -1228,10 +1254,8 @@ class LocalLlmService {
 
   Future<void> _ensureModelDir() async {
     try {
-      await NativeBridge.runInProot(
-        'mkdir -p /root/.openclaw/models',
-        timeout: 5,
-      );
+      final filesDir = await _filesDirPath();
+      await Directory('$filesDir/local-llm/models').create(recursive: true);
     } catch (_) {}
   }
 
@@ -1292,15 +1316,14 @@ class LocalLlmService {
       }
 
       _updateState(
-          _state.copyWith(errorMessage: 'Installing model into PRoot...'));
-      final filesDir = await NativeBridge.getFilesDir();
-      final prootPath = '$filesDir/rootfs';
-      final hostProotModelPath = '$prootPath${model.prootModelPath}';
-      final targetDir = Directory('$prootPath/root/.openclaw/models');
+          _state.copyWith(errorMessage: 'Installing model into app storage...'));
+      final filesDir = await _filesDirPath();
+      final hostModelPath = _nativeModelPath(filesDir, model);
+      final targetDir = Directory('$filesDir/local-llm/models');
       if (!await targetDir.exists()) {
         await targetDir.create(recursive: true);
       }
-      await tmpFile.copy(hostProotModelPath);
+      await tmpFile.copy(hostModelPath);
       await tmpFile.delete();
 
       _updateState(_state.copyWith(downloadProgress: 1.0, errorMessage: null));
@@ -1314,11 +1337,12 @@ class LocalLlmService {
 
   Future<bool> _isMmProjInstalled(LocalLlmModel model) async {
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final hostPath = '$filesDir/rootfs${model.prootMmProjPath}';
-      final file = File(hostPath);
-      if (!await file.exists()) return false;
-      return await file.length() > 1048576;
+      final filesDir = await _filesDirPath();
+      final file = await _firstExistingLargeFile([
+        _nativeMmProjPath(filesDir, model),
+        _legacyProotMmProjPath(filesDir, model),
+      ]);
+      return file != null;
     } catch (_) {
       return false;
     }
@@ -1357,10 +1381,9 @@ class LocalLlmService {
         await sink.close();
       }
 
-      final filesDir = await NativeBridge.getFilesDir();
-      final prootPath = '$filesDir/rootfs';
-      final hostMmProjPath = '$prootPath${model.prootMmProjPath}';
-      final targetDir = Directory('$prootPath/root/.openclaw/models');
+      final filesDir = await _filesDirPath();
+      final hostMmProjPath = _nativeMmProjPath(filesDir, model);
+      final targetDir = Directory('$filesDir/local-llm/models');
       if (!await targetDir.exists()) await targetDir.create(recursive: true);
       await tmpFile.copy(hostMmProjPath);
       await tmpFile.delete();
@@ -1388,18 +1411,24 @@ class LocalLlmService {
     ));
 
     try {
-      final filesDir = await NativeBridge.getFilesDir();
-      final prootRoot = '$filesDir/rootfs';
-
-      _activeModelPath = '$prootRoot${model.prootModelPath}';
-      _activeMmprojPath =
-          model.isMultimodal ? '$prootRoot${model.prootMmProjPath}' : null;
-
-      if (!File(_activeModelPath!).existsSync()) {
-        throw Exception('Model file not found: $_activeModelPath');
+      final filesDir = await _filesDirPath();
+      final modelFile = await _firstExistingLargeFile([
+        _nativeModelPath(filesDir, model),
+        _legacyProotModelPath(filesDir, model),
+      ]);
+      if (modelFile == null) {
+        throw Exception('Model file not found in local app storage');
       }
+      _activeModelPath = modelFile.path;
+
       // Non-fatal: mmproj missing → text-only fallback
-      if (_activeMmprojPath != null && !File(_activeMmprojPath!).existsSync()) {
+      if (model.isMultimodal) {
+        final mmProjFile = await _firstExistingLargeFile([
+          _nativeMmProjPath(filesDir, model),
+          _legacyProotMmProjPath(filesDir, model),
+        ]);
+        _activeMmprojPath = mmProjFile?.path;
+      } else {
         _activeMmprojPath = null;
       }
 
