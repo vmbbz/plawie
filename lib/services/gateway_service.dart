@@ -15439,6 +15439,7 @@ $message''';
   }) async {
     // The BootstrapService handles pre-start hardening now, but we perform
     // a defensive check here to ensure the active gateway is always hardened.
+    await _refreshSelectedRuntimeOwner();
 
     try {
       final config = await _readConfig();
@@ -15512,6 +15513,31 @@ $message''';
     }
     _removeLegacyOllamaConfig(currentConfig);
     await _writeConfig(currentConfig);
+
+    if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot) {
+      try {
+        final alreadyRunning = await _runtime.isRunning();
+        final shouldRestart =
+            allowReload && alreadyRunning && !_isInGatewaySettleWindow;
+        if (shouldRestart) {
+          await _restartNativeRuntimeForConfigChange('gateway hardening update');
+        } else {
+          _addActivity(
+            '[SYS] Native Gateway config hardening written; PRoot CLI patch skipped.',
+          );
+        }
+        debugPrint(
+          '✅ Native hardening sweep applied without PRoot CLI'
+          '${shouldRestart ? ' + restart' : ''}',
+        );
+      } catch (e) {
+        debugPrint('⚠️ Native hardening restart failed (non-fatal): $e');
+        _addActivity(
+          '[SYS] Native Gateway config hardening written; restart skipped: $e',
+        );
+      }
+      return;
+    }
 
     final gatewayAuth =
         currentConfig['gateway']?['auth'] as Map<String, dynamic>?;

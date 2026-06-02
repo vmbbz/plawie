@@ -1346,3 +1346,28 @@ Device evidence from the rebuilt public rollback APK:
 
 Release interpretation: native Device Node startup no longer churns through
 visible connect/reconnect loops after a healthy command-contract connect.
+
+## 2026-06-02 Native Config Hardening Owner Boundary
+
+Follow-up audit found one remaining native-owner sharp edge in
+`GatewayService.hardenGatewayConfigViaCli()`: after writing the hardened config,
+the defensive hardening sweep could still invoke `openclaw config patch` through
+`NativeBridge.runInProot(...)`.
+
+Code hardening now applied in `lib/services/gateway_service.dart`:
+
+- the hardening sweep refreshes the active runtime owner before deciding how to
+  apply the patch;
+- PRoot owner keeps the existing official `openclaw config patch` flow;
+- native owner writes the hardened native config and skips the PRoot CLI path;
+- if native is already running and a reload was requested outside the startup
+  settle window, native restarts to apply the config instead of trying
+  `openclaw reload` through PRoot.
+
+Validation:
+
+- `flutter analyze lib/services/gateway_service.dart` passed.
+
+Release interpretation: native-owner normal config hardening no longer has a
+hidden PRoot shell dependency. PRoot remains available only as the selected
+rollback owner or explicit rollback path.
