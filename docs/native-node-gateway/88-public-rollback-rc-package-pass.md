@@ -76,14 +76,78 @@ Re-enable:
 
 ## Patch Included In This Gate
 
-The owner-enable report previously allowed an internally inconsistent display:
-`nativeHealthOk: true` with `nativeRunning: false`. The runtime itself was
-healthy, but the report sampled process state before the health probe proved
-the native Gateway was live.
+This pass includes the release-polish fixes needed to make the public rollback
+shape testable from logs instead of from optimistic UI state:
 
-This pass normalizes the report so a live production health response also marks
-`nativeRunning: true`. That keeps the public rollback command output aligned
-with actual process and health evidence.
+- The owner-enable report previously allowed an internally inconsistent
+  display: `nativeHealthOk: true` with `nativeRunning: false`. A live production
+  health response now also marks `nativeRunning: true`.
+- Native runtime log polling now feeds the same Gateway activity path as PRoot
+  log streaming, so native startup/plugin/health evidence is visible in-app.
+- Rollback now logs each owner handoff step: selector restore, native stop,
+  native port release, PRoot start, and PRoot health recovery.
+- Rollback fails fast if native does not release production port `18789` before
+  PRoot is started.
+- Native isolated process stop now has a bounded force-stop fallback.
+- Chat sending waits for both WebSocket connection and Gateway RPC/chat
+  readiness after owner transitions. Health-live alone is not treated as enough
+  for normal chat.
+- A missed runtime process probe no longer marks native stopped when production
+  health is live.
+
+## Final Rebuilt RC Evidence
+
+The rebuilt public rollback APK was installed again on the USB-connected device
+and the owner-switch path was rechecked from real chat/logs.
+
+Baseline after relaunch:
+
+- persisted owner was `proot`, which is correct after a sticky rollback state;
+- processes were the app process, `libproot.so`, and PRoot `openclaw`;
+- native `:native_node_smoke` was absent;
+- production `/health` returned `{"ok":true,"status":"live"}`;
+- PRoot logs reached `Gateway RPC discovery complete` and
+  `Gateway ready; auto-connect check running`.
+
+PRoot chat after readiness:
+
+- prompt: `Say only proot_rc_chat_ok_4`;
+- logs showed `Mobile node tool context attached (OpenClaw Mobile)`;
+- logs showed `Gateway accepted`, `First token received`, and `Complete`;
+- this proves sticky rollback can still serve normal chat once the Gateway
+  chat/RPC lane is ready.
+
+Native re-enable:
+
+- command: `/native-default-owner-enable`;
+- report showed `selectorSetOk: true`, `prootStopped: true`,
+  `portReleased: true`, `nativeStarted: true`, `nativeRunning: true`,
+  `nativeHealthOk: true`, and `wsConnected: true`;
+- process table showed the app process plus `:native_node_smoke`;
+- PRoot `libproot.so` and PRoot `openclaw` were absent.
+
+Rollback from native:
+
+- command: `/native-default-owner-rollback`;
+- logs showed selector restored to `proot`;
+- logs showed native stop returned, native stopped, native port released,
+  PRoot start returned, and PRoot health returned live;
+- PRoot then reached `Gateway RPC discovery complete`.
+
+Post-rollback timing note:
+
+- one test message was sent too early, after HTTP health was live but before
+  PRoot RPC/chat readiness was complete;
+- logs showed the early turn was accepted at `10:46:30`, while
+  `Gateway RPC discovery complete` arrived only at `10:48:21`;
+- the 90 second no-first-token guard correctly paused the chat lane instead of
+  allowing retries into a stale queue;
+- the next retry waited for Gateway settle, then sent at `10:51:01`, received
+  first token at `10:51:18`, and completed at `10:51:18`.
+
+Classification: rollback is healthy. The remaining polish is to make the
+post-recovery wait feel less opaque to the user, not to reclassify PRoot
+rollback as broken.
 
 ## Release Classification
 

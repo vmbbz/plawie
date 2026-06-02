@@ -77,11 +77,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       'name': 'OpenRouter',
       'icon': 'hub',
       'models': [
+        {'id': 'openai/gpt-oss-20b:free', 'name': 'GPT-OSS 20B Free'},
         {'id': 'openrouter/free', 'name': 'OpenRouter Free Router'},
         {'id': 'auto', 'name': 'OpenRouter Auto'},
         {'id': 'moonshotai/kimi-k2.6', 'name': 'Kimi K2.6'},
       ],
-      'defaultModel': 'openrouter/free',
+      'defaultModel': 'openai/gpt-oss-20b:free',
     },
     {
       'id': 'groq',

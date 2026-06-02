@@ -977,3 +977,84 @@ Linux/PRoot package assumptions:
 
   That property excludes PRoot native libraries only for the internal proof
   artifact. Public rollback builds still package PRoot as emergency rollback.
+
+## 2026-06-02 Release Reset After PRoot/Native Log Confusion
+
+The current factual state is:
+
+- native default plus PRoot rollback mechanics are proven by the public
+  rollback-shaped APK gate;
+- the currently attached device may still show PRoot if it was explicitly
+  rolled back, because rollback is sticky by design;
+- PRoot chat was observed recovering from a busy/no-first-token window and then
+  returning visible assistant responses after the Gateway settled;
+- that PRoot recovery should not be classified as "PRoot broken";
+- native runtime logs looked weaker than PRoot logs because the Dart
+  `GatewayRuntime` implementations for native runtimes returned an empty
+  `logStream`;
+- native ownership must therefore be judged from app-scoped owner/health/process
+  evidence plus native runtime logs, not from whole-phone WebSocket/noise logs.
+
+Release-polish correction:
+
+- native runtimes now poll their native log source and feed redacted lines into
+  the same GatewayService log subscription path used by PRoot;
+- this makes native startup/plugin/health logs visible in the app activity log
+  instead of making healthy native ownership look silent;
+- PRoot's streamed logs and native's polled logs are not identical plumbing, but
+  they now share the same UI/service observability path.
+
+Remaining release blockers are not more tiny bridge canaries. They are:
+
+- one clean public rollback release build after the native log-stream patch:
+  complete;
+- install on USB-connected device: complete;
+- verify PRoot sticky rollback baseline health/chat after readiness: complete;
+- verify re-enable returns to native with no live PRoot process: complete;
+- verify native owner health and in-app startup/log evidence: complete;
+- verify rollback to PRoot releases native, waits for Gateway settle, and then
+  chat responds: complete;
+- keep local NDK Gateway bridge-chat hardening documented as a deferred loose
+  end, while direct local NDK inference remains supported;
+- commit only the release-boundary code/docs, excluding generated build reports
+  and APK artifacts.
+
+Final rebuilt public rollback RC evidence:
+
+- build command:
+  `flutter build apk --release --dart-define=PLAWIE_NATIVE_GATEWAY_RELEASE_VARIANT=public-rollback --dart-define=PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true`;
+- release APK built and installed over USB on `RZCX30KA9AW`;
+- attached device initially came up on sticky PRoot rollback, which is expected
+  after explicit rollback because `native_gateway_default_cutover_applied`
+  remains set;
+- PRoot baseline process state showed the app process, `libproot.so`, and
+  PRoot `openclaw`, with native absent;
+- PRoot reached `Gateway RPC discovery complete` and then served a real chat
+  turn with `Gateway accepted`, `First token received`, and `Complete`;
+- `/native-default-owner-enable` switched to native, showed
+  `nativeRunning: true` with `nativeHealthOk: true`, and removed live PRoot
+  processes;
+- `/native-default-owner-rollback` restored selector `proot`, stopped native,
+  waited for native port release, started PRoot, and returned production health
+  live;
+- a too-early post-rollback send before RPC readiness hit the 90s no-first-token
+  recovery guard; this was not counted as PRoot failure because RPC discovery
+  completed only after that first turn had already timed out;
+- the held retry after Gateway settle sent at `10:51:01`, received first token
+  at `10:51:18`, and completed at `10:51:18`.
+
+Current release classification: public rollback RC mechanics are passing. The
+remaining work before push is documentation cleanup, focused analyzer checks,
+excluding generated build artifacts, and committing the release-boundary patch.
+
+Known polish/loose ends that do not block this RC boundary:
+
+- post-recovery wait UI can feel opaque after a too-early send;
+- transition-time TTS may log `talk.speak failed: Bad state: No element`;
+- native log polling and PRoot log streaming are now both visible, but they are
+  not identical transports;
+- `OpenRouter Free Router` catalog metadata is conservative, but normal Gateway
+  chat still attached `Mobile node tool context (OpenClaw Mobile)` in the real
+  logs;
+- direct local NDK inference remains supported, while Gateway-to-NDK chat bridge
+  hardening remains deferred.

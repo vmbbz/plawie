@@ -20,11 +20,11 @@ Current release-boundary status:
 > Embedded native Node has passed the fresh-key native default release gate.
 > It can own production port `18789`, process a normal provider-backed chat
 > turn, return visible assistant text, roll back to PRoot, and preserve sticky
-> PRoot rollback across relaunch. The latest installed-device run also proved
-> rollback then re-enable plus cold-start native default. The public
-> rollback-shaped release APK also passed install, native-default health,
-> provider chat, rollback, and re-enable checks. PRoot is now documented as the
-> emergency rollback runtime, not the intended default production owner.
+> PRoot rollback across relaunch. The public rollback-shaped release APK also
+> passed install, native enable, native health/process checks, rollback to
+> PRoot, PRoot post-rollback chat after Gateway RPC readiness, and re-enable
+> checks. PRoot is now documented as the emergency rollback runtime, not the
+> intended default production owner.
 
 Current local-model boundary:
 

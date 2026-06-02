@@ -70,13 +70,23 @@ Behavior:
 
 Latest installed test state:
 
-- Rollback to PRoot was proven from native default.
-- Native was then re-enabled as the persisted production owner.
-- Force-stop/relaunch cold-started the app into native ownership.
-- Production `/health` returned `{"ok":true,"status":"live"}` after a longer
-  native warmup.
-- Process inspection showed the app process plus `:native_node_smoke`, with no
-  PRoot `openclaw` or `libproot.so` process during native ownership.
+- Native default ownership was proven from the public rollback build.
+- Native re-enable was proven from sticky PRoot rollback using
+  `/native-default-owner-enable`.
+- Rollback to PRoot was proven from native default using
+  `/native-default-owner-rollback`.
+- After explicit rollback, the attached device may remain on PRoot by design;
+  that sticky rollback state does not contradict the native default rule for
+  fresh or eligible upgraded installs.
+- Production `/health` returned `{"ok":true,"status":"live"}` on both owners
+  during their respective ownership windows.
+- Process inspection while native owned production showed the app process plus
+  `:native_node_smoke`, with no PRoot `openclaw` or `libproot.so`.
+- Process inspection while PRoot owned production showed the app process,
+  `libproot.so`, and PRoot `openclaw`, with native absent.
+- PRoot post-rollback chat must wait for Gateway RPC/chat readiness, not just
+  HTTP health-live. The rebuilt RC proved a held retry completed after
+  `Gateway RPC discovery complete`.
 
 ## Switch And Rollback
 
@@ -259,11 +269,14 @@ When native owns production:
 - `libproot.so` should not be active for Gateway service;
 - `18790` should not autostart unless a diagnostics build explicitly enables
   the sidecar.
+- app activity logs should show native Gateway startup/plugin/health evidence
+  from the native runtime log poller.
 
 When PRoot owns production:
 
 - native production process should be absent;
 - rollback is sticky until native is explicitly re-enabled.
+- app activity logs should show PRoot Gateway output from the PRoot log stream.
 
 Native config mirror rule:
 
@@ -296,6 +309,8 @@ Before public release, verify all of these:
 - upgrade from old PRoot install applies the one-time native cutover;
 - manual rollback remains sticky across force-stop, reboot, and app relaunch;
 - native startup failure automatically restores PRoot;
+- native and PRoot owner checks use app-scoped process/health/log evidence, not
+  whole-phone background WebSocket noise;
 - provider billing/rate-limit errors are surfaced accurately, not replaced by
   generic false messages;
 - WebSocket identity handshake still rejects unauthenticated host-only frames;

@@ -94,7 +94,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFF7C3AED),
       hint: 'sk-or-...',
       prefix: 'sk-or-',
-      defaultModel: 'openrouter/openrouter/free',
+      defaultModel: ModelProviderCatalog.defaultCloudFallbackModel,
       requiresApiKey: true,
     ),
     _ProviderInfo(

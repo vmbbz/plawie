@@ -1,5 +1,6 @@
 package com.nxg.openclawproot
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
@@ -132,8 +133,17 @@ class NativeNodeSmokeProcess(
             NativeNodeEmbeddedService.stop(context.applicationContext)
             appendLog("requested embedded Node smoke service stop")
 
-            val deadline = SystemClock.elapsedRealtime() + 2500L
+            val deadline = SystemClock.elapsedRealtime() + 3500L
             while (SystemClock.elapsedRealtime() < deadline) {
+                if (!isRunningOnAnyKnownPort()) return true
+                Thread.sleep(100)
+            }
+
+            appendLog("embedded Node service did not stop from intent; force killing isolated process")
+            forceKillNativeNodeProcess()
+
+            val killDeadline = SystemClock.elapsedRealtime() + 3500L
+            while (SystemClock.elapsedRealtime() < killDeadline) {
                 if (!isRunningOnAnyKnownPort()) return true
                 Thread.sleep(100)
             }
@@ -201,6 +211,20 @@ class NativeNodeSmokeProcess(
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun forceKillNativeNodeProcess() {
+        val activityManager =
+            context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                ?: return
+        val targetProcess = "${context.packageName}:native_node_smoke"
+        val runningProcesses = activityManager.runningAppProcesses ?: return
+        for (process in runningProcesses) {
+            if (process.processName == targetProcess) {
+                appendLog("force killing isolated native Node process pid=${process.pid}")
+                android.os.Process.killProcess(process.pid)
+            }
         }
     }
 

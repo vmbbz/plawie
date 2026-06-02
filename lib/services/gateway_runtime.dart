@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'native_bridge.dart';
 
 /// Runtime boundary for the OpenClaw Gateway process.
@@ -58,7 +60,7 @@ class NativeNodeGatewayRuntime implements GatewayRuntime {
   String get label => 'Native Node Gateway Smoke Runtime';
 
   @override
-  Stream<String> get logStream => const Stream<String>.empty();
+  Stream<String> get logStream => _pollNativeGatewayLogs(getLogs);
 
   @override
   Future<bool> start({bool allowDuringSetup = false}) {
@@ -91,7 +93,7 @@ class NativeNodeProcessGatewayRuntime implements GatewayRuntime {
   String get label => 'Embedded Native Node Smoke Runtime';
 
   @override
-  Stream<String> get logStream => const Stream<String>.empty();
+  Stream<String> get logStream => _pollNativeGatewayLogs(getLogs);
 
   @override
   Future<bool> start({bool allowDuringSetup = false}) {
@@ -124,7 +126,7 @@ class NativeNodeProductionPortCanaryRuntime implements GatewayRuntime {
   String get label => 'Embedded Native Node Production-Port Canary Runtime';
 
   @override
-  Stream<String> get logStream => const Stream<String>.empty();
+  Stream<String> get logStream => _pollNativeGatewayLogs(getLogs);
 
   @override
   Future<bool> start({bool allowDuringSetup = false}) {
@@ -157,7 +159,7 @@ class NativeNodeFullGatewayBootstrapRuntime implements GatewayRuntime {
   String get label => 'Embedded Native Node Full Gateway Bootstrap Runtime';
 
   @override
-  Stream<String> get logStream => const Stream<String>.empty();
+  Stream<String> get logStream => _pollNativeGatewayLogs(getLogs);
 
   @override
   Future<bool> start({bool allowDuringSetup = false}) {
@@ -190,7 +192,7 @@ class NativeNodeFullGatewayProductionRuntime implements GatewayRuntime {
   String get label => 'Embedded Native Node Full Gateway Production Runtime';
 
   @override
-  Stream<String> get logStream => const Stream<String>.empty();
+  Stream<String> get logStream => _pollNativeGatewayLogs(getLogs);
 
   @override
   Future<bool> start({bool allowDuringSetup = false}) {
@@ -211,6 +213,75 @@ class NativeNodeFullGatewayProductionRuntime implements GatewayRuntime {
   Future<String> getLogs() {
     return NativeBridge.getNativeNodeSmokeRuntimeLogs();
   }
+}
+
+const _nativeLogPollInterval = Duration(seconds: 2);
+const _nativeLogPollTimeout = Duration(seconds: 3);
+const _nativeInitialLogReplayLimit = 80;
+
+Stream<String> _pollNativeGatewayLogs(
+  Future<String> Function() readLogs,
+) async* {
+  var previousLog = '';
+
+  while (true) {
+    try {
+      final currentLog =
+          (await readLogs().timeout(_nativeLogPollTimeout)).trimRight();
+      if (currentLog.isNotEmpty && currentLog != previousLog) {
+        final rotated =
+            previousLog.isNotEmpty && !currentLog.startsWith(previousLog);
+        final chunk = previousLog.isEmpty || rotated
+            ? currentLog
+            : currentLog.substring(previousLog.length).trimLeft();
+
+        if (rotated) {
+          yield '[native] log stream resumed after rotation or runtime restart';
+        }
+
+        final lines = chunk
+            .split(RegExp(r'\r?\n'))
+            .map((line) => line.trimRight())
+            .where((line) => line.isNotEmpty)
+            .toList();
+        final replayLines = (previousLog.isEmpty || rotated) &&
+                lines.length > _nativeInitialLogReplayLimit
+            ? lines.sublist(lines.length - _nativeInitialLogReplayLimit)
+            : lines;
+
+        for (final line in replayLines) {
+          yield _redactGatewayLogLine('[native] $line');
+        }
+
+        previousLog = currentLog;
+      }
+    } catch (error) {
+      yield '[native] log poll failed: ${error.runtimeType}';
+    }
+
+    await Future<void>.delayed(_nativeLogPollInterval);
+  }
+}
+
+String _redactGatewayLogLine(String line) {
+  var redacted = line;
+  redacted = redacted.replaceAllMapped(
+    RegExp(r'(Authorization:\s*Bearer\s+)[^\s]+', caseSensitive: false),
+    (match) => '${match.group(1)}<redacted>',
+  );
+  redacted = redacted.replaceAllMapped(
+    RegExp(r'((?:api[_-]?key|apikey)["=:\s]+)[^,\s"}]+', caseSensitive: false),
+    (match) => '${match.group(1)}<redacted>',
+  );
+  redacted = redacted.replaceAllMapped(
+    RegExp(r'(\btoken=)[^&\s]+', caseSensitive: false),
+    (match) => '${match.group(1)}<redacted>',
+  );
+  redacted = redacted.replaceAllMapped(
+    RegExp(r'\b((?:sk-or|sk-proj|sk)-)[A-Za-z0-9_\-]{8,}\b'),
+    (match) => '${match.group(1)}<redacted>',
+  );
+  return redacted;
 }
 
 class GatewayRuntimeRegistry {

@@ -219,8 +219,16 @@ class GatewayService {
     if (selectedRuntime.id == _runtime.id) return;
     _runtime = selectedRuntime;
     _runtimeLogged = false;
-    await _logSubscription?.cancel();
+    final previousLogSubscription = _logSubscription;
     _logSubscription = null;
+    if (previousLogSubscription != null) {
+      unawaited(
+        previousLogSubscription
+            .cancel()
+            .timeout(const Duration(seconds: 2), onTimeout: () {})
+            .catchError((_) {}),
+      );
+    }
   }
 
   bool get _hasGatewayConfigTransition {
@@ -250,6 +258,7 @@ class GatewayService {
   }) async {
     final deadline = DateTime.now().add(timeout);
     final transitionReason = _gatewayConfigTransitionReason;
+    var readinessWaitLogged = false;
     if (_hasGatewayConfigTransition) {
       _addActivity('[CHAT] Waiting for Gateway to settle'
           '${transitionReason == null ? '' : ' after $transitionReason'}...');
@@ -298,12 +307,16 @@ class GatewayService {
         return token;
       }
 
-      // If no explicit config transition is active, avoid turning an ordinary
-      // transient health lag into a long blocking wait. The caller can still
-      // attempt normal WS repair below.
-      if (!_hasGatewayConfigTransition &&
+      // HTTP health can become live before the operator WebSocket has finished
+      // RPC discovery. Sending chat in that window can be accepted by the
+      // gateway but never produce a first token, so normal chat waits for the
+      // same interactive-ready gate used by node auto-connect.
+      if (!readinessWaitLogged &&
+          !_hasGatewayConfigTransition &&
           _state.status != GatewayStatus.starting) {
-        return token;
+        readinessWaitLogged = true;
+        _addActivity(
+            '[CHAT] Waiting for Gateway RPC discovery before sending.');
       }
 
       await Future.delayed(const Duration(seconds: 1));
@@ -681,6 +694,16 @@ class GatewayService {
     try {
       final running = await _runtime.isRunning();
       if (!running) {
+        final listenerAlive = await _isGatewayListenerAlive(
+          timeout: const Duration(seconds: 2),
+        );
+        if (listenerAlive) {
+          _consecutiveProcessValidationMisses = 0;
+          _addActivity(
+            '[HEALTH] Runtime process probe missed but production health is live; keeping gateway running.',
+          );
+          return;
+        }
         _consecutiveProcessValidationMisses++;
         if (_consecutiveProcessValidationMisses >= 2 &&
             _state.status == GatewayStatus.running) {
@@ -10512,48 +10535,85 @@ $message''';
     _healthTimer?.cancel();
 
     try {
+      _addActivity('[NATIVE-DEFAULT-ROLLBACK] step selector -> proot');
       prefs.gatewayRuntimeOwner = rollbackOwnerId;
       await _refreshSelectedRuntimeOwner();
       selectorRestoredOk = prefs.gatewayRuntimeOwner == rollbackOwnerId &&
           _runtime.id == rollbackOwnerId;
+      _addActivity(
+        '[NATIVE-DEFAULT-ROLLBACK] step selector '
+        'selectorRestoredOk=$selectorRestoredOk owner=${prefs.gatewayRuntimeOwner} '
+        'runtime=${_runtime.id}',
+      );
 
       try {
+        _addActivity('[NATIVE-DEFAULT-ROLLBACK] step native stop request');
         nativeStopRequested = await nativeRuntime
             .stop()
             .timeout(const Duration(seconds: 15), onTimeout: () => false);
+        _addActivity(
+          '[NATIVE-DEFAULT-ROLLBACK] step native stop returned '
+          'nativeStopRequested=$nativeStopRequested',
+        );
         nativeStopped = await _waitForRuntimeStopped(
           nativeRuntime,
           timeout: const Duration(seconds: 12),
         );
+        _addActivity(
+          '[NATIVE-DEFAULT-ROLLBACK] step native stopped '
+          'nativeStopped=$nativeStopped',
+        );
       } catch (e) {
         rollbackError = e;
+        _addActivity('[NATIVE-DEFAULT-ROLLBACK] step native stop error $e');
       }
 
+      _addActivity('[NATIVE-DEFAULT-ROLLBACK] step wait port release');
       nativePortReleased = await _waitForProductionPortReleased(
         timeout: const Duration(seconds: 20),
       );
+      _addActivity(
+        '[NATIVE-DEFAULT-ROLLBACK] step port release '
+        'nativePortReleased=$nativePortReleased',
+      );
 
-      prootStarted = await prootRuntime
-          .start(allowDuringSetup: true)
-          .timeout(const Duration(seconds: 45), onTimeout: () => false);
-      for (var attempt = 0; attempt < 80; attempt++) {
-        try {
-          prootRunning = await prootRuntime
-              .isRunning()
-              .timeout(const Duration(seconds: 3), onTimeout: () => false);
-          prootHealth = await _waitForProductionHealthPayload(
-            timeout: const Duration(seconds: 3),
-          );
-          prootHealthOk = _gatewayHealthLooksLive(prootHealth) &&
-              prootHealth['runtime'] != 'native-node-embedded';
-          if (prootStarted && prootRunning && prootHealthOk) {
-            rollbackError = null;
-            break;
+      if (!nativePortReleased) {
+        rollbackError = StateError(
+          'Native owner did not release production port 18789; '
+          'PRoot rollback was not started to avoid port contention.',
+        );
+      } else {
+        _addActivity('[NATIVE-DEFAULT-ROLLBACK] step PRoot start request');
+        prootStarted = await prootRuntime
+            .start(allowDuringSetup: true)
+            .timeout(const Duration(seconds: 45), onTimeout: () => false);
+        _addActivity(
+          '[NATIVE-DEFAULT-ROLLBACK] step PRoot start returned '
+          'prootStarted=$prootStarted',
+        );
+        for (var attempt = 0; attempt < 80; attempt++) {
+          try {
+            prootRunning = await prootRuntime
+                .isRunning()
+                .timeout(const Duration(seconds: 3), onTimeout: () => false);
+            prootHealth = await _waitForProductionHealthPayload(
+              timeout: const Duration(seconds: 3),
+            );
+            prootHealthOk = _gatewayHealthLooksLive(prootHealth) &&
+                prootHealth['runtime'] != 'native-node-embedded';
+            if (prootStarted && prootRunning && prootHealthOk) {
+              _addActivity(
+                '[NATIVE-DEFAULT-ROLLBACK] step PRoot health OK '
+                'attempt=$attempt status=${prootHealth['status'] ?? prootHealth['ok']}',
+              );
+              rollbackError = null;
+              break;
+            }
+          } catch (e) {
+            rollbackError = e;
           }
-        } catch (e) {
-          rollbackError = e;
+          await Future<void>.delayed(const Duration(milliseconds: 750));
         }
-        await Future<void>.delayed(const Duration(milliseconds: 750));
       }
     } catch (e) {
       rollbackError = e;
@@ -13240,12 +13300,13 @@ $message''';
     // Default behavior: keep cloud traffic on the gateway lane so tool/skill
     // execution is always available and diagnostics stay consistent.
     // A manual fast lane is still possible via the "/fast " prefix.
-    if (_shouldUseFastCloudChat(message, model)) {
+    final fastCloudMessage = _fastCloudDiagnosticPayload(message);
+    if (fastCloudMessage != null) {
       final route = await _resolveFastCloudRoute(model);
       if (route != null) {
         yield* _sendFastCloudMessage(
           route: route,
-          message: message,
+          message: fastCloudMessage,
           conversationHistory: conversationHistory,
         );
         return;
@@ -13288,9 +13349,9 @@ $message''';
 
     token = await _waitForGatewayChatLaneReady(token);
     if (token == null || token.isEmpty) {
-      yield '[Error] Gateway is applying provider/model changes.\n\n'
+      yield '[Error] Gateway is still finishing startup or applying changes.\n\n'
           'Please wait a moment and send again. Your message was not sent '
-          'into the Gateway while it was reloading.';
+          'until the Gateway RPC/chat lane is ready.';
       return;
     }
 
@@ -13355,9 +13416,9 @@ $message''';
       );
       token = await _waitForGatewayChatLaneReady(token);
       if (token == null || token.isEmpty) {
-        yield '[Error] Gateway is applying the selected model/provider.\n\n'
-            'Please retry in a moment. Your message was not sent during the '
-            'Gateway reload window.';
+        yield '[Error] Gateway is still finishing the selected model/provider update.\n\n'
+            'Please retry in a moment. Your message was not sent before the '
+            'Gateway RPC/chat lane was ready.';
         return;
       }
       wsOk = await _ensureWebSocket(token);
@@ -13381,10 +13442,18 @@ $message''';
     final chunkController = StreamController<String>();
     final requestStartedAt = DateTime.now();
     var lastRelevantGatewayActivityAt = requestStartedAt;
+    final firstVisibleOutputDeadline =
+        requestStartedAt.add(noFirstTokenTimeout);
     Timer? inactivityWatchdog;
+    var visibleChatOutputSeen = false;
 
     void markRelevantGatewayActivity() {
       lastRelevantGatewayActivityAt = DateTime.now();
+    }
+
+    void markVisibleChatOutput() {
+      visibleChatOutputSeen = true;
+      markRelevantGatewayActivity();
     }
 
     void finishChatWithError(String message) {
@@ -13461,8 +13530,8 @@ $message''';
       }
       final now = DateTime.now();
       final idleFor = now.difference(lastRelevantGatewayActivityAt);
-      if (firstToken && idleFor > noFirstTokenTimeout) {
-        _addActivity('[CHAT] ✗ No assistant response for '
+      if (!visibleChatOutputSeen && now.isAfter(firstVisibleOutputDeadline)) {
+        _addActivity('[CHAT] ✗ No assistant/tool response for '
             '${noFirstTokenTimeout.inSeconds}s');
         _beginGatewayConfigTransition(
           'chat no-first-token recovery',
@@ -13470,7 +13539,7 @@ $message''';
         );
         disconnectWebSocket();
         finishChatWithError(
-          'Gateway accepted the turn but produced no assistant response after '
+          'Gateway accepted the turn but produced no assistant/tool response after '
           '${noFirstTokenTimeout.inSeconds} seconds. Plawie is holding the '
           'Gateway chat lane while it recovers, so retries do not enter a '
           'stale queue. Please resend after the Gateway settles.',
@@ -13560,7 +13629,7 @@ $message''';
             final payload = frame['payload'] as Map<String, dynamic>?;
             final message = payload?['text'] as String?;
             if (message != null && message.isNotEmpty) {
-              markRelevantGatewayActivity();
+              markVisibleChatOutput();
               _addActivity('[CHAT] ← Agent initiated: $message');
               if (!chunkController.isClosed) {
                 chunkController.add(message);
@@ -13618,7 +13687,7 @@ $message''';
                   payload?['text'] ??
                   frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
-                markRelevantGatewayActivity();
+                markVisibleChatOutput();
                 final delta = assistantDelta(text);
                 if (delta.isEmpty) return;
                 if (firstToken) {
@@ -13640,6 +13709,7 @@ $message''';
                   '';
               final input = innerData?['input'] ?? payload?['input'];
               if (name.isNotEmpty && !chunkController.isClosed) {
+                markVisibleChatOutput();
                 chunkController
                     .add('\x00TOOL_USE:$name:${jsonEncode(input ?? {})}\x00');
               }
@@ -13685,6 +13755,7 @@ $message''';
               }
 
               if (!chunkController.isClosed) {
+                markVisibleChatOutput();
                 chunkController.add(
                     '\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
               }
@@ -14157,13 +14228,12 @@ $message''';
     return 'openclaw';
   }
 
-  bool _shouldUseFastCloudChat(String message, String model) {
-    // Production policy: cloud chat stays on gateway by default so tools and
-    // skills remain available in one consistent execution lane.
-    //
-    // Local chat is handled separately by explicit local-llm model routing
-    // gated through Local Chat Mode in preferences.
-    return false;
+  String? _fastCloudDiagnosticPayload(String message) {
+    final trimmedLeft = message.trimLeft();
+    const prefix = '/fast ';
+    if (!trimmedLeft.toLowerCase().startsWith(prefix)) return null;
+    final payload = trimmedLeft.substring(prefix.length).trimLeft();
+    return payload.isEmpty ? null : payload;
   }
 
   Future<_FastCloudRoute?> _resolveFastCloudRoute(String model) async {
