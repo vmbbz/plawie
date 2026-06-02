@@ -397,11 +397,25 @@ Primary canary diagnostics:
 PLAWIE_NATIVE_GATEWAY_PRIMARY_CANARY_DIAGNOSTICS=true
 ```
 
+Owner switch command availability:
+
+```text
+PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true
+```
+
+Default: `true`.
+
+This allows `/native-default-owner-enable` without enabling the broad native
+canary commands. Public native-default rollback builds should keep this enabled
+so sticky PRoot rollback can return to native without shipping diagnostics.
+
 Important release rule:
 
 - Broad smoke diagnostics can unlock hidden commands in debug builds.
 - `18790` sidecar autostart should stay behind the narrower autostart flag.
 - PRoot rollback must not be hidden behind diagnostics.
+- Native re-enable should be controlled by
+  `PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS`, not by broad canary flags.
 - Release builds should not auto-start `18790` unless that is explicitly chosen
   for a release diagnostic variant.
 

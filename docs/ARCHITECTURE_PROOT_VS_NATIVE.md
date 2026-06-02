@@ -84,8 +84,10 @@ Roll back to PRoot:
 
 Release safety rule:
 
-- Native enable and wider diagnostics commands can stay gated in debug or
-  operator builds.
+- Native enable is controlled separately by
+  `PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS` so public rollback builds can
+  return from sticky PRoot rollback without exposing broad canaries.
+- Wider diagnostics commands can stay gated in debug or operator builds.
 - Rollback must remain available even when broad diagnostics are disabled.
 - Do not ship a build where rollback depends on
   `PLAWIE_NATIVE_GATEWAY_SMOKE_DIAGNOSTICS=true`.

@@ -30,6 +30,8 @@ For developer-facing positioning and the `libnode.so` distribution story, use
 [83-libnode-release-and-developer-positioning.md](83-libnode-release-and-developer-positioning.md).
 For diagnostics/public/no-PRoot release variant planning, use
 [84-release-variants-and-proot-removal-plan.md](84-release-variants-and-proot-removal-plan.md).
+For the exact diagnostics/package boundary for the first native-default release,
+use [85-release-diagnostics-package-boundary.md](85-release-diagnostics-package-boundary.md).
 
 ## Current Direction
 
@@ -296,6 +298,7 @@ be safely generalized.
 | [82-release-boundary-architecture-runbook.md](82-release-boundary-architecture-runbook.md) | Current release-boundary architecture, runtime ids, ports, switch/rollback commands, diagnostics flags, and cleanup |
 | [83-libnode-release-and-developer-positioning.md](83-libnode-release-and-developer-positioning.md) | Developer-facing `libnode.so` value story, package boundaries, efficiency story, and claims that are safe to make |
 | [84-release-variants-and-proot-removal-plan.md](84-release-variants-and-proot-removal-plan.md) | Debug/internal/public variant plan and staged path from native-default rollback build to final no-PRoot build |
+| [85-release-diagnostics-package-boundary.md](85-release-diagnostics-package-boundary.md) | Exact diagnostics flags, owner-switch policy, and package boundary for the public native-default rollback build |
 
 ## Work Rules
 

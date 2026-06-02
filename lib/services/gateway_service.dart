@@ -62,6 +62,11 @@ class GatewayService {
     'PLAWIE_NATIVE_GATEWAY_PRIMARY_CANARY_DIAGNOSTICS',
     defaultValue: false,
   );
+  static const bool _nativeGatewayOwnerSwitchCommandsEnabled =
+      bool.fromEnvironment(
+    'PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS',
+    defaultValue: true,
+  );
   static const String _mobileChatSessionPrefix = 'mobile:chat:';
   static const String _defaultAuthProfileName = 'default';
 
@@ -5336,7 +5341,8 @@ $message''';
   }
 
   bool _nativeDefaultOwnerEnableRequested(String message) {
-    if (!_nativePrimaryCanaryDiagnosticsEnabled &&
+    if (!_nativeGatewayOwnerSwitchCommandsEnabled &&
+        !_nativePrimaryCanaryDiagnosticsEnabled &&
         !NativeGatewaySmokeService.diagnosticsEnabled) {
       return false;
     }
