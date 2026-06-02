@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/skills_service.dart';
 import '../constants/openclaw_paths.dart';
-import '../services/native_bridge.dart';
+import '../services/openclaw_service.dart';
 
 class AgentSkillsPage extends StatefulWidget {
   const AgentSkillsPage({super.key});
@@ -76,13 +76,13 @@ class _AgentSkillsPageState extends State<AgentSkillsPage>
 
     try {
       // Primary search pattern: JSON output with download sorting
-      String result = await NativeBridge.runInProot(
+      String result = await OpenClawCommandService.runCliForActiveOwner(
         '$kOpenClawCommand skills search "$query" --json --limit 20 --sort downloads',
       );
 
       // Fallback strategy: If first pattern fails or returns empty, try broad search
       if (result.trim().isEmpty || result.contains('error')) {
-        result = await NativeBridge.runInProot(
+        result = await OpenClawCommandService.runCliForActiveOwner(
           '$kOpenClawCommand skills search "$query" --json --limit 10',
         );
       }

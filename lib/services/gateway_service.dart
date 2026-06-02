@@ -114,6 +114,7 @@ class GatewayService {
   DateTime? _lastDisconnectContextAt;
   DateTime? _lastNodeAutoConnectAttemptAt;
   DateTime? _lastWsConnectAttemptAt;
+  DateTime? _gatewayInteractiveReadyAt;
   DateTime? _talkSpeakUnavailableUntil;
   bool _talkSpeakBackoffAllowsNativeFallback = false;
   DateTime? _lastLocalInferenceHealthSkipAt;
@@ -129,6 +130,8 @@ class GatewayService {
   bool _nativeFullSelectorSoakInFlight = false;
   bool _nativeFullSelectorPressureSoakInFlight = false;
   bool _nativeDefaultOwnerSwitchInFlight = false;
+  bool _chatLaneRecoveryInFlight = false;
+  bool _gatewayChatTurnInFlight = false;
   bool _runtimeLogged = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
@@ -150,9 +153,14 @@ class GatewayService {
   static const Duration _gatewayConfigReloadSettle = Duration(seconds: 8);
   static const Duration _gatewayConfigSoftSettle = Duration(seconds: 3);
   static const Duration _gatewaySessionPatchSettle = Duration(seconds: 5);
-  static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 240);
+  static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 300);
+  static const Duration _prootGatewayChatLaneExtraSettle =
+      Duration(seconds: 75);
   static const Duration _gatewayStaleChatRecoverySettle =
       Duration(seconds: 180);
+  static const Duration _gatewayNoFirstTokenRecoverySettle =
+      Duration(seconds: 15);
+  static const Duration _nativeFullGatewayStartupGrace = Duration(seconds: 120);
 
   /// Live stream of human-readable chat and gateway events.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -195,6 +203,7 @@ class GatewayService {
     }
     _gatewayConfigTransitionReason = reason;
     _rpcDiscoveryDone = false;
+    _gatewayInteractiveReadyAt = null;
     _updateState(_state.copyWith(isInteractiveReady: false));
     _addActivity(
         '[Gateway] Applying $reason; chat is paused until Gateway settles.');
@@ -252,6 +261,39 @@ class GatewayService {
     }
   }
 
+  Future<Duration?> _prootChatLaneSettleRemaining() async {
+    if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot) {
+      return null;
+    }
+
+    var readySince = _gatewayInteractiveReadyAt ?? DateTime.now();
+
+    try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      if (prefs.nodeEnabled) {
+        final node = NodeService();
+        await node.init().timeout(const Duration(seconds: 4), onTimeout: () {});
+        final nodeReady =
+            node.state.isPaired && node.isConnected && !node.isConnectionStale;
+        if (!nodeReady) {
+          unawaited(_ensureNodeConnectedAfterGatewayReady(
+            reason: 'proot-chat-send-gate',
+          ));
+          return const Duration(seconds: 3);
+        }
+        final connectedAt = node.state.connectedAt;
+        if (connectedAt != null && connectedAt.isAfter(readySince)) {
+          readySince = connectedAt;
+        }
+      }
+    } catch (_) {}
+
+    final elapsed = DateTime.now().difference(readySince);
+    if (elapsed >= _prootGatewayChatLaneExtraSettle) return null;
+    return _prootGatewayChatLaneExtraSettle - elapsed;
+  }
+
   Future<String?> _waitForGatewayChatLaneReady(
     String? token, {
     Duration timeout = _gatewayChatLaneSettleTimeout,
@@ -259,6 +301,7 @@ class GatewayService {
     final deadline = DateTime.now().add(timeout);
     final transitionReason = _gatewayConfigTransitionReason;
     var readinessWaitLogged = false;
+    var prootSettleWaitLogged = false;
     if (_hasGatewayConfigTransition) {
       _addActivity('[CHAT] Waiting for Gateway to settle'
           '${transitionReason == null ? '' : ' after $transitionReason'}...');
@@ -304,6 +347,20 @@ class GatewayService {
       _clearGatewayConfigTransitionIfReady();
       final wsReady = _connection?.state == GatewayConnectionState.connected;
       if (wsReady && _state.isInteractiveReady) {
+        final prootSettleRemaining = await _prootChatLaneSettleRemaining();
+        if (prootSettleRemaining != null &&
+            prootSettleRemaining > Duration.zero) {
+          if (!prootSettleWaitLogged) {
+            prootSettleWaitLogged = true;
+            _addActivity('[CHAT] Waiting for PRoot chat lane to settle '
+                '(${prootSettleRemaining.inSeconds}s remaining).');
+          }
+          final wait = prootSettleRemaining > const Duration(seconds: 1)
+              ? const Duration(seconds: 1)
+              : prootSettleRemaining;
+          await Future.delayed(wait);
+          continue;
+        }
         return token;
       }
 
@@ -323,6 +380,124 @@ class GatewayService {
     }
 
     return null;
+  }
+
+  Future<void> _recoverChatNoFirstTokenLane(String reason) async {
+    if (_chatLaneRecoveryInFlight) return;
+    _chatLaneRecoveryInFlight = true;
+
+    final runtime = _runtime;
+    _addActivity('[CHAT] Recovery: rebuilding ${runtime.id} chat lane '
+        'after $reason.');
+
+    try {
+      disconnectWebSocket();
+      _cachedToken = null;
+      _lastTokenFetch = null;
+      NodeService().clearCachedToken();
+
+      _beginGatewayConfigTransition(
+        'chat no-first-token recovery',
+        minimumSettle: _gatewayNoFirstTokenRecoverySettle,
+        allowShorten: true,
+      );
+
+      final isProotRuntime =
+          runtime.id == PreferencesService.gatewayRuntimeOwnerProot;
+      if (isProotRuntime) {
+        final stopped = await runtime.stop().timeout(
+              const Duration(seconds: 20),
+              onTimeout: () => false,
+            );
+        final portReleased = await _waitForProductionPortReleased(
+          timeout: const Duration(seconds: 20),
+        ).catchError((_) => false);
+        _addActivity('[CHAT] Recovery: PRoot stopped=$stopped '
+            'portReleased=$portReleased.');
+
+        final started = await runtime
+            .start(allowDuringSetup: true)
+            .timeout(const Duration(seconds: 45), onTimeout: () => false);
+        _addActivity('[CHAT] Recovery: PRoot restart requested=$started.');
+      } else {
+        final running = await runtime
+            .isRunning()
+            .timeout(const Duration(seconds: 4), onTimeout: () => false);
+        if (!running) {
+          final started = await runtime
+              .start(allowDuringSetup: true)
+              .timeout(const Duration(seconds: 25), onTimeout: () => false);
+          _addActivity('[CHAT] Recovery: native restart requested=$started.');
+        }
+      }
+
+      _runtime = runtime;
+      _runtimeLogged = false;
+      _consecutiveFailures = 0;
+      _httpWaitingSince = null;
+      _markGatewaySettleWindow();
+      _subscribeLogs();
+      _startHealthCheck();
+      final recoveryStatus =
+          isProotRuntime ? GatewayStatus.starting : GatewayStatus.running;
+      _updateState(_state.copyWith(
+        status: recoveryStatus,
+        clearError: true,
+        isReady: !isProotRuntime,
+        isInteractiveReady: false,
+        isWebsocketConnected: false,
+      ));
+
+      final deadline = DateTime.now().add(const Duration(seconds: 120));
+      while (DateTime.now().isBefore(deadline)) {
+        try {
+          final health = await _waitForProductionHealthPayload(
+            timeout: const Duration(seconds: 5),
+          );
+          if (_gatewayHealthLooksLive(health)) {
+            _updateState(_state.copyWith(
+              status: GatewayStatus.running,
+              clearError: true,
+              isReady: true,
+              detailedHealth: health,
+            ));
+          }
+        } catch (_) {}
+
+        try {
+          final freshToken = await retrieveTokenFromConfig(force: true)
+              .timeout(const Duration(seconds: 5), onTimeout: () => null);
+          if (freshToken != null && freshToken.isNotEmpty) {
+            await _ensureWebSocket(freshToken).timeout(
+              const Duration(seconds: 20),
+              onTimeout: () => false,
+            );
+          }
+        } catch (_) {}
+
+        try {
+          await _checkHealth().timeout(const Duration(seconds: 20));
+        } catch (_) {}
+
+        _clearGatewayConfigTransitionIfReady();
+        if (_connection?.state == GatewayConnectionState.connected &&
+            _state.isInteractiveReady) {
+          _gatewayConfigTransitionUntil = null;
+          _gatewayConfigTransitionReason = null;
+          _addActivity('[CHAT] Recovery: chat lane ready.');
+          return;
+        }
+
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+
+      _addActivity(
+          '[CHAT] Recovery: chat lane not ready after bounded restart window.');
+    } catch (e) {
+      _addActivity('[CHAT] Recovery failed: $e');
+    } finally {
+      _chatLaneRecoveryInFlight = false;
+    }
   }
 
   /// Update the background repair status.
@@ -694,13 +869,28 @@ class GatewayService {
     try {
       final running = await _runtime.isRunning();
       if (!running) {
+        final nativeRuntime =
+            _runtime.id != PreferencesService.gatewayRuntimeOwnerProot;
         final listenerAlive = await _isGatewayListenerAlive(
           timeout: const Duration(seconds: 2),
         );
         if (listenerAlive) {
           _consecutiveProcessValidationMisses = 0;
+          if (!nativeRuntime) {
+            _addActivity(
+              '[HEALTH] Runtime process probe missed but production health is live; keeping gateway running.',
+            );
+          }
+          return;
+        }
+        final nativeTurnOrSettle = nativeRuntime &&
+            (_gatewayChatTurnInFlight ||
+                _isInGatewaySettleWindow ||
+                _gatewayConfigTransitionReason != null);
+        if (nativeTurnOrSettle) {
+          _consecutiveProcessValidationMisses = 0;
           _addActivity(
-            '[HEALTH] Runtime process probe missed but production health is live; keeping gateway running.',
+            '[HEALTH] Native process probe missed during active chat/settle; deferring stopped status.',
           );
           return;
         }
@@ -724,6 +914,7 @@ class GatewayService {
   /// Check if gateway is already running (e.g. after app restart)
   /// and sync UI state accordingly.
   Future<void> init() async {
+    await _refreshSelectedRuntimeOwner();
     _logRuntimeOnce();
     unawaited(NativeGatewaySmokeService.runStartupSelfTestIfEnabled(
       log: _addActivity,
@@ -748,17 +939,22 @@ class GatewayService {
     await getFilesDir();
     await _ensureWorkspaceHeartbeatFile();
 
-    // SELF-HEALING: Ensure binary wrappers are fresh on every startup.
-    try {
-      final diag = await NativeBridge.runInProot(
-        'export PATH=\$PATH:/usr/local/bin:/usr/bin; echo "--- /usr/local/bin ---"; ls -F /usr/local/bin; echo "--- /usr/bin ---"; ls -F /usr/bin/open* /usr/bin/npm* 2>/dev/null || true',
-        timeout: 10,
-      );
-      debugPrint('[GATEWAY] Path Diagnostic:\n$diag');
-      await NativeBridge.createBinWrappers('openclaw');
-      await NativeBridge.ensureAgentSkillsAwareness();
-    } catch (e) {
-      debugPrint('[GATEWAY] Self-healing error: $e');
+    // SELF-HEALING: PRoot wrapper repair is rollback/setup-only.
+    if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+      try {
+        final diag = await NativeBridge.runInProot(
+          'export PATH=\$PATH:/usr/local/bin:/usr/bin; echo "--- /usr/local/bin ---"; ls -F /usr/local/bin; echo "--- /usr/bin ---"; ls -F /usr/bin/open* /usr/bin/npm* 2>/dev/null || true',
+          timeout: 10,
+        );
+        debugPrint('[GATEWAY] Path Diagnostic:\n$diag');
+        await NativeBridge.createBinWrappers('openclaw');
+        await NativeBridge.ensureAgentSkillsAwareness();
+      } catch (e) {
+        debugPrint('[GATEWAY] Self-healing error: $e');
+      }
+    } else {
+      debugPrint(
+          '[GATEWAY] Native owner active; skipping PRoot wrapper repair.');
     }
 
     // Gateway startup. No longer probes Ollama models on startup to prevent
@@ -975,6 +1171,12 @@ class GatewayService {
   Future<void> _runTargetedFix(String packageName,
       {bool isGlobal = false}) async {
     if (_isFixingDep) return;
+    if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot) {
+      _addActivity(
+        '[SYS] Auto-heal skipped: native Gateway owner is active; PRoot package repair is rollback-only.',
+      );
+      return;
+    }
     _isFixingDep = true;
     _addActivity('[SYS] Auto-Healing: Fixing missing $packageName...');
 
@@ -1011,6 +1213,12 @@ class GatewayService {
     if (_nativeOwnerTransitionInProgress) {
       debugPrint(
         '[GATEWAY] Passive auto-heal paused during native owner swap canary.',
+      );
+      return;
+    }
+    if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot) {
+      _addActivity(
+        '[SYS] Passive PRoot auto-heal skipped while native Gateway owner is active.',
       );
       return;
     }
@@ -1111,6 +1319,7 @@ class GatewayService {
     _addActivity(
         '[INFO] Gateway already listening; attaching instead of failing start.');
     _rpcDiscoveryDone = false;
+    _gatewayInteractiveReadyAt = null;
     _connection?.dispose();
     _connection = null;
     _cachedToken = null;
@@ -1214,6 +1423,7 @@ class GatewayService {
 
       debugPrint('[GATEWAY] Existing gateway detected — attaching...');
       _rpcDiscoveryDone = false;
+      _gatewayInteractiveReadyAt = null;
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
         isInteractiveReady: false,
@@ -1273,6 +1483,7 @@ class GatewayService {
     // Attempting a fresh start
     _isStarting = true;
     _rpcDiscoveryDone = false; // ensure discovery runs on this new session
+    _gatewayInteractiveReadyAt = null;
     debugPrint('[GATEWAY] Starting gateway process...');
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
@@ -1580,6 +1791,7 @@ class GatewayService {
           _beginGatewayConfigTransition('gateway restart');
         }
         _rpcDiscoveryDone = false;
+        _gatewayInteractiveReadyAt = null;
         _updateState(_state.copyWith(
           isReady: false,
           isInteractiveReady: false,
@@ -2343,12 +2555,18 @@ HEARTBEAT_OK.
     // 2. Official 'onboard' CLI in background (for long-term integrity/SecretRefs)
     // Optional: setup bootstrap can disable this to avoid post-start config churn.
     if (runBackgroundOnboard) {
-      // We do NOT await this, preventing the 5-minute UI deadlock.
-      unawaited(NativeBridge.runInProot(onboardCmd, timeout: 60).then((_) {
-        _addActivity('[Gateway] Background onboarding CLI complete.');
-      }).catchError((e) {
-        _addActivity('[Gateway] Background onboarding CLI failed: $e');
-      }));
+      if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+        // We do NOT await this, preventing the 5-minute UI deadlock.
+        unawaited(NativeBridge.runInProot(onboardCmd, timeout: 60).then((_) {
+          _addActivity('[Gateway] Background onboarding CLI complete.');
+        }).catchError((e) {
+          _addActivity('[Gateway] Background onboarding CLI failed: $e');
+        }));
+      } else {
+        _addActivity(
+          '[Gateway] Native owner active; skipping background PRoot onboarding CLI.',
+        );
+      }
     }
 
     // 2. Update agent auth-profiles.json in the current canonical format.
@@ -2366,13 +2584,19 @@ HEARTBEAT_OK.
         if (!gatewayRunningForCredentialChange) {
           _beginGatewayConfigTransition('provider credential update');
         }
-        await NativeBridge.runInProot(
-          'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
-          'openclaw reload || openclaw gateway config apply',
-          timeout: 10,
-        );
-        _addActivity(
-            '[Gateway] Reload requested; credential changes may briefly restart Gateway.');
+        if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+          await NativeBridge.runInProot(
+            'export PATH=\$PATH:/usr/local/bin:/usr/bin && export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && '
+            'openclaw reload || openclaw gateway config apply',
+            timeout: 10,
+          );
+          _addActivity(
+              '[Gateway] Reload requested; credential changes may briefly restart Gateway.');
+        } else {
+          await _restartNativeRuntimeForConfigChange(
+            'provider credential update',
+          );
+        }
         invalidateTokenCache();
         disconnectWebSocket();
       }
@@ -2574,6 +2798,14 @@ HEARTBEAT_OK.
       return urlWithToken;
     }
 
+    if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot) {
+      _updateState(_state.copyWith(logs: [
+        ..._state.logs,
+        '[INFO] Native Gateway owner active; skipping PRoot dashboard CLI probe.'
+      ]));
+      return _state.dashboardUrl;
+    }
+
     // STEP 2: Fallback to CLI dashboard probe WITH bionic-bypass (fixes the MAC error)
     try {
       final output = await NativeBridge.runInProot(
@@ -2671,6 +2903,7 @@ HEARTBEAT_OK.
   /// installing/uninstalling a skill or any time the user wants a fresh read.
   void refreshRpcDiscovery() {
     _rpcDiscoveryDone = false;
+    _gatewayInteractiveReadyAt = null;
     _updateState(_state.copyWith(
       isInteractiveReady: false,
       logs: [
@@ -2685,6 +2918,7 @@ HEARTBEAT_OK.
     _isStopping = true;
     await _refreshSelectedRuntimeOwner();
     _rpcDiscoveryDone = false; // reset so next start re-runs discovery
+    _gatewayInteractiveReadyAt = null;
     _healthTimer?.cancel();
     _logSubscription?.cancel();
     // Tear down WS and invalidate token cache BEFORE stopping the process.
@@ -2964,11 +3198,18 @@ HEARTBEAT_OK.
         approved = await _tryApprovePairingViaRpc(safeRequestId);
       }
       if (!approved) {
-        await _approveOperatorPairingRequest(
-          safeRequestId,
-          skipRequestResolution: true,
-        );
-        approved = true;
+        if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+          await _approveOperatorPairingRequest(
+            safeRequestId,
+            skipRequestResolution: true,
+          );
+          approved = true;
+        } else {
+          throw StateError(
+            'Native owner could not approve dashboard pairing via RPC; '
+            'PRoot CLI fallback is rollback-only.',
+          );
+        }
       }
       _autoApprovedDashboardRequestIds.add(safeRequestId);
       _addActivity(
@@ -3101,6 +3342,11 @@ HEARTBEAT_OK.
     String? deviceId,
     bool skipRequestResolution = false,
   }) async {
+    if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot) {
+      throw StateError(
+        'Operator pairing CLI approval is only available in PRoot rollback.',
+      );
+    }
     final safeRequestId = requestId.trim();
     if (!RegExp(r'^[a-f0-9-]{16,}$').hasMatch(safeRequestId)) {
       throw Exception('Invalid pairing request id: $requestId');
@@ -3428,7 +3674,13 @@ HEARTBEAT_OK.
             await reregisterSkills();
           } catch (_) {}
 
+          final wasRpcDiscoveryDone = _rpcDiscoveryDone;
           _rpcDiscoveryDone = healthRpcSucceeded && skillsDiscoverySatisfied;
+          if (_rpcDiscoveryDone) {
+            _gatewayInteractiveReadyAt ??= DateTime.now();
+          } else if (wasRpcDiscoveryDone) {
+            _gatewayInteractiveReadyAt = null;
+          }
           _updateState(_state.copyWith(
             isInteractiveReady: _rpcDiscoveryDone,
           ));
@@ -3461,6 +3713,26 @@ HEARTBEAT_OK.
         }
       }
     } catch (e) {
+      if (_chatLaneRecoveryInFlight ||
+          _gatewayConfigTransitionReason == 'chat no-first-token recovery') {
+        _consecutiveFailures = 0;
+        final waitingSince = _httpWaitingSince ?? DateTime.now();
+        _httpWaitingSince = waitingSince;
+        final processAlive = await _runtime
+            .isRunning()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false);
+        final listenerAlive = processAlive
+            ? false
+            : await _isGatewayListenerAlive(
+                timeout: const Duration(seconds: 2),
+              );
+        if (processAlive || listenerAlive) {
+          final elapsed = DateTime.now().difference(waitingSince).inSeconds;
+          _addActivity('[HEALTH] Deferring health restart while chat lane '
+              'recovery settles (${elapsed}s).');
+          return;
+        }
+      }
       _consecutiveFailures++;
       if (_state.status == GatewayStatus.starting) {
         // Gateway is intentionally booting — show progress, not error spam.
@@ -3469,6 +3741,10 @@ HEARTBEAT_OK.
         _httpWaitingSince ??= DateTime.now();
         final elapsed = DateTime.now().difference(_httpWaitingSince!).inSeconds;
         _addActivity('[INFO] Gateway starting up... (${elapsed}s)');
+        final nativeFullGateway =
+            _runtime.id != PreferencesService.gatewayRuntimeOwnerProot;
+        final nativeStartupGraceActive = nativeFullGateway &&
+            elapsed < _nativeFullGatewayStartupGrace.inSeconds;
 
         final processAlive = await _runtime
             .isRunning()
@@ -3478,8 +3754,12 @@ HEARTBEAT_OK.
             : await _isGatewayListenerAlive(
                 timeout: const Duration(seconds: 2),
               );
-        if (!processAlive && !listenerAlive && elapsed >= 10) {
+        if (!processAlive &&
+            !listenerAlive &&
+            elapsed >= 10 &&
+            !nativeStartupGraceActive) {
           _rpcDiscoveryDone = false;
+          _gatewayInteractiveReadyAt = null;
           _addActivity(
               '[HEALTH] Gateway startup process disappeared; restarting cleanly.');
           _updateState(_state.copyWith(
@@ -3489,12 +3769,19 @@ HEARTBEAT_OK.
           ));
           unawaited(attachOrStart(autoStart: true, forceStart: true));
           return;
+        } else if (!processAlive &&
+            !listenerAlive &&
+            nativeStartupGraceActive) {
+          _consecutiveFailures = 0;
+          _addActivity(
+              '[HEALTH] Native Gateway bootstrap still within startup grace; waiting for listener.');
         }
 
         if (elapsed > _startupPassiveHealGrace.inSeconds &&
             !_isAutoHealingInProgress) {
           _triggerPassiveAutoHeal();
         }
+        return;
       } else if (_state.status == GatewayStatus.running) {
         final wsAlive = _connection?.state == GatewayConnectionState.connected;
         final processAlive = await _runtime
@@ -10501,6 +10788,39 @@ $message''';
     );
   }
 
+  Future<void> _restartNativeRuntimeForConfigChange(String reason) async {
+    if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) return;
+    _addActivity('[Gateway] Restarting native Gateway to apply $reason.');
+    try {
+      disconnectWebSocket();
+      final stopped = await _runtime.stop().timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => false,
+          );
+      final portReleased = await _waitForProductionPortReleased(
+        timeout: const Duration(seconds: 12),
+      );
+      if (!stopped || !portReleased) {
+        _addActivity(
+          '[Gateway] Native restart warning: stopped=$stopped portReleased=$portReleased',
+        );
+      }
+
+      final started = await _runtime.start().timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => false,
+          );
+      if (!started) {
+        throw StateError('native Gateway start returned false');
+      }
+      _markGatewaySettleWindow();
+      _addActivity('[Gateway] Native Gateway restart requested for $reason.');
+    } catch (e) {
+      _addActivity('[Gateway] Native Gateway restart failed for $reason: $e');
+      rethrow;
+    }
+  }
+
   bool _gatewayHealthLooksLive(Map<String, dynamic> health) {
     if (health.isEmpty) return false;
     return health['ok'] == true ||
@@ -13395,13 +13715,13 @@ $message''';
     // Session routing priority:
     // 1) explicit sessionKey from caller (per-chat session binding)
     // 2) agent/<id> model route
-    // 3) isolated mobile default (never agent:main:main)
+    // 3) gateway-advertised main lane for this OpenClaw runtime
     final requestedSessionKey =
         (sessionKey != null && sessionKey.trim().isNotEmpty)
             ? sessionKey.trim()
             : model.startsWith('agent/')
                 ? model.substring(6)
-                : 'main';
+                : _defaultGatewayChatSessionKey();
     final resolvedSessionKey =
         _normalizeMobileChatSessionKey(requestedSessionKey);
     if (resolvedSessionKey != requestedSessionKey) {
@@ -13434,6 +13754,7 @@ $message''';
         '[SESS] gateway main=${_connection?.mainSessionKey ?? 'pending'}; '
         'chat=$resolvedSessionKey');
     _addActivity('[CHAT] → Sending to $model');
+    _gatewayChatTurnInFlight = true;
 
     const timeoutMs = 300000;
     const noFirstTokenTimeout = Duration(seconds: 90);
@@ -13535,14 +13856,16 @@ $message''';
             '${noFirstTokenTimeout.inSeconds}s');
         _beginGatewayConfigTransition(
           'chat no-first-token recovery',
-          minimumSettle: _gatewayStaleChatRecoverySettle,
+          minimumSettle: _gatewayNoFirstTokenRecoverySettle,
+          allowShorten: true,
         );
         disconnectWebSocket();
+        unawaited(_recoverChatNoFirstTokenLane('no-first-token timeout'));
         finishChatWithError(
           'Gateway accepted the turn but produced no assistant/tool response after '
           '${noFirstTokenTimeout.inSeconds} seconds. Plawie is holding the '
-          'Gateway chat lane while it recovers, so retries do not enter a '
-          'stale queue. Please resend after the Gateway settles.',
+          'Gateway chat lane while it rebuilds the active runtime. Please '
+          'resend after the Gateway settles.',
         );
         timer.cancel();
         return;
@@ -13893,6 +14216,7 @@ $message''';
     } finally {
       inactivityWatchdog.cancel();
       frameSub.cancel();
+      _gatewayChatTurnInFlight = false;
     }
   }
 
@@ -13967,6 +14291,9 @@ $message''';
 
   String _normalizeMobileChatSessionKey(String key) {
     final trimmed = key.trim();
+    if (trimmed.isEmpty || trimmed == 'main') {
+      return _defaultGatewayChatSessionKey();
+    }
     const canonicalAgentMainPrefix = 'agent:main:';
     if (trimmed.startsWith(canonicalAgentMainPrefix)) {
       final unscoped = trimmed.substring(canonicalAgentMainPrefix.length);
@@ -13977,17 +14304,23 @@ $message''';
     return trimmed;
   }
 
+  String _defaultGatewayChatSessionKey() {
+    final advertisedMain = _connection?.mainSessionKey?.trim() ?? '';
+    if (advertisedMain.isNotEmpty) return advertisedMain;
+    return 'agent:main:main';
+  }
+
   /// Resolve (or create) a stable gateway session key for one local chat thread.
   Future<String> resolveOrCreateGatewaySessionKey({
     required String localSessionId,
     String? existingSessionKey,
     bool forceNew = false,
   }) async {
-    // Keep the gateway runtime on its proven default session lane. The app's
+    // Keep the gateway runtime on its advertised main session lane. The app's
     // visible chat threading is already handled by Flutter persistence; asking
     // this OpenClaw build to dispatch arbitrary mobile session keys can leave a
     // queued message without an active run.
-    return 'main';
+    return _defaultGatewayChatSessionKey();
   }
 
   /// Synthesize speech through modern gateway Talk RPC (`talk.speak`).
@@ -14070,6 +14403,27 @@ $message''';
         return const TalkSpeakPlayback(
           played: false,
           allowNativeFallback: true,
+        );
+      }
+      final providerBillingOrQuotaError = lower.contains('http 402') ||
+          lower.contains('insufficient credits') ||
+          lower.contains('insufficient balance') ||
+          lower.contains('billing') ||
+          lower.contains('credit') ||
+          lower.contains('quota') ||
+          lower.contains('rate limit');
+      if (providerBillingOrQuotaError) {
+        _talkSpeakUnavailableUntil =
+            DateTime.now().add(_talkSpeakUnavailableBackoff);
+        _talkSpeakBackoffAllowsNativeFallback = false;
+        final compactError =
+            err.length > 240 ? '${err.substring(0, 240)}...' : err;
+        _addActivity(
+            '[TTS] talk.speak provider/account error; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m: $compactError');
+        return TalkSpeakPlayback(
+          played: false,
+          allowNativeFallback: false,
+          errorMessage: err,
         );
       }
       _addActivity('[TTS] talk.speak failed: $e');
@@ -14896,6 +15250,7 @@ $message''';
   /// fresh session — picking up any gateway config change (e.g. local-llm reload).
   void disconnectWebSocket() {
     _rpcDiscoveryDone = false;
+    _gatewayInteractiveReadyAt = null;
     _connection?.dispose();
     _connection = null;
     _updateState(_state.copyWith(

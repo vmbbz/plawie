@@ -15,7 +15,6 @@ import '../../services/clawhub_service.dart';
 import '../../services/gateway_service.dart';
 import '../../services/gateway_tool_catalog.dart';
 import '../../services/local_llm_service.dart';
-import '../../services/native_bridge.dart';
 import '../../services/node_service.dart';
 import '../../services/openclaw_service.dart';
 import '../../services/preferences_service.dart';
@@ -188,7 +187,7 @@ class _SkillsManagerState extends State<SkillsManager>
 
     // 3. npm cache inside PRoot — largest offender for stale package metadata
     try {
-      await NativeBridge.runInProot(
+      await OpenClawCommandService.runCliForActiveOwner(
         'npm cache clean --force 2>/dev/null; rm -rf /root/.npm/_cacache 2>/dev/null; '
         'rm -rf /tmp/npm-* /tmp/.npm 2>/dev/null || true',
         timeout: 30,
@@ -245,7 +244,7 @@ class _SkillsManagerState extends State<SkillsManager>
           skill.installSlug!);
       String cliResult;
       try {
-        cliResult = await NativeBridge.runInProot(
+        cliResult = await OpenClawCommandService.runCliForActiveOwner(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
           '&& $installCmd --yes',
           timeout: 60,
@@ -258,7 +257,7 @@ class _SkillsManagerState extends State<SkillsManager>
       if (cliResult.toLowerCase().contains('error:') ||
           cliResult.toLowerCase().contains('too many arguments') ||
           cliResult.toLowerCase().contains('unknown command')) {
-        cliResult = await NativeBridge.runInProot(
+        cliResult = await OpenClawCommandService.runCliForActiveOwner(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
           '&& npx --yes clawhub install ${skill.installSlug}',
           timeout: 60,
@@ -327,13 +326,13 @@ class _SkillsManagerState extends State<SkillsManager>
           await OpenClawCommandService.getSkillInstallCommand(slug);
       String cliResult;
       try {
-        cliResult = await NativeBridge.runInProot(
+        cliResult = await OpenClawCommandService.runCliForActiveOwner(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
           '&& $installCmd',
           timeout: 60,
         );
       } catch (_) {
-        cliResult = await NativeBridge.runInProot(
+        cliResult = await OpenClawCommandService.runCliForActiveOwner(
           'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" '
           '&& npx --yes clawhub install $slug',
           timeout: 60,
@@ -1818,7 +1817,7 @@ class _ToolsTabState extends State<_ToolsTab> {
                           NodeService().clearCachedToken();
                           PreferencesService().nodeDeviceToken = null;
                           try {
-                            await NativeBridge.runInProot(
+                            await OpenClawCommandService.runCliForActiveOwner(
                               'npm cache clean --force 2>/dev/null; '
                               'rm -rf /root/.npm/_cacache /tmp/npm-* /tmp/.npm 2>/dev/null || true',
                               timeout: 30,

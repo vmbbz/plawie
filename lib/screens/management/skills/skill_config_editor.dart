@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../services/native_bridge.dart';
+import '../../../services/openclaw_service.dart';
 import '../../../app.dart';
 
 /// Skill configuration editor.
@@ -33,7 +36,8 @@ class _SkillConfigEditorState extends State<SkillConfigEditor> {
   bool _isLoading = true;
   bool _isSaving = false;
   String? _error;
-  String? _resolvedPath;   // The path where the file was actually found
+  String? _resolvedPath; // The path where the file was actually found
+  String? _resolvedHostPath;
   bool _isCustomSkill = false; // true = workspace custom, false = npm/bundled
 
   @override
@@ -78,17 +82,14 @@ class _SkillConfigEditorState extends State<SkillConfigEditor> {
 
     try {
       for (final (path, isCustom) in candidates) {
-        final result = await NativeBridge.runInProot(
-          'test -f "$path" && cat "$path" || echo "::NOT_FOUND::"',
-          timeout: 8,
-        );
-        final trimmed = result.trim();
-        if (trimmed.isNotEmpty &&
-            !trimmed.contains('::NOT_FOUND::') &&
-            !trimmed.contains('No such file')) {
+        final hostFile = await _firstExistingHostFile(path);
+        if (hostFile != null) {
+          final trimmed = (await hostFile.readAsString()).trim();
+          if (trimmed.isEmpty) continue;
           _controller.text = trimmed;
           setState(() {
             _resolvedPath = path;
+            _resolvedHostPath = hostFile.path;
             _isCustomSkill = isCustom;
             _isLoading = false;
           });
@@ -103,6 +104,7 @@ class _SkillConfigEditorState extends State<SkillConfigEditor> {
             'a local config file. You can create a workspace override below — '
             'it will be loaded instead of the gateway default.';
         _resolvedPath = '/root/.openclaw/workspace/skills/$id/SKILL.yaml';
+        _resolvedHostPath = null;
         _isCustomSkill = true;
         _controller.text = _defaultSkillYaml(id);
         _isLoading = false;
@@ -126,22 +128,13 @@ class _SkillConfigEditorState extends State<SkillConfigEditor> {
       if (text.isEmpty) throw Exception('Cannot save empty configuration');
 
       final targetPath = _resolvedPath!;
+      final hostPath = _resolvedHostPath ??
+          (await _hostCandidatesForOpenClawPath(targetPath)).first;
 
-      // Ensure the directory exists (for workspace custom skills & new overrides)
-      final dir = targetPath.substring(0, targetPath.lastIndexOf('/'));
-      await NativeBridge.runInProot('mkdir -p "$dir"', timeout: 5);
-
-      // Base64-encode content to safely handle multiline YAML through bash
-      final encoded = Uri.encodeComponent(text);
-      final script = 'require("fs").writeFileSync('
-          '"$targetPath",'
-          'decodeURIComponent("$encoded"))';
-
-      await NativeBridge.runInProot(
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js '
-        '--max-old-space-size=256" && node -e \'$script\'',
-        timeout: 15,
-      );
+      final file = File(hostPath);
+      await Directory(file.parent.path).create(recursive: true);
+      await file.writeAsString(text, flush: true);
+      _resolvedHostPath = hostPath;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -184,6 +177,36 @@ system_prompt: |
 #   - $id.command_name
 ''';
 
+  Future<File?> _firstExistingHostFile(String openClawPath) async {
+    for (final hostPath in await _hostCandidatesForOpenClawPath(openClawPath)) {
+      final file = File(hostPath);
+      if (await file.exists()) return file;
+    }
+    return null;
+  }
+
+  Future<List<String>> _hostCandidatesForOpenClawPath(
+    String openClawPath,
+  ) async {
+    final filesDir = await NativeBridge.getFilesDir();
+    final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
+    final prootPath = '$filesDir/rootfs/ubuntu$openClawPath';
+    final nativePath = _nativeHostPathFor(openClawPath, filesDir);
+    return nativeOwner
+        ? <String>[nativePath, prootPath]
+        : <String>[prootPath, nativePath];
+  }
+
+  String _nativeHostPathFor(String openClawPath, String filesDir) {
+    const logicalHome = '/root';
+    final nativeHome = '$filesDir/native-node-embedded/native-home';
+    if (openClawPath == logicalHome) return nativeHome;
+    if (openClawPath.startsWith('$logicalHome/')) {
+      return '$nativeHome/${openClawPath.substring('$logicalHome/'.length)}';
+    }
+    return '$nativeHome/${openClawPath.replaceFirst(RegExp(r'^/+'), '')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -195,7 +218,8 @@ system_prompt: |
       appBar: AppBar(
         title: Text(
           widget.skillId.toUpperCase(),
-          style: GoogleFonts.firaCode(fontWeight: FontWeight.bold, fontSize: 15),
+          style:
+              GoogleFonts.firaCode(fontWeight: FontWeight.bold, fontSize: 15),
         ),
         actions: [
           if (!_isLoading)
@@ -206,7 +230,8 @@ system_prompt: |
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.save_rounded, color: AppColors.statusGreen),
+                  : const Icon(Icons.save_rounded,
+                      color: AppColors.statusGreen),
               onPressed: _isSaving ? null : _saveSkillConfig,
               tooltip: 'Save',
             ),
@@ -231,13 +256,15 @@ system_prompt: |
                   // ── npm read-only notice ──────────────────────────────────
                   if (isNpmSkill)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
                         color: AppColors.statusAmber.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: AppColors.statusAmber.withValues(alpha: 0.25)),
+                            color:
+                                AppColors.statusAmber.withValues(alpha: 0.25)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,9 +277,11 @@ system_prompt: |
                               'This is a gateway-managed skill. '
                               'Changes you save here create a workspace override '
                               'that OpenClaw loads instead of the npm default. '
-                              'Run "openclaw reload" in terminal to apply.',
+                              'Restart or refresh the active Gateway owner to apply.',
                               style: const TextStyle(
-                                  fontSize: 12, color: AppColors.statusAmber, height: 1.5),
+                                  fontSize: 12,
+                                  color: AppColors.statusAmber,
+                                  height: 1.5),
                             ),
                           ),
                         ],
@@ -267,20 +296,25 @@ system_prompt: |
                         color: AppColors.statusAmber.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: AppColors.statusAmber.withValues(alpha: 0.2)),
+                            color:
+                                AppColors.statusAmber.withValues(alpha: 0.2)),
                       ),
                       child: Text(_error!,
                           style: const TextStyle(
-                              color: AppColors.statusAmber, fontSize: 12, height: 1.5)),
+                              color: AppColors.statusAmber,
+                              fontSize: 12,
+                              height: 1.5)),
                     ),
                   // ── Editor ───────────────────────────────────────────────
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.black26 : Colors.black.withValues(alpha: 0.05),
+                        color: isDark
+                            ? Colors.black26
+                            : Colors.black.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isDark ? Colors.white24 : Colors.black12),
+                            color: isDark ? Colors.white24 : Colors.black12),
                       ),
                       padding: const EdgeInsets.all(12),
                       child: TextField(

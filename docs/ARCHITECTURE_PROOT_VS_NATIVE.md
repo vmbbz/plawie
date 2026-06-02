@@ -35,6 +35,51 @@ Flutter UI
 Native Node and PRoot must not both own production port `18789`. Exactly one
 production Gateway runtime should be alive.
 
+## Runtime Owner vs Management Control Plane
+
+The production Gateway owner and the management shell are separate concerns.
+
+Native Node now owns the production Gateway path by default, but older app
+management code was originally written around PRoot CLI commands such as
+`openclaw --version`, `openclaw skills list`, `openclaw config set`, and
+`openclaw reload`. Those commands are valid only for the PRoot rollback shell.
+
+Release rule:
+
+- Native owner must not silently start PRoot for normal management operations.
+- Native owner should use Gateway RPCs, active-owner config files, or direct
+  app-storage file operations.
+- CLI-only marketplace/package actions must be marked as PRoot rollback-only
+  until native package-management RPCs are implemented.
+
+Current owner-aware control-plane coverage:
+
+- OpenClaw version detection reads the native package metadata while native owns
+  the Gateway.
+- OpenClaw config reads and `tools.allow` writes prefer the active owner config.
+- Skill inventory under native scans app-storage skill roots without launching
+  PRoot.
+- Skill config editing writes direct host files mapped from logical
+  `/root/.openclaw/...` paths.
+- Voice persona/engine config is persisted through owner-aware config writes and
+  live Gateway TTS RPCs where available.
+- Voice model files are managed through Dart file/network I/O in the active
+  runtime home.
+- Gateway startup skips PRoot wrapper repair and passive PRoot package auto-heal
+  while native owns the Gateway.
+- Provider credential changes restart the native Gateway owner instead of
+  calling the PRoot-only `openclaw reload` path.
+- Dashboard pairing uses Gateway RPC first; PRoot CLI approval is rollback-only
+  fallback behavior.
+
+Remaining native-first control-plane work:
+
+- marketplace skill install/update/uninstall through Gateway/native package
+  management instead of PRoot CLI;
+- active-owner refresh/reload semantics after config or skill changes;
+- continued isolation of PRoot to setup, explicit rollback, terminal, and repair
+  surfaces.
+
 ## Runtime Owner Selection
 
 The selected runtime is stored in `PreferencesService.gatewayRuntimeOwner`.

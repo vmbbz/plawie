@@ -160,7 +160,7 @@ class NativeNodeSmokeProcess(
     }
 
     fun isProductionPortCanaryRunning(): Boolean {
-        return isRunningOnPort(PRODUCTION_PORT)
+        return isTcpListening(PRODUCTION_PORT)
     }
 
     fun isFullGatewayBootstrapRunning(): Boolean {
@@ -176,7 +176,7 @@ class NativeNodeSmokeProcess(
     }
 
     private fun isRunningOnAnyKnownPort(): Boolean {
-        return isRunningOnPort(PORT) || isRunningOnPort(PRODUCTION_PORT)
+        return isTcpListening(PORT) || isTcpListening(PRODUCTION_PORT)
     }
 
     fun getRecentLogs(): String {
@@ -191,8 +191,8 @@ class NativeNodeSmokeProcess(
     private fun probeHealth(port: Int): JSONObject? {
         return try {
             val connection = URL("http://$HOST:$port/health").openConnection() as HttpURLConnection
-            connection.connectTimeout = 300
-            connection.readTimeout = 300
+            connection.connectTimeout = 1000
+            connection.readTimeout = 1000
             connection.useCaches = false
             connection.inputStream.bufferedReader().use { reader ->
                 if (connection.responseCode != 200) return null
@@ -206,7 +206,7 @@ class NativeNodeSmokeProcess(
     private fun isTcpListening(port: Int): Boolean {
         return try {
             Socket().use { socket ->
-                socket.connect(InetSocketAddress(HOST, port), 300)
+                socket.connect(InetSocketAddress(HOST, port), 1000)
             }
             true
         } catch (_: Exception) {

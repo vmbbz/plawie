@@ -1047,6 +1047,88 @@ Current release classification: public rollback RC mechanics are passing. The
 remaining work before push is documentation cleanup, focused analyzer checks,
 excluding generated build artifacts, and committing the release-boundary patch.
 
+## 2026-06-02 Control-Plane Native Ownership Patch
+
+The next real blocker was not another bridge canary. It was app code that still
+treated PRoot as the OpenClaw management/control plane even when native Node was
+the selected Gateway owner.
+
+Code patch applied:
+
+- `OpenClawCommandService` is now runtime-owner aware.
+- Under native owner, version detection reads the extracted native OpenClaw
+  `package.json` instead of shelling into PRoot for `openclaw --version`.
+- `openclaw.json` reads now prefer the active owner config without starting a
+  PRoot shell.
+- `tools.allow` writes update the active owner config and mirror the rollback
+  config when it exists.
+- installed skill inventory under native scans app-storage skill roots instead
+  of running `openclaw skills list` in PRoot.
+- CLI-only marketplace/package operations now go through
+  `runCliForActiveOwner`; they still work in PRoot rollback, but fail loudly
+  under native instead of silently starting PRoot behind the native owner.
+- Skills Manager, Agent Skills, SkillsService, skill config editing, voice
+  persona config, and voice model file management were moved off direct
+  `NativeBridge.runInProot` calls for their normal management paths.
+- OpenRouter Free Router is no longer hard-labeled `CHAT ONLY`; it is marked
+  `VARIABLE TOOLS`, matching the real routed-model behavior and avoiding a false
+  tool disablement signal.
+- `GatewayService` refreshes the selected runtime owner before startup
+  diagnostics, skips PRoot wrapper repair while native owns, skips passive PRoot
+  package auto-heal under native, skips background PRoot onboarding under
+  native, restarts native Gateway for provider credential changes instead of
+  calling `openclaw reload`, and makes dashboard-pairing CLI fallback
+  PRoot-rollback-only after RPC approval fails.
+
+Focused analyzer result:
+
+```text
+flutter analyze lib/services/model_provider_catalog.dart \
+  lib/services/openclaw_service.dart \
+  lib/services/voice_model_service.dart \
+  lib/services/voice_persona_service.dart \
+  lib/services/skills_service.dart \
+  lib/screens/management/skills_manager.dart \
+  lib/pages/agent_skills_page.dart \
+  lib/screens/management/skills/skill_config_editor.dart
+
+No issues found.
+```
+
+Build result:
+
+```text
+flutter analyze
+No issues found.
+
+flutter build apk --release \
+  --dart-define=PLAWIE_NATIVE_GATEWAY_RELEASE_VARIANT=public-rollback \
+  --dart-define=PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true
+
+Built build/app/outputs/flutter-apk/app-release.apk
+Size: 197.4 MB
+```
+
+Device validation status:
+
+- ADB reported no attached devices after the build, so install/runtime checks
+  are pending USB device visibility.
+- Next device gate is: install this APK, launch native owner, verify native
+  health/chat/logs with no live PRoot process, verify PRoot rollback health/chat
+  after readiness, then re-enable native and verify PRoot is absent again.
+
+Remaining code blockers to full native-first functionality:
+
+- Native marketplace install/update/uninstall still needs a real Gateway
+  RPC/package-management path. It should not be hidden behind PRoot.
+- Native Gateway refresh/reload after management changes needs a first-class
+  owner-aware mechanism beyond the current provider-credential restart path.
+- Setup/bootstrap/onboarding, terminal, repair flows, and rollback internals
+  still legitimately contain PRoot paths; those must stay isolated to setup,
+  rollback, and explicit PRoot shell features.
+- The local NDK Gateway route remains a separate stream/session hardening
+  loose end.
+
 Known polish/loose ends that do not block this RC boundary:
 
 - post-recovery wait UI can feel opaque after a too-early send;
@@ -1058,3 +1140,127 @@ Known polish/loose ends that do not block this RC boundary:
   logs;
 - direct local NDK inference remains supported, while Gateway-to-NDK chat bridge
   hardening remains deferred.
+
+## 2026-06-02 PRoot Fallback Chat-Lane Recovery RC Blocker
+
+Latest device pass exposed a real release-readiness blocker in fallback
+recovery, not in native `libnode.so` ownership:
+
+- PRoot fallback started and reached `Gateway RPC discovery complete`.
+- The app declared the mobile node command surface, including avatar, camera,
+  canvas, flash, haptic, location, screen, and sensor commands.
+- A settled PRoot chat turn was accepted by the Gateway, but the selected
+  OpenRouter/free provider stream produced no first token within 90 seconds.
+- The no-first-token guard correctly entered chat-lane recovery.
+- Before this patch, recovery restarted PRoot and then the periodic health
+  watchdog judged the still-booting PRoot runtime too early, causing an
+  unnecessary second restart.
+
+Code fix applied in `lib/services/gateway_service.dart`:
+
+- no-first-token recovery now marks PRoot as `starting` while it restarts;
+- periodic health checks now defer restart decisions while
+  `chat no-first-token recovery` is active;
+- the recovery loop remains the bounded owner of that restart window;
+- analyzer result: `flutter analyze lib/services/gateway_service.dart` passes;
+- release APK rebuilt and installed with the public rollback defines.
+
+Device evidence after the fix:
+
+- PRoot no-first-token recovery stopped PRoot, released port `18789`, and
+  restarted PRoot.
+- Health misses during recovery logged
+  `Deferring health restart while chat lane recovery settles` instead of
+  killing PRoot early.
+- PRoot reached `Startup health probe kick (ready-log)`,
+  `Startup health probe kick (ws-connected)`,
+  `Gateway RPC discovery complete`, and
+  `Recovery: chat lane ready`.
+- Node reconnected and declared the same 42 mobile command aliases.
+
+Closure evidence:
+
+- post-recovery retry sent `Say only proot_after_recovery_retry_ok`;
+- Gateway accepted the turn at `15:03:39`;
+- first token arrived at `15:04:16`;
+- stream completed at `15:04:17`;
+- the chat UI showed visible assistant text `proot_after_recovery_retry_ok`;
+- the only trailing error was OpenRouter TTS `HTTP 402`, which is an
+  account/provider billing issue and is now suppressed for five minutes so it
+  does not poison chat retries.
+
+Classification: this blocker is closed for the public rollback RC. The next RC
+gate is native enable -> native chat -> rollback -> PRoot chat on the patched
+build.
+
+## 2026-06-02 PRoot Chat Readiness Gate Follow-Up
+
+Follow-up testing showed the remaining PRoot fallback risk was send timing:
+`/health` live, WebSocket connected, and RPC discovery complete were still not
+strong enough to prove the PRoot provider/chat lane was ready for the first
+user turn.
+
+Code hardening now applied in `lib/services/gateway_service.dart`:
+
+- normal chat waits up to 300 seconds for the Gateway chat lane;
+- PRoot owner gets an additional 75-second settle window after interactive
+  readiness;
+- when the mobile node is enabled, PRoot chat also waits until the node bridge
+  is paired, connected, and not stale;
+- the readiness timestamp resets on owner switch, start, stop, restart,
+  recovery, WebSocket disconnect, and RPC refresh;
+- default chat session now uses the Gateway-advertised main lane
+  `agent:main:main`, avoiding the previous `chat=main` mismatch.
+
+Device evidence from the rebuilt public rollback APK:
+
+- PRoot cold launch produced app + `libproot.so` + `openclaw`, with no native
+  owner process;
+- health reached `{"ok":true,"status":"live"}`;
+- logs reached `Gateway RPC discovery complete`;
+- node declared 42 commands and logged `Connect accepted` plus
+  `Paired and connected`;
+- after the settle window, prompt `Say only proot_final_after_settle_ok` logged
+  `gateway main=agent:main:main; chat=agent:main:main`;
+- Gateway accepted the turn at `18:00:09`;
+- first token arrived at `18:00:44`;
+- stream completed at `18:00:46`;
+- chat UI showed visible assistant text `proot_final_after_settle_ok`.
+
+Conclusion: PRoot fallback chat is viable when the app blocks early sends until
+the full PRoot chat lane has settled. The remaining TTS `HTTP 402` is provider
+account billing noise and remains suppressed so it does not poison chat.
+
+## 2026-06-02 Public Rollback Owner Loop Closure
+
+The same rebuilt public rollback APK then completed the owner loop:
+
+- `/native-default-owner-enable` persisted native as the selected production
+  owner;
+- command report showed `selectorSetOk=true`, `prootStopped=true`,
+  `portReleased=true`, `nativeStarted=true`, `nativeRunning=true`,
+  `nativeHealthOk=true`, `wsConnected=true`, and `rollbackAttempted=false`;
+- process tree after switch showed only the app process plus
+  `:native_node_smoke`; no `libproot.so` and no PRoot `openclaw`;
+- native Gateway reached `Gateway RPC discovery complete`;
+- node declared the same 42 mobile commands and logged `Connect accepted` plus
+  `Paired and connected`;
+- native chat prompt `Say only native_final_after_proot_settle_ok` produced
+  first token and complete, with visible chat text
+  `native_final_after_proot_settle_ok`;
+- cold force-stop/relaunch preserved native as default owner;
+- cold native launch showed `Embedded Native Node Full Gateway Production
+  Runtime`, skipped PRoot wrapper repair/config rewrite, reached health live,
+  RPC discovery, node command declaration, and paired node connection;
+- cold native chat prompt `Say only native_cold_default_ok` produced first token
+  and complete, with visible chat text `native_cold_default_ok`;
+- final process tree still showed app + `:native_node_smoke` only.
+
+Release interpretation:
+
+- Native is now proven as the persisted default production owner in this public
+  rollback build.
+- PRoot fallback is proven usable when the app waits for full PRoot chat-lane
+  readiness rather than sending immediately after health-live.
+- Owner switching is still intentionally explicit: PRoot remains available as
+  rollback, not as a background co-owner.

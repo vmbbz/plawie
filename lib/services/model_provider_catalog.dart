@@ -272,8 +272,7 @@ class ModelProviderCatalog {
       description:
           'Routes to available free models; tool-call support is not guaranteed.',
       category: 'Free',
-      supportsToolCalls: false,
-      toolPolicy: ModelToolPolicy.disabled,
+      toolPolicy: ModelToolPolicy.variable,
       contextWindow: ModelExecutionPolicy.openRouterFreeContextWindow,
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),

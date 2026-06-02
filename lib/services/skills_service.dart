@@ -4,9 +4,9 @@ import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:decimal/decimal.dart';
-import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'gateway_skill_proxy.dart';
+import 'openclaw_service.dart';
 import 'base_service.dart';
 import 'gateway_service.dart';
 import 'avatar_gesture_catalog.dart';
@@ -82,7 +82,10 @@ class SkillsService {
     int timeout = 60,
   }) async {
     try {
-      await NativeBridge.runInProot(command, timeout: timeout);
+      await OpenClawCommandService.runCliForActiveOwner(
+        command,
+        timeout: timeout,
+      );
     } catch (e) {
       _logger.w('Could not $description: $e');
     }
@@ -163,8 +166,9 @@ class SkillsService {
     try {
       if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
 
-      final result =
-          await NativeBridge.runInProot('$kOpenClawCommand skills install $id');
+      final result = await OpenClawCommandService.runCliForActiveOwner(
+        '$kOpenClawCommand skills install $id',
+      );
 
       if (result.contains('Error')) {
         throw Exception(result);
@@ -183,8 +187,9 @@ class SkillsService {
   /// Uninstalls a skill via the OpenClaw CLI and triggers a forensic awareness sync.
   Future<bool> uninstallSkill(String id, {bool silent = false}) async {
     try {
-      final result = await NativeBridge.runInProot(
-          '$kOpenClawCommand skills uninstall $id');
+      final result = await OpenClawCommandService.runCliForActiveOwner(
+        '$kOpenClawCommand skills uninstall $id',
+      );
 
       if (result.contains('Error')) {
         throw Exception(result);
@@ -205,8 +210,9 @@ class SkillsService {
   /// Fetch full skill details (YAML info) from the PRoot workspace.
   Future<Map<String, dynamic>?> getSkillDetails(String id) async {
     try {
-      final output = await NativeBridge.runInProot(
-          '$kOpenClawCommand skills info $id --json');
+      final output = await OpenClawCommandService.runCliForActiveOwner(
+        '$kOpenClawCommand skills info $id --json',
+      );
       if (output.trim().isEmpty) return null;
       return jsonDecode(output) as Map<String, dynamic>;
     } catch (e) {
@@ -224,8 +230,9 @@ class SkillsService {
 
     // 2. Fallback: ClawHub lookup via CLI
     try {
-      final result = await NativeBridge.runInProot(
-          '$kOpenClawCommand skills info $id --json');
+      final result = await OpenClawCommandService.runCliForActiveOwner(
+        '$kOpenClawCommand skills info $id --json',
+      );
       final decoded = json.decode(result) as Map<String, dynamic>;
       return {
         ...decoded,
@@ -251,8 +258,9 @@ class SkillsService {
   Future<Map<String, dynamic>?> _readLocalSkillProfile(String id) async {
     try {
       // BootstrapManager copies SKILL.md to /root/.openclaw/skills/[id]/SKILL.md
-      final content = await NativeBridge.runInProot(
-          'cat /root/.openclaw/skills/$id/SKILL.md 2>/dev/null');
+      final content = await OpenClawCommandService.runCliForActiveOwner(
+        'cat /root/.openclaw/skills/$id/SKILL.md 2>/dev/null',
+      );
       if (content.trim().isEmpty) return null;
 
       return {
