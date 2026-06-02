@@ -176,18 +176,64 @@ Native production ownership is implemented as the intended default owner:
 - Sticky rollback is intentional: after rollback, that installed device remains
   on PRoot until native is explicitly re-enabled.
 
-Current attached test device state after the last release gate:
+Current attached test device state after the latest release-boundary install:
 
-- PRoot owns production port `18789`.
-- Native production process is absent.
-- This is expected because the last gate intentionally proved rollback and
-  sticky rollback after relaunch.
+- Native owns production port `18789`.
+- `/health` returns `{"ok":true,"status":"live"}`.
+- The app process and `:native_node_smoke` process are present.
+- PRoot `openclaw` and `libproot.so` are absent during native ownership.
+- `/native-default-owner-rollback` was invoked and proved sticky PRoot
+  rollback.
+- `/native-default-owner-enable` was invoked afterward and restored native as
+  the persisted production owner.
+- Force-stop/relaunch cold-started native as the selected default; native took
+  longer than 35 seconds to become health-live, then returned green.
 
 Release implication:
 
 - For fresh installs, native is the intended default.
-- For this test device, PRoot is active only because rollback was deliberately
-  invoked.
+- PRoot is active only after an explicit rollback and remains sticky until
+  native is re-enabled.
+
+## 2026-06-02 Install/Test Run Addendum
+
+The current debug APK was rebuilt, installed over USB, and tested on the
+attached phone.
+
+Passed:
+
+- `flutter analyze lib/services/gateway_service.dart`.
+- `flutter build apk --debug`.
+- `adb install -r build\app\outputs\flutter-apk\app-debug.apk`.
+- Native default production owner on `18789`.
+- Native config mirror rewrites PRoot-only `/root/...` paths into
+  app-private native paths.
+- Native `openclaw.json` contains no `/root` entries after NDK bridge config.
+- Normal native health on production port.
+- Local Qwen 2.5 1.5B NDK model starts from the Local LLM page.
+- NDK bridge on `11435` reports ready.
+- Direct OpenAI-compatible bridge request returns `OK`.
+- Rollback command restores PRoot, releases native, and reports PRoot health
+  live.
+- Re-enable command restores native as the persisted owner.
+- Cold-start after force-stop selects native and reaches health-live.
+
+Known edge:
+
+- Gateway chat routed to `plawie_ndk/local-llm` reached the bridge
+  (`requestCount` advanced) but the Chat UI timed out after 90 seconds with no
+  assistant text. Direct bridge inference returned `OK`, so this is a
+  Gateway-to-bridge request/stream/session edge, not a broken local model and
+  not a PRoot-drop blocker for cloud/tool Gateway release.
+
+Release decision from this run:
+
+- Native `libnode.so` remains the intended Gateway default.
+- PRoot remains packaged only as emergency rollback for the first public native
+  default release.
+- `local-llm/...` direct NDK inference remains supported and independent.
+- `plawie_ndk/local-llm` should be documented as experimental until its
+  Gateway chat stream behavior is hardened.
 
 ## What Is Left
 
@@ -219,15 +265,17 @@ Only these stages matter for the PRoot drop now:
 
 ## Immediate Next Work
 
-Next work is release hardening, not more proof-of-possibility:
+Next work is release hardening and package cleanup, not more
+proof-of-possibility:
 
-- Run one assistant-text confirmation with a working provider key.
 - Keep diagnostics-only commands available in debug builds, but keep `18790`
   smoke sidecar autostart behind the narrower
   `PLAWIE_NATIVE_GATEWAY_SMOKE_AUTOSTART_DIAGNOSTICS=true` toggle.
 - Prepare the release/commit boundary with PRoot retained as emergency
   rollback only.
 - Keep `/native-default-owner-rollback` documented as the one-action rollback.
+- Harden or explicitly defer the Gateway-to-NDK bridge chat timeout before
+  claiming `plawie_ndk/local-llm` as production-ready.
 
 ## 2026-06-01 Bootstrap Implementation Status
 

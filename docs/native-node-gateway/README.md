@@ -20,8 +20,18 @@ Current release-boundary status:
 > Embedded native Node has passed the fresh-key native default release gate.
 > It can own production port `18789`, process a normal provider-backed chat
 > turn, return visible assistant text, roll back to PRoot, and preserve sticky
-> PRoot rollback across relaunch. PRoot is now documented as the emergency
-> rollback runtime, not the intended default production owner.
+> PRoot rollback across relaunch. The latest installed-device run also proved
+> rollback then re-enable plus cold-start native default. PRoot is now
+> documented as the emergency rollback runtime, not the intended default
+> production owner.
+
+Current local-model boundary:
+
+> Direct `local-llm/...` NDK inference remains in play and independent of PRoot.
+> The `plawie_ndk/local-llm` Gateway bridge reaches the local bridge and direct
+> bridge HTTP returns `OK`, but Gateway chat to that bridge still timed out in
+> the latest installed-device run. Treat bridge-chat as experimental until that
+> stream/session edge is hardened.
 
 For the current architecture, switch commands, rollback commands, diagnostics
 flags, ports, paths, and cleanup rules, use

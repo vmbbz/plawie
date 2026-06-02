@@ -87,6 +87,15 @@ Local NDK LLM remains in the product:
 - PRoot removal must not remove the Local LLM page, direct GGUF inference, or
   the NDK bridge.
 
+Latest installed-device result:
+
+- Qwen 2.5 1.5B starts from the Local LLM page.
+- The NDK bridge reports ready on `127.0.0.1:11435`.
+- A direct OpenAI-compatible bridge request returned `OK`.
+- Gateway chat to `plawie_ndk/local-llm` reached the bridge, but the Chat UI
+  timed out after 90 seconds without assistant text. Treat bridge-chat as
+  experimental until this stream/session path is hardened.
+
 ## Ports
 
 | Port | Owner | Use |
@@ -155,6 +164,17 @@ required Node engine: node >=22.19.0
 The Android launcher bypasses the desktop CLI wrapper and imports
 `dist/cli/run-main.js` directly. It also patches Android-safe temp behavior and
 rewrites copied `/root/.openclaw` paths to the native app-owned state directory.
+
+The Dart config mirror also rewrites Linux-only PRoot paths before native reads
+them:
+
+```text
+/root/... -> $filesDir/native-node-embedded/native-home/...
+```
+
+The latest installed-device test confirmed the native `openclaw.json` contains
+no `/root` entries after NDK bridge configuration. This prevents embedded Node
+from attempting to create `/root` during Gateway-owned local bridge turns.
 
 ## Gateway Plugins, Skills, And Device Capabilities
 

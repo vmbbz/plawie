@@ -132,11 +132,27 @@ Before packaging:
 - confirm fresh or eligible install defaults to native owner;
 - confirm sticky rollback can return to native with `/native-default-owner-enable`;
 - confirm rollback can restore PRoot with `/native-default-owner-rollback`;
+- confirm native cold-start reaches `{"ok":true,"status":"live"}` on `18789`;
+- confirm PRoot `openclaw` and `libproot.so` are absent while native owns
+  production;
 - confirm `18790` is absent unless sidecar autostart diagnostics are enabled;
+- confirm native config mirror contains no `/root` paths;
 - confirm direct `local-llm/...` still bypasses Gateway;
-- confirm `plawie_ndk/local-llm` can use native Gateway when the Dart bridge is
-  running;
+- confirm the NDK bridge server on `11435` can answer a direct
+  OpenAI-compatible request;
+- do not claim `plawie_ndk/local-llm` Gateway chat is production-ready until the
+  Gateway-to-bridge stream/session timeout is fixed;
 - confirm no generated build reports are committed.
+
+Latest installed-device evidence:
+
+- debug APK rebuild and install passed;
+- native default owner served production health on `18789`;
+- rollback restored PRoot and health-live;
+- native was re-enabled and survived force-stop/relaunch as selected default;
+- direct NDK bridge request returned `OK`;
+- Gateway chat to the NDK bridge reached the bridge but timed out in Chat, so
+  bridge-chat remains experimental.
 
 ## Current Decision
 
@@ -149,4 +165,5 @@ Owner switch commands are available.
 Broad canaries are internal-only.
 18790 sidecar does not autostart publicly.
 Local NDK LLM remains available.
+Gateway-to-NDK bridge chat remains experimental until its timeout is hardened.
 ```

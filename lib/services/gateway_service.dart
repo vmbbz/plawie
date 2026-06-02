@@ -1649,6 +1649,66 @@ HEARTBEAT_OK.
     }).toList();
   }
 
+  Map<String, dynamic> _cloneConfigMap(Map<String, dynamic> config) {
+    final decoded = jsonDecode(jsonEncode(config));
+    if (decoded is Map) return _deepCastMap(decoded);
+    return <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> _nativeGatewayConfigFrom(
+    Map<String, dynamic> config,
+  ) async {
+    final filesDir = await getFilesDir();
+    final nativeHome = '$filesDir/native-node-embedded/native-home';
+    final nativeOpenClawDir = '$nativeHome/.openclaw';
+    final nativeConfig = _cloneConfigMap(config);
+
+    final rewritten =
+        _rewriteNativeGatewayPaths(nativeConfig, nativeHome: nativeHome);
+    final result = rewritten is Map<String, dynamic>
+        ? rewritten
+        : _deepCastMap(rewritten as Map);
+
+    final agents = result['agents'];
+    final defaults = agents is Map ? agents['defaults'] : null;
+    if (defaults is Map && defaults['workspace'] is String) {
+      defaults['workspace'] = '$nativeOpenClawDir/workspace';
+    }
+
+    await Directory(nativeHome).create(recursive: true);
+    await Directory('$nativeOpenClawDir/workspace').create(recursive: true);
+    return result;
+  }
+
+  dynamic _rewriteNativeGatewayPaths(
+    dynamic value, {
+    required String nativeHome,
+  }) {
+    if (value is Map) {
+      return value.map(
+        (key, child) => MapEntry(
+          key.toString(),
+          _rewriteNativeGatewayPaths(child, nativeHome: nativeHome),
+        ),
+      );
+    }
+    if (value is List) {
+      return value
+          .map((child) => _rewriteNativeGatewayPaths(
+                child,
+                nativeHome: nativeHome,
+              ))
+          .toList();
+    }
+    if (value is String) {
+      if (value == '/root') return nativeHome;
+      if (value.startsWith('/root/')) {
+        return '$nativeHome/${value.substring('/root/'.length)}';
+      }
+    }
+    return value;
+  }
+
   /// Direct Dart-native config read/write (bypasses proot overhead)
   Future<Map<String, dynamic>> _readConfig() async {
     for (int i = 0; i < 3; i++) {
@@ -1685,6 +1745,8 @@ HEARTBEAT_OK.
       _applyExplicitAuthMode(config);
       _syncLocalGatewayRemoteCredentials(config);
       final nextSignature = _canonicalJsonSignature(config);
+      final nativeConfig = await _nativeGatewayConfigFrom(config);
+      final nativeSignature = _canonicalJsonSignature(nativeConfig);
 
       var writePrimary = true;
       if (await file.exists()) {
@@ -1719,7 +1781,7 @@ HEARTBEAT_OK.
             final decoded = jsonDecode(existingRaw);
             if (decoded is Map) {
               writeNative = _canonicalJsonSignature(_deepCastMap(decoded)) !=
-                  nextSignature;
+                  nativeSignature;
             }
           }
         } catch (_) {
@@ -1727,7 +1789,7 @@ HEARTBEAT_OK.
         }
         if (writeNative) {
           await Directory(nativeConfigFile.parent.path).create(recursive: true);
-          await _writeStringAtomically(nativeConfigFile, nextSignature);
+          await _writeStringAtomically(nativeConfigFile, nativeSignature);
         }
       }
     } catch (e) {

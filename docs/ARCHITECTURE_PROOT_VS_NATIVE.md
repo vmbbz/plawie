@@ -68,6 +68,16 @@ Behavior:
 - A device that currently shows PRoot after testing is not contradicting the
   native default; it is in sticky rollback state.
 
+Latest installed test state:
+
+- Rollback to PRoot was proven from native default.
+- Native was then re-enabled as the persisted production owner.
+- Force-stop/relaunch cold-started the app into native ownership.
+- Production `/health` returned `{"ok":true,"status":"live"}` after a longer
+  native warmup.
+- Process inspection showed the app process plus `:native_node_smoke`, with no
+  PRoot `openclaw` or `libproot.so` process during native ownership.
+
 ## Switch And Rollback
 
 Enable native production owner from the hidden operator path:
@@ -221,6 +231,24 @@ When PRoot owns production:
 - native production process should be absent;
 - rollback is sticky until native is explicitly re-enabled.
 
+Native config mirror rule:
+
+```text
+PRoot source config:
+  $filesDir/rootfs/ubuntu/root/.openclaw/openclaw.json
+
+Native runtime config:
+  $filesDir/native-node-embedded/native-home/.openclaw/openclaw.json
+
+Path rewrite:
+  /root/... -> $filesDir/native-node-embedded/native-home/...
+```
+
+This rewrite is release-critical. The latest installed test confirmed the
+native `openclaw.json` no longer contains `/root` after configuring the NDK
+bridge. Without this, embedded Node can fail with `ENOENT` while trying to
+create Linux-only paths such as `/root`.
+
 Observed native startup memory in the full Gateway bootstrap log included an
 RSS near `452.6 MB` at ready and near `501.7 MB` post-ready. This is full
 OpenClaw under native Node, not a tiny smoke process. PRoot's additional cost is
@@ -277,6 +305,14 @@ need PRoot and it does not need native `libnode.so`.
 The native `libnode.so` migration affects Gateway-owned routes only. It changes
 which runtime owns OpenClaw on `18789`; it does not replace fllama.
 
+Latest installed test:
+
+- Qwen 2.5 1.5B starts from the Local LLM page after reinstall.
+- Direct NDK inference remains the private/offline path.
+- The NDK bridge server on `127.0.0.1:11435` reports ready when manually
+  started.
+- A direct OpenAI-compatible bridge request returned `OK`.
+
 ## Native HTTP Bridge For Local Model Inference
 
 The NDK Gateway bridge also remains useful:
@@ -306,6 +342,18 @@ Direct local mode and bridge mode are intentionally different:
 | --- | --- | --- | --- |
 | `local-llm/...` | No | Dart local loop | private/offline chat, low overhead |
 | `plawie_ndk/local-llm` | Yes | OpenClaw Gateway | local model with Gateway tool transport |
+
+Current release caveat:
+
+- `plawie_ndk/local-llm` Gateway chat reached the bridge in the latest
+  installed test, but the Chat UI timed out after 90 seconds without assistant
+  text.
+- Because direct bridge inference returned `OK`, this is a Gateway-to-bridge
+  request/stream/session hardening item, not a broken local model.
+- Do not position `plawie_ndk/local-llm` as production-ready until this stream
+  path is hardened.
+- Do position `local-llm/...` direct NDK inference as supported and independent
+  of PRoot.
 
 ## PRoot Removal Plan For This Branch
 
