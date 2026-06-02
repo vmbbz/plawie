@@ -187,11 +187,13 @@ class _SkillsManagerState extends State<SkillsManager>
 
     // 3. npm cache inside PRoot — largest offender for stale package metadata
     try {
-      await OpenClawCommandService.runCliForActiveOwner(
-        'npm cache clean --force 2>/dev/null; rm -rf /root/.npm/_cacache 2>/dev/null; '
-        'rm -rf /tmp/npm-* /tmp/.npm 2>/dev/null || true',
-        timeout: 30,
-      );
+      if (!await OpenClawCommandService.isNativeOwnerSelected()) {
+        await OpenClawCommandService.runCliForActiveOwner(
+          'npm cache clean --force 2>/dev/null; rm -rf /root/.npm/_cacache 2>/dev/null; '
+          'rm -rf /tmp/npm-* /tmp/.npm 2>/dev/null || true',
+          timeout: 30,
+        );
+      }
     } catch (_) {}
 
     // 4. Device tokens — clear from SharedPreferences and in-memory so the
@@ -205,11 +207,28 @@ class _SkillsManagerState extends State<SkillsManager>
     if (!mounted) return;
     gateway.checkHealth();
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('All caches cleared.'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(await OpenClawCommandService.isNativeOwnerSelected()
+            ? 'App caches and node token cleared. PRoot npm cache skipped under native owner.'
+            : 'All caches cleared.'),
+        duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<bool> _blockNativeMarketplaceInstall(
+    ScaffoldMessengerState messenger,
+  ) async {
+    if (!await OpenClawCommandService.isNativeOwnerSelected()) return false;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Marketplace install is PRoot rollback-only for now. Native can use bundled and already-installed skills.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    return true;
   }
 
   // ── Shared install logic (called from My Skills + Discover) ────────────────
@@ -231,6 +250,9 @@ class _SkillsManagerState extends State<SkillsManager>
       }
       return;
     }
+
+    if (await _blockNativeMarketplaceInstall(messenger)) return;
+    if (!context.mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -313,6 +335,9 @@ class _SkillsManagerState extends State<SkillsManager>
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = Provider.of<GatewayProvider>(context, listen: false);
+
+    if (await _blockNativeMarketplaceInstall(messenger)) return;
+    if (!context.mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -1817,17 +1842,24 @@ class _ToolsTabState extends State<_ToolsTab> {
                           NodeService().clearCachedToken();
                           PreferencesService().nodeDeviceToken = null;
                           try {
-                            await OpenClawCommandService.runCliForActiveOwner(
-                              'npm cache clean --force 2>/dev/null; '
-                              'rm -rf /root/.npm/_cacache /tmp/npm-* /tmp/.npm 2>/dev/null || true',
-                              timeout: 30,
-                            );
+                            if (!await OpenClawCommandService
+                                .isNativeOwnerSelected()) {
+                              await OpenClawCommandService.runCliForActiveOwner(
+                                'npm cache clean --force 2>/dev/null; '
+                                'rm -rf /root/.npm/_cacache /tmp/npm-* /tmp/.npm 2>/dev/null || true',
+                                timeout: 30,
+                              );
+                            }
                           } catch (_) {}
                           if (!context.mounted) return;
                           gateway.checkHealth();
-                          messenger.showSnackBar(const SnackBar(
-                            content: Text('All caches cleared.'),
-                            duration: Duration(seconds: 2),
+                          final nativeOwner = await OpenClawCommandService
+                              .isNativeOwnerSelected();
+                          messenger.showSnackBar(SnackBar(
+                            content: Text(nativeOwner
+                                ? 'App caches and node token cleared. PRoot npm cache skipped under native owner.'
+                                : 'All caches cleared.'),
+                            duration: const Duration(seconds: 2),
                           ));
                         },
                         child: _ToolActionChip(

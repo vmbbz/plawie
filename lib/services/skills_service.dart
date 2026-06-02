@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
@@ -7,14 +8,17 @@ import 'package:decimal/decimal.dart';
 import 'preferences_service.dart';
 import 'gateway_skill_proxy.dart';
 import 'openclaw_service.dart';
+import 'native_bridge.dart';
 import 'base_service.dart';
 import 'gateway_service.dart';
 import 'avatar_gesture_catalog.dart';
 import '../constants/openclaw_paths.dart';
 
 /// Skills System — Thin UI + Native Bridge architecture.
-/// This service acts as the UI manager and execution router for on-device native skills,
-/// while delegating heavy lifting (marketplace, YAML, workspace) to the OpenClaw PRoot CLI.
+/// This service acts as the UI manager and execution router for on-device native
+/// skills, while delegating marketplace/package mutation to the selected
+/// Gateway owner. Native owner can read bundled/already-installed skills but
+/// does not expose a mobile OpenClaw shell for marketplace installs yet.
 class SkillsService {
   static final SkillsService _instance = SkillsService._internal();
   factory SkillsService() => _instance;
@@ -165,6 +169,12 @@ class SkillsService {
   Future<bool> installSkill(String id, {bool silent = false}) async {
     try {
       if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
+      if (await OpenClawCommandService.isNativeOwnerSelected()) {
+        throw UnsupportedError(
+          'Marketplace install is PRoot rollback-only until native package '
+          'installation is implemented.',
+        );
+      }
 
       final result = await OpenClawCommandService.runCliForActiveOwner(
         '$kOpenClawCommand skills install $id',
@@ -187,6 +197,13 @@ class SkillsService {
   /// Uninstalls a skill via the OpenClaw CLI and triggers a forensic awareness sync.
   Future<bool> uninstallSkill(String id, {bool silent = false}) async {
     try {
+      if (await OpenClawCommandService.isNativeOwnerSelected()) {
+        throw UnsupportedError(
+          'Marketplace uninstall is PRoot rollback-only until native package '
+          'installation is implemented.',
+        );
+      }
+
       final result = await OpenClawCommandService.runCliForActiveOwner(
         '$kOpenClawCommand skills uninstall $id',
       );
@@ -257,10 +274,7 @@ class SkillsService {
 
   Future<Map<String, dynamic>?> _readLocalSkillProfile(String id) async {
     try {
-      // BootstrapManager copies SKILL.md to /root/.openclaw/skills/[id]/SKILL.md
-      final content = await OpenClawCommandService.runCliForActiveOwner(
-        'cat /root/.openclaw/skills/$id/SKILL.md 2>/dev/null',
-      );
+      final content = await _readLocalSkillMarkdown(id);
       if (content.trim().isEmpty) return null;
 
       return {
@@ -278,6 +292,31 @@ class SkillsService {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<String> _readLocalSkillMarkdown(String id) async {
+    final filesDir = await NativeBridge.getFilesDir();
+    final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
+    final prootPaths = <String>[
+      '$filesDir/rootfs/ubuntu/root/.openclaw/skills/$id/SKILL.md',
+      '$filesDir/rootfs/ubuntu/root/.openclaw/workspace/skills/$id/SKILL.md',
+    ];
+    final nativePaths = <String>[
+      '$filesDir/native-node-embedded/native-home/.openclaw/skills/$id/SKILL.md',
+      '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills/$id/SKILL.md',
+    ];
+    final ordered = nativeOwner
+        ? <String>[...nativePaths, ...prootPaths]
+        : <String>[...prootPaths, ...nativePaths];
+
+    for (final path in ordered) {
+      final file = File(path);
+      if (!await file.exists()) continue;
+      final content = await file.readAsString();
+      if (content.trim().isNotEmpty) return content;
+    }
+
+    return '';
   }
 
   // ── Mappings and Executors (Kept for runtime functionality) ───────────────

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/clawhub_skill.dart';
 import 'native_bridge.dart';
+import 'openclaw_service.dart';
 
 /// Wraps `npx clawhub search` / `npx clawhub info` with:
 ///   - Per-query result caching (5-min TTL)
@@ -63,7 +64,9 @@ class ClawHubService {
       return _markInstalled(apiResults, installedSlugs);
     }
 
-    // Fallback: PRoot CLI (requires gateway to be running).
+    // Fallback: PRoot CLI (requires PRoot owner to be selected).
+    if (await OpenClawCommandService.isNativeOwnerSelected()) return [];
+
     try {
       final raw = await NativeBridge.runInProot(
         'openclaw skills search "${_sanitize(query)}" --json 2>/dev/null || '
@@ -212,6 +215,8 @@ class ClawHubService {
     if (cached != null && !cached.isExpired && cached.results.isNotEmpty) {
       return cached.results.first.copyWith(isInstalled: isInstalled);
     }
+
+    if (await OpenClawCommandService.isNativeOwnerSelected()) return null;
 
     try {
       final raw = await NativeBridge.runInProot(

@@ -1371,3 +1371,33 @@ Validation:
 Release interpretation: native-owner normal config hardening no longer has a
 hidden PRoot shell dependency. PRoot remains available only as the selected
 rollback owner or explicit rollback path.
+
+## 2026-06-02 Native Skills Marketplace Owner Boundary
+
+Follow-up audit moved the Skills/ClawHub surface closer to production-native
+truthfulness. Native owner can use bundled skills, already-installed skills,
+tool toggles, and direct app/mobile bridges, but the current app still has no
+native package installer equivalent to `openclaw skills install`.
+
+Code hardening now applied:
+
+- Skills UI no longer opens an install spinner under native owner for ClawHub
+  marketplace installs; it clearly reports that marketplace install is
+  PRoot-rollback-only for now;
+- ClawHub search/details still use REST and npm registry lookups under native,
+  but CLI fallbacks no longer call PRoot directly while native owns;
+- skill profile reads now use direct app-storage file reads for native/PRoot
+  skill roots instead of shelling out to `cat`;
+- cache clearing under native now clears app caches and node tokens while
+  accurately skipping PRoot npm cache cleanup.
+
+Validation:
+
+- `flutter analyze lib/screens/management/skills_manager.dart
+  lib/services/skills_service.dart lib/services/clawhub_service.dart` passed.
+
+Release interpretation: native-owner Skills/ClawHub management no longer
+silently relies on PRoot for normal browsing/profile/cache behavior. The
+remaining marketplace blocker is explicit and product-visible: native needs a
+real package install/update/uninstall implementation before ClawHub mutation is
+fully native.
