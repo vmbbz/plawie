@@ -23,16 +23,21 @@ release.
 
 ## Verified In The Latest Installed-Device Run
 
-- Debug APK built and installed over USB.
+- Public rollback-shaped release APK built and installed over USB with native
+  as the intended default and PRoot retained as emergency rollback.
 - Native production `/health` returned `{"ok":true,"status":"live"}`.
 - Native ownership showed app process plus `:native_node_smoke`, with no PRoot
   `openclaw` or `libproot.so` process.
-- Normal provider-backed native chat had already returned visible assistant
-  text in the release gate.
+- `18790` diagnostics sidecar was not listening in the public rollback-shaped
+  package.
+- Normal provider-backed native chat returned visible assistant text `OK` on
+  the OpenRouter free cloud route.
 - Native config mirror rewrote PRoot-only `/root/...` paths into app-private
   native paths.
-- Rollback restored PRoot, released native, and returned health-live.
-- Native was re-enabled after rollback.
+- Rollback restored PRoot, released native, and returned health-live from the
+  chat command `/native-default-owner-rollback`.
+- Native was re-enabled after rollback from the chat command
+  `/native-default-owner-enable`.
 - Force-stop/relaunch cold-started into native default and returned
   health-live after warmup.
 - Qwen 2.5 1.5B local NDK model started from the Local LLM page.

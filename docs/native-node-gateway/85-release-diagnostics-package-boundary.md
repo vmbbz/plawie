@@ -152,7 +152,36 @@ Latest installed-device evidence:
 - native was re-enabled and survived force-stop/relaunch as selected default;
 - direct NDK bridge request returned `OK`;
 - Gateway chat to the NDK bridge reached the bridge but timed out in Chat, so
-  bridge-chat remains experimental.
+  bridge-chat remains experimental and is tracked separately in
+  [86-local-ndk-gateway-route-hardening-loose-end.md](86-local-ndk-gateway-route-hardening-loose-end.md).
+
+Public rollback-shaped APK evidence:
+
+- build passed with:
+
+  ```powershell
+  flutter build apk --release `
+    --dart-define=PLAWIE_NATIVE_GATEWAY_RELEASE_VARIANT=public-rollback `
+    --dart-define=PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true
+  ```
+
+- APK installed over USB with `adb install -r`;
+- cold launch reached `{"ok":true,"status":"live"}` on production port
+  `18789`;
+- process state while native owned production was app process plus
+  `com.nxg.openclawproot:native_node_smoke`, with no live `libproot.so` or
+  PRoot `openclaw`;
+- device netstat showed listeners on `18789` and the Android node host `8765`,
+  with no `18790` diagnostics sidecar listener;
+- chat UI model was switched away from the known experimental local bridge to
+  `OpenRouter Free Router`;
+- real chat prompt `release smoke native provider check reply OK` returned
+  visible assistant text `OK`;
+- production health on `18789` remained live after the provider-backed chat;
+- `/native-default-owner-rollback` from chat restored PRoot, stopped native,
+  released the native port, and returned health-live;
+- `/native-default-owner-enable` from chat restored native as selected
+  production owner, removed live PRoot processes, and returned health-live.
 
 ## Current Decision
 

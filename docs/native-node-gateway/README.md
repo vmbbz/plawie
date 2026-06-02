@@ -21,9 +21,10 @@ Current release-boundary status:
 > It can own production port `18789`, process a normal provider-backed chat
 > turn, return visible assistant text, roll back to PRoot, and preserve sticky
 > PRoot rollback across relaunch. The latest installed-device run also proved
-> rollback then re-enable plus cold-start native default. PRoot is now
-> documented as the emergency rollback runtime, not the intended default
-> production owner.
+> rollback then re-enable plus cold-start native default. The public
+> rollback-shaped release APK also passed install, native-default health,
+> provider chat, rollback, and re-enable checks. PRoot is now documented as the
+> emergency rollback runtime, not the intended default production owner.
 
 Current local-model boundary:
 
@@ -42,6 +43,8 @@ For diagnostics/public/no-PRoot release variant planning, use
 [84-release-variants-and-proot-removal-plan.md](84-release-variants-and-proot-removal-plan.md).
 For the exact diagnostics/package boundary for the first native-default release,
 use [85-release-diagnostics-package-boundary.md](85-release-diagnostics-package-boundary.md).
+For the deferred local NDK Gateway bridge-chat hardening issue, use
+[86-local-ndk-gateway-route-hardening-loose-end.md](86-local-ndk-gateway-route-hardening-loose-end.md).
 
 ## Current Direction
 
@@ -309,6 +312,7 @@ be safely generalized.
 | [83-libnode-release-and-developer-positioning.md](83-libnode-release-and-developer-positioning.md) | Developer-facing `libnode.so` value story, package boundaries, efficiency story, and claims that are safe to make |
 | [84-release-variants-and-proot-removal-plan.md](84-release-variants-and-proot-removal-plan.md) | Debug/internal/public variant plan and staged path from native-default rollback build to final no-PRoot build |
 | [85-release-diagnostics-package-boundary.md](85-release-diagnostics-package-boundary.md) | Exact diagnostics flags, owner-switch policy, and package boundary for the public native-default rollback build |
+| [86-local-ndk-gateway-route-hardening-loose-end.md](86-local-ndk-gateway-route-hardening-loose-end.md) | Deferred hardening for `plawie_ndk/local-llm` Gateway-to-NDK bridge chat |
 
 ## Work Rules
 

@@ -44,6 +44,21 @@ transport, provider envelope, streaming, tool-plan capture, Dart bridge
 dispatch, chat-visible evidence, inventory parity, policy coverage, production
 port ownership, and rollback.
 
+## Loose End: Local NDK Gateway Route Hardening
+
+Local on-device inference is still in play and remains independent of PRoot.
+The latest installed-device run proved the Qwen 2.5 1.5B runtime, the native
+HTTP bridge on `11435`, and direct OpenAI-compatible bridge requests.
+
+The remaining loose end is narrower: Gateway-mediated chat using
+`plawie_ndk/local-llm` reached the local bridge, but the chat UI timed out after
+90 seconds without assistant text. That route is deferred to production
+hardening because it is a Gateway-to-bridge stream/session issue, not evidence
+that native Node default or direct local-model inference is broken.
+
+Tracked in:
+[86-local-ndk-gateway-route-hardening-loose-end.md](native-node-gateway/86-local-ndk-gateway-route-hardening-loose-end.md).
+
 ## Why The Plan Looked Inconsistent
 
 The original phase map had the right destination, but the execution drifted
@@ -900,3 +915,39 @@ Rollback exposure fix:
 - Native-default enable remains diagnostic/operator gated.
 - This keeps the emergency PRoot recovery path available even when broad native
   diagnostics are disabled for release.
+
+## 2026-06-02 Public Rollback-Shaped APK Gate
+
+The public native-default rollback package boundary was built, installed, and
+tested on the USB-connected device.
+
+Build shape:
+
+```powershell
+flutter build apk --release `
+  --dart-define=PLAWIE_NATIVE_GATEWAY_RELEASE_VARIANT=public-rollback `
+  --dart-define=PLAWIE_NATIVE_GATEWAY_OWNER_SWITCH_COMMANDS=true
+```
+
+Observed results:
+
+- release APK built successfully and installed with `adb install -r`;
+- cold launch selected native Node as production owner;
+- `127.0.0.1:18789 /health` returned `{"ok":true,"status":"live"}`;
+- process state while native owned production was app process plus
+  `com.nxg.openclawproot:native_node_smoke`;
+- PRoot `libproot.so` and PRoot `openclaw` were absent while native owned
+  production;
+- device netstat showed `18789` and Android node host `8765`, with no `18790`
+  diagnostics sidecar listener;
+- real chat UI provider smoke on `OpenRouter Free Router` returned visible
+  assistant text `OK`;
+- production health stayed live after the provider-backed chat;
+- `/native-default-owner-rollback` from chat restored PRoot, stopped native,
+  released native ownership, and returned health-live;
+- `/native-default-owner-enable` from chat restored native default, removed live
+  PRoot processes, and returned health-live.
+
+Current classification: the first public rollback-shaped release package gate
+passed. PRoot is still packaged and proven as rollback, but native Node is the
+intended default owner.
