@@ -2716,18 +2716,12 @@ HEARTBEAT_OK.
 
   Future<void> reregisterSkills() async {
     if (!_state.isRunning) return;
-    // Only register device-native skills when the gateway advertises the RPC.
-    // Calling this on newer gateways that omit skills.register can collapse the
-    // broader tool context down to just Plawie's bundled skills.
-    if (_connection?.state != GatewayConnectionState.connected) {
-      return;
-    }
+    // If method discovery has not arrived yet, optimistically try the legacy
+    // registration path. The gateway may already be ready to accept it, and
+    // skipping here can leave the provider turn without the local tool catalog.
     final supported = _connection?.supportedMethods ?? const <String>[];
     final methodAdvertised = supported.contains('skills.register');
     final discoveryUnknown = supported.isEmpty;
-    if (discoveryUnknown) {
-      return;
-    }
     if (!methodAdvertised && !discoveryUnknown) {
       if (!_skillsRegisterUnavailableLogged) {
         _skillsRegisterUnavailableLogged = true;
@@ -4236,7 +4230,7 @@ Every OpenClaw nodes tool call for this Android phone MUST include this exact fi
 Never use node=auto or the raw Android device identity hash for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
 For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, sitting, chill sit wave, cross leg sitting wave, excited sitting wave, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.
-If this provider/route cannot emit a structured tool call, do not claim avatar gestures are unavailable. Instead include a short inline marker such as (gesture: sitting) or (gesture: wave right) in the assistant text so the Plawie chat UI can dispatch the local avatar bridge.
+Primary route: emit the structured OpenClaw nodes tool call. Fallback only if the selected provider refuses structured tool output: include a short inline marker such as (gesture: sitting) or (gesture: wave right) in the assistant text so the Plawie chat UI can dispatch the local avatar bridge. Never answer that avatar, phone, or device tools are unavailable while this mobile node context is present unless an actual tool result says they are disconnected.
 For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.mode, avatar.model, avatar.status, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"dance\\",\\"durationMs\\":60000}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
@@ -4283,10 +4277,16 @@ $message''';
     activeSkills.sort((a, b) =>
         _skillIdFromGatewaySkill(a).compareTo(_skillIdFromGatewaySkill(b)));
 
-    final primitiveTools = (_state.capabilities ?? const <String>[])
+    final reportedTools = (_state.capabilities ?? const <String>[])
+        .map((tool) => tool.trim())
+        .where((tool) => tool.isNotEmpty)
+        .toList();
+    final primitiveToolSource =
+        reportedTools.isEmpty ? GatewayToolCatalog.primitiveIds : reportedTools;
+    final primitiveTools = primitiveToolSource
         .map((tool) => _privatePromptText(tool, maxChars: 48))
         .where((tool) => tool.isNotEmpty)
-        .take(40)
+        .take(80)
         .toList();
 
     if (activeSkills.isEmpty && primitiveTools.isEmpty) return message;
@@ -4333,6 +4333,11 @@ ${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCount
 
 Primitive tools/capabilities currently reported:
 $toolLine
+
+Structured OpenClaw tool routing:
+- The primary structured tool for connected phone/device actions is the OpenClaw nodes tool.
+- Valid Android node commands include avatar.gesture, avatar.mode, avatar.model, avatar.status, camera.snap, camera.list, camera.clip, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.list, sensor.read, canvas.navigate, canvas.eval, and canvas.snapshot.
+- If Mobile node context is present, do not say phone/device/avatar tools are unavailable unless an actual tool result says so.
 
 ${hasStocks ? 'Financial routing note: the stocks skill is active. For stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path or Gateway financial tooling instead of saying no stocks skill is available.' : ''}
 </openclaw_runtime_inventory>

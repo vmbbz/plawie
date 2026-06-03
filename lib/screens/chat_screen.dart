@@ -2786,14 +2786,19 @@ class _ChatScreenState extends State<ChatScreen>
 
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.black.withValues(alpha: 0.94),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
-          child: Column(
+      builder: (ctx) {
+        final maxHeight = MediaQuery.sizeOf(ctx).height * 0.88;
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2902,9 +2907,11 @@ class _ChatScreenState extends State<ChatScreen>
                 ],
               ),
             ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
