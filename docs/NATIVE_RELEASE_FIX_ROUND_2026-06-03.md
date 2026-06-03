@@ -91,9 +91,49 @@ is actually available.
 ## Remaining Gates
 
 - Run final RC soak and release notes pass.
-- TTS provider-error UI was implemented in code, but needs one forced failing
-  `talk.speak` turn after a depleted/invalid TTS provider is selected to verify
-  snackbar/orb color in the exact UI state.
+- TTS provider-error UI now has both snackbar feedback and voice-orb alert
+  pulsing, but still needs one forced failing `talk.speak` turn after a
+  depleted/invalid TTS provider is selected to verify the exact visual state on
+  device.
+- Avatar limb gestures are present in the APK asset tree. The follow-up polish
+  found a code alias bug: `wave` and `wave right` were mapped to
+  `animations/limbs/*.vrma`, then overwritten back to
+  `animations/gesture_greeting.vrma`. The alias now preserves the converted
+  limb VRMA files, while explicit `greeting wave`/`hello wave` aliases keep the
+  legacy greeting clip available.
+- Chat voice selection now merges voice lists from both `tts.providers` and
+  `talk.catalog`, matching the richer Web Dashboard-style catalog instead of
+  collapsing to only the currently active provider's voice list.
+- Native log reading now filters noisy websocket tick/health heartbeats and
+  tags stdio entries by category: startup, plugins, skills, chat, provider,
+  tools, TTS, health, websocket, warning, and error.
+- Gateway Logs UI now uses tighter top spacing, smaller monospaced rows,
+  category colors, and row dividers so native logs are readable on phone.
+
+## Release Boundary Notes Added During Polish
+
+- Dreaming mode is an OpenClaw dashboard/autonomy surface (`/dreaming`) with
+  light/deep/REM-style controls. It is not yet a chat-page feature. To promote
+  it into chat, the app should first discover the advertised dreaming RPCs, add
+  a visible chat control/toggle, and show state/permission failures instead of
+  silently sending dashboard-only commands.
+- The failed `hello_and_location` cron job is a release-hardening item, not a
+  native runtime proof failure by itself. Scheduled jobs must run only after the
+  selected owner is ready and must have a live Android node/tool bridge for
+  device actions such as `location.get`. Until that is hardened, cron jobs that
+  need phone state should show a clear "device bridge unavailable at run time"
+  failure.
+- The Web Dashboard `Instances` permission-denied page is a dashboard capability
+  mismatch/permission issue. Chat does not require it for normal turns. For
+  public release, the dashboard should either hide/disable that entry when the
+  Gateway does not advertise or permit it, or show a plain unavailable message.
+- The `phone-control` plugin being loaded does not equal silent third-party app
+  automation. WhatsApp/Gmail/contact/file actions must be exposed as explicit
+  tool schemas with permissions and user confirmation. Current release-safe
+  posture is Android intents/confirmation for third-party apps, not background
+  sending.
+- Public builds should continue redacting or truncating raw prompt/output logs.
+  Internal diagnostics can show richer message exchange when explicitly enabled.
 
 ## Validation To Run
 

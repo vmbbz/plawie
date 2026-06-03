@@ -632,7 +632,7 @@ class _ChatScreenState extends State<ChatScreen>
 
     _tts.onComplete = () {
       if (mounted) {
-        _isTtsSpeaking = false;
+        _setTtsProcessing(false);
         _processNextTtsInQueue();
 
         // Only close mouth and reset gesture when the entire queue is drained
@@ -787,13 +787,22 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  void _setTtsProcessing(bool value) {
+    if (_isTtsSpeaking == value) return;
+    if (mounted) {
+      setState(() => _isTtsSpeaking = value);
+    } else {
+      _isTtsSpeaking = value;
+    }
+  }
+
   Future<void> _processNextTtsInQueue() async {
     if (_isTtsSpeaking || _ttsQueue.isEmpty || _tts.isSpeaking) return;
-    _isTtsSpeaking = true;
+    _setTtsProcessing(true);
     final sentence = _ttsQueue.removeAt(0);
     try {
       if (!mounted) {
-        _isTtsSpeaking = false;
+        _setTtsProcessing(false);
         return;
       }
       if (ModelProviderCatalog.isLocalModelId(_selectedModel)) {
@@ -815,7 +824,7 @@ class _ChatScreenState extends State<ChatScreen>
         );
         await _tts.speak(sentence);
         if (!_tts.isSpeaking) {
-          _isTtsSpeaking = false;
+          _setTtsProcessing(false);
           _processNextTtsInQueue();
         }
       } else if (!playback.played && playback.errorMessage != null) {
@@ -824,17 +833,17 @@ class _ChatScreenState extends State<ChatScreen>
           _GatewayTtsHealth.failed,
           message: playback.errorMessage!,
         );
-        _isTtsSpeaking = false;
+        _setTtsProcessing(false);
         _processNextTtsInQueue();
       } else if (!playback.played) {
         // Backoff/skip responses (for example temporary Talk suppression) must
         // release the queue lock, otherwise viseme + speech state can freeze.
-        _isTtsSpeaking = false;
+        _setTtsProcessing(false);
         _processNextTtsInQueue();
       }
     } catch (_) {
       // Guarantee _isTtsSpeaking is cleared on error so queue isn't permanently jammed
-      _isTtsSpeaking = false;
+      _setTtsProcessing(false);
       _processNextTtsInQueue();
     }
   }
@@ -1105,7 +1114,7 @@ class _ChatScreenState extends State<ChatScreen>
     _tts.stop();
     _ttsQueue.clear();
     _ttsSentenceBuffer = '';
-    _isTtsSpeaking = false;
+    _setTtsProcessing(false);
     // Also stop unified TTS (handles both local and gateway audio)
     _tts.stop();
     setState(() => _speechIntensity = 0.0);
@@ -3735,8 +3744,11 @@ class _ChatScreenState extends State<ChatScreen>
             AuraDot(
               position: Offset(size.width / 2, voiceOrbY),
               anchorOffset: Offset.zero,
-              isSpeaking: TtsService().isSpeaking,
+              isSpeaking: TtsService().isSpeaking ||
+                  _isTtsSpeaking ||
+                  _ttsQueue.isNotEmpty,
               statusColor: _gatewayTtsAuraColor(),
+              alertPulse: _gatewayTtsHealth != _GatewayTtsHealth.normal,
               onTap: () => _showHolographicTtsMenu(context),
             ),
         ],
@@ -3856,13 +3868,32 @@ class _ChatScreenState extends State<ChatScreen>
     final voiceProviders = <String, String>{};
     var talkConfigured = false;
 
+    void collectProviderVoices(
+      Map<String, dynamic> provider, {
+      bool requireConfigured = false,
+    }) {
+      final id = (provider['id'] ?? '').toString().trim();
+      if (id.isEmpty) return;
+      if (requireConfigured && provider['configured'] != true) return;
+      final rawVoices = provider['voices'];
+      if (rawVoices is! List) return;
+      for (final voice in rawVoices) {
+        final v = voice.toString().trim();
+        if (v.isEmpty) continue;
+        voices.add(v);
+        voiceProviders.putIfAbsent(v.toLowerCase(), () => id);
+      }
+    }
+
     try {
       final providersFrame = await gatewayProvider.getTtsProviders();
       final rawProviders = providersFrame['providers'];
       if (rawProviders is List) {
         for (final item in rawProviders) {
           if (item is Map) {
-            providers.add(Map<String, dynamic>.from(item));
+            final mapped = Map<String, dynamic>.from(item);
+            providers.add(mapped);
+            collectProviderVoices(mapped);
           }
         }
       }
@@ -3911,16 +3942,7 @@ class _ChatScreenState extends State<ChatScreen>
             if (id == activeProvider) {
               activeEntry = mapped;
             }
-            final configured = mapped['configured'] == true;
-            final rawVoices = mapped['voices'];
-            if (configured && rawVoices is List) {
-              for (final voice in rawVoices) {
-                final v = voice.toString().trim();
-                if (v.isEmpty) continue;
-                voices.add(v);
-                voiceProviders.putIfAbsent(v.toLowerCase(), () => id);
-              }
-            }
+            collectProviderVoices(mapped);
           }
           if (speechProviderEntries.isNotEmpty) {
             // talk.catalog is authoritative for speech. tts.providers can reflect

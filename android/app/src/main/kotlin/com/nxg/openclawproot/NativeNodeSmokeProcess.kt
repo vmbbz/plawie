@@ -245,8 +245,9 @@ class NativeNodeSmokeProcess(
             }
             val stdioLines = if (stdioFile.exists()) {
                 stdioFile.readLines()
+                    .takeLast(MAX_LOG_LINES * 4)
+                    .mapNotNull(::formatStdioLogLine)
                     .takeLast(MAX_LOG_LINES / 2)
-                    .map { "[native-stdio] $it" }
             } else {
                 emptyList()
             }
@@ -263,9 +264,55 @@ class NativeNodeSmokeProcess(
             val message = json.optString("message", raw)
             val process = json.optString("process", "")
             val suffix = if (process.isBlank()) "" else " ($process)"
-            "[native] $time $message$suffix"
+            "[native][runtime] $time $message$suffix"
         } catch (_: Exception) {
-            "[native] $raw"
+            "[native][runtime] $raw"
+        }
+    }
+
+    private fun formatStdioLogLine(raw: String): String? {
+        val line = raw.trim()
+        if (line.isBlank() || isNoisyNativeHeartbeat(line)) return null
+        val category = nativeLogCategory(line)
+        return "[native-stdio][$category] $line"
+    }
+
+    private fun isNoisyNativeHeartbeat(line: String): Boolean {
+        val lower = line.lowercase(Locale.US)
+        return lower.contains("[ws]") &&
+            (lower.contains("event tick") || lower.contains("event health"))
+    }
+
+    private fun nativeLogCategory(line: String): String {
+        val lower = line.lowercase(Locale.US)
+        return when {
+            lower.contains("error") || lower.contains("[err]") -> "error"
+            lower.contains("warn") || lower.contains("[warn]") -> "warn"
+            lower.contains("plugin") -> "plugins"
+            lower.contains("active skills") ||
+                lower.contains("[skills]") ||
+                lower.contains("skills.") -> "skills"
+            lower.contains("[chat]") ||
+                lower.contains("chat.send") ||
+                lower.contains("processed message") ||
+                lower.contains("send-to-provider") -> "chat"
+            lower.contains("provider") ||
+                lower.contains("openrouter") ||
+                lower.contains("gemini") ||
+                lower.contains("openai") -> "provider"
+            lower.contains("[tts]") ||
+                lower.contains("talk.") ||
+                lower.contains("speech") -> "tts"
+            lower.contains("tool") ||
+                lower.contains("device") ||
+                lower.contains("capabilit") -> "tools"
+            lower.contains("gateway is healthy") ||
+                lower.contains("health rpc") -> "health"
+            lower.contains("startup") ||
+                lower.contains("bootstrap") ||
+                lower.contains("server listening") -> "startup"
+            lower.contains("[ws]") -> "ws"
+            else -> "gateway"
         }
     }
 

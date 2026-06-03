@@ -11,6 +11,7 @@ class AuraDot extends StatefulWidget {
   final bool isSpeaking;
   final Offset anchorOffset;
   final Color? statusColor;
+  final bool alertPulse;
 
   const AuraDot({
     super.key,
@@ -19,6 +20,7 @@ class AuraDot extends StatefulWidget {
     this.isSpeaking = false,
     this.anchorOffset = const Offset(0, -50),
     this.statusColor,
+    this.alertPulse = false,
   });
 
   @override
@@ -66,8 +68,10 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
           animation: _pulseController,
           builder: (context, _) {
             final pulse = _pulseController.value;
-            final active = widget.isSpeaking || _isPressed;
-            final scale = _isPressed ? 0.80 : (1.0 + 0.10 * pulse);
+            final attention = widget.alertPulse || widget.statusColor != null;
+            final active = widget.isSpeaking || _isPressed || attention;
+            final scale =
+                _isPressed ? 0.80 : (1.0 + (attention ? 0.16 : 0.10) * pulse);
             final accentColor = widget.statusColor ?? Colors.cyanAccent;
 
             // Core colour — cyan tint when active, translucent white at rest
@@ -83,14 +87,20 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                         : 0.58 + 0.12 * pulse);
 
             // Orbit ring breathes gently; brightens cyan when active
-            final ringOpacity =
-                active ? 0.50 + 0.28 * pulse : 0.18 + 0.08 * pulse;
+            final ringOpacity = attention
+                ? 0.45 + 0.45 * pulse
+                : active
+                    ? 0.50 + 0.28 * pulse
+                    : 0.18 + 0.08 * pulse;
             final ringColor = widget.statusColor ??
                 (active ? Colors.cyanAccent : Colors.white);
 
             // Bloom glow
-            final glowAlpha =
-                active ? 0.30 + 0.22 * pulse : 0.06 + 0.05 * pulse;
+            final glowAlpha = attention
+                ? 0.32 + 0.38 * pulse
+                : active
+                    ? 0.30 + 0.22 * pulse
+                    : 0.06 + 0.05 * pulse;
             final glowColor = (widget.statusColor ??
                     (active ? Colors.cyanAccent : Colors.white))
                 .withValues(alpha: glowAlpha);
@@ -107,6 +117,23 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
+                        if (attention)
+                          Transform.scale(
+                            scale: 1.05 + 0.28 * pulse,
+                            child: Container(
+                              width: ringR * 2 + 14,
+                              height: ringR * 2 + 14,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: accentColor.withValues(
+                                      alpha: 0.22 + 0.42 * pulse),
+                                  width: 1.3,
+                                ),
+                              ),
+                            ),
+                          ),
+
                         // Bloom — soft glow behind the ring
                         Container(
                           width: ringR * 2 + 8,

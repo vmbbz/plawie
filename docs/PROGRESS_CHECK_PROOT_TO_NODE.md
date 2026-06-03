@@ -1682,3 +1682,51 @@ skill inventory, the native logs are useful enough for release diagnostics, and
 skill installation/page errors no longer create misleading UX. The remaining
 release boundary is a short RC soak/release-notes pass and forced TTS-error UI
 verification.
+
+## 2026-06-03 Native Polish Follow-up
+
+The next polish pass focused on the release issues raised from screenshots after
+the heavy fix round:
+
+- confirmed the converted limb VRMA files are packaged; the actual avatar bug
+  was an alias override that remapped `wave`/`wave right` back to
+  `gesture_greeting.vrma`;
+- fixed the alias map so plain `wave` uses `animations/limbs/Wave_Right_01.vrma`
+  again, while explicit `greeting wave`/`hello wave` keep the old greeting clip;
+- added gesture load logs that include the exact VRMA path for future phone
+  validation;
+- made the chat TTS orb visibly pulse in degraded/failed Talk states and while
+  Gateway TTS is processing queued speech;
+- merged chat voice choices from both `tts.providers` and `talk.catalog`, so
+  chat no longer collapses to a single current-provider voice list when the
+  Gateway exposes a larger catalog;
+- filtered noisy native websocket tick/health heartbeat lines before they reach
+  the app log feed;
+- categorized native stdio logs as startup/plugins/skills/chat/provider/tools/
+  TTS/health/ws/warn/error;
+- removed duplicate `[native] [native-stdio]` prefixes from the Dart log stream;
+- tightened the Gateway Logs screen spacing and row styling for better mobile
+  readability;
+- documented release-boundary handling for Dreaming mode, failed device cron
+  jobs, Web Dashboard Instances permission errors, and third-party app control.
+
+Validation:
+
+- `flutter analyze` passed.
+- public rollback release APK rebuilt successfully:
+  `build/app/outputs/flutter-apk/app-release.apk`, about `197.6 MB`;
+- installed the APK over USB on `RZCX30KA9AW`;
+- post-install process ownership showed `com.nxg.openclawproot` and
+  `com.nxg.openclawproot:native_node_smoke`, with no visible PRoot process while
+  native owns.
+
+Still to verify on-device UI:
+
+- force a Talk/TTS billing/quota failure and confirm the snackbar plus pulsing
+  red/amber orb state;
+- ask for `wave` and `sit` gestures and confirm Gateway Logs show the exact
+  `animations/limbs/*.vrma` path;
+- open Gateway Logs after native startup and confirm startup/plugins/skills/chat
+  lines are readable and no longer drowned by tick spam;
+- decide whether Dreaming/cron/Instances are hidden, labeled unavailable, or
+  promoted through first-class chat controls for public release.

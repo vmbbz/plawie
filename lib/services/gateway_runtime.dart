@@ -250,7 +250,9 @@ Stream<String> _pollNativeGatewayLogs(
             : lines;
 
         for (final line in replayLines) {
-          yield _redactGatewayLogLine('[native] $line');
+          final nativeTagged =
+              line.startsWith('[native') ? line : '[native] $line';
+          yield _redactGatewayLogLine(nativeTagged);
         }
 
         previousLog = currentLog;
