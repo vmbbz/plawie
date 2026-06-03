@@ -1728,5 +1728,66 @@ Still to verify on-device UI:
   `animations/limbs/*.vrma` path;
 - open Gateway Logs after native startup and confirm startup/plugins/skills/chat
   lines are readable and no longer drowned by tick spam;
-- decide whether Dreaming/cron/Instances are hidden, labeled unavailable, or
-  promoted through first-class chat controls for public release.
+
+## 2026-06-03 Native Recovery And Agent Controls Follow-up
+
+Follow-up phone testing raised a sharper concern: after the log/TTS/avatar
+polish, native still looked noisy and a provider response could claim it could
+not find avatar gesture tooling. A surgical audit found no deletion of the
+mobile command bridge. The live native node still declared the 42-command mobile
+contract, including `avatar.gesture`, `location.get`, `camera.snap`,
+`sensor.read`, `haptic.vibrate`, `flash.status`, `canvas.navigate`, and
+`screen.record`.
+
+The real issues fixed in this pass were:
+
+- the chat no-first-token recovery path could try to restart native even when
+  `/health` on `18789` was already live, creating confusing "start ignored"
+  lifecycle noise;
+- `skills.register` was correctly not advertised by this Gateway build, but the
+  app logged that preservation path too often;
+- Talk/TTS backoff returned without the last provider/account error, so the
+  voice orb could visually settle too quickly;
+- some providers cannot emit structured tool calls even when the Android node
+  bridge is connected, so the avatar prompt now permits a local inline fallback
+  marker such as `(gesture: sitting)`;
+- the chat UI now consumes that inline gesture marker, strips it from spoken TTS
+  text, and dispatches the same local avatar bridge path as a structured
+  `avatar.gesture` request;
+- Dreaming, Cron, and Instances are now promoted into the chat page top-right
+  menu as `Agent Controls`, but every action is gated by live Gateway method
+  discovery. Unsupported controls show a visible unavailable/failure state
+  instead of guessing RPC names.
+
+Validation:
+
+- `flutter analyze` passed.
+- public rollback release APK rebuilt successfully:
+  `build/app/outputs/flutter-apk/app-release.apk`, about `197.6 MB`;
+- installed the APK over USB on `RZCX30KA9AW`;
+- cold start with app-PID-only logs showed no Python traceback, no
+  `ModuleNotFoundError`, no `ImportError`, no app FATAL, and no native Gateway
+  crash;
+- native process ownership remained `com.nxg.openclawproot` plus
+  `com.nxg.openclawproot:native_node_smoke`, with no visible PRoot process while
+  native owns;
+- adb-forwarded production `/health` returned `{"ok":true,"status":"live"}`;
+- native startup logs showed the embedded full OpenClaw bundle prepared,
+  `libplawie_node_bridge.so` loaded, Node started, RPC discovery completed, the
+  Android node connected, and 42 mobile commands declared.
+
+Current release risk after this pass:
+
+- the copied `gateway_logs.md` and raw Android logcat can contain scary system
+  noise such as Google Play auth and Android tethering/BPF errors. Those are not
+  OpenClaw Python or native Gateway crashes. Release diagnostics should continue
+  to prioritize app PID logs and formatted Gateway Logs UI.
+- the avatar inline fallback should be tested with a real chat prompt that asks
+  the avatar to sit or wave. If the provider uses a proper tool call, normal
+  `avatar.gesture` executes. If it cannot, the inline marker path should still
+  move the avatar.
+- the forced Talk/TTS billing/quota failure still needs a visible phone check:
+  snackbar plus pulsing red/amber voice orb.
+- Cron jobs that require phone state still need a run-time readiness guard so a
+  scheduled job does not execute before the Android node/device bridge is
+  connected.

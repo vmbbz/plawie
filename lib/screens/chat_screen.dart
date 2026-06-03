@@ -36,6 +36,7 @@ import '../services/chat_runtime_service.dart';
 import '../services/hologram_service.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
+import 'web_dashboard_screen.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -664,7 +665,7 @@ class _ChatScreenState extends State<ChatScreen>
     t = t.replaceAll(
         RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
     // Gesture/action tags
-    t = t.replaceAll(RegExp(r'\(gesture:\s*\w+\)\s*'), '');
+    t = t.replaceAll(RegExp(r'\(gesture:\s*[^)]+\)\s*'), '');
     // Code blocks → label only (don't read source code verbatim)
     t = t.replaceAll(RegExp(r'```[\s\S]*?```'), 'code block. ');
     // Inline code → content only (strip backticks)
@@ -1412,11 +1413,22 @@ class _ChatScreenState extends State<ChatScreen>
             _isThinking = false; // Stopped thinking, started talking
             // _speechIntensity is driven ONLY by _tts.onStart/onComplete — not chunk arrival
 
-            // Check for (gesture: name) in bot response
+            // Check for (gesture: name) in bot response. This is a fallback for
+            // providers that can follow instructions but do not emit structured
+            // tool calls on the current route.
             if (chunk.contains('(gesture:')) {
-              final match = RegExp(r'\(gesture:\s*(\w+)\)').firstMatch(chunk);
+              final match =
+                  RegExp(r'\(gesture:\s*([^)]+)\)').firstMatch(chunk);
               if (match != null) {
-                _currentGesture = match.group(1);
+                final requestedGesture =
+                    (match.group(1) ?? '').split(',').first.trim();
+                if (requestedGesture.isNotEmpty) {
+                  _currentGesture = requestedGesture;
+                  unawaited(_handleAvatarGestureRequest({
+                    'gesture': requestedGesture,
+                    'source': 'assistant-inline-marker',
+                  }));
+                }
               }
             }
 
@@ -2630,6 +2642,272 @@ class _ChatScreenState extends State<ChatScreen>
     return '${dt.month}/${dt.day}';
   }
 
+  String? _firstSupportedMethod(
+    Set<String> supported,
+    List<String> candidates,
+  ) {
+    for (final method in candidates) {
+      if (supported.contains(method)) return method;
+    }
+    return null;
+  }
+
+  Future<void> _invokeGatewayControl(
+    BuildContext context, {
+    required String label,
+    required List<String> candidates,
+    Map<String, dynamic> params = const <String, dynamic>{},
+  }) async {
+    final gateway = context.read<GatewayProvider>();
+    final supported = gateway.supportedMethods.toSet();
+    final method = _firstSupportedMethod(supported, candidates);
+    if (method == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$label is not advertised by this Gateway build.'),
+          backgroundColor: AppColors.statusAmber,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final result = await gateway.invoke(method, params);
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(label),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              const JsonEncoder.withIndent('  ').convert(result),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$label failed: $e'),
+          backgroundColor: AppColors.statusRed,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openGatewayDashboard(BuildContext context) async {
+    final gateway = context.read<GatewayProvider>();
+    final url = await gateway.refreshDashboardUrl();
+    if (!context.mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)),
+    );
+  }
+
+  Widget _agentControlCard({
+    required IconData icon,
+    required String title,
+    required String body,
+    required bool available,
+    required List<Widget> actions,
+  }) {
+    final accent = available ? AppColors.statusGreen : AppColors.statusAmber;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: accent, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Text(
+                available ? 'READY' : 'CHECK',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: actions),
+        ],
+      ),
+    );
+  }
+
+  void _showAgentRuntimeControls(BuildContext context) {
+    HapticFeedback.selectionClick();
+    final gateway = context.read<GatewayProvider>();
+    final supported = gateway.supportedMethods.toSet();
+    final cronReady = supported.any((method) => method.startsWith('cron.'));
+    final dreamingReady = supported.any((method) =>
+        method.startsWith('dream') ||
+        method.startsWith('memory.') ||
+        method == 'doctor.memory');
+    final instancesReady = supported.any((method) =>
+        method == 'system-presence' ||
+        method.startsWith('instances.') ||
+        method.startsWith('presence.') ||
+        method.startsWith('clients.'));
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black.withValues(alpha: 0.94),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.tune_rounded,
+                      color: AppColors.statusGreen),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Agent Controls',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _agentControlCard(
+                icon: Icons.schedule_rounded,
+                title: 'Cron',
+                body:
+                    'Scheduled Gateway jobs and delayed agent actions. Use for reminders, follow-ups, and timed checks.',
+                available: cronReady,
+                actions: [
+                  OutlinedButton(
+                    onPressed: () => _invokeGatewayControl(
+                      ctx,
+                      label: 'Cron status',
+                      candidates: const ['cron.status', 'cron.list'],
+                    ),
+                    child: const Text('Status'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _invokeGatewayControl(
+                      ctx,
+                      label: 'Cron jobs',
+                      candidates: const ['cron.list', 'cron.status'],
+                    ),
+                    child: const Text('Jobs'),
+                  ),
+                  TextButton(
+                    onPressed: () => _openGatewayDashboard(ctx),
+                    child: const Text('Dashboard'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _agentControlCard(
+                icon: Icons.nightlight_round,
+                title: 'Dreaming',
+                body:
+                    'Memory consolidation and background reflection. Keep it opt-in until release policy is final.',
+                available: dreamingReady,
+                actions: [
+                  OutlinedButton(
+                    onPressed: () => _invokeGatewayControl(
+                      ctx,
+                      label: 'Dreaming status',
+                      candidates: const [
+                        'dreaming.status',
+                        'memory.status',
+                        'doctor.memory',
+                      ],
+                    ),
+                    child: const Text('Status'),
+                  ),
+                  TextButton(
+                    onPressed: () => _openGatewayDashboard(ctx),
+                    child: const Text('Dashboard'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _agentControlCard(
+                icon: Icons.hub_rounded,
+                title: 'Instances',
+                body:
+                    'Connected Gateway clients and presence. Useful for confirming chat, dashboard, and mobile node ownership.',
+                available: instancesReady,
+                actions: [
+                  OutlinedButton(
+                    onPressed: () => _invokeGatewayControl(
+                      ctx,
+                      label: 'Instances',
+                      candidates: const [
+                        'system-presence',
+                        'instances.list',
+                        'presence.list',
+                        'clients.list',
+                      ],
+                    ),
+                    child: const Text('List'),
+                  ),
+                  TextButton(
+                    onPressed: () => _openGatewayDashboard(ctx),
+                    child: const Text('Dashboard'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -2829,9 +3107,24 @@ class _ChatScreenState extends State<ChatScreen>
                           SnackBar(content: Text('PiP not supported: $e')),
                         );
                       }
+                    } else if (value == 'agent_controls') {
+                      _showAgentRuntimeControls(context);
                     }
                   },
                   itemBuilder: (ctx) => [
+                    PopupMenuItem<String>(
+                      value: 'agent_controls',
+                      child: Row(
+                        children: const [
+                          Icon(Icons.tune_rounded,
+                              color: Colors.white70, size: 20),
+                          SizedBox(width: 10),
+                          Text('Agent Controls',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 13)),
+                        ],
+                      ),
+                    ),
                     PopupMenuItem<String>(
                       enabled: false,
                       height: 40,

@@ -182,6 +182,45 @@ class _AuraDotState extends State<AuraDot> with SingleTickerProviderStateMixin {
                                 : null,
                           ),
                         ),
+                        if (attention)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Transform.scale(
+                              scale: 0.86 + 0.18 * pulse,
+                              child: Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.92),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          accentColor.withValues(alpha: 0.65),
+                                      blurRadius: 10,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    '!',
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),

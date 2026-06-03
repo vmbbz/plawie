@@ -113,10 +113,11 @@ is actually available.
 ## Release Boundary Notes Added During Polish
 
 - Dreaming mode is an OpenClaw dashboard/autonomy surface (`/dreaming`) with
-  light/deep/REM-style controls. It is not yet a chat-page feature. To promote
-  it into chat, the app should first discover the advertised dreaming RPCs, add
-  a visible chat control/toggle, and show state/permission failures instead of
-  silently sending dashboard-only commands.
+  light/deep/REM-style controls. It is now exposed from the chat page through
+  the top-right `Agent Controls` sheet, but only through advertised Gateway
+  methods such as `dreaming.status`, `memory.status`, or `doctor.memory`.
+  Unsupported controls show a visible unavailable state instead of silently
+  guessing commands.
 - The failed `hello_and_location` cron job is a release-hardening item, not a
   native runtime proof failure by itself. Scheduled jobs must run only after the
   selected owner is ready and must have a live Android node/tool bridge for
@@ -135,6 +136,45 @@ is actually available.
 - Public builds should continue redacting or truncating raw prompt/output logs.
   Internal diagnostics can show richer message exchange when explicitly enabled.
 
+## 2026-06-03 Recovery Follow-up
+
+Phone testing after the polish pass showed native still looked noisy when the
+provider lane was slow or when a model could not emit structured tool calls.
+The follow-up patch tightened the actual failure points without reverting the
+log/TTS/avatar work.
+
+- Chat no-first-token recovery now checks native production `/health` before
+  trying to restart embedded Node. If native health is already live, the app
+  rebuilds the WebSocket lane and avoids another process start request.
+- The `skills.register not advertised` preservation log is emitted once per
+  discovery state instead of repeating during startup.
+- Talk/TTS backoff now preserves the last provider/account error message so the
+  chat voice control remains visibly failed/degraded during the backoff window.
+- The voice orb now shows a small pulsing alert badge when TTS is processing,
+  degraded, or failed.
+- The chat prompt allows an inline fallback marker such as `(gesture: sitting)`
+  when a provider cannot emit a structured `avatar.gesture` tool call.
+- The chat UI consumes that inline marker, removes it from spoken TTS, and sends
+  it through the local avatar bridge.
+- Cron, Dreaming, and Instances are available from the chat page top-right menu
+  as first-class guarded controls. Each action is method-discovery gated and can
+  fall back to the Web Dashboard when richer UI is needed.
+
+Validation from the installed public rollback APK:
+
+- `flutter analyze` passed.
+- Release APK built and installed over USB on `RZCX30KA9AW`.
+- App-PID-only log scan found no Python traceback, no `ModuleNotFoundError`, no
+  `ImportError`, and no native Gateway FATAL/crash.
+- Native owner process state showed `com.nxg.openclawproot` and
+  `com.nxg.openclawproot:native_node_smoke`; no PRoot process was visible while
+  native owned production.
+- Adb-forwarded `http://127.0.0.1:18789/health` returned
+  `{"ok":true,"status":"live"}`.
+- Startup logs showed the embedded OpenClaw bundle prepared, the native Node
+  bridge loaded, Node started, Gateway RPC discovery completed, and the Android
+  node declared 42 mobile commands.
+
 ## Validation To Run
 
 - `flutter analyze`
@@ -148,3 +188,6 @@ is actually available.
 - TTS account/billing failure must be visible in chat and reflected by the voice
   orb state.
 - Rollback to PRoot must still wait for readiness before chat is accepted.
+- Chat Agent Controls should show Cron/Dreaming/Instances status when the
+  Gateway advertises matching methods, and should show unavailable/failure
+  feedback when it does not.

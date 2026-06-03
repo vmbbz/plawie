@@ -123,6 +123,7 @@ class GatewayService {
   DateTime? _lastWsConnectAttemptAt;
   DateTime? _gatewayInteractiveReadyAt;
   DateTime? _talkSpeakUnavailableUntil;
+  String? _lastTalkSpeakErrorMessage;
   bool _talkSpeakBackoffAllowsNativeFallback = false;
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
@@ -140,6 +141,7 @@ class GatewayService {
   bool _chatLaneRecoveryInFlight = false;
   bool _gatewayChatTurnInFlight = false;
   bool _runtimeLogged = false;
+  bool _skillsRegisterUnavailableLogged = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
@@ -427,14 +429,39 @@ class GatewayService {
             .timeout(const Duration(seconds: 45), onTimeout: () => false);
         _addActivity('[CHAT] Recovery: PRoot restart requested=$started.');
       } else {
-        final running = await runtime
-            .isRunning()
-            .timeout(const Duration(seconds: 4), onTimeout: () => false);
+        var nativeHealthLive = false;
+        try {
+          final health = await _waitForProductionHealthPayload(
+            timeout: const Duration(seconds: 4),
+          );
+          nativeHealthLive = _gatewayHealthLooksLive(health);
+          if (nativeHealthLive) {
+            _updateState(_state.copyWith(
+              status: GatewayStatus.running,
+              clearError: true,
+              isReady: true,
+              detailedHealth: health,
+            ));
+            _addActivity(
+              '[CHAT] Recovery: native health live; rebuilding WebSocket lane without process restart.',
+            );
+          }
+        } catch (_) {}
+
+        final running = nativeHealthLive
+            ? true
+            : await runtime
+                .isRunning()
+                .timeout(const Duration(seconds: 4), onTimeout: () => false);
         if (!running) {
           final started = await runtime
               .start(allowDuringSetup: true)
               .timeout(const Duration(seconds: 25), onTimeout: () => false);
           _addActivity('[CHAT] Recovery: native restart requested=$started.');
+        } else if (!nativeHealthLive) {
+          _addActivity(
+            '[CHAT] Recovery: native process probe is running; skipping process restart.',
+          );
         }
       }
 
@@ -2692,12 +2719,21 @@ HEARTBEAT_OK.
     // Only register device-native skills when the gateway advertises the RPC.
     // Calling this on newer gateways that omit skills.register can collapse the
     // broader tool context down to just Plawie's bundled skills.
+    if (_connection?.state != GatewayConnectionState.connected) {
+      return;
+    }
     final supported = _connection?.supportedMethods ?? const <String>[];
     final methodAdvertised = supported.contains('skills.register');
     final discoveryUnknown = supported.isEmpty;
+    if (discoveryUnknown) {
+      return;
+    }
     if (!methodAdvertised && !discoveryUnknown) {
-      _addActivity(
-          '[SKILLS] skills.register not advertised; preserving gateway tool catalog');
+      if (!_skillsRegisterUnavailableLogged) {
+        _skillsRegisterUnavailableLogged = true;
+        _addActivity(
+            '[SKILLS] skills.register not advertised; preserving gateway tool catalog');
+      }
       return;
     }
     try {
@@ -2710,6 +2746,7 @@ HEARTBEAT_OK.
         _addActivity(
           '[SKILLS] Registered ${catalog.length} device skills with gateway',
         );
+        _skillsRegisterUnavailableLogged = false;
       }
     } catch (e) {
       final msg = e.toString().toLowerCase();
@@ -4199,6 +4236,7 @@ Every OpenClaw nodes tool call for this Android phone MUST include this exact fi
 Never use node=auto or the raw Android device identity hash for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
 For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, sitting, chill sit wave, cross leg sitting wave, excited sitting wave, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.
+If this provider/route cannot emit a structured tool call, do not claim avatar gestures are unavailable. Instead include a short inline marker such as (gesture: sitting) or (gesture: wave right) in the assistant text so the Plawie chat UI can dispatch the local avatar bridge.
 For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.mode, avatar.model, avatar.status, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"dance\\",\\"durationMs\\":60000}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
@@ -14537,9 +14575,14 @@ $message''';
 
     final unavailableUntil = _talkSpeakUnavailableUntil;
     if (unavailableUntil != null && DateTime.now().isBefore(unavailableUntil)) {
+      final remaining = unavailableUntil.difference(DateTime.now());
+      final reason = _lastTalkSpeakErrorMessage;
       return TalkSpeakPlayback(
         played: false,
         allowNativeFallback: _talkSpeakBackoffAllowsNativeFallback,
+        errorMessage: reason == null || reason.isEmpty
+            ? 'Gateway voice is paused for ${remaining.inSeconds.clamp(1, 300)}s while Talk recovers.'
+            : 'Gateway voice is paused for ${remaining.inSeconds.clamp(1, 300)}s: $reason',
       );
     }
 
@@ -14567,6 +14610,8 @@ $message''';
       }
       final audioBytes = base64Decode(audioBase64);
       await TtsService().speakBytes(audioBytes);
+      _talkSpeakUnavailableUntil = null;
+      _lastTalkSpeakErrorMessage = null;
       return const TalkSpeakPlayback(
         played: true,
         allowNativeFallback: false,
@@ -14581,6 +14626,7 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = false;
+        _lastTalkSpeakErrorMessage = message;
         _addActivity('[TTS] $message');
         return const TalkSpeakPlayback(
           played: false,
@@ -14595,11 +14641,15 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = true;
+        const message =
+            'Gateway voice is unavailable on this runtime; local system TTS may be used.';
+        _lastTalkSpeakErrorMessage = message;
         _addActivity(
             '[TTS] talk.speak unavailable; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m');
         return const TalkSpeakPlayback(
           played: false,
           allowNativeFallback: true,
+          errorMessage: message,
         );
       }
       final providerBillingOrQuotaError = lower.contains('http 402') ||
@@ -14615,6 +14665,7 @@ $message''';
         _talkSpeakBackoffAllowsNativeFallback = false;
         final compactError =
             err.length > 240 ? '${err.substring(0, 240)}...' : err;
+        _lastTalkSpeakErrorMessage = compactError;
         _addActivity(
             '[TTS] talk.speak provider/account error; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m: $compactError');
         return TalkSpeakPlayback(
