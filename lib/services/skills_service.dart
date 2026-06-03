@@ -181,22 +181,25 @@ class SkillsService {
     try {
       if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
       final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
-      _logger.i('Installing skill $id via ${nativeOwner ? 'native' : 'PRoot'} owner');
+      _logger.i(
+          'Installing skill $id via ${nativeOwner ? 'native' : 'PRoot'} owner');
 
       if (nativeOwner) {
         final result = await NativeClawHubSkillInstaller.instance
             .install(id)
             .timeout(const Duration(seconds: 90));
         if (!result.ok) {
-          throw UnsupportedError(result.error ?? 'Native skill install failed.');
+          throw UnsupportedError(
+              result.error ?? 'Native skill install failed.');
         }
         await ensureAgentAwareness(fullSync: false);
         if (!silent) _broadcast(SkillsEvent.skillInstalled(id));
         return SkillInstallReport(
           ok: true,
           id: result.slug,
-          message:
-              'Installed native workspace skill ${result.slug}@${result.version ?? 'latest'}',
+          message: result.alreadyInstalled
+              ? 'Native workspace skill ${result.slug} is already installed'
+              : 'Installed native workspace skill ${result.slug}@${result.version ?? 'latest'}',
           targetPath: result.targetPath,
         );
       }
@@ -233,8 +236,7 @@ class SkillsService {
   Future<bool> uninstallSkill(String id, {bool silent = false}) async {
     try {
       if (await OpenClawCommandService.isNativeOwnerSelected()) {
-        final result =
-            await NativeClawHubSkillInstaller.instance.uninstall(id);
+        final result = await NativeClawHubSkillInstaller.instance.uninstall(id);
         if (!result.ok) {
           throw UnsupportedError(
             result.error ?? 'Native skill uninstall failed.',
@@ -486,7 +488,7 @@ class SkillsService {
           params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
     } catch (e) {
-      return SkillResult.error(e.toString());
+      return SkillResult.error(_skillPageRuntimeError(e));
     }
   }
 
@@ -498,7 +500,7 @@ class SkillsService {
           params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
     } catch (e) {
-      return SkillResult.error(e.toString());
+      return SkillResult.error(_skillPageRuntimeError(e));
     }
   }
 
@@ -510,7 +512,7 @@ class SkillsService {
           params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
     } catch (e) {
-      return SkillResult.error(e.toString());
+      return SkillResult.error(_skillPageRuntimeError(e));
     }
   }
 
@@ -522,7 +524,7 @@ class SkillsService {
           params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
     } catch (e) {
-      return SkillResult.error(e.toString());
+      return SkillResult.error(_skillPageRuntimeError(e));
     }
   }
 
@@ -534,8 +536,17 @@ class SkillsService {
           params: Map.from(p)..remove('method'));
       return SkillResult.success(data);
     } catch (e) {
-      return SkillResult.error(e.toString());
+      return SkillResult.error(_skillPageRuntimeError(e));
     }
+  }
+
+  String _skillPageRuntimeError(Object error) {
+    final message =
+        error is SkillProxyException ? error.message : error.toString();
+    if (message.contains('direct skill page execution')) {
+      return message;
+    }
+    return message.replaceFirst(RegExp(r'^SkillProxyException:\s*'), '');
   }
 
   Future<SkillResult> _executeBaseChainSkill(

@@ -7,8 +7,9 @@ import '../../../app.dart';
 
 /// Agent Wallet — powered by AgentCard.ai (agentcard.ai)
 /// Virtual Visa card issued by AgentCard for autonomous AI agent spending.
-/// Data is fetched via: SkillsService.executeSkill('agent_card', {method: 'get_balance'})
-/// which proxies through OpenClaw gateway → skills.execute → agent_card skill handler.
+/// Data is fetched via SkillsService. Direct gateway skill-page execution is
+/// optional, so native builds may show an unavailable state until an adapter is
+/// provided.
 ///
 /// Official AgentCard.ai (private beta) response fields (inferred from CLI schema):
 ///   id            - card unique identifier
@@ -58,7 +59,10 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
 
   Future<void> _refreshData() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     final result = await SkillsService()
         .executeSkill('agent_card', parameters: {'method': 'get_balance'});
@@ -67,9 +71,14 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
     if (result.success) {
       final raw = result.data;
       if (raw is Map<String, dynamic>) {
-        setState(() { _data = raw; _loading = false; });
+        setState(() {
+          _data = raw;
+          _loading = false;
+        });
       } else {
-        setState(() { _loading = false; });
+        setState(() {
+          _loading = false;
+        });
       }
     } else {
       setState(() {
@@ -172,12 +181,14 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off_rounded, color: AppColors.statusAmber, size: 18),
+          const Icon(Icons.cloud_off_rounded,
+              color: AppColors.statusAmber, size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               _error ?? 'Gateway offline — showing last known state',
-              style: const TextStyle(color: AppColors.statusAmber, fontSize: 12),
+              style:
+                  const TextStyle(color: AppColors.statusAmber, fontSize: 12),
             ),
           ),
           TextButton(
@@ -207,7 +218,9 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5),
+              color: Theme.of(context)
+                  .scaffoldBackgroundColor
+                  .withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -288,7 +301,8 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
                       ),
                       // Network logo area
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -315,10 +329,12 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
                           color: Colors.amber.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Icon(Icons.memory_rounded, size: 14, color: Colors.black54),
+                        child: const Icon(Icons.memory_rounded,
+                            size: 14, color: Colors.black54),
                       ),
                       const SizedBox(width: 10),
-                      const Icon(Icons.wifi_rounded, color: Colors.white54, size: 18),
+                      const Icon(Icons.wifi_rounded,
+                          color: Colors.white54, size: 18),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -419,8 +435,10 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
       crossAxisSpacing: 16,
       childAspectRatio: 2.2,
       children: [
-        _buildInfoItem(context, 'Provider', 'AgentCard.ai', Icons.credit_card_outlined),
-        _buildInfoItem(context, 'Network', _data['network'] ?? 'Visa', Icons.public),
+        _buildInfoItem(
+            context, 'Provider', 'AgentCard.ai', Icons.credit_card_outlined),
+        _buildInfoItem(
+            context, 'Network', _data['network'] ?? 'Visa', Icons.public),
         _buildInfoItem(
           context,
           'Status',
@@ -433,21 +451,29 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
           'Auto-Refill',
           (_data['autoRefill'] == true) ? 'Enabled' : 'Disabled',
           Icons.refresh_rounded,
-          (_data['autoRefill'] == true) ? AppColors.statusGreen : AppColors.statusGrey,
+          (_data['autoRefill'] == true)
+              ? AppColors.statusGreen
+              : AppColors.statusGrey,
         ),
       ],
     );
   }
 
-  Widget _buildInfoItem(BuildContext context, String label, String value, IconData icon, [Color? color]) {
+  Widget _buildInfoItem(
+      BuildContext context, String label, String value, IconData icon,
+      [Color? color]) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.05)),
       ),
       child: Row(
         children: [
@@ -458,10 +484,14 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(label, style: const TextStyle(fontSize: 10, color: AppColors.statusGrey)),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 10, color: AppColors.statusGrey)),
                 Text(value,
                     style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.bold, overflow: TextOverflow.ellipsis)),
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        overflow: TextOverflow.ellipsis)),
               ],
             ),
           ),
@@ -481,10 +511,14 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.05)),
       ),
       child: Column(
         children: [
@@ -499,15 +533,20 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
     );
   }
 
-  Widget _buildLimitRow(BuildContext context, String label, double progress, String detail) {
+  Widget _buildLimitRow(
+      BuildContext context, String label, double progress, String detail) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            Text(detail, style: GoogleFonts.firaCode(fontSize: 11, color: AppColors.statusGrey)),
+            Text(label,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(detail,
+                style: GoogleFonts.firaCode(
+                    fontSize: 11, color: AppColors.statusGrey)),
           ],
         ),
         const SizedBox(height: 8),
@@ -516,7 +555,8 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
           child: LinearProgressIndicator(
             value: progress,
             backgroundColor: Colors.white.withValues(alpha: 0.05),
-            color: progress > 0.8 ? AppColors.statusAmber : AppColors.statusGreen,
+            color:
+                progress > 0.8 ? AppColors.statusAmber : AppColors.statusGreen,
             minHeight: 6,
           ),
         ),
@@ -531,22 +571,30 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.05)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.refresh_rounded, size: 20, color: AppColors.statusGreen),
+          const Icon(Icons.refresh_rounded,
+              size: 20, color: AppColors.statusGreen),
           const SizedBox(width: 16),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Auto-Refill', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('Auto-Refill',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 Text('Automatically top up when balance runs low',
-                    style: TextStyle(fontSize: 11, color: AppColors.statusGrey)),
+                    style:
+                        TextStyle(fontSize: 11, color: AppColors.statusGrey)),
               ],
             ),
           ),
@@ -572,7 +620,8 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
               backgroundColor: AppColors.statusGreen,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
             ),
           ),
         ),
@@ -584,7 +633,8 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
             label: const Text('AgentCard.ai'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
             ),
           ),
         ),

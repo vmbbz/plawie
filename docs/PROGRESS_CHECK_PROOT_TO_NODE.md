@@ -1618,3 +1618,67 @@ Validation:
 Release interpretation: the native-owner marketplace UI now reflects the live
 Gateway inventory instead of accidentally treating native as empty. This closes
 the "native skill installed but UI still offers install" blocker.
+
+## 2026-06-03 Native Release Heavy Fix Round
+
+Follow-up validation from real chat/screenshots found four release blockers:
+chat saw tools/device capabilities but not installed skills as distinct
+context, partner skill pages could still assume `skills.execute`, native logs
+were too wrapper-heavy, and Talk/TTS provider failures were logged without a
+clear user-visible state.
+
+Code hardening now applied:
+
+- real chat turns now receive private runtime inventory context that separates
+  installed OpenClaw skills, primitive tools, and Android device capabilities;
+- the prompt explicitly tells the model not to claim active installed skills are
+  unavailable;
+- `stocks` receives a financial-routing hint when it is active;
+- partner skill pages now go through a guarded `GatewaySkillProxy` path, so
+  native builds without `skills.execute` show an adapter-unavailable state
+  instead of raw `unknown method: skills.execute`;
+- native ClawHub install is idempotent: already-installed skills are a green
+  no-op, not an install failure;
+- Discover/detail surfaces `Active`/`Open`/`Install` based on live installed
+  status and uses `Install` instead of misleading `Connect` wording for skill
+  installation;
+- Talk/TTS now has normal/degraded/failed health state, visible snackbar
+  feedback for provider/account errors, and a colored voice orb state;
+- the native logs UI now merges Android wrapper logs with native OpenClaw
+  stdout/stderr, so Gateway events appear in the app log feed;
+- duplicate native `start ignored` lifecycle lines are coalesced;
+- `NodeService` native-owner state reads now use only the native `.openclaw`
+  store, not the old PRoot store;
+- local NDK/fllama chat now reports exact readiness state for idle,
+  downloading, starting, and error cases.
+
+Validation:
+
+- `flutter analyze` passed.
+- public rollback release APK built successfully with native default and owner
+  switch commands enabled;
+- installed the final APK over USB on `RZCX30KA9AW`;
+- native owner reached `/health` on `18789` with
+  `{"ok":true,"status":"live"}`;
+- process list showed only `com.nxg.openclawproot` and
+  `com.nxg.openclawproot:native_node_smoke`, with no PRoot process;
+- fresh chat probe answered that `stocks` is installed/active and part of the
+  installed skill set instead of saying no dedicated stocks skill was present;
+- Gateway Logs UI showed native OpenClaw stdio events such as message dispatch,
+  processed message, session state, websocket health/tick, and heartbeat.
+- final owner-switch UX passed on the same APK:
+  `/native-default-owner-rollback` stopped native, released `18789`, restored
+  PRoot, and returned PRoot health live;
+- after waiting for readiness, PRoot fallback chat produced visible assistant
+  text;
+- `/native-default-owner-enable` restored native as the persisted production
+  owner, reported native health live, and reconnected WebSocket;
+- process ownership after re-enable showed only the app process and
+  `:native_node_smoke`, with no PRoot process while native owned production;
+- a post-reenable native chat turn produced visible assistant text.
+
+Release interpretation: native-owner normal chat now sees the real installed
+skill inventory, the native logs are useful enough for release diagnostics, and
+skill installation/page errors no longer create misleading UX. The remaining
+release boundary is a short RC soak/release-notes pass and forced TTS-error UI
+verification.

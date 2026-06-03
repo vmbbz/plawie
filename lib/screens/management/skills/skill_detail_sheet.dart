@@ -145,6 +145,8 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
     final installs = _skill?.currentInstalls;
     final ownerAvatar = _skill?.ownerAvatarUrl;
     final color = widget.accentColor;
+    final skillCommand =
+        'openclaw skills ${widget.isInstalled ? 'update' : 'install'} ${widget.slug}';
 
     return DraggableScrollableSheet(
       initialChildSize: 0.52,
@@ -341,10 +343,9 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
             // ── Slug copy row ──────────────────────────────────────────────
             GestureDetector(
               onTap: () {
-                Clipboard.setData(ClipboardData(
-                    text: 'openclaw skills install ${widget.slug}'));
+                Clipboard.setData(ClipboardData(text: skillCommand));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Install command copied!')),
+                  const SnackBar(content: Text('Skill command copied!')),
                 );
               },
               child: Container(
@@ -363,7 +364,7 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'openclaw skills install ${widget.slug}',
+                        skillCommand,
                         style: GoogleFonts.firaCode(
                           fontSize: 11,
                           color: Colors.white.withValues(alpha: 0.5),
@@ -442,7 +443,7 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                     ),
                   ),
                 ],
-                // "Connect" / "Install" — shown when not yet installed.
+                // "Install" — shown when not yet installed.
                 if (!widget.isInstalled && widget.onInstall != null) ...[
                   const SizedBox(width: 10),
                   Expanded(

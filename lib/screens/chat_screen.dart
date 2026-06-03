@@ -39,6 +39,12 @@ import 'management/local_llm_screen.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 
+enum _GatewayTtsHealth {
+  normal,
+  degraded,
+  failed,
+}
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -89,6 +95,9 @@ class _ChatScreenState extends State<ChatScreen>
   String _ttsSentenceBuffer = '';
   bool _isTtsSpeaking = false;
   final List<String> _ttsQueue = [];
+  _GatewayTtsHealth _gatewayTtsHealth = _GatewayTtsHealth.normal;
+  String? _gatewayTtsHealthMessage;
+  DateTime? _lastGatewayTtsNoticeAt;
   String? _gatewaySessionKey;
 
   String _selectedAvatar = 'gemini.vrm';
@@ -732,6 +741,52 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  void _setGatewayTtsHealth(
+    _GatewayTtsHealth health, {
+    String? message,
+    bool notify = true,
+  }) {
+    if (!mounted) return;
+    final changed =
+        _gatewayTtsHealth != health || _gatewayTtsHealthMessage != message;
+    setState(() {
+      _gatewayTtsHealth = health;
+      _gatewayTtsHealthMessage = message;
+    });
+    if (!notify || health == _GatewayTtsHealth.normal || message == null) {
+      return;
+    }
+    final now = DateTime.now();
+    final last = _lastGatewayTtsNoticeAt;
+    if (!changed &&
+        last != null &&
+        now.difference(last) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastGatewayTtsNoticeAt = now;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: health == _GatewayTtsHealth.failed
+            ? AppColors.statusRed
+            : AppColors.statusAmber,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  Color? _gatewayTtsAuraColor() {
+    switch (_gatewayTtsHealth) {
+      case _GatewayTtsHealth.normal:
+        return null;
+      case _GatewayTtsHealth.degraded:
+        return AppColors.statusAmber;
+      case _GatewayTtsHealth.failed:
+        return AppColors.statusRed;
+    }
+  }
+
   Future<void> _processNextTtsInQueue() async {
     if (_isTtsSpeaking || _ttsQueue.isEmpty || _tts.isSpeaking) return;
     _isTtsSpeaking = true;
@@ -748,8 +803,16 @@ class _ChatScreenState extends State<ChatScreen>
       final gatewayProvider =
           Provider.of<GatewayProvider>(context, listen: false);
       final playback = await gatewayProvider.speakTextViaTalk(sentence);
+      if (playback.played) {
+        _setGatewayTtsHealth(_GatewayTtsHealth.normal, notify: false);
+      }
       if (!playback.played && playback.allowNativeFallback) {
         // Official fallback path: only when talk.speak is unavailable on this gateway.
+        _setGatewayTtsHealth(
+          _GatewayTtsHealth.degraded,
+          message:
+              'Gateway voice is unavailable on this runtime; using local system TTS.',
+        );
         await _tts.speak(sentence);
         if (!_tts.isSpeaking) {
           _isTtsSpeaking = false;
@@ -757,6 +820,10 @@ class _ChatScreenState extends State<ChatScreen>
         }
       } else if (!playback.played && playback.errorMessage != null) {
         _addDiagnosticLog('Gateway Talk voice error: ${playback.errorMessage}');
+        _setGatewayTtsHealth(
+          _GatewayTtsHealth.failed,
+          message: playback.errorMessage!,
+        );
         _isTtsSpeaking = false;
         _processNextTtsInQueue();
       } else if (!playback.played) {
@@ -3669,6 +3736,7 @@ class _ChatScreenState extends State<ChatScreen>
               position: Offset(size.width / 2, voiceOrbY),
               anchorOffset: Offset.zero,
               isSpeaking: TtsService().isSpeaking,
+              statusColor: _gatewayTtsAuraColor(),
               onTap: () => _showHolographicTtsMenu(context),
             ),
         ],
@@ -3785,6 +3853,7 @@ class _ChatScreenState extends State<ChatScreen>
     var activePersona = prefs.currentTtsPersona.trim().toLowerCase();
     final selectedVoiceId = prefs.gatewayVoiceId.trim();
     final voices = <String>[];
+    final voiceProviders = <String, String>{};
     var talkConfigured = false;
 
     try {
@@ -3842,6 +3911,16 @@ class _ChatScreenState extends State<ChatScreen>
             if (id == activeProvider) {
               activeEntry = mapped;
             }
+            final configured = mapped['configured'] == true;
+            final rawVoices = mapped['voices'];
+            if (configured && rawVoices is List) {
+              for (final voice in rawVoices) {
+                final v = voice.toString().trim();
+                if (v.isEmpty) continue;
+                voices.add(v);
+                voiceProviders.putIfAbsent(v.toLowerCase(), () => id);
+              }
+            }
           }
           if (speechProviderEntries.isNotEmpty) {
             // talk.catalog is authoritative for speech. tts.providers can reflect
@@ -3858,17 +3937,10 @@ class _ChatScreenState extends State<ChatScreen>
             }
           }
 
-          final rawVoices = activeEntry?['voices'];
           if (activeEntry?['configured'] == true) {
             talkConfigured = true;
           } else if (activeEntry != null) {
             talkConfigured = false;
-          }
-          if (rawVoices is List) {
-            for (final voice in rawVoices) {
-              final v = voice.toString().trim();
-              if (v.isNotEmpty) voices.add(v);
-            }
           }
         }
       }
@@ -3885,7 +3957,10 @@ class _ChatScreenState extends State<ChatScreen>
       if (rawVoices is List) {
         for (final voice in rawVoices) {
           final v = voice.toString().trim();
-          if (v.isNotEmpty) voices.add(v);
+          if (v.isNotEmpty) {
+            voices.add(v);
+            voiceProviders.putIfAbsent(v.toLowerCase(), () => activeProvider);
+          }
         }
       }
     }
@@ -3905,6 +3980,7 @@ class _ChatScreenState extends State<ChatScreen>
       'activePersona': activePersona,
       'selectedVoiceId': selectedVoiceId,
       'voices': dedupedVoices,
+      'voiceProviders': voiceProviders,
       'talkConfigured': talkConfigured,
     };
   }
@@ -3953,6 +4029,11 @@ class _ChatScreenState extends State<ChatScreen>
                         const <Map<String, dynamic>>[];
                     final voices = (data['voices'] as List?)?.cast<String>() ??
                         const <String>[];
+                    final voiceProvidersRaw = data['voiceProviders'];
+                    final voiceProviders = voiceProvidersRaw is Map
+                        ? voiceProvidersRaw.map((key, value) =>
+                            MapEntry(key.toString(), value.toString()))
+                        : const <String, String>{};
 
                     String activeProvider =
                         (data['activeProvider'] ?? '').toString();
@@ -4131,19 +4212,36 @@ class _ChatScreenState extends State<ChatScreen>
                                                 color: Colors.white54)),
                                         isExpanded: true,
                                         dropdownColor: const Color(0xFF17181F),
-                                        items: voices
-                                            .map((voice) => DropdownMenuItem(
-                                                  value: voice,
-                                                  child: Text(voice),
-                                                ))
-                                            .toList(),
+                                        items: voices.map((voice) {
+                                          final owner = voiceProviders[
+                                                  voice.toLowerCase()] ??
+                                              '';
+                                          final label = owner.isNotEmpty &&
+                                                  owner != activeProvider
+                                              ? '$voice · $owner'
+                                              : voice;
+                                          return DropdownMenuItem(
+                                            value: voice,
+                                            child: Text(label),
+                                          );
+                                        }).toList(),
                                         onChanged: (value) async {
                                           if (value == null) return;
+                                          final owner = voiceProviders[
+                                                  value.toLowerCase()] ??
+                                              '';
+                                          if (owner.isNotEmpty &&
+                                              owner != activeProvider) {
+                                            await _applyGatewayProvider(owner);
+                                          }
                                           final prefs = PreferencesService();
                                           await prefs.init();
                                           prefs.gatewayVoiceId = value;
                                           setModalState(() {
                                             data['selectedVoiceId'] = value;
+                                            if (owner.isNotEmpty) {
+                                              data['activeProvider'] = owner;
+                                            }
                                           });
                                         },
                                       ),

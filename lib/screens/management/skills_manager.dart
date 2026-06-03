@@ -239,6 +239,60 @@ class _SkillsManagerState extends State<SkillsManager>
 
   // ── Shared install logic (called from My Skills + Discover) ────────────────
 
+  String _normalizeSkillSlug(String value) => value
+      .trim()
+      .toLowerCase()
+      .replaceAll('_', '-')
+      .replaceAll(RegExp(r'^@openclaw/'), '');
+
+  bool _skillSlugMatches(String installed, String requested) {
+    final left = _normalizeSkillSlug(installed);
+    final right = _normalizeSkillSlug(requested);
+    if (left.isEmpty || right.isEmpty) return false;
+    return left == right || left.endsWith('/$right');
+  }
+
+  bool _slugInGatewayActiveSkills(
+    String slug,
+    List<Map<String, dynamic>>? activeSkills,
+  ) {
+    if (activeSkills == null) return false;
+    for (final skill in activeSkills) {
+      final candidates = <dynamic>[
+        skill['skillKey'],
+        skill['id'],
+        skill['slug'],
+        skill['name'],
+        skill['packageName'],
+      ];
+      if (candidates.any((value) =>
+          value != null && _skillSlugMatches(value.toString(), slug))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _isSkillAlreadyActive(
+    String slug,
+    GatewayProvider provider,
+  ) async {
+    if (_slugInGatewayActiveSkills(slug, provider.activeSkills)) return true;
+    try {
+      final installed = await OpenClawCommandService.getInstalledSkills();
+      return installed.any((id) => _skillSlugMatches(id, slug));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _installResultMeansAlreadyInstalled(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('already installed') ||
+        lower.contains('use update to replace') ||
+        lower.contains('use update instead');
+  }
+
   Future<void> _installSkill(
     BuildContext context,
     _SkillEntry skill,
@@ -254,6 +308,20 @@ class _SkillsManagerState extends State<SkillsManager>
       if (skill.hasPage) {
         _navigateToSkillPage(context, skill.id);
       }
+      return;
+    }
+
+    final alreadyActive =
+        await _isSkillAlreadyActive(skill.installSlug!, provider);
+    if (!mounted || !context.mounted) return;
+    if (alreadyActive) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('${skill.title} is already active.'),
+          backgroundColor: AppColors.statusGreen,
+        ),
+      );
+      provider.refreshRpcDiscovery();
       return;
     }
 
@@ -314,10 +382,13 @@ class _SkillsManagerState extends State<SkillsManager>
 
       final lower = cliResult.toLowerCase();
       if (lower.contains('installed') ||
+          _installResultMeansAlreadyInstalled(cliResult) ||
           (!lower.contains('error:') && !lower.contains('failed'))) {
         messenger.showSnackBar(
           SnackBar(
-            content: Text('✅ ${skill.title} installed successfully!'),
+            content: Text(_installResultMeansAlreadyInstalled(cliResult)
+                ? '${skill.title} is already active.'
+                : '✅ ${skill.title} installed successfully!'),
             backgroundColor: AppColors.statusGreen,
           ),
         );
@@ -355,6 +426,18 @@ class _SkillsManagerState extends State<SkillsManager>
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = Provider.of<GatewayProvider>(context, listen: false);
+
+    final alreadyActive = await _isSkillAlreadyActive(slug, provider);
+    if (!mounted || !context.mounted) return;
+    if (alreadyActive) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('$displayTitle is already active.'),
+        backgroundColor: AppColors.statusGreen,
+        behavior: SnackBarBehavior.floating,
+      ));
+      provider.refreshRpcDiscovery();
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -401,9 +484,12 @@ class _SkillsManagerState extends State<SkillsManager>
       ClawHubService.instance.invalidateCache();
       navigator.pop();
       final lower = cliResult.toLowerCase();
-      if (!lower.contains('error:') && !lower.contains('failed')) {
+      if (_installResultMeansAlreadyInstalled(cliResult) ||
+          (!lower.contains('error:') && !lower.contains('failed'))) {
         messenger.showSnackBar(SnackBar(
-          content: Text('$displayTitle installed'),
+          content: Text(_installResultMeansAlreadyInstalled(cliResult)
+              ? '$displayTitle is already active.'
+              : '$displayTitle installed'),
           backgroundColor: AppColors.statusGreen,
           behavior: SnackBarBehavior.floating,
         ));
@@ -757,7 +843,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                             id.contains(
                                                 skill.id.replaceAll('-', '_')));
                                 // Always open detail sheet first — shows live
-                                // stats. Sheet has Open / Connect / Install CTA.
+                                // stats. Sheet has Open / Install CTA.
                                 showSkillDetailSheet(
                                   context,
                                   slug: skill.id,
@@ -766,11 +852,9 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                   isInstalled: installed,
                                   accentColor: skill.color,
                                   icon: skill.icon,
-                                  // Partner skills with a dedicated page use
-                                  // "Connect" (not "Install") and show "Open"
-                                  // once active so the user can go straight in.
-                                  installLabel:
-                                      skill.hasPage ? 'Connect' : 'Install',
+                                  // Partner skills install first; account/device
+                                  // linking happens inside the dedicated page.
+                                  installLabel: 'Install',
                                   onOpen: (skill.hasPage && installed)
                                       ? () => widget.onNavigate(skill.id)
                                       : null,
@@ -1105,8 +1189,7 @@ class _DiscoverTabState extends State<_DiscoverTab>
       _results = _results
           .map(
             (s) => s.copyWith(
-              isInstalled:
-                  effective.contains(s.slug.trim().toLowerCase()),
+              isInstalled: effective.contains(s.slug.trim().toLowerCase()),
             ),
           )
           .toList();
@@ -3430,8 +3513,7 @@ class _SkillEntry {
 
   /// True when there is a dedicated Flutter page for this skill
   /// (agent-card, molt-launch, valeo-sentinel, twilio-voice, moonpay, local-llm).
-  /// Affects the CTA labels in the detail sheet: "Connect" instead of "Install",
-  /// and "Open" (not Install) when already active.
+  /// Shows "Open" when already active; install remains an install action.
   final bool hasPage;
   final String? installSlug;
 

@@ -73,9 +73,7 @@ class NodeService {
     final nativeRoot = '$filesDir/native-node-embedded/native-home/.openclaw';
     final prootRoot = '$filesDir/rootfs/ubuntu/root/.openclaw';
     final nativeSelected = await _nativeOwnerSelected();
-    return nativeSelected
-        ? <String>[nativeRoot, prootRoot]
-        : <String>[prootRoot, nativeRoot];
+    return nativeSelected ? <String>[nativeRoot] : <String>[prootRoot];
   }
 
   Future<List<File>> _openClawStoreFiles(String relativePath) async {
@@ -428,7 +426,8 @@ class NodeService {
   Future<bool> _liveNativePairingCoversDeclaredCommands() async {
     if (!await _nativeOwnerSelected()) return false;
     if (_state.status != NodeStatus.paired || !_ws.isConnected) return false;
-    return _liveNativeCommandContractHash == _declaredCommandContractSignature();
+    return _liveNativeCommandContractHash ==
+        _declaredCommandContractSignature();
   }
 
   Future<bool> _nativeStoredContractAlreadyAccepted() async {
@@ -437,7 +436,8 @@ class NodeService {
       await prefs.init();
       final token = prefs.nodeDeviceToken?.trim() ?? '';
       if (token.isEmpty) return false;
-      return prefs.nodeCommandContractHash == _declaredCommandContractSignature();
+      return prefs.nodeCommandContractHash ==
+          _declaredCommandContractSignature();
     } catch (_) {
       return false;
     }

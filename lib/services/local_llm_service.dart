@@ -458,8 +458,7 @@ class LocalLlmService {
     debugPrint(
         '[NDK] chat requested status=${_state.status.name} model=${_state.activeModelId ?? 'none'} history=${history.length} chars=${userMessage.length}');
     if (_state.status != LocalLlmStatus.ready || _activeModelPath == null) {
-      controller
-          .add('[Error] Local LLM is not ready. Status: ${_state.status}');
+      controller.add('[Error] ${_localReadinessMessage()}');
       debugPrint(
           '[NDK] chat rejected: local LLM not ready status=${_state.status.name}');
       controller.close();
@@ -494,6 +493,28 @@ class LocalLlmService {
     _runChatTurn(messages, controller,
         tools: effectiveTools, yieldToolCalls: yieldToolCalls);
     return controller.stream;
+  }
+
+  String _localReadinessMessage() {
+    switch (_state.status) {
+      case LocalLlmStatus.downloading:
+        final pct = (_state.downloadProgress * 100).clamp(0, 100).round();
+        return 'Local NDK model is still downloading ($pct%). Wait until it is ready before sending chat.';
+      case LocalLlmStatus.starting:
+      case LocalLlmStatus.installing:
+        return 'Local NDK model is still starting. Wait for the Local LLM page to show READY before sending chat.';
+      case LocalLlmStatus.error:
+        final details = _state.errorMessage;
+        return details == null || details.trim().isEmpty
+            ? 'Local NDK model failed to start. Open Local LLM and restart the model.'
+            : 'Local NDK model failed to start: $details';
+      case LocalLlmStatus.idle:
+        return 'Local NDK chat is not ready. Start a downloaded model from the Local LLM page first.';
+      case LocalLlmStatus.ready:
+        return _activeModelPath == null
+            ? 'Local NDK model state is READY but no model path is active. Restart the model from the Local LLM page.'
+            : 'Local NDK model is ready.';
+    }
   }
 
   /// Trims history to fit within the active context window.
@@ -1315,8 +1336,8 @@ class LocalLlmService {
         }
       }
 
-      _updateState(
-          _state.copyWith(errorMessage: 'Installing model into app storage...'));
+      _updateState(_state.copyWith(
+          errorMessage: 'Installing model into app storage...'));
       final filesDir = await _filesDirPath();
       final hostModelPath = _nativeModelPath(filesDir, model);
       final targetDir = Directory('$filesDir/local-llm/models');

@@ -76,7 +76,10 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
 
   Future<void> _loadIdentity() async {
     if (!mounted) return;
-    setState(() { _loadingIdentity = true; _error = null; });
+    setState(() {
+      _loadingIdentity = true;
+      _error = null;
+    });
 
     final result = await SkillsService()
         .executeSkill('molt-launch', parameters: {'method': 'get_identity'});
@@ -98,7 +101,9 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
 
   Future<void> _loadRep() async {
     if (!mounted) return;
-    setState(() { _loadingRep = true; });
+    setState(() {
+      _loadingRep = true;
+    });
 
     final result = await SkillsService()
         .executeSkill('molt-launch', parameters: {'method': 'get_rep'});
@@ -107,9 +112,14 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     if (result.success) {
       final raw = result.data;
       if (raw is Map<String, dynamic>) {
-        setState(() { _repData = raw; _loadingRep = false; });
+        setState(() {
+          _repData = raw;
+          _loadingRep = false;
+        });
       } else {
-        setState(() { _loadingRep = false; });
+        setState(() {
+          _loadingRep = false;
+        });
       }
     } else {
       setState(() {
@@ -119,11 +129,15 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     }
   }
 
-  /// Register the agent on MoltLaunch via gateway → skills.execute → molt-launch.register
-  /// Gateway runs: POST https://api.moltlaunch.com/api/agents/register
+  /// Register the agent on MoltLaunch through SkillsService. Some Gateway
+  /// builds expose direct skill-page RPCs; native builds may require a
+  /// dedicated adapter before this action is available.
   Future<void> _registerAgent() async {
     if (!mounted) return;
-    setState(() { _loadingIdentity = true; _error = null; });
+    setState(() {
+      _loadingIdentity = true;
+      _error = null;
+    });
 
     final result = await SkillsService()
         .executeSkill('molt-launch', parameters: {'method': 'register'});
@@ -135,7 +149,8 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     } else {
       setState(() {
         _loadingIdentity = false;
-        _error = result.error ?? 'Registration failed — check gateway connection';
+        _error =
+            result.error ?? 'Registration failed — check gateway connection';
       });
     }
   }
@@ -202,13 +217,16 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     return Stack(
       children: [
         Positioned(
-          top: 40, left: 10,
+          top: 40,
+          left: 10,
           child: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white70),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ),
-        SafeArea(child: SkillInstallHero(skill: skill, onInstalled: () => setState(() {}))),
+        SafeArea(
+            child: SkillInstallHero(
+                skill: skill, onInstalled: () => setState(() {}))),
       ],
     );
   }
@@ -224,11 +242,16 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off_rounded, color: AppColors.statusAmber, size: 18),
+          const Icon(Icons.cloud_off_rounded,
+              color: AppColors.statusAmber, size: 18),
           const SizedBox(width: 12),
-          Expanded(child: Text(_error ?? 'Gateway offline',
-              style: const TextStyle(color: AppColors.statusAmber, fontSize: 12))),
-          TextButton(onPressed: _loadAll, child: const Text('Retry', style: TextStyle(fontSize: 12))),
+          Expanded(
+              child: Text(_error ?? 'Gateway offline',
+                  style: const TextStyle(
+                      color: AppColors.statusAmber, fontSize: 12))),
+          TextButton(
+              onPressed: _loadAll,
+              child: const Text('Retry', style: TextStyle(fontSize: 12))),
         ],
       ),
     );
@@ -249,7 +272,9 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
-                color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5)),
+                color: Theme.of(context)
+                    .scaffoldBackgroundColor
+                    .withValues(alpha: 0.5)),
           ),
         ),
       ),
@@ -284,7 +309,8 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
                   color: Colors.orange.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.badge_rounded, color: Colors.orange, size: 28),
+                child: const Icon(Icons.badge_rounded,
+                    color: Colors.orange, size: 28),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -292,9 +318,11 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Register on MoltLaunch',
-                        style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+                        style: GoogleFonts.outfit(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     const Text('ERC-8004 on-chain identity required',
-                        style: TextStyle(color: AppColors.statusGrey, fontSize: 12)),
+                        style: TextStyle(
+                            color: AppColors.statusGrey, fontSize: 12)),
                   ],
                 ),
               ),
@@ -307,7 +335,8 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
             'MoltLaunch is an AI agent job marketplace on Base mainnet (Ethereum L2). '
             'Your OpenClaw agent needs an ERC-8004 identity to get hired, quote prices, '
             'and receive ETH payments via onchain escrow.',
-            style: TextStyle(color: AppColors.statusGrey, fontSize: 13, height: 1.5),
+            style: TextStyle(
+                color: AppColors.statusGrey, fontSize: 13, height: 1.5),
           ),
           const SizedBox(height: 20),
 
@@ -331,15 +360,19 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
             child: ElevatedButton.icon(
               onPressed: _loadingIdentity ? null : _registerAgent,
               icon: _loadingIdentity
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.add_rounded),
               label: Text(_loadingIdentity ? 'Registering…' : 'Register Agent'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
               ),
             ),
           ),
@@ -365,8 +398,12 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-              Text(subtitle, style: const TextStyle(color: AppColors.statusGrey, fontSize: 11)),
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 12)),
+              Text(subtitle,
+                  style: const TextStyle(
+                      color: AppColors.statusGrey, fontSize: 11)),
             ],
           ),
         ),
@@ -399,23 +436,29 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.05)),
       ),
       child: Row(
         children: [
           // Orange gradient avatar for orange Base chain branding
           Container(
-            width: 64, height: 64,
+            width: 64,
+            height: 64,
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [Colors.orange, Colors.deepOrange],
               ),
             ),
-            child: const Icon(Icons.badge_rounded, color: Colors.white, size: 32),
+            child:
+                const Icon(Icons.badge_rounded, color: Colors.white, size: 32),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -424,19 +467,22 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
               children: [
                 Text(
                   displayName.isNotEmpty ? displayName : 'Unnamed Agent',
-                  style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.outfit(
+                      fontSize: 17, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   shortAddr,
-                  style: GoogleFonts.firaCode(color: AppColors.statusGrey, fontSize: 11),
+                  style: GoogleFonts.firaCode(
+                      color: AppColors.statusGrey, fontSize: 11),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     // ERC-8004 verified badge
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: verified
                             ? AppColors.statusGreen.withValues(alpha: 0.1)
@@ -446,15 +492,19 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
                       child: Text(
                         verified ? 'ERC-8004 VERIFIED' : 'UNVERIFIED',
                         style: TextStyle(
-                          color: verified ? AppColors.statusGreen : AppColors.statusGrey,
-                          fontSize: 9, fontWeight: FontWeight.bold,
+                          color: verified
+                              ? AppColors.statusGreen
+                              : AppColors.statusGrey,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                     const SizedBox(width: 6),
                     // Reputation badge
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
@@ -462,14 +512,17 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
                       child: Text(
                         'REP $reputation/100',
                         style: const TextStyle(
-                          color: Colors.orange, fontSize: 9, fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                     const SizedBox(width: 6),
                     // Base chain badge
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: Colors.blueAccent.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
@@ -477,7 +530,9 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
                       child: const Text(
                         'BASE CHAIN',
                         style: TextStyle(
-                          color: Colors.blueAccent, fontSize: 9, fontWeight: FontWeight.bold,
+                          color: Colors.blueAccent,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
@@ -493,7 +548,9 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
 
   Widget _buildTaskList(BuildContext context) {
     if (_loadingRep) {
-      return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
+      return const Center(
+          child: Padding(
+              padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
     }
 
     final gigs = _repData['active_gig_list'];
@@ -505,9 +562,11 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
         alignment: Alignment.center,
         child: Column(
           children: [
-            Icon(Icons.inbox_rounded, size: 36, color: AppColors.statusGrey.withValues(alpha: 0.4)),
+            Icon(Icons.inbox_rounded,
+                size: 36, color: AppColors.statusGrey.withValues(alpha: 0.4)),
             const SizedBox(height: 12),
-            const Text('No active tasks', style: TextStyle(color: AppColors.statusGrey, fontSize: 13)),
+            const Text('No active tasks',
+                style: TextStyle(color: AppColors.statusGrey, fontSize: 13)),
             const Text('Task requests from clients appear here',
                 style: TextStyle(color: AppColors.statusGrey, fontSize: 11)),
           ],
@@ -562,10 +621,14 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.black.withValues(alpha: 0.01),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.03)
+            : Colors.black.withValues(alpha: 0.01),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.02)),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.02)),
       ),
       child: Row(
         children: [
@@ -576,16 +639,24 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 Row(
                   children: [
                     Text(status.replaceAll('_', ' ').toUpperCase(),
-                        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold)),
                     if (shortClient.isNotEmpty) ...[
-                      const Text(' · ', style: TextStyle(color: AppColors.statusGrey, fontSize: 10)),
+                      const Text(' · ',
+                          style: TextStyle(
+                              color: AppColors.statusGrey, fontSize: 10)),
                       Text(shortClient,
-                          style: GoogleFonts.firaCode(fontSize: 9, color: AppColors.statusGrey)),
+                          style: GoogleFonts.firaCode(
+                              fontSize: 9, color: AppColors.statusGrey)),
                     ],
                   ],
                 ),
@@ -596,7 +667,8 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
           if (priceEth > 0)
             Text(
               '${priceEth.toStringAsFixed(4)} ETH',
-              style: GoogleFonts.firaCode(fontWeight: FontWeight.bold, fontSize: 12),
+              style: GoogleFonts.firaCode(
+                  fontWeight: FontWeight.bold, fontSize: 12),
             ),
         ],
       ),
@@ -627,10 +699,18 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
           crossAxisSpacing: 12,
           childAspectRatio: 1.8,
           children: [
-            _buildMetricItem(context, 'COMPLETED', '$completed', Icons.task_alt_rounded, AppColors.statusGreen),
-            _buildMetricItem(context, 'REPUTATION', '$reputation/100', Icons.star_rounded, repColor),
-            _buildMetricItem(context, 'PENDING ETH', '${pendingEth.toStringAsFixed(4)} ETH', Icons.account_balance_wallet_rounded, Colors.orange),
-            _buildMetricItem(context, 'NETWORK', 'Base chain', Icons.hub_rounded, Colors.blueAccent),
+            _buildMetricItem(context, 'COMPLETED', '$completed',
+                Icons.task_alt_rounded, AppColors.statusGreen),
+            _buildMetricItem(context, 'REPUTATION', '$reputation/100',
+                Icons.star_rounded, repColor),
+            _buildMetricItem(
+                context,
+                'PENDING ETH',
+                '${pendingEth.toStringAsFixed(4)} ETH',
+                Icons.account_balance_wallet_rounded,
+                Colors.orange),
+            _buildMetricItem(context, 'NETWORK', 'Base chain',
+                Icons.hub_rounded, Colors.blueAccent),
           ],
         ),
         const SizedBox(height: 16),
@@ -649,9 +729,13 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Onchain Reputation',
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 12)),
                   Text('$reputation / 100',
-                      style: GoogleFonts.firaCode(fontSize: 12, color: repColor, fontWeight: FontWeight.bold)),
+                      style: GoogleFonts.firaCode(
+                          fontSize: 12,
+                          color: repColor,
+                          fontWeight: FontWeight.bold)),
                 ],
               ),
               const SizedBox(height: 10),
@@ -667,7 +751,8 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
               const SizedBox(height: 8),
               const Text(
                 'ERC-8004 Reputation Registry on Base mainnet · 0–100 · Set by clients after each job',
-                style: TextStyle(color: AppColors.statusGrey, fontSize: 10, height: 1.4),
+                style: TextStyle(
+                    color: AppColors.statusGrey, fontSize: 10, height: 1.4),
               ),
             ],
           ),
@@ -676,7 +761,8 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
     );
   }
 
-  Widget _buildMetricItem(BuildContext context, String label, String value, IconData icon, Color color) {
+  Widget _buildMetricItem(BuildContext context, String label, String value,
+      IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -690,10 +776,15 @@ class _AgentWorkPageState extends State<AgentWorkPage> {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 9, color: AppColors.statusGrey, fontWeight: FontWeight.bold)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 9,
+                  color: AppColors.statusGrey,
+                  fontWeight: FontWeight.bold)),
           Text(value,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              style:
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         ],
       ),
     );

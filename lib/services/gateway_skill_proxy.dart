@@ -2,15 +2,12 @@ import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import '../providers/gateway_provider.dart';
 
-/// GatewaySkillProxy — the single point of contact between SkillsService
-/// and the OpenClaw gateway's skills.execute RPC method.
+/// GatewaySkillProxy — guarded access to optional gateway skill-page RPCs.
 ///
-/// OpenClaw gateway routing: skills.execute { name, method, ...params }
-/// The installed skill's handler on the gateway processes the call and
-/// returns { ok, payload, error } — same envelope as all other RPC calls.
-///
-/// Falls back to a mock payload when the gateway is offline, so skill pages
-/// show loading states rather than hard crashes.
+/// Some OpenClaw builds expose `skills.execute`; current native builds often
+/// expose installed skills for chat while not exposing this direct page RPC.
+/// Check support before calling so partner pages show a clear unavailable state
+/// instead of throwing "unknown method: skills.execute".
 
 class GatewaySkillProxy {
   static final GatewaySkillProxy _instance = GatewaySkillProxy._internal();
@@ -34,6 +31,9 @@ class GatewaySkillProxy {
 
   bool get isAttached => _gatewayProvider != null;
 
+  bool get canExecuteGatewaySkills =>
+      _gatewayProvider?.supportedMethods.contains('skills.execute') == true;
+
   /// Execute a skill method via the OpenClaw gateway.
   ///
   /// [skillName]  — the OpenClaw skill id (e.g. 'agent_card', 'twilio_voice')
@@ -52,6 +52,14 @@ class GatewaySkillProxy {
     }
 
     try {
+      if (!canExecuteGatewaySkills) {
+        throw const SkillProxyException(
+          'This Gateway does not expose direct skill page execution yet. '
+          'The skill can still be installed and visible to chat, but this page '
+          'needs a native adapter or PRoot rollback before it can run actions.',
+        );
+      }
+
       final result = await _gatewayProvider!.invoke('skills.execute', {
         'name': skillName,
         'method': method,

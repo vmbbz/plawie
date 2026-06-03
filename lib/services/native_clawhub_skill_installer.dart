@@ -33,13 +33,13 @@ class NativeClawHubSkillInstaller {
     debugPrint('[NativeClawHub] resolved slug=$slug version=$resolvedVersion');
 
     if (await targetDir.exists() && !force) {
-      debugPrint('[NativeClawHub] install rejected already-installed slug=$slug');
+      debugPrint('[NativeClawHub] install no-op already-installed slug=$slug');
       return NativeClawHubSkillResult(
-        ok: false,
+        ok: true,
         slug: slug,
         version: resolvedVersion,
         targetPath: targetDir.path,
-        error: 'Skill already installed. Use update to replace it.',
+        alreadyInstalled: true,
       );
     }
 
@@ -217,9 +217,9 @@ class NativeClawHubSkillInstaller {
     final uri = Uri.parse('$_baseUrl/api/v1/download').replace(
       queryParameters: query,
     );
-    final response = await http
-        .get(uri, headers: {'User-Agent': 'plawie-app/1.0'})
-        .timeout(const Duration(seconds: 30));
+    final response = await http.get(uri, headers: {
+      'User-Agent': 'plawie-app/1.0'
+    }).timeout(const Duration(seconds: 30));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final bodyPreview = utf8
           .decode(response.bodyBytes, allowMalformed: true)
@@ -235,7 +235,8 @@ class NativeClawHubSkillInstaller {
     final bytes = Uint8List.fromList(response.bodyBytes);
     if (bytes.isEmpty) throw StateError('ClawHub returned an empty archive.');
     if (bytes.length > _maxArchiveBytes) {
-      throw StateError('ClawHub skill archive is too large for mobile install.');
+      throw StateError(
+          'ClawHub skill archive is too large for mobile install.');
     }
     return bytes;
   }
@@ -365,9 +366,9 @@ class NativeClawHubSkillInstaller {
     final uri = Uri.parse('$_baseUrl/api/v1/skills/$slug/card').replace(
       queryParameters: query,
     );
-    final response = await http
-        .get(uri, headers: {'User-Agent': 'plawie-app/1.0'})
-        .timeout(const Duration(seconds: 15));
+    final response = await http.get(uri, headers: {
+      'User-Agent': 'plawie-app/1.0'
+    }).timeout(const Duration(seconds: 15));
     if (response.statusCode < 200 || response.statusCode >= 300) return '';
     return utf8.decode(response.bodyBytes);
   }
@@ -378,7 +379,8 @@ class NativeClawHubSkillInstaller {
     required String version,
     required int installedAt,
   }) async {
-    final lockFile = File(path.join(workspaceDir.path, '.clawhub', 'lock.json'));
+    final lockFile =
+        File(path.join(workspaceDir.path, '.clawhub', 'lock.json'));
     final lock = await _readJson(lockFile) ?? <String, dynamic>{};
     lock['version'] = 1;
     final skills = lock['skills'] is Map
@@ -394,7 +396,8 @@ class NativeClawHubSkillInstaller {
   }
 
   Future<void> _removeFromLock(Directory workspaceDir, String slug) async {
-    final lockFile = File(path.join(workspaceDir.path, '.clawhub', 'lock.json'));
+    final lockFile =
+        File(path.join(workspaceDir.path, '.clawhub', 'lock.json'));
     final lock = await _readJson(lockFile);
     if (lock == null) return;
     final skills = lock['skills'] is Map
@@ -431,6 +434,7 @@ class NativeClawHubSkillResult {
   final String? version;
   final String targetPath;
   final String? error;
+  final bool alreadyInstalled;
 
   const NativeClawHubSkillResult({
     required this.ok,
@@ -438,5 +442,6 @@ class NativeClawHubSkillResult {
     this.version,
     required this.targetPath,
     this.error,
+    this.alreadyInstalled = false,
   });
 }

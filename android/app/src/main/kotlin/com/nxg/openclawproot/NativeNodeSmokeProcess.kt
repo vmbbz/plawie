@@ -229,13 +229,43 @@ class NativeNodeSmokeProcess(
     }
 
     private fun readServiceLogs(): String {
-        val file = NativeNodeEmbeddedService.logFile(context.applicationContext)
-        if (!file.exists()) return ""
+        val runtimeFile = NativeNodeEmbeddedService.logFile(context.applicationContext)
+        val stdioFile = File(
+            NativeNodeEmbeddedService.workDir(context.applicationContext),
+            "native-home/.openclaw/native-full-gateway-bootstrap-stdio.log"
+        )
 
         return try {
-            file.readLines().takeLast(MAX_LOG_LINES).joinToString("\n")
+            val runtimeLines = if (runtimeFile.exists()) {
+                runtimeFile.readLines()
+                    .takeLast(MAX_LOG_LINES / 2)
+                    .map(::formatRuntimeLogLine)
+            } else {
+                emptyList()
+            }
+            val stdioLines = if (stdioFile.exists()) {
+                stdioFile.readLines()
+                    .takeLast(MAX_LOG_LINES / 2)
+                    .map { "[native-stdio] $it" }
+            } else {
+                emptyList()
+            }
+            (runtimeLines + stdioLines).takeLast(MAX_LOG_LINES).joinToString("\n")
         } catch (e: Exception) {
             "Could not read embedded native Node logs: ${e.message}"
+        }
+    }
+
+    private fun formatRuntimeLogLine(raw: String): String {
+        return try {
+            val json = JSONObject(raw)
+            val time = json.optString("time", "")
+            val message = json.optString("message", raw)
+            val process = json.optString("process", "")
+            val suffix = if (process.isBlank()) "" else " ($process)"
+            "[native] $time $message$suffix"
+        } catch (_: Exception) {
+            "[native] $raw"
         }
     }
 

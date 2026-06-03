@@ -4209,6 +4209,104 @@ If the user asks what tools or phone abilities are available, include these Andr
 $message''';
   }
 
+  String _privatePromptText(dynamic value, {int maxChars = 120}) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return '';
+    final compact = raw
+        .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .replaceAll('<', '[')
+        .replaceAll('>', ']');
+    if (compact.length <= maxChars) return compact;
+    return '${compact.substring(0, maxChars - 1)}…';
+  }
+
+  String _skillIdFromGatewaySkill(Map<String, dynamic> skill) {
+    return _privatePromptText(
+      skill['skillKey'] ??
+          skill['id'] ??
+          skill['name'] ??
+          skill['slug'] ??
+          skill['packageName'],
+      maxChars: 64,
+    ).toLowerCase();
+  }
+
+  Future<String> _decorateMessageWithGatewaySkillContext(String message) async {
+    final rawSkills = _state.activeSkills ?? const <Map<String, dynamic>>[];
+    final activeSkills = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final raw in rawSkills) {
+      final skill = Map<String, dynamic>.from(raw);
+      final id = _skillIdFromGatewaySkill(skill);
+      if (id.isEmpty || !seen.add(id)) continue;
+      activeSkills.add(skill);
+    }
+    activeSkills.sort((a, b) =>
+        _skillIdFromGatewaySkill(a).compareTo(_skillIdFromGatewaySkill(b)));
+
+    final primitiveTools = (_state.capabilities ?? const <String>[])
+        .map((tool) => _privatePromptText(tool, maxChars: 48))
+        .where((tool) => tool.isNotEmpty)
+        .take(40)
+        .toList();
+
+    if (activeSkills.isEmpty && primitiveTools.isEmpty) return message;
+
+    final skillLines = activeSkills.take(90).map((skill) {
+      final id = _skillIdFromGatewaySkill(skill);
+      final title = _privatePromptText(
+        skill['title'] ?? skill['displayName'] ?? skill['name'] ?? id,
+        maxChars: 72,
+      );
+      final description = _privatePromptText(
+        skill['description'] ?? skill['summary'] ?? skill['about'],
+        maxChars: 120,
+      );
+      return description.isEmpty
+          ? '- $id ($title)'
+          : '- $id ($title): $description';
+    }).join('\n');
+
+    final hasStocks = activeSkills
+        .any((skill) => _skillIdFromGatewaySkill(skill) == 'stocks');
+    final skillCountSuffix = activeSkills.length > 90
+        ? '\n- …and ${activeSkills.length - 90} more active skills'
+        : '';
+    final toolLine =
+        primitiveTools.isEmpty ? 'none reported' : primitiveTools.join(', ');
+
+    _addActivity('[CHAT] Skill inventory context attached '
+        '(skills=${activeSkills.length}, tools=${primitiveTools.length})');
+
+    return '''
+<openclaw_runtime_inventory>
+This is private runtime context. Use it to route the answer, but do not quote the XML tag.
+
+Definitions:
+- Skills are installed OpenClaw packages/integrations that add agent knowledge, workflows, or tool affordances.
+- Tools are primitive permissions/capabilities the Gateway may invoke.
+- Device capabilities are Android node actions such as camera, location, sensors, haptics, flashlight, canvas, and avatar gestures.
+Do not confuse these categories. If the user asks what skills are available, answer from Active skills, not from Device capabilities alone.
+Do not claim an installed skill is unavailable when it appears in Active skills. A skill can be active even if its name is not also a primitive tool function name.
+
+Active skills (${activeSkills.length}):
+${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCountSuffix
+
+Primitive tools/capabilities currently reported:
+$toolLine
+
+${hasStocks ? 'Financial routing note: the stocks skill is active. For stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path or Gateway financial tooling instead of saying no stocks skill is available.' : ''}
+</openclaw_runtime_inventory>
+
+$message''';
+  }
+
+  Future<String> _decorateMessageWithRuntimeContext(String message) async {
+    final withSkills = await _decorateMessageWithGatewaySkillContext(message);
+    return _decorateMessageWithMobileNodeContext(withSkills);
+  }
+
   String? _nativePrimaryCanaryPayload(String message, String model) {
     if (!_nativePrimaryCanaryDiagnosticsEnabled) return null;
 
@@ -13861,8 +13959,7 @@ $message''';
       chunkController.close();
     }
 
-    final outboundMessage =
-        await _decorateMessageWithMobileNodeContext(message);
+    final outboundMessage = await _decorateMessageWithRuntimeContext(message);
 
     final chatSendFrame = <String, dynamic>{
       'type': 'req',
@@ -15582,7 +15679,8 @@ $message''';
         final shouldRestart =
             allowReload && alreadyRunning && !_isInGatewaySettleWindow;
         if (shouldRestart) {
-          await _restartNativeRuntimeForConfigChange('gateway hardening update');
+          await _restartNativeRuntimeForConfigChange(
+              'gateway hardening update');
         } else {
           _addActivity(
             '[SYS] Native Gateway config hardening written; PRoot CLI patch skipped.',

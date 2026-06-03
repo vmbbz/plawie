@@ -27,6 +27,9 @@ class NativeNodeEmbeddedService : Service() {
     private var activePort = PORT
     private var activeCanaryMode = "embedded-smoke"
     private val fullGatewayBootstrapStartClaimed = AtomicBoolean(false)
+    private var lastStartIgnoredMessage: String? = null
+    private var lastStartIgnoredAtMs: Long = 0L
+    private var suppressedStartIgnoredCount: Int = 0
 
     private data class PreflightBundle(
         val root: File,
@@ -115,7 +118,7 @@ class NativeNodeEmbeddedService : Service() {
             activeCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE &&
             requestedCanaryMode != FULL_GATEWAY_BOOTSTRAP_MODE
         ) {
-            appendLog(
+            appendStartIgnoredLog(
                 "start ignored; full Gateway bootstrap is already preparing " +
                     "activePort=$activePort requestedPort=$requestedPort " +
                     "requestedMode=$requestedCanaryMode"
@@ -144,7 +147,7 @@ class NativeNodeEmbeddedService : Service() {
                 }
                 return
             }
-            appendLog(
+            appendStartIgnoredLog(
                 "start ignored; embedded Node already running " +
                     "activePort=$activePort activeMode=$activeCanaryMode " +
                     "requestedPort=$requestedPort requestedMode=$requestedCanaryMode"
@@ -157,7 +160,7 @@ class NativeNodeEmbeddedService : Service() {
 
         if (requestedCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE) {
             if (!fullGatewayBootstrapStartClaimed.compareAndSet(false, true)) {
-                appendLog(
+                appendStartIgnoredLog(
                     "start ignored; full Gateway bootstrap already starting or started " +
                         "activePort=$activePort requestedPort=$requestedPort"
                 )
@@ -1034,5 +1037,28 @@ class NativeNodeEmbeddedService : Service() {
             Log.w(TAG, "Could not append native Node log", e)
         }
         Log.i(TAG, payload)
+    }
+
+    private fun appendStartIgnoredLog(message: String) {
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastStartIgnoredMessage
+        if (previous == message && now - lastStartIgnoredAtMs < 10_000L) {
+            suppressedStartIgnoredCount += 1
+            if (suppressedStartIgnoredCount == 1) {
+                appendLog("$message; duplicate start requests suppressed")
+            }
+            return
+        }
+
+        if (suppressedStartIgnoredCount > 0 && previous != null) {
+            appendLog(
+                "startup duplicate summary; suppressed=$suppressedStartIgnoredCount " +
+                    "last=\"$previous\""
+            )
+        }
+        lastStartIgnoredMessage = message
+        lastStartIgnoredAtMs = now
+        suppressedStartIgnoredCount = 0
+        appendLog(message)
     }
 }
